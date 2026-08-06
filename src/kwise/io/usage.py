@@ -22,6 +22,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
+from typing import ClassVar
 
 import pandas as pd
 
@@ -30,6 +31,8 @@ __all__ = [
     "SUPPORTED_INTERVALS",
     "USAGE_DATE_COLUMN_CANDIDATES",
     "USAGE_ENERGY_COLUMN_CANDIDATES",
+    "GridKwhSeries",
+    "OffGridEnergyError",
     "UsageData",
     "UsageLoadError",
     "UsageMeta",
@@ -41,6 +44,7 @@ __all__ = [
     "match_usage_column",
     "parse_usage_datetime",
     "parse_usage_energy",
+    "slot_start",
 ]
 
 # 인코딩 4종 순차 시도. 인코딩이 어긋나도 예외 없이 깨진 헤더가 나오는 경우가 있으므로
@@ -121,6 +125,40 @@ class UsageMeta:
         return self.interval_minutes / 60.0
 
 
+class OffGridEnergyError(RuntimeError):
+    """그리드 이탈분을 빠뜨린 채 총 사용량을 구하려 할 때 발생한다."""
+
+
+class GridKwhSeries(pd.Series):  # type: ignore[misc]
+    """그리드 정렬 사용량 시리즈. **총합을 직접 구하는 것을 막는다.**
+
+    ``kwh_grid.sum()`` 은 그리드 이탈(부분 적산) 행의 kWh 를 빠뜨린다. 샘플에서
+    그 차이는 43.2 kWh, 전체의 0.0002% 라 눈으로는 잡히지 않는다. 요금 엔진에서
+    이 실수가 나면 발견이 매우 어려우므로 합계 경로 자체를 막고
+    :attr:`UsageData.total_kwh` 또는 :meth:`UsageData.energy_kwh` 로 유도한다.
+
+    슬라이스에도 ``off_grid_kwh`` 가 따라붙으므로 월별·시간대별 부분합 역시 막힌다.
+    그리드 정렬분만 필요한 것이 확실하면 ``sum(grid_only=True)`` 로 뜻을 밝힌다.
+    """
+
+    _metadata: ClassVar[list[str]] = ["off_grid_kwh"]
+
+    @property
+    def _constructor(self) -> type[GridKwhSeries]:
+        return GridKwhSeries
+
+    def sum(self, *args: object, grid_only: bool = False, **kwargs: object) -> float:
+        off_grid_kwh = float(getattr(self, "off_grid_kwh", 0.0) or 0.0)
+        if off_grid_kwh and not grid_only:
+            raise OffGridEnergyError(
+                f"kwh_grid.sum() 은 그리드 이탈 {off_grid_kwh:,.2f} kWh 를 빠뜨립니다. "
+                "총 사용량은 UsageData.total_kwh, 시계열 합계는 "
+                "UsageData.energy_kwh() 를 쓰십시오 (요구사항서 4.3). "
+                "그리드 정렬분만 필요하면 sum(grid_only=True) 로 밝히십시오."
+            )
+        return float(super().sum(*args, **kwargs))
+
+
 @dataclass(frozen=True, eq=False)
 class UsageData:
     """로더의 반환값.
@@ -128,13 +166,14 @@ class UsageData:
     Attributes:
         kw: tz-naive DatetimeIndex 의 15분(또는 1시간) 평균 수요. 결측은 NaN.
             그리드 이탈 행은 포함하지 않는다.
-        kwh: 같은 인덱스의 사용량. 그리드 이탈 행은 포함하지 않는다.
+        kwh_grid: 같은 인덱스의 **그리드 정렬분** 사용량. 이탈 행이 빠져 있으므로
+            총합은 :attr:`total_kwh` 나 :meth:`energy_kwh` 로 구한다.
         off_grid: 그리드를 벗어난 행 (``timestamp``, ``kwh``). 값까지 보존한다.
         meta: 메타데이터.
     """
 
     kw: pd.Series
-    kwh: pd.Series
+    kwh_grid: GridKwhSeries
     off_grid: pd.DataFrame
     meta: UsageMeta
 
@@ -142,6 +181,44 @@ class UsageData:
     def total_kwh(self) -> float:
         """그리드 이탈 행을 포함한 총 사용량. 요금 계산의 기준이다."""
         return self.meta.total_kwh
+
+    def energy_kwh(self, *, include_off_grid: bool = True) -> pd.Series:
+        """요금 계산용 사용량 시계열.
+
+        그리드 이탈 행의 kWh 를 그 행이 속한 구간의 라벨에 얹어 돌려준다.
+        부분 적산 행은 애초에 그 구간의 일부를 잰 값이므로 귀속이 맞다.
+        합계는 :attr:`total_kwh` 와 같다.
+
+        **kW 로 환산하지 말 것.** 이탈분이 얹힌 구간은 위상이 달라 수요가 왜곡된다
+        (요구사항서 4.3).
+        """
+        energy = pd.Series(
+            self.kwh_grid.to_numpy(dtype=float),
+            index=self.kwh_grid.index.copy(),
+            name="kwh",
+        )
+        if not include_off_grid or self.off_grid.empty:
+            return energy
+
+        interval = pd.Timedelta(minutes=self.meta.interval_minutes)
+        # 라벨은 구간 끝이다. 이탈 행은 자기를 품는 구간의 라벨로 올림한다.
+        labels = self.off_grid["timestamp"].dt.ceil(interval)
+        extra = self.off_grid.groupby(labels)["kwh"].sum()
+        extra = extra[extra.index.isin(energy.index)]
+        if extra.empty:
+            return energy
+        base = energy.reindex(extra.index).fillna(0.0)
+        energy.loc[extra.index] = base + extra
+        return energy
+
+    def __getattr__(self, name: str) -> object:
+        # 1세션의 이름을 그대로 쓰다가 이탈분을 빠뜨리는 것을 막는다.
+        if name == "kwh":
+            raise AttributeError(
+                "UsageData.kwh 는 kwh_grid 로 바뀌었습니다. 총 사용량은 total_kwh, "
+                "요금 계산용 시계열은 energy_kwh() 를 쓰십시오 (요구사항서 4.3)."
+            )
+        raise AttributeError(name)
 
 
 # --------------------------------------------------------------------- 컬럼 매칭
@@ -263,6 +340,16 @@ def detect_grid_phase_seconds(timestamps: pd.Series, interval_minutes: int) -> i
     )
     phase = second_of_day % (interval_minutes * 60)
     return int(phase.mode().iloc[0])
+
+
+def slot_start(index: pd.DatetimeIndex, interval_minutes: int) -> pd.DatetimeIndex:
+    """라벨(구간 끝)에서 구간 시작 시각을 만든다.
+
+    계절·시간대·월·요일 귀속은 모두 이 시각으로 판정해야 한다. ``15:00`` 라벨은
+    ``14:45~15:00`` 사용량이므로 중간부하이고, 첫 최대부하 슬롯은 ``15:15`` 이다.
+    quality·tariff·pv 가 모두 이 함수를 써야 15분 어긋남이 생기지 않는다.
+    """
+    return index - pd.Timedelta(minutes=interval_minutes)
 
 
 # --------------------------------------------------------------------- 파일 읽기
@@ -399,18 +486,20 @@ def load_usage_bytes(
 
     index = pd.date_range(grouped.index.min(), grouped.index.max(), freq=f"{interval}min")
     index.name = "timestamp"
-    kwh_series = grouped.reindex(index)
-    kw_series = kwh_series * (60.0 / interval)
-    kw_series.name = "kw"
-    kwh_series.name = "kwh"
+    aligned = grouped.reindex(index)
+    kw_series = pd.Series(aligned.to_numpy(dtype=float) * (60.0 / interval), index=index, name="kw")
 
     expected_rows = len(index)
     valid_rows = len(grouped)
-    missing_rows = int(kwh_series.isna().sum())
+    missing_rows = int(aligned.isna().sum())
     missing_ratio = missing_rows / expected_rows if expected_rows else 0.0
 
     off_grid_kwh = float(off_grid["kwh"].sum())
-    total_kwh = float(kwh_series.sum()) + off_grid_kwh  # 그리드 이탈 행의 kWh 도 더한다
+    total_kwh = float(aligned.sum()) + off_grid_kwh  # 그리드 이탈 행의 kWh 도 더한다
+
+    # 총합 경로를 막은 시리즈로 감싼다. 이탈분이 있으면 .sum() 이 예외를 던진다.
+    kwh_series = GridKwhSeries(aligned.to_numpy(dtype=float), index=index, name="kwh")
+    kwh_series.off_grid_kwh = off_grid_kwh
     max_demand_kw = float(kw_series.max())
     max_demand_at = pd.Timestamp(kw_series.idxmax())
     mean_kw = float(kw_series.mean())
@@ -459,7 +548,7 @@ def load_usage_bytes(
             negative_energy_rows=negative_energy_rows,
         ),
     )
-    return UsageData(kw=kw_series, kwh=kwh_series, off_grid=off_grid, meta=meta)
+    return UsageData(kw=kw_series, kwh_grid=kwh_series, off_grid=off_grid, meta=meta)
 
 
 def _build_warnings(

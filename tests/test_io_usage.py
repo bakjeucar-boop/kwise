@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from kwise.io import (
+    OffGridEnergyError,
     UsageData,
     UsageLoadError,
     detect_grid_phase_seconds,
@@ -16,50 +17,9 @@ from kwise.io import (
     match_usage_column,
     parse_usage_datetime,
     parse_usage_energy,
+    slot_start,
 )
-
-HEADER = ("검침일", "순방향 유효전력량(KWH)")
-
-
-# --------------------------------------------------------------------- 헬퍼
-
-
-def make_labels(date: str, interval: int) -> list[str]:
-    """하루치 검침 라벨. 라벨은 구간 끝이라 ``00:15`` 로 시작해 ``24:00`` 으로 끝난다."""
-    start = pd.Timestamp(date)
-    labels: list[str] = []
-    for step in range(1, 24 * 60 // interval + 1):
-        stamp = start + pd.Timedelta(minutes=interval * step)
-        if stamp.date() != start.date():
-            labels.append(f"{start.date()} 24:00")  # 자정은 24:00 으로 적힌다
-        else:
-            labels.append(stamp.strftime("%Y-%m-%d %H:%M"))
-    return labels
-
-
-def write_csv(
-    path: Path,
-    rows: list[tuple[str, float]],
-    *,
-    encoding: str = "utf-8-sig",
-    header: tuple[str, str] = HEADER,
-) -> Path:
-    text = ",".join(header) + "\n" + "".join(f"{label},{kwh:.2f}\n" for label, kwh in rows)
-    path.write_text(text, encoding=encoding)
-    return path
-
-
-def one_day(
-    path: Path,
-    *,
-    date: str = "2024-01-01",
-    interval: int = 15,
-    kwh: float = 100.0,
-    **kwargs: object,
-) -> Path:
-    rows = [(label, kwh) for label in make_labels(date, interval)]
-    return write_csv(path, rows, **kwargs)  # type: ignore[arg-type]
-
+from tests._synthetic import HEADER, make_labels, one_day, write_csv
 
 # --------------------------------------------------------------------- 24:00 파싱
 
@@ -271,7 +231,7 @@ def test_duplicate_timestamps_are_summed(tmp_path: Path) -> None:
     rows.append(("2024-01-01 12:00", 50.0))
     usage = load_usage(write_csv(tmp_path / "d.csv", rows))
     assert usage.meta.duplicate_rows == 1
-    assert usage.kwh.loc[pd.Timestamp("2024-01-01 12:00")] == pytest.approx(150.0)
+    assert usage.kwh_grid.loc[pd.Timestamp("2024-01-01 12:00")] == pytest.approx(150.0)
 
 
 # --------------------------------------------------------------------- 실측 샘플 (부록 B)
@@ -342,3 +302,78 @@ def test_sample_low_load_slot(sample: UsageData) -> None:
     assert len(low) == 1
     assert low.index[0] == pd.Timestamp("2024-04-07 06:00")
     assert low.iloc[0] == pytest.approx(2.88)
+
+
+# --------------------------------------------------------------------- total_kwh 강제 장치
+
+
+def off_grid_usage(tmp_path: Path) -> UsageData:
+    """그리드 이탈 2건이 있는 하루치 데이터."""
+    rows = [(label, 100.0) for label in make_labels("2024-01-01", 15)]
+    rows.append(("2024-01-01 19:29", 43.20))
+    rows.append(("2024-01-01 03:51", 0.72))
+    return load_usage(write_csv(tmp_path / "guard.csv", rows))
+
+
+def test_kwh_grid_sum_is_blocked_when_off_grid_exists(tmp_path: Path) -> None:
+    """kwh_grid.sum() 은 이탈분을 빠뜨리므로 막는다. 43.92 kWh 는 눈에 띄지 않는다."""
+    usage = off_grid_usage(tmp_path)
+    with pytest.raises(OffGridEnergyError, match="total_kwh"):
+        usage.kwh_grid.sum()
+
+
+def test_kwh_grid_partial_sum_is_blocked_too(tmp_path: Path) -> None:
+    """슬라이스에도 장치가 따라붙는다. 월별·시간대별 부분합이 더 위험하다."""
+    usage = off_grid_usage(tmp_path)
+    with pytest.raises(OffGridEnergyError):
+        usage.kwh_grid.loc["2024-01-01 12:00":"2024-01-01 20:00"].sum()
+
+
+def test_grid_only_sum_is_allowed_when_declared(tmp_path: Path) -> None:
+    usage = off_grid_usage(tmp_path)
+    assert usage.kwh_grid.sum(grid_only=True) == pytest.approx(9600.0)
+
+
+def test_sum_is_not_blocked_without_off_grid_rows(tmp_path: Path) -> None:
+    """이탈 행이 없으면 합계가 정확하므로 막지 않는다. 거짓 경보를 만들지 않는다."""
+    usage = load_usage(one_day(tmp_path / "clean.csv"))
+    assert usage.kwh_grid.sum() == pytest.approx(9600.0)
+    assert usage.total_kwh == pytest.approx(9600.0)
+
+
+def test_old_kwh_attribute_points_to_replacement(tmp_path: Path) -> None:
+    usage = off_grid_usage(tmp_path)
+    with pytest.raises(AttributeError, match="kwh_grid"):
+        _ = usage.kwh
+
+
+def test_energy_kwh_sums_to_total(tmp_path: Path) -> None:
+    """energy_kwh() 는 이탈분을 그 구간 라벨에 얹는다. 합계가 total_kwh 와 같다."""
+    usage = off_grid_usage(tmp_path)
+    energy = usage.energy_kwh()
+    assert energy.sum() == pytest.approx(usage.total_kwh)
+    # 19:29 → 19:30 구간, 03:51 → 04:00 구간
+    assert energy.loc[pd.Timestamp("2024-01-01 19:30")] == pytest.approx(143.20)
+    assert energy.loc[pd.Timestamp("2024-01-01 04:00")] == pytest.approx(100.72)
+    assert usage.kw.loc[pd.Timestamp("2024-01-01 19:30")] == pytest.approx(400.0)  # kW 는 그대로
+
+
+def test_energy_kwh_can_exclude_off_grid(tmp_path: Path) -> None:
+    usage = off_grid_usage(tmp_path)
+    assert usage.energy_kwh(include_off_grid=False).sum() == pytest.approx(9600.0)
+
+
+def test_sample_energy_kwh_matches_total(sample: UsageData) -> None:
+    """실측 샘플 — 이탈 행이 결측 슬롯에 얹혀도 총합이 어긋나지 않는다."""
+    energy = sample.energy_kwh()
+    assert energy.sum() == pytest.approx(sample.total_kwh)
+    # 2024-04-06 19:29 의 43.2 kWh 는 19:30 슬롯(결측)에 얹힌다
+    assert energy.loc[pd.Timestamp("2024-04-06 19:30")] == pytest.approx(43.20)
+    assert pd.isna(sample.kw.loc[pd.Timestamp("2024-04-06 19:30")])
+
+
+def test_slot_start_applies_label_convention() -> None:
+    """라벨은 구간 끝이다. 15:00 라벨은 14:45 에 시작한 구간이다."""
+    index = pd.DatetimeIndex(["2023-07-03 15:00", "2023-07-03 15:15"])
+    starts = slot_start(index, 15)
+    assert list(starts) == [pd.Timestamp("2023-07-03 14:45"), pd.Timestamp("2023-07-03 15:00")]

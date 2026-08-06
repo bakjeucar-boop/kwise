@@ -5,6 +5,8 @@ from kwise.io.usage import (
     SUPPORTED_INTERVALS,
     USAGE_DATE_COLUMN_CANDIDATES,
     USAGE_ENERGY_COLUMN_CANDIDATES,
+    GridKwhSeries,
+    OffGridEnergyError,
     UsageData,
     UsageLoadError,
     UsageMeta,
@@ -16,6 +18,7 @@ from kwise.io.usage import (
     match_usage_column,
     parse_usage_datetime,
     parse_usage_energy,
+    slot_start,
 )
 
 __all__ = [
@@ -23,6 +26,8 @@ __all__ = [
     "SUPPORTED_INTERVALS",
     "USAGE_DATE_COLUMN_CANDIDATES",
     "USAGE_ENERGY_COLUMN_CANDIDATES",
+    "GridKwhSeries",
+    "OffGridEnergyError",
     "UsageData",
     "UsageLoadError",
     "UsageMeta",
@@ -34,4 +39,5 @@ __all__ = [
     "match_usage_column",
     "parse_usage_datetime",
     "parse_usage_energy",
+    "slot_start",
 ]
