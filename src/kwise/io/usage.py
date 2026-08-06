@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -31,6 +32,8 @@ __all__ = [
     "SUPPORTED_INTERVALS",
     "USAGE_DATE_COLUMN_CANDIDATES",
     "USAGE_ENERGY_COLUMN_CANDIDATES",
+    "EnergySeries",
+    "EnergyToDemandError",
     "GridKwhSeries",
     "OffGridEnergyError",
     "UsageData",
@@ -159,6 +162,59 @@ class GridKwhSeries(pd.Series):  # type: ignore[misc]
         return float(super().sum(*args, **kwargs))
 
 
+class EnergyToDemandError(RuntimeError):
+    """사용량 시계열을 수요(kW)로 환산하려 할 때 발생한다."""
+
+
+class EnergySeries(pd.Series):  # type: ignore[misc]
+    """요금 계산용 사용량 시리즈. **kW 환산을 막는다.**
+
+    :meth:`UsageData.energy_kwh` 는 그리드 이탈 행의 kWh 를 그 행이 속한 구간에
+    얹는다. 그 구간은 위상이 달라(14분 적산 등) 시간으로 나누면 수요가 왜곡된다.
+    43.2 kWh ÷ 14분 = 185 kW 인데 15분 환산하면 172.8 kW 가 되는 식이다.
+    수요가 필요하면 언제나 :attr:`UsageData.kw` 를 쓴다.
+
+    막는 것은 kW 로 가는 두 경로뿐이다 — 구간 환산계수를 곱하거나
+    구간 시간으로 나누는 것. 단가를 곱하는 등 정상적인 연산은 그대로 된다.
+    """
+
+    _metadata: ClassVar[list[str]] = ["kw_factor"]
+
+    @property
+    def _constructor(self) -> type[EnergySeries]:
+        return EnergySeries
+
+    def _guard(self, other: object, *, dividing: bool) -> None:
+        factor = float(getattr(self, "kw_factor", 0.0) or 0.0)
+        if factor <= 1.0 or not isinstance(other, int | float) or isinstance(other, bool):
+            return  # 1시간 간격은 kWh 와 kW 가 같은 수라 환산이랄 것이 없다
+        target = 1.0 / factor if dividing else factor
+        if math.isclose(float(other), target, rel_tol=1e-9):
+            raise EnergyToDemandError(
+                f"energy_kwh() 를 kW 로 환산하지 마십시오 "
+                f"({'÷ ' + format(target, 'g') if dividing else '× ' + format(target, 'g')}). "
+                "그리드 이탈분이 얹힌 구간은 위상이 달라 수요가 왜곡됩니다. "
+                "수요는 UsageData.kw 를 쓰십시오 (요구사항서 4.3)."
+            )
+
+    def to_kw(self) -> pd.Series:
+        raise EnergyToDemandError(
+            "energy_kwh() 는 kW 로 바꿀 수 없습니다. UsageData.kw 를 쓰십시오 (요구사항서 4.3)."
+        )
+
+    def __mul__(self, other: object) -> EnergySeries:
+        self._guard(other, dividing=False)
+        return super().__mul__(other)
+
+    def __rmul__(self, other: object) -> EnergySeries:
+        self._guard(other, dividing=False)
+        return super().__rmul__(other)
+
+    def __truediv__(self, other: object) -> EnergySeries:
+        self._guard(other, dividing=True)
+        return super().__truediv__(other)
+
+
 @dataclass(frozen=True, eq=False)
 class UsageData:
     """로더의 반환값.
@@ -182,21 +238,22 @@ class UsageData:
         """그리드 이탈 행을 포함한 총 사용량. 요금 계산의 기준이다."""
         return self.meta.total_kwh
 
-    def energy_kwh(self, *, include_off_grid: bool = True) -> pd.Series:
+    def energy_kwh(self, *, include_off_grid: bool = True) -> EnergySeries:
         """요금 계산용 사용량 시계열.
 
         그리드 이탈 행의 kWh 를 그 행이 속한 구간의 라벨에 얹어 돌려준다.
         부분 적산 행은 애초에 그 구간의 일부를 잰 값이므로 귀속이 맞다.
         합계는 :attr:`total_kwh` 와 같다.
 
-        **kW 로 환산하지 말 것.** 이탈분이 얹힌 구간은 위상이 달라 수요가 왜곡된다
-        (요구사항서 4.3).
+        **kW 로 환산할 수 없다.** 이탈분이 얹힌 구간은 위상이 달라 수요가 왜곡되므로
+        :class:`EnergySeries` 가 환산 경로를 막는다 (요구사항서 4.3).
         """
-        energy = pd.Series(
+        energy = EnergySeries(
             self.kwh_grid.to_numpy(dtype=float),
             index=self.kwh_grid.index.copy(),
             name="kwh",
         )
+        energy.kw_factor = 60.0 / self.meta.interval_minutes
         if not include_off_grid or self.off_grid.empty:
             return energy
 

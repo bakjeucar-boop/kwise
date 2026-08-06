@@ -77,3 +77,15 @@ def label_timestamps(date: str, interval: int = 15) -> pd.DatetimeIndex:
 def to_rows(values: dict[str, float]) -> list[tuple[str, float]]:
     """라벨 사전을 시각 순으로 정렬한 행 목록으로 바꾼다."""
     return sorted(values.items(), key=lambda item: parse_label(item[0]))
+
+
+def month_dates(year: int, month: int) -> list[str]:
+    """해당 달의 모든 날짜. 한 달을 통째로 만들면 부분 월이 되지 않는다."""
+    start = pd.Timestamp(year=year, month=month, day=1)
+    return [str(day.date()) for day in pd.date_range(start, periods=start.days_in_month, freq="D")]
+
+
+def write_month(path: Path, year: int, month: int, *, kwh: float = 100.0) -> Path:
+    """한 달치 균일 부하 파일. 15분 100 kWh = 400 kW."""
+    rows = [(label, kwh) for date in month_dates(year, month) for label in make_labels(date)]
+    return write_csv(path, rows)

@@ -1,0 +1,104 @@
+{
+  "schema_version": "0.1",
+  "region": "kr",
+  "source": "한국전력공사 전기요금표(종합)",
+  "effective_date": "2026-06-01",
+  "verified": false,
+
+  "season_definition": {
+    "summer": [6, 7, 8],
+    "spring_fall": [3, 4, 5, 9, 10],
+    "winter": [11, 12, 1, 2]
+  },
+
+  "tou_definition": {
+    "mainland": {
+      "summer":      { "light": [[22, 8]], "mid": [[8, 15], [21, 22]], "peak": [[15, 21]] },
+      "spring_fall": { "light": [[22, 8]], "mid": [[8, 15], [21, 22]], "peak": [[15, 21]] },
+      "winter":      { "light": [[22, 8]], "mid": [[8, 9], [12, 16], [19, 22]], "peak": [[9, 12], [16, 19]] }
+    }
+  },
+
+  "day_rules": {
+    "saturday": "peak_to_mid",
+    "sunday": "all_to_light",
+    "holiday": "all_to_light",
+    "exclude_temporary_holiday": true
+  },
+
+  "contract_types": {
+    "general_b": {
+      "label": "일반용전력(을)",
+      "threshold_kw": 300,
+      "threshold_direction": "above",
+      "effective_date": "2026-06-01",
+      "options": ["I", "II", "III"],
+      "voltages": {
+        "high_a": {
+          "label": "고압A",
+          "I": {
+            "base_won_per_kw": 7220,
+            "energy": {
+              "summer":      { "light": 92.8, "mid": 145.7, "peak": 227.8 },
+              "spring_fall": { "light": 92.8, "mid": 115.3, "peak": 146.0 },
+              "winter":      { "light": 99.8, "mid": 145.9, "peak": 203.4 }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 8320,
+            "energy": {
+              "summer":      { "light": 87.3, "mid": 140.2, "peak": 222.3 },
+              "spring_fall": { "light": 87.3, "mid": 109.8, "peak": 140.5 },
+              "winter":      { "light": 94.3, "mid": 140.4, "peak": 197.9 }
+            }
+          },
+          "III": {
+            "base_won_per_kw": 9810,
+            "energy": {
+              "summer":      { "light": 86.4, "mid": 139.6, "peak": 209.9 },
+              "spring_fall": { "light": 86.4, "mid": 108.5, "peak": 132.2 },
+              "winter":      { "light": 93.7, "mid": 139.8, "peak": 186.7 }
+            }
+          }
+        },
+        "high_b": {
+          "label": "고압B",
+          "I": {
+            "base_won_per_kw": 6630,
+            "energy": {
+              "summer":      { "light": 95.9, "mid": 148.2, "peak": 229.4 },
+              "spring_fall": { "light": 95.9, "mid": 118.2, "peak": 148.5 },
+              "winter":      { "light": 102.9, "mid": 148.2, "peak": 204.4 }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 7380,
+            "energy": {
+              "summer":      { "light": 92.1, "mid": 144.4, "peak": 225.6 },
+              "spring_fall": { "light": 92.1, "mid": 114.4, "peak": 144.7 },
+              "winter":      { "light": 99.1, "mid": 144.4, "peak": 200.6 }
+            }
+          },
+          "III": {
+            "base_won_per_kw": 8190,
+            "energy": {
+              "summer":      { "light": 90.4, "mid": 142.7, "peak": 224.0 },
+              "spring_fall": { "light": 90.4, "mid": 112.8, "peak": 143.1 },
+              "winter":      { "light": 97.5, "mid": 142.7, "peak": 198.9 }
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "special_rules": {
+    "industrial_b_weekend_discount": {
+      "applies_to": ["industrial_b"],
+      "seasons": ["spring_fall"],
+      "days": ["saturday", "sunday", "holiday"],
+      "hours": [[11, 14]],
+      "discount_rate": 0.5
+    }
+  }
+}

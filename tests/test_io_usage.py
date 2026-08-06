@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from kwise.io import (
+    EnergyToDemandError,
     OffGridEnergyError,
     UsageData,
     UsageLoadError,
@@ -377,3 +378,41 @@ def test_slot_start_applies_label_convention() -> None:
     index = pd.DatetimeIndex(["2023-07-03 15:00", "2023-07-03 15:15"])
     starts = slot_start(index, 15)
     assert list(starts) == [pd.Timestamp("2023-07-03 14:45"), pd.Timestamp("2023-07-03 15:00")]
+
+
+# --------------------------------------------------------------------- kW 환산 차단
+
+
+def test_energy_kwh_cannot_be_multiplied_into_kw(tmp_path: Path) -> None:
+    """energy_kwh() × 4 는 kW 가 아니다. 이탈분이 얹힌 구간은 위상이 다르다."""
+    usage = off_grid_usage(tmp_path)
+    energy = usage.energy_kwh()
+    with pytest.raises(EnergyToDemandError, match=r"UsageData\.kw"):
+        _ = energy * 4
+    with pytest.raises(EnergyToDemandError):
+        _ = 4 * energy
+    with pytest.raises(EnergyToDemandError):
+        _ = energy / 0.25
+    with pytest.raises(EnergyToDemandError):
+        energy.to_kw()
+
+
+def test_energy_kwh_still_supports_normal_arithmetic(tmp_path: Path) -> None:
+    """막는 것은 kW 환산뿐이다. 단가를 곱하는 계산은 그대로 된다."""
+    usage = off_grid_usage(tmp_path)
+    energy = usage.energy_kwh()
+    assert float((energy * 145.7).sum()) == pytest.approx(usage.total_kwh * 145.7)
+    assert float((energy * 2).sum()) == pytest.approx(usage.total_kwh * 2)
+    assert float(energy.sum()) == pytest.approx(usage.total_kwh)
+
+
+def test_energy_kwh_guard_survives_slicing(tmp_path: Path) -> None:
+    usage = off_grid_usage(tmp_path)
+    window = usage.energy_kwh().loc["2024-01-01 12:00":"2024-01-01 20:00"]
+    with pytest.raises(EnergyToDemandError):
+        _ = window * 4
+
+
+def test_sample_energy_kwh_blocks_kw_conversion(sample: UsageData) -> None:
+    with pytest.raises(EnergyToDemandError, match=r"요구사항서 4\.3"):
+        _ = sample.energy_kwh() * 4

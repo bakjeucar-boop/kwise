@@ -8,6 +8,13 @@ import pytest
 
 from kwise.io import UsageData, load_usage
 from kwise.quality import QualityReport, check_quality
+from kwise.tariff import (
+    BillingResult,
+    TariffSelection,
+    TariffTable,
+    calculate_bill,
+    load_tariff,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SAMPLE_USAGE_CSV = PROJECT_ROOT / "input" / "사용량조회_20240429.csv"
@@ -29,3 +36,22 @@ def sample_usage(sample_usage_path: Path) -> UsageData:
 @pytest.fixture(scope="session")
 def sample_report(sample_usage: UsageData) -> QualityReport:
     return check_quality(sample_usage)
+
+
+@pytest.fixture(scope="session")
+def tariff() -> TariffTable:
+    """PoC 요금표 (일반용전력(을) 고압A·B)."""
+    return load_tariff()
+
+
+@pytest.fixture(scope="session")
+def sample_bill(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> BillingResult:
+    """실측 샘플 × 일반용(을) 고압A 선택Ⅰ. 부록 B 회귀의 기준이다."""
+    return calculate_bill(
+        sample_usage,
+        tariff,
+        TariffSelection("general_b", "high_a", "I"),
+        quality=sample_report,
+    )
