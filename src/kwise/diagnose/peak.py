@@ -21,7 +21,13 @@ from dataclasses import dataclass
 import pandas as pd
 
 from kwise.io import slot_start
-from kwise.tariff import billing_demands
+from kwise.tariff import (
+    DEFAULT_CONTRACT_FLOOR_RATIO,
+    DEFAULT_DEMAND_MONTHS,
+    apply_contract_floor,
+    billing_demands,
+    monthly_demand_basis,
+)
 
 __all__ = ["DEFAULT_TOP_N", "PeakProfile", "peak_profile"]
 
@@ -44,12 +50,14 @@ class PeakProfile:
 
     monthly: pd.DataFrame
     billing_demand_kw: float
+    billing_demand_before_floor_kw: float
     top_slots: pd.DataFrame
     hour_counts: pd.Series
     weekday_counts: pd.Series
     hourly_profile: pd.Series
     top_n: int
     observed_slots: int
+    demand_months: tuple[int, ...] = DEFAULT_DEMAND_MONTHS
 
     @property
     def weekend_slots(self) -> int:
@@ -74,12 +82,21 @@ def peak_profile(
     *,
     top_n: int = DEFAULT_TOP_N,
     prior_peaks: Mapping[str, float] | None = None,
+    demand_eligible: pd.Series | None = None,
+    demand_months: tuple[int, ...] = DEFAULT_DEMAND_MONTHS,
+    contract_kw: float | None = None,
+    contract_floor_ratio: float | None = DEFAULT_CONTRACT_FLOOR_RATIO,
 ) -> PeakProfile:
     """월별 최대수요, 상위 구간 분포, 시각별 평균 부하를 낸다.
 
     Args:
         kw: 15분 평균 수요. 결측은 NaN 인 채로 넘긴다.
-        prior_peaks: 데이터 이전 기간의 최대수요 이력 (요금적용전력 12개월 규칙).
+        prior_peaks: 데이터 이전 기간의 최대수요 이력.
+        demand_eligible: 요금적용전력 대상 슬롯 마스크 (중간·최대부하만).
+            주지 않으면 모든 슬롯을 대상으로 본다 — 요금적용전력이 과대 산출되므로
+            요금과 함께 볼 때는 반드시 넘긴다 (요구사항서 5.2 ①).
+        demand_months: 요금적용전력 대상월. 전력량요금의 계절과 다르다 (5.2 ②).
+        contract_kw, contract_floor_ratio: 하한 규정 (5.2 ③).
     """
     observed = kw.dropna()
     if observed.empty:
@@ -92,12 +109,27 @@ def peak_profile(
     grouped = observed.groupby(months, observed=True)
     peaks = grouped.max()
     peak_at = grouped.idxmax()
-    demands = billing_demands(dict(peaks.items()), prior_peaks=prior_peaks)
+
+    month_series = pd.Series(months, index=observed.index)
+    eligible = (
+        demand_eligible.reindex(observed.index).fillna(False).astype(bool)
+        if demand_eligible is not None
+        else pd.Series(True, index=observed.index)
+    )
+    basis = monthly_demand_basis(observed, month_series, eligible)
+    before_floor = billing_demands(basis, prior_peaks=prior_peaks, demand_months=demand_months)
+    demands = apply_contract_floor(
+        before_floor,
+        contract_kw=contract_kw,
+        floor_ratio=contract_floor_ratio,
+    )
 
     monthly = pd.DataFrame(
         {
             "max_demand_kw": peaks,
             "max_demand_at": peak_at,
+            "demand_basis_kw": pd.Series(basis),
+            "demand_before_floor_kw": pd.Series(before_floor),
             "billing_demand_kw": pd.Series(demands),
         }
     )
@@ -139,6 +171,8 @@ def peak_profile(
     return PeakProfile(
         monthly=monthly,
         billing_demand_kw=float(max(demands.values())),
+        billing_demand_before_floor_kw=float(max(before_floor.values())),
+        demand_months=demand_months,
         top_slots=top_slots,
         hour_counts=hour_counts,
         weekday_counts=weekday_counts,

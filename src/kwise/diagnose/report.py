@@ -13,6 +13,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+import pandas as pd
+
 from kwise.diagnose.contract import (
     DEFAULT_MARGIN_RATIO,
     ContractAdequacy,
@@ -25,10 +27,14 @@ from kwise.diagnose.summary import ImprovementSummary, build_lines, judge_pv_pot
 from kwise.io import UsageData
 from kwise.quality import LoadPattern, QualityReport, check_quality, load_pattern
 from kwise.tariff import (
+    DEFAULT_DEMAND_MONTHS,
     BillingOptions,
     TariffSelection,
     TariffTable,
+    build_calendar,
     calculate_bill,
+    classify_slots,
+    demand_eligible_mask,
     list_selections,
 )
 
@@ -70,14 +76,51 @@ def diagnose(
     Args:
         contract: 계약 정보. None 이면 요금 관련 항목을 비우고 부하·피크만 낸다.
         contract_floor_ratio: 요금적용전력의 계약전력 대비 하한 비율.
-            모르면 계약전력 조정 절감액을 산출하지 않는다 (6.4).
+            None 이면 요금표의 종별 속성(일반용(을) 30%)을 쓴다 (요구사항서 5.2 ③).
     """
     report = quality if quality is not None else check_quality(usage)
     interval = usage.meta.interval_minutes
     opts = options if options is not None else BillingOptions()
 
     pattern = load_pattern(usage.kw, interval)  # 2세션 함수를 호출만 한다
-    peak = peak_profile(usage.kw, interval, top_n=top_n, prior_peaks=opts.prior_peaks)
+
+    # 요금적용전력은 중간·최대부하 시간대만 대상이다 (요구사항서 5.2 ①).
+    contract_type = contract.selection.contract_type if contract else None
+    type_rules = table.contract(contract_type) if contract_type else None
+    index = pd.DatetimeIndex(usage.kw.index)
+    calendar = build_calendar(
+        range(index[0].year - 1, index[-1].year + 2),
+        sunday_is_holiday=opts.sunday_is_holiday,
+        exclude_temporary=(
+            table.day_rules.exclude_temporary_holiday
+            if opts.exclude_temporary_holiday is None
+            else opts.exclude_temporary_holiday
+        ),
+        extra_holidays=opts.extra_holidays,
+        excluded_holidays=opts.excluded_holidays,
+    )
+    slots = classify_slots(
+        index,
+        interval,
+        table,
+        calendar,
+        contract_type=contract_type,
+        region_group=opts.region_group,
+    )
+    eligible = demand_eligible_mask(
+        slots["band"],
+        demand_bands=type_rules.demand_bands if type_rules else ("mid", "peak"),
+    )
+    peak = peak_profile(
+        usage.kw,
+        interval,
+        top_n=top_n,
+        prior_peaks=opts.prior_peaks,
+        demand_eligible=eligible,
+        demand_months=type_rules.demand_months if type_rules else DEFAULT_DEMAND_MONTHS,
+        contract_kw=contract.contract_kw if contract else None,
+        contract_floor_ratio=type_rules.contract_floor_ratio if type_rules else None,
+    )
     potential, midday_share = judge_pv_potential(peak)
 
     warnings = list(report.warnings)
@@ -129,11 +172,15 @@ def diagnose(
         adequacy = assess_contract(
             usage.kw,
             contract_kw=contract.contract_kw,
-            billing_demand_kw=peak.billing_demand_kw,
+            billing_demand_kw=peak.billing_demand_before_floor_kw,
             base_rate_won_per_kw=current_bill.base_rate_won_per_kw,
             base_fee_months=current_bill.base_fee_months,
             margin_ratio=margin_ratio,
-            contract_floor_ratio=contract_floor_ratio,
+            contract_floor_ratio=(
+                contract_floor_ratio
+                if contract_floor_ratio is not None
+                else (type_rules.contract_floor_ratio if type_rules else None)
+            ),
         )
         warnings.extend(adequacy.warnings)
     else:

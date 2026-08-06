@@ -8,9 +8,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from enum import StrEnum
 
-__all__ = ["Certainty", "annualize", "payback_years"]
+__all__ = ["Certainty", "annualize", "lowest_certainty", "payback_years"]
 
 
 class Certainty(StrEnum):
@@ -19,6 +20,20 @@ class Certainty(StrEnum):
     HIGH = "높음"  # 요금제 전환, 계약전력 조정 — 실측과 요금표만으로 확정
     MEDIUM = "중간"  # 태양광 — 발전량 예측 오차
     MEDIUM_LOW = "중간~낮음"  # ESS — 운전 전략과 열화에 좌우
+
+    @property
+    def rank(self) -> int:
+        """높을수록 확실하다. 조합 등급을 고를 때 쓴다."""
+        return {Certainty.MEDIUM_LOW: 0, Certainty.MEDIUM: 1, Certainty.HIGH: 2}[self]
+
+
+def lowest_certainty(items: Iterable[Certainty]) -> Certainty:
+    """조합의 확실성은 **가장 낮은 구성 요소**를 따른다.
+
+    태양광과 ESS 를 함께 넣으면 조합 전체가 ESS 등급(중간~낮음)이 된다.
+    비어 있으면 확정 계산만 있다는 뜻이므로 '높음'.
+    """
+    return min(items, key=lambda item: item.rank, default=Certainty.HIGH)
 
 
 def annualize(amount_won: float, base_fee_months: float) -> float:

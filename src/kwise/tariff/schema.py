@@ -16,6 +16,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from kwise.tariff.demand import (
+    DEFAULT_CONTRACT_FLOOR_RATIO,
+    DEFAULT_DEMAND_BANDS,
+    DEFAULT_DEMAND_MONTHS,
+)
+
 __all__ = [
     "BANDS",
     "DEFAULT_REGION_GROUP",
@@ -85,7 +91,16 @@ class VoltageRates:
 
 @dataclass(frozen=True)
 class ContractType:
-    """계약종별."""
+    """계약종별.
+
+    Attributes:
+        demand_bands: 요금적용전력 대상 시간대. 일반용(을) 등은 중간·최대부하만이다.
+        demand_months: 요금적용전력 대상월 (하계 7·8·9, 동계 12·1·2).
+            **전력량요금의 계절과 다르다** (요구사항서 5.2 ②).
+        contract_floor_ratio: 요금적용전력의 계약전력 대비 하한. 일반용(을) 30%,
+            교육용 등 일부는 15% 특례. 확인되지 않은 종별은 ``null`` 로 두면
+            하한을 적용하지 않고 절감액도 산출하지 않는다.
+    """
 
     key: str
     label: str
@@ -94,6 +109,9 @@ class ContractType:
     effective_date: str | None
     options: tuple[str, ...]
     voltages: Mapping[str, VoltageRates]
+    demand_bands: tuple[str, ...] = DEFAULT_DEMAND_BANDS
+    demand_months: tuple[int, ...] = DEFAULT_DEMAND_MONTHS
+    contract_floor_ratio: float | None = DEFAULT_CONTRACT_FLOOR_RATIO
 
 
 @dataclass(frozen=True)
@@ -289,6 +307,15 @@ def _parse_contract(key: str, payload: Mapping[str, Any]) -> ContractType:
         effective_date=payload.get("effective_date"),
         options=options,
         voltages=voltages,
+        demand_bands=tuple(str(band) for band in payload.get("demand_bands", DEFAULT_DEMAND_BANDS)),
+        demand_months=tuple(
+            int(month) for month in payload.get("demand_months", DEFAULT_DEMAND_MONTHS)
+        ),
+        contract_floor_ratio=(
+            None
+            if "contract_floor_ratio" in payload and payload["contract_floor_ratio"] is None
+            else float(payload.get("contract_floor_ratio", DEFAULT_CONTRACT_FLOOR_RATIO))
+        ),
     )
 
 

@@ -9,6 +9,16 @@
 모두 순수 함수다. Streamlit 을 import 하지 않는다.
 """
 
+from kwise.tariff.demand import (
+    DEFAULT_CONTRACT_FLOOR_RATIO,
+    DEFAULT_DEMAND_BANDS,
+    DEFAULT_DEMAND_MONTHS,
+    apply_contract_floor,
+    billing_demands,
+    demand_eligible_mask,
+    is_demand_month,
+    monthly_demand_basis,
+)
 from kwise.tariff.engine import (
     DEMAND_WINDOW_MONTHS,
     MISSING_LIMIT_RATIO,
@@ -17,7 +27,6 @@ from kwise.tariff.engine import (
     BillingOptions,
     BillingResult,
     PartialMonthPolicy,
-    billing_demands,
     calculate_bill,
 )
 from kwise.tariff.holiday import (
@@ -58,7 +67,10 @@ from kwise.tariff.validate import (
 
 __all__ = [
     "BANDS",
+    "DEFAULT_CONTRACT_FLOOR_RATIO",
     "DEFAULT_COUNTRY",
+    "DEFAULT_DEMAND_BANDS",
+    "DEFAULT_DEMAND_MONTHS",
     "DEFAULT_POLICY",
     "DEFAULT_REGION_GROUP",
     "DEFAULT_UNIFORM_TOLERANCE",
@@ -83,17 +95,21 @@ __all__ = [
     "TariffTable",
     "ValidationFinding",
     "VoltageRates",
+    "apply_contract_floor",
     "available_tariff_files",
     "billing_demands",
     "build_calendar",
     "calculate_bill",
     "classify_slots",
     "default_tariff_dir",
+    "demand_eligible_mask",
+    "is_demand_month",
     "list_contract_types",
     "list_options",
     "list_selections",
     "list_voltages",
     "load_tariff",
+    "monthly_demand_basis",
     "option_pair_diffs",
     "parse_tariff",
     "validate_tariff",

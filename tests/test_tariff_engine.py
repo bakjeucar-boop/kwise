@@ -24,6 +24,7 @@ from kwise.tariff import (
     TariffTable,
     billing_demands,
     calculate_bill,
+    is_demand_month,
     list_selections,
 )
 from tests._synthetic import write_month
@@ -435,7 +436,8 @@ def test_excluded_charge_elements_are_stated(sample_bill: BillingResult) -> None
     """기본요금·전력량요금만 계산했다는 사실을 반드시 적는다 (5.1)."""
     assert NOT_INCLUDED_NOTICE in sample_bill.notes
     assert any("부가가치세" in note for note in sample_bill.notes)
-    assert any("하한 규정" in note for note in sample_bill.notes)
+    assert any("경부하 제외" in note for note in sample_bill.notes)
+    assert any("이월되지 않습니다" in note for note in sample_bill.notes)
 
 
 def test_unverified_tariff_is_warned(sample_bill: BillingResult) -> None:
@@ -480,3 +482,106 @@ def test_sample_optimal_option_matches_appendix_b(
     assert min(totals, key=lambda option: totals[option]) == "II"
     assert totals["II"] < totals["I"]
     assert totals["II"] < totals["III"]
+
+
+# --------------------------------------------------------------------- 요금적용전력 규칙 (5.2)
+
+
+def test_demand_month_is_not_the_energy_season(tariff: TariffTable) -> None:
+    """대상월과 전력량요금 계절은 다른 규칙이다. 9월과 6·11월이 갈린다."""
+    assert is_demand_month(9)  # 봄·가을철 단가지만 대상월이다
+    assert tariff.season_of(9) == "spring_fall"
+    assert not is_demand_month(6)  # 여름철 단가지만 대상월이 아니다
+    assert tariff.season_of(6) == "summer"
+    assert not is_demand_month(11)  # 겨울철 단가지만 대상월이 아니다
+    assert tariff.season_of(11) == "winter"
+    assert [month for month in range(1, 13) if is_demand_month(month)] == [1, 2, 7, 8, 9, 12]
+
+
+def test_spring_peak_does_not_carry_forward() -> None:
+    """3~6월·10~11월 피크는 당월분으로만 잡히고 이월되지 않는다."""
+    peaks = {"2023-10": 5_000.0, "2023-11": 3_000.0, "2023-12": 3_100.0}
+    demands = billing_demands(peaks)
+    assert demands[pd.Period("2023-10", freq="M")] == 5_000.0  # 당월이라 잡힌다
+    assert demands[pd.Period("2023-11", freq="M")] == 3_000.0  # 10월 피크는 이월 안 됨
+    assert demands[pd.Period("2023-12", freq="M")] == 3_100.0
+
+
+def test_summer_peak_carries_for_twelve_months() -> None:
+    peaks = {"2023-07": 5_000.0}
+    peaks.update({f"2023-{month:02d}": 3_000.0 for month in range(8, 13)})
+    peaks.update({f"2024-{month:02d}": 3_000.0 for month in range(1, 8)})
+    demands = billing_demands(peaks)
+    assert demands[pd.Period("2024-06", freq="M")] == 5_000.0  # 아직 창 안이다
+    assert demands[pd.Period("2024-07", freq="M")] == 3_000.0  # 12개월이 지나 빠졌다
+
+
+def test_light_band_slots_are_excluded_from_the_demand_basis(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """경부하 시간대 수요는 아무리 커도 요금적용전력이 되지 않는다."""
+    from kwise.tariff import build_calendar, classify_slots, demand_eligible_mask
+
+    index = pd.DatetimeIndex(sample_usage.kw.index)
+    calendar = build_calendar(range(2022, 2026))
+    slots = classify_slots(index, 15, tariff, calendar)
+    eligible = demand_eligible_mask(slots["band"])
+    assert bool(eligible.any())
+    assert not bool(eligible.all())  # 경부하 슬롯이 실제로 빠진다
+
+    # 공휴일은 전량 경부하로 계량되므로 대상에서 자동으로 빠진다
+    holiday_slots = slots[slots["day_type"] == "holiday"].index
+    assert not bool(eligible.loc[holiday_slots].any())
+
+
+def test_sample_demand_basis_equals_observed_peak(sample_bill: BillingResult) -> None:
+    """샘플의 월별 최대는 모두 중간·최대부하 시간대에 있다. 그래서 값이 같다."""
+    monthly = sample_bill.monthly
+    assert (monthly["demand_basis_kw"] <= monthly["max_demand_kw"] + 1e-9).all()
+    assert monthly["demand_basis_kw"].max() == pytest.approx(5_293.44)
+
+
+def test_contract_floor_lifts_the_demand(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """요금적용전력이 계약전력의 30% 미만이면 30%를 적용한다 (5.2 ③)."""
+    high = calculate_bill(
+        sample_usage,
+        tariff,
+        HIGH_A_I,
+        options=BillingOptions(contract_kw=30_000.0),  # 하한 9,000 kW
+        quality=sample_report,
+    )
+    assert (high.monthly["billing_demand_kw"] - 9_000.0).abs().max() < 1e-6
+    assert high.billing_demand_kw == pytest.approx(9_000.0)
+    assert any("하한" in message for message in high.warnings)
+
+    low = calculate_bill(
+        sample_usage,
+        tariff,
+        HIGH_A_I,
+        options=BillingOptions(contract_kw=5_500.0),  # 하한 1,650 kW — 걸리지 않는다
+        quality=sample_report,
+    )
+    assert low.billing_demand_kw == pytest.approx(5_293.44)
+
+
+def test_floor_ratio_is_a_contract_type_attribute(tariff: TariffTable) -> None:
+    contract = tariff.contract("general_b")
+    assert contract.contract_floor_ratio == pytest.approx(0.30)
+    assert contract.demand_bands == ("mid", "peak")
+    assert contract.demand_months == (7, 8, 9, 12, 1, 2)
+
+
+def test_over_contract_slots_are_flagged_for_the_surcharge(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """경부하 초과는 요금적용전력에 영향이 없지만 초과사용부가금 대상이다."""
+    result = calculate_bill(
+        sample_usage,
+        tariff,
+        HIGH_A_I,
+        options=BillingOptions(contract_kw=5_000.0),
+        quality=sample_report,
+    )
+    assert any("초과사용부가금" in message for message in result.warnings)

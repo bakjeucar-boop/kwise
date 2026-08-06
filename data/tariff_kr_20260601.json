@@ -33,6 +33,11 @@
       "threshold_direction": "above",
       "effective_date": "2026-06-01",
       "options": ["I", "II", "III"],
+
+      "demand_bands": ["mid", "peak"],
+      "demand_months": [7, 8, 9, 12, 1, 2],
+      "contract_floor_ratio": 0.30,
+
       "voltages": {
         "high_a": {
           "label": "고압A",

@@ -344,9 +344,15 @@ def test_summary_lines_are_ready_for_the_screen(sample_diagnosis: Diagnosis) -> 
     assert "높음" in lines[2]
 
 
-def test_no_investment_saving_ignores_unknown_amounts(sample_diagnosis: Diagnosis) -> None:
+def test_contract_saving_is_zero_when_the_floor_does_not_bind(
+    sample_diagnosis: Diagnosis,
+) -> None:
+    """하한 30% 가 확인됐다. 다만 이 건물은 하한이 걸리지 않아 절감액이 0 이다.
+
+    계약 5,500 kW 의 하한은 1,650 kW 인데 요금적용전력이 5,293 kW 라 훨씬 위에 있다.
+    """
     summary = sample_diagnosis.summary
-    assert summary.contract_saving_won is None
+    assert summary.contract_saving_won == pytest.approx(0.0)
     assert summary.no_investment_saving_won == pytest.approx(
         summary.tariff_switch_saving_won or 0.0
     )

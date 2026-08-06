@@ -20,6 +20,9 @@ dependencies = [
     "openpyxl>=3.1",
     "pyarrow>=15.0",
     "requests>=2.31",
+    "typer>=0.12",
+    "rich>=13.0",
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]

@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -24,6 +23,13 @@ import pandas as pd
 
 from kwise.io import UsageData
 from kwise.quality import QualityReport, monthly_missing
+from kwise.tariff.demand import (
+    DEMAND_WINDOW_MONTHS,
+    apply_contract_floor,
+    billing_demands,
+    demand_eligible_mask,
+    monthly_demand_basis,
+)
 from kwise.tariff.holiday import DateLike, build_calendar
 from kwise.tariff.schema import (
     BANDS,
@@ -45,7 +51,6 @@ __all__ = [
     "calculate_bill",
 ]
 
-DEMAND_WINDOW_MONTHS = 12
 MISSING_LIMIT_RATIO = 0.05
 PartialMonthPolicy = Literal["merge", "prorate"]
 # 월 지정은 Period·문자열·Timestamp 를 모두 받는다 (청구서에서 옮겨 적기 쉽게).
@@ -55,10 +60,6 @@ NOT_INCLUDED_NOTICE = (
     "본 결과는 기본요금과 전력량요금만 산출한 값입니다. 기후환경요금, 연료비조정요금, "
     "부가가치세, 전력산업기반기금은 포함되지 않았습니다. 이들은 모두 사용전력량에 "
     "비례하므로 실제 절감액은 본 결과보다 다소 크게 나타납니다."
-)
-_CONTRACT_FLOOR_NOTICE = (
-    "계약전력 대비 요금적용전력 하한 규정은 한전 기본공급약관 확인 전이라 적용하지 "
-    "않았습니다. 하한이 걸리는 저부하 사업장은 기본요금이 과소 산출됩니다."
 )
 
 
@@ -105,6 +106,9 @@ class BillingResult:
     tariff_label: str
     effective_date: str
     base_rate_won_per_kw: float
+    contract_floor_ratio: float | None
+    demand_months: tuple[int, ...]
+    contract_kw: float | None
 
     period_start: pd.Timestamp
     period_end: pd.Timestamp
@@ -171,38 +175,6 @@ def _as_period(value: PeriodLike) -> pd.Period:
     if isinstance(value, pd.Period):
         return value
     return pd.Period(pd.Timestamp(value), freq="M")
-
-
-def billing_demands(
-    monthly_peaks: Mapping[Any, float],
-    *,
-    prior_peaks: Mapping[PeriodLike, float] | None = None,
-    window: int = DEMAND_WINDOW_MONTHS,
-) -> dict[pd.Period, float]:
-    """요금적용전력 = 당월 및 직전 11개월의 최대수요전력 중 최대값 (5.2).
-
-    12개월 규칙 때문에 여름 피크만 낮추고 겨울 피크가 그대로면 기본요금은 변하지 않는다.
-
-    Args:
-        monthly_peaks: 월별 최대수요전력.
-        prior_peaks: 데이터 이전 기간의 이력. 없으면 첫 11개월이 과소 산출된다.
-    """
-    peaks = {_as_period(key): float(value) for key, value in monthly_peaks.items()}
-    history = dict(peaks)
-    if prior_peaks:
-        for key, value in prior_peaks.items():
-            period = _as_period(key)
-            history[period] = max(history.get(period, float("-inf")), float(value))
-
-    result: dict[pd.Period, float] = {}
-    for month in sorted(peaks):
-        candidates = [
-            peak
-            for offset in range(window)
-            if (peak := history.get(month - offset)) is not None and not math.isnan(peak)
-        ]
-        result[month] = max(candidates) if candidates else float("nan")
-    return result
 
 
 # --------------------------------------------------------------------- 부분 월 (5.5)
@@ -327,9 +299,22 @@ def calculate_bill(
         discount_won[period] += value * rate * float(discount)
         season_of[period] = str(season)
 
+    # 관측 최대수요 — 보고용. 경부하 슬롯도 들어간다.
     peaks = usage.kw.groupby(slots["month"].to_numpy(), observed=True).max()
     monthly_peaks = {_as_period(month): float(value) for month, value in peaks.items()}
-    demands = billing_demands(monthly_peaks, prior_peaks=opts.prior_peaks)
+
+    # 요금적용전력 대상 최대수요 — 경부하 제외 (요구사항서 5.2 ①).
+    eligible = demand_eligible_mask(slots["band"], demand_bands=contract.demand_bands)
+    basis = monthly_demand_basis(usage.kw, slots["month"], eligible)
+    # 대상월 규칙 (5.2 ②) → 계약전력 하한 (5.2 ③)
+    before_floor = billing_demands(
+        basis, prior_peaks=opts.prior_peaks, demand_months=contract.demand_months
+    )
+    demands = apply_contract_floor(
+        before_floor,
+        contract_kw=opts.contract_kw,
+        floor_ratio=contract.contract_floor_ratio,
+    )
 
     slots_per_day = 1440 / interval
     counts = slots["month"].value_counts()
@@ -365,6 +350,8 @@ def calculate_bill(
                 "is_partial": factors[month] < 1.0,
                 "max_demand_kw": peak_kw,
                 "max_demand_at": peak_at,
+                "demand_basis_kw": basis[month],
+                "demand_before_floor_kw": before_floor[month],
                 "billing_demand_kw": demands[month],
                 "base_fee_factor": factors[month],
                 "base_won": base_won,
@@ -388,6 +375,34 @@ def calculate_bill(
     )
 
     warnings: list[str] = []
+    if contract.contract_floor_ratio is None:
+        warnings.append(
+            f"{contract.label} 의 요금적용전력 하한 비율이 요금 데이터에 없어 "
+            "하한을 적용하지 않았습니다 (요구사항서 5.2 ③)."
+        )
+    elif opts.contract_kw is None:
+        warnings.append(
+            "계약전력을 주지 않아 요금적용전력 하한"
+            f"(계약전력의 {contract.contract_floor_ratio:.0%})을 적용하지 않았습니다. "
+            "저부하 사업장은 기본요금이 과소 산출됩니다 (요구사항서 5.2 ③)."
+        )
+    else:
+        floor_kw = opts.contract_kw * contract.contract_floor_ratio
+        bound = [month for month in months if before_floor[month] < floor_kw]
+        if bound:
+            warnings.append(
+                f"요금적용전력 하한 {floor_kw:,.1f} kW "
+                f"(계약전력의 {contract.contract_floor_ratio:.0%})가 "
+                f"{len(bound)}개 월에 걸렸습니다."
+            )
+        over = usage.kw.dropna()
+        over_slots = int((over > opts.contract_kw).sum())
+        if over_slots:
+            warnings.append(
+                f"계약전력 {opts.contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 "
+                "있습니다. 경부하 초과는 요금적용전력에 영향을 주지 않지만 "
+                "초과사용부가금 대상이므로 별도로 확인하십시오 (요구사항서 5.2)."
+            )
     if not opts.prior_peaks:
         warnings.append(
             "직전 12개월 최대수요 이력이 없어 첫 11개월의 요금적용전력이 과소 산출됩니다. "
@@ -410,7 +425,16 @@ def calculate_bill(
 
     notes = [
         NOT_INCLUDED_NOTICE,
-        _CONTRACT_FLOOR_NOTICE,
+        (
+            "요금적용전력은 중간·최대부하 시간대의 최대수요만 대상으로 하며 "
+            f"(경부하 제외), 대상월은 {'·'.join(str(m) for m in contract.demand_months)}월과 "
+            "검침 당월입니다. 3~6월·10~11월 피크는 이월되지 않습니다 (요구사항서 5.2)."
+        ),
+        (
+            "봄·가을 피크 저감은 기본요금 절감 가치가 거의 없습니다. 태양광 발전이 "
+            "가장 강한 계절이 봄·가을이므로, PV 의 기본요금 기여는 7~9월에 집중되고 "
+            "12~2월에는 발전이 약해 비대칭이 큽니다."
+        ),
         *partial_notes,
         "전력량요금은 관측 기준이 정본이고, 결측 보정 기준은 회수기간 산정 참고용입니다 "
         "(요구사항서 5.4). 도입 전후 차분(Δ)을 절대 금액보다 우선 신뢰하십시오.",
@@ -428,6 +452,9 @@ def calculate_bill(
         tariff_label=table.label,
         effective_date=table.effective_date,
         base_rate_won_per_kw=rates.base_won_per_kw,
+        contract_floor_ratio=contract.contract_floor_ratio,
+        demand_months=contract.demand_months,
+        contract_kw=opts.contract_kw,
         period_start=usage.meta.start,
         period_end=usage.meta.end,
         period_days=period_days,

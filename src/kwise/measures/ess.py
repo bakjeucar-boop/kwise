@@ -152,6 +152,8 @@ class DispatchResult:
     soc_start_kwh: float
     soc_end_kwh: float
     achieved_peak_kw: float
+    charge_window_peak_kw: float
+    charge_window_peak_before_kw: float
     target_kw: float
     power_kw: float
     capacity_kwh: float
@@ -171,6 +173,21 @@ class DispatchResult:
     @property
     def target_met(self) -> bool:
         return self.unmet_kwh <= 1e-9
+
+    @property
+    def charge_created_new_peak(self) -> bool:
+        """충전이 목표를 넘는 새 피크를 만들었는가.
+
+        경부하 충전이 기저부하에 얹히면 야간에 새 피크가 생길 수 있다.
+        ``respect_target_when_charging`` 을 켜 두면 일어나지 않지만, 결과에서
+        반드시 확인한다 — 조합 비교가 이 값을 본다.
+        """
+        return self.charge_window_peak_kw > self.target_kw + 1e-6
+
+    @property
+    def charge_window_rise_kw(self) -> float:
+        """충전으로 올라간 충전 시간대 최대 부하."""
+        return self.charge_window_peak_kw - self.charge_window_peak_before_kw
 
 
 def light_band_mask(
@@ -216,10 +233,16 @@ def dispatch_peak_shaving(
     round_trip: float = DEFAULT_ROUND_TRIP,
     dod: float = DEFAULT_DOD,
     initial_soc_ratio: float = 1.0,
+    charge_limit_kw: float | None = None,
+    respect_target_when_charging: bool = True,
 ) -> DispatchResult:
     """목표 초과분 방전, 경부하 충전. 규칙기반 단일 전략이다.
 
-    충전은 목표를 넘지 않는 선에서만 한다. 충전이 새 피크를 만들면 의미가 없다.
+    Args:
+        charge_limit_kw: 충전 전력 상한. 야간 피크를 억제하고 싶을 때 쓴다.
+        respect_target_when_charging: 충전을 목표 이하로 묶을지. **기본은 켬.**
+            끄면 경부하 시간대에 출력껏 충전하므로 기저부하 위에 새 피크가 생긴다.
+            그 실패 양상을 재현하려는 경우에만 끈다.
     """
     if power_kw < 0 or capacity_kwh < 0:
         raise ValueError("출력과 용량은 음수일 수 없습니다.")
@@ -254,8 +277,11 @@ def dispatch_peak_shaving(
                 unmet += (excess - deliverable) * slot_hours
                 net[position] = load - deliverable
             elif charge_window[position] and soc < usable:
-                headroom = max(0.0, target_kw - load)
-                intake = min(power_kw, headroom, (usable - soc) / efficiency / slot_hours)
+                intake = min(power_kw, (usable - soc) / efficiency / slot_hours)
+                if respect_target_when_charging:
+                    intake = min(intake, max(0.0, target_kw - load))
+                if charge_limit_kw is not None:
+                    intake = min(intake, charge_limit_kw)
                 intake = max(intake, 0.0)
                 energy = intake * slot_hours
                 soc += energy * efficiency
@@ -265,6 +291,9 @@ def dispatch_peak_shaving(
 
     net_series = pd.Series(net, index=index, name="kw")
     observed = net_series.dropna()
+    in_window = pd.Series(charge_window, index=index)
+    windowed_after = net_series[in_window].dropna()
+    windowed_before = kw[in_window].dropna()
     return DispatchResult(
         net_kw=net_series,
         soc_kwh=pd.Series(soc_track, index=index, name="soc_kwh"),
@@ -274,6 +303,10 @@ def dispatch_peak_shaving(
         soc_start_kwh=soc_start,
         soc_end_kwh=soc,
         achieved_peak_kw=float(observed.max()) if len(observed) else 0.0,
+        charge_window_peak_kw=float(windowed_after.max()) if len(windowed_after) else 0.0,
+        charge_window_peak_before_kw=(
+            float(windowed_before.max()) if len(windowed_before) else 0.0
+        ),
         target_kw=target_kw,
         power_kw=power_kw,
         capacity_kwh=capacity_kwh,
@@ -316,6 +349,8 @@ def evaluate_ess(
     power_kw: float | None = None,
     capacity_kwh: float | None = None,
     sizing_basis: str = "daily",
+    charge_limit_kw: float | None = None,
+    respect_target_when_charging: bool = True,
     round_trip: float = DEFAULT_ROUND_TRIP,
     dod: float = DEFAULT_DOD,
     payback_target_years: float = DEFAULT_PAYBACK_TARGET_YEARS,
@@ -354,6 +389,8 @@ def evaluate_ess(
         interval_minutes=interval,
         round_trip=round_trip,
         dod=dod,
+        charge_limit_kw=charge_limit_kw,
+        respect_target_when_charging=respect_target_when_charging,
     )
 
     base_bill = (
@@ -374,6 +411,12 @@ def evaluate_ess(
     )
 
     warnings: list[str] = []
+    if dispatch.charge_created_new_peak:
+        warnings.append(
+            f"경부하 충전이 목표를 넘는 새 피크를 만들었습니다 — 충전 시간대 최대 "
+            f"{dispatch.charge_window_peak_kw:,.1f} kW > 목표 {target_kw:,.0f} kW. "
+            "charge_limit_kw 로 충전 전력을 제한하십시오."
+        )
     if not dispatch.target_met:
         warnings.append(
             f"목표 {target_kw:,.0f} kW 를 지키지 못한 에너지가 {dispatch.unmet_kwh:,.1f} kWh "

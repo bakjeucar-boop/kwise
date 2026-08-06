@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from kwise.compare import ComparisonResult, compare_combinations, default_combinations
 from kwise.diagnose import ContractInfo, Diagnosis, diagnose
 from kwise.io import UsageData, load_usage
 from kwise.measures import (
@@ -154,3 +155,43 @@ def sample_ess(
         baseline=sample_bill,
         quality=sample_report,
     )
+
+
+@pytest.fixture(scope="session")
+def sample_comparison(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_unit_pv: pd.Series,
+) -> ComparisonResult:
+    """기준선 / 요금제만 / +태양광 500 kWp / +ESS 목표 5,000 kW."""
+    specs = default_combinations(
+        current_selection=SAMPLE_SELECTION,
+        best_selection=TariffSelection("general_b", "high_a", "II"),
+        pv_capacity_kwp=500.0,
+        pv_unit_cost_won_per_kwp=PV_COST_WON_PER_KWP,
+        ess_target_kw=5_000.0,
+        ess_unit_cost_won_per_kwh=CELL_COST_WON_PER_KWH,
+    )
+    return compare_combinations(
+        sample_usage,
+        tariff,
+        specs,
+        baseline_bill=sample_bill,
+        unit_pv_kw_per_kwp=sample_unit_pv,
+        quality=sample_report,
+    )
+
+
+@pytest.fixture(scope="session")
+def synthetic_usage(tmp_path_factory: pytest.TempPathFactory) -> UsageData:
+    """야간 기저 400 kW, 낮 스파이크가 있는 한 달치. ESS 야간 피크 시험용."""
+    from tests._synthetic import make_labels, month_dates, write_csv
+
+    rows: list[tuple[str, float]] = []
+    for date in month_dates(2024, 3):
+        for label in make_labels(date):
+            spike = date == "2024-03-06" and " 12:" in label
+            rows.append((label, 250.0 if spike else 100.0))
+    return load_usage(write_csv(tmp_path_factory.mktemp("synthetic") / "flat.csv", rows))

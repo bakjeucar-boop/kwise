@@ -1,0 +1,393 @@
+"""조합 비교 (요구사항서 8장).
+
+**조합의 절감액은 단순 합이 아니다.** 태양광이 사용량을 줄이면 최적 선택요금이
+바뀌고, ESS 가 피크를 낮추면 기본요금 기반이 달라진다. 그래서 조합마다 부하를
+처음부터 다시 만들어 요금을 한 번만 계산한다.
+
+    부하 → apply_generation(PV) → dispatch_peak_shaving(ESS) → calculate_bill()
+
+**확실성 등급을 반드시 표시한다.** 조합의 등급은 가장 낮은 구성 요소를 따른다.
+요금제 전환만이면 '높음', 태양광이 끼면 '중간', ESS 가 끼면 '중간~낮음'이다.
+
+ESS 충전이 새 피크를 만드는지도 확인한다. 경부하 시간대 충전이 기저부하 위에
+얹히면 야간 피크가 생긴다. 목표를 넘으면 경고하고, ``charge_limit_kw`` 로
+충전 전력을 제한할 수 있다.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import pandas as pd
+
+from kwise.io import UsageData
+from kwise.measures import (
+    Certainty,
+    DispatchResult,
+    annualize,
+    apply_generation,
+    dispatch_peak_shaving,
+    light_band_mask,
+    lowest_certainty,
+    payback_years,
+    size_for_target,
+    with_load,
+)
+from kwise.measures.contract import evaluate_contract_adjustment
+from kwise.measures.ess import analyze_peak_excess
+from kwise.quality import QualityReport
+from kwise.tariff import (
+    BillingOptions,
+    BillingResult,
+    TariffSelection,
+    TariffTable,
+    calculate_bill,
+)
+
+__all__ = [
+    "CombinationResult",
+    "CombinationSpec",
+    "ComparisonResult",
+    "compare_combinations",
+    "default_combinations",
+    "evaluate_combination",
+]
+
+
+@dataclass(frozen=True)
+class CombinationSpec:
+    """조합 하나의 정의. 켠 수단만 값을 채운다."""
+
+    name: str
+    selection: TariffSelection
+    pv_capacity_kwp: float = 0.0
+    pv_unit_cost_won_per_kwp: float = 0.0
+    sensitivity_factor: float = 1.0
+    ess_target_kw: float | None = None
+    ess_power_kw: float | None = None
+    ess_capacity_kwh: float | None = None
+    ess_unit_cost_won_per_kwh: float = 0.0
+    ess_charge_limit_kw: float | None = None
+    ess_respect_target_when_charging: bool = True
+    contract_kw: float | None = None
+    contract_floor_ratio: float | None = None
+
+    @property
+    def has_pv(self) -> bool:
+        return self.pv_capacity_kwp > 0
+
+    @property
+    def has_ess(self) -> bool:
+        return self.ess_target_kw is not None
+
+    @property
+    def measures(self) -> tuple[str, ...]:
+        names: list[str] = []
+        if self.pv_capacity_kwp > 0:
+            names.append(f"태양광 {self.pv_capacity_kwp:,.0f} kWp")
+        if self.has_ess:
+            names.append(f"ESS 목표 {self.ess_target_kw:,.0f} kW")
+        if self.contract_kw is not None:
+            names.append(f"계약전력 {self.contract_kw:,.0f} kW")
+        return tuple(names)
+
+
+@dataclass(frozen=True, eq=False)
+class CombinationResult:
+    """조합 하나의 평가. 시계열은 들고 있지 않는다 (디스패치 요약만 남긴다)."""
+
+    spec: CombinationSpec
+    bill: BillingResult
+    saving_won: float
+    annual_saving_won: float
+    investment_won: float
+    payback_years: float | None
+    certainty: Certainty
+    billing_demand_kw: float
+    generation_kwh: float
+    surplus_kwh: float
+    self_consumption_ratio: float | None
+    dispatch: DispatchResult | None = None
+    contract_saving_won: float | None = None
+    warnings: tuple[str, ...] = field(default=())
+    notes: tuple[str, ...] = field(default=())
+
+    @property
+    def name(self) -> str:
+        return self.spec.name
+
+    @property
+    def total_won(self) -> float:
+        return self.bill.total_won - (self.contract_saving_won or 0.0)
+
+
+@dataclass(frozen=True, eq=False)
+class ComparisonResult:
+    """조합 비교 표 (요구사항서 8장)."""
+
+    baseline: CombinationResult
+    combinations: tuple[CombinationResult, ...]
+    base_fee_months: float
+    period_label: str
+    warnings: tuple[str, ...] = field(default=())
+    notes: tuple[str, ...] = field(default=())
+
+    def frame(self) -> pd.DataFrame:
+        """조합 | 절감액 | 투자비 | 회수기간 | 확실성."""
+        rows = [
+            {
+                "조합": item.name,
+                "수단": ", ".join(item.spec.measures) or "—",
+                "요금(원)": item.total_won,
+                "절감액(원)": item.saving_won,
+                "12개월 환산 절감액(원)": item.annual_saving_won,
+                "투자비(원)": item.investment_won,
+                "회수기간(년)": item.payback_years,
+                "요금적용전력(kW)": item.billing_demand_kw,
+                "확실성": str(item.certainty),
+            }
+            for item in self.combinations
+        ]
+        return pd.DataFrame(rows).set_index("조합")
+
+    @property
+    def best(self) -> CombinationResult:
+        """절감액이 가장 큰 조합. 투자비는 따로 본다."""
+        return max(self.combinations, key=lambda item: item.saving_won)
+
+
+def _combination_certainty(spec: CombinationSpec) -> Certainty:
+    grades: list[Certainty] = [Certainty.HIGH]  # 요금제·계약은 확정 계산
+    if spec.has_pv:
+        grades.append(Certainty.MEDIUM)
+    if spec.has_ess:
+        grades.append(Certainty.MEDIUM_LOW)
+    return lowest_certainty(grades)
+
+
+def evaluate_combination(
+    usage: UsageData,
+    table: TariffTable,
+    spec: CombinationSpec,
+    *,
+    baseline_bill: BillingResult,
+    unit_pv_kw_per_kwp: pd.Series | None = None,
+    charge_mask: pd.Series | None = None,
+    quality: QualityReport | None = None,
+    options: BillingOptions | None = None,
+) -> CombinationResult:
+    """수단을 차례로 물린 뒤 요금을 **한 번** 계산한다.
+
+    Args:
+        unit_pv_kw_per_kwp: 1 kWp 당 발전 프로파일. PV 를 켠 조합에 필요하다.
+        baseline_bill: 절감액의 기준선.
+    """
+    opts = options if options is not None else BillingOptions()
+    interval = usage.meta.interval_minutes
+    warnings: list[str] = []
+    notes: list[str] = []
+
+    generated_kwh = 0.0
+    surplus_kwh = 0.0
+    self_consumption: float | None = None
+    working = usage
+
+    if spec.has_pv:
+        if unit_pv_kw_per_kwp is None:
+            raise ValueError(f"'{spec.name}' 은 태양광을 켰지만 단위 발전 프로파일이 없습니다.")
+        generation = (
+            unit_pv_kw_per_kwp.reindex(pd.DatetimeIndex(usage.kw.index)).fillna(0.0)
+            * spec.pv_capacity_kwp
+            * spec.sensitivity_factor
+        )
+        net = apply_generation(usage, generation)
+        working = net.usage
+        generated_kwh = net.generated_kwh
+        surplus_kwh = net.surplus_kwh
+        self_consumption = net.self_consumption_ratio
+
+    dispatch: DispatchResult | None = None
+    if spec.ess_target_kw is not None:
+        excess = analyze_peak_excess(working.kw, spec.ess_target_kw, interval)
+        sized_power, sized_capacity = size_for_target(excess)
+        power = spec.ess_power_kw if spec.ess_power_kw is not None else sized_power
+        capacity = spec.ess_capacity_kwh if spec.ess_capacity_kwh is not None else sized_capacity
+        mask = (
+            charge_mask
+            if charge_mask is not None
+            else light_band_mask(usage, table, selection=spec.selection, options=opts)
+        )
+        dispatch = dispatch_peak_shaving(
+            working.kw,
+            target_kw=spec.ess_target_kw,
+            power_kw=power,
+            capacity_kwh=capacity,
+            charge_mask=mask,
+            interval_minutes=interval,
+            charge_limit_kw=spec.ess_charge_limit_kw,
+            respect_target_when_charging=spec.ess_respect_target_when_charging,
+        )
+        working = with_load(working, dispatch.net_kw, source_suffix=" + ESS")
+        notes.append(
+            f"ESS {power:,.0f} kW / {capacity:,.0f} kWh — 하루 최대 초과 에너지 "
+            f"{excess.max_daily_excess_kwh:,.1f} kWh 기준으로 잡았습니다. "
+            f"부록 B 의 총 초과 에너지({excess.total_excess_kwh:,.1f} kWh)는 기간 합계라 "
+            "용량 산정에 쓰지 않습니다."
+        )
+        if dispatch.charge_created_new_peak:
+            warnings.append(
+                f"'{spec.name}' — 경부하 충전이 목표를 넘는 새 피크를 만들었습니다. "
+                f"충전 시간대 최대 {dispatch.charge_window_peak_kw:,.1f} kW > 목표 "
+                f"{spec.ess_target_kw:,.0f} kW. ess_charge_limit_kw 로 제한하십시오."
+            )
+        elif dispatch.charge_window_rise_kw > 0:
+            notes.append(
+                f"경부하 충전으로 충전 시간대 최대 부하가 "
+                f"{dispatch.charge_window_rise_kw:,.1f} kW 올랐습니다 "
+                f"(목표 {spec.ess_target_kw:,.0f} kW 이내)."
+            )
+        if not dispatch.target_met:
+            warnings.append(
+                f"'{spec.name}' — 목표 {spec.ess_target_kw:,.0f} kW 를 지키지 못했습니다. "
+                f"달성 {dispatch.achieved_peak_kw:,.1f} kW, 미달 {dispatch.unmet_kwh:,.1f} kWh."
+            )
+
+    bill = calculate_bill(working, table, spec.selection, options=opts, quality=quality)
+
+    contract_saving: float | None = None
+    if spec.contract_kw is not None:
+        adjustment = evaluate_contract_adjustment(
+            working,
+            bill,
+            contract_kw=spec.contract_kw,
+            contract_floor_ratio=spec.contract_floor_ratio,
+        )
+        contract_saving = adjustment.saving_won
+        warnings.extend(adjustment.warnings)
+        notes.extend(adjustment.notes)
+
+    investment = spec.pv_capacity_kwp * spec.pv_unit_cost_won_per_kwp
+    if dispatch is not None:
+        investment += dispatch.capacity_kwh * spec.ess_unit_cost_won_per_kwh
+
+    saving = baseline_bill.total_won - bill.total_won + (contract_saving or 0.0)
+    annual = annualize(saving, baseline_bill.base_fee_months)
+    return CombinationResult(
+        spec=spec,
+        bill=bill,
+        saving_won=saving,
+        annual_saving_won=annual,
+        investment_won=investment,
+        payback_years=payback_years(investment, annual),
+        certainty=_combination_certainty(spec),
+        billing_demand_kw=bill.billing_demand_kw,
+        generation_kwh=generated_kwh,
+        surplus_kwh=surplus_kwh,
+        self_consumption_ratio=self_consumption,
+        dispatch=dispatch,
+        contract_saving_won=contract_saving,
+        warnings=tuple(warnings),
+        notes=tuple(notes),
+    )
+
+
+def default_combinations(
+    *,
+    current_selection: TariffSelection,
+    best_selection: TariffSelection,
+    pv_capacity_kwp: float = 0.0,
+    pv_unit_cost_won_per_kwp: float = 0.0,
+    ess_target_kw: float | None = None,
+    ess_unit_cost_won_per_kwh: float = 0.0,
+    contract_kw: float | None = None,
+    contract_floor_ratio: float | None = None,
+    sensitivity_factor: float = 1.0,
+) -> tuple[CombinationSpec, ...]:
+    """기본 조합 세트. 투자비 순으로 쌓는다.
+
+    기준선 → 요금제만 → 요금제+태양광 → 요금제+태양광+ESS
+    """
+    common = {
+        "pv_unit_cost_won_per_kwp": pv_unit_cost_won_per_kwp,
+        "ess_unit_cost_won_per_kwh": ess_unit_cost_won_per_kwh,
+        "contract_kw": contract_kw,
+        "contract_floor_ratio": contract_floor_ratio,
+        "sensitivity_factor": sensitivity_factor,
+    }
+    specs = [
+        CombinationSpec(name="기준선 (현행)", selection=current_selection, **common),  # type: ignore[arg-type]
+        CombinationSpec(name="선택요금 전환", selection=best_selection, **common),  # type: ignore[arg-type]
+    ]
+    if pv_capacity_kwp > 0:
+        specs.append(
+            CombinationSpec(
+                name=f"+ 태양광 {pv_capacity_kwp:,.0f} kWp",
+                selection=best_selection,
+                pv_capacity_kwp=pv_capacity_kwp,
+                **common,  # type: ignore[arg-type]
+            )
+        )
+    if ess_target_kw is not None:
+        specs.append(
+            CombinationSpec(
+                name=f"+ ESS 목표 {ess_target_kw:,.0f} kW",
+                selection=best_selection,
+                pv_capacity_kwp=pv_capacity_kwp,
+                ess_target_kw=ess_target_kw,
+                **common,  # type: ignore[arg-type]
+            )
+        )
+    return tuple(specs)
+
+
+def compare_combinations(
+    usage: UsageData,
+    table: TariffTable,
+    specs: tuple[CombinationSpec, ...],
+    *,
+    baseline_bill: BillingResult | None = None,
+    unit_pv_kw_per_kwp: pd.Series | None = None,
+    quality: QualityReport | None = None,
+    options: BillingOptions | None = None,
+) -> ComparisonResult:
+    """조합을 순차로 평가한다. 첫 조합이 기준선이다."""
+    if not specs:
+        raise ValueError("비교할 조합이 없습니다.")
+    opts = options if options is not None else BillingOptions()
+    base = (
+        baseline_bill
+        if baseline_bill is not None
+        else calculate_bill(usage, table, specs[0].selection, options=opts, quality=quality)
+    )
+    # 충전 시간대는 조합마다 같으므로 한 번만 만든다.
+    mask = light_band_mask(usage, table, selection=specs[0].selection, options=opts)
+
+    results: list[CombinationResult] = []
+    for spec in specs:  # 순차 처리. 시계열은 조합 하나 분량만 살아 있다
+        results.append(
+            evaluate_combination(
+                usage,
+                table,
+                spec,
+                baseline_bill=base,
+                unit_pv_kw_per_kwp=unit_pv_kw_per_kwp,
+                charge_mask=mask,
+                quality=quality,
+                options=opts,
+            )
+        )
+
+    warnings = tuple(message for item in results for message in item.warnings)
+    notes = (
+        "조합의 절감액은 수단별 절감액의 합이 아닙니다. 조합마다 부하를 다시 만들어 "
+        "요금을 처음부터 산출했습니다 (요구사항서 8장).",
+        "확실성 등급은 가장 낮은 구성 요소를 따릅니다.",
+    )
+    return ComparisonResult(
+        baseline=results[0],
+        combinations=tuple(results),
+        base_fee_months=base.base_fee_months,
+        period_label=base.period_label,
+        warnings=warnings,
+        notes=notes,
+    )

@@ -137,26 +137,52 @@ def test_switch_rejects_a_selection_outside_the_table(
 # --------------------------------------------------------------------- 7.2 계약전력 조정
 
 
-def test_floor_ratio_has_no_default() -> None:
-    """임의 가정으로 금액을 만들지 않도록 인자를 필수로 둔다."""
+def test_floor_ratio_comes_from_the_contract_type() -> None:
+    """하한 30% 가 확인됐다 (요구사항서 5.2 ③). 종별 속성으로 관리한다.
+
+    인자를 주지 않으면 요금표의 종별 값을 쓴다. 코드에 숫자를 박지 않는다.
+    """
     parameter = inspect.signature(evaluate_contract_adjustment).parameters["contract_floor_ratio"]
-    assert parameter.default is inspect.Parameter.empty
+    assert parameter.default is None  # None = 종별 속성을 따른다
     assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
 
 
-def test_unknown_floor_rule_reports_headroom_without_money(
+def test_floor_ratio_defaults_to_the_contract_type(
     sample_usage: UsageData, sample_bill: BillingResult
 ) -> None:
-    result = evaluate_contract_adjustment(
-        sample_usage, sample_bill, contract_kw=7_000.0, contract_floor_ratio=None
-    )
+    """인자를 주지 않으면 종별 하한(일반용(을) 30%)으로 산출한다."""
+    result = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=7_000.0)
+    assert result.status is ContractStatus.CONFIRMED
+    assert result.contract_floor_ratio == pytest.approx(0.30)
+    assert result.reduction_kw == pytest.approx(1_177.0)
+    assert result.suggested_contract_kw == 5_823.0
+    assert result.is_over_contracted
+    # 7,000 × 30% = 2,100 kW 로 요금적용전력 5,293 kW 에 못 미친다 → 절감 없음
+    assert result.saving_won == pytest.approx(0.0)
+
+
+def test_unknown_floor_rule_reports_headroom_without_money(
+    sample_usage: UsageData, tariff: TariffTable, sample_report: QualityReport
+) -> None:
+    """종별 하한 비율이 요금 데이터에 없으면 금액을 만들지 않는다."""
+    import copy
+    import json
+
+    from kwise.tariff import default_tariff_dir, parse_tariff
+
+    with (default_tariff_dir() / "tariff_kr_20260601.json").open(encoding="utf-8") as stream:
+        payload = copy.deepcopy(json.load(stream))
+    payload["contract_types"]["general_b"]["contract_floor_ratio"] = None
+    unknown_table = parse_tariff(payload)
+    bill = calculate_bill(sample_usage, unknown_table, CURRENT, quality=sample_report)
+
+    result = evaluate_contract_adjustment(sample_usage, bill, contract_kw=7_000.0)
     assert result.status is ContractStatus.UNKNOWN
     assert result.saving_won is None
     assert result.annual_saving_won is None
     assert result.adjusted_base_won is None
     # 여지와 경고는 언제나 나온다
     assert result.reduction_kw == pytest.approx(1_177.0)
-    assert result.suggested_contract_kw == 5_823.0
     assert result.is_over_contracted
     assert any("하한 규정" in message for message in result.warnings)
 

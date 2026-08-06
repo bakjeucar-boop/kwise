@@ -91,9 +91,18 @@ class ContractAdjustment:
 
 
 def _base_fee_won(bill: BillingResult, floor_kw: float) -> float:
-    """월별 요금적용전력에 하한을 씌워 기본요금을 다시 합산한다."""
+    """월별 요금적용전력에 하한을 씌워 기본요금을 다시 합산한다.
+
+    하한 적용 **전** 값에서 출발한다. 이미 씌워진 하한을 다시 씌우면 계약전력을
+    낮춘 효과가 사라진다.
+    """
     monthly = bill.monthly
-    demand = monthly["billing_demand_kw"].clip(lower=floor_kw)
+    column = (
+        "demand_before_floor_kw"
+        if "demand_before_floor_kw" in monthly.columns
+        else "billing_demand_kw"
+    )
+    demand = monthly[column].clip(lower=floor_kw)
     return float((demand * bill.base_rate_won_per_kw * monthly["base_fee_factor"]).sum())
 
 
@@ -102,7 +111,7 @@ def evaluate_contract_adjustment(
     bill: BillingResult,
     *,
     contract_kw: float,
-    contract_floor_ratio: float | None,
+    contract_floor_ratio: float | None = None,
     margin_ratio: float = DEFAULT_MARGIN_RATIO,
     step_kw: float = 1.0,
 ) -> ContractAdjustment:
@@ -110,12 +119,14 @@ def evaluate_contract_adjustment(
 
     Args:
         contract_floor_ratio: 요금적용전력의 계약전력 대비 하한 비율.
-            **기본값이 없다.** 모르면 ``None`` 을 명시적으로 넘긴다.
+            None 이면 요금표의 종별 속성(일반용(을) 30%)을 쓴다. 종별 속성마저
+            비어 있으면 '미확인' 을 돌려주고 금액을 만들지 않는다.
         margin_ratio: 권장 계약전력에 얹을 여유율.
     """
     if contract_kw <= 0:
         raise ValueError(f"계약전력은 양수여야 합니다: {contract_kw}")
 
+    ratio = contract_floor_ratio if contract_floor_ratio is not None else bill.contract_floor_ratio
     observed = usage.kw.dropna()
     max_demand = float(observed.max()) if len(observed) else 0.0
     billing_demand = float(bill.billing_demand_kw)
@@ -131,7 +142,7 @@ def evaluate_contract_adjustment(
             "하향이 아니라 상향·초과 위약 검토 대상입니다."
         )
 
-    if contract_floor_ratio is None:
+    if ratio is None:
         warnings.append(_UNKNOWN_NOTICE)
         return ContractAdjustment(
             status=ContractStatus.UNKNOWN,
@@ -154,14 +165,15 @@ def evaluate_contract_adjustment(
             notes=(_UNKNOWN_NOTICE,),
         )
 
-    if not 0.0 <= contract_floor_ratio <= 1.0:
-        raise ValueError(f"하한 비율은 0~1 이어야 합니다: {contract_floor_ratio}")
+    if not 0.0 <= ratio <= 1.0:
+        raise ValueError(f"하한 비율은 0~1 이어야 합니다: {ratio}")
 
-    current_base = _base_fee_won(bill, contract_kw * contract_floor_ratio)
-    adjusted_base = _base_fee_won(bill, suggested * contract_floor_ratio)
+    # 하한 적용 전 값으로 되돌린 뒤 두 계약전력에서 각각 다시 씌운다.
+    current_base = _base_fee_won(bill, contract_kw * ratio)
+    adjusted_base = _base_fee_won(bill, suggested * ratio)
     saving = current_base - adjusted_base
     basis = (
-        f"요금적용전력 하한 {contract_floor_ratio:.0%} 적용, "
+        f"요금적용전력 하한 {ratio:.0%} 적용, "
         f"월별 기본요금을 {bill.base_fee_months:.2f}개월분으로 재계산"
     )
     notes = [
@@ -183,7 +195,7 @@ def evaluate_contract_adjustment(
         margin_ratio=margin_ratio,
         suggested_contract_kw=suggested,
         reduction_kw=reduction,
-        contract_floor_ratio=contract_floor_ratio,
+        contract_floor_ratio=ratio,
         current_base_won=current_base,
         adjusted_base_won=adjusted_base,
         saving_won=saving,

@@ -11,7 +11,7 @@
 :func:`apply_generation`·:func:`with_load` 가 맡는다.
 """
 
-from kwise.measures.base import Certainty, annualize, payback_years
+from kwise.measures.base import Certainty, annualize, lowest_certainty, payback_years
 from kwise.measures.contract import (
     MARGIN_NOTICE,
     ContractAdjustment,
@@ -92,6 +92,7 @@ __all__ = [
     "excess_slots_by_day",
     "excess_table",
     "light_band_mask",
+    "lowest_certainty",
     "payback_years",
     "power_factor_after_pct",
     "roof_capacity_limit_kwp",
