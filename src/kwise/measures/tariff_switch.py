@@ -1,0 +1,163 @@
+"""선택요금 전환 (요구사항서 7.1) — 투자 0원.
+
+가능한 모든 선택요금 조합을 계산해 표로 낸다. **설비 없이도 가치가 나오는
+핵심 기능이다.** 선택지 목록은 요금 데이터 파일에서 생성한다. 하드코딩 금지.
+
+두 기준을 모두 돌려준다.
+
+    현행 유지 기준   지금 계약된 선택요금 그대로
+    최적 전환 기준   전 조합 중 가장 싼 것
+
+다른 수단(태양광·ESS)의 기준선을 어느 쪽으로 잡느냐에 따라 절감액이 달라지므로
+둘 다 있어야 한다. 감도를 적용하지 않는 확정 계산이다 (요구사항서 9.2).
+
+4세션 diagnose 가 이미 전 조합을 돌린다. 그 합계를 ``option_totals`` 로 넘기면
+상세가 필요한 두 조합(현행·최적)만 다시 계산한다.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+
+from kwise.io import UsageData
+from kwise.measures.base import Certainty, annualize
+from kwise.quality import QualityReport
+from kwise.tariff import (
+    BillingOptions,
+    BillingResult,
+    TariffSelection,
+    TariffTable,
+    calculate_bill,
+    list_selections,
+)
+
+__all__ = ["OptionQuote", "TariffSwitchResult", "evaluate_tariff_switch"]
+
+
+@dataclass(frozen=True)
+class OptionQuote:
+    """조합 하나의 요금. 상세를 계산하지 않은 조합은 합계만 있다."""
+
+    selection: TariffSelection
+    total_won: float
+    base_won: float | None = None
+    energy_won: float | None = None
+
+    @property
+    def key(self) -> str:
+        return str(self.selection)
+
+
+@dataclass(frozen=True, eq=False)
+class TariffSwitchResult:
+    """선택요금 전환 평가."""
+
+    current: OptionQuote
+    best: OptionQuote
+    quotes: tuple[OptionQuote, ...]
+    saving_won: float
+    annual_saving_won: float
+    base_fee_months: float
+    period_label: str
+    current_bill: BillingResult
+    best_bill: BillingResult
+    certainty: Certainty = Certainty.HIGH
+    investment_won: float = 0.0
+    warnings: tuple[str, ...] = field(default=())
+    notes: tuple[str, ...] = field(default=())
+
+    @property
+    def switch_needed(self) -> bool:
+        return self.best.selection != self.current.selection
+
+    @property
+    def ranking(self) -> tuple[OptionQuote, ...]:
+        """싼 순서. 화면 표를 이 순서로 그린다."""
+        return tuple(sorted(self.quotes, key=lambda quote: quote.total_won))
+
+
+def evaluate_tariff_switch(
+    usage: UsageData,
+    table: TariffTable,
+    current_selection: TariffSelection,
+    *,
+    quality: QualityReport | None = None,
+    options: BillingOptions | None = None,
+    option_totals: Mapping[str, float] | None = None,
+) -> TariffSwitchResult:
+    """전 조합을 계산해 현행 기준과 최적 기준을 낸다.
+
+    Args:
+        option_totals: 이미 계산해 둔 조합별 합계. 4세션 ``Diagnosis.option_totals``
+            를 그대로 넘기면 중복 계산을 피한다.
+    """
+    opts = options if options is not None else BillingOptions()
+    selections = list_selections(table)  # 요금 데이터에서 생성한다
+    if current_selection not in selections:
+        raise ValueError(
+            f"요금표에 없는 조합입니다: {current_selection} "
+            f"(가능: {', '.join(str(item) for item in selections)})"
+        )
+
+    totals: dict[str, float] = dict(option_totals) if option_totals else {}
+    missing = [item for item in selections if str(item) not in totals]
+    for selection in missing:  # 순차 처리. 합계만 남긴다
+        totals[str(selection)] = calculate_bill(
+            usage, table, selection, options=opts, quality=quality
+        ).total_won
+
+    best_key = min(totals, key=lambda key: totals[key])
+    best_selection = next(item for item in selections if str(item) == best_key)
+
+    # 상세가 필요한 것은 두 조합뿐이다.
+    current_bill = calculate_bill(usage, table, current_selection, options=opts, quality=quality)
+    best_bill = (
+        current_bill
+        if best_selection == current_selection
+        else calculate_bill(usage, table, best_selection, options=opts, quality=quality)
+    )
+
+    detailed = {
+        str(current_selection): current_bill,
+        str(best_selection): best_bill,
+    }
+    quotes = tuple(
+        OptionQuote(
+            selection=selection,
+            total_won=totals[str(selection)],
+            base_won=(
+                detailed[str(selection)].total_base_won if str(selection) in detailed else None
+            ),
+            energy_won=(
+                detailed[str(selection)].total_energy_won if str(selection) in detailed else None
+            ),
+        )
+        for selection in selections
+    )
+    quote_by_key = {quote.key: quote for quote in quotes}
+
+    saving = current_bill.total_won - best_bill.total_won
+    notes = [
+        "선택요금 전환은 실측 데이터와 요금표만으로 확정되는 계산입니다. "
+        "감도를 적용하지 않습니다 (요구사항서 9.2).",
+        "설비 도입과 무관하게 나오는 절감액입니다. 투자가 필요하지 않습니다.",
+    ]
+    if best_selection != current_selection:
+        notes.append(
+            f"최적은 {best_selection} 입니다. 다른 수단의 기준선을 현행으로 둘지 "
+            "최적으로 둘지에 따라 그 수단의 절감액이 달라집니다."
+        )
+    return TariffSwitchResult(
+        current=quote_by_key[str(current_selection)],
+        best=quote_by_key[best_key],
+        quotes=quotes,
+        saving_won=saving,
+        annual_saving_won=annualize(saving, current_bill.base_fee_months),
+        base_fee_months=current_bill.base_fee_months,
+        period_label=current_bill.period_label,
+        current_bill=current_bill,
+        best_bill=best_bill,
+        warnings=current_bill.warnings,
+        notes=tuple(notes),
+    )
