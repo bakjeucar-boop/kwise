@@ -7,8 +7,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    from kwise.pv import WeatherData
 
 HEADER = ("검침일", "순방향 유효전력량(KWH)")
 
@@ -89,3 +93,47 @@ def write_month(path: Path, year: int, month: int, *, kwh: float = 100.0) -> Pat
     """한 달치 균일 부하 파일. 15분 100 kWh = 400 kW."""
     rows = [(label, kwh) for date in month_dates(year, month) for label in make_labels(date)]
     return write_csv(path, rows)
+
+
+def clearsky_weather(
+    *,
+    latitude: float = 37.5,
+    longitude: float = 127.0,
+    timezone: str = "Asia/Seoul",
+    start: str = "2023-07-02",
+    end: str = "2023-07-04",
+    altitude_m: float = 50.0,
+    temp_air: float = 25.0,
+    wind_speed: float = 2.0,
+) -> WeatherData:
+    """맑은 날 합성 기상. 네트워크를 타지 않는다.
+
+    Open-Meteo 규약(라벨 = 구간 시작)에 맞춰, 라벨 + 30분의 청천 일사를 그 시간의
+    값으로 넣는다. 시각 정렬 시험의 기준이 되므로 규약을 어기면 안 된다.
+    """
+    from pvlib.location import Location
+
+    from kwise.pv import WeatherData, WeatherRequest
+
+    labels = pd.date_range(f"{start} 00:00", f"{end} 23:00", freq="1h", tz=timezone)
+    location = Location(latitude, longitude, tz=timezone, altitude=altitude_m)
+    clearsky = location.get_clearsky(labels + pd.Timedelta(minutes=30))
+    hourly = pd.DataFrame(
+        {
+            "ghi": clearsky["ghi"].to_numpy(),
+            "dni": clearsky["dni"].to_numpy(),
+            "dhi": clearsky["dhi"].to_numpy(),
+            "temp_air": temp_air,
+            "wind_speed": wind_speed,
+            "snowfall": 0.0,
+        },
+        index=labels,
+    )
+    request = WeatherRequest(
+        latitude=latitude,
+        longitude=longitude,
+        start=pd.Timestamp(start).date(),
+        end=pd.Timestamp(end).date(),
+        timezone=timezone,
+    )
+    return WeatherData(hourly=hourly, request=request)

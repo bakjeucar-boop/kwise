@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from kwise.diagnose import ContractInfo, Diagnosis, diagnose
 from kwise.io import UsageData, load_usage
 from kwise.quality import QualityReport, check_quality
 from kwise.tariff import (
@@ -53,5 +54,18 @@ def sample_bill(
         sample_usage,
         tariff,
         TariffSelection("general_b", "high_a", "I"),
+        quality=sample_report,
+    )
+
+
+@pytest.fixture(scope="session")
+def sample_diagnosis(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> Diagnosis:
+    """실측 샘플 × 일반용(을) 고압A 선택Ⅰ × 계약전력 5,500 kW."""
+    return diagnose(
+        sample_usage,
+        tariff,
+        ContractInfo(TariffSelection("general_b", "high_a", "I"), contract_kw=5_500.0),
         quality=sample_report,
     )
