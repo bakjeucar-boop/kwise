@@ -1,0 +1,85 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kwise"
+version = "0.1.0"
+description = "건물 전력 비용 진단 및 개선안 비교 도구"
+readme = "README.txt"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+dependencies = [
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "scipy>=1.13",
+    "pvlib>=0.11",
+    "holidays>=0.40",
+    "streamlit>=1.35",
+    "altair>=5.3",
+    "openpyxl>=3.1",
+    "pyarrow>=15.0",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6", "mypy>=1.11"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# ---------------------------------------------------------------- ruff
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# reference\ 는 읽기 전용 참조 코드다. 검사 대상에서 제외한다.
+extend-exclude = ["reference", ".venv", "cache", "output"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "W",    # pycodestyle warning
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # simplify
+    "PTH",  # 경로는 pathlib 만 쓴다
+    "ANN",  # 타입힌트
+    "RUF",
+]
+ignore = [
+    "RUF001", # 주석·문자열에 한글과 전각 기호가 섞이는 것은 정상이다
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN401"]
+
+# ---------------------------------------------------------------- mypy
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests"]
+exclude = "^(reference|\\.venv|build)/"
+strict = true
+# pandas·numpy 등은 타입 스텁을 제공하지 않는다.
+ignore_missing_imports = true
+disallow_untyped_calls = false
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+module = ["pandas.*", "numpy.*", "pvlib.*", "holidays.*", "streamlit.*", "altair.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------- pytest
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = ["error::FutureWarning"]

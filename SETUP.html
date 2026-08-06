@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kWise — Windows 설치 및 시작 안내</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EDF0F2; --paper-2:#F7F9FA; --ink:#16232E; --ink-60:#5A6B77;
+  --ink-40:#8B99A3; --rule:#C3CBD1;
+  --light:#3E7B7A; --mid:#B08033; --peak:#A44A3F;
+  --sans:'IBM Plex Sans KR',-apple-system,'Malgun Gothic',sans-serif;
+  --mono:'IBM Plex Mono','D2Coding',ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-weight:400;line-height:1.65;font-size:15px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:900px;margin:0 auto;padding:0 28px 120px}
+
+header{padding:64px 0 36px;border-bottom:1px solid var(--rule)}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--ink-40);margin-bottom:20px}
+h1{font-size:clamp(32px,5.5vw,48px);font-weight:700;letter-spacing:-.03em;
+  line-height:1.1;margin:0 0 16px}
+h1 .dim{color:var(--ink-40);font-weight:300}
+.lede{font-size:17px;color:var(--ink-60);max-width:56ch;margin:0}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+  gap:1px;background:var(--rule);border:1px solid var(--rule);margin-top:36px}
+.facts div{background:var(--paper-2);padding:14px 16px}
+.facts dt{font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-40);margin-bottom:5px}
+.facts dd{margin:0;font-size:14px;font-weight:500}
+
+.step{padding-top:56px}
+.step-head{display:flex;align-items:baseline;gap:14px;margin-bottom:6px}
+.step-n{font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--ink-40)}
+h2{font-size:26px;font-weight:600;letter-spacing:-.02em;margin:0}
+.step-sub{color:var(--ink-60);margin:0 0 22px;max-width:62ch}
+h3{font-size:16px;font-weight:600;margin:30px 0 10px;letter-spacing:-.01em}
+p{margin:12px 0}
+
+.cmd{margin:14px 0;position:relative}
+.cmd-label{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-40);margin-bottom:6px}
+.cmd pre{margin:0;background:var(--ink);color:#DCE4E8;border-radius:3px;
+  font-family:var(--mono);font-size:12.5px;line-height:1.85;
+  padding:18px 20px;overflow-x:auto;white-space:pre-wrap;word-break:break-word}
+.copy{position:absolute;top:26px;right:10px;background:#2C3D49;color:#DCE4E8;
+  border:1px solid #44555F;border-radius:2px;cursor:pointer;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+  padding:5px 10px;transition:background .15s}
+.copy:hover{background:#3C4E59}
+.copy.done{background:var(--light);border-color:var(--light);color:#fff}
+
+.tree{background:var(--paper-2);border:1px solid var(--rule);border-radius:3px;
+  font-family:var(--mono);font-size:12.5px;line-height:1.9;
+  padding:18px 20px;overflow-x:auto;margin:14px 0;white-space:pre}
+.tree b{font-weight:600;color:var(--ink)}
+.tree i{font-style:normal;color:var(--ink-40)}
+
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+th{text-align:left;font-family:var(--mono);font-size:10.5px;font-weight:500;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ink-40);
+  padding:0 12px 8px 0;border-bottom:1px solid var(--ink)}
+td{padding:11px 12px 11px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+code{font-family:var(--mono);font-size:12.5px;background:#DFE5E9;
+  padding:1px 5px;border-radius:2px}
+td code{word-break:break-all}
+
+.note{border-left:3px solid var(--peak);background:var(--paper-2);
+  padding:14px 18px;margin:18px 0;font-size:14px}
+.note.ok{border-left-color:var(--light)}
+.note.warn{border-left-color:var(--mid)}
+.note b{font-weight:600}
+ul{padding-left:20px;margin:10px 0}
+li{margin:5px 0}
+
+.check{list-style:none;padding:0;margin:14px 0}
+.check li{padding:10px 0 10px 30px;border-bottom:1px solid var(--rule);
+  position:relative;font-size:14px}
+.check li::before{content:'';position:absolute;left:2px;top:15px;width:12px;height:12px;
+  border:1.5px solid var(--ink-40);border-radius:2px}
+
+footer{margin-top:80px;padding-top:24px;border-top:1px solid var(--rule);
+  font-family:var(--mono);font-size:11px;color:var(--ink-40);
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Setup &amp; Workflow · Windows 11</div>
+  <h1>kWise<br><span class="dim">설치 및 시작 안내</span></h1>
+  <p class="lede">건물 전력 비용 진단 및 개선안 비교. 운영 중 건물의 15분 실측 전력 데이터로
+  비용 구조를 진단하고, 요금제 전환·계약 조정·태양광·ESS 등 개선 수단의 효과를
+  같은 기준으로 비교합니다.</p>
+
+  <dl class="facts">
+    <div><dt>대상 OS</dt><dd>Windows 10 1809+ / 11</dd></div>
+    <div><dt>Python</dt><dd>3.12 (3.13 이상 금지)</dd></div>
+    <div><dt>작업 도구</dt><dd>Claude Code</dd></div>
+    <div><dt>소요</dt><dd>설치 20분 · 1세션 1~2시간</dd></div>
+  </dl>
+</header>
+
+<!-- ── STEP 0 ───────────────────────────── -->
+<section class="step">
+  <div class="step-head"><span class="step-n">Step 0</span><h2>받은 파일 확인</h2></div>
+  <p class="step-sub"><code>kwise_setup.zip</code> 안에 요구사항 일체가 들어 있습니다.
+  코드는 없습니다 — 코드는 Claude Code가 이 문서들을 읽고 만듭니다.</p>
+
+<div class="tree"><b>kwise_setup.zip</b>
+├─ SETUP.html                     <i>지금 보고 계신 문서</i>
+├─ PROJECT_GUIDE.html             <i>세션별 프롬프트와 순서</i>
+├─ CLAUDE.md                      <i>Claude Code가 매 세션 자동으로 읽는 규칙</i>
+├─ PROCEED.md                     <i>진행 이력 — 이전 세션 결정사항이 채워져 있음</i>
+└─ docs/
+    ├─ ENVIRONMENT.md             <i>실행 환경 제약</i>
+    └─ REQUIREMENTS_kwise.md    <i>요구사항서 (본문)</i>
+</div>
+
+  <p>여기에 더해 <b>직접 준비하실 파일</b>이 있습니다.</p>
+<div class="tree"><b>reference\</b>   <i>기존 pv_peak_cut 저장소에서</i>
+  ├─ mg_pv_core.py
+  ├─ mg_weather_openmeteo.py
+  └─ streamlit_app.py
+
+<b>input\</b>       <i>샘플 15분 실측 데이터</i>
+  └─ 사용량조회_20240429.csv
+</div>
+
+  <div class="note ok"><b>이전 저장소를 옮길 수 있다면.</b>
+  안드로이드에서 3세션까지 작업한 폴더를 통째로 가져오면 코드와 커밋 이력이 보존됩니다.
+  그 경우 <code>CLAUDE.md</code>와 <code>docs\ENVIRONMENT.md</code> 두 파일만 이 묶음의 것으로
+  교체하고, <code>PROCEED.md</code>는 기존 것을 유지하십시오. 옮기지 못하더라도
+  이 묶음의 <code>PROCEED.md</code>에 1~3세션 결정사항 12건이 모두 담겨 있습니다.</div>
+</section>
+
+<!-- ── STEP 1 ───────────────────────────── -->
+<section class="step">
+  <div class="step-head"><span class="step-n">Step 1</span><h2>기존 설치 정리</h2></div>
+  <p class="step-sub">애매하게 설치된 것들을 먼저 지웁니다. 이 단계를 건너뛰면
+  나중에 어느 환경에서 실행되고 있는지 알 수 없게 됩니다.</p>
+
+  <h3>가상환경과 작업 폴더</h3>
+  <p>현재 <code>(peakcut)</code> 또는 <code>(.venv)</code> 프롬프트가 보이면 가상환경이 활성화된 상태입니다. 먼저 빠져나옵니다.</p>
+
+  <div class="cmd">
+    <div class="cmd-label">PowerShell</div><button class="copy">복사</button>
+<pre>deactivate
+cd C:\
+Remove-Item C:\Users\SAMSUNG\Documents\peakcut -Recurse -Force</pre>
+  </div>
+
+  <div class="note warn"><b>폴더 안에 남길 파일이 있는지 먼저 확인하십시오.</b>
+  기존 코드나 샘플 CSV를 이미 넣어 두셨다면 다른 곳으로 복사한 뒤 지우십시오.
+  <code>Remove-Item</code>은 되돌릴 수 없습니다.</div>
+
+  <h3>uv 제거</h3>
+  <p>이 프로젝트는 표준 <code>venv</code>와 <code>pip</code>만 씁니다. 앞서 설치한 <code>uv</code>는 필요 없습니다.</p>
+
+  <div class="cmd">
+    <div class="cmd-label">PowerShell</div><button class="copy">복사</button>
+<pre>python -m pip uninstall uv -y</pre>
+  </div>
+
+  <h3>PowerShell 프로필 확인</h3>
+  <p>앞서 <code>$PROFILE</code>에 환경변수를 넣으셨다면 지웁니다. Step 2에서 더 나은 방법으로 다시 설정합니다.</p>
+
+  <div class="cmd">
+    <div class="cmd-label">PowerShell — 내용 확인</div><button class="copy">복사</button>
+<pre>Get-Content $PROFILE -ErrorAction SilentlyContinue</pre>
+  </div>
+
+  <p><code>PYTHONUTF8</code>이나 <code>PROJECT_CACHE</code> 줄이 보이면 메모장으로 열어 그 줄만 지우십시오.
+  아무것도 출력되지 않으면 넘어가시면 됩니다.</p>
+
+  <div class="cmd">
+    <div class="cmd-label">PowerShell — 필요할 때만</div><button class="copy">복사</button>
+<pre>notepad $PROFILE</pre>
+  </div>
+
+  <div class="note ok"><b>실행 정책은 그대로 두십시오.</b>
+  앞서 설정한 <code>Set-ExecutionPolicy RemoteSigned -Scope CurrentUser</code>는
+  가상환경 활성화에 필요합니다. 되돌리지 마십시오.</div>
+</section>
+
+<!-- ── STEP 2 ───────────────────────────── -->
+<section class="step">
+  <div class="step-head"><span class="step-n">Step 2</span><h2>사전 설치 확인</h2></div>
+  <p class="step-sub">이미 갖춰진 것이 많습니다. 확인만 하고 없는 것만 설치합니다.</p>
+
+  <div class="cmd">
+    <div class="cmd-label">PowerShell — 확인</div><button class="copy">복사</button>
+<pre>python --version
+pip --version
+git --version
+claude --version</pre>
+  </div>
+
+  <table>
+    <tr><th>항목</th><th>기대 출력</th><th>없으면</th></tr>
+    <tr><td>Python</td><td><code>Python 3.12.x</code></td>
+        <td>python.org에서 3.12 계열 64-bit. 설치 첫 화면에서 <b>Add python.exe to PATH</b> 체크</td></tr>
+    <tr><td>pip</td><td><code>pip 25.x</code> 이상</td>
+        <td><code>python -m ensurepip --upgrade</code></td></tr>
+    <tr><td>Git</td><td><code>git version 2.x</code></td>
+        <td>git-scm.com에서 설치</td></tr>
+    <tr><td>Claude Code</td><td>버전 문자열</td>
+        <td><code>irm https://claude.ai/install.ps1 | iex</code></td></tr>
+  </table>
+
+  <div class="note"><b>Python 3.13 이상은 쓰지 마십시오.</b>
+  일부 과학 계산 패키지가 새 Python 지원이 늦어 설치가 실패할 수 있습니다.
+  <code>Microsoft Store</code> 창이 뜨면 PATH 체크를 놓친 것이니 설치 파일을 다시 실행해
+  <b>Modify → Add to PATH</b>를 켜십시오.</p></div>
+
+  <h3>환경변수 — 한 번만</h3>
+  <p>한국어 Windows는 콘솔 기본 코드페이지가 <code>cp949</code>라 UTF-8 파일에서
+  <code>UnicodeDecodeError</code>가 자주 납니다. 미리 막아둡니다.</p>
+
+  <div class="cmd">
+    <div class="cmd-label">PowerShell — 1회만</div><button class="copy">복사</button>
+<pre>[Environment]::SetEnvironmentVariable("PYTHONUTF8", "1", "User")
+[Environment]::SetEnvironmentVariable("PROJECT_CACHE", "$env:LOCALAPPDATA\kwise\cache", "User")</pre>
+  </div>
+
+  <p>설정 후 <b>PowerShell 창을 닫았다 다시 엽니다.</b> 확인은 이렇게 합니다.</p>
+
+  <div class="cmd">
+    <div class="cmd-label">PowerShell — 새 창에서</div><button class="copy">복사</button>
+<pre>$env:PYTHONUTF8
+$env:PROJECT_CACHE</pre>
+  </div>
+
+  <p><code>1</code>과 캐시 경로가 나오면 됩니다.</p>
+
+  <div class="note ok"><b>왜 <code>$PROFILE</code>이 아니라 이 방법인가.</b>
+  <code>SetEnvironmentVariable</code>은 Windows 사용자 환경변수에 직접 등록하므로
+  PowerShell뿐 아니라 CMD, VS Code 터미널, Claude Code가 띄우는 Git Bash에서도 똑같이 적용됩니다.
+  <code>$PROFILE</code>은 PowerShell에서만 동작합니다.</div>
+
+  <h3>Claude Code 로그인 확인</h3>
+  <div class="cmd">
+    <div class="cmd-label">PowerShell</div><button class="copy">복사</button>
+<pre>claude doctor</pre>
+  </div>
+  <p>설치 상태와 설정을 진단해 무엇이 잘못됐는지 알려줍니다. 문제가 생기면 가장 먼저 이 명령을 쓰십시오.</p>
+
+  <div class="note"><b>계정 요건.</b>
+  Claude Code는 Pro, Max, Team, Enterprise 또는 Console 계정이 필요합니다.
+  무료 플랜으로는 동작하지 않습니다. 처음 <code>claude</code>를 실행하면 브라우저가 열리며 로그인을 요구합니다.</div>
+</section>
+
+<!-- ── STEP 3 ───────────────────────────── -->
+<section class="step">
+  <div class="step-head"><span class="step-n">Step 3</span><h2>작업 폴더 준비</h2></div>
+  <p class="step-sub">경로에 <b>한글이나 공백이 없는 위치</b>를 고르십시오.
+  일부 파이썬 패키지가 한글 경로에서 문제를 일으킵니다. OneDrive 동기화 폴더도 피하십시오.</p>
+
+  <div class="cmd">
+    <div class="cmd-label">PowerShell</div><button class="copy">복사</button>
+<pre>mkdir C:\work\kwise
+cd C:\work\kwise
+mkdir docs, input, output, data, reference, src\kwise, tests
+mkdir "$env:LOCALAPPDATA\kwise\cache" -Force
+git init</pre>
+  </div>
+
+  <h3>파일 배치</h3>
+  <p>zip을 이 폴더에 풀고, 기존 코드와 샘플 데이터를 넣습니다.</p>
+
+<div class="tree"><b>C:\work\kwise\</b>
+├─ SETUP.html
+├─ PROJECT_GUIDE.html
+├─ CLAUDE.md
+├─ PROCEED.md
+├─ .gitignore              <i>아래에서 생성</i>
+├─ docs\
+│   ├─ ENVIRONMENT.md
+│   └─ REQUIREMENTS_kwise.md
+├─ reference\              <i>기존 코드 3개 — 이관이 끝나면 삭제</i>
+│   ├─ mg_pv_core.py
+│   ├─ mg_weather_openmeteo.py
+│   └─ streamlit_app.py
+├─ input\
+│   └─ 사용량조회_20240429.csv
+├─ data\   output\   src\kwise\   tests\      <i>비어 있음</i>
+</div>
+
+  <p><code>reference\</code>를 저장소 안에 두는 이유는 Claude Code가 이관 대상 코드를 직접 읽어야 하기 때문입니다.</p>
+
+  <h3>.gitignore</h3>
+  <div class="cmd">
+    <div class="cmd-label">PowerShell</div><button class="copy">복사</button>
+<pre>@"
+output/
+__pycache__/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+cache/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+"@ | Set-Content .gitignore -Encoding UTF8</pre>
+  </div>
+
+  <p><code>input/</code>은 일부러 넣지 않았습니다. 케이스 스터디 데이터를 이력으로 남겨야
+  검증 결과를 재현할 수 있습니다.</p>
+
+  <h3>가상환경 만들기</h3>
+  <p>시스템 Python을 더럽히지 않도록 프로젝트 전용 환경을 만듭니다.</p>
+
+  <div class="cmd">
+    <div class="cmd-label">PowerShell</div><button class="copy">복사</button>
+<pre>py -3.12 -m venv .venv
+.venv\Scripts\activate
+python -m pip install --upgrade pip</pre>
+  </div>
+
+  <p>프롬프트 앞에 <code>(.venv)</code>가 붙으면 활성화된 것입니다.
+  <b>PowerShell을 새로 열 때마다 <code>.venv\Scripts\activate</code>를 다시 실행</b>해야 합니다.</p>
+
+  <div class="note"><b>실행이 차단되면</b> <code>Set-ExecutionPolicy RemoteSigned -Scope CurrentUser</code>를
+  한 번 돌리십시오. 이미 하셨다면 다시 할 필요 없습니다.</div>
+
+  <p>패키지 설치는 1세션에서 Claude Code가 합니다. 미리 확인만 하시려면 이렇게 합니다.</p>
+
+  <div class="cmd">
+    <div class="cmd-label">PowerShell — 선택</div><button class="copy">복사</button>
+<pre>pip install pandas numpy pvlib holidays streamlit openpyxl pyarrow pytest ruff mypy</pre>
+  </div>
+</section>
+
+<!-- ── STEP 4 ───────────────────────────── -->
+<section class="step">
+  <div class="step-head"><span class="step-n">Step 4</span><h2>첫 세션 시작</h2></div>
+  <p class="step-sub">작업 폴더에서 Claude Code를 시작합니다.
+  <code>CLAUDE.md</code>는 저장소 루트에 있으면 자동으로 읽히므로 따로 첨부할 필요가 없습니다.</p>
+
+  <div class="cmd">
+    <div class="cmd-label">PowerShell</div><button class="copy">복사</button>
+<pre>cd C:\work\kwise
+.venv\Scripts\activate
+claude</pre>
+  </div>
+
+  <p>세션이 열리면 <code>PROJECT_GUIDE.html</code>의 05장에서 1세션 프롬프트를 복사해 붙여넣으십시오.</p>
+
+  <div class="note warn"><b>가상환경 주의.</b>
+  Claude Code가 명령을 실행하는 셸은 <code>.venv</code>가 활성화되어 있지 않을 수 있습니다.
+  그러면 <code>pytest</code>가 패키지를 못 찾습니다. 첫 세션 시작 때 한 줄 알려주십시오 —
+  <b>“이 프로젝트는 .venv 를 쓴다. python 실행은 .venv\Scripts\python.exe 로 해줘.”</b>
+  <code>CLAUDE.md</code>에도 같은 내용이 적혀 있습니다.</div>
+
+  <h3>세션 순서</h3>
+  <table>
+    <tr><th>세션</th><th>내용</th><th>산출</th></tr>
+    <tr><td><code>S1</code></td><td>골격과 데이터 입출력</td><td><code>kwise/io</code></td></tr>
+    <tr><td><code>S2</code></td><td>데이터 품질 검사</td><td><code>quality</code></td></tr>
+    <tr><td><code>S3</code></td><td><b>요금 엔진</b></td><td><code>tariff</code>, 요금 JSON</td></tr>
+    <tr><td><code>S4</code></td><td>태양광과 진단</td><td><code>pv</code>, <code>diagnose</code></td></tr>
+    <tr><td><code>S5</code></td><td>개선 수단 평가</td><td><code>measures</code></td></tr>
+    <tr><td><code>S6</code></td><td>조합 비교·출력·배치</td><td><code>compare</code>, <code>report</code></td></tr>
+    <tr><td><code>S7</code></td><td><b>검증과 케이스 스터디</b></td><td>케이스 결과</td></tr>
+    <tr><td><code>S8</code></td><td>Streamlit UI와 마무리</td><td><code>ui</code>, README</td></tr>
+  </table>
+
+  <p>각 세션은 <code>pytest</code>·<code>ruff</code>·<code>mypy</code>를 통과해야 다음으로 넘어갑니다.
+  세션이 끝나면 <code>PROCEED.md</code>가 실제로 갱신됐는지 눈으로 확인하십시오.
+  이 파일이 다음 세션의 출발점입니다.</p>
+</section>
+
+<!-- ── 문제 해결 ───────────────────────────── -->
+<section class="step">
+  <div class="step-head"><span class="step-n">부록</span><h2>막힐 때</h2></div>
+
+  <table>
+    <tr><th>증상</th><th>원인과 대처</th></tr>
+    <tr><td><code>'irm' is not recognized</code></td>
+        <td>PowerShell이 아니라 CMD입니다. 프롬프트가 <code>PS C:\…</code>로 시작하는지 확인하십시오.</td></tr>
+    <tr><td><code>claude</code> 명령을 못 찾음</td>
+        <td><code>%USERPROFILE%\.local\bin</code>이 사용자 PATH에 있는지 확인. 설치기가 추가하지만 일부 환경에서 누락됩니다.</td></tr>
+    <tr><td>스크립트 실행이 차단됨</td>
+        <td><code>Set-ExecutionPolicy RemoteSigned -Scope CurrentUser</code></td></tr>
+    <tr><td>다운로드한 <code>.ps1</code>이 “디지털 서명되지 않았습니다”</td>
+        <td>인터넷에서 받은 파일의 차단 표시입니다. <code>Get-ChildItem -Recurse | Unblock-File</code></td></tr>
+    <tr><td>한글이 <code>?묒꽦</code> 처럼 깨짐</td>
+        <td><code>PYTHONUTF8</code> 미설정, 또는 <code>.ps1</code>이 BOM 없는 UTF-8입니다.
+        Windows PowerShell 5.1은 한글이 든 스크립트를 BOM 없이 읽지 못합니다.</td></tr>
+    <tr><td>Git Bash를 못 찾음</td>
+        <td><code>%USERPROFILE%\.claude\settings.json</code>에
+        <code>{"env":{"CLAUDE_CODE_GIT_BASH_PATH":"C:\\Program Files\\Git\\bin\\bash.exe"}}</code> 추가</td></tr>
+    <tr><td><code>PermissionError</code> (xlsx)</td>
+        <td>Excel이 파일을 열고 있습니다. 닫고 다시 실행하십시오.</td></tr>
+    <tr><td><code>pytest</code>가 패키지를 못 찾음</td>
+        <td><code>.venv</code> 미활성화입니다. <code>.venv\Scripts\activate</code> 실행 후 재시도.</td></tr>
+    <tr><td>로그인 브라우저가 안 열림</td>
+        <td>추적 차단이 강한 브라우저에서 자주 발생합니다. 기본 브라우저를 바꿔 보십시오.</td></tr>
+  </table>
+
+  <p>사내망 프록시 환경이라면 방화벽에서 <code>claude.ai</code>, <code>api.anthropic.com</code>,
+  <code>downloads.claude.ai</code> 접근이 필요합니다.</p>
+</section>
+
+<!-- ── 체크리스트 ───────────────────────────── -->
+<section class="step">
+  <div class="step-head"><span class="step-n">최종</span><h2>시작 전 확인</h2></div>
+  <ul class="check">
+    <li>기존 <code>Documents\peakcut</code> 폴더와 <code>.venv</code> 제거</li>
+    <li><code>uv</code> 제거, <code>$PROFILE</code> 정리</li>
+    <li><code>python --version</code> → 3.12.x</li>
+    <li><code>git --version</code>, <code>claude --version</code> 확인</li>
+    <li><code>PYTHONUTF8</code>, <code>PROJECT_CACHE</code> 사용자 환경변수 등록 후 새 창</li>
+    <li><code>C:\work\kwise</code> 생성, <code>git init</code></li>
+    <li>zip 압축 해제 — <code>CLAUDE.md</code>, <code>PROCEED.md</code>, <code>docs\</code></li>
+    <li><code>reference\</code>에 기존 코드 3개 배치</li>
+    <li><code>input\</code>에 샘플 CSV 배치</li>
+    <li><code>.gitignore</code> 생성</li>
+    <li><code>py -3.12 -m venv .venv</code> 후 활성화, 프롬프트에 <code>(.venv)</code> 확인</li>
+    <li>요금 단가 원본 대조 — 3세션 전까지만 하면 된다</li>
+  </ul>
+</section>
+
+<footer>
+  <span>kWise · Windows 설치 및 시작 안내 v1.0</span>
+  <span>2026-08-06</span>
+</footer>
+
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var pre = btn.parentElement.querySelector('pre');
+    var text = pre.innerText;
+    var done = function(){
+      btn.textContent='복사됨'; btn.classList.add('done');
+      setTimeout(function(){ btn.textContent='복사'; btn.classList.remove('done'); },1600);
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done).catch(function(){ fb(text,done); });
+    } else { fb(text,done); }
+  });
+});
+function fb(text,done){
+  var ta=document.createElement('textarea');
+  ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); done(); }catch(e){}
+  document.body.removeChild(ta);
+}
+</script>
+</body>
+</html>
