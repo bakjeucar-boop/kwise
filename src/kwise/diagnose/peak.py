@@ -11,6 +11,17 @@
 요금 귀속(계절·시간대·월)은 구간 시작 시각으로 판정한다 — tariff 모듈의 일이다.
 두 규약은 15분 차이가 나며, 섞으면 조용히 틀린다. ``top_slots`` 에 두 값을 모두 담아
 어느 쪽이 필요하든 꺼내 쓸 수 있게 했다.
+
+모집단 규약 — 상위 구간을 **두 벌** 낸다. 섞지 않는다.
+
+    top_slots / hour_counts / weekday_counts
+        관측된 전 슬롯이 모집단. **부록 B 의 시각 분포가 이 기준이다.**
+    demand_top_slots / demand_hour_counts / demand_weekday_counts
+        요금적용전력 대상 슬롯(중간·최대부하)만이 모집단. 경부하 구간은 아무리 커도
+        요금적용전력이 되지 않으므로 **태양광의 기본요금 기여 판정은 이쪽을 쓴다**
+        (요구사항서 5.2 ①).
+
+마스크를 주지 않으면 두 벌이 같아진다.
 """
 
 from __future__ import annotations
@@ -42,9 +53,14 @@ class PeakProfile:
     Attributes:
         monthly: 월별 최대수요와 발생 시각, 요금적용전력.
         billing_demand_kw: 기간 전체의 요금적용전력 (최대값).
-        top_slots: 상위 N 구간. 라벨 시각·요일과 구간 시작 시각을 함께 담는다.
-        hour_counts: 상위 구간의 시각 분포 (라벨 기준, 0~23 전부).
+        top_slots: 상위 N 구간 (**전 슬롯** 모집단). 라벨 시각·요일과 구간 시작 시각.
+        hour_counts: 상위 구간의 시각 분포 (라벨 기준, 0~23 전부). 부록 B 규약.
         weekday_counts: 상위 구간의 요일 분포 (월~일).
+        demand_top_slots: 상위 N 구간 (**요금적용전력 대상 슬롯** 모집단).
+        demand_hour_counts: 대상 슬롯 상위 구간의 시각 분포 (라벨 기준).
+        demand_weekday_counts: 대상 슬롯 상위 구간의 요일 분포.
+        demand_eligible_slots: 관측 슬롯 중 요금적용전력 대상인 것의 수.
+        demand_eligible_applied: 마스크를 받았는지. False 면 두 모집단이 같다.
         hourly_profile: 시각별 평균 부하 (kW).
     """
 
@@ -54,26 +70,83 @@ class PeakProfile:
     top_slots: pd.DataFrame
     hour_counts: pd.Series
     weekday_counts: pd.Series
+    demand_top_slots: pd.DataFrame
+    demand_hour_counts: pd.Series
+    demand_weekday_counts: pd.Series
     hourly_profile: pd.Series
     top_n: int
     observed_slots: int
+    demand_eligible_slots: int
+    demand_eligible_applied: bool
     demand_months: tuple[int, ...] = DEFAULT_DEMAND_MONTHS
 
     @property
     def weekend_slots(self) -> int:
-        """상위 구간 중 주말에 든 것. 0 이면 평일 집중형이다."""
+        """상위 구간 중 주말에 든 것 (전 슬롯 모집단). 0 이면 평일 집중형이다."""
         return int(self.top_slots["is_weekend"].sum())
+
+    @property
+    def demand_weekend_slots(self) -> int:
+        """대상 슬롯 상위 구간 중 주말에 든 것.
+
+        공휴일·일요일은 전량 경부하로 계량되므로 마스크를 주면 0 이 되는 것이 정상이다.
+        """
+        return int(self.demand_top_slots["is_weekend"].sum())
 
     @property
     def peak_kw(self) -> float:
         return float(self.monthly["max_demand_kw"].max())
 
     def hour_share(self, hours: range) -> float:
-        """주어진 시간대에 든 상위 구간의 비율."""
-        total = int(self.hour_counts.sum())
-        if total == 0:
-            return 0.0
-        return float(self.hour_counts.reindex(hours, fill_value=0).sum()) / total
+        """주어진 시간대에 든 상위 구간의 비율 — **전 슬롯 모집단** (부록 B 규약)."""
+        return _share(self.hour_counts, hours)
+
+    def demand_hour_share(self, hours: range) -> float:
+        """주어진 시간대에 든 상위 구간의 비율 — **요금적용전력 대상 슬롯 모집단**.
+
+        태양광의 기본요금 기여 판정은 이 값을 쓴다. 경부하 구간은 요금적용전력
+        대상이 아니므로 그 시각에 피크가 몰려도 기본요금과 무관하다.
+        """
+        return _share(self.demand_hour_counts, hours)
+
+
+def _share(counts: pd.Series, hours: range) -> float:
+    total = int(counts.sum())
+    if total == 0:
+        return 0.0
+    return float(counts.reindex(hours, fill_value=0).sum()) / total
+
+
+def _rank_slots(
+    observed: pd.Series, interval_minutes: int, top_n: int
+) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
+    """상위 N 구간과 그 시각·요일 분포. 모집단은 호출자가 정한다."""
+    ranked = observed.nlargest(min(top_n, len(observed)))
+    labels = pd.DatetimeIndex(ranked.index)
+    starts = slot_start(labels, interval_minutes)
+    top_slots = pd.DataFrame(
+        {
+            "kw": ranked.to_numpy(dtype=float),
+            "hour": labels.hour,  # 검침 라벨 기준 (부록 B 규약)
+            "slot_start": starts,
+            "slot_start_hour": starts.hour,
+            "weekday": [_WEEKDAY_NAMES[day] for day in labels.weekday],
+            "is_weekend": labels.weekday >= 5,
+        },
+        index=labels,
+    )
+    top_slots.index.name = "timestamp"
+
+    hour_counts = top_slots["hour"].value_counts().reindex(range(24), fill_value=0).sort_index()
+    hour_counts.index.name = "hour"
+    hour_counts.name = "slots"
+
+    weekday_counts = (
+        top_slots["weekday"].value_counts().reindex(list(_WEEKDAY_NAMES), fill_value=0).astype(int)
+    )
+    weekday_counts.index.name = "weekday"
+    weekday_counts.name = "slots"
+    return top_slots, hour_counts, weekday_counts
 
 
 def peak_profile(
@@ -93,8 +166,10 @@ def peak_profile(
         kw: 15분 평균 수요. 결측은 NaN 인 채로 넘긴다.
         prior_peaks: 데이터 이전 기간의 최대수요 이력.
         demand_eligible: 요금적용전력 대상 슬롯 마스크 (중간·최대부하만).
-            주지 않으면 모든 슬롯을 대상으로 본다 — 요금적용전력이 과대 산출되므로
-            요금과 함께 볼 때는 반드시 넘긴다 (요구사항서 5.2 ①).
+            월별 대상 최대수요와 ``demand_top_slots`` 모집단 **양쪽**에 쓰인다.
+            주지 않으면 모든 슬롯을 대상으로 본다 — 요금적용전력이 과대 산출되고
+            태양광 등급도 경부하 피크에 끌려가므로, 요금과 함께 볼 때는 반드시
+            넘긴다 (요구사항서 5.2 ①).
         demand_months: 요금적용전력 대상월. 전력량요금의 계절과 다르다 (5.2 ②).
         contract_kw, contract_floor_ratio: 하한 규정 (5.2 ③).
     """
@@ -138,31 +213,20 @@ def peak_profile(
     monthly["weekday"] = [_WEEKDAY_NAMES[day] for day in at_index.weekday]
     monthly["hour"] = at_index.hour
 
-    ranked = observed.nlargest(min(top_n, len(observed)))
-    top_labels = pd.DatetimeIndex(ranked.index)
-    top_starts = slot_start(top_labels, interval_minutes)
-    top_slots = pd.DataFrame(
-        {
-            "kw": ranked.to_numpy(dtype=float),
-            "hour": top_labels.hour,  # 검침 라벨 기준 (부록 B 규약)
-            "slot_start": top_starts,
-            "slot_start_hour": top_starts.hour,
-            "weekday": [_WEEKDAY_NAMES[day] for day in top_labels.weekday],
-            "is_weekend": top_labels.weekday >= 5,
-        },
-        index=top_labels,
-    )
-    top_slots.index.name = "timestamp"
-
-    hour_counts = top_slots["hour"].value_counts().reindex(range(24), fill_value=0).sort_index()
-    hour_counts.index.name = "hour"
-    hour_counts.name = "slots"
-
-    weekday_counts = (
-        top_slots["weekday"].value_counts().reindex(list(_WEEKDAY_NAMES), fill_value=0).astype(int)
-    )
-    weekday_counts.index.name = "weekday"
-    weekday_counts.name = "slots"
+    # 상위 구간은 두 모집단으로 각각 뽑는다. 섞지 않는다.
+    # ① 전 슬롯 — 부록 B 의 시각 분포가 이 기준이다.
+    # ② 요금적용전력 대상 슬롯 — 태양광의 기본요금 기여 판정이 이 기준이다.
+    top_slots, hour_counts, weekday_counts = _rank_slots(observed, interval_minutes, top_n)
+    if demand_eligible is None:
+        demand_top_slots, demand_hour_counts, demand_weekday_counts = (
+            top_slots,
+            hour_counts,
+            weekday_counts,
+        )
+    else:
+        demand_top_slots, demand_hour_counts, demand_weekday_counts = _rank_slots(
+            observed[eligible], interval_minutes, top_n
+        )
 
     hourly_profile = observed.groupby(labels.hour, observed=True).mean()
     hourly_profile.index.name = "hour"
@@ -176,7 +240,12 @@ def peak_profile(
         top_slots=top_slots,
         hour_counts=hour_counts,
         weekday_counts=weekday_counts,
+        demand_top_slots=demand_top_slots,
+        demand_hour_counts=demand_hour_counts,
+        demand_weekday_counts=demand_weekday_counts,
         hourly_profile=hourly_profile,
         top_n=top_n,
         observed_slots=len(observed),
+        demand_eligible_slots=int(eligible.sum()),
+        demand_eligible_applied=demand_eligible is not None,
     )

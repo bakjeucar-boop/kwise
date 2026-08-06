@@ -185,6 +185,9 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
                 f"{summary.pv_potential} (상위 구간의 {summary.pv_midday_share:.0%}가 정오 시간대)",
             )
         )
+        if summary.pv_basis:
+            # 어느 모집단으로 판정했는지 밝힌다. 부록 B 원값과 섞이지 않게 한다.
+            rows.append(("개선 여지", "태양광 판정 모집단", summary.pv_basis))
 
     rows.append(("미포함 요금요소", "안내", NOT_INCLUDED_NOTICE))  # 5.1
     rows.append(("계약전력 변경 경고", "필수 안내", CONTRACT_CHANGE_WARNING))  # 9.4
@@ -321,7 +324,13 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
             f"{pattern.unattended_ratio:.1%}" if pattern.unattended_ratio else "—",
         ),
         ("요금적용전력", f"{peak.billing_demand_kw:,.1f} kW"),
-        ("상위 100구간 주말 건수", f"{peak.weekend_slots}"),
+        (f"상위 {peak.top_n}구간 주말 건수 (전 슬롯)", f"{peak.weekend_slots}"),
+        (
+            f"상위 {peak.top_n}구간 주말 건수 (요금적용전력 대상)",
+            f"{peak.demand_weekend_slots}",
+        ),
+        ("관측 슬롯", f"{peak.observed_slots:,}"),
+        ("요금적용전력 대상 슬롯", f"{peak.demand_eligible_slots:,}"),
     ]
     if diagnosis.contract is not None:
         contract = diagnosis.contract
@@ -354,11 +363,19 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
         )
     frame = pd.DataFrame(rows, columns=["항목", "값"]).set_index("항목")
 
-    hours = peak.hour_counts[peak.hour_counts > 0]
-    extra = pd.DataFrame(
-        [(f"상위 100구간 {hour}시", f"{count}건") for hour, count in hours.items()],
-        columns=["항목", "값"],
-    ).set_index("항목")
+    # 시각 분포는 두 모집단을 나란히 싣되 라벨로 구분한다.
+    # 전 슬롯 값이 부록 B 의 원값이고, 대상 슬롯 값이 태양광 등급의 근거다.
+    distribution: list[tuple[str, str]] = [
+        (f"상위 {peak.top_n}구간 {hour}시 (전 슬롯)", f"{count}건")
+        for hour, count in peak.hour_counts.items()
+        if count > 0
+    ]
+    distribution.extend(
+        (f"상위 {peak.top_n}구간 {hour}시 (요금적용전력 대상)", f"{count}건")
+        for hour, count in peak.demand_hour_counts.items()
+        if count > 0
+    )
+    extra = pd.DataFrame(distribution, columns=["항목", "값"]).set_index("항목")
     return pd.concat([frame, extra])
 
 

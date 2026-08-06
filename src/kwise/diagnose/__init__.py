@@ -28,6 +28,7 @@ from kwise.diagnose.summary import (
     PvPotential,
     build_lines,
     judge_pv_potential,
+    pv_basis_label,
 )
 
 __all__ = [
@@ -50,4 +51,5 @@ __all__ = [
     "diagnose",
     "judge_pv_potential",
     "peak_profile",
+    "pv_basis_label",
 ]

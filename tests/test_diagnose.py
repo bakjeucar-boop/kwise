@@ -22,7 +22,13 @@ from kwise.diagnose import (
 )
 from kwise.io import UsageData
 from kwise.quality import QualityReport
-from kwise.tariff import TariffSelection, TariffTable
+from kwise.tariff import (
+    TariffSelection,
+    TariffTable,
+    build_calendar,
+    classify_slots,
+    demand_eligible_mask,
+)
 
 CURRENT = TariffSelection("general_b", "high_a", "I")
 CONTRACT_KW = 5_500.0
@@ -361,3 +367,118 @@ def test_contract_saving_is_zero_when_the_floor_does_not_bind(
 def test_quality_warnings_are_carried_into_the_diagnosis(sample_diagnosis: Diagnosis) -> None:
     assert any("신뢰 제한" in message for message in sample_diagnosis.warnings)
     assert any("직전 12개월" in message for message in sample_diagnosis.warnings)
+
+
+# --------------------------------------------------------------------- 5.2 ① 경부하 제외
+
+
+def _demand_mask(
+    usage: UsageData, table: TariffTable, *, contract_type: str = "general_b"
+) -> pd.Series:
+    """진단이 만드는 것과 같은 요금적용전력 대상 슬롯 마스크."""
+    index = pd.DatetimeIndex(usage.kw.index)
+    calendar = build_calendar(range(index[0].year - 1, index[-1].year + 2))
+    slots = classify_slots(
+        index, usage.meta.interval_minutes, table, calendar, contract_type=contract_type
+    )
+    return demand_eligible_mask(
+        slots["band"], demand_bands=table.contract(contract_type).demand_bands
+    )
+
+
+def test_sample_grade_is_unchanged_by_the_light_band_exclusion(
+    sample_diagnosis: Diagnosis,
+) -> None:
+    """샘플의 상위 100구간은 07~17시라 마스크를 씌워도 등급이 그대로다.
+
+    바뀌는 것은 딱 한 칸이다. 라벨 07:45(구간 시작 07:30)는 경부하라 대상에서
+    빠지고 그 자리를 09:45 가 채운다. 정오 비율 66% 와 '높음' 은 그대로다.
+    **이 무영향을 회귀로 못 박는다** — 야간 피크형에서만 결과가 달라져야 한다.
+    """
+    peak = sample_diagnosis.peak
+    assert peak.demand_eligible_applied
+    assert peak.demand_hour_share(range(10, 15)) == pytest.approx(0.66)
+    assert peak.hour_share(range(10, 15)) == pytest.approx(0.66)
+    assert sample_diagnosis.summary.pv_potential is PvPotential.HIGH
+
+    raw = set(pd.DatetimeIndex(peak.top_slots.index))
+    masked = set(pd.DatetimeIndex(peak.demand_top_slots.index))
+    assert raw - masked == {pd.Timestamp("2023-08-02 07:45")}
+    assert masked - raw == {pd.Timestamp("2023-08-02 09:45")}
+    assert min(peak.demand_top_slots["hour"]) == 8
+    assert max(peak.demand_top_slots["hour"]) == 17
+
+
+def test_appendix_b_distribution_is_kept_separate_from_the_masked_one(
+    sample_diagnosis: Diagnosis,
+) -> None:
+    """부록 B 원값(전 슬롯)과 마스크 적용 값을 함께 담되 섞지 않는다."""
+    peak = sample_diagnosis.peak
+    raw = {hour: int(value) for hour, value in peak.hour_counts.items() if value}
+    masked = {hour: int(value) for hour, value in peak.demand_hour_counts.items() if value}
+    assert raw == {7: 1, 8: 6, 9: 5, 10: 15, 11: 14, 12: 20, 13: 8, 14: 9, 15: 9, 16: 10, 17: 3}
+    assert masked == {8: 6, 9: 6, 10: 15, 11: 14, 12: 20, 13: 8, 14: 9, 15: 9, 16: 10, 17: 3}
+    assert raw != masked  # 원값에는 경부하 07시가 남아 있다
+    assert int(peak.hour_counts.sum()) == int(peak.demand_hour_counts.sum()) == 100
+    assert peak.demand_eligible_slots < peak.observed_slots
+
+
+def test_holidays_never_reach_the_demand_population(sample_diagnosis: Diagnosis) -> None:
+    """공휴일·일요일은 전량 경부하로 계량되므로 대상 모집단에 들 수 없다."""
+    assert sample_diagnosis.peak.demand_weekend_slots == 0
+
+
+@pytest.fixture
+def night_peak_usage(tmp_path_factory: pytest.TempPathFactory) -> UsageData:
+    """야간 최대, 정오 차순인 한 달치. 마스크로 등급이 뒤바뀌는 경로다."""
+    from kwise.io import load_usage
+    from tests._synthetic import night_peak_month
+
+    return load_usage(night_peak_month(tmp_path_factory.mktemp("night") / "night.csv"))
+
+
+def test_night_peak_grade_flips_when_the_light_band_is_excluded(
+    night_peak_usage: UsageData, tariff: TariffTable
+) -> None:
+    """야간 피크형에서는 마스크 적용 여부로 등급이 정반대가 된다.
+
+    전 슬롯을 모집단으로 삼으면 상위 100구간이 전부 경부하(22~08시)라 '낮음'이지만,
+    경부하는 애초에 요금적용전력 대상이 아니다. 대상 슬롯만 남기면 정오가 상위를
+    채워 '높음'이 된다. 태양광의 기본요금 기여는 후자가 맞다.
+    """
+    kw = night_peak_usage.kw
+    unmasked = peak_profile(kw, 15)
+    masked = peak_profile(kw, 15, demand_eligible=_demand_mask(night_peak_usage, tariff))
+
+    assert judge_pv_potential(unmasked)[0] is PvPotential.LOW
+    assert judge_pv_potential(masked)[0] is PvPotential.HIGH
+    assert unmasked.hour_share(range(10, 15)) == pytest.approx(0.0)
+    assert masked.demand_hour_share(range(10, 15)) > 0.9
+
+    # 원값은 마스크와 무관하게 같다. 두 벌이 섞이지 않는다는 증거다.
+    assert masked.hour_counts.to_dict() == unmasked.hour_counts.to_dict()
+    assert not unmasked.demand_eligible_applied
+    assert masked.demand_eligible_applied
+
+
+def test_night_peak_diagnosis_uses_the_masked_population(
+    night_peak_usage: UsageData, tariff: TariffTable
+) -> None:
+    """진단을 통째로 돌려도 같다. 판정 모집단이 산출물에 적힌다."""
+    result = diagnose(night_peak_usage, tariff, ContractInfo(CURRENT, contract_kw=2_000.0))
+    assert result.summary.pv_potential is PvPotential.HIGH
+    assert "요금적용전력 대상 슬롯" in result.summary.pv_basis
+    assert "부록 B" in result.summary.pv_basis
+    # 야간 최대 2,000 kW 는 요금적용전력이 되지 못한다.
+    assert result.peak.peak_kw == pytest.approx(2_000.0)
+    assert result.peak.billing_demand_kw == pytest.approx(1_200.0)
+
+
+def test_basis_says_so_when_no_mask_was_given() -> None:
+    """마스크가 없으면 그 사실을 적는다. 조용히 전 슬롯으로 판정하지 않는다."""
+    from kwise.diagnose import pv_basis_label
+
+    kw = pd.Series(100.0, index=pd.date_range("2024-03-01 00:15", periods=96 * 5, freq="15min"))
+    basis = pv_basis_label(peak_profile(kw, 15))
+    assert "마스크를 받지 않아" in basis
+    assert "계약종별 미입력" in basis

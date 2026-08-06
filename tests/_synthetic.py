@@ -95,6 +95,38 @@ def write_month(path: Path, year: int, month: int, *, kwh: float = 100.0) -> Pat
     return write_csv(path, rows)
 
 
+def night_peak_month(
+    path: Path,
+    year: int = 2024,
+    month: int = 3,
+    *,
+    night_kwh: float = 500.0,
+    midday_kwh: float = 300.0,
+    other_kwh: float = 50.0,
+) -> Path:
+    """야간 피크형 한 달치. 경부하 제외 마스크의 효과를 뒤집어 보이기 위한 것이다.
+
+    가장 큰 부하는 라벨 22:15~08:00 (경부하 구간, 구간 시작 22:00~07:45) 에 두고,
+    그 다음이 라벨 10:15~15:00 (정오) 다. 전 슬롯을 모집단으로 삼으면 상위 구간이
+    전부 야간이라 태양광 등급이 '낮음' 이지만, 요금적용전력 대상 슬롯만 남기면
+    정오가 상위를 채워 '높음' 이 된다.
+    """
+
+    def bucket(label: str) -> float:
+        stamp = parse_label(label)
+        start = stamp - pd.Timedelta(minutes=15)  # 귀속은 구간 시작 기준이다
+        if start.hour >= 22 or start.hour < 8:
+            return night_kwh
+        if 10 <= start.hour < 15:
+            return midday_kwh
+        return other_kwh
+
+    rows = [
+        (label, bucket(label)) for date in month_dates(year, month) for label in make_labels(date)
+    ]
+    return write_csv(path, rows)
+
+
 def clearsky_weather(
     *,
     latitude: float = 37.5,

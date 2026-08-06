@@ -23,7 +23,12 @@ from kwise.diagnose.contract import (
 )
 from kwise.diagnose.peak import DEFAULT_TOP_N, PeakProfile, peak_profile
 from kwise.diagnose.structure import ChargeStructure, charge_structure
-from kwise.diagnose.summary import ImprovementSummary, build_lines, judge_pv_potential
+from kwise.diagnose.summary import (
+    ImprovementSummary,
+    build_lines,
+    judge_pv_potential,
+    pv_basis_label,
+)
 from kwise.io import UsageData
 from kwise.quality import LoadPattern, QualityReport, check_quality, load_pattern
 from kwise.tariff import (
@@ -121,7 +126,9 @@ def diagnose(
         contract_kw=contract.contract_kw if contract else None,
         contract_floor_ratio=type_rules.contract_floor_ratio if type_rules else None,
     )
+    # 등급은 요금적용전력 대상 슬롯만 놓고 매긴다. 판정 모집단을 산출물에 적는다.
     potential, midday_share = judge_pv_potential(peak)
+    pv_basis = pv_basis_label(peak)
 
     warnings = list(report.warnings)
 
@@ -136,6 +143,7 @@ def diagnose(
             contract_reduction_kw=None,
             pv_potential=potential,
             pv_midday_share=midday_share,
+            pv_basis=pv_basis,
         )
         warnings.append(
             "계약 정보가 없어 요금 구조와 절감액을 산출하지 않았습니다. "
@@ -196,6 +204,7 @@ def diagnose(
         contract_reduction_kw=adequacy.reduction_kw if adequacy else None,
         pv_potential=potential,
         pv_midday_share=midday_share,
+        pv_basis=pv_basis,
         period_label=current_bill.period_label,
     )
     summary = ImprovementSummary(**{**summary.__dict__, "lines": build_lines(summary)})

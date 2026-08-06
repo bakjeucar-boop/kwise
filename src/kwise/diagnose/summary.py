@@ -9,6 +9,12 @@
 태양광 등급은 상위 100구간의 시각 분포로 판정한다. 오전·정오 집중이면 PV 기여가
 크고, 저녁·아침 집중이면 거의 없다. 건물마다 정반대 결과가 나오므로 도구가
 판별해 주어야 한다. **설비 정보 없이 나오는 판정이다.**
+
+**모집단은 요금적용전력 대상 슬롯(중간·최대부하)이다.** 경부하 구간은 아무리 큰
+수요가 나도 요금적용전력이 되지 않으므로, 그 시각의 피크를 판정에 넣으면 태양광의
+기본요금 기여를 잘못 읽는다 (요구사항서 5.2 ①). 야간 피크형 건물에서는 마스크
+적용 여부로 등급이 뒤바뀐다. 부록 B 의 시각 분포는 전 슬롯 기준의 원값이며
+:attr:`PeakProfile.hour_counts` 에 따로 남아 있다 — 두 값을 섞지 않는다.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ __all__ = [
     "ImprovementSummary",
     "PvPotential",
     "judge_pv_potential",
+    "pv_basis_label",
 ]
 
 # 태양광이 실제로 힘을 쓰는 시간대. 라벨 기준 10:15~15:00 구간이 여기 든다.
@@ -51,15 +58,35 @@ def judge_pv_potential(
 ) -> tuple[PvPotential, float]:
     """상위 구간의 정오 집중도로 등급을 매긴다.
 
+    모집단은 **요금적용전력 대상 슬롯**이다 (:meth:`PeakProfile.demand_hour_share`).
+    마스크를 받지 않은 :class:`PeakProfile` 은 전 슬롯이 그대로 모집단이 된다.
+
     Returns:
         (등급, 정오 시간대 비율).
     """
-    share = peak.hour_share(midday_hours)
+    share = peak.demand_hour_share(midday_hours)
     if share >= high_share:
         return PvPotential.HIGH, share
     if share >= medium_share:
         return PvPotential.MEDIUM, share
     return PvPotential.LOW, share
+
+
+def pv_basis_label(peak: PeakProfile) -> str:
+    """등급 판정에 쓴 **모집단**을 한 줄로 적는다. 산출물에 그대로 싣는다."""
+    counted = len(peak.demand_top_slots)
+    if not peak.demand_eligible_applied:
+        return (
+            f"관측 전 슬롯 {peak.observed_slots:,}개 중 상위 {counted}구간 기준. "
+            "요금적용전력 대상 시간대 마스크를 받지 않아 경부하 구간을 제외하지 "
+            "못했습니다 (계약종별 미입력)."
+        )
+    return (
+        f"요금적용전력 대상 슬롯(중간·최대부하) {peak.demand_eligible_slots:,}개 중 "
+        f"상위 {counted}구간 기준. 경부하 구간은 요금적용전력 대상이 아니므로 "
+        "판정에서 제외했습니다 (요구사항서 5.2 ①). 부록 B 의 시각 분포는 전 슬롯 "
+        f"{peak.observed_slots:,}개 기준의 원값이며 따로 싣습니다."
+    )
 
 
 @dataclass(frozen=True)
@@ -71,6 +98,8 @@ class ImprovementSummary:
             조합마다 요금을 다시 계산해 얻는다. 감도를 적용하지 않는 확정 계산이다.
         contract_saving_won: 계약전력 조정 절감액. 하한 규정 미확인 시 None.
         pv_potential: 태양광 피크 기여 가능성 등급.
+        pv_midday_share: 정오 시간대 비율. **요금적용전력 대상 슬롯 기준이다.**
+        pv_basis: 등급 판정에 쓴 모집단 설명. 산출물에 그대로 싣는다.
     """
 
     current_selection: TariffSelection | None
@@ -82,6 +111,7 @@ class ImprovementSummary:
     contract_reduction_kw: float | None
     pv_potential: PvPotential
     pv_midday_share: float
+    pv_basis: str = ""
     period_label: str | None = None
     lines: tuple[str, ...] = field(default=())
 
