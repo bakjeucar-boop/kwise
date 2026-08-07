@@ -35,6 +35,7 @@ from kwise.measures import (
 )
 from kwise.measures.contract import evaluate_contract_adjustment
 from kwise.measures.ess import analyze_peak_excess
+from kwise.measures.pv_cost import PV_UNPRICED_REASON, PvCostInput
 from kwise.pv import sharpen
 from kwise.quality import QualityReport
 from kwise.tariff import (
@@ -62,16 +63,27 @@ class CombinationSpec:
     name: str
     selection: TariffSelection
     pv_capacity_kwp: float = 0.0
-    pv_unit_cost_won_per_kwp: float = 0.0
+    pv_unit_cost_won_per_kwp: float | None = None
+    pv_total_investment_won: float | None = None
     sharpness: float = 1.0
     ess_target_kw: float | None = None
     ess_power_kw: float | None = None
     ess_capacity_kwh: float | None = None
-    ess_unit_cost_won_per_kw: float = 0.0
+    ess_unit_cost_won_per_kw: float | None = None
+    ess_total_investment_won: float | None = None
     ess_charge_limit_kw: float | None = None
     ess_respect_target_when_charging: bool = True
     contract_kw: float | None = None
     contract_floor_ratio: float | None = None
+
+    @property
+    def pv_cost(self) -> PvCostInput:
+        """태양광 단가. 총액이 있으면 그것이 이긴다. 없으면 **미산출**이다."""
+        if self.pv_total_investment_won is not None:
+            return PvCostInput.of_total(self.pv_total_investment_won)
+        if self.pv_unit_cost_won_per_kwp is not None:
+            return PvCostInput.of_unit_cost(self.pv_unit_cost_won_per_kwp)
+        return PvCostInput.unpriced()
 
     @property
     def has_pv(self) -> bool:
@@ -101,7 +113,7 @@ class CombinationResult:
     bill: BillingResult
     saving_won: float
     annual_saving_won: float
-    investment_won: float
+    investment_won: float | None
     payback_years: float | None
     certainty: Certainty
     billing_demand_kw: float
@@ -271,11 +283,30 @@ def evaluate_combination(
         warnings.extend(adjustment.warnings)
         notes.extend(adjustment.notes)
 
-    investment = spec.pv_capacity_kwp * spec.pv_unit_cost_won_per_kwp
+    # 투자비를 **모르면 0 이 아니라 None 이다.** 0 으로 두면 회수기간이 0년으로
+    # 나와 "즉시 회수" 로 읽힌다.
+    investment: float | None = 0.0
+    if spec.has_pv:
+        pv_investment = spec.pv_cost.investment_won(spec.pv_capacity_kwp)
+        if pv_investment is None:
+            investment = None
+            notes.append(PV_UNPRICED_REASON)
+        elif investment is not None:
+            investment += pv_investment
     if dispatch is not None:
         # ESS 투자비는 **출력 × kW당 단가**다 (7.6). 방전시간은 단가에 이미
         # 반영되어 있으므로 용량을 다시 곱하지 않는다.
-        investment += dispatch.power_kw * spec.ess_unit_cost_won_per_kw
+        if spec.ess_total_investment_won is not None:
+            ess_investment: float | None = spec.ess_total_investment_won
+        elif spec.ess_unit_cost_won_per_kw is not None:
+            ess_investment = dispatch.power_kw * spec.ess_unit_cost_won_per_kw
+        else:
+            ess_investment = None
+        if ess_investment is None:
+            investment = None
+            notes.append("미산출 — ESS 단가 미입력 (원/kW 또는 총액을 넣으십시오)")
+        elif investment is not None:
+            investment += ess_investment
 
     saving = baseline_bill.total_won - bill.total_won + (contract_saving or 0.0)
     annual = annualize(saving, baseline_bill.base_fee_months)
@@ -285,7 +316,7 @@ def evaluate_combination(
         saving_won=saving,
         annual_saving_won=annual,
         investment_won=investment,
-        payback_years=payback_years(investment, annual),
+        payback_years=payback_years(investment, annual) if investment is not None else None,
         certainty=_combination_certainty(spec),
         billing_demand_kw=bill.billing_demand_kw,
         generation_kwh=generated_kwh,
@@ -303,9 +334,10 @@ def default_combinations(
     current_selection: TariffSelection,
     best_selection: TariffSelection,
     pv_capacity_kwp: float = 0.0,
-    pv_unit_cost_won_per_kwp: float = 0.0,
+    pv_unit_cost_won_per_kwp: float | None = None,
+    pv_total_investment_won: float | None = None,
     ess_target_kw: float | None = None,
-    ess_unit_cost_won_per_kw: float = 0.0,
+    ess_unit_cost_won_per_kw: float | None = None,
     contract_kw: float | None = None,
     contract_floor_ratio: float | None = None,
     sharpness: float = 1.0,
@@ -316,6 +348,7 @@ def default_combinations(
     """
     common = {
         "pv_unit_cost_won_per_kwp": pv_unit_cost_won_per_kwp,
+        "pv_total_investment_won": pv_total_investment_won,
         "ess_unit_cost_won_per_kw": ess_unit_cost_won_per_kw,
         "contract_kw": contract_kw,
         "contract_floor_ratio": contract_floor_ratio,

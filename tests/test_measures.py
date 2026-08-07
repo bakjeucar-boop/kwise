@@ -16,11 +16,13 @@ import pytest
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData, load_usage
 from kwise.measures import (
+    PV_UNPRICED_REASON,
     Certainty,
     ContractStatus,
     EssCostInput,
     EssResult,
     NetLoad,
+    PvCostInput,
     SolarCurve,
     TariffSwitchResult,
     analyze_peak_excess,
@@ -313,7 +315,7 @@ def test_solar_saving_is_recalculated_not_subtracted(
         CURRENT,
         sample_unit_pv,
         max_capacity_kwp=500.0,
-        unit_cost_won_per_kwp=PV_COST_WON_PER_KWP,
+        cost=PvCostInput.of_unit_cost(PV_COST_WON_PER_KWP),
         steps=1,
         baseline=sample_bill,
         quality=sample_report,
@@ -353,7 +355,7 @@ def test_power_factor_warning_appears_below_the_standard(
         CURRENT,
         sample_unit_pv,
         max_capacity_kwp=960.0,
-        unit_cost_won_per_kwp=PV_COST_WON_PER_KWP,
+        cost=PvCostInput.of_unit_cost(PV_COST_WON_PER_KWP),
         steps=1,
         baseline=sample_bill,
         quality=sample_report,
@@ -386,7 +388,7 @@ def test_tariff_switch_saving_ignores_sensitivity_while_solar_does_not(
             CURRENT,
             sample_unit_pv,
             max_capacity_kwp=300.0,
-            unit_cost_won_per_kwp=PV_COST_WON_PER_KWP,
+            cost=PvCostInput.of_unit_cost(PV_COST_WON_PER_KWP),
             steps=1,
             sharpness=sharpness,
             baseline=sample_bill,
@@ -684,3 +686,92 @@ def test_with_load_recomputes_the_metadata(sample_usage: UsageData) -> None:
     assert halved.meta.source_name.endswith(" (반)")
     # 결측·이탈 정보는 그대로다
     assert halved.meta.missing_rows == sample_usage.meta.missing_rows
+
+
+# --------------------------------------------------------------------- 7.5 태양광 단가
+
+
+def test_investment_is_capacity_times_unit_cost(sample_curve: SolarCurve) -> None:
+    """**투자비 = 설치 용량(kWp) × 입력단가(원/kWp).** ESS 와 같은 규약이다."""
+    for point in sample_curve.points:
+        assert point.investment_won == pytest.approx(point.capacity_kwp * PV_COST_WON_PER_KWP)
+    assert sample_curve.is_priced
+
+
+def test_total_investment_path(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_unit_pv: pd.Series,
+) -> None:
+    """견적서를 받았으면 총액을 그대로 쓴다. 곡선 전체에 같은 값이 붙는 것을 경고한다."""
+    curve = solar_curve(
+        sample_usage,
+        tariff,
+        CURRENT,
+        sample_unit_pv,
+        max_capacity_kwp=300.0,
+        cost=PvCostInput.of_total(400_000_000.0),
+        steps=2,
+        baseline=sample_bill,
+        quality=sample_report,
+    )
+    assert {point.investment_won for point in curve.points} == {400_000_000.0}
+    assert any("같은 총액" in message for message in curve.warnings)
+
+
+def test_missing_unit_cost_returns_a_reason_not_zero(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_unit_pv: pd.Series,
+) -> None:
+    """**참고단가를 만들지 않는다.** 단가가 없으면 0원이 아니라 사유다."""
+    curve = solar_curve(
+        sample_usage,
+        tariff,
+        CURRENT,
+        sample_unit_pv,
+        max_capacity_kwp=300.0,
+        steps=2,
+        baseline=sample_bill,
+        quality=sample_report,
+    )
+    assert not curve.is_priced
+    assert all(point.investment_won is None for point in curve.points)
+    assert all(point.payback_years is None for point in curve.points)
+    assert curve.best_payback is None
+    # 절감액은 유효하다 — 단가를 몰라도 요금 계산은 확정된다.
+    assert curve.points[-1].total_saving_won > 0
+    assert any("참고값은 제공하지 않습니다" in note for note in curve.notes)
+    assert PvCostInput.unpriced().reason == PV_UNPRICED_REASON
+
+
+def test_cost_basis_and_scale_economy_are_stated(sample_curve: SolarCurve) -> None:
+    """kWp 가 DC 정격임을, 그리고 규모의 경제를 반영하지 않았음을 밝힌다."""
+    notes = "\n".join(sample_curve.notes)
+    assert "모듈 직류(DC) 정격" in notes
+    assert "인버터 용량(kW-ac)과 다릅니다" in notes
+    assert "부대비용" in notes
+    assert "규모의 경제는 반영하지 않았습니다" in notes
+
+
+def test_investment_is_linear_in_capacity(sample_curve: SolarCurve) -> None:
+    """단일 단가 가정이므로 투자비는 용량에 **정확히 선형**이다.
+
+    이 선형성이 곧 규모의 경제 미반영의 정체다. 주석과 짝을 이룬다.
+    """
+    priced = [
+        point
+        for point in sample_curve.points
+        if point.investment_won is not None and point.capacity_kwp > 0
+    ]
+    ratios = {round((point.investment_won or 0.0) / point.capacity_kwp, 6) for point in priced}
+    assert len(ratios) == 1
+
+
+def test_both_cost_paths_cannot_be_given() -> None:
+    with pytest.raises(ValueError, match="함께 줄 수 없습니다"):
+        PvCostInput(unit_cost_won_per_kwp=1_000_000.0, total_won=5_000_000.0)

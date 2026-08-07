@@ -22,6 +22,12 @@ import pandas as pd
 from kwise.io import UsageData, slot_start
 from kwise.measures.base import Certainty, annualize, payback_years
 from kwise.measures.netload import apply_generation
+from kwise.measures.pv_cost import (
+    PV_COST_BASIS_NOTE,
+    PV_REFERENCE_NOTE,
+    SCALE_ECONOMY_NOTE,
+    PvCostInput,
+)
 from kwise.pv import PvSystemConfig, WeatherData, align_simulation, sharpen, simulate
 from kwise.quality import QualityReport
 from kwise.tariff import (
@@ -152,7 +158,7 @@ class SolarPoint:
     energy_saving_won: float
     total_saving_won: float
     annual_saving_won: float
-    investment_won: float
+    investment_won: float | None
     payback_years: float | None
     power_factor_after_pct: float
     power_factor_extra_won: float
@@ -181,7 +187,7 @@ class SolarCurve:
     baseline_energy_won: float
     sharpness: float
     max_capacity_kwp: float
-    unit_cost_won_per_kwp: float
+    cost: PvCostInput
     base_fee_months: float
     certainty: Certainty = Certainty.MEDIUM
     warnings: tuple[str, ...] = field(default=())
@@ -190,6 +196,10 @@ class SolarCurve:
     def frame(self) -> pd.DataFrame:
         """표로 그릴 수 있는 형태."""
         return pd.DataFrame([point.__dict__ for point in self.points]).set_index("capacity_kwp")
+
+    @property
+    def is_priced(self) -> bool:
+        return self.cost.is_priced
 
     @property
     def best_payback(self) -> SolarPoint | None:
@@ -206,7 +216,7 @@ def solar_curve(
     unit_kw_per_kwp: pd.Series,
     *,
     max_capacity_kwp: float,
-    unit_cost_won_per_kwp: float,
+    cost: PvCostInput | None = None,
     steps: int = DEFAULT_STEPS,
     sharpness: float = 1.0,
     power_factor_pct: float = LAGGING_STANDARD_PCT,
@@ -219,7 +229,9 @@ def solar_curve(
     Args:
         unit_kw_per_kwp: :func:`unit_generation_kw` 의 결과.
         max_capacity_kwp: 상한. 보통 :func:`roof_capacity_limit_kwp`.
-        unit_cost_won_per_kwp: 설치 단가. 사용자 입력이며 기본값이 없다.
+        cost: 설치 단가. **kWp당 단가 또는 총액**이다 (:class:`PvCostInput`).
+            주지 않으면 투자비와 회수기간을 만들지 않고 사유를 남긴다 —
+            태양광은 인용할 참고단가가 없어 기본값을 지어내지 않는다.
         sharpness: 감도 첨예도 계수 (9.2). PV 출력에만 적용한다. 일별 총량을
             보존하고 곡선의 뾰족한 정도만 바꾼다.
     """
@@ -228,6 +240,7 @@ def solar_curve(
     if max_capacity_kwp < 0:
         raise ValueError(f"상한 용량은 음수일 수 없습니다: {max_capacity_kwp}")
 
+    pricing = cost if cost is not None else PvCostInput.unpriced()
     opts = options if options is not None else BillingOptions()
     base_bill = (
         baseline
@@ -247,7 +260,7 @@ def solar_curve(
         net = apply_generation(usage, generation)
         bill = calculate_bill(net.usage, table, selection, options=opts, quality=quality)
 
-        investment = capacity * unit_cost_won_per_kwp
+        investment = pricing.investment_won(capacity)
         saving = base_bill.total_won - bill.total_won
         annual_saving = annualize(saving, base_bill.base_fee_months)
 
@@ -275,7 +288,9 @@ def solar_curve(
                 total_saving_won=saving,
                 annual_saving_won=annual_saving,
                 investment_won=investment,
-                payback_years=payback_years(investment, annual_saving),
+                payback_years=(
+                    payback_years(investment, annual_saving) if investment is not None else None
+                ),
                 power_factor_after_pct=after_pct,
                 power_factor_extra_won=extra_won,
             )
@@ -299,6 +314,7 @@ def solar_curve(
         f"감도 첨예도 계수 s={sharpness:.2f} 를 PV 출력에 적용했습니다. "
         "일별 총 발전량은 보존되고 피크만 달라집니다 (요구사항서 9.2).",
         "용량마다 요금을 다시 계산했습니다. 절감액을 빼기로 어림하지 않았습니다.",
+        PV_COST_BASIS_NOTE,
         f"역률 판정 창은 08~22시(구간 시작 기준)이며 기준은 지상 "
         f"{LAGGING_STANDARD_PCT:.0f}% 입니다 (기본공급약관 제43조 ②). "
         f"도입 전 추정 역률 {power_factor_pct:.1f}% 에서 시작합니다.",
@@ -306,6 +322,27 @@ def solar_curve(
         "(약관 제42조는 30분 누적 계량을 요구하는데 우리 데이터는 15분이고 "
         "무효전력이 없습니다).",
     ]
+    if pricing.unit_cost_won_per_kwp is not None:
+        notes.append(SCALE_ECONOMY_NOTE)
+        notes.append(
+            f"투자비는 용량(kWp) × {pricing.unit_cost_won_per_kwp:,.0f} 원/kWp 로 냈습니다 "
+            f"(출처: {pricing.source})."
+        )
+    elif pricing.total_won is not None:
+        notes.append(
+            f"투자비를 총액 {pricing.total_won:,.0f} 원으로 고정했습니다 (출처: {pricing.source})."
+        )
+        warnings.append(
+            "총액을 직접 넣으면 **용량 곡선의 모든 점에 같은 총액**이 적용됩니다. "
+            "견적은 특정 용량에 대한 것이므로 그 용량 근처에서만 회수기간을 읽으십시오. "
+            "곡선 전체를 보려면 kWp당 단가를 넣으십시오."
+        )
+    else:
+        notes.append(PV_REFERENCE_NOTE)
+        notes.append(
+            "설치 단가를 넣지 않아 투자비와 회수기간을 산출하지 않았습니다. 절감액만 유효합니다."
+        )
+
     return SolarCurve(
         points=tuple(points),
         selection=selection,
@@ -314,7 +351,7 @@ def solar_curve(
         baseline_energy_won=base_bill.total_energy_won,
         sharpness=sharpness,
         max_capacity_kwp=max_capacity_kwp,
-        unit_cost_won_per_kwp=unit_cost_won_per_kwp,
+        cost=pricing,
         base_fee_months=base_bill.base_fee_months,
         warnings=tuple(warnings),
         notes=tuple(notes),

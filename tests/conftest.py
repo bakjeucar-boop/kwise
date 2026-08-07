@@ -16,6 +16,7 @@ from kwise.io import UsageData, load_usage
 from kwise.measures import (
     EssCostInput,
     EssResult,
+    PvCostInput,
     SolarCurve,
     TariffSwitchResult,
     evaluate_ess,
@@ -146,7 +147,7 @@ def sample_curve(
         SAMPLE_SELECTION,
         sample_unit_pv,
         max_capacity_kwp=roof_capacity_limit_kwp(20_000.0),
-        unit_cost_won_per_kwp=PV_COST_WON_PER_KWP,
+        cost=PvCostInput.of_unit_cost(PV_COST_WON_PER_KWP),
         steps=4,
         baseline=sample_bill,
         quality=sample_report,

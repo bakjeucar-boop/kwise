@@ -18,6 +18,7 @@ import pandas as pd
 import pytest
 
 from kwise.io import UsageData
+from kwise.measures import PvCostInput
 from kwise.pv import (
     GRID_RESOLUTION_DEG,
     KOREA_LATITUDE_RANGE,
@@ -347,7 +348,7 @@ def test_area_error_only_moves_the_point_on_the_curve(
         selection,
         sample_unit_pv,
         max_capacity_kwp=wide.capacity_kwp,
-        unit_cost_won_per_kwp=1_200_000.0,
+        cost=PvCostInput.of_unit_cost(1_200_000.0),
         steps=6,
         baseline=None,
     )

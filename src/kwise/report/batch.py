@@ -22,6 +22,7 @@ from kwise.diagnose import ContractInfo, diagnose
 from kwise.io import load_usage
 from kwise.measures import (
     EssCostInput,
+    PvCostInput,
     evaluate_contract_adjustment,
     evaluate_demand_response,
     evaluate_ess,
@@ -78,9 +79,10 @@ class CaseSpec:
     contract_kw: float | None = None
     contract_floor_ratio: float | None = None
     pv_capacity_kwp: float = 0.0
-    pv_unit_cost_won_per_kwp: float = 0.0
+    pv_unit_cost_won_per_kwp: float | None = None
+    pv_total_investment_won: float | None = None
     ess_target_kw: float | None = None
-    ess_unit_cost_won_per_kw: float = 0.0
+    ess_unit_cost_won_per_kw: float | None = None
     ess_total_investment_won: float | None = None
     # 역률 (기본공급약관 제41·42·43조). 기본 92% 는 무효전력계 미설치 간주값이다.
     power_factor_pct: float = LAGGING_STANDARD_PCT
@@ -102,6 +104,18 @@ class CaseSpec:
         return TariffSelection(self.contract_type, self.voltage, self.option)
 
     @property
+    def pv_cost(self) -> PvCostInput:
+        """태양광 단가. 총액이 있으면 그것이 이긴다. 없으면 **미산출**이다.
+
+        태양광은 인용할 참고단가가 없어 기본값을 지어내지 않는다 (7.5).
+        """
+        if self.pv_total_investment_won is not None:
+            return PvCostInput.of_total(self.pv_total_investment_won)
+        if self.pv_unit_cost_won_per_kwp is not None:
+            return PvCostInput.of_unit_cost(self.pv_unit_cost_won_per_kwp)
+        return PvCostInput.unpriced()
+
+    @property
     def ess_cost(self) -> EssCostInput:
         """ESS 단가 입력. **총액을 주면 그것이 이긴다** (견적서를 받은 경우).
 
@@ -109,7 +123,7 @@ class CaseSpec:
         """
         if self.ess_total_investment_won is not None:
             return EssCostInput.of_total(self.ess_total_investment_won)
-        return EssCostInput.of_unit_cost(self.ess_unit_cost_won_per_kw)
+        return EssCostInput.of_unit_cost(self.ess_unit_cost_won_per_kw or 0.0)
 
 
 @dataclass(frozen=True)
@@ -140,7 +154,7 @@ class CaseSummary:
     best_combination: str
     saving_won: float
     annual_saving_won: float
-    investment_won: float
+    investment_won: float | None
     payback_years: float | None
     certainty: str
     excel: str
@@ -248,6 +262,7 @@ def run_case(
         best_selection=best_selection,
         pv_capacity_kwp=case.pv_capacity_kwp if unit_pv is not None else 0.0,
         pv_unit_cost_won_per_kwp=case.pv_unit_cost_won_per_kwp,
+        pv_total_investment_won=case.pv_total_investment_won,
         ess_target_kw=case.ess_target_kw,
         ess_unit_cost_won_per_kw=case.ess_unit_cost_won_per_kw,
         contract_kw=case.contract_kw,

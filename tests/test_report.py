@@ -271,7 +271,7 @@ def test_summary_carries_every_known_limit(summary_text: str) -> None:
     역률 정정(약관 제41·42·43조)으로 두 항목이, 경제성DR(전력시장운영규칙 제12장)로
     두 항목이 늘었다.
     """
-    assert len(KNOWN_LIMITS) == 16
+    assert len(KNOWN_LIMITS) == 18
     for limit in KNOWN_LIMITS:
         assert limit in summary_text, limit
     assert any("제42조" in limit for limit in KNOWN_LIMITS)  # 30분 누적 계량

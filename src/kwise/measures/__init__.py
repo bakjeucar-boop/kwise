@@ -67,6 +67,14 @@ from kwise.measures.power_factor import (
     PowerFactorResult,
     evaluate_power_factor,
 )
+from kwise.measures.pv_cost import (
+    PV_COST_BASIS_NOTE,
+    PV_REFERENCE_NOTE,
+    PV_UNPRICED_REASON,
+    SCALE_ECONOMY_NOTE,
+    PvCostInput,
+    PvCostReference,
+)
 from kwise.measures.solar import (
     DEFAULT_MODULE_DENSITY_KWP_PER_M2,
     DEFAULT_STEPS,
@@ -106,6 +114,10 @@ __all__ = [
     "HIGH_RATE_DISCHARGE_HOURS",
     "MARGIN_NOTICE",
     "POWER_FACTOR_FLOOR_PCT",
+    "PV_COST_BASIS_NOTE",
+    "PV_REFERENCE_NOTE",
+    "PV_UNPRICED_REASON",
+    "SCALE_ECONOMY_NOTE",
     "ArbitrageValue",
     "Certainty",
     "ContractAdjustment",
@@ -121,6 +133,8 @@ __all__ = [
     "OptionQuote",
     "PeakExcess",
     "PowerFactorResult",
+    "PvCostInput",
+    "PvCostReference",
     "SeasonSpread",
     "SolarCurve",
     "SolarPoint",
