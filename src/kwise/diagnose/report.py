@@ -21,6 +21,7 @@ from kwise.diagnose.contract import (
     ContractInfo,
     assess_contract,
 )
+from kwise.diagnose.dr import DrProfile, dr_profile
 from kwise.diagnose.peak import DEFAULT_TOP_N, PeakProfile, peak_profile
 from kwise.diagnose.structure import ChargeStructure, charge_structure
 from kwise.diagnose.summary import (
@@ -30,7 +31,7 @@ from kwise.diagnose.summary import (
     pv_basis_label,
 )
 from kwise.io import UsageData
-from kwise.quality import LoadPattern, QualityReport, check_quality, load_pattern
+from kwise.quality import LoadPattern, QualityReport, check_quality, load_pattern, outage_slot_mask
 from kwise.tariff import (
     DEFAULT_DEMAND_MONTHS,
     BillingOptions,
@@ -54,6 +55,7 @@ class Diagnosis:
     pattern: LoadPattern
     peak: PeakProfile
     summary: ImprovementSummary
+    dr: DrProfile | None = None
     structure: ChargeStructure | None = None
     contract: ContractAdequacy | None = None
     option_totals: Mapping[str, float] = field(default_factory=dict)
@@ -130,6 +132,18 @@ def diagnose(
     potential, midday_share = judge_pv_potential(peak)
     pv_basis = pv_basis_label(peak)
 
+    # 6.6 경제성DR 참여 여력. 거래일 판정은 요금 계량의 평일과 **다르다** —
+    # DR 은 토·일·공휴일이 모두 제외다 (전력시장운영규칙 제12.4.2.1조 제1항 1호).
+    dr = dr_profile(
+        usage.kw,
+        interval,
+        calendar,
+        pattern=pattern,
+        contract_type=contract_type,
+        contract_kw=contract.contract_kw if contract else None,
+        outage_mask=outage_slot_mask(index, report.outages),
+    )
+
     warnings = list(report.warnings)
 
     if contract is None:
@@ -153,6 +167,7 @@ def diagnose(
             quality=report,
             pattern=pattern,
             peak=peak,
+            dr=dr,
             summary=summary.__class__(**{**summary.__dict__, "lines": build_lines(summary)}),
             warnings=tuple(warnings),
         )
@@ -215,6 +230,7 @@ def diagnose(
         quality=report,
         pattern=pattern,
         peak=peak,
+        dr=dr,
         summary=summary,
         structure=structure,
         contract=adequacy,

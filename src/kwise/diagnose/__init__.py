@@ -5,6 +5,7 @@
     charge_structure()                 6.3 요금 구조 (tariff 호출)
     assess_contract()                  6.4 계약전력 적정성
     judge_pv_potential()               6.5 태양광 피크 기여 가능성
+    dr_profile()                       6.6 경제성DR 참여 여력
 
 **설비 정보를 받지 않는다.** 부하 패턴(6.1)은 2세션 `quality.load_pattern` 을
 호출만 한다.
@@ -16,6 +17,16 @@ from kwise.diagnose.contract import (
     ContractAdequacy,
     ContractInfo,
     assess_contract,
+)
+from kwise.diagnose.dr import (
+    DR_REFERENCE_CAPACITY_KW,
+    DrPotential,
+    DrProfile,
+    DrResourceType,
+    dr_day_mask,
+    dr_eligible_days,
+    dr_profile,
+    judge_resource_types,
 )
 from kwise.diagnose.peak import DEFAULT_TOP_N, PeakProfile, peak_profile
 from kwise.diagnose.report import Diagnosis, diagnose
@@ -37,11 +48,15 @@ __all__ = [
     "DEFAULT_MEDIUM_SHARE",
     "DEFAULT_POWER_FACTOR_PCT",
     "DEFAULT_TOP_N",
+    "DR_REFERENCE_CAPACITY_KW",
     "MIDDAY_HOURS",
     "ChargeStructure",
     "ContractAdequacy",
     "ContractInfo",
     "Diagnosis",
+    "DrPotential",
+    "DrProfile",
+    "DrResourceType",
     "ImprovementSummary",
     "PeakProfile",
     "PvPotential",
@@ -49,7 +64,11 @@ __all__ = [
     "build_lines",
     "charge_structure",
     "diagnose",
+    "dr_day_mask",
+    "dr_eligible_days",
+    "dr_profile",
     "judge_pv_potential",
+    "judge_resource_types",
     "peak_profile",
     "pv_basis_label",
 ]

@@ -162,7 +162,7 @@ class BillingResult:
             + (
                 f"야간(22~08시) 진상 {self.power_factor.leading_pct:.1f}%"
                 if self.power_factor.leading_pct is not None
-                else "야간(22~08시) 진상 미상"
+                else "야간(22~08시) 지상 간주 100% (약관 제43조 ② 2호 나목)"
             ),
             f"산출 기간: {self.period_label}",
         )

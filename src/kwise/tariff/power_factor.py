@@ -10,12 +10,22 @@
              무효전력계 미설치 고객은 **지상역률 92%로 본다.**
     제43조 ① 대상은 무효전력계가 설치된 고압 이상 일반용·교육용·산업용 등.
              — 우리 대상 종별 전부가 여기 든다.
-           ② 08~22시  **지상역률 기준 92%**
-                       미달 시 매 1%당 기본요금의 0.2% **추가** (역률 60%까지)
-                       초과 시 매 1%당 기본요금의 0.2% **감액** (역률 97%까지)
-              22~08시  **진상역률 기준 95%**
-                       미달 시 매 1%당 기본요금의 0.2% 추가
+           ② 1호 08~22시  **지상역률 기준 92%**
+                          미달 시 매 1%당 기본요금의 0.2% **추가** (역률 60%까지)
+                          초과 시 매 1%당 기본요금의 0.2% **감액** (역률 97%까지)
+              2호 22~08시  **진상역률 기준 95%**
+                          미달 시 매 1%당 기본요금의 0.2% 추가
+                 **나목**  30분 단위 역률이 진상 60% 미달이면 60%로,
+                          **지상이면 100%로 간주**하여 1개월 평균역률을 계산한다.
            ③ 추가요금이 발생하는 첫 달은 **예고**, 두 번째 달부터 청구.
+
+**야간 진상 페널티는 '콘덴서 과투자의 결과'다.**
+
+제43조 ② 2호 나목이 핵심이다. 야간에 **지상이면 역률을 100%로 간주**하므로
+기준 95%를 넘어 추가요금이 0이 된다. 대부분의 건물은 야간 경부하에서 지상이고,
+진상은 **고정 콘덴서가 부하 대비 과다할 때** 생긴다. 그래서 이 조항은
+"야간에도 역률을 관리하라"가 아니라 "주간 역률을 맞추려 콘덴서를 키우면
+야간에 되돌려 받는다"는 뜻으로 읽어야 한다 — 역률 개선 수단(7.4)의 경고다.
 
 **③은 계산에 넣지 않는다.** 첫 달을 빼면 기간에 따라 금액이 달라져 도입 전후
 비교(Δ)가 흔들린다. 12개월 기준의 정상 상태를 보는 것이 이 도구의 목적이므로
@@ -38,8 +48,10 @@ __all__ = [
     "LAGGING_REBATE_CAP_PCT",
     "LAGGING_STANDARD_PCT",
     "LEADING_FLOOR_PCT",
+    "LEADING_LAGGING_DEEMED_PCT",
     "LEADING_STANDARD_PCT",
     "PowerFactorCharge",
+    "deemed_leading_pct",
     "lagging_adjustment_ratio",
     "leading_adjustment_ratio",
     "power_factor_charge",
@@ -56,9 +68,12 @@ LAGGING_REBATE_CAP_PCT = 97.0  # 이보다 높아도 97%로 본다 → 감액 �
 
 # 22~08시 진상역률
 LEADING_STANDARD_PCT = 95.0
-# 원문에 야간 하한이 명시되지 않아 주간과 같은 60%를 적용한다. 값이 터무니없이
-# 커지는 것을 막기 위한 보수적 처리이며, 약관 재확인 시 바꿀 수 있게 인자로 뺐다.
+# 제43조 ② 2호 **나목** — 30분 단위 역률이 진상 60% 미달이면 60%로 간주한다.
+# 추정이 아니라 원문에 명시된 하한이다.
 LEADING_FLOOR_PCT = 60.0
+# 같은 나목 — 야간에 **지상**이면 역률을 100%로 간주한다. 기준 95%를 넘으므로
+# 추가요금이 0이 된다. 대부분의 건물이 여기 해당한다.
+LEADING_LAGGING_DEEMED_PCT = 100.0
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -85,6 +100,25 @@ def lagging_adjustment_ratio(
     return (standard_pct - effective) * per_percent
 
 
+def deemed_leading_pct(
+    power_factor_pct: float | None,
+    *,
+    is_leading: bool = True,
+    floor_pct: float = LEADING_FLOOR_PCT,
+) -> float:
+    """제43조 ② 2호 **나목**의 간주값을 적용한 야간 역률.
+
+    ``is_leading`` 이 거짓이면(= 야간이 지상이면) **100% 로 간주**한다.
+    진상이면서 하한 미만이면 하한(60%)으로 올린다. 알 수 없으면 지상으로 본다 —
+    대부분의 건물이 야간 경부하에서 지상이고, 진상은 콘덴서 과다의 결과다.
+    """
+    if power_factor_pct is None or not is_leading:
+        return LEADING_LAGGING_DEEMED_PCT
+    if not 0 < power_factor_pct <= 100:
+        raise ValueError(f"역률은 0~100% 여야 합니다: {power_factor_pct}")
+    return max(power_factor_pct, floor_pct)
+
+
 def leading_adjustment_ratio(
     power_factor_pct: float,
     *,
@@ -92,12 +126,12 @@ def leading_adjustment_ratio(
     floor_pct: float = LEADING_FLOOR_PCT,
     per_percent: float = ADJUSTMENT_PER_PERCENT,
 ) -> float:
-    """야간(22~08시) 진상역률의 기본요금 조정 비율 (제43조 ②).
+    """야간(22~08시) 진상역률의 기본요금 조정 비율 (제43조 ② 2호).
 
     **추가만 있고 감액은 없다.** 기준 95% 를 넘겨도 0 이다.
 
-    ESS 야간 충전과 PV 인버터의 진상 무효전력이 여기 걸린다. 낮에 좋아 보이던
-    설비가 밤에 요금을 늘리는 경로다.
+    하한 60% 는 나목에 명시된 간주값이다. **지상인 야간은 100% 로 간주되므로
+    이 함수에 들어오지 않거나 0 을 돌려준다** — :func:`deemed_leading_pct` 참조.
     """
     if not 0 < power_factor_pct <= 100:
         raise ValueError(f"역률은 0~100% 여야 합니다: {power_factor_pct}")
@@ -111,13 +145,15 @@ class PowerFactorCharge:
 
     Attributes:
         lagging_pct: 주간 지상역률 (추정).
-        leading_pct: 야간 진상역률. 모르면 None — 추가를 산출하지 않고 경고한다.
+        leading_pct: 야간 **진상**역률. None 이면 지상으로 본다.
+        leading_deemed_pct: 나목의 간주값을 적용한 야간 역률. 지상이면 100 이다.
         total_won: ``lagging_won + leading_won``. 기본요금에 더할 금액이다.
     """
 
     base_won: float
     lagging_pct: float
     leading_pct: float | None
+    leading_deemed_pct: float
     lagging_ratio: float
     leading_ratio: float
     lagging_won: float
@@ -150,8 +186,9 @@ def power_factor_charge(
     Args:
         base_won: 대상 기본요금. 부분 월 계수가 이미 곱해진 값을 넘긴다.
         lagging_pct: 주간 지상역률. 기본값 92% 는 제42조의 간주값이라 조정이 0 이다.
-        leading_pct: 야간 진상역률. None 이면 산출하지 않고 경고만 낸다 —
-            무효전력 실측 없이 진상역률을 지어낼 근거가 없다.
+        leading_pct: 야간 **진상**역률. None 이면 제43조 ② 2호 나목에 따라
+            지상으로 보아 100% 로 간주하고 추가를 0 으로 둔다. 진상은 고정
+            콘덴서가 부하 대비 과다할 때 생기므로, 그 사실을 경고로 남긴다.
     """
     lagging_ratio = lagging_adjustment_ratio(lagging_pct)
     warnings: list[str] = []
@@ -188,29 +225,38 @@ def power_factor_charge(
             "검토하십시오 (기본공급약관 제41·43조)."
         )
 
-    leading_ratio = 0.0
+    # 제43조 ② 2호 나목 — 지상인 야간은 100% 로 간주되어 추가가 0 이다.
+    deemed = deemed_leading_pct(leading_pct)
+    leading_ratio = leading_adjustment_ratio(deemed)
     if leading_pct is None:
+        notes.append(
+            "야간(22~08시)은 **지상으로 보아 역률 100% 간주**, 진상 추가요금 0원입니다 "
+            "(기본공급약관 제43조 ② 2호 나목). 야간 경부하에서 지상인 것이 보통이며, "
+            "진상은 고정 콘덴서가 부하 대비 과다할 때 생깁니다."
+        )
         warnings.append(
-            "야간(22~08시) 진상역률을 알 수 없어 추가요금을 산출하지 않았습니다. "
-            "기준은 95% 이며 미달 시 매 1%당 기본요금의 0.2% 가 추가됩니다. "
-            "ESS 야간 충전과 태양광 인버터의 진상 무효전력이 여기 걸립니다 "
-            "(기본공급약관 제43조)."
+            "야간 진상 여부를 확인하지 않았습니다. 고정 콘덴서를 크게 두었거나 "
+            "역률 개선으로 키울 예정이라면 야간 경부하에서 진상으로 넘어갈 수 "
+            "있습니다. 기준 95% 미달 시 매 1%당 기본요금의 0.2% 가 추가되며, "
+            "하한은 60% 입니다 (제43조 ② 2호)."
+        )
+    elif leading_ratio > 0:
+        warnings.append(
+            f"야간 진상역률 {leading_pct:.1f}% 가 기준 95% 에 미달합니다"
+            + (f" (하한 {LEADING_FLOOR_PCT:.0f}% 적용)" if deemed != leading_pct else "")
+            + f". 기본요금의 {leading_ratio:.1%} 가 추가됩니다. "
+            "**콘덴서 과보상입니다** — 부하가 줄어든 야간에 진상 무효전력이 남는 "
+            "것이므로 고정 콘덴서 용량을 줄이거나 자동역률조정장치(APFR)로 "
+            "시간대별 투입 단수를 조절하십시오."
         )
     else:
-        leading_ratio = leading_adjustment_ratio(leading_pct)
-        if leading_ratio > 0:
-            warnings.append(
-                f"야간 진상역률 {leading_pct:.1f}% 가 기준 95% 에 미달합니다. "
-                f"기본요금의 {leading_ratio:.1%} 가 추가됩니다. 콘덴서 과보상 여부를 "
-                "확인하십시오 — 야간에는 진상이 문제입니다."
-            )
-        else:
-            notes.append(f"야간 진상역률 {leading_pct:.1f}% — 기준 95% 이상이라 추가 없음.")
+        notes.append(f"야간 진상역률 {leading_pct:.1f}% — 기준 95% 이상이라 추가 없음.")
 
     return PowerFactorCharge(
         base_won=base_won,
         lagging_pct=lagging_pct,
         leading_pct=leading_pct,
+        leading_deemed_pct=deemed,
         lagging_ratio=lagging_ratio,
         leading_ratio=leading_ratio,
         lagging_won=base_won * lagging_ratio,

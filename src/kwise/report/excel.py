@@ -22,8 +22,10 @@ from kwise.compare import ComparisonResult
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
 from kwise.measures import (
+    DR_ADVISORY,
     Certainty,
     ContractAdjustment,
+    DemandResponseResult,
     EssResult,
     PowerFactorResult,
     SolarPoint,
@@ -224,14 +226,15 @@ def measure_summary_frame(
     *,
     switch: TariffSwitchResult | None = None,
     contract: ContractAdjustment | None = None,
+    demand_response: DemandResponseResult | None = None,
     power_factor: PowerFactorResult | None = None,
     ess: EssResult | None = None,
     solar: SolarPoint | None = None,
 ) -> pd.DataFrame:
     """수단별 결과 시트 (요구사항서 7장).
 
-    **투자비 순으로 배치한다** — 선택요금(0원) → 계약전력(0원) → 역률(소액) →
-    태양광 → ESS.
+    **투자비 순으로 배치한다** (요구사항서 7장) — 선택요금(0원) → 계약전력(0원) →
+    경제성DR(0원) → 역률(저투자) → 태양광 → ESS.
 
     **금액을 내지 못한 항목은 빈칸으로 두지 않고 사유를 적는다.**
     """
@@ -263,6 +266,24 @@ def measure_summary_frame(
                 "회수기간": "즉시" if contract.saving_won else "—",
                 "확실성": str(contract.certainty),
                 "비고": f"하향 여지 {contract.reduction_kw:,.0f} kW. {contract.saving_basis}",
+            }
+        )
+    if demand_response is not None:
+        rows.append(
+            {
+                "수단": f"경제성DR {demand_response.reduction_kw:,.0f} kW",
+                "투자비(원)": 0.0,
+                "절감액(원)": demand_response.settlement_label,
+                "12개월 환산(원)": demand_response.settlement_label,
+                "회수기간": "즉시" if demand_response.is_priced else UNPRICED_REASONS["no_saving"],
+                "확실성": str(demand_response.certainty),
+                "비고": (
+                    f"거래 가능일 {demand_response.eligible_days}일 기준 "
+                    f"{demand_response.max_reduction_kwh:,.0f} kWh "
+                    f"(입찰 {demand_response.bid_hours_per_day:.1f}h/일). "
+                    f"무비용 감축 가능일 {demand_response.low_load_days}일. "
+                    "투자비는 0원이지만 감축 미달 시 실적위약금이 있습니다(별표26). " + DR_ADVISORY
+                ),
             }
         )
     if power_factor is not None:
@@ -384,6 +405,19 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
                     "계약전력 조정 절감액",
                     format_won(contract.saving_won, reason=UNPRICED_REASONS["contract"]),
                 ),
+            ]
+        )
+    if diagnosis.dr is not None:  # 6.6 경제성DR
+        dr = diagnosis.dr
+        rows.extend(
+            [
+                ("DR 거래 가능일", f"{dr.eligible_days}일 / 전체 {dr.total_days}일"),
+                ("DR 제외일 (토·일·공휴일)", f"{dr.excluded_days}일"),
+                ("DR 등록 가능 용량 (보수적)", f"{dr.registrable_kw:,.0f} kW"),
+                ("DR 평균 기준 여력", f"{dr.mean_reducible_kw:,.0f} kW"),
+                ("DR 무비용 감축 가능일", f"{len(dr.low_load_days)}일"),
+                ("DR 자원 유형", ", ".join(str(item) for item in dr.resource_types)),
+                ("DR 적합성", str(dr.potential)),
             ]
         )
     if diagnosis.structure is not None:

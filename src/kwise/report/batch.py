@@ -22,6 +22,7 @@ from kwise.diagnose import ContractInfo, diagnose
 from kwise.io import load_usage
 from kwise.measures import (
     evaluate_contract_adjustment,
+    evaluate_demand_response,
     evaluate_ess,
     evaluate_power_factor,
     evaluate_tariff_switch,
@@ -83,6 +84,10 @@ class CaseSpec:
     power_factor_pct: float = LAGGING_STANDARD_PCT
     power_factor_target_pct: float = 97.0
     power_factor_investment_won: float = 0.0
+    # 경제성DR (전력시장운영규칙 제12장). 단가는 기본값이 없다 — 없으면 감축량만 낸다.
+    dr_unit_price_won_per_kwh: float | None = None
+    dr_day_ahead_price_won_per_kwh: float | None = None
+    dr_bid_hours_per_day: float = 1.0
     latitude: float = 37.5
     longitude: float = 127.0
     altitude_m: float = 0.0
@@ -273,6 +278,18 @@ def run_case(
         if case.contract_kw is not None
         else None
     )
+    # 경제성DR — 투자 0원. 거래 가능일은 토·일·공휴일을 뺀 평일뿐이다.
+    demand_response = (
+        evaluate_demand_response(
+            diagnosis.dr,
+            unit_price_won_per_kwh=case.dr_unit_price_won_per_kwh,
+            day_ahead_price_won_per_kwh=case.dr_day_ahead_price_won_per_kwh,
+            bid_hours_per_day=case.dr_bid_hours_per_day,
+        )
+        if diagnosis.dr is not None
+        else None
+    )
+
     # 역률 개선 — 투자비가 작아 회수기간이 짧다. 요금표와 약관만으로 확정된다.
     power_factor_result = evaluate_power_factor(
         usage,
@@ -307,6 +324,7 @@ def run_case(
         measure_rows=measure_summary_frame(
             switch=switch,
             contract=contract_result,
+            demand_response=demand_response,
             power_factor=power_factor_result,
             ess=ess_result,
         ),

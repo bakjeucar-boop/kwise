@@ -1,4 +1,4 @@
-"""역률요금 (요구사항서 5.7, 7.3 / 기본공급약관 제41·42·43조).
+"""역률요금 (요구사항서 5.7, 7.4 / 기본공급약관 제41·42·43조).
 
 초판 요구사항서의 "지상 90% 미만" 은 오류였다. 원문 기준은 **92%** 이고,
 미달 시 추가만이 아니라 **초과 시 감액도 있다.** 금액이 기본요금의
@@ -33,12 +33,15 @@ from kwise.tariff import (
     LAGGING_FLOOR_PCT,
     LAGGING_REBATE_CAP_PCT,
     LAGGING_STANDARD_PCT,
+    LEADING_FLOOR_PCT,
+    LEADING_LAGGING_DEEMED_PCT,
     LEADING_STANDARD_PCT,
     BillingOptions,
     BillingResult,
     TariffSelection,
     TariffTable,
     calculate_bill,
+    deemed_leading_pct,
     lagging_adjustment_ratio,
     leading_adjustment_ratio,
     power_factor_charge,
@@ -122,13 +125,36 @@ def test_charge_splits_lagging_and_leading() -> None:
     assert charge.total_won == pytest.approx(8_000.0)
 
 
-def test_missing_leading_factor_warns_instead_of_guessing() -> None:
-    """진상역률을 지어낼 근거가 없다. 산출하지 않고 경고한다."""
+def test_lagging_night_incurs_no_leading_penalty() -> None:
+    """**야간이 지상이면 역률 100% 로 간주되어 진상 추가가 0 이다** (제43조 ② 2호 나목).
+
+    대부분의 건물이 야간 경부하에서 지상이다. 진상은 고정 콘덴서가 부하 대비
+    과다할 때 생기므로, 진상 추가요금은 곧 콘덴서 과투자의 신호다.
+    """
     charge = power_factor_charge(1_000_000.0)
     assert charge.leading_pct is None
+    assert charge.leading_deemed_pct == LEADING_LAGGING_DEEMED_PCT == 100.0
+    assert charge.leading_ratio == pytest.approx(0.0)
     assert charge.leading_won == pytest.approx(0.0)
-    assert any("진상역률을 알 수 없어" in message for message in charge.warnings)
-    assert any("ESS 야간 충전" in message for message in charge.warnings)
+    assert any("지상으로 보아 역률 100% 간주" in note for note in charge.notes)
+    assert any("고정 콘덴서" in message for message in charge.warnings)
+
+
+def test_deemed_leading_pct_follows_the_clause() -> None:
+    """나목 — 진상 60% 미달은 60%로, 지상은 100%로 간주한다."""
+    assert deemed_leading_pct(None) == 100.0  # 미상 → 지상으로 본다
+    assert deemed_leading_pct(85.0, is_leading=False) == 100.0  # 지상
+    assert deemed_leading_pct(85.0) == 85.0  # 진상, 하한 위
+    assert deemed_leading_pct(40.0) == LEADING_FLOOR_PCT == 60.0  # 진상, 하한 미달
+    # 지상 판정이면 60% 하한을 거치지 않고 곧장 100% 다.
+    assert deemed_leading_pct(40.0, is_leading=False) == 100.0
+
+
+def test_leading_floor_is_from_the_clause_not_an_assumption() -> None:
+    """하한 60% 는 나목에 명시된 간주값이다. 우리가 정한 값이 아니다."""
+    assert LEADING_FLOOR_PCT == 60.0
+    assert leading_adjustment_ratio(40.0) == leading_adjustment_ratio(60.0)
+    assert leading_adjustment_ratio(60.0) == pytest.approx(0.070)  # 35%p × 0.2%
 
 
 def test_rebate_is_flagged() -> None:
@@ -229,7 +255,8 @@ def test_traceability_records_the_applied_power_factor(sample_bill: BillingResul
     lines = " | ".join(sample_bill.traceability())
     assert "적용 역률" in lines
     assert "지상 92.0%" in lines
-    assert "진상 미상" in lines
+    assert "지상 간주 100%" in lines  # 야간 — 제43조 ② 2호 나목
+    assert "제43조 ② 2호 나목" in lines
 
 
 # --------------------------------------------------------------------- 7.3 역률 개선 수단
@@ -412,3 +439,23 @@ def test_power_factor_damage_grows_with_capacity(sample_curve: SolarCurve) -> No
     extras = [point.power_factor_extra_won for point in sample_curve.points]
     assert extras == sorted(extras)
     assert extras[0] == pytest.approx(0.0, abs=1.0)
+
+
+def test_improvement_warns_about_apfr_and_fixed_banks(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+) -> None:
+    """야간 진상은 콘덴서 과투자의 결과다. APFR 회피책을 함께 안내한다.
+
+    금액은 만들지 않는다 — 설치비는 설비 구성에 달렸고 사용자 입력이다.
+    """
+    result = evaluate_power_factor(
+        sample_usage, tariff, CURRENT, baseline=sample_bill, quality=sample_report
+    )
+    joined = " ".join(result.warnings)
+    assert "고정 콘덴서" in joined
+    assert "APFR" in joined
+    assert "콘덴서 과투자의 신호" in joined
+    assert result.investment_won == 0.0  # 금액을 지어내지 않는다
