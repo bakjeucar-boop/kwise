@@ -1,4 +1,8 @@
-﻿output/
+﻿# output/ 자체가 아니라 **내용물**을 제외한다. 디렉터리를 통째로 제외하면
+# git 이 그 아래의 예외(!)를 무시한다.
+output/*
+# 케이스 스터디 결과는 남긴다 (11.3). 95.9초짜리 실행을 매번 돌리는 것보다 낫다.
+!output/casestudy_*.xlsx
 __pycache__/
 *.egg-info/
 build/
