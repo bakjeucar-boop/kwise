@@ -21,6 +21,7 @@ from kwise.compare.sensitivity import sensitivity_comparison
 from kwise.diagnose import ContractInfo, diagnose
 from kwise.io import load_usage
 from kwise.measures import (
+    EssCostInput,
     evaluate_contract_adjustment,
     evaluate_demand_response,
     evaluate_ess,
@@ -79,7 +80,8 @@ class CaseSpec:
     pv_capacity_kwp: float = 0.0
     pv_unit_cost_won_per_kwp: float = 0.0
     ess_target_kw: float | None = None
-    ess_unit_cost_won_per_kwh: float = 0.0
+    ess_unit_cost_won_per_kw: float = 0.0
+    ess_total_investment_won: float | None = None
     # 역률 (기본공급약관 제41·42·43조). 기본 92% 는 무효전력계 미설치 간주값이다.
     power_factor_pct: float = LAGGING_STANDARD_PCT
     power_factor_target_pct: float = 97.0
@@ -98,6 +100,16 @@ class CaseSpec:
     @property
     def selection(self) -> TariffSelection:
         return TariffSelection(self.contract_type, self.voltage, self.option)
+
+    @property
+    def ess_cost(self) -> EssCostInput:
+        """ESS 단가 입력. **총액을 주면 그것이 이긴다** (견적서를 받은 경우).
+
+        참고단가를 자동으로 채우지 않는다 — 케이스 정의에 적어야 한다 (7.6).
+        """
+        if self.ess_total_investment_won is not None:
+            return EssCostInput.of_total(self.ess_total_investment_won)
+        return EssCostInput.of_unit_cost(self.ess_unit_cost_won_per_kw)
 
 
 @dataclass(frozen=True)
@@ -207,6 +219,9 @@ def run_case(
         except WeatherUnavailableError as exc:
             note = f"기상 자료를 얻지 못해 태양광을 제외했습니다: {exc}"
         else:
+            # 사전 취득분으로 물러섰으면 요약에 남긴다. 조용히 바꾸지 않는다 (7.5).
+            if weather.fallback:
+                note = " ".join(weather.notes)
             pv_config = PvSystemConfig(
                 latitude=case.latitude,
                 longitude=case.longitude,
@@ -234,7 +249,7 @@ def run_case(
         pv_capacity_kwp=case.pv_capacity_kwp if unit_pv is not None else 0.0,
         pv_unit_cost_won_per_kwp=case.pv_unit_cost_won_per_kwp,
         ess_target_kw=case.ess_target_kw,
-        ess_unit_cost_won_per_kwh=case.ess_unit_cost_won_per_kwh,
+        ess_unit_cost_won_per_kw=case.ess_unit_cost_won_per_kw,
         contract_kw=case.contract_kw,
         contract_floor_ratio=case.contract_floor_ratio,
     )
@@ -306,7 +321,7 @@ def run_case(
             table,
             case.selection,
             target_kw=case.ess_target_kw,
-            unit_cost_won_per_kwh=case.ess_unit_cost_won_per_kwh,
+            cost=case.ess_cost,
             charge_mask=light_band_mask(usage, table, selection=case.selection),
             baseline=baseline,
             quality=quality,

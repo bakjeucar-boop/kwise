@@ -35,6 +35,7 @@ from kwise.measures import (
 )
 from kwise.measures.contract import evaluate_contract_adjustment
 from kwise.measures.ess import analyze_peak_excess
+from kwise.pv import sharpen
 from kwise.quality import QualityReport
 from kwise.tariff import (
     BillingOptions,
@@ -62,11 +63,11 @@ class CombinationSpec:
     selection: TariffSelection
     pv_capacity_kwp: float = 0.0
     pv_unit_cost_won_per_kwp: float = 0.0
-    sensitivity_factor: float = 1.0
+    sharpness: float = 1.0
     ess_target_kw: float | None = None
     ess_power_kw: float | None = None
     ess_capacity_kwh: float | None = None
-    ess_unit_cost_won_per_kwh: float = 0.0
+    ess_unit_cost_won_per_kw: float = 0.0
     ess_charge_limit_kw: float | None = None
     ess_respect_target_when_charging: bool = True
     contract_kw: float | None = None
@@ -195,10 +196,14 @@ def evaluate_combination(
     if spec.has_pv:
         if unit_pv_kw_per_kwp is None:
             raise ValueError(f"'{spec.name}' 은 태양광을 켰지만 단위 발전 프로파일이 없습니다.")
+        # 첨예도 조정(9.2)은 단위 프로파일에 걸고 용량을 곱한다. sharpen 이
+        # 양의 상수배에 동차라 순서를 바꿔도 결과가 같다.
         generation = (
-            unit_pv_kw_per_kwp.reindex(pd.DatetimeIndex(usage.kw.index)).fillna(0.0)
+            sharpen(
+                unit_pv_kw_per_kwp.reindex(pd.DatetimeIndex(usage.kw.index)).fillna(0.0),
+                spec.sharpness,
+            )
             * spec.pv_capacity_kwp
-            * spec.sensitivity_factor
         )
         net = apply_generation(usage, generation)
         working = net.usage
@@ -268,7 +273,9 @@ def evaluate_combination(
 
     investment = spec.pv_capacity_kwp * spec.pv_unit_cost_won_per_kwp
     if dispatch is not None:
-        investment += dispatch.capacity_kwh * spec.ess_unit_cost_won_per_kwh
+        # ESS 투자비는 **출력 × kW당 단가**다 (7.6). 방전시간은 단가에 이미
+        # 반영되어 있으므로 용량을 다시 곱하지 않는다.
+        investment += dispatch.power_kw * spec.ess_unit_cost_won_per_kw
 
     saving = baseline_bill.total_won - bill.total_won + (contract_saving or 0.0)
     annual = annualize(saving, baseline_bill.base_fee_months)
@@ -298,10 +305,10 @@ def default_combinations(
     pv_capacity_kwp: float = 0.0,
     pv_unit_cost_won_per_kwp: float = 0.0,
     ess_target_kw: float | None = None,
-    ess_unit_cost_won_per_kwh: float = 0.0,
+    ess_unit_cost_won_per_kw: float = 0.0,
     contract_kw: float | None = None,
     contract_floor_ratio: float | None = None,
-    sensitivity_factor: float = 1.0,
+    sharpness: float = 1.0,
 ) -> tuple[CombinationSpec, ...]:
     """기본 조합 세트. 투자비 순으로 쌓는다.
 
@@ -309,10 +316,10 @@ def default_combinations(
     """
     common = {
         "pv_unit_cost_won_per_kwp": pv_unit_cost_won_per_kwp,
-        "ess_unit_cost_won_per_kwh": ess_unit_cost_won_per_kwh,
+        "ess_unit_cost_won_per_kw": ess_unit_cost_won_per_kw,
         "contract_kw": contract_kw,
         "contract_floor_ratio": contract_floor_ratio,
-        "sensitivity_factor": sensitivity_factor,
+        "sharpness": sharpness,
     }
     specs = [
         CombinationSpec(name="기준선 (현행)", selection=current_selection, **common),  # type: ignore[arg-type]

@@ -163,7 +163,9 @@ def simulate(weather: WeatherData, config: PvSystemConfig) -> PvSimulation:
         total = total.add(result.ac_kw, fill_value=0.0)
         results.append(result)
 
-    warnings: list[str] = []
+    # 사전 취득분으로 물러섰으면 그 사실을 결과에 싣는다 (요구사항서 7.5).
+    # 조용히 바꾸지 않는다 — 케이스 요약과 산출물까지 이 문구가 따라간다.
+    warnings: list[str] = list(weather.notes)
     if not config.arrays:
         warnings.append("어레이가 없어 발전량이 0 입니다.")
     if config.total_capacity_kwp == 0:

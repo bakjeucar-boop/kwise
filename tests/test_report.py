@@ -68,7 +68,7 @@ def sample_sections(
     sample_comparison: ComparisonResult,
     sample_measure_rows: pd.DataFrame,
 ) -> ReportSections:
-    """여덟 장이 모두 채워지는 케이스."""
+    """아홉 장이 모두 채워지는 케이스."""
     return ReportSections(
         usage=sample_usage,
         bill=sample_bill,
@@ -96,21 +96,30 @@ def summary_text(sample_sheets: dict[str, pd.DataFrame]) -> str:
 # --------------------------------------------------------------------- 시트 구성
 
 
-def test_workbook_has_the_eight_sheets_in_order(sample_sheets: dict[str, pd.DataFrame]) -> None:
+# '감도 상세' 는 감도 원자료가 있을 때만 붙는다. 태양광이 없으면 감도 시트에
+# 사유만 적고 상세는 만들지 않는다.
+OPTIONAL_SHEETS = ("감도 상세",)
+
+
+def expected_sheets(*, exclude: tuple[str, ...] = ()) -> list[str]:
+    return [name for name in SHEET_ORDER if name not in OPTIONAL_SHEETS + exclude]
+
+
+def test_workbook_has_every_sheet_in_order(sample_sheets: dict[str, pd.DataFrame]) -> None:
     """요약 / 진단 / 월별 집계 / 15분 시계열 / 요금 계산 명세 / 수단별 결과 / 조합 비교 / 감도."""
-    assert tuple(sample_sheets) == SHEET_ORDER
-    assert len(SHEET_ORDER) == 8
+    assert list(sample_sheets) == expected_sheets()
+    assert len(SHEET_ORDER) == 9
 
 
 def test_sheet_order_survives_the_round_trip(
     sample_sections: ReportSections, tmp_path: Path
 ) -> None:
-    """openpyxl 로 다시 열어도 여덟 장이 같은 순서다."""
+    """openpyxl 로 다시 열어도 아홉 장이 같은 순서다."""
     path = export_report(sample_sections, output_dir=tmp_path)
     assert path.is_file()
     workbook = load_workbook(path, read_only=True)
     try:
-        assert tuple(workbook.sheetnames) == SHEET_ORDER
+        assert workbook.sheetnames == expected_sheets()
     finally:
         workbook.close()
 
@@ -262,7 +271,7 @@ def test_summary_carries_every_known_limit(summary_text: str) -> None:
     역률 정정(약관 제41·42·43조)으로 두 항목이, 경제성DR(전력시장운영규칙 제12장)로
     두 항목이 늘었다.
     """
-    assert len(KNOWN_LIMITS) == 11
+    assert len(KNOWN_LIMITS) == 16
     for limit in KNOWN_LIMITS:
         assert limit in summary_text, limit
     assert any("제42조" in limit for limit in KNOWN_LIMITS)  # 30분 누적 계량
@@ -340,7 +349,7 @@ def test_sensitivity_sheet_says_why_it_is_empty() -> None:
     """태양광이 없으면 감도 시트가 빈 장이 아니라 사유로 채워진다 (9.2)."""
     frame = no_pv_sensitivity_frame()
     assert frame.iloc[0]["내용"] == NO_PV_SENSITIVITY_NOTE
-    assert "PV 출력에만 적용" in NO_PV_SENSITIVITY_NOTE
+    assert "PV 출력의 첨예도에만 적용" in NO_PV_SENSITIVITY_NOTE
 
 
 # --------------------------------------------------------------------- 진단 시트
@@ -521,7 +530,7 @@ def test_batch_case_report_has_the_required_sheets(
     workbook = load_workbook(path, read_only=True)
     try:
         assert "15분 시계열" not in workbook.sheetnames
-        assert workbook.sheetnames == [name for name in SHEET_ORDER if name != "15분 시계열"]
+        assert workbook.sheetnames == expected_sheets(exclude=("15분 시계열",))
     finally:
         workbook.close()
     summary = pd.read_excel(path, sheet_name="요약", index_col=0)

@@ -11,9 +11,15 @@
 있고 기본값으로 자동 적용된다. 8세션 UI 는 **확장 패널에 접어 둔다.**
 **모드를 나누지 않는다** — 상세 설계 모드를 만들면 pvsim 과 경계가 흐려진다.
 
-밀도 프리셋이 GCR 과 경사각을 **함께** 정한다. 고밀도 배치는 이격을 좁히는 대신
-경사를 낮춰 음영을 줄이는 것이 실무 관행이다. 프리셋 값은 ``data\\pv_presets.json``
-에 있다 — 하드코딩하지 않는다.
+설치 밀도 프리셋이 GCR 과 경사각을 **함께** 정한다. 고밀도 배치는 이격을 좁히는
+대신 경사를 낮춰 음영을 줄이는 것이 실무 관행이다. 프리셋 값은
+``data\\pv_presets.json`` 에 있다 — 하드코딩하지 않는다.
+
+**내부 키(``high``/``normal``/``low``)와 표시 라벨(높음/보통/낮음)을 분리한다.**
+그리고 선택지마다 **상충 관계를 한 줄로 병기한다** — 밀도만 보아서는 "높으면 좋은
+것인지" 를 알 수 없기 때문이다. 밀도를 높이면 면적당 용량이 커지는 대신 kWp당
+발전량이 작아진다. 화면에서는 고르는 즉시 환산 용량을 함께 보여 준다
+(:func:`capacity_preview`).
 
     설치 용량(kWp) ≈ 설치 가능 면적 × GCR ÷ 5
 
@@ -39,6 +45,7 @@ __all__ = [
     "PvPresets",
     "PvQuickInput",
     "capacity_from_area_kwp",
+    "capacity_preview",
     "load_pv_presets",
     "preset_data_path",
 ]
@@ -52,12 +59,19 @@ class PvPresetError(ValueError):
 
 @dataclass(frozen=True)
 class DensityPreset:
-    """설치 밀도 하나. **GCR 과 경사각이 함께 움직인다.**"""
+    """설치 밀도 하나. **GCR 과 경사각이 함께 움직인다.**
+
+    Attributes:
+        key: 내부 키 (``high``/``normal``/``low``). 코드와 케이스 정의가 쓴다.
+        label: 표시 라벨 (높음/보통/낮음). 산출물에 나가는 이름이다.
+        tradeoff: 상충 관계 한 줄. **밀도만으로는 좋고 나쁨을 알 수 없다.**
+    """
 
     key: str
     label: str
     gcr: float
     tilt_deg: float
+    tradeoff: str = ""
     description: str = ""
 
     def __post_init__(self) -> None:
@@ -75,6 +89,7 @@ class PvPresets:
     area_per_kwp_m2: float
     default_azimuth_deg: float
     default_density: str
+    density_label: str = "설치 밀도"
 
     def density(self, key: str) -> DensityPreset:
         for item in self.densities:
@@ -115,6 +130,7 @@ def load_pv_presets(path: str | None = None) -> PvPresets:
             label=str(item.get("label", item["key"])),
             gcr=float(item["gcr"]),
             tilt_deg=float(item["tilt_deg"]),
+            tradeoff=str(item.get("tradeoff", "")),
             description=str(item.get("description", "")),
         )
         for item in raw
@@ -127,9 +143,29 @@ def load_pv_presets(path: str | None = None) -> PvPresets:
         area_per_kwp_m2=area_per_kwp,
         default_azimuth_deg=float(payload.get("default_azimuth_deg", 180.0)),
         default_density=str(payload.get("default_density", densities[0].key)),
+        density_label=str(payload.get("density_label", "설치 밀도")),
     )
     _ = presets.default  # 기본 밀도가 목록에 있는지 여기서 확인한다
     return presets
+
+
+def capacity_preview(
+    area_m2: float,
+    presets: PvPresets | None = None,
+) -> tuple[tuple[DensityPreset, float], ...]:
+    """밀도별 환산 용량. **고르는 즉시 함께 보여 준다** (8세션 UI).
+
+    1,000 m² 면 높음 110 / 보통 80 / 낮음 60 kWp 다. 숫자를 함께 보여 주지 않으면
+    "밀도 높음" 이 무엇을 뜻하는지 알 수 없다.
+    """
+    items = presets if presets is not None else load_pv_presets()
+    return tuple(
+        (
+            preset,
+            capacity_from_area_kwp(area_m2, gcr=preset.gcr, area_per_kwp_m2=items.area_per_kwp_m2),
+        )
+        for preset in items.densities
+    )
 
 
 def capacity_from_area_kwp(

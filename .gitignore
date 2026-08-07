@@ -9,3 +9,11 @@ cache/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+# 약관·규칙 PDF 원본은 로컬에만 둔다 (약 9.4 MB).
+# 코드가 PDF 를 읽지 않으므로 pdftotext -layout 으로 뽑은 .txt 만 커밋한다.
+# 원본이 필요하면 한전·전력거래소 사이트에서 다시 받는다.
+data/source/*.pdf
+
+# 사전 취득 실패 목록은 실행마다 달라진다 (data\weather\ 자체는 커밋한다).
+data/weather/fetch_failures.json

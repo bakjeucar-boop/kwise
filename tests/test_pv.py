@@ -15,10 +15,10 @@ import pvlib
 import pytest
 
 from kwise.pv import (
-    DEFAULT_FACTORS,
+    DEFAULT_SHARPNESS,
     ArrayConfig,
     PvSystemConfig,
-    SensitivityFactors,
+    SharpnessFactors,
     WeatherData,
     WeatherLabel,
     WeatherRequest,
@@ -28,6 +28,7 @@ from kwise.pv import (
     cache_root,
     iter_scenarios,
     load_weather,
+    sharpen,
     simulate,
     slot_midpoints,
     summarize_scenarios,
@@ -82,6 +83,15 @@ def weather() -> WeatherData:
 def aligned_day(weather: WeatherData) -> pd.Series:
     simulation = simulate(weather, roof_system())
     return align_simulation(simulation, load_index(), INTERVAL).kw
+
+
+@pytest.fixture(scope="module")
+def aligned_days(weather: WeatherData) -> pd.Series:
+    """사흘치. 일별 총량 보존을 하루가 아니라 날짜 경계를 넘겨 확인한다."""
+    simulation = simulate(weather, roof_system())
+    start = pd.Timestamp("2023-07-02") + pd.Timedelta(minutes=INTERVAL)
+    index = pd.date_range(start, periods=96 * 3, freq=f"{INTERVAL}min")
+    return align_simulation(simulation, index, INTERVAL).kw
 
 
 # --------------------------------------------------------------------- 시각 정렬
@@ -393,19 +403,103 @@ def test_request_for_index_pads_the_period() -> None:
 
 
 # --------------------------------------------------------------------- 감도 (9.2)
+#
+# 감도는 **첨예도**만 조정한다. 9.1 이 말하는 편향이 "총량 오차"가 아니라
+# "프로파일 평탄화"이기 때문이다. 총량이 맞는데 일률 계수를 곱하면 총량을 ±30%
+# 흔들게 되고 전력량요금 절감액 밴드와 회수기간 밴드가 함께 부풀려진다.
 
 
-def test_default_factors_are_070_100_120() -> None:
-    assert DEFAULT_FACTORS.items() == (("보수", 0.70), ("기준", 1.00), ("낙관", 1.20))
+def test_default_sharpness_is_085_100_125() -> None:
+    assert DEFAULT_SHARPNESS.items() == (("평탄형", 0.85), ("기준", 1.00), ("첨예형", 1.25))
 
 
-def test_sensitivity_scales_output(aligned_day: pd.Series) -> None:
-    summaries = summarize_scenarios(aligned_day, INTERVAL)
-    assert [item.name for item in summaries] == ["보수", "기준", "낙관"]
-    base = summaries[1]
-    assert summaries[0].total_kwh == pytest.approx(base.total_kwh * 0.70)
-    assert summaries[2].total_kwh == pytest.approx(base.total_kwh * 1.20)
-    assert summaries[0].peak_kw < base.peak_kw < summaries[2].peak_kw
+def test_labels_are_separate_from_the_internal_keys() -> None:
+    """**이 축은 낙관·비관이 아니다.** 이름이 프로파일 모양을 가리켜야 한다.
+
+    내부 키는 그대로 두고 표시 라벨만 분리한다 — 설정 파일과 케이스 정의가
+    키를 쓰고 있다.
+    """
+    from kwise.pv import SCENARIO_KEYS
+
+    assert SCENARIO_KEYS == ("conservative", "base", "optimistic")
+    assert DEFAULT_SHARPNESS.keyed_items() == (
+        ("conservative", "평탄형", 0.85),
+        ("base", "기준", 1.00),
+        ("optimistic", "첨예형", 1.25),
+    )
+    assert DEFAULT_SHARPNESS.base_label == "기준"
+
+
+def test_sharpness_comes_from_the_preset_file() -> None:
+    """s 값은 코드가 아니라 pv_presets.json 에 있다 — 하드코딩하지 않는다."""
+    import json
+
+    from kwise.pv.layout import preset_data_path
+    from kwise.pv.sensitivity import SHARPNESS_KEY
+
+    with preset_data_path().open(encoding="utf-8") as stream:
+        payload = json.load(stream)
+    block = payload[SHARPNESS_KEY]
+    assert (block["conservative"], block["base"], block["optimistic"]) == (0.85, 1.0, 1.25)
+    assert block["labels"] == ["평탄형", "기준", "첨예형"]
+
+
+def test_sharpness_one_returns_the_original_exactly(aligned_day: pd.Series) -> None:
+    """s=1.0 이면 원본 그대로다. 부동소수 오차조차 만들지 않는다."""
+    adjusted = sharpen(aligned_day, 1.0)
+    pd.testing.assert_series_equal(adjusted, aligned_day)
+    assert adjusted is aligned_day
+
+
+def test_daily_total_is_preserved(aligned_days: pd.Series) -> None:
+    """세 시나리오의 **일별** 총 발전량이 서로 ±1% 이내여야 한다.
+
+    총량 보존이 이 방식의 전부다. 이것이 깨지면 전력량요금 절감액이 흔들린다.
+    """
+    day = pd.DatetimeIndex(aligned_days.index).normalize().to_numpy()
+    base_daily = aligned_days.groupby(day).sum()
+    for _, sharpness, adjusted in iter_scenarios(aligned_days):
+        daily = adjusted.groupby(day).sum()
+        generating = base_daily > 0
+        ratio = (daily[generating] / base_daily[generating]).abs()
+        assert float((ratio - 1.0).abs().max()) < 0.01, sharpness
+
+
+def test_daily_total_is_preserved_to_machine_precision(aligned_day: pd.Series) -> None:
+    """±1% 는 요구 사항이고 실제로는 재정규화 덕에 부동소수 수준으로 같다."""
+    for _, _, adjusted in iter_scenarios(aligned_day):
+        assert float(adjusted.sum()) == pytest.approx(float(aligned_day.sum()), rel=1e-12)
+
+
+def test_noon_peak_widens_with_sharpness(aligned_day: pd.Series) -> None:
+    """정오 최대 출력은 보수 < 기준 < 낙관 이어야 한다."""
+    noon = [
+        float(adjusted.loc[f"{DAY} 11:00" : f"{DAY} 13:00"].max())
+        for _, _, adjusted in iter_scenarios(aligned_day)
+    ]
+    assert noon[0] < noon[1] < noon[2]
+
+
+def test_night_stays_zero(aligned_day: pd.Series) -> None:
+    """평균을 축으로 회전시켜도 밤에 발전이 생기지 않는다.
+
+    일평균을 야간 0 까지 포함해 잡으면 밤의 편차가 전체를 지배해 재정규화 후
+    정오 출력이 오히려 낮아진다. 발전 슬롯 기준 평균을 쓰는 이유다.
+    """
+    for _, _, adjusted in iter_scenarios(aligned_day):
+        assert adjusted.loc[f"{DAY} 03:00"] == 0.0
+        assert adjusted.loc[f"{DAY} 23:00"] == 0.0
+        assert float(adjusted.min()) >= 0.0
+
+
+def test_sharpen_is_homogeneous(aligned_day: pd.Series) -> None:
+    """양의 상수배에 동차다 — 단위 프로파일에 한 번만 걸어도 된다.
+
+    용량 곡선이 20단계를 훑을 때 sharpen 을 매번 다시 걸지 않는 근거다.
+    """
+    scaled = sharpen(aligned_day * 250.0, 1.25)
+    once = sharpen(aligned_day, 1.25) * 250.0
+    pd.testing.assert_series_equal(scaled, once, rtol=1e-12)
 
 
 def test_zero_capacity_makes_every_scenario_identical(weather: WeatherData) -> None:
@@ -420,16 +514,30 @@ def test_zero_capacity_makes_every_scenario_identical(weather: WeatherData) -> N
 def test_scenarios_are_produced_one_at_a_time(aligned_day: pd.Series) -> None:
     """시나리오는 순차 처리한다. 세 시계열을 동시에 들고 있지 않는다."""
     iterator = iter_scenarios(aligned_day)
-    name, factor, series = next(iterator)
-    assert (name, factor) == ("보수", 0.70)
-    assert series.max() == pytest.approx(aligned_day.max() * 0.70)
+    name, sharpness, series = next(iterator)
+    assert (name, sharpness) == ("평탄형", 0.85)
+    assert float(series.max()) < float(aligned_day.max())
     assert len(list(iterator)) == 2
 
 
+def test_summary_totals_are_equal_but_peaks_differ(aligned_day: pd.Series) -> None:
+    summaries = summarize_scenarios(aligned_day, INTERVAL)
+    assert [item.name for item in summaries] == ["평탄형", "기준", "첨예형"]
+    totals = [item.total_kwh for item in summaries]
+    assert totals[0] == pytest.approx(totals[1], rel=1e-12)
+    assert totals[2] == pytest.approx(totals[1], rel=1e-12)
+    assert summaries[0].peak_kw < summaries[1].peak_kw < summaries[2].peak_kw
+
+
 def test_custom_factors_are_allowed(aligned_day: pd.Series) -> None:
-    factors = SensitivityFactors(conservative=0.8, base=1.0, optimistic=1.1)
+    factors = SharpnessFactors(conservative=0.8, base=1.0, optimistic=1.1)
     summaries = summarize_scenarios(aligned_day, INTERVAL, factors)
-    assert [item.factor for item in summaries] == [0.8, 1.0, 1.1]
+    assert [item.sharpness for item in summaries] == [0.8, 1.0, 1.1]
+
+
+def test_empty_series_survives() -> None:
+    empty = pd.Series(dtype="float64", index=pd.DatetimeIndex([]))
+    assert sharpen(empty, 1.25).empty
 
 
 @pytest.mark.parametrize(
@@ -440,5 +548,5 @@ def test_custom_factors_are_allowed(aligned_day: pd.Series) -> None:
     ],
 )
 def test_invalid_factors_raise(kwargs: dict[str, float]) -> None:
-    with pytest.raises(ValueError, match="감도 계수"):
-        SensitivityFactors(**kwargs)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="첨예도 계수"):
+        SharpnessFactors(**kwargs)  # type: ignore[arg-type]

@@ -14,6 +14,7 @@ from kwise.compare import ComparisonResult, compare_combinations, default_combin
 from kwise.diagnose import ContractInfo, Diagnosis, diagnose
 from kwise.io import UsageData, load_usage
 from kwise.measures import (
+    EssCostInput,
     EssResult,
     SolarCurve,
     TariffSwitchResult,
@@ -40,7 +41,22 @@ SAMPLE_USAGE_CSV = PROJECT_ROOT / "input" / "사용량조회_20240429.csv"
 SAMPLE_SELECTION = TariffSelection("general_b", "high_a", "I")
 SAMPLE_CONTRACT_KW = 5_500.0
 PV_COST_WON_PER_KWP = 1_200_000.0
-CELL_COST_WON_PER_KWH = 400_000.0
+# ESS 단가는 **kW당 하나**로 받는다 (7.6). 방전시간은 단가에 이미 들어 있다.
+ESS_COST_WON_PER_KW = 615_231.0  # 참고단가 LFP 2025 · 1h 방전 환산값
+
+
+@pytest.fixture(autouse=True)
+def isolated_weather_archive(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사전 취득분(data\\weather)에서 테스트를 떼어 놓는다.
+
+    저장소에 전국 3개년치가 들어 있으므로, 격리하지 않으면 "API 실패 시 멈추는가"
+    같은 시험이 **조용히 폴백에 성공해** 통과해 버린다. 사전 취득분을 실제로
+    쓰는 시험은 ``root=`` 나 자체 ``monkeypatch`` 로 경로를 직접 지정한다.
+    """
+    empty = tmp_path_factory.mktemp("no-weather-archive")
+    monkeypatch.setenv("KWISE_WEATHER_DIR", str(empty))
 
 
 @pytest.fixture(scope="session")
@@ -150,7 +166,7 @@ def sample_ess(
         tariff,
         SAMPLE_SELECTION,
         target_kw=5_200.0,
-        unit_cost_won_per_kwh=CELL_COST_WON_PER_KWH,
+        cost=EssCostInput.of_unit_cost(ESS_COST_WON_PER_KW),
         charge_mask=light_band_mask(sample_usage, tariff, selection=SAMPLE_SELECTION),
         baseline=sample_bill,
         quality=sample_report,
@@ -172,7 +188,7 @@ def sample_comparison(
         pv_capacity_kwp=500.0,
         pv_unit_cost_won_per_kwp=PV_COST_WON_PER_KWP,
         ess_target_kw=5_000.0,
-        ess_unit_cost_won_per_kwh=CELL_COST_WON_PER_KWH,
+        ess_unit_cost_won_per_kw=ESS_COST_WON_PER_KW,
     )
     return compare_combinations(
         sample_usage,

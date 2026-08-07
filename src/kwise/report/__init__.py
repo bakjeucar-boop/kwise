@@ -32,6 +32,7 @@ from kwise.report.excel import (
 )
 from kwise.report.notices import (
     CONTRACT_CHANGE_WARNING,
+    DATA_SOURCES,
     KNOWN_LIMITS,
     NOT_INCLUDED_NOTICE,
     UNPRICED_REASONS,
@@ -40,6 +41,7 @@ from kwise.report.notices import (
 
 __all__ = [
     "CONTRACT_CHANGE_WARNING",
+    "DATA_SOURCES",
     "DEFAULT_OUTPUT_DIR",
     "KNOWN_LIMITS",
     "NOT_INCLUDED_NOTICE",

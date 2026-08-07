@@ -29,6 +29,7 @@ from kwise.pv import (
     RegionDataError,
     WeatherRequest,
     capacity_from_area_kwp,
+    capacity_preview,
     find_region,
     grid_cell,
     list_provinces,
@@ -201,20 +202,25 @@ def test_presets_come_from_the_data_file() -> None:
     """프리셋은 ``data\\pv_presets.json`` 에 있다. 하드코딩하지 않는다."""
     assert preset_data_path().is_file()
     presets = load_pv_presets()
-    assert tuple(item.key for item in presets.densities) == ("촘촘", "보통", "듬성")
+    # 내부 키와 표시 라벨을 분리한다 — 산출물에는 구어체를 쓰지 않는다.
+    assert tuple(item.key for item in presets.densities) == ("high", "normal", "low")
+    assert tuple(item.label for item in presets.densities) == ("높음", "보통", "낮음")
+    assert presets.density_label == "설치 밀도"
+    # 밀도만으로는 좋고 나쁨을 알 수 없다. 상충 관계를 한 줄로 병기한다.
+    assert all(item.tradeoff for item in presets.densities)
     assert presets.area_per_kwp_m2 == 5.0
     assert presets.default_azimuth_deg == 180.0
-    assert presets.default.key == "보통"
+    assert presets.default.key == "normal"
 
 
 @pytest.mark.parametrize(
     ("density", "expected_kwp"),
-    [("촘촘", 110.0), ("보통", 80.0), ("듬성", 60.0)],
+    [("high", 110.0), ("normal", 80.0), ("low", 60.0)],
 )
 def test_area_converts_to_capacity_by_density(
     regions: tuple[Region, ...], density: str, expected_kwp: float
 ) -> None:
-    """1,000 m² 에서 촘촘 110 / 보통 80 / 듬성 60 kWp (±10%)."""
+    """1,000 m² 에서 높음 110 / 보통 80 / 낮음 60 kWp (±10%)."""
     quick = PvQuickInput(
         area_m2=1_000.0, density=density, region=find_region("서울특별시/강남구", regions)
     )
@@ -227,11 +233,11 @@ def test_density_moves_gcr_and_tilt_together() -> None:
     고밀도 배치는 이격을 좁히는 대신 경사를 낮춰 음영을 줄이는 실무 관행이다.
     """
     presets = load_pv_presets()
-    dense, normal, sparse = (presets.density(key) for key in ("촘촘", "보통", "듬성"))
-    assert dense.gcr > normal.gcr > sparse.gcr  # 촘촘할수록 GCR 이 크고
+    dense, normal, sparse = (presets.density(key) for key in ("high", "normal", "low"))
+    assert dense.gcr > normal.gcr > sparse.gcr  # 밀도가 높을수록 GCR 이 크고
     assert dense.tilt_deg < normal.tilt_deg < sparse.tilt_deg  # 경사는 낮다
 
-    quick = PvQuickInput(area_m2=1_000.0, density="촘촘", latitude=37.5, longitude=127.0)
+    quick = PvQuickInput(area_m2=1_000.0, density="high", latitude=37.5, longitude=127.0)
     assert (quick.gcr, quick.tilt_deg) == (0.55, 15.0)
     array = quick.to_system().arrays[0]
     assert (array.gcr, array.tilt_deg) == (0.55, 15.0)
@@ -299,7 +305,7 @@ def test_coordinates_beat_the_region_when_both_given(regions: tuple[Region, ...]
 
 
 def test_unknown_density_is_rejected() -> None:
-    quick = PvQuickInput(area_m2=1_000.0, density="아주촘촘", latitude=37.5, longitude=127.0)
+    quick = PvQuickInput(area_m2=1_000.0, density="아주높음", latitude=37.5, longitude=127.0)
     with pytest.raises(PvPresetError, match="없는 설치 밀도"):
         _ = quick.gcr
 
@@ -351,3 +357,40 @@ def test_area_error_only_moves_the_point_on_the_curve(
     matched = by_capacity[round(narrow.capacity_kwp, 6)]
     assert matched.capacity_kwp == pytest.approx(narrow.capacity_kwp)
     assert matched.total_saving_won > 0
+
+
+# --------------------------------------------------------------------- 설치 밀도 라벨 (3.3)
+
+
+def test_density_keys_are_separate_from_the_labels() -> None:
+    """산출물에 구어체를 쓰지 않는다. 내부 키와 표시 라벨을 분리한다."""
+    presets = load_pv_presets()
+    assert [item.key for item in presets.densities] == ["high", "normal", "low"]
+    assert [item.label for item in presets.densities] == ["높음", "보통", "낮음"]
+    assert presets.density_label == "설치 밀도"
+    assert presets.default.key == "normal" and presets.default.label == "보통"
+
+
+def test_every_density_states_its_tradeoff() -> None:
+    """**밀도만으로는 '높으면 좋은 것인지' 를 알 수 없다.** 상충 관계를 병기한다."""
+    presets = load_pv_presets()
+    high, normal, low = presets.densities
+    assert "면적당 용량이 가장 크다" in high.tradeoff
+    assert "kWp당 발전량이 가장 크다" in low.tradeoff
+    assert "균형" in normal.tradeoff
+    for item in presets.densities:
+        assert len(item.tradeoff) > 10
+
+
+def test_capacity_preview_shows_the_conversion_immediately() -> None:
+    """고르는 즉시 환산 용량을 함께 보여 준다 — 1,000 m² → 110 / 80 / 60 kWp."""
+    preview = capacity_preview(1_000.0)
+    assert [item[0].label for item in preview] == ["높음", "보통", "낮음"]
+    assert [round(item[1]) for item in preview] == [110, 80, 60]
+
+
+def test_capacity_preview_scales_with_area() -> None:
+    small = capacity_preview(500.0)
+    large = capacity_preview(1_000.0)
+    for (_, low_kwp), (_, high_kwp) in zip(small, large, strict=True):
+        assert high_kwp == pytest.approx(low_kwp * 2.0)

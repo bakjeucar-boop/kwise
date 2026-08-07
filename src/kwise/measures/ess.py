@@ -20,7 +20,14 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from kwise.io import UsageData, slot_start
+from kwise.measures.arbitrage import (
+    DEFAULT_CYCLES_PER_DAY,
+    ArbitrageValue,
+    arbitrage_value,
+    c_rate,
+)
 from kwise.measures.base import Certainty, annualize, payback_years
+from kwise.measures.ess_cost import EssCostInput, EssCostReference, load_ess_cost_reference
 from kwise.measures.netload import with_load
 from kwise.quality import QualityReport
 from kwise.tariff import (
@@ -37,20 +44,29 @@ __all__ = [
     "DEFAULT_DOD",
     "DEFAULT_PAYBACK_TARGET_YEARS",
     "DEFAULT_ROUND_TRIP",
+    "HIGH_RATE_DISCHARGE_HOURS",
     "DispatchResult",
     "EssResult",
     "PeakExcess",
     "analyze_peak_excess",
     "dispatch_peak_shaving",
+    "ess_payback_curve",
     "evaluate_ess",
     "excess_slots_by_day",
     "light_band_mask",
+    "required_discharge_hours",
     "size_for_target",
 ]
 
 DEFAULT_ROUND_TRIP = 0.88
 DEFAULT_DOD = 0.90
 DEFAULT_PAYBACK_TARGET_YEARS = 10.0
+
+# 이 아래는 정치형 셀의 통상 연속 방전(0.5~1C)을 넘어선다. 고출력 셀 사양이다.
+HIGH_RATE_DISCHARGE_HOURS = 0.5
+
+# 회수기간 곡선에서 보여 줄 방전시간. 짧을수록 경제성이 좋다는 것을 보이는 표다.
+DEFAULT_CURVE_DISCHARGE_HOURS: tuple[float, ...] = (0.5, 1.0, 2.0, 4.0)
 
 
 @dataclass(frozen=True)
@@ -134,6 +150,20 @@ def size_for_target(
     # 방전 손실을 감안해 계통에 내보낼 에너지를 배터리 저장량으로 환산한다.
     nameplate = energy[basis] / discharge_efficiency / dod
     return excess.max_excess_kw, nameplate
+
+
+def required_discharge_hours(excess: PeakExcess) -> float:
+    """**방전시간은 산출값이다. 강제하지 않는다** (요구사항서 7.6).
+
+        방전시간 = 하루 최대 초과 에너지 ÷ 최대 초과 출력
+
+    목표 피크를 정하면 데이터에서 결정된다. 짧을수록 kW당 단가가 싸므로
+    경제성이 좋다 — 조달이 가능하다면 짧은 쪽이 맞다. 다만 0.5h 미만은
+    2C 이상이라 정치형 셀의 통상 사양(0.5~1C 연속)을 넘는다.
+    """
+    if excess.max_excess_kw <= 0:
+        return 0.0
+    return excess.max_daily_excess_kwh / excess.max_excess_kw
 
 
 @dataclass(frozen=True, eq=False)
@@ -317,25 +347,53 @@ def dispatch_peak_shaving(
 
 @dataclass(frozen=True, eq=False)
 class EssResult:
-    """ESS 평가. 출력과 에너지를 분리해 담는다."""
+    """ESS 평가. 출력과 에너지를 분리해 담는다.
+
+    Attributes:
+        discharge_hours: **산출된** 방전시간 (하루 최대 초과 에너지 ÷ 최대 초과 출력).
+            강제 입력이 아니다.
+        breakeven_unit_cost_won_per_kw: 목표 회수기간을 맞추는 kW당 단가.
+            입력 단가와 같은 단위라 그대로 견줄 수 있다.
+        arbitrage: 차익거래 **잠재** 수익. 절감액에 더하지 않았다 (이중 계산 방지).
+        payback_years: **피크저감 절감액만**으로 낸 회수기간. 기본값이자 보수적인 값이다.
+        payback_with_arbitrage_years: 차익거래 잠재 수익까지 더한 회수기간. **상한**이다.
+        outlook_payback_years: 2030년 전망 단가 기준 회수기간.
+            "지금은 안 됨" 을 "언제쯤 되는가" 로 바꾼다.
+    """
 
     excess: PeakExcess
     dispatch: DispatchResult
     power_kw: float
     capacity_kwh: float
-    unit_cost_won_per_kwh: float
+    discharge_hours: float
+    cost: EssCostInput
     investment_won: float
     base_saving_won: float
     energy_saving_won: float
     total_saving_won: float
     annual_saving_won: float
     payback_years: float | None
-    breakeven_unit_cost_won_per_kwh: float | None
+    breakeven_unit_cost_won_per_kw: float | None
     payback_target_years: float
     billing_demand_kw: float
+    arbitrage: ArbitrageValue | None = None
+    payback_with_arbitrage_years: float | None = None
+    outlook_payback_years: float | None = None
+    outlook_payback_with_arbitrage_years: float | None = None
+    outlook_label: str = ""
+    reference_verdict: str = ""
     certainty: Certainty = Certainty.MEDIUM_LOW
     warnings: tuple[str, ...] = field(default=())
     notes: tuple[str, ...] = field(default=())
+
+    @property
+    def c_rate(self) -> float:
+        """방전 C-rate. 0.5h 는 2C 다."""
+        return c_rate(self.discharge_hours)
+
+    @property
+    def unit_cost_won_per_kw(self) -> float | None:
+        return self.cost.unit_cost_won_per_kw
 
 
 def evaluate_ess(
@@ -344,7 +402,7 @@ def evaluate_ess(
     selection: TariffSelection,
     *,
     target_kw: float,
-    unit_cost_won_per_kwh: float,
+    cost: EssCostInput,
     charge_mask: pd.Series | None = None,
     power_kw: float | None = None,
     capacity_kwh: float | None = None,
@@ -354,6 +412,8 @@ def evaluate_ess(
     round_trip: float = DEFAULT_ROUND_TRIP,
     dod: float = DEFAULT_DOD,
     payback_target_years: float = DEFAULT_PAYBACK_TARGET_YEARS,
+    cycles_per_day: float = DEFAULT_CYCLES_PER_DAY,
+    reference: EssCostReference | None = None,
     baseline: BillingResult | None = None,
     quality: QualityReport | None = None,
     options: BillingOptions | None = None,
@@ -361,9 +421,11 @@ def evaluate_ess(
     """목표 요금적용전력을 받아 사양·절감액·회수기간을 낸다.
 
     Args:
-        unit_cost_won_per_kwh: 배터리 단가. 사용자 입력이며 기본값이 없다.
+        cost: 단가 입력. **kW당 단가 하나** 또는 **총액**이다 (:class:`EssCostInput`).
+            방전시간은 kW당 단가에 이미 들어 있으므로 이중으로 곱하지 않는다.
         power_kw, capacity_kwh: 주지 않으면 목표에서 역산한다.
         payback_target_years: 손익분기 단가를 역산할 회수기간 (기본 10년).
+        cycles_per_day: 차익거래 평일 사이클 수 (기본 1).
     """
     opts = options if options is not None else BillingOptions()
     interval = usage.meta.interval_minutes
@@ -374,6 +436,8 @@ def evaluate_ess(
     )
     power = sized_power if power_kw is None else power_kw
     capacity = sized_capacity if capacity_kwh is None else capacity_kwh
+    # 방전시간은 데이터가 정한다. 사양으로 강제하지 않는다 (7.6).
+    discharge_hours = required_discharge_hours(excess)
 
     mask = (
         charge_mask
@@ -401,14 +465,40 @@ def evaluate_ess(
     after = with_load(usage, dispatch.net_kw, source_suffix=" + ESS")
     bill = calculate_bill(after, table, selection, options=opts, quality=quality)
 
-    investment = capacity * unit_cost_won_per_kwh
+    # 투자비 = 출력 × kW당 단가. 총액을 직접 넣었으면 그 값을 그대로 쓴다.
+    investment = cost.investment_won(power)
     saving = base_bill.total_won - bill.total_won
     annual_saving = annualize(saving, base_bill.base_fee_months)
     breakeven = (
-        annual_saving * payback_target_years / capacity
-        if capacity > 0 and annual_saving > 0
-        else None
+        annual_saving * payback_target_years / power if power > 0 and annual_saving > 0 else None
     )
+
+    # 차익거래 — 계시별 단가는 요금표에서 온다. 절감액에 더하지 않는다.
+    ref = reference if reference is not None else load_ess_cost_reference()
+    arbitrage = arbitrage_value(
+        usage,
+        table,
+        selection,
+        usable_kwh=capacity * dod,
+        round_trip=round_trip,
+        base_fee_months=base_bill.base_fee_months,
+        cycles_per_day=cycles_per_day,
+        capex_energy_won_per_kwh=ref.default.capex_energy_won_per_kwh,
+        quality=quality,
+        options=opts,
+    )
+
+    # 2030년 전망 단가 기준 회수기간 — "언제쯤 성립하는가" 에 답한다.
+    outlook_investment = power * ref.outlook.unit_cost_won_per_kw(discharge_hours)
+    outlook_payback = payback_years(outlook_investment, annual_saving)
+    # 차익거래를 더한 **상한**. 기본값은 피크저감만 쓴 보수적인 값이다.
+    with_arbitrage = annual_saving + arbitrage.annual_won
+    payback_with_arbitrage = payback_years(investment, with_arbitrage)
+    outlook_payback_with_arbitrage = payback_years(outlook_investment, with_arbitrage)
+
+    # 이미 실현된 차익거래가 얼마나 겹치는지. 겹침이 크면 상한 값이 과대평가다.
+    assumed_cycles_kwh = capacity * dod * arbitrage.period_days * cycles_per_day
+    overlap = dispatch.discharged_kwh / assumed_cycles_kwh if assumed_cycles_kwh > 0 else 0.0
 
     warnings: list[str] = []
     if dispatch.charge_created_new_peak:
@@ -423,40 +513,174 @@ def evaluate_ess(
             f"있습니다. 실제 달성 피크는 {dispatch.achieved_peak_kw:,.1f} kW 입니다. "
             "출력이나 용량을 키우십시오."
         )
-    if breakeven is not None and breakeven < unit_cost_won_per_kwh:
+    if 0 < discharge_hours < HIGH_RATE_DISCHARGE_HOURS:
         warnings.append(
-            f"손익분기 단가 {breakeven:,.0f} 원/kWh 가 입력 단가 "
-            f"{unit_cost_won_per_kwh:,.0f} 원/kWh 보다 낮습니다. "
+            f"산출 사양이 {c_rate(discharge_hours):.1f}C 방전에 해당합니다 "
+            f"(방전시간 {discharge_hours:.2f}h). 정치형 LFP 는 통상 0.5~1C 연속이므로 "
+            "고출력 셀 사양이며, 참고단가보다 비쌀 수 있습니다."
+        )
+    if (
+        breakeven is not None
+        and cost.unit_cost_won_per_kw is not None
+        and breakeven < cost.unit_cost_won_per_kw
+    ):
+        warnings.append(
+            f"손익분기 단가 {breakeven:,.0f} 원/kW 가 입력 단가 "
+            f"{cost.unit_cost_won_per_kw:,.0f} 원/kW 보다 낮습니다. "
             f"{payback_target_years:.0f}년 회수는 성립하지 않습니다."
         )
+    verdict = ref.verdict(breakeven, discharge_hours)
+
     notes = [
         "규칙기반 피크컷 단일 전략입니다. 목표 초과분을 방전하고 경부하에 충전합니다. "
-        "최적 운전과는 차이가 있습니다 (요구사항서 부록 D.8).",
+        "최적 운전과는 차이가 있습니다 (요구사항서 부록 D.9).",
         f"용량 산정 기준: {sizing_basis} "
         f"(하루 최대 {excess.max_daily_excess_kwh:,.1f} kWh, "
         f"연속 구간 최대 {excess.max_event_excess_kwh:,.1f} kWh, "
         f"기간 합계 {excess.total_excess_kwh:,.1f} kWh).",
+        f"방전시간 {discharge_hours:.2f}h ({c_rate(discharge_hours):.1f}C) 는 "
+        "하루 최대 초과 에너지 ÷ 최대 초과 출력으로 **산출한 값**입니다. "
+        "짧을수록 kW당 단가가 싸므로, 조달이 가능하다면 짧은 쪽이 맞습니다.",
+        f"투자비는 출력 {power:,.1f} kW × kW당 단가로 냈습니다 (출처: {cost.source}). "
+        "방전시간은 단가에 이미 반영되어 있어 다시 곱하지 않았습니다.",
+        "**수익 구조** — 피크저감 수익은 출력(kW)에 비례해 용량을 늘려도 늘지 않고, "
+        "차익거래 수익은 용량(kWh)에 비례하며, 투자비도 용량에 크게 비례합니다. "
+        "따라서 용량을 늘릴수록 회수기간이 나빠집니다.",
+        f"참고단가 출처: {ref.citation}. {ref.lower_bound_note}",
+        verdict,
         f"왕복효율 {round_trip:.0%}, DoD {dod:.0%} 를 적용했습니다.",
         "열화·수명은 반영하지 않았습니다.",
     ]
+    if outlook_payback is not None:
+        notes.append(
+            f"현재 단가 기준 {payback_years(investment, annual_saving):,.1f}년 / "
+            f"{ref.outlook.label} 단가 기준 {outlook_payback:,.1f}년입니다 "
+            "(피크저감 절감액만 반영)."
+        )
+    if payback_with_arbitrage is not None:
+        notes.append(
+            f"차익거래 잠재 수익까지 더하면 현재 단가 {payback_with_arbitrage:,.1f}년 / "
+            f"{ref.outlook.label} 단가 "
+            f"{outlook_payback_with_arbitrage:,.1f}년입니다. **이쪽이 상한입니다** — "
+            f"피크컷 디스패치가 이미 가정 사이클의 {overlap:.0%} 를 돌리고 있어 그만큼은 "
+            "절감액에 이미 들어 있습니다."
+        )
+    notes.extend(arbitrage.notes)
+
     return EssResult(
         excess=excess,
         dispatch=dispatch,
         power_kw=power,
         capacity_kwh=capacity,
-        unit_cost_won_per_kwh=unit_cost_won_per_kwh,
+        discharge_hours=discharge_hours,
+        cost=cost,
         investment_won=investment,
         base_saving_won=base_bill.total_base_won - bill.total_base_won,
         energy_saving_won=base_bill.total_energy_won - bill.total_energy_won,
         total_saving_won=saving,
         annual_saving_won=annual_saving,
         payback_years=payback_years(investment, annual_saving),
-        breakeven_unit_cost_won_per_kwh=breakeven,
+        breakeven_unit_cost_won_per_kw=breakeven,
         payback_target_years=payback_target_years,
         billing_demand_kw=bill.billing_demand_kw,
+        arbitrage=arbitrage,
+        payback_with_arbitrage_years=payback_with_arbitrage,
+        outlook_payback_years=outlook_payback,
+        outlook_payback_with_arbitrage_years=outlook_payback_with_arbitrage,
+        outlook_label=ref.outlook.label,
+        reference_verdict=verdict,
         warnings=tuple(warnings),
         notes=tuple(notes),
     )
+
+
+def ess_payback_curve(
+    usage: UsageData,
+    table: TariffTable,
+    selection: TariffSelection,
+    *,
+    target_kw: float,
+    discharge_hours: tuple[float, ...] = DEFAULT_CURVE_DISCHARGE_HOURS,
+    technology: str | None = None,
+    reference: EssCostReference | None = None,
+    charge_mask: pd.Series | None = None,
+    round_trip: float = DEFAULT_ROUND_TRIP,
+    dod: float = DEFAULT_DOD,
+    cycles_per_day: float = DEFAULT_CYCLES_PER_DAY,
+    baseline: BillingResult | None = None,
+    quality: QualityReport | None = None,
+    options: BillingOptions | None = None,
+) -> pd.DataFrame:
+    """방전시간별 회수기간. **용량을 늘릴수록 나빠진다는 것을 보이는 표다.**
+
+    출력은 목표에서 정해져 고정이고 용량만 ``출력 × 방전시간`` 으로 키운다.
+    피크저감 수익은 출력에 붙어 그대로인데 투자비는 용량을 따라 오르므로
+    회수기간이 단조증가한다.
+
+    차익거래 잠재 수익을 더한 열을 함께 낸다 — 이쪽이 **상한**이다. 기본 열은
+    순부하 재계산 절감액만 쓴 값이라 이중 계산이 없다.
+    """
+    opts = options if options is not None else BillingOptions()
+    interval = usage.meta.interval_minutes
+    excess = analyze_peak_excess(usage.kw, target_kw, interval)
+    power, _ = size_for_target(excess, dod=dod, round_trip=round_trip)
+    ref = reference if reference is not None else load_ess_cost_reference()
+    item = ref.default if technology is None else ref.technology(technology)
+
+    base_bill = (
+        baseline
+        if baseline is not None
+        else calculate_bill(usage, table, selection, options=opts, quality=quality)
+    )
+    mask = (
+        charge_mask
+        if charge_mask is not None
+        else light_band_mask(usage, table, selection=selection, options=opts)
+    )
+
+    rows: list[dict[str, object]] = []
+    for hours in discharge_hours:
+        capacity = power * hours
+        dispatch = dispatch_peak_shaving(
+            usage.kw,
+            target_kw=target_kw,
+            power_kw=power,
+            capacity_kwh=capacity,
+            charge_mask=mask,
+            interval_minutes=interval,
+            round_trip=round_trip,
+            dod=dod,
+        )
+        after = with_load(usage, dispatch.net_kw, source_suffix=" + ESS")
+        bill = calculate_bill(after, table, selection, options=opts, quality=quality)
+        annual = annualize(base_bill.total_won - bill.total_won, base_bill.base_fee_months)
+        investment = power * item.unit_cost_won_per_kw(hours)
+        arbitrage = arbitrage_value(
+            usage,
+            table,
+            selection,
+            usable_kwh=capacity * dod,
+            round_trip=round_trip,
+            base_fee_months=base_bill.base_fee_months,
+            cycles_per_day=cycles_per_day,
+            options=opts,
+        )
+        rows.append(
+            {
+                "방전시간(h)": hours,
+                "용량(kWh)": capacity,
+                "kW당 단가(원)": item.unit_cost_won_per_kw(hours),
+                "투자비(원)": investment,
+                "12개월 환산 절감액(원)": annual,
+                "회수기간(피크저감만, 년)": payback_years(investment, annual),
+                "차익거래 잠재(원/년)": arbitrage.annual_won,
+                "회수기간(차익거래 포함, 년)": payback_years(
+                    investment, annual + arbitrage.annual_won
+                ),
+                "목표 달성": dispatch.target_met,
+            }
+        )
+    return pd.DataFrame(rows).set_index("방전시간(h)")
 
 
 def excess_table(kw: pd.Series, targets: tuple[float, ...], interval_minutes: int) -> pd.DataFrame:

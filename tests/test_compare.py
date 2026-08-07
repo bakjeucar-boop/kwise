@@ -9,12 +9,15 @@ import pandas as pd
 import pytest
 
 from kwise.compare import (
+    SCENARIO_NAME_CAVEAT,
     CombinationSpec,
     ComparisonResult,
     compare_combinations,
     default_combinations,
     evaluate_combination,
     sensitivity_comparison,
+    sensitivity_range_frame,
+    sensitivity_ranges,
 )
 from kwise.io import UsageData
 from kwise.measures import Certainty, dispatch_peak_shaving, lowest_certainty
@@ -319,11 +322,8 @@ def test_sensitivity_moves_pv_but_not_the_tariff_switch(
         unit_pv_kw_per_kwp=sample_unit_pv,
         quality=sample_report,
     )
-    assert list(with_pv.index) == ["보수", "기준", "낙관"]
-    assert list(with_pv["계수"]) == [0.70, 1.00, 1.20]
-    assert with_pv["발전량(kWh)"].nunique() == 3
-    assert with_pv["절감액(원)"].nunique() == 3
-    assert with_pv["절감액(원)"].is_monotonic_increasing
+    assert list(with_pv.index) == ["평탄형", "기준", "첨예형"]
+    assert list(with_pv["첨예도 s"]) == [0.85, 1.00, 1.25]
 
     without_pv = sensitivity_comparison(
         sample_usage,
@@ -334,3 +334,128 @@ def test_sensitivity_moves_pv_but_not_the_tariff_switch(
     )
     assert without_pv["절감액(원)"].nunique() == 1  # 확정 계산이라 감도와 무관하다
     assert set(without_pv["발전량(kWh)"]) == {0.0}
+
+
+@pytest.fixture(scope="module")
+def pv_sensitivity(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_unit_pv: pd.Series,
+) -> pd.DataFrame:
+    return sensitivity_comparison(
+        sample_usage,
+        tariff,
+        CombinationSpec("PV", BEST, pv_capacity_kwp=PV_KWP),
+        baseline_bill=sample_bill,
+        unit_pv_kw_per_kwp=sample_unit_pv,
+        quality=sample_report,
+    )
+
+
+def test_generation_is_preserved_across_scenarios(pv_sensitivity: pd.DataFrame) -> None:
+    """총 발전량이 세 시나리오에서 같다. 첨예도만 바꿨기 때문이다 (9.2)."""
+    generation = pv_sensitivity["발전량(kWh)"]
+    assert float(generation.max() / generation.min() - 1.0) < 0.01
+
+
+def test_energy_saving_barely_moves_but_base_fee_saving_does(
+    pv_sensitivity: pd.DataFrame,
+) -> None:
+    """**감도가 흔들어야 할 것은 기본요금이다.**
+
+    전력량요금 절감액은 총 발전량에 붙으므로 시나리오 간 차이가 5% 이내여야 하고,
+    기본요금 절감액은 피크 시각의 출력에 붙으므로 그보다 훨씬 크게 벌어져야 한다.
+    일률 계수를 곱하던 이전 방식은 둘을 함께 흔들어 감도의 뜻을 흐렸다.
+    """
+
+    def spread(column: str) -> float:
+        values = pv_sensitivity[column]
+        return float((values.max() - values.min()) / values.abs().max())
+
+    energy_spread = spread("전력량요금 절감액(원)")
+    base_spread = spread("기본요금 절감액(원)")
+    assert energy_spread < 0.05
+    assert base_spread > energy_spread * 5
+
+
+def test_base_case_matches_the_unadjusted_combination(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_unit_pv: pd.Series,
+    pv_sensitivity: pd.DataFrame,
+) -> None:
+    """s=1.0 시나리오는 감도를 적용하지 않은 조합과 완전히 같다."""
+    plain = evaluate_combination(
+        sample_usage,
+        tariff,
+        CombinationSpec("PV", BEST, pv_capacity_kwp=PV_KWP),
+        baseline_bill=sample_bill,
+        unit_pv_kw_per_kwp=sample_unit_pv,
+        quality=sample_report,
+    )
+    assert pv_sensitivity.loc["기준", "절감액(원)"] == pytest.approx(plain.saving_won)
+    assert pv_sensitivity.loc["기준", "발전량(kWh)"] == pytest.approx(plain.generation_kwh)
+
+
+def test_scenario_names_describe_the_profile_not_the_saving(
+    pv_sensitivity: pd.DataFrame,
+) -> None:
+    """**'낙관'이 절감액이 크다는 뜻이 아니다.**
+
+    총량이 보존되므로 첨예도를 올리면 정오는 높아지지만 아침·저녁 어깨가 낮아진다.
+    샘플은 최대수요가 09:30 인 오전 피크형이라 '낙관'의 기본요금 절감액이 오히려
+    작다. 이름을 절감액으로 읽으면 결론이 뒤집히므로 안내 문구를 함께 낸다.
+    """
+    assert "좋고 나쁨의 축이" in SCENARIO_NAME_CAVEAT
+    base_savings = pv_sensitivity["기본요금 절감액(원)"]
+    assert base_savings.nunique() == 3  # 방향은 부하 형태가 정한다
+
+
+# --------------------------------------------------------------------- 감도 범위 표시 (9.2)
+
+
+def test_result_is_shown_as_a_range_not_three_columns(pv_sensitivity: pd.DataFrame) -> None:
+    """**3열 나열이 아니라 범위로 보여 준다.**
+
+    세 값을 나란히 놓으면 "어느 쪽이 좋은 값인가" 를 찾게 되는데 이 축에는
+    좋고 나쁨이 없다. min/max 로 범위만 뽑는다.
+    """
+    frame = sensitivity_range_frame(pv_sensitivity)
+    assert frame.index.name == "지표"
+    row = frame.loc["기본요금 절감액(원)"]
+    detail = pv_sensitivity["기본요금 절감액(원)"]
+    assert row["범위 하한"] == pytest.approx(detail.min())
+    assert row["범위 상한"] == pytest.approx(detail.max())
+    assert row["기준값"] == pytest.approx(detail.loc["기준"])
+    assert "프로파일 감도 범위" in row["표시"]
+
+
+def test_range_endpoints_are_not_pinned_to_a_scenario(pv_sensitivity: pd.DataFrame) -> None:
+    """최댓값이 평탄형에서 나올 수도 첨예형에서 나올 수도 있다.
+
+    샘플은 최대수요가 09:30 인 오전 피크형이라 기본요금 절감액의 상한이
+    **첨예형에서 나오지 않는다.** 일률 계수를 곱하던 이전 방식에서는 낙관이 항상
+    최대였으므로 여기서 읽는 방식이 갈린다. 그래서 시나리오를 고정하지 않고
+    min/max 로 뽑는다.
+    """
+    ranges = {item.metric: item for item in sensitivity_ranges(pv_sensitivity)}
+    base_fee = ranges["기본요금 절감액(원)"]
+    assert base_fee.high_scenario != "첨예형"
+    assert base_fee.low_scenario == "첨예형"
+    assert base_fee.high is not None and base_fee.low is not None
+    assert base_fee.high > base_fee.low
+
+
+def test_range_width_separates_total_and_peak_metrics(pv_sensitivity: pd.DataFrame) -> None:
+    """총량 기반 지표는 범위가 좁고 피크 기반 지표만 벌어진다."""
+    ranges = {item.metric: item for item in sensitivity_ranges(pv_sensitivity)}
+    energy = ranges["전력량요금 절감액(원)"].spread_ratio
+    base_fee = ranges["기본요금 절감액(원)"].spread_ratio
+    generation = ranges["발전량(kWh)"].spread_ratio
+    assert generation is not None and generation < 0.01
+    assert energy is not None and energy < 0.05
+    assert base_fee is not None and base_fee > energy * 5

@@ -1,0 +1,62 @@
+{
+  "schema_version": "0.1",
+  "source": {
+    "title": "효율적 탄소중립 실현을 위한 에너지저장장치비용(LCOS) 전망 및 최적믹스 수립 시스템 구축 연구",
+    "publisher": "에너지경제연구원",
+    "basis_year": 2025,
+    "exchange_rate_won_per_usd": 1412.0,
+    "reference_discharge_hours": 6.0,
+    "note": "원 자료는 2성분(원/kW + 원/kWh)이다. 방전시간을 곱해 kW당 단가로 환산해 쓴다. 양수발전(PSH)은 건물 대상이 아니라 넣지 않았다."
+  },
+  "character": {
+    "kind": "lower_bound",
+    "why": "계통용 대형 ESS 기준이며 전용실·소화설비 등 안전 규제 대응비와 수배전 연계공사비가 빠져 있다. 실제 견적은 반드시 이보다 높다. 추정치가 아니라 하한선으로 쓴다.",
+    "asymmetry": {
+      "above_breakeven": "하한선이 손익분기 단가보다 높으면 — 경제성 없음 (강한 판정). 더 싸질 여지가 없다",
+      "below_breakeven": "하한선이 손익분기 단가보다 낮으면 — 견적을 받아볼 가치 있음 (약한 판정). 실제 견적이 손익분기를 넘을 수 있다"
+    }
+  },
+  "auto_apply": false,
+  "auto_apply_note": "참고값을 기본값으로 자동 적용하지 않는다. 사용자가 명시적으로 골라야 한다. 자동 적용하면 출처가 다른 값이 견적으로 둔갑한다.",
+  "technologies": [
+    {
+      "key": "lfp_2025",
+      "label": "LFP (2025년 기준)",
+      "chemistry": "LFP",
+      "year": 2025,
+      "capex_power_won_per_kw": 245295.0,
+      "capex_energy_won_per_kwh": 369936.0,
+      "opex_power_won_per_kw_year": 10770.0
+    },
+    {
+      "key": "ncm_2025",
+      "label": "NCM (2025년 기준)",
+      "chemistry": "NCM",
+      "year": 2025,
+      "capex_power_won_per_kw": 245295.0,
+      "capex_energy_won_per_kwh": 475633.0,
+      "opex_power_won_per_kw_year": 12139.0
+    },
+    {
+      "key": "lfp_2030",
+      "label": "LFP (2030년 전망)",
+      "chemistry": "LFP",
+      "year": 2030,
+      "capex_power_won_per_kw": 213225.0,
+      "capex_energy_won_per_kwh": 284175.0,
+      "opex_power_won_per_kw_year": 9108.0
+    },
+    {
+      "key": "ncm_2030",
+      "label": "NCM (2030년 전망)",
+      "chemistry": "NCM",
+      "year": 2030,
+      "capex_power_won_per_kw": 213225.0,
+      "capex_energy_won_per_kwh": 391064.0,
+      "opex_power_won_per_kw_year": 10313.0
+    }
+  ],
+  "default_technology": "lfp_2025",
+  "outlook_technology": "lfp_2030",
+  "discharge_hours_shown": [0.5, 1.0, 2.0, 4.0, 6.0]
+}

@@ -18,6 +18,7 @@ from kwise.io import UsageData, load_usage
 from kwise.measures import (
     Certainty,
     ContractStatus,
+    EssCostInput,
     EssResult,
     NetLoad,
     SolarCurve,
@@ -45,7 +46,7 @@ from tests._synthetic import clearsky_weather, write_month
 CURRENT = TariffSelection("general_b", "high_a", "I")
 BEST = TariffSelection("general_b", "high_a", "II")
 INTERVAL = 15
-CELL_COST_WON_PER_KWH = 400_000.0
+ESS_COST_WON_PER_KW = 615_231.0  # 참고단가 LFP 2025 · 1h 방전 환산값
 PV_COST_WON_PER_KWP = 1_200_000.0
 
 
@@ -375,7 +376,7 @@ def test_tariff_switch_saving_ignores_sensitivity_while_solar_does_not(
     """요금제 전환은 확정 계산이라 감도와 무관하다. 태양광은 감도에 따라 달라진다."""
     switch_savings: set[float] = set()
     solar_savings: set[float] = set()
-    for factor in (0.70, 1.00, 1.20):
+    for sharpness in (0.85, 1.00, 1.25):
         switch_savings.add(
             evaluate_tariff_switch(sample_usage, tariff, CURRENT, quality=sample_report).saving_won
         )
@@ -387,7 +388,7 @@ def test_tariff_switch_saving_ignores_sensitivity_while_solar_does_not(
             max_capacity_kwp=300.0,
             unit_cost_won_per_kwp=PV_COST_WON_PER_KWP,
             steps=1,
-            sensitivity_factor=factor,
+            sharpness=sharpness,
             baseline=sample_bill,
             quality=sample_report,
         )
@@ -514,7 +515,8 @@ def test_ess_economics(sample_ess: EssResult) -> None:
     result = sample_ess
     assert result.power_kw == pytest.approx(93.4, abs=0.1)
     assert result.capacity_kwh == pytest.approx(41.1, abs=0.5)
-    assert result.investment_won == pytest.approx(result.capacity_kwh * CELL_COST_WON_PER_KWH)
+    # 투자비 = **출력 × kW당 단가**. 방전시간은 단가에 들어 있어 다시 곱하지 않는다.
+    assert result.investment_won == pytest.approx(result.power_kw * ESS_COST_WON_PER_KW)
     assert result.total_saving_won > 0
     assert result.payback_years is not None
     assert result.certainty is Certainty.MEDIUM_LOW
@@ -523,8 +525,8 @@ def test_ess_economics(sample_ess: EssResult) -> None:
 def test_breakeven_unit_cost_is_reversed_from_ten_years(sample_ess: EssResult) -> None:
     """회수기간 10년이 되는 단가를 역산한다. '경제성 없음' 도 의사결정 자료가 된다."""
     result = sample_ess
-    expected = result.annual_saving_won * 10.0 / result.capacity_kwh
-    assert result.breakeven_unit_cost_won_per_kwh == pytest.approx(expected)
+    expected = result.annual_saving_won * 10.0 / result.power_kw
+    assert result.breakeven_unit_cost_won_per_kw == pytest.approx(expected)
     assert result.payback_target_years == 10.0
 
 
@@ -554,7 +556,7 @@ def test_undersized_battery_warns(
         tariff,
         CURRENT,
         target_kw=5_000.0,
-        unit_cost_won_per_kwh=CELL_COST_WON_PER_KWH,
+        cost=EssCostInput.of_unit_cost(ESS_COST_WON_PER_KW),
         charge_mask=mask,
         power_kw=50.0,
         capacity_kwh=50.0,

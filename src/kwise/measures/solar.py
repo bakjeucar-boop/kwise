@@ -22,7 +22,7 @@ import pandas as pd
 from kwise.io import UsageData, slot_start
 from kwise.measures.base import Certainty, annualize, payback_years
 from kwise.measures.netload import apply_generation
-from kwise.pv import PvSystemConfig, WeatherData, align_simulation, simulate
+from kwise.pv import PvSystemConfig, WeatherData, align_simulation, sharpen, simulate
 from kwise.quality import QualityReport
 from kwise.tariff import (
     DAY_WINDOW,
@@ -179,7 +179,7 @@ class SolarCurve:
     baseline_total_won: float
     baseline_base_won: float
     baseline_energy_won: float
-    sensitivity_factor: float
+    sharpness: float
     max_capacity_kwp: float
     unit_cost_won_per_kwp: float
     base_fee_months: float
@@ -208,7 +208,7 @@ def solar_curve(
     max_capacity_kwp: float,
     unit_cost_won_per_kwp: float,
     steps: int = DEFAULT_STEPS,
-    sensitivity_factor: float = 1.0,
+    sharpness: float = 1.0,
     power_factor_pct: float = LAGGING_STANDARD_PCT,
     baseline: BillingResult | None = None,
     quality: QualityReport | None = None,
@@ -220,7 +220,8 @@ def solar_curve(
         unit_kw_per_kwp: :func:`unit_generation_kw` 의 결과.
         max_capacity_kwp: 상한. 보통 :func:`roof_capacity_limit_kwp`.
         unit_cost_won_per_kwp: 설치 단가. 사용자 입력이며 기본값이 없다.
-        sensitivity_factor: 감도 계수 (9.2). PV 출력에만 적용한다.
+        sharpness: 감도 첨예도 계수 (9.2). PV 출력에만 적용한다. 일별 총량을
+            보존하고 곡선의 뾰족한 정도만 바꾼다.
     """
     if steps < 1:
         raise ValueError(f"단계 수는 1 이상이어야 합니다: {steps}")
@@ -233,13 +234,16 @@ def solar_curve(
         if baseline is not None
         else calculate_bill(usage, table, selection, options=opts, quality=quality)
     )
-    unit = unit_kw_per_kwp.reindex(pd.DatetimeIndex(usage.kw.index)).fillna(0.0)
+    # 첨예도 조정을 **단위 프로파일에 한 번만** 건다. sharpen 은 양의 상수배에
+    # 대해 동차이므로(평균·편차·클램프·재정규화가 모두 비례) 용량을 곱한 뒤
+    # 조정한 것과 결과가 같다. 20단계마다 다시 계산할 이유가 없다.
+    unit = sharpen(unit_kw_per_kwp.reindex(pd.DatetimeIndex(usage.kw.index)).fillna(0.0), sharpness)
 
     points: list[SolarPoint] = []
     warnings: list[str] = []
     for step in range(steps + 1):  # 0 kWp 포함
         capacity = max_capacity_kwp * step / steps
-        generation = unit * capacity * sensitivity_factor
+        generation = unit * capacity
         net = apply_generation(usage, generation)
         bill = calculate_bill(net.usage, table, selection, options=opts, quality=quality)
 
@@ -292,7 +296,8 @@ def solar_curve(
     notes = [
         "발전량 예측은 피크 발전량을 과소 산출하는 경향이 있어 결과가 보수적입니다 "
         "(요구사항서 9.1).",
-        f"감도 계수 {sensitivity_factor:.2f} 를 PV 출력에 적용했습니다.",
+        f"감도 첨예도 계수 s={sharpness:.2f} 를 PV 출력에 적용했습니다. "
+        "일별 총 발전량은 보존되고 피크만 달라집니다 (요구사항서 9.2).",
         "용량마다 요금을 다시 계산했습니다. 절감액을 빼기로 어림하지 않았습니다.",
         f"역률 판정 창은 08~22시(구간 시작 기준)이며 기준은 지상 "
         f"{LAGGING_STANDARD_PCT:.0f}% 입니다 (기본공급약관 제43조 ②). "
@@ -307,7 +312,7 @@ def solar_curve(
         baseline_total_won=base_bill.total_won,
         baseline_base_won=base_bill.total_base_won,
         baseline_energy_won=base_bill.total_energy_won,
-        sensitivity_factor=sensitivity_factor,
+        sharpness=sharpness,
         max_capacity_kwp=max_capacity_kwp,
         unit_cost_won_per_kwp=unit_cost_won_per_kwp,
         base_fee_months=base_bill.base_fee_months,

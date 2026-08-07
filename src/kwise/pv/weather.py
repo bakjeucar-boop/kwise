@@ -3,6 +3,16 @@
 Open-Meteo 에서 시간별 일사·기온·풍속을 받아 ``PROJECT_CACHE`` 경로에 parquet 으로
 캐시한다. 같은 좌표·기간을 다시 물으면 네트워크를 타지 않는다.
 
+**조회 순서** (:func:`load_weather`)
+
+    ① ``PROJECT_CACHE`` 캐시    반복 호출을 여기서 막는다
+    ② Open-Meteo API           성공분은 ①에 캐시한다
+    ③ 사전 취득분 ``data\\weather\\``  (:mod:`kwise.pv.archive`)
+    ④ 둘 다 없으면 중단        0 으로 계산하거나 인접 격자로 대체하지 않는다
+
+③으로 물러선 결과에는 ``fallback=True`` 와 :data:`ARCHIVE_FALLBACK_NOTE` 가 붙는다.
+**조용히 바꾸지 않는다** — 시뮬레이션 경고와 케이스 요약까지 그대로 실려 나간다.
+
 **시각 규약** — Open-Meteo 의 시간별 라벨은 구간의 **시작**이다. 값이 대표하는
 순시각은 라벨 + 30분으로 본다 (:class:`WeatherLabel`). 실측 발전량과 대조했을 때
 발전 곡선이 통째로 30분 밀려 보이면 이 규약부터 의심한다.
@@ -27,6 +37,7 @@ from urllib.parse import urlencode
 import pandas as pd
 
 __all__ = [
+    "ARCHIVE_FALLBACK_NOTE",
     "ARCHIVE_URL",
     "FORECAST_URL",
     "WEATHER_COLUMNS",
@@ -69,6 +80,12 @@ _COLUMN_MAP = {
     "snowfall": "snowfall",
 }
 _KMH_TO_MS = 1 / 3.6
+
+# 사전 취득분으로 물러섰을 때 결과에 붙는 문구. 조용히 바꾸지 않는다 (요구사항서 7.5).
+ARCHIVE_FALLBACK_NOTE = (
+    "Open-Meteo 접속에 실패해 사전 취득분(data\\weather\\)으로 계산했습니다. "
+    "격자 ({latitude:.2f}, {longitude:.2f}) · {start} ~ {end}. 사유: {reason}"
+)
 
 
 class WeatherUnavailableError(RuntimeError):
@@ -159,6 +176,8 @@ class WeatherData:
     label: WeatherLabel = WeatherLabel.INTERVAL_START
     source: str = "cache"
     path: Path | None = None
+    fallback: bool = False
+    notes: tuple[str, ...] = ()
 
     @property
     def instants(self) -> pd.DatetimeIndex:
@@ -301,23 +320,64 @@ def load_weather(
     use_cache: bool = True,
     refresh: bool = False,
     label: WeatherLabel = WeatherLabel.INTERVAL_START,
+    archive_dir: Path | None = None,
+    use_archive: bool = True,
 ) -> WeatherData:
-    """캐시 우선으로 기상 데이터를 얻는다.
+    """캐시 → API → 사전 취득분 순으로 기상 데이터를 얻는다.
 
     Args:
         fetch: 취득 함수. 기본은 Open-Meteo. 테스트는 여기에 합성 생성기를 넣어
             네트워크를 타지 않는다.
         refresh: True 면 캐시를 무시하고 다시 받는다.
+        archive_dir: 사전 취득분 경로. 기본은 ``KWISE_WEATHER_DIR`` 또는
+            ``data\\weather``. **다른 경로로 옮겨도 동작한다.**
+        use_archive: False 면 폴백하지 않고 그대로 실패한다.
+
+    Raises:
+        WeatherUnavailableError: API 도 사전 취득분도 없을 때. **예외를 삼키고 0 으로
+            계산하지 않는다. 인접 격자로 대체하지도 않는다.**
     """
+    from kwise.pv.archive import load_archive, unavailable_message
+
     path = weather_cache_path(request, root=cache_dir)
     if use_cache and not refresh and path.is_file():
         hourly = pd.read_parquet(path)
         return WeatherData(hourly=hourly, request=request, label=label, source="cache", path=path)
 
     fetcher = fetch if fetch is not None else fetch_open_meteo
-    hourly = fetcher(request)
-    if hourly.empty:
-        raise WeatherUnavailableError(f"받은 기상 자료가 비어 있습니다: {request}")
+    try:
+        hourly = fetcher(request)
+        if hourly.empty:
+            raise WeatherUnavailableError(f"받은 기상 자료가 비어 있습니다: {request}")
+    except WeatherUnavailableError as network_error:
+        if not use_archive:
+            raise
+        try:
+            stored_hourly = load_archive(request, root=archive_dir)
+        except WeatherUnavailableError as archive_error:
+            raise WeatherUnavailableError(
+                unavailable_message(request, root=archive_dir)
+                + f" (API: {network_error} / 사전 취득분: {archive_error})"
+            ) from network_error
+        cell = request.grid_cell
+        note = ARCHIVE_FALLBACK_NOTE.format(
+            latitude=cell[0],
+            longitude=cell[1],
+            start=request.start,
+            end=request.end,
+            reason=str(network_error)[:200],
+        )
+        # 사전 취득분은 캐시에 쓰지 않는다. 쓰면 폴백이 다음 실행에서 캐시로 둔갑해
+        # "조용히 바뀐" 상태가 굳는다.
+        return WeatherData(
+            hourly=stored_hourly,
+            request=request,
+            label=label,
+            source="archive",
+            path=None,
+            fallback=True,
+            notes=(note,),
+        )
 
     stored: Path | None = None
     if use_cache:

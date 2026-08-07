@@ -14,15 +14,28 @@ from kwise.compare.combination import (
     default_combinations,
     evaluate_combination,
 )
-from kwise.compare.sensitivity import SENSITIVITY_NOTE, sensitivity_comparison
+from kwise.compare.sensitivity import (
+    RANGE_METRICS,
+    SCENARIO_NAME_CAVEAT,
+    SENSITIVITY_NOTE,
+    SensitivityRange,
+    sensitivity_comparison,
+    sensitivity_range_frame,
+    sensitivity_ranges,
+)
 
 __all__ = [
+    "RANGE_METRICS",
+    "SCENARIO_NAME_CAVEAT",
     "SENSITIVITY_NOTE",
     "CombinationResult",
     "CombinationSpec",
     "ComparisonResult",
+    "SensitivityRange",
     "compare_combinations",
     "default_combinations",
     "evaluate_combination",
     "sensitivity_comparison",
+    "sensitivity_range_frame",
+    "sensitivity_ranges",
 ]

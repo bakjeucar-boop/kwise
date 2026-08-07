@@ -1,7 +1,7 @@
 """Excel 출력 (요구사항서 10.3).
 
 시트 구성은 요약 / 진단 / 월별 집계 / 15분 시계열 / 요금 계산 명세 / 수단별 결과 /
-조합 비교 / 감도 여덟 장이다.
+조합 비교 / 감도 / 감도 상세 아홉 장이다.
 
 **저장 직전 tz-aware 컬럼을 반드시 해제한다.** pvlib 결과는 항상 tz-aware 이고,
 openpyxl 은 tz 가 붙은 시각을 쓰지 못해 ValueError 를 낸다.
@@ -18,7 +18,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from kwise.compare import ComparisonResult
+from kwise.compare import (
+    SCENARIO_NAME_CAVEAT,
+    SENSITIVITY_NOTE,
+    ComparisonResult,
+    sensitivity_range_frame,
+)
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
 from kwise.measures import (
@@ -33,6 +38,7 @@ from kwise.measures import (
 )
 from kwise.report.notices import (
     CONTRACT_CHANGE_WARNING,
+    DATA_SOURCES,
     KNOWN_LIMITS,
     NOT_INCLUDED_NOTICE,
     UNPRICED_REASONS,
@@ -56,8 +62,9 @@ __all__ = [
 ]
 
 NO_PV_SENSITIVITY_NOTE = (
-    "태양광이 없어 감도를 적용할 항목이 없습니다. 감도 계수는 PV 출력에만 적용하며, "
-    "요금제 전환과 계약전력 조정은 확정 계산이라 감도를 쓰지 않습니다 (요구사항서 9.2)."
+    "태양광이 없어 감도를 적용할 항목이 없습니다. 감도는 PV 출력의 첨예도에만 적용하며, "
+    "요금제 전환·계약전력 조정·역률 개선은 확정 계산이라 감도를 쓰지 않습니다 "
+    "(요구사항서 9.2)."
 )
 
 DEFAULT_OUTPUT_DIR = Path("output")
@@ -70,6 +77,7 @@ SHEET_ORDER: tuple[str, ...] = (
     "수단별 결과",
     "조합 비교",
     "감도",
+    "감도 상세",
 )
 _CLOSE_EXCEL = "Excel 에서 파일을 닫아 주세요."
 
@@ -206,6 +214,11 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
     rows.append(("계약전력 변경 경고", "필수 안내", CONTRACT_CHANGE_WARNING))  # 9.4
     for number, limit in enumerate(KNOWN_LIMITS, start=1):  # 부록 D
         rows.append(("알려진 한계", f"{number}", limit))
+    for source in DATA_SOURCES:  # 출처 표기 (7.5)
+        rows.append(("데이터 출처", "", source))
+    if sections.sensitivity is not None:  # 9.2
+        rows.append(("감도", "방식", SENSITIVITY_NOTE))
+        rows.append(("감도", "이름 주의", SCENARIO_NAME_CAVEAT))
 
     for note in bill.notes:
         rows.append(("계산 방침", "", note))
@@ -352,14 +365,45 @@ def measure_summary_frame(
                 ),
                 "확실성": str(ess.certainty),
                 "비고": (
+                    f"방전시간 {ess.discharge_hours:.2f}h ({ess.c_rate:.1f}C, 산출값) · "
                     f"손익분기 단가 "
-                    f"{format_won(ess.breakeven_unit_cost_won_per_kwh)} 원/kWh "
-                    f"(회수 {ess.payback_target_years:.0f}년 기준). "
-                    f"용량은 하루 최대 초과 에너지 "
-                    f"{ess.excess.max_daily_excess_kwh:,.1f} kWh 기준"
+                    f"{format_won(ess.breakeven_unit_cost_won_per_kw)} 원/kW "
+                    f"(회수 {ess.payback_target_years:.0f}년 기준) · "
+                    + (
+                        f"{ess.outlook_label} 단가 기준 {ess.outlook_payback_years:,.1f}년"
+                        if ess.outlook_payback_years is not None
+                        else "전망 단가 회수기간 미산출"
+                    )
                 ),
             }
         )
+        if ess.arbitrage is not None:
+            # 차익거래는 **별도 줄**이다. 피크저감 절감액에 더하면 이중 계산이 된다.
+            arbitrage = ess.arbitrage
+            rows.append(
+                {
+                    "수단": "└ 차익거래 잠재 (경부하 충전 → 최대부하 방전)",
+                    "투자비(원)": None,
+                    "절감액(원)": UNPRICED_REASONS["arbitrage_not_summed"],
+                    "12개월 환산(원)": format_won(arbitrage.annual_won),
+                    "회수기간": (
+                        f"단독 {arbitrage.standalone_payback_years:,.1f}년"
+                        if arbitrage.standalone_payback_years is not None
+                        else UNPRICED_REASONS["no_saving"]
+                    ),
+                    "확실성": str(ess.certainty),
+                    "비고": (
+                        f"연 {arbitrage.won_per_kwh_year:,.0f} 원/kWh · "
+                        f"평일 {arbitrage.cycles_per_day:g} 사이클 · 계시별 단가는 요금표에서 "
+                        "가져왔습니다. "
+                        + (
+                            "배터리 수명(10~15년)을 넘어 단독으로는 성립하지 않습니다."
+                            if arbitrage.outlives_battery
+                            else "배터리 수명 안에 들어옵니다."
+                        )
+                    ),
+                }
+            )
     return pd.DataFrame(rows).set_index("수단")
 
 
@@ -519,7 +563,12 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
     if sections.comparison is not None:
         sheets["조합 비교"] = sections.comparison.frame()
     if sections.sensitivity is not None:
-        sheets["감도"] = sections.sensitivity
+        # **범위로 보여 준다.** 3열 나열은 근거표(감도 상세)로 내린다 (9.2).
+        if "첨예도 s" in sections.sensitivity.columns:
+            sheets["감도"] = sensitivity_range_frame(sections.sensitivity)
+            sheets["감도 상세"] = sections.sensitivity
+        else:
+            sheets["감도"] = sections.sensitivity
     return {name: sheets[name] for name in SHEET_ORDER if name in sheets}
 
 
