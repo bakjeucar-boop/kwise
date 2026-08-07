@@ -27,6 +27,7 @@ from kwise.tariff.schema import BANDS, TariffTable
 __all__ = [
     "DEFAULT_POLICY",
     "DEFAULT_UNIFORM_TOLERANCE",
+    "FLAT_RATE_POLICY",
     "OptionPairPolicy",
     "ValidationFinding",
     "option_pair_diffs",
@@ -53,11 +54,22 @@ class OptionPairPolicy:
     peak_focused: bool = False
 
 
+# 전체시간(단일 단가) 종별의 기본 정책.
+#
+# 균일성 검사를 끈다. 전체시간 종별은 계절마다 단가가 하나뿐이라 검사 대상 칸이
+# 9개가 아니라 3개이고, 선택Ⅰ→Ⅱ 할인폭을 계절별로 다르게 설계한다
+# (일반용(갑)Ⅰ 고압A: 여름 4.0 / 봄가을 4.3 / 겨울 5.3원). 요금표가 약속하지
+# 않은 것을 검사하는 셈이라 규칙 쪽이 틀린 것이다. 손익분기는 그대로 본다.
+FLAT_RATE_POLICY = OptionPairPolicy(uniform_tolerance=None)
+
 # 부록 A.2 의 표를 그대로 옮긴 것이다.
 #   고압A Ⅰ→Ⅱ  5.5 원 ±0.05,  손익분기 1,100 ÷ 5.5 = 200 h
 #   고압B Ⅰ→Ⅱ  3.8 원 ±0.05,  손익분기   750 ÷ 3.8 = 197 h
 #   고압B Ⅱ→Ⅲ  1.6~1.7 원 ±0.15 (반올림 폭), 손익분기 810 ÷ 1.65 ≈ 491 h
 #   고압A Ⅱ→Ⅲ  0.6~12.4 원 — 균일성·손익분기 모두 미적용. 최대부하 집중 설계다.
+#
+# 산업용(을)의 선택요금 차이 구조는 일반용(을)과 **완전히 같다** (고압A·B 의
+# 기본요금과 단가 차이가 원 단위까지 일치한다). 고압C 만 산업용(을)에 있다.
 DEFAULT_POLICY: Mapping[tuple[str, str, str, str], OptionPairPolicy] = {
     ("general_b", "high_a", "I", "II"): OptionPairPolicy(),
     ("general_b", "high_a", "II", "III"): OptionPairPolicy(
@@ -67,6 +79,19 @@ DEFAULT_POLICY: Mapping[tuple[str, str, str, str], OptionPairPolicy] = {
     ("general_b", "high_b", "II", "III"): OptionPairPolicy(
         uniform_tolerance=0.15, breakeven_range=(400.0, 600.0)
     ),
+    # 산업용(을) — 고압A·B 는 일반용(을)과 같은 정책, 고압C 는 이 종별에만 있다.
+    ("industrial_b", "high_a", "I", "II"): OptionPairPolicy(),
+    ("industrial_b", "high_a", "II", "III"): OptionPairPolicy(
+        uniform_tolerance=None, breakeven_range=None, peak_focused=True
+    ),
+    ("industrial_b", "high_b", "I", "II"): OptionPairPolicy(),
+    ("industrial_b", "high_b", "II", "III"): OptionPairPolicy(
+        uniform_tolerance=0.15, breakeven_range=(400.0, 600.0)
+    ),
+    ("industrial_b", "high_c", "I", "II"): OptionPairPolicy(),
+    # 고압C Ⅱ→Ⅲ 는 1.1 원으로 균일하다. 손익분기 810 ÷ 1.1 = 736 h 가 아니라
+    # 570 ÷ 1.1 ≈ 518 h — 고압B Ⅱ→Ⅲ 와 같은 '월 500시간 초과 유리' 대역이다.
+    ("industrial_b", "high_c", "II", "III"): OptionPairPolicy(breakeven_range=(400.0, 600.0)),
 }
 
 
@@ -106,12 +131,23 @@ def _check_order(table: TariffTable) -> list[ValidationFinding]:
             for option in ordered:
                 rates = voltage.options[option]
                 for season, energy in rates.energy.items():
-                    if not energy.light < energy.mid < energy.peak:
+                    if contract.time_of_use:
+                        if not energy.light < energy.mid < energy.peak:
+                            findings.append(
+                                ValidationFinding(
+                                    "규칙 1",
+                                    f"{target}/{option}/{season}",
+                                    f"경부하 < 중간부하 < 최대부하 가 깨졌습니다: "
+                                    f"{energy.light}, {energy.mid}, {energy.peak}",
+                                )
+                            )
+                    # 전체시간 종별은 시간대 구분이 없다. 세 칸이 같아야 정상이다.
+                    elif not energy.light == energy.mid == energy.peak:
                         findings.append(
                             ValidationFinding(
                                 "규칙 1",
                                 f"{target}/{option}/{season}",
-                                f"경부하 < 중간부하 < 최대부하 가 깨졌습니다: "
+                                f"전체시간 종별인데 시간대별 단가가 다릅니다: "
                                 f"{energy.light}, {energy.mid}, {energy.peak}",
                             )
                         )
@@ -163,9 +199,10 @@ def _check_option_pairs(
     for contract_key, contract in table.contract_types.items():
         for voltage_key, voltage in contract.voltages.items():
             ordered = [option for option in contract.options if option in voltage.options]
+            fallback = OptionPairPolicy() if contract.time_of_use else FLAT_RATE_POLICY
             for lower, upper in pairwise(ordered):
                 key = (contract_key, voltage_key, lower, upper)
-                rule = policy.get(key, OptionPairPolicy())
+                rule = policy.get(key, fallback)
                 target = f"{contract_key}/{voltage_key}/{lower}→{upper}"
                 diffs = option_pair_diffs(table, contract_key, voltage_key, lower, upper)
                 values = list(diffs.values())

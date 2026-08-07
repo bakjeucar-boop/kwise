@@ -445,10 +445,13 @@ def test_unverified_tariff_is_warned(sample_bill: BillingResult) -> None:
 
 
 def test_every_selection_can_be_priced(sample_usage: UsageData, tariff: TariffTable) -> None:
-    """선택요금 비교(5세션)는 이 함수를 조합마다 부른다. 6조합이 모두 계산돼야 한다."""
+    """선택요금 비교(5세션)는 이 함수를 조합마다 부른다. 6조합이 모두 계산돼야 한다.
+
+    **같은 계약종별 안에서만 돈다.** 종별 전환은 요금제 선택이 아니다.
+    """
     results = {
         str(selection): calculate_bill(sample_usage, tariff, selection)
-        for selection in list_selections(tariff)
+        for selection in list_selections(tariff, contract_types=["general_b"])
     }
     assert len(results) == 6
     assert all(result.total_won > 0 for result in results.values())

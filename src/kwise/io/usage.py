@@ -17,21 +17,33 @@
 
 from __future__ import annotations
 
+import csv
 import math
-import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import ClassVar
 
 import pandas as pd
+
+from kwise.io.columns import (
+    USAGE_DATE_COLUMN_CANDIDATES,
+    USAGE_ENERGY_COLUMN_CANDIDATES,
+    ColumnDetection,
+    ColumnDetectionError,
+    detect_usage_columns,
+    match_usage_column,
+    normalize_column_name,
+)
 
 __all__ = [
     "DEFAULT_ENCODINGS",
     "SUPPORTED_INTERVALS",
     "USAGE_DATE_COLUMN_CANDIDATES",
     "USAGE_ENERGY_COLUMN_CANDIDATES",
+    "ColumnDetection",
+    "ColumnDetectionError",
     "EnergySeries",
     "EnergyToDemandError",
     "GridKwhSeries",
@@ -42,9 +54,11 @@ __all__ = [
     "count_hour24",
     "detect_grid_phase_seconds",
     "detect_interval_minutes",
+    "detect_usage_columns",
     "load_usage",
     "load_usage_bytes",
     "match_usage_column",
+    "normalize_column_name",
     "parse_usage_datetime",
     "parse_usage_energy",
     "slot_start",
@@ -55,26 +69,6 @@ __all__ = [
 DEFAULT_ENCODINGS: tuple[str, ...] = ("utf-8-sig", "cp949", "euc-kr", "utf-8")
 
 SUPPORTED_INTERVALS: tuple[int, ...] = (15, 60)
-
-USAGE_DATE_COLUMN_CANDIDATES: tuple[str, ...] = (
-    "Meter Reading Date",
-    "검침일",
-    "검침일시",
-    "검침 날짜",
-    "검침시간",
-    "일시",
-    "날짜시간",
-)
-USAGE_ENERGY_COLUMN_CANDIDATES: tuple[str, ...] = (
-    "Forward Active Energy (kWh)",
-    "순방향 유효전력량(KWH)",
-    "순방향 유효전력량 (kWh)",
-    "순방향유효전력량",
-    "유효전력량",
-    "전력사용량",
-    "사용량",
-    "kWh",
-)
 
 _HOUR24_PATTERN = r"24:00(?::00)?$"
 _CSV_SUFFIXES = frozenset({".csv", ".txt"})
@@ -93,6 +87,7 @@ class UsageMeta:
     encoding: str | None
     date_column: str
     energy_column: str
+    columns: ColumnDetection
 
     interval_minutes: int
     grid_phase_seconds: int
@@ -278,36 +273,6 @@ class UsageData:
         raise AttributeError(name)
 
 
-# --------------------------------------------------------------------- 컬럼 매칭
-
-
-def normalize_column_name(value: object) -> str:
-    """컬럼명 비교용 정규화. 공백·기호를 지우고 소문자로 만든다."""
-    text = str(value).strip().lower()
-    text = re.sub(r"[\s_\-./\\()\[\]{}]", "", text)
-    return text.replace("㎾h", "kwh")
-
-
-def match_usage_column(columns: Iterable[object], candidates: Sequence[str]) -> str | None:
-    """후보 목록으로 컬럼을 유연 매칭한다. 정확 일치 → 부분 일치 순.
-
-    reference\\streamlit_app.py 에서 실측 검증된 로직이다.
-    """
-    normalized_columns = {normalize_column_name(col): col for col in columns}
-    for candidate in candidates:
-        key = normalize_column_name(candidate)
-        if key in normalized_columns:
-            return str(normalized_columns[key])
-    for candidate in candidates:
-        key = normalize_column_name(candidate)
-        if not key:
-            continue
-        for norm_col, original_col in normalized_columns.items():
-            if key in norm_col or norm_col in key:
-                return str(original_col)
-    return None
-
-
 # --------------------------------------------------------------------- 파싱
 
 
@@ -412,53 +377,92 @@ def slot_start(index: pd.DatetimeIndex, interval_minutes: int) -> pd.DatetimeInd
 # --------------------------------------------------------------------- 파일 읽기
 
 
-def _match_columns(frame: pd.DataFrame) -> tuple[str, str] | None:
-    date_col = match_usage_column(frame.columns, USAGE_DATE_COLUMN_CANDIDATES)
-    energy_col = match_usage_column(frame.columns, USAGE_ENERGY_COLUMN_CANDIDATES)
-    if date_col is None or energy_col is None:
-        return None
-    return date_col, energy_col
+def _csv_column_count(data: bytes, encoding: str, *, sample_lines: int = 40) -> int:
+    """앞부분을 훑어 열 개수의 최대값을 센다.
+
+    제목 행은 한 칸짜리라 뒤 행들과 열 수가 다르다. 그대로 읽으면 pandas 가
+    ``ParserError`` 를 낸다. 열 이름을 넉넉히 미리 주어 들쭉날쭉한 행을 견딘다.
+    """
+    text = data.decode(encoding)
+    reader = csv.reader(StringIO(text))
+    widths = [len(row) for _, row in zip(range(sample_lines), reader, strict=False)]
+    return max(widths) if widths else 1
+
+
+def _read_raw(data: bytes, suffix: str, encoding: str | None) -> pd.DataFrame:
+    """헤더 없이 통째로 읽는다. 헤더 행 탐색(1단)의 입력이다."""
+    if suffix in _CSV_SUFFIXES:
+        assert encoding is not None
+        width = _csv_column_count(data, encoding)
+        return pd.read_csv(
+            BytesIO(data), encoding=encoding, header=None, dtype=str, names=range(width)
+        )
+    return pd.read_excel(BytesIO(data), sheet_name=0, header=None)
+
+
+def _read_body(data: bytes, suffix: str, encoding: str | None, header_row: int) -> pd.DataFrame:
+    """헤더 행을 확정한 뒤 다시 읽는다. 이래야 dtype 추론이 정상으로 돌아온다.
+
+    CSV 는 ``skiprows`` 로 제목 행을 **파서에 닿기 전에** 버린다. ``header=N`` 은
+    앞 행도 토큰화하므로 열 수가 다른 제목 행에서 걸린다.
+    """
+    if suffix in _CSV_SUFFIXES:
+        return pd.read_csv(BytesIO(data), encoding=encoding, skiprows=header_row, header=0)
+    return pd.read_excel(BytesIO(data), sheet_name=0, header=header_row)
+
+
+def _detect_csv(data: bytes, encodings: Sequence[str]) -> tuple[str, ColumnDetection]:
+    """CSV 인코딩과 열 판정을 함께 확정한다.
+
+    **1차는 이름 매칭만 허용한다.** 인코딩이 어긋나도 예외 없이 깨진 헤더가
+    나오는 경우가 있는데, 내용 기반 판정은 헤더가 깨져도 성공해 버려서
+    잘못된 인코딩이 채택된다. 이름으로 아무 인코딩도 통과하지 못했을 때만
+    2차로 내용 기반을 연다 (그때는 인코딩 첫 후보를 쓴다).
+    """
+    attempts: list[str] = []
+    frames: list[tuple[str, pd.DataFrame]] = []
+    for encoding in encodings:
+        try:
+            raw = _read_raw(data, ".csv", encoding)
+        except (UnicodeDecodeError, ValueError, LookupError, pd.errors.ParserError) as exc:
+            attempts.append(f"{encoding}: {type(exc).__name__}")
+            continue
+        frames.append((encoding, raw))
+        try:
+            return encoding, detect_usage_columns(raw, allow_content_fallback=False)
+        except ColumnDetectionError as exc:
+            attempts.append(f"{encoding}: {exc}")
+
+    for encoding, raw in frames:  # 2차 — 값으로 판정한다
+        try:
+            return encoding, detect_usage_columns(raw)
+        except ColumnDetectionError:
+            continue
+    raise UsageLoadError(
+        "CSV 를 읽지 못했습니다. 인코딩 또는 컬럼명을 확인해 주세요.\n  " + "\n  ".join(attempts)
+    )
 
 
 def _read_frame(
-    raw: bytes, suffix: str, encodings: Sequence[str]
-) -> tuple[pd.DataFrame, str | None, str, str]:
-    """파일 바이트를 DataFrame 으로 읽고 컬럼까지 확정한다.
-
-    CSV 는 인코딩을 순차 시도하되, **컬럼 매칭에 성공해야 그 인코딩을 채택한다.**
-    인코딩이 어긋나도 예외 없이 깨진 헤더가 나오는 경우가 있기 때문이다.
-    """
+    data: bytes, suffix: str, encodings: Sequence[str]
+) -> tuple[pd.DataFrame, str | None, ColumnDetection]:
+    """파일 바이트를 DataFrame 으로 읽고 헤더 행·두 열까지 확정한다."""
     if suffix in _CSV_SUFFIXES:
-        attempts: list[str] = []
-        for encoding in encodings:
-            try:
-                frame = pd.read_csv(BytesIO(raw), encoding=encoding)
-            except (UnicodeDecodeError, ValueError, pd.errors.ParserError) as exc:
-                attempts.append(f"{encoding}: {type(exc).__name__}")
-                continue
-            matched = _match_columns(frame)
-            if matched is None:
-                attempts.append(f"{encoding}: 컬럼 매칭 실패 {list(frame.columns)}")
-                continue
-            return frame, encoding, matched[0], matched[1]
-        raise UsageLoadError(
-            "CSV 를 읽지 못했습니다. 인코딩 또는 컬럼명을 확인해 주세요.\n  "
-            + "\n  ".join(attempts)
-        )
+        encoding, detection = _detect_csv(data, encodings)
+        return _read_body(data, suffix, encoding, detection.header_row), encoding, detection
 
     if suffix in _EXCEL_SUFFIXES:
         try:
-            frame = pd.read_excel(BytesIO(raw), sheet_name=0)
+            raw = _read_raw(data, suffix, None)
         except ImportError as exc:  # openpyxl / xlrd 미설치
             raise UsageLoadError(
                 "엑셀 파일을 읽는 데 필요한 라이브러리가 없습니다. openpyxl 설치를 확인해 주세요."
             ) from exc
-        matched = _match_columns(frame)
-        if matched is None:
-            raise UsageLoadError(
-                f"검침일 또는 전력량 컬럼을 판독하지 못했습니다: {list(frame.columns)}"
-            )
-        return frame, None, matched[0], matched[1]
+        try:
+            detection = detect_usage_columns(raw)
+        except ColumnDetectionError as exc:
+            raise UsageLoadError(str(exc)) from exc
+        return _read_body(data, suffix, None, detection.header_row), None, detection
 
     raise UsageLoadError(
         f"지원하지 않는 파일 형식입니다: '{suffix}'. csv, xls, xlsx 를 올려 주세요."
@@ -501,8 +505,14 @@ def load_usage_bytes(
 ) -> UsageData:
     """업로드된 바이트에서 사용량 데이터를 읽는다. Streamlit 업로더용."""
     suffix = Path(filename).suffix.lower()
-    frame, encoding, date_col, energy_col = _read_frame(data, suffix, encodings)
+    frame, encoding, detection = _read_frame(data, suffix, encodings)
+    date_col, energy_col = detection.date_column, detection.energy_column
     frame = frame.dropna(how="all").dropna(axis=1, how="all")
+    for column in (date_col, energy_col):
+        if column not in frame.columns:
+            raise UsageLoadError(
+                f"판정한 열 '{column}' 이 본문에 없습니다 ({detection.describe()})."
+            )
 
     raw_rows = len(frame)
     hour24_rows = count_hour24(frame[date_col])
@@ -571,6 +581,7 @@ def load_usage_bytes(
         encoding=encoding,
         date_column=date_col,
         energy_column=energy_col,
+        columns=detection,
         interval_minutes=interval,
         grid_phase_seconds=phase,
         start=start,
@@ -594,6 +605,7 @@ def load_usage_bytes(
         mean_kw=mean_kw,
         load_factor=load_factor,
         warnings=_build_warnings(
+            detection=detection,
             interval=interval,
             missing_rows=missing_rows,
             missing_ratio=missing_ratio,
@@ -610,6 +622,7 @@ def load_usage_bytes(
 
 def _build_warnings(
     *,
+    detection: ColumnDetection,
     interval: int,
     missing_rows: int,
     missing_ratio: float,
@@ -621,7 +634,7 @@ def _build_warnings(
     negative_energy_rows: int,
 ) -> tuple[str, ...]:
     """업로드 직후 표시할 경고. 조용히 넘어가지 않는다 (요구사항서 4장)."""
-    messages: list[str] = []
+    messages: list[str] = list(detection.warnings)  # 열 판정에 확신이 없으면 먼저 알린다
     if interval != 15:
         messages.append(
             f"{interval}분 간격 데이터입니다. 15분 최대수요를 직접 관측할 수 없어 "

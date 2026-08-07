@@ -162,8 +162,10 @@ def diagnose(
     warnings.extend(current_bill.warnings)
 
     # 조합을 순차로 돌며 합계만 남긴다. 월별 명세는 현행 조합만 들고 있는다.
+    # **같은 계약종별 안에서만 비교한다.** 종별 전환은 요금제 선택이 아니라
+    # 용도·계약 변경이라 여기서 권할 수 있는 것이 아니다 (요구사항서 7.1).
     totals: dict[str, float] = {str(contract.selection): current_bill.total_won}
-    for selection in list_selections(table):
+    for selection in list_selections(table, contract_types=[contract.selection.contract_type]):
         key = str(selection)
         if key in totals:
             continue

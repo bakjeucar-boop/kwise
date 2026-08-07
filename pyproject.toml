@@ -68,7 +68,7 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.12"
-files = ["src", "tests"]
+files = ["src", "tests", "tools"]
 exclude = "^(reference|\\.venv|build)/"
 strict = true
 # pandas·numpy 등은 타입 스텁을 제공하지 않는다.

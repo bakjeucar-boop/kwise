@@ -1,108 +1,1262 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "region": "kr",
   "source": "한국전력공사 전기요금표(종합)",
+  "source_file": "2026_KEPCO_Electricity_Tariff.xlsx",
   "effective_date": "2026-06-01",
   "verified": false,
-
   "season_definition": {
-    "summer": [6, 7, 8],
-    "spring_fall": [3, 4, 5, 9, 10],
-    "winter": [11, 12, 1, 2]
+    "summer": [
+      6,
+      7,
+      8
+    ],
+    "spring_fall": [
+      3,
+      4,
+      5,
+      9,
+      10
+    ],
+    "winter": [
+      11,
+      12,
+      1,
+      2
+    ]
   },
-
   "tou_definition": {
     "mainland": {
-      "summer":      { "light": [[22, 8]], "mid": [[8, 15], [21, 22]], "peak": [[15, 21]] },
-      "spring_fall": { "light": [[22, 8]], "mid": [[8, 15], [21, 22]], "peak": [[15, 21]] },
-      "winter":      { "light": [[22, 8]], "mid": [[8, 9], [12, 16], [19, 22]], "peak": [[9, 12], [16, 19]] }
+      "summer": {
+        "light": [
+          [
+            22,
+            8
+          ]
+        ],
+        "mid": [
+          [
+            8,
+            15
+          ],
+          [
+            21,
+            22
+          ]
+        ],
+        "peak": [
+          [
+            15,
+            21
+          ]
+        ]
+      },
+      "spring_fall": {
+        "light": [
+          [
+            22,
+            8
+          ]
+        ],
+        "mid": [
+          [
+            8,
+            15
+          ],
+          [
+            21,
+            22
+          ]
+        ],
+        "peak": [
+          [
+            15,
+            21
+          ]
+        ]
+      },
+      "winter": {
+        "light": [
+          [
+            22,
+            8
+          ]
+        ],
+        "mid": [
+          [
+            8,
+            9
+          ],
+          [
+            12,
+            16
+          ],
+          [
+            19,
+            22
+          ]
+        ],
+        "peak": [
+          [
+            9,
+            12
+          ],
+          [
+            16,
+            19
+          ]
+        ]
+      }
     }
   },
-
   "day_rules": {
     "saturday": "peak_to_mid",
     "sunday": "all_to_light",
     "holiday": "all_to_light",
     "exclude_temporary_holiday": true
   },
-
   "contract_types": {
     "general_b": {
       "label": "일반용전력(을)",
       "threshold_kw": 300,
       "threshold_direction": "above",
       "effective_date": "2026-06-01",
-      "options": ["I", "II", "III"],
-
-      "demand_bands": ["mid", "peak"],
-      "demand_months": [7, 8, 9, 12, 1, 2],
-      "contract_floor_ratio": 0.30,
-
+      "base_fee_basis": "billing_demand",
+      "time_of_use": true,
+      "options": [
+        "I",
+        "II",
+        "III"
+      ],
+      "demand_bands": [
+        "mid",
+        "peak"
+      ],
+      "demand_months": [
+        7,
+        8,
+        9,
+        12,
+        1,
+        2
+      ],
+      "contract_floor_ratio": 0.3,
       "voltages": {
         "high_a": {
           "label": "고압A",
           "I": {
-            "base_won_per_kw": 7220,
+            "base_won_per_kw": 7220.0,
             "energy": {
-              "summer":      { "light": 92.8, "mid": 145.7, "peak": 227.8 },
-              "spring_fall": { "light": 92.8, "mid": 115.3, "peak": 146.0 },
-              "winter":      { "light": 99.8, "mid": 145.9, "peak": 203.4 }
+              "summer": {
+                "light": 92.8,
+                "mid": 145.7,
+                "peak": 227.8
+              },
+              "spring_fall": {
+                "light": 92.8,
+                "mid": 115.3,
+                "peak": 146.0
+              },
+              "winter": {
+                "light": 99.8,
+                "mid": 145.9,
+                "peak": 203.4
+              }
             }
           },
           "II": {
-            "base_won_per_kw": 8320,
+            "base_won_per_kw": 8320.0,
             "energy": {
-              "summer":      { "light": 87.3, "mid": 140.2, "peak": 222.3 },
-              "spring_fall": { "light": 87.3, "mid": 109.8, "peak": 140.5 },
-              "winter":      { "light": 94.3, "mid": 140.4, "peak": 197.9 }
+              "summer": {
+                "light": 87.3,
+                "mid": 140.2,
+                "peak": 222.3
+              },
+              "spring_fall": {
+                "light": 87.3,
+                "mid": 109.8,
+                "peak": 140.5
+              },
+              "winter": {
+                "light": 94.3,
+                "mid": 140.4,
+                "peak": 197.9
+              }
             }
           },
           "III": {
-            "base_won_per_kw": 9810,
+            "base_won_per_kw": 9810.0,
             "energy": {
-              "summer":      { "light": 86.4, "mid": 139.6, "peak": 209.9 },
-              "spring_fall": { "light": 86.4, "mid": 108.5, "peak": 132.2 },
-              "winter":      { "light": 93.7, "mid": 139.8, "peak": 186.7 }
+              "summer": {
+                "light": 86.4,
+                "mid": 139.6,
+                "peak": 209.9
+              },
+              "spring_fall": {
+                "light": 86.4,
+                "mid": 108.5,
+                "peak": 132.2
+              },
+              "winter": {
+                "light": 93.7,
+                "mid": 139.8,
+                "peak": 186.7
+              }
             }
           }
         },
         "high_b": {
           "label": "고압B",
           "I": {
-            "base_won_per_kw": 6630,
+            "base_won_per_kw": 6630.0,
             "energy": {
-              "summer":      { "light": 95.9, "mid": 148.2, "peak": 229.4 },
-              "spring_fall": { "light": 95.9, "mid": 118.2, "peak": 148.5 },
-              "winter":      { "light": 102.9, "mid": 148.2, "peak": 204.4 }
+              "summer": {
+                "light": 95.9,
+                "mid": 148.2,
+                "peak": 229.4
+              },
+              "spring_fall": {
+                "light": 95.9,
+                "mid": 118.2,
+                "peak": 148.5
+              },
+              "winter": {
+                "light": 102.9,
+                "mid": 148.2,
+                "peak": 204.4
+              }
             }
           },
           "II": {
-            "base_won_per_kw": 7380,
+            "base_won_per_kw": 7380.0,
             "energy": {
-              "summer":      { "light": 92.1, "mid": 144.4, "peak": 225.6 },
-              "spring_fall": { "light": 92.1, "mid": 114.4, "peak": 144.7 },
-              "winter":      { "light": 99.1, "mid": 144.4, "peak": 200.6 }
+              "summer": {
+                "light": 92.1,
+                "mid": 144.4,
+                "peak": 225.6
+              },
+              "spring_fall": {
+                "light": 92.1,
+                "mid": 114.4,
+                "peak": 144.7
+              },
+              "winter": {
+                "light": 99.1,
+                "mid": 144.4,
+                "peak": 200.6
+              }
             }
           },
           "III": {
-            "base_won_per_kw": 8190,
+            "base_won_per_kw": 8190.0,
             "energy": {
-              "summer":      { "light": 90.4, "mid": 142.7, "peak": 224.0 },
-              "spring_fall": { "light": 90.4, "mid": 112.8, "peak": 143.1 },
-              "winter":      { "light": 97.5, "mid": 142.7, "peak": 198.9 }
+              "summer": {
+                "light": 90.4,
+                "mid": 142.7,
+                "peak": 224.0
+              },
+              "spring_fall": {
+                "light": 90.4,
+                "mid": 112.8,
+                "peak": 143.1
+              },
+              "winter": {
+                "light": 97.5,
+                "mid": 142.7,
+                "peak": 198.9
+              }
+            }
+          }
+        }
+      }
+    },
+    "general_a_1": {
+      "label": "일반용전력(갑)Ⅰ",
+      "threshold_kw": 300,
+      "threshold_direction": "below",
+      "effective_date": "2026-06-01",
+      "base_fee_basis": "contract",
+      "time_of_use": false,
+      "options": [
+        "single",
+        "I",
+        "II"
+      ],
+      "demand_bands": [
+        "mid",
+        "peak"
+      ],
+      "demand_months": [
+        7,
+        8,
+        9,
+        12,
+        1,
+        2
+      ],
+      "contract_floor_ratio": null,
+      "voltages": {
+        "low": {
+          "label": "저압",
+          "single": {
+            "base_won_per_kw": 6160.0,
+            "energy": {
+              "summer": {
+                "light": 132.4,
+                "mid": 132.4,
+                "peak": 132.4
+              },
+              "spring_fall": {
+                "light": 91.9,
+                "mid": 91.9,
+                "peak": 91.9
+              },
+              "winter": {
+                "light": 119.0,
+                "mid": 119.0,
+                "peak": 119.0
+              }
+            }
+          }
+        },
+        "high_a": {
+          "label": "고압A",
+          "I": {
+            "base_won_per_kw": 7170.0,
+            "energy": {
+              "summer": {
+                "light": 142.6,
+                "mid": 142.6,
+                "peak": 142.6
+              },
+              "spring_fall": {
+                "light": 98.6,
+                "mid": 98.6,
+                "peak": 98.6
+              },
+              "winter": {
+                "light": 130.3,
+                "mid": 130.3,
+                "peak": 130.3
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 8230.0,
+            "energy": {
+              "summer": {
+                "light": 138.6,
+                "mid": 138.6,
+                "peak": 138.6
+              },
+              "spring_fall": {
+                "light": 94.3,
+                "mid": 94.3,
+                "peak": 94.3
+              },
+              "winter": {
+                "light": 125.0,
+                "mid": 125.0,
+                "peak": 125.0
+              }
+            }
+          }
+        },
+        "high_b": {
+          "label": "고압B",
+          "I": {
+            "base_won_per_kw": 7170.0,
+            "energy": {
+              "summer": {
+                "light": 140.5,
+                "mid": 140.5,
+                "peak": 140.5
+              },
+              "spring_fall": {
+                "light": 97.5,
+                "mid": 97.5,
+                "peak": 97.5
+              },
+              "winter": {
+                "light": 127.3,
+                "mid": 127.3,
+                "peak": 127.3
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 8230.0,
+            "energy": {
+              "summer": {
+                "light": 135.2,
+                "mid": 135.2,
+                "peak": 135.2
+              },
+              "spring_fall": {
+                "light": 92.2,
+                "mid": 92.2,
+                "peak": 92.2
+              },
+              "winter": {
+                "light": 122.0,
+                "mid": 122.0,
+                "peak": 122.0
+              }
+            }
+          }
+        }
+      }
+    },
+    "general_a_2": {
+      "label": "일반용전력(갑)Ⅱ",
+      "threshold_kw": 300,
+      "threshold_direction": "below",
+      "effective_date": "2026-06-01",
+      "base_fee_basis": "contract",
+      "time_of_use": true,
+      "options": [
+        "I",
+        "II"
+      ],
+      "demand_bands": [
+        "mid",
+        "peak"
+      ],
+      "demand_months": [
+        7,
+        8,
+        9,
+        12,
+        1,
+        2
+      ],
+      "contract_floor_ratio": null,
+      "voltages": {
+        "high_a": {
+          "label": "고압A",
+          "I": {
+            "base_won_per_kw": 7170.0,
+            "energy": {
+              "summer": {
+                "light": 89.4,
+                "mid": 140.6,
+                "peak": 163.1
+              },
+              "spring_fall": {
+                "light": 89.4,
+                "mid": 96.8,
+                "peak": 108.1
+              },
+              "winter": {
+                "light": 98.1,
+                "mid": 128.5,
+                "peak": 143.3
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 8230.0,
+            "energy": {
+              "summer": {
+                "light": 84.1,
+                "mid": 135.3,
+                "peak": 157.8
+              },
+              "spring_fall": {
+                "light": 84.1,
+                "mid": 91.5,
+                "peak": 102.8
+              },
+              "winter": {
+                "light": 92.8,
+                "mid": 123.2,
+                "peak": 138.0
+              }
+            }
+          }
+        },
+        "high_b": {
+          "label": "고압B",
+          "I": {
+            "base_won_per_kw": 7170.0,
+            "energy": {
+              "summer": {
+                "light": 88.8,
+                "mid": 137.4,
+                "peak": 153.8
+              },
+              "spring_fall": {
+                "light": 88.8,
+                "mid": 94.7,
+                "peak": 100.1
+              },
+              "winter": {
+                "light": 97.8,
+                "mid": 125.1,
+                "peak": 139.3
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 8230.0,
+            "energy": {
+              "summer": {
+                "light": 83.5,
+                "mid": 132.1,
+                "peak": 148.5
+              },
+              "spring_fall": {
+                "light": 83.5,
+                "mid": 89.4,
+                "peak": 94.8
+              },
+              "winter": {
+                "light": 92.5,
+                "mid": 119.8,
+                "peak": 134.0
+              }
+            }
+          }
+        }
+      }
+    },
+    "industrial_a_1": {
+      "label": "산업용전력(갑)Ⅰ",
+      "threshold_kw": 300,
+      "threshold_direction": "below",
+      "effective_date": "2026-06-01",
+      "base_fee_basis": "contract",
+      "time_of_use": false,
+      "options": [
+        "single",
+        "I",
+        "II"
+      ],
+      "demand_bands": [
+        "mid",
+        "peak"
+      ],
+      "demand_months": [
+        7,
+        8,
+        9,
+        12,
+        1,
+        2
+      ],
+      "contract_floor_ratio": null,
+      "voltages": {
+        "low": {
+          "label": "저압",
+          "single": {
+            "base_won_per_kw": 5550.0,
+            "energy": {
+              "spring_fall": {
+                "light": 94.4,
+                "mid": 94.4,
+                "peak": 94.4
+              },
+              "summer": {
+                "light": 116.2,
+                "mid": 116.2,
+                "peak": 116.2
+              },
+              "winter": {
+                "light": 114.5,
+                "mid": 114.5,
+                "peak": 114.5
+              }
+            }
+          }
+        },
+        "high_a": {
+          "label": "고압A",
+          "I": {
+            "base_won_per_kw": 6490.0,
+            "energy": {
+              "spring_fall": {
+                "light": 101.1,
+                "mid": 101.1,
+                "peak": 101.1
+              },
+              "summer": {
+                "light": 124.8,
+                "mid": 124.8,
+                "peak": 124.8
+              },
+              "winter": {
+                "light": 124.7,
+                "mid": 124.7,
+                "peak": 124.7
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 7470.0,
+            "energy": {
+              "spring_fall": {
+                "light": 96.5,
+                "mid": 96.5,
+                "peak": 96.5
+              },
+              "summer": {
+                "light": 120.0,
+                "mid": 120.0,
+                "peak": 120.0
+              },
+              "winter": {
+                "light": 118.2,
+                "mid": 118.2,
+                "peak": 118.2
+              }
+            }
+          }
+        },
+        "high_b": {
+          "label": "고압B",
+          "I": {
+            "base_won_per_kw": 6000.0,
+            "energy": {
+              "spring_fall": {
+                "light": 100.0,
+                "mid": 100.0,
+                "peak": 100.0
+              },
+              "summer": {
+                "light": 123.6,
+                "mid": 123.6,
+                "peak": 123.6
+              },
+              "winter": {
+                "light": 123.2,
+                "mid": 123.2,
+                "peak": 123.2
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 6900.0,
+            "energy": {
+              "spring_fall": {
+                "light": 95.4,
+                "mid": 95.4,
+                "peak": 95.4
+              },
+              "summer": {
+                "light": 118.9,
+                "mid": 118.9,
+                "peak": 118.9
+              },
+              "winter": {
+                "light": 117.1,
+                "mid": 117.1,
+                "peak": 117.1
+              }
+            }
+          }
+        }
+      }
+    },
+    "industrial_a_2": {
+      "label": "산업용전력(갑)Ⅱ",
+      "threshold_kw": 300,
+      "threshold_direction": "below",
+      "effective_date": "2026-06-01",
+      "base_fee_basis": "contract",
+      "time_of_use": true,
+      "options": [
+        "I",
+        "II"
+      ],
+      "demand_bands": [
+        "mid",
+        "peak"
+      ],
+      "demand_months": [
+        7,
+        8,
+        9,
+        12,
+        1,
+        2
+      ],
+      "contract_floor_ratio": null,
+      "voltages": {
+        "high_a": {
+          "label": "고압A",
+          "I": {
+            "base_won_per_kw": 6490.0,
+            "energy": {
+              "spring_fall": {
+                "light": 95.7,
+                "mid": 100.5,
+                "peak": 119.7
+              },
+              "summer": {
+                "light": 95.7,
+                "mid": 121.5,
+                "peak": 155.0
+              },
+              "winter": {
+                "light": 103.1,
+                "mid": 120.0,
+                "peak": 149.4
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 7470.0,
+            "energy": {
+              "spring_fall": {
+                "light": 90.8,
+                "mid": 95.6,
+                "peak": 114.8
+              },
+              "summer": {
+                "light": 90.8,
+                "mid": 116.6,
+                "peak": 150.1
+              },
+              "winter": {
+                "light": 98.2,
+                "mid": 115.1,
+                "peak": 144.5
+              }
+            }
+          }
+        },
+        "high_b": {
+          "label": "고압B",
+          "I": {
+            "base_won_per_kw": 6000.0,
+            "energy": {
+              "spring_fall": {
+                "light": 92.5,
+                "mid": 99.1,
+                "peak": 117.9
+              },
+              "summer": {
+                "light": 92.5,
+                "mid": 120.1,
+                "peak": 153.9
+              },
+              "winter": {
+                "light": 99.7,
+                "mid": 117.7,
+                "peak": 146.4
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 6900.0,
+            "energy": {
+              "spring_fall": {
+                "light": 88.0,
+                "mid": 94.6,
+                "peak": 113.4
+              },
+              "summer": {
+                "light": 88.0,
+                "mid": 115.6,
+                "peak": 149.4
+              },
+              "winter": {
+                "light": 95.2,
+                "mid": 113.2,
+                "peak": 141.9
+              }
+            }
+          }
+        }
+      }
+    },
+    "industrial_b": {
+      "label": "산업용전력(을)",
+      "threshold_kw": 300,
+      "threshold_direction": "above",
+      "effective_date": "2026-06-01",
+      "base_fee_basis": "billing_demand",
+      "time_of_use": true,
+      "options": [
+        "I",
+        "II",
+        "III"
+      ],
+      "demand_bands": [
+        "mid",
+        "peak"
+      ],
+      "demand_months": [
+        7,
+        8,
+        9,
+        12,
+        1,
+        2
+      ],
+      "contract_floor_ratio": 0.3,
+      "voltages": {
+        "high_a": {
+          "label": "고압A",
+          "I": {
+            "base_won_per_kw": 7220.0,
+            "energy": {
+              "spring_fall": {
+                "light": 121.5,
+                "mid": 138.9,
+                "peak": 156.4
+              },
+              "summer": {
+                "light": 121.5,
+                "mid": 169.3,
+                "peak": 234.5
+              },
+              "winter": {
+                "light": 128.5,
+                "mid": 169.5,
+                "peak": 210.1
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 8320.0,
+            "energy": {
+              "spring_fall": {
+                "light": 116.0,
+                "mid": 133.4,
+                "peak": 150.9
+              },
+              "summer": {
+                "light": 116.0,
+                "mid": 163.8,
+                "peak": 229.0
+              },
+              "winter": {
+                "light": 123.0,
+                "mid": 164.0,
+                "peak": 204.6
+              }
+            }
+          },
+          "III": {
+            "base_won_per_kw": 9810.0,
+            "energy": {
+              "spring_fall": {
+                "light": 115.1,
+                "mid": 132.1,
+                "peak": 142.6
+              },
+              "summer": {
+                "light": 115.1,
+                "mid": 163.2,
+                "peak": 216.6
+              },
+              "winter": {
+                "light": 122.4,
+                "mid": 163.4,
+                "peak": 193.4
+              }
+            }
+          }
+        },
+        "high_b": {
+          "label": "고압B",
+          "I": {
+            "base_won_per_kw": 6630.0,
+            "energy": {
+              "spring_fall": {
+                "light": 131.4,
+                "mid": 148.6,
+                "peak": 165.7
+              },
+              "summer": {
+                "light": 131.4,
+                "mid": 178.6,
+                "peak": 242.9
+              },
+              "winter": {
+                "light": 138.4,
+                "mid": 178.6,
+                "peak": 217.9
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 7380.0,
+            "energy": {
+              "spring_fall": {
+                "light": 127.6,
+                "mid": 144.8,
+                "peak": 161.9
+              },
+              "summer": {
+                "light": 127.6,
+                "mid": 174.8,
+                "peak": 239.1
+              },
+              "winter": {
+                "light": 134.6,
+                "mid": 174.8,
+                "peak": 214.1
+              }
+            }
+          },
+          "III": {
+            "base_won_per_kw": 8190.0,
+            "energy": {
+              "spring_fall": {
+                "light": 125.9,
+                "mid": 143.2,
+                "peak": 160.3
+              },
+              "summer": {
+                "light": 125.9,
+                "mid": 173.1,
+                "peak": 237.5
+              },
+              "winter": {
+                "light": 133.0,
+                "mid": 173.1,
+                "peak": 212.4
+              }
+            }
+          }
+        },
+        "high_c": {
+          "label": "고압C",
+          "I": {
+            "base_won_per_kw": 6590.0,
+            "energy": {
+              "spring_fall": {
+                "light": 130.9,
+                "mid": 148.7,
+                "peak": 165.9
+              },
+              "summer": {
+                "light": 130.9,
+                "mid": 178.7,
+                "peak": 242.7
+              },
+              "winter": {
+                "light": 137.8,
+                "mid": 178.3,
+                "peak": 218.0
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 7520.0,
+            "energy": {
+              "spring_fall": {
+                "light": 126.2,
+                "mid": 144.0,
+                "peak": 161.2
+              },
+              "summer": {
+                "light": 126.2,
+                "mid": 174.0,
+                "peak": 238.0
+              },
+              "winter": {
+                "light": 133.1,
+                "mid": 173.6,
+                "peak": 213.3
+              }
+            }
+          },
+          "III": {
+            "base_won_per_kw": 8090.0,
+            "energy": {
+              "spring_fall": {
+                "light": 125.1,
+                "mid": 142.9,
+                "peak": 160.1
+              },
+              "summer": {
+                "light": 125.1,
+                "mid": 172.9,
+                "peak": 236.9
+              },
+              "winter": {
+                "light": 132.0,
+                "mid": 172.5,
+                "peak": 212.2
+              }
+            }
+          }
+        }
+      }
+    },
+    "education_a": {
+      "label": "교육용전력(갑)",
+      "threshold_kw": 1000,
+      "threshold_direction": "below",
+      "effective_date": "2026-06-01",
+      "base_fee_basis": "contract",
+      "time_of_use": false,
+      "options": [
+        "single",
+        "I",
+        "II"
+      ],
+      "demand_bands": [
+        "mid",
+        "peak"
+      ],
+      "demand_months": [
+        7,
+        8,
+        9,
+        12,
+        1,
+        2
+      ],
+      "contract_floor_ratio": null,
+      "voltages": {
+        "low": {
+          "label": "저압",
+          "single": {
+            "base_won_per_kw": 5230.0,
+            "energy": {
+              "summer": {
+                "light": 123.6,
+                "mid": 123.6,
+                "peak": 123.6
+              },
+              "spring_fall": {
+                "light": 86.4,
+                "mid": 86.4,
+                "peak": 86.4
+              },
+              "winter": {
+                "light": 110.8,
+                "mid": 110.8,
+                "peak": 110.8
+              }
+            }
+          }
+        },
+        "high_a": {
+          "label": "고압A",
+          "I": {
+            "base_won_per_kw": 5550.0,
+            "energy": {
+              "summer": {
+                "light": 123.3,
+                "mid": 123.3,
+                "peak": 123.3
+              },
+              "spring_fall": {
+                "light": 86.5,
+                "mid": 86.5,
+                "peak": 86.5
+              },
+              "winter": {
+                "light": 109.3,
+                "mid": 109.3,
+                "peak": 109.3
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 6370.0,
+            "energy": {
+              "summer": {
+                "light": 118.8,
+                "mid": 118.8,
+                "peak": 118.8
+              },
+              "spring_fall": {
+                "light": 82.1,
+                "mid": 82.1,
+                "peak": 82.1
+              },
+              "winter": {
+                "light": 104.8,
+                "mid": 104.8,
+                "peak": 104.8
+              }
+            }
+          }
+        },
+        "high_b": {
+          "label": "고압B",
+          "I": {
+            "base_won_per_kw": 5550.0,
+            "energy": {
+              "summer": {
+                "light": 122.6,
+                "mid": 122.6,
+                "peak": 122.6
+              },
+              "spring_fall": {
+                "light": 86.1,
+                "mid": 86.1,
+                "peak": 86.1
+              },
+              "winter": {
+                "light": 108.5,
+                "mid": 108.5,
+                "peak": 108.5
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 6370.0,
+            "energy": {
+              "summer": {
+                "light": 118.1,
+                "mid": 118.1,
+                "peak": 118.1
+              },
+              "spring_fall": {
+                "light": 81.6,
+                "mid": 81.6,
+                "peak": 81.6
+              },
+              "winter": {
+                "light": 104.0,
+                "mid": 104.0,
+                "peak": 104.0
+              }
+            }
+          }
+        }
+      }
+    },
+    "education_b": {
+      "label": "교육용전력(을)",
+      "threshold_kw": 1000,
+      "threshold_direction": "above",
+      "effective_date": "2026-06-01",
+      "base_fee_basis": "billing_demand",
+      "time_of_use": true,
+      "options": [
+        "I",
+        "II"
+      ],
+      "demand_bands": [
+        "mid",
+        "peak"
+      ],
+      "demand_months": [
+        7,
+        8,
+        9,
+        12,
+        1,
+        2
+      ],
+      "contract_floor_ratio": 0.15,
+      "voltages": {
+        "high_a": {
+          "label": "고압A",
+          "I": {
+            "base_won_per_kw": 6090.0,
+            "energy": {
+              "summer": {
+                "light": 76.5,
+                "mid": 121.2,
+                "peak": 187.1
+              },
+              "spring_fall": {
+                "light": 76.5,
+                "mid": 90.9,
+                "peak": 111.4
+              },
+              "winter": {
+                "light": 80.5,
+                "mid": 119.7,
+                "peak": 158.4
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 6980.0,
+            "energy": {
+              "summer": {
+                "light": 72.0,
+                "mid": 116.7,
+                "peak": 182.6
+              },
+              "spring_fall": {
+                "light": 72.0,
+                "mid": 86.4,
+                "peak": 106.9
+              },
+              "winter": {
+                "light": 76.0,
+                "mid": 115.2,
+                "peak": 153.9
+              }
+            }
+          }
+        },
+        "high_b": {
+          "label": "고압B",
+          "I": {
+            "base_won_per_kw": 6090.0,
+            "energy": {
+              "summer": {
+                "light": 75.0,
+                "mid": 118.5,
+                "peak": 181.4
+              },
+              "spring_fall": {
+                "light": 75.0,
+                "mid": 89.2,
+                "peak": 109.0
+              },
+              "winter": {
+                "light": 78.8,
+                "mid": 116.8,
+                "peak": 154.1
+              }
+            }
+          },
+          "II": {
+            "base_won_per_kw": 6980.0,
+            "energy": {
+              "summer": {
+                "light": 70.5,
+                "mid": 114.0,
+                "peak": 176.9
+              },
+              "spring_fall": {
+                "light": 70.5,
+                "mid": 84.7,
+                "peak": 104.5
+              },
+              "winter": {
+                "light": 74.3,
+                "mid": 112.3,
+                "peak": 149.6
+              }
             }
           }
         }
       }
     }
   },
-
   "special_rules": {
     "industrial_b_weekend_discount": {
-      "applies_to": ["industrial_b"],
-      "seasons": ["spring_fall"],
-      "days": ["saturday", "sunday", "holiday"],
-      "hours": [[11, 14]],
+      "applies_to": [
+        "industrial_b"
+      ],
+      "seasons": [
+        "spring_fall"
+      ],
+      "days": [
+        "saturday",
+        "sunday",
+        "holiday"
+      ],
+      "hours": [
+        [
+          11,
+          14
+        ]
+      ],
       "discount_rate": 0.5
     }
   }

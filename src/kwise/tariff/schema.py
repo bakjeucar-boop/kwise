@@ -24,6 +24,9 @@ from kwise.tariff.demand import (
 
 __all__ = [
     "BANDS",
+    "BASE_FEE_BASES",
+    "BASE_FEE_BILLING_DEMAND",
+    "BASE_FEE_CONTRACT",
     "DEFAULT_REGION_GROUP",
     "ContractType",
     "DayRules",
@@ -46,6 +49,11 @@ __all__ = [
 BANDS: tuple[str, ...] = ("light", "mid", "peak")
 DEFAULT_REGION_GROUP = "mainland"
 _TARIFF_GLOB = "tariff_*.json"
+
+# 기본요금 기준 — 을 종별은 요금적용전력, 갑 종별은 계약전력이다 (기본공급약관 제68조).
+BASE_FEE_BILLING_DEMAND = "billing_demand"
+BASE_FEE_CONTRACT = "contract"
+BASE_FEE_BASES: tuple[str, ...] = (BASE_FEE_BILLING_DEMAND, BASE_FEE_CONTRACT)
 
 
 class TariffDataError(ValueError):
@@ -97,9 +105,15 @@ class ContractType:
         demand_bands: 요금적용전력 대상 시간대. 일반용(을) 등은 중간·최대부하만이다.
         demand_months: 요금적용전력 대상월 (하계 7·8·9, 동계 12·1·2).
             **전력량요금의 계절과 다르다** (요구사항서 5.2 ②).
-        contract_floor_ratio: 요금적용전력의 계약전력 대비 하한. 일반용(을) 30%,
-            교육용 등 일부는 15% 특례. 확인되지 않은 종별은 ``null`` 로 두면
+        contract_floor_ratio: 요금적용전력의 계약전력 대비 하한. 일반용(을)·산업용(을)
+            30%, 교육용(을) 15% 특례. 확인되지 않은 종별은 ``null`` 로 두면
             하한을 적용하지 않고 절감액도 산출하지 않는다.
+        base_fee_basis: 기본요금의 기준. ``"billing_demand"`` 는 요금적용전력(을 종별),
+            ``"contract"`` 는 계약전력(갑 종별)이다. **둘을 섞으면 기본요금이
+            통째로 틀린다.**
+        time_of_use: 시간대별 요금제인지. 갑Ⅰ·교육용(갑)은 '전체시간' 단일 단가라
+            세 시간대 단가가 모두 같다. 검증 규칙 1 의 ``경<중간<최대`` 를
+            적용하지 않는다.
     """
 
     key: str
@@ -112,6 +126,13 @@ class ContractType:
     demand_bands: tuple[str, ...] = DEFAULT_DEMAND_BANDS
     demand_months: tuple[int, ...] = DEFAULT_DEMAND_MONTHS
     contract_floor_ratio: float | None = DEFAULT_CONTRACT_FLOOR_RATIO
+    base_fee_basis: str = BASE_FEE_BILLING_DEMAND
+    time_of_use: bool = True
+
+    @property
+    def base_fee_on_contract(self) -> bool:
+        """기본요금이 계약전력 기준인가 (갑 종별)."""
+        return self.base_fee_basis == BASE_FEE_CONTRACT
 
 
 @dataclass(frozen=True)
@@ -297,6 +318,12 @@ def _parse_contract(key: str, payload: Mapping[str, Any]) -> ContractType:
             label=str(voltage_payload.get("label", voltage)),
             options=parsed,
         )
+    base_fee_basis = str(payload.get("base_fee_basis", BASE_FEE_BILLING_DEMAND))
+    if base_fee_basis not in BASE_FEE_BASES:
+        raise TariffDataError(
+            f"{context}: 알 수 없는 기본요금 기준입니다: {base_fee_basis!r} "
+            f"(가능: {', '.join(BASE_FEE_BASES)})"
+        )
     return ContractType(
         key=key,
         label=str(_require(payload, "label", context)),
@@ -316,6 +343,8 @@ def _parse_contract(key: str, payload: Mapping[str, Any]) -> ContractType:
             if "contract_floor_ratio" in payload and payload["contract_floor_ratio"] is None
             else float(payload.get("contract_floor_ratio", DEFAULT_CONTRACT_FLOOR_RATIO))
         ),
+        base_fee_basis=base_fee_basis,
+        time_of_use=bool(payload.get("time_of_use", True)),
     )
 
 

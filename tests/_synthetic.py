@@ -42,6 +42,58 @@ def write_csv(
     return path
 
 
+KEPCO_HEADER = ("계기번호", "고객번호", "검침일", "순방향 유효전력량(KWH)")
+
+
+def write_kepco_file(
+    path: Path,
+    rows: list[tuple[str, float]],
+    *,
+    header: tuple[str, ...] = KEPCO_HEADER,
+    title: str | None = None,
+    meter: str = "55-282007100",
+    customer: int = 196705100,
+) -> Path:
+    """한전ON 원본 4열 양식. 계기번호·고객번호가 앞에 붙는다.
+
+    ``.xlsx`` 와 ``.csv`` 를 확장자로 갈라 쓴다. ``title`` 을 주면 헤더 앞에
+    제목 행이 한 줄 붙는다 — 화면 저장본에서 실제로 나오는 모양이다.
+
+    고객번호는 **전 행이 같은 상수**라 값 열 판정의 고유값 조건에 걸려야 한다.
+    계기번호는 문자열이라 애초에 수치 변환이 실패한다.
+    """
+    body = [[meter, customer, label, kwh] for label, kwh in rows]
+    frame = pd.DataFrame(body, columns=list(header))
+    if path.suffix.lower() == ".csv":
+        text = ""
+        if title is not None:
+            text += title + "\n"
+        text += ",".join(str(name) for name in header) + "\n"
+        text += "".join(f"{meter},{customer},{label},{kwh:.2f}\n" for label, kwh in rows)
+        path.write_text(text, encoding="utf-8-sig")
+        return path
+
+    with pd.ExcelWriter(path, engine="openpyxl") as writer:
+        start = 0 if title is None else 1
+        frame.to_excel(writer, sheet_name="Sheet1", index=False, startrow=start)
+        if title is not None:
+            writer.sheets["Sheet1"].cell(row=1, column=1, value=title)
+    return path
+
+
+def kepco_month_rows(year: int, month: int, *, kwh: float = 100.0) -> list[tuple[str, float]]:
+    """한 달치 (라벨, kWh). 실측처럼 값이 조금씩 다르게 흔든다.
+
+    전부 같은 값이면 고유값 조건(상수 열 배제)에 스스로 걸린다. 실측 샘플의
+    고유값 비율은 4.1% 인데, 여기서는 값이 거의 다 달라 그보다 후하다.
+    """
+    labels = [label for date in month_dates(year, month) for label in make_labels(date)]
+    return [
+        (label, round(kwh + (index % 97) * 0.31 + index * 0.01, 2))
+        for index, label in enumerate(labels)
+    ]
+
+
 def one_day(
     path: Path,
     *,

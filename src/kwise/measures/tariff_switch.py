@@ -93,7 +93,10 @@ def evaluate_tariff_switch(
             를 그대로 넘기면 중복 계산을 피한다.
     """
     opts = options if options is not None else BillingOptions()
-    selections = list_selections(table)  # 요금 데이터에서 생성한다
+    # 요금 데이터에서 생성하되 **같은 계약종별 안에서만** 비교한다.
+    # 일반용(을) 을 쓰는 건물에 산업용(을) 을 권할 수는 없다 — 용도로 정해지는
+    # 계약이지 선택요금이 아니다.
+    selections = list_selections(table, contract_types=[current_selection.contract_type])
     if current_selection not in selections:
         raise ValueError(
             f"요금표에 없는 조합입니다: {current_selection} "

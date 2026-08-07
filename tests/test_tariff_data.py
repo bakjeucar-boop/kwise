@@ -65,7 +65,7 @@ def test_shipped_file_is_found_and_loaded(tariff: TariffTable) -> None:
     assert tariff.source_path is not None
     assert tariff.source_path.name == "tariff_kr_20260601.json"
     assert tariff.effective_date == "2026-06-01"
-    assert tariff.schema_version == "0.1"
+    assert tariff.schema_version == "0.2"  # 6세션 준비 — 엑셀 변환·종별 확장
     assert not tariff.verified  # 청구서 대조 전이다
 
 
@@ -76,9 +76,26 @@ def test_available_files_are_sorted() -> None:
     assert all(path.name.startswith("tariff_") for path in files)
 
 
-def test_poc_scope_is_general_b_high_a_b_only(tariff: TariffTable) -> None:
-    """부록 A.4 — PoC 는 일반용전력(을) 고압A·B 만 구현한다."""
-    assert list_contract_types(tariff) == (("general_b", "일반용전력(을)"),)
+def test_scope_follows_appendix_a4(tariff: TariffTable) -> None:
+    """부록 A.4 — 일반용·산업용·교육용까지. 농사용·가로등·심야는 범위 밖이다."""
+    keys = tuple(key for key, _ in list_contract_types(tariff))
+    assert keys == (
+        "education_a",
+        "education_b",
+        "general_a_1",
+        "general_a_2",
+        "general_b",
+        "industrial_a_1",
+        "industrial_a_2",
+        "industrial_b",
+    )
+    labels = " ".join(label for _, label in list_contract_types(tariff))
+    for excluded in ("농사용", "가로등", "심야", "전기차", "보완전력", "주택용"):
+        assert excluded not in labels
+
+
+def test_general_b_shape_is_unchanged(tariff: TariffTable) -> None:
+    """3세션 이래의 일반용(을) 형태가 그대로다. 확장이 기존을 건드리지 않았다."""
     assert tuple(key for key, _ in list_voltages(tariff, "general_b")) == VOLTAGES
     for voltage in VOLTAGES:
         assert list_options(tariff, "general_b", voltage) == OPTIONS
@@ -86,10 +103,14 @@ def test_poc_scope_is_general_b_high_a_b_only(tariff: TariffTable) -> None:
 
 def test_dropdown_choices_come_from_the_data(tariff: TariffTable) -> None:
     """부록 A.3 — 데이터에 없는 조합은 선택지에 나타나지 않는다."""
-    selections = list_selections(tariff)
+    selections = list_selections(tariff, contract_types=["general_b"])
     assert len(selections) == 6  # 전압 2 × 선택요금 3
     assert TariffSelection("general_b", "high_a", "II") in selections
     assert all(item.contract_type == "general_b" for item in selections)
+    # 산업용(을) 은 고압C 가 더 있다. 종별마다 선택지가 다르다는 증거다.
+    industrial = list_selections(tariff, contract_types=["industrial_b"])
+    assert len(industrial) == 9
+    assert TariffSelection("industrial_b", "high_c", "III") in industrial
 
 
 def test_unknown_combination_raises(tariff: TariffTable) -> None:
@@ -98,7 +119,7 @@ def test_unknown_combination_raises(tariff: TariffTable) -> None:
     with pytest.raises(TariffDataError, match="선택요금"):
         tariff.rates(TariffSelection("general_b", "high_a", "IV"))
     with pytest.raises(TariffDataError, match="계약종별"):
-        tariff.rates(TariffSelection("industrial_b", "high_a", "I"))
+        tariff.rates(TariffSelection("농사용", "high_a", "I"))
 
 
 def test_missing_file_raises(tmp_path: Path) -> None:

@@ -34,6 +34,7 @@ from kwise.tariff.holiday import DateLike, build_calendar
 from kwise.tariff.schema import (
     BANDS,
     DEFAULT_REGION_GROUP,
+    TariffDataError,
     TariffSelection,
     TariffTable,
 )
@@ -316,6 +317,19 @@ def calculate_bill(
         floor_ratio=contract.contract_floor_ratio,
     )
 
+    # 기본요금 기준 — 갑 종별은 계약전력, 을 종별은 요금적용전력이다.
+    # 섞으면 기본요금이 통째로 틀리므로 계약전력이 없으면 계산하지 않는다.
+    if contract.base_fee_on_contract:
+        if opts.contract_kw is None:
+            raise TariffDataError(
+                f"{contract.label} 은 기본요금을 계약전력으로 매깁니다. "
+                "BillingOptions(contract_kw=...) 로 계약전력을 주십시오 "
+                "(한전 기본공급약관 제68조)."
+            )
+        base_demand = dict.fromkeys(months, float(opts.contract_kw))
+    else:
+        base_demand = dict(demands)
+
     slots_per_day = 1440 / interval
     counts = slots["month"].value_counts()
     covered_days = {
@@ -338,7 +352,7 @@ def calculate_bill(
         peak_at = pd.Timestamp(month_kw.idxmax()) if month_kw.notna().any() else pd.NaT
         ratio = missing_ratio.get(month, 0.0)
         limited = ratio > opts.missing_limit_ratio
-        base_won = demands[month] * rates.base_won_per_kw * factors[month]
+        base_won = base_demand[month] * rates.base_won_per_kw * factors[month]
         observed_energy_won = energy_won[month]
         adjusted_energy_won = observed_energy_won / (1.0 - ratio) if ratio < 1.0 else float("nan")
         rows.append(
@@ -353,6 +367,7 @@ def calculate_bill(
                 "demand_basis_kw": basis[month],
                 "demand_before_floor_kw": before_floor[month],
                 "billing_demand_kw": demands[month],
+                "base_demand_kw": base_demand[month],  # 기본요금에 실제로 곱한 kW
                 "base_fee_factor": factors[month],
                 "base_won": base_won,
                 "light_kwh": band_kwh[month]["light"],
@@ -375,7 +390,22 @@ def calculate_bill(
     )
 
     warnings: list[str] = []
-    if contract.contract_floor_ratio is None:
+    if contract.base_fee_on_contract:
+        # 갑 종별이다. 요금적용전력 하한·이월 규칙은 기본요금에 관여하지 않는다.
+        observed_peak = float(usage.kw.max())
+        if observed_peak > (opts.contract_kw or 0.0):
+            warnings.append(
+                f"{contract.label} 의 관측 최대수요 {observed_peak:,.1f} kW 가 "
+                f"계약전력 {opts.contract_kw:,.0f} kW 를 넘습니다. "
+                "초과사용부가금 대상이며, 계약전력 재산정이 필요할 수 있습니다."
+            )
+        threshold = contract.threshold_kw
+        if threshold is not None and (opts.contract_kw or 0.0) >= threshold:
+            warnings.append(
+                f"{contract.label} 은 계약전력 {threshold:,.0f} kW 미만 종별인데 "
+                f"계약전력이 {opts.contract_kw:,.0f} kW 입니다. 종별을 확인하십시오."
+            )
+    elif contract.contract_floor_ratio is None:
         warnings.append(
             f"{contract.label} 의 요금적용전력 하한 비율이 요금 데이터에 없어 "
             "하한을 적용하지 않았습니다 (요구사항서 5.2 ③)."
@@ -403,7 +433,7 @@ def calculate_bill(
                 "있습니다. 경부하 초과는 요금적용전력에 영향을 주지 않지만 "
                 "초과사용부가금 대상이므로 별도로 확인하십시오 (요구사항서 5.2)."
             )
-    if not opts.prior_peaks:
+    if not opts.prior_peaks and not contract.base_fee_on_contract:
         warnings.append(
             "직전 12개월 최대수요 이력이 없어 첫 11개월의 요금적용전력이 과소 산출됩니다. "
             "청구서를 확보하면 prior_peaks= 로 주입하십시오 (요구사항서 5.2)."
@@ -423,13 +453,22 @@ def calculate_bill(
             f"요금표 {table.effective_date} 는 아직 청구서로 검증되지 않았습니다 (verified=false)."
         )
 
-    notes = [
-        NOT_INCLUDED_NOTICE,
+    demand_note = (
         (
+            f"{contract.label} 의 기본요금은 **계약전력** "
+            f"{opts.contract_kw:,.0f} kW 기준입니다 (갑 종별). 요금적용전력은 참고용으로만 "
+            "함께 싣습니다 — 피크를 낮춰도 계약전력을 낮추지 않으면 기본요금은 그대로입니다."
+        )
+        if contract.base_fee_on_contract
+        else (
             "요금적용전력은 중간·최대부하 시간대의 최대수요만 대상으로 하며 "
             f"(경부하 제외), 대상월은 {'·'.join(str(m) for m in contract.demand_months)}월과 "
             "검침 당월입니다. 3~6월·10~11월 피크는 이월되지 않습니다 (요구사항서 5.2)."
-        ),
+        )
+    )
+    notes = [
+        NOT_INCLUDED_NOTICE,
+        demand_note,
         (
             "봄·가을 피크 저감은 기본요금 절감 가치가 거의 없습니다. 태양광 발전이 "
             "가장 강한 계절이 봄·가을이므로, PV 의 기본요금 기여는 7~9월에 집중되고 "

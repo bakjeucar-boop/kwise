@@ -1,5 +1,14 @@
 """사용량 데이터 입출력 (요구사항서 3.1)."""
 
+from kwise.io.columns import (
+    ColumnCandidate,
+    ColumnDetection,
+    ColumnDetectionError,
+    detect_usage_columns,
+    find_header_row,
+    score_date_column,
+    score_energy_column,
+)
 from kwise.io.usage import (
     DEFAULT_ENCODINGS,
     SUPPORTED_INTERVALS,
@@ -18,6 +27,7 @@ from kwise.io.usage import (
     load_usage,
     load_usage_bytes,
     match_usage_column,
+    normalize_column_name,
     parse_usage_datetime,
     parse_usage_energy,
     slot_start,
@@ -28,6 +38,9 @@ __all__ = [
     "SUPPORTED_INTERVALS",
     "USAGE_DATE_COLUMN_CANDIDATES",
     "USAGE_ENERGY_COLUMN_CANDIDATES",
+    "ColumnCandidate",
+    "ColumnDetection",
+    "ColumnDetectionError",
     "EnergySeries",
     "EnergyToDemandError",
     "GridKwhSeries",
@@ -38,10 +51,15 @@ __all__ = [
     "count_hour24",
     "detect_grid_phase_seconds",
     "detect_interval_minutes",
+    "detect_usage_columns",
+    "find_header_row",
     "load_usage",
     "load_usage_bytes",
     "match_usage_column",
+    "normalize_column_name",
     "parse_usage_datetime",
     "parse_usage_energy",
+    "score_date_column",
+    "score_energy_column",
     "slot_start",
 ]
