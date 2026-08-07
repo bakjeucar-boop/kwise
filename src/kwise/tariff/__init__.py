@@ -34,6 +34,19 @@ from kwise.tariff.holiday import (
     HolidayCalendar,
     build_calendar,
 )
+from kwise.tariff.power_factor import (
+    ADJUSTMENT_PER_PERCENT,
+    DAY_WINDOW,
+    LAGGING_FLOOR_PCT,
+    LAGGING_REBATE_CAP_PCT,
+    LAGGING_STANDARD_PCT,
+    LEADING_FLOOR_PCT,
+    LEADING_STANDARD_PCT,
+    PowerFactorCharge,
+    lagging_adjustment_ratio,
+    leading_adjustment_ratio,
+    power_factor_charge,
+)
 from kwise.tariff.schema import (
     BANDS,
     DEFAULT_REGION_GROUP,
@@ -54,6 +67,7 @@ from kwise.tariff.schema import (
     list_voltages,
     load_tariff,
     parse_tariff,
+    switchable_selections,
 )
 from kwise.tariff.tou import Band, DayType, classify_slots
 from kwise.tariff.validate import (
@@ -66,7 +80,9 @@ from kwise.tariff.validate import (
 )
 
 __all__ = [
+    "ADJUSTMENT_PER_PERCENT",
     "BANDS",
+    "DAY_WINDOW",
     "DEFAULT_CONTRACT_FLOOR_RATIO",
     "DEFAULT_COUNTRY",
     "DEFAULT_DEMAND_BANDS",
@@ -75,6 +91,11 @@ __all__ = [
     "DEFAULT_REGION_GROUP",
     "DEFAULT_UNIFORM_TOLERANCE",
     "DEMAND_WINDOW_MONTHS",
+    "LAGGING_FLOOR_PCT",
+    "LAGGING_REBATE_CAP_PCT",
+    "LAGGING_STANDARD_PCT",
+    "LEADING_FLOOR_PCT",
+    "LEADING_STANDARD_PCT",
     "MISSING_LIMIT_RATIO",
     "NOT_INCLUDED_NOTICE",
     "AnnualEstimate",
@@ -89,6 +110,7 @@ __all__ = [
     "OptionPairPolicy",
     "OptionRates",
     "PartialMonthPolicy",
+    "PowerFactorCharge",
     "SpecialRule",
     "TariffDataError",
     "TariffSelection",
@@ -104,6 +126,8 @@ __all__ = [
     "default_tariff_dir",
     "demand_eligible_mask",
     "is_demand_month",
+    "lagging_adjustment_ratio",
+    "leading_adjustment_ratio",
     "list_contract_types",
     "list_options",
     "list_selections",
@@ -112,5 +136,7 @@ __all__ = [
     "monthly_demand_basis",
     "option_pair_diffs",
     "parse_tariff",
+    "power_factor_charge",
+    "switchable_selections",
     "validate_tariff",
 ]

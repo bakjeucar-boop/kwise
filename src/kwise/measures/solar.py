@@ -1,4 +1,4 @@
-"""태양광 (요구사항서 7.3, 5.7).
+"""태양광 (요구사항서 7.4, 5.7).
 
 **용량 곡선이 핵심이다.** "태양광을 얼마나 넣어야 하나" 가 실제로 가장 많이 받는
 질문이다. 0 부터 옥상 가용면적 상한까지 20단계로 자가소비율·절감액·잉여·회수기간을
@@ -19,17 +19,20 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from kwise.io import UsageData
+from kwise.io import UsageData, slot_start
 from kwise.measures.base import Certainty, annualize, payback_years
 from kwise.measures.netload import apply_generation
 from kwise.pv import PvSystemConfig, WeatherData, align_simulation, simulate
 from kwise.quality import QualityReport
 from kwise.tariff import (
+    DAY_WINDOW,
+    LAGGING_STANDARD_PCT,
     BillingOptions,
     BillingResult,
     TariffSelection,
     TariffTable,
     calculate_bill,
+    lagging_adjustment_ratio,
 )
 
 __all__ = [
@@ -39,6 +42,7 @@ __all__ = [
     "POWER_FACTOR_FLOOR_PCT",
     "SolarCurve",
     "SolarPoint",
+    "day_window_mask",
     "power_factor_after_pct",
     "roof_capacity_limit_kwp",
     "solar_curve",
@@ -48,7 +52,8 @@ __all__ = [
 DEFAULT_USABLE_RATIO = 0.6  # 옥상 가용 비율 (요구사항서 3.3)
 DEFAULT_MODULE_DENSITY_KWP_PER_M2 = 0.20
 DEFAULT_STEPS = 20
-POWER_FACTOR_FLOOR_PCT = 90.0
+# 약관 제41조의 유지 의무이자 제43조의 요금 기준. 이 아래로 떨어지면 돈이 나간다.
+POWER_FACTOR_FLOOR_PCT = LAGGING_STANDARD_PCT
 
 
 def roof_capacity_limit_kwp(
@@ -87,25 +92,42 @@ def unit_generation_kw(
     return (aligned.kw / capacity).rename("pv_kw_per_kwp")
 
 
+def day_window_mask(index: pd.DatetimeIndex, interval_minutes: int) -> pd.Series:
+    """역률요금 주간 창(08~22시) 마스크 — **구간 시작 시각 기준** (제43조 ②).
+
+    라벨은 구간 끝이므로 ``08:00`` 슬롯은 07:45~08:00 이라 야간이다.
+    첫 주간 슬롯은 ``08:15`` 다.
+    """
+    hours = slot_start(pd.DatetimeIndex(index), interval_minutes).hour
+    start, end = DAY_WINDOW
+    return pd.Series((hours >= start) & (hours < end), index=index, name="day_window")
+
+
 def power_factor_after_pct(
     load_kw: pd.Series,
     generation_kw: pd.Series,
     *,
     power_factor_pct: float,
+    interval_minutes: int = 15,
 ) -> float:
-    """PV 도입 후 예상 역률 (요구사항서 5.7).
+    """PV 도입 후 예상 **주간 지상역률** (요구사항서 5.7, 약관 제43조 ②).
 
     무효전력은 그대로인데 PV 가 유효전력만 상쇄하므로 역률이 떨어진다.
-    발전 시간대의 평균 유효전력으로 판정한다.
+
+    **판정 창은 08~22시다.** 약관이 그 시간대의 지상역률로 요금을 매기기 때문이다.
+    발전 시간대(대략 06~19시)로 재면 요금 규칙과 창이 어긋난다. 창 안의 평균
+    유효전력으로 판정하며, 무효전력은 도입 전 유효전력과 기준 역률에서 역산한
+    값을 그대로 유지한다 (PV 는 무효전력을 만들지도 없애지도 않는다).
     """
     if not 0 < power_factor_pct <= 100:
         raise ValueError(f"역률은 0~100% 여야 합니다: {power_factor_pct}")
-    generating = (generation_kw > 0) & load_kw.notna()
-    if not bool(generating.any()):
+    window = day_window_mask(pd.DatetimeIndex(load_kw.index), interval_minutes)
+    observed = window & load_kw.notna()
+    if not bool(observed.any()):
         return power_factor_pct
 
-    before = float(load_kw[generating].mean())
-    after = float((load_kw - generation_kw).clip(lower=0.0)[generating].mean())
+    before = float(load_kw[observed].mean())
+    after = float((load_kw - generation_kw).clip(lower=0.0)[observed].mean())
     if before <= 0:
         return power_factor_pct
 
@@ -133,6 +155,13 @@ class SolarPoint:
     investment_won: float
     payback_years: float | None
     power_factor_after_pct: float
+    power_factor_extra_won: float
+    """도입 후 역률로 늘어나는 역률요금 (원). 감액이면 음수다 (약관 제43조)."""
+
+    @property
+    def saving_after_power_factor_won(self) -> float:
+        """역률 악화분을 뺀 절감액. **이것이 실제로 남는 돈이다.**"""
+        return self.total_saving_won - self.power_factor_extra_won
 
     @property
     def surplus_ratio(self) -> float | None:
@@ -180,7 +209,7 @@ def solar_curve(
     unit_cost_won_per_kwp: float,
     steps: int = DEFAULT_STEPS,
     sensitivity_factor: float = 1.0,
-    power_factor_pct: float = 92.0,
+    power_factor_pct: float = LAGGING_STANDARD_PCT,
     baseline: BillingResult | None = None,
     quality: QualityReport | None = None,
     options: BillingOptions | None = None,
@@ -217,6 +246,18 @@ def solar_curve(
         investment = capacity * unit_cost_won_per_kwp
         saving = base_bill.total_won - bill.total_won
         annual_saving = annualize(saving, base_bill.base_fee_months)
+
+        # 역률 악화분 (약관 제43조). 기준 역률 대비 조정 비율의 차이를
+        # 도입 후 기본요금에 곱한다. 92% 미만이면 양수(추가)다.
+        after_pct = power_factor_after_pct(
+            usage.kw,
+            generation,
+            power_factor_pct=power_factor_pct,
+            interval_minutes=usage.meta.interval_minutes,
+        )
+        extra_won = bill.total_base_won * (
+            lagging_adjustment_ratio(after_pct) - lagging_adjustment_ratio(power_factor_pct)
+        )
         points.append(
             SolarPoint(
                 capacity_kwp=capacity,
@@ -231,26 +272,34 @@ def solar_curve(
                 annual_saving_won=annual_saving,
                 investment_won=investment,
                 payback_years=payback_years(investment, annual_saving),
-                power_factor_after_pct=power_factor_after_pct(
-                    usage.kw, generation, power_factor_pct=power_factor_pct
-                ),
+                power_factor_after_pct=after_pct,
+                power_factor_extra_won=extra_won,
             )
         )
 
     largest = points[-1]
     if largest.power_factor_after_pct < POWER_FACTOR_FLOOR_PCT:
         warnings.append(
-            f"PV {largest.capacity_kwp:,.0f} kWp 도입 시 예상 역률이 "
-            f"{largest.power_factor_after_pct:.1f}% 로 지상 90% 를 밑돕니다. "
-            "무효전력은 그대로인데 유효전력만 상쇄되기 때문입니다. "
-            "콘덴서 용량 조정이 필요합니다 (요구사항서 5.7)."
+            f"PV {largest.capacity_kwp:,.0f} kWp 도입 시 예상 주간(08~22시) 지상역률이 "
+            f"{largest.power_factor_after_pct:.1f}% 로 기준 "
+            f"{POWER_FACTOR_FLOOR_PCT:.0f}% 를 밑돕니다. 무효전력은 그대로인데 "
+            "유효전력만 상쇄되기 때문입니다. 역률요금이 "
+            f"{largest.power_factor_extra_won:,.0f} 원 늘어 절감액이 "
+            f"{largest.total_saving_won:,.0f} → "
+            f"{largest.saving_after_power_factor_won:,.0f} 원이 됩니다. "
+            "콘덴서 용량 조정이 필요합니다 (기본공급약관 제41·43조, 요구사항서 5.7)."
         )
     notes = [
         "발전량 예측은 피크 발전량을 과소 산출하는 경향이 있어 결과가 보수적입니다 "
         "(요구사항서 9.1).",
         f"감도 계수 {sensitivity_factor:.2f} 를 PV 출력에 적용했습니다.",
         "용량마다 요금을 다시 계산했습니다. 절감액을 빼기로 어림하지 않았습니다.",
-        "역률요금은 추정 역률 기반 참고 산출입니다. 무효전력 실측이 없습니다.",
+        f"역률 판정 창은 08~22시(구간 시작 기준)이며 기준은 지상 "
+        f"{LAGGING_STANDARD_PCT:.0f}% 입니다 (기본공급약관 제43조 ②). "
+        f"도입 전 추정 역률 {power_factor_pct:.1f}% 에서 시작합니다.",
+        "역률요금은 추정 역률 기반 참고 산출입니다. 무효전력 실측이 없습니다 "
+        "(약관 제42조는 30분 누적 계량을 요구하는데 우리 데이터는 15분이고 "
+        "무효전력이 없습니다).",
     ]
     return SolarCurve(
         points=tuple(points),

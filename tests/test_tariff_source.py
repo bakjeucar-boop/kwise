@@ -33,6 +33,7 @@ from kwise.tariff import (
     classify_slots,
     list_selections,
     parse_tariff,
+    switchable_selections,
     validate_tariff,
 )
 from kwise.tariff.source_excel import (
@@ -394,3 +395,35 @@ def test_selections_are_scoped_by_contract_type(tariff: TariffTable) -> None:
     scoped = list_selections(tariff, contract_types=["general_b"])
     assert len(scoped) == 6
     assert {item.contract_type for item in scoped} == {"general_b"}
+
+
+def test_switchable_selections_lock_the_voltage(tariff: TariffTable) -> None:
+    """**전압구분은 수전설비로 정해진다.** 고압A ↔ B ↔ C 는 전환 대상이 아니다.
+
+    고압A 3,300~66,000 V / 고압B 154,000 V / 고압C 345,000 V 로 수전 자체가
+    다르다. 154 kV 수전 건물에 "고압A 로 바꾸면 절감" 을 권하는 것은 변전설비를
+    새로 지으라는 말이다. 단가만 보면 그럴듯해서 더 위험하다.
+    """
+    current = TariffSelection("industrial_b", "high_b", "I")
+    switchable = switchable_selections(tariff, current)
+    assert {item.option for item in switchable} == {"I", "II", "III"}
+    assert {item.voltage for item in switchable} == {"high_b"}
+    assert {item.contract_type for item in switchable} == {"industrial_b"}
+    assert current in switchable
+    # 고압C 는 산업용(을) 에 실제로 있는 전압이지만 권고 대상이 아니다.
+    assert TariffSelection("industrial_b", "high_c", "I") not in switchable
+    assert TariffSelection("industrial_b", "high_c", "I") in list_selections(tariff)
+
+
+def test_dropdown_still_offers_every_voltage(tariff: TariffTable) -> None:
+    """가두는 것은 **전환 비교**뿐이다. 드롭다운(부록 A.3)은 전부 보여 준다."""
+    options = list_selections(tariff, contract_types=["industrial_b"])
+    assert {item.voltage for item in options} == {"high_a", "high_b", "high_c"}
+
+
+def test_diagnosis_compares_only_within_the_current_voltage(sample_diagnosis: object) -> None:
+    """샘플은 고압A 수전이므로 고압B 가 후보에 오르지 않는다."""
+    from kwise.diagnose import Diagnosis
+
+    assert isinstance(sample_diagnosis, Diagnosis)
+    assert all(key.startswith("general_b/high_a/") for key in sample_diagnosis.option_totals)

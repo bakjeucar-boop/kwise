@@ -44,6 +44,7 @@ __all__ = [
     "list_selections",
     "list_voltages",
     "load_tariff",
+    "switchable_selections",
 ]
 
 BANDS: tuple[str, ...] = ("light", "mid", "peak")
@@ -480,14 +481,49 @@ def list_selections(
     table: TariffTable,
     *,
     contract_types: Iterable[str] | None = None,
+    voltages: Iterable[str] | None = None,
 ) -> tuple[TariffSelection, ...]:
-    """가능한 모든 조합. 5세션의 선택요금 비교가 이 목록을 돈다."""
+    """가능한 모든 조합. 5세션의 선택요금 비교가 이 목록을 돈다.
+
+    Args:
+        contract_types: 계약종별을 가둔다. 종별은 용도로 정해지는 계약이지
+            고를 수 있는 요금제가 아니다.
+        voltages: 전압구분을 가둔다. **수전설비로 정해지므로 전환 대상이 아니다.**
+
+    드롭다운(부록 A.3)을 그릴 때는 인자를 주지 않고 전부 받아 쓴다. 반면
+    **선택요금 전환 비교는 반드시 현행 종별·전압으로 가둔다** —
+    :func:`switchable_selections` 를 쓰면 된다.
+    """
     keys: Sequence[str] = (
         tuple(contract_types) if contract_types is not None else tuple(sorted(table.contract_types))
     )
+    allowed = set(voltages) if voltages is not None else None
     return tuple(
         TariffSelection(contract_type=key, voltage=voltage, option=option)
         for key in keys
         for voltage, _ in list_voltages(table, key)
+        if allowed is None or voltage in allowed
         for option in list_options(table, key, voltage)
+    )
+
+
+def switchable_selections(
+    table: TariffTable, current: TariffSelection
+) -> tuple[TariffSelection, ...]:
+    """현행 조합에서 **실제로 갈아탈 수 있는** 조합 목록.
+
+    바꿀 수 있는 것은 선택요금(Ⅰ·Ⅱ·Ⅲ)뿐이다. 나머지 둘은 고객이 고르는 값이
+    아니다.
+
+        계약종별   용도로 정해진다. 일반용 건물에 산업용을 권할 수 없다.
+        전압구분   **수전설비로 정해진다.** 고압A 는 3,300~66,000 V,
+                   고압B 는 154,000 V, 고압C 는 345,000 V 수전이다.
+                   154 kV 수전 건물이 22.9 kV 로 바꾸려면 변전설비를 새로
+                   지어야 하므로 요금제 비교에 끼울 대상이 아니다.
+
+    가둬 두지 않으면 "고압B 로 바꾸면 연 ○○원 절감" 같은 실행 불가능한 권고가
+    나온다. 단가만 보면 그럴듯해서 더 위험하다.
+    """
+    return list_selections(
+        table, contract_types=[current.contract_type], voltages=[current.voltage]
     )

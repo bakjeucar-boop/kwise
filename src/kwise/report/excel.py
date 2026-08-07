@@ -25,6 +25,7 @@ from kwise.measures import (
     Certainty,
     ContractAdjustment,
     EssResult,
+    PowerFactorResult,
     SolarPoint,
     TariffSwitchResult,
 )
@@ -162,6 +163,16 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
     )
 
     rows.append(("요금", "기본요금", f"{bill.total_base_won:,.0f} 원"))
+    charge = bill.power_factor
+    rows.append(
+        (
+            "요금",
+            "역률요금",
+            f"{bill.total_power_factor_won:,.0f} 원 "
+            f"({'감액' if charge.is_rebate else '추가'}, 기본요금의 "
+            f"{charge.total_ratio:+.1%}, 주간 지상 {charge.lagging_pct:.1f}%)",
+        )
+    )
     rows.append(("요금", "전력량요금", f"{bill.total_energy_won:,.0f} 원"))
     rows.append(("요금", "합계 (관측 기준)", f"{bill.total_won:,.0f} 원"))
     rows.append(("요금", "합계 (결측 보정 기준)", f"{bill.total_won_adjusted:,.0f} 원"))
@@ -213,10 +224,14 @@ def measure_summary_frame(
     *,
     switch: TariffSwitchResult | None = None,
     contract: ContractAdjustment | None = None,
+    power_factor: PowerFactorResult | None = None,
     ess: EssResult | None = None,
     solar: SolarPoint | None = None,
 ) -> pd.DataFrame:
     """수단별 결과 시트 (요구사항서 7장).
+
+    **투자비 순으로 배치한다** — 선택요금(0원) → 계약전력(0원) → 역률(소액) →
+    태양광 → ESS.
 
     **금액을 내지 못한 항목은 빈칸으로 두지 않고 사유를 적는다.**
     """
@@ -248,6 +263,32 @@ def measure_summary_frame(
                 "회수기간": "즉시" if contract.saving_won else "—",
                 "확실성": str(contract.certainty),
                 "비고": f"하향 여지 {contract.reduction_kw:,.0f} kW. {contract.saving_basis}",
+            }
+        )
+    if power_factor is not None:
+        rows.append(
+            {
+                "수단": (
+                    f"역률 개선 ({power_factor.current_pct:.1f} → {power_factor.target_pct:.1f}%)"
+                ),
+                "투자비(원)": power_factor.investment_won,
+                "절감액(원)": format_won(power_factor.saving_won),
+                "12개월 환산(원)": format_won(power_factor.annual_saving_won),
+                "회수기간": (
+                    "즉시"
+                    if power_factor.payback_years == 0
+                    else f"{power_factor.payback_years:.1f}년"
+                    if power_factor.payback_years is not None
+                    else UNPRICED_REASONS["no_saving"]
+                ),
+                "확실성": str(power_factor.certainty),
+                "비고": (
+                    f"주간(08~22시) 지상역률 기준 92%, 매 1%당 기본요금의 0.2% "
+                    f"(기본공급약관 제43조). 현재 역률요금 "
+                    f"{power_factor.current_charge_won:,.0f} 원 → "
+                    f"{power_factor.target_charge_won:,.0f} 원. "
+                    "야간 진상 95% 조항에 걸리지 않도록 시간대별 투입을 제어하십시오."
+                ),
             }
         )
     if solar is not None:
@@ -421,8 +462,10 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
     sheets["요금 계산 명세"] = monthly[
         [
             "billing_demand_kw",
+            "base_demand_kw",
             "base_fee_factor",
             "base_won",
+            "power_factor_won",
             "energy_won",
             "energy_won_adjusted",
             "total_won",

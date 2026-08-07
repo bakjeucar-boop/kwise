@@ -31,6 +31,11 @@ from kwise.tariff.demand import (
     monthly_demand_basis,
 )
 from kwise.tariff.holiday import DateLike, build_calendar
+from kwise.tariff.power_factor import (
+    LAGGING_STANDARD_PCT,
+    PowerFactorCharge,
+    power_factor_charge,
+)
 from kwise.tariff.schema import (
     BANDS,
     DEFAULT_REGION_GROUP,
@@ -42,12 +47,14 @@ from kwise.tariff.tou import classify_slots
 
 __all__ = [
     "DEMAND_WINDOW_MONTHS",
+    "LAGGING_STANDARD_PCT",
     "MISSING_LIMIT_RATIO",
     "NOT_INCLUDED_NOTICE",
     "AnnualEstimate",
     "BillingOptions",
     "BillingResult",
     "PartialMonthPolicy",
+    "PowerFactorCharge",
     "billing_demands",
     "calculate_bill",
 ]
@@ -77,6 +84,11 @@ class BillingOptions:
     region_group: str = DEFAULT_REGION_GROUP
     missing_limit_ratio: float = MISSING_LIMIT_RATIO
     contract_kw: float | None = None
+    # 역률 (기본공급약관 제41·42·43조). 기본값 92% 는 무효전력계 미설치 고객의
+    # 간주값이며 이 값에서 추가·감액이 정확히 0 이다 — 모르는 채로 금액을
+    # 만들어내지 않는다. 야간 진상역률은 근거가 없으면 None 으로 두고 경고만 낸다.
+    power_factor_pct: float = LAGGING_STANDARD_PCT
+    leading_power_factor_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -120,9 +132,11 @@ class BillingResult:
     billing_demand_kw: float
     total_base_won: float
     total_energy_won: float
+    total_power_factor_won: float
     total_won: float
     total_energy_won_adjusted: float
     total_won_adjusted: float
+    power_factor: PowerFactorCharge
 
     limited_months: tuple[pd.Period, ...]
     prior_peaks_supplied: bool
@@ -144,6 +158,12 @@ class BillingResult:
             f"계약종별: {self.contract_label} {self.voltage_label} 선택{self.selection.option}",
             f"기본요금 단가: {self.base_rate_won_per_kw:,.0f} 원/kW",
             f"계절·시간대 구분: {self.tariff_label}",
+            f"적용 역률: 주간(08~22시) 지상 {self.power_factor.lagging_pct:.1f}%, "
+            + (
+                f"야간(22~08시) 진상 {self.power_factor.leading_pct:.1f}%"
+                if self.power_factor.leading_pct is not None
+                else "야간(22~08시) 진상 미상"
+            ),
             f"산출 기간: {self.period_label}",
         )
 
@@ -160,7 +180,7 @@ class BillingResult:
             )
         return AnnualEstimate(
             factor=factor,
-            base_won=self.total_base_won * factor,
+            base_won=(self.total_base_won + self.total_power_factor_won) * factor,
             energy_won=self.total_energy_won * factor,
             total_won=self.total_won * factor,
             energy_won_adjusted=self.total_energy_won_adjusted * factor,
@@ -344,6 +364,18 @@ def calculate_bill(
     )
     missing_ratio = {_as_period(item.month): item.ratio for item in missing}
 
+    # 역률요금 (제41·42·43조). 기본요금 총액에 대해 한 번 산출하고, 월별로는
+    # 같은 비율을 그 달 기본요금에 곱한다.
+    total_base_before_pf = sum(
+        base_demand[month] * rates.base_won_per_kw * factors[month] for month in months
+    )
+    power_factor = power_factor_charge(
+        total_base_before_pf,
+        lagging_pct=opts.power_factor_pct,
+        leading_pct=opts.leading_power_factor_pct,
+    )
+    power_factor_ratio = power_factor.total_ratio
+
     rows: list[dict[str, Any]] = []
     for month in months:
         month_mask = slots["month"].to_numpy() == month
@@ -353,6 +385,9 @@ def calculate_bill(
         ratio = missing_ratio.get(month, 0.0)
         limited = ratio > opts.missing_limit_ratio
         base_won = base_demand[month] * rates.base_won_per_kw * factors[month]
+        # 역률요금은 그 달 기본요금에 대한 비율이다 (제43조). 부분 월 계수가 곱해진
+        # 값에 붙이므로 부분 월도 자동으로 안분된다.
+        power_factor_won = base_won * power_factor_ratio
         observed_energy_won = energy_won[month]
         adjusted_energy_won = observed_energy_won / (1.0 - ratio) if ratio < 1.0 else float("nan")
         rows.append(
@@ -375,10 +410,11 @@ def calculate_bill(
                 "peak_kwh": band_kwh[month]["peak"],
                 "total_kwh": sum(band_kwh[month].values()),
                 "discount_won": discount_won[month],
+                "power_factor_won": power_factor_won,
                 "energy_won": observed_energy_won,
                 "energy_won_adjusted": adjusted_energy_won,
-                "total_won": base_won + observed_energy_won,
-                "total_won_adjusted": base_won + adjusted_energy_won,
+                "total_won": base_won + power_factor_won + observed_energy_won,
+                "total_won_adjusted": base_won + power_factor_won + adjusted_energy_won,
                 "missing_ratio": ratio,
                 "demand_confidence": "신뢰 제한" if limited else "정상",
             }
@@ -438,6 +474,7 @@ def calculate_bill(
             "직전 12개월 최대수요 이력이 없어 첫 11개월의 요금적용전력이 과소 산출됩니다. "
             "청구서를 확보하면 prior_peaks= 로 주입하십시오 (요구사항서 5.2)."
         )
+    warnings.extend(power_factor.warnings)  # 역률 (제41·43조)
     for month in limited_months:
         warnings.append(
             f"{month} 결측률 {missing_ratio[month]:.1%} — 최대수요를 '신뢰 제한' 으로 "
@@ -475,6 +512,7 @@ def calculate_bill(
             "12~2월에는 발전이 약해 비대칭이 큽니다."
         ),
         *partial_notes,
+        *power_factor.notes,
         "전력량요금은 관측 기준이 정본이고, 결측 보정 기준은 회수기간 산정 참고용입니다 "
         "(요구사항서 5.4). 도입 전후 차분(Δ)을 절대 금액보다 우선 신뢰하십시오.",
     ]
@@ -482,6 +520,7 @@ def calculate_bill(
     total_base = float(monthly["base_won"].sum())
     total_energy = float(monthly["energy_won"].sum())
     total_energy_adjusted = float(monthly["energy_won_adjusted"].sum())
+    total_power_factor = float(monthly["power_factor_won"].sum())
 
     return BillingResult(
         monthly=monthly,
@@ -502,9 +541,11 @@ def calculate_bill(
         billing_demand_kw=float(max(demands.values())),
         total_base_won=total_base,
         total_energy_won=total_energy,
-        total_won=total_base + total_energy,
+        total_power_factor_won=total_power_factor,
+        total_won=total_base + total_power_factor + total_energy,
         total_energy_won_adjusted=total_energy_adjusted,
-        total_won_adjusted=total_base + total_energy_adjusted,
+        total_won_adjusted=total_base + total_power_factor + total_energy_adjusted,
+        power_factor=power_factor,
         limited_months=limited_months,
         prior_peaks_supplied=bool(opts.prior_peaks),
         warnings=tuple(warnings),

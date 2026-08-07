@@ -55,14 +55,15 @@ PV_COST_WON_PER_KWP = 1_200_000.0
 def test_switch_prices_every_option_from_the_data(
     sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
 ) -> None:
-    """선택지는 요금 데이터에서 생성한다. 하드코딩하지 않는다."""
+    """선택지는 요금 데이터에서 생성한다. 하드코딩하지 않는다.
+
+    **전압구분은 넘나들지 않는다.** 수전설비로 정해지므로 전환 대상이 아니다.
+    """
     result = evaluate_tariff_switch(sample_usage, tariff, CURRENT, quality=sample_report)
-    assert len(result.quotes) == 6
     assert {quote.key for quote in result.quotes} == {
-        f"general_b/{voltage}/{option}"
-        for voltage in ("high_a", "high_b")
-        for option in ("I", "II", "III")
+        f"general_b/high_a/{option}" for option in ("I", "II", "III")
     }
+    assert not any("high_b" in quote.key for quote in result.quotes)
     assert result.certainty is Certainty.HIGH
     assert result.investment_won == 0.0
 
@@ -98,14 +99,12 @@ def test_switch_reuses_precomputed_totals(
         "general_b/high_a/I": 1.0,
         "general_b/high_a/II": 2.0,
         "general_b/high_a/III": 3.0,
-        "general_b/high_b/I": 4.0,
-        "general_b/high_b/II": 5.0,
-        "general_b/high_b/III": 6.0,
+        "general_b/high_b/I": 0.5,  # 더 싸지만 갈아탈 수 없는 전압이다
     }
     result = evaluate_tariff_switch(
         sample_usage, tariff, CURRENT, quality=sample_report, option_totals=totals
     )
-    assert [quote.total_won for quote in result.quotes] == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    assert [quote.total_won for quote in result.quotes] == [1.0, 2.0, 3.0]
     assert result.best.key == "general_b/high_a/I"  # 가짜 합계에서는 현행이 최저다
 
 
@@ -328,18 +327,25 @@ def test_solar_saving_is_recalculated_not_subtracted(
 def test_power_factor_falls_and_warns(sample_curve: SolarCurve) -> None:
     """무효전력은 그대로인데 유효전력만 상쇄되어 역률이 떨어진다 (5.7)."""
     factors = [point.power_factor_after_pct for point in sample_curve.points]
-    assert factors[0] == pytest.approx(92.0)  # 도입 전 추정 역률
+    assert factors[0] == pytest.approx(92.0)  # 도입 전 추정 역률 (약관 제42조 간주값)
     assert factors == sorted(factors, reverse=True)
     assert factors[-1] < 92.0
+    # 0 kWp 는 역률이 그대로이므로 추가요금도 0 이다.
+    assert sample_curve.points[0].power_factor_extra_won == pytest.approx(0.0, abs=1.0)
+    assert sample_curve.points[-1].power_factor_extra_won > 0
 
 
-def test_power_factor_warning_appears_below_90(
+def test_power_factor_warning_appears_below_the_standard(
     sample_usage: UsageData,
     sample_report: QualityReport,
     tariff: TariffTable,
     sample_bill: BillingResult,
     sample_unit_pv: pd.Series,
 ) -> None:
+    """기준은 지상 **92%** 다 (기본공급약관 제41·43조). 90% 가 아니다.
+
+    경고에 예상 추가 역률요금과 그만큼 깎인 절감액을 함께 적는다.
+    """
     curve = solar_curve(
         sample_usage,
         tariff,
@@ -351,8 +357,12 @@ def test_power_factor_warning_appears_below_90(
         baseline=sample_bill,
         quality=sample_report,
     )
-    assert curve.points[-1].power_factor_after_pct < 90.0
+    point = curve.points[-1]
+    assert point.power_factor_after_pct < 92.0
+    assert point.power_factor_extra_won > 0  # 92% 미만이므로 추가요금이다
+    assert point.saving_after_power_factor_won < point.total_saving_won
     assert any("콘덴서" in message for message in curve.warnings)
+    assert any("제41·43조" in message for message in curve.warnings)
 
 
 def test_tariff_switch_saving_ignores_sensitivity_while_solar_does_not(

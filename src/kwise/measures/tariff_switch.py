@@ -29,7 +29,7 @@ from kwise.tariff import (
     TariffSelection,
     TariffTable,
     calculate_bill,
-    list_selections,
+    switchable_selections,
 )
 
 __all__ = ["OptionQuote", "TariffSwitchResult", "evaluate_tariff_switch"]
@@ -93,10 +93,10 @@ def evaluate_tariff_switch(
             를 그대로 넘기면 중복 계산을 피한다.
     """
     opts = options if options is not None else BillingOptions()
-    # 요금 데이터에서 생성하되 **같은 계약종별 안에서만** 비교한다.
-    # 일반용(을) 을 쓰는 건물에 산업용(을) 을 권할 수는 없다 — 용도로 정해지는
-    # 계약이지 선택요금이 아니다.
-    selections = list_selections(table, contract_types=[current_selection.contract_type])
+    # 요금 데이터에서 생성하되 **현행 계약종별·전압구분 안에서만** 비교한다.
+    # 종별은 용도로, 전압구분은 수전설비로 정해진다. 154 kV 수전 건물에
+    # "고압A 로 바꾸면 절감" 을 권하는 것은 변전설비를 새로 지으라는 말이다.
+    selections = switchable_selections(table, current_selection)
     if current_selection not in selections:
         raise ValueError(
             f"요금표에 없는 조합입니다: {current_selection} "
@@ -110,8 +110,10 @@ def evaluate_tariff_switch(
             usage, table, selection, options=opts, quality=quality
         ).total_won
 
-    best_key = min(totals, key=lambda key: totals[key])
-    best_selection = next(item for item in selections if str(item) == best_key)
+    # **갈아탈 수 있는 조합 안에서만 고른다.** ``option_totals`` 에 다른 전압구분이
+    # 섞여 들어와도 그것을 최적으로 뽑지 않는다.
+    best_selection = min(selections, key=lambda item: totals[str(item)])
+    best_key = str(best_selection)
 
     # 상세가 필요한 것은 두 조합뿐이다.
     current_bill = calculate_bill(usage, table, current_selection, options=opts, quality=quality)

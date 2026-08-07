@@ -257,10 +257,15 @@ def test_summary_carries_the_contract_change_warning(summary_text: str) -> None:
 
 
 def test_summary_carries_every_known_limit(summary_text: str) -> None:
-    """요구사항서 부록 D — 여덟 항목을 하나도 빠뜨리지 않는다."""
-    assert len(KNOWN_LIMITS) == 8
+    """요구사항서 부록 D — 아홉 항목을 하나도 빠뜨리지 않는다.
+
+    역률 정정(약관 제41·42·43조)으로 두 항목이 늘고 기존 한 줄이 갈라졌다.
+    """
+    assert len(KNOWN_LIMITS) == 9
     for limit in KNOWN_LIMITS:
         assert limit in summary_text, limit
+    assert any("제42조" in limit for limit in KNOWN_LIMITS)  # 30분 누적 계량
+    assert any("제43조 ③" in limit for limit in KNOWN_LIMITS)  # 첫 달 예고
 
 
 def test_summary_records_the_pv_judgement_population(summary_text: str) -> None:

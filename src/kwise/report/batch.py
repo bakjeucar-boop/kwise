@@ -23,6 +23,7 @@ from kwise.io import load_usage
 from kwise.measures import (
     evaluate_contract_adjustment,
     evaluate_ess,
+    evaluate_power_factor,
     evaluate_tariff_switch,
     light_band_mask,
     unit_generation_kw,
@@ -43,7 +44,13 @@ from kwise.report.excel import (
     measure_summary_frame,
     no_pv_sensitivity_frame,
 )
-from kwise.tariff import TariffSelection, TariffTable, calculate_bill, load_tariff
+from kwise.tariff import (
+    LAGGING_STANDARD_PCT,
+    TariffSelection,
+    TariffTable,
+    calculate_bill,
+    load_tariff,
+)
 
 __all__ = [
     "BatchConfig",
@@ -72,6 +79,10 @@ class CaseSpec:
     pv_unit_cost_won_per_kwp: float = 0.0
     ess_target_kw: float | None = None
     ess_unit_cost_won_per_kwh: float = 0.0
+    # 역률 (기본공급약관 제41·42·43조). 기본 92% 는 무효전력계 미설치 간주값이다.
+    power_factor_pct: float = LAGGING_STANDARD_PCT
+    power_factor_target_pct: float = 97.0
+    power_factor_investment_won: float = 0.0
     latitude: float = 37.5
     longitude: float = 127.0
     altitude_m: float = 0.0
@@ -262,6 +273,16 @@ def run_case(
         if case.contract_kw is not None
         else None
     )
+    # 역률 개선 — 투자비가 작아 회수기간이 짧다. 요금표와 약관만으로 확정된다.
+    power_factor_result = evaluate_power_factor(
+        usage,
+        table,
+        case.selection,
+        current_pct=case.power_factor_pct,
+        target_pct=case.power_factor_target_pct,
+        investment_won=case.power_factor_investment_won,
+        quality=quality,
+    )
     ess_result = (
         evaluate_ess(
             usage,
@@ -283,7 +304,12 @@ def run_case(
         diagnosis=diagnosis,
         comparison=comparison,
         sensitivity=sensitivity,
-        measure_rows=measure_summary_frame(switch=switch, contract=contract_result, ess=ess_result),
+        measure_rows=measure_summary_frame(
+            switch=switch,
+            contract=contract_result,
+            power_factor=power_factor_result,
+            ess=ess_result,
+        ),
         include_timeseries=include_timeseries,
     )
     excel = export_report(sections, output_dir=output_dir, prefix=f"result_{case.name}")

@@ -40,7 +40,7 @@ from kwise.tariff import (
     calculate_bill,
     classify_slots,
     demand_eligible_mask,
-    list_selections,
+    switchable_selections,
 )
 
 __all__ = ["Diagnosis", "diagnose"]
@@ -162,10 +162,10 @@ def diagnose(
     warnings.extend(current_bill.warnings)
 
     # 조합을 순차로 돌며 합계만 남긴다. 월별 명세는 현행 조합만 들고 있는다.
-    # **같은 계약종별 안에서만 비교한다.** 종별 전환은 요금제 선택이 아니라
-    # 용도·계약 변경이라 여기서 권할 수 있는 것이 아니다 (요구사항서 7.1).
+    # **현행 계약종별·전압구분 안에서만 비교한다.** 종별은 용도로, 전압은 수전설비로
+    # 정해지므로 요금제 전환으로 바꿀 수 있는 것이 아니다 (요구사항서 7.1).
     totals: dict[str, float] = {str(contract.selection): current_bill.total_won}
-    for selection in list_selections(table, contract_types=[contract.selection.contract_type]):
+    for selection in switchable_selections(table, contract.selection):
         key = str(selection)
         if key in totals:
             continue

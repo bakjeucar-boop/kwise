@@ -1,4 +1,4 @@
-"""태양광 계산과 기상 취득 (요구사항서 7.3, 9.2).
+"""태양광 계산과 기상 취득 (요구사항서 7.4, 9.2).
 
     load_weather()   Open-Meteo 시간별 기상. PROJECT_CACHE 에 parquet 캐시
     simulate()       다중 어레이 발전 시뮬레이션 (GCR 단일 파라미터)

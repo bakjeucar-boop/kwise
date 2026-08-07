@@ -334,9 +334,16 @@ def test_tariff_switch_saving_is_recalculated(sample_diagnosis: Diagnosis) -> No
 
 
 def test_every_option_is_priced_but_only_totals_are_kept(sample_diagnosis: Diagnosis) -> None:
-    """조합은 순차 처리하고 합계만 남긴다. 월별 명세는 현행 조합만 들고 있다."""
+    """조합은 순차 처리하고 합계만 남긴다. 월별 명세는 현행 조합만 들고 있다.
+
+    **현행 종별·전압 안에서만 돈다.** 고압A 수전 건물이므로 선택Ⅰ·Ⅱ·Ⅲ 셋뿐이다.
+    """
     totals = sample_diagnosis.option_totals
-    assert len(totals) == 6
+    assert set(totals) == {
+        "general_b/high_a/I",
+        "general_b/high_a/II",
+        "general_b/high_a/III",
+    }
     assert all(isinstance(value, float) for value in totals.values())
     assert min(totals, key=lambda key: totals[key]) == "general_b/high_a/II"
 

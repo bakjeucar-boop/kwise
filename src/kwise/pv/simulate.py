@@ -1,4 +1,4 @@
-"""태양광 발전량 시뮬레이션 (요구사항서 7.3).
+"""태양광 발전량 시뮬레이션 (요구사항서 7.4).
 
 pvlib 기반. 어레이마다 :func:`pvlib.bifacial.infinite_sheds.get_irradiance` 로
 경사면 일사를 구한다. 어레이 상호 음영은 **GCR 하나로** 표현한다 — 모델이
