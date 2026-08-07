@@ -588,3 +588,79 @@ def test_over_contract_slots_are_flagged_for_the_surcharge(
         quality=sample_report,
     )
     assert any("초과사용부가금" in message for message in result.warnings)
+
+
+# --------------------------------------------------------------------- 수기 케이스 6
+
+
+def test_hand_case_industrial_spring_weekend_discount(tmp_path: Path, tariff: TariffTable) -> None:
+    """2023-04 (30일: 평일 20, 토 5, 일 5, 공휴일 0), 400 kW 균일, **산업용(을) 고압A 선택Ⅰ**.
+
+    봄·가을 토·일·공휴일 **11~14시**는 단가의 50% 다 (특례
+    ``industrial_b_weekend_discount``). 케이스 스터디 C4 가 이 조항을 태운다.
+
+    슬롯 배분 (구간 시작 시각 기준)
+        경부하 = 20×40 + 5×40 + 5×96 = 1,480슬롯 → 148,000 kWh
+        중간부하 = 20×32 + 5×56       =   920슬롯 →  92,000 kWh
+        최대부하 = 20×24              =   480슬롯 →  48,000 kWh
+
+    할인 대상은 토·일의 11~14시 = 10일 × 12슬롯 = 120슬롯 → 12,000 kWh 인데,
+    **토요일과 일요일의 시간대 계량이 다르다.**
+
+        토요일 11~14시  중간부하 (최대부하가 중간부하로 내려간다)  138.9 원
+        일요일 11~14시  **경부하** (일요일은 전량 경부하)          121.5 원
+
+    할인액 = 6,000 × 138.9 × 50% + 6,000 × 121.5 × 50%
+           = 416,700 + 364,500 = 781,200 원
+
+    처음에 토·일을 모두 중간부하로 보고 833,400 원을 적었다가 엔진과 어긋나서
+    잡았다. **일요일 경부하 계량**이 여기서도 걸린다 (3세션 결정).
+    """
+    usage = month_usage(tmp_path, 2023, 4)
+    result = bill(usage, tariff, TariffSelection("industrial_b", "high_a", "I"))
+    row = result.monthly.loc[pd.Period("2023-04", freq="M")]
+
+    assert row["light_kwh"] == pytest.approx(148_000.0)
+    assert row["mid_kwh"] == pytest.approx(92_000.0)
+    assert row["peak_kwh"] == pytest.approx(48_000.0)
+
+    # 요금표에서 옮긴 산업용(을) 고압A 선택Ⅰ 봄·가을 단가
+    light, mid, peak = 121.5, 138.9, 156.4
+    undiscounted = 148_000 * light + 92_000 * mid + 48_000 * peak
+    assert undiscounted == pytest.approx(38_268_000.0)  # 손으로 계산한 값
+
+    discount = 6_000 * mid * 0.5 + 6_000 * light * 0.5
+    assert discount == pytest.approx(781_200.0)
+    assert row["energy_won"] == pytest.approx(undiscounted - discount)
+    assert row["energy_won"] == pytest.approx(37_486_800.0)
+
+
+# --------------------------------------------------------------------- 수기 케이스 7
+
+
+def test_hand_case_night_peak_is_excluded_from_billing_demand(
+    tmp_path: Path, tariff: TariffTable
+) -> None:
+    """**경부하 시간대의 최대는 요금적용전력이 되지 않는다** (요구사항서 5.2 ①).
+
+    2023-07 균일 400 kW 에 03:00 슬롯 하나만 1,200 kW 로 올린다. 03:00 은
+    경부하이므로 관측 최대는 1,200 kW 가 되지만 요금적용전력은 400 kW 그대로여야
+    한다. 케이스 스터디 C6 이 이 조항을 파이프라인 전체에서 태운다.
+    """
+    from tests._synthetic import make_labels, write_csv
+
+    rows: list[tuple[str, float]] = []
+    for day in range(1, 32):
+        for label in make_labels(f"2023-07-{day:02d}"):
+            # 라벨은 구간 끝이다. 03:00 라벨은 02:45~03:00 구간이라 경부하다.
+            spike = label.endswith(" 03:00")
+            rows.append((label, 300.0 if spike else KWH))
+    usage = load_usage(write_csv(tmp_path / "night.csv", rows))
+
+    assert float(usage.kw.max()) == pytest.approx(1_200.0)  # 관측 최대는 밤이다
+
+    result = bill(usage, tariff)
+    row = result.monthly.loc[pd.Period("2023-07", freq="M")]
+    assert row["max_demand_kw"] == pytest.approx(1_200.0)
+    assert row["billing_demand_kw"] == pytest.approx(400.0)  # 경부하는 대상이 아니다
+    assert row["base_won"] == pytest.approx(400.0 * BASE_A_I)
