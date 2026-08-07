@@ -271,16 +271,18 @@ def measure_summary_frame(
     if demand_response is not None:
         rows.append(
             {
-                "수단": f"경제성DR {demand_response.reduction_kw:,.0f} kW",
+                "수단": f"경제성DR (등록 {demand_response.registered_capacity_kw:,.0f} kW)",
                 "투자비(원)": 0.0,
                 "절감액(원)": demand_response.settlement_label,
                 "12개월 환산(원)": demand_response.settlement_label,
                 "회수기간": "즉시" if demand_response.is_priced else UNPRICED_REASONS["no_saving"],
                 "확실성": str(demand_response.certainty),
                 "비고": (
-                    f"거래 가능일 {demand_response.eligible_days}일 기준 "
-                    f"{demand_response.max_reduction_kwh:,.0f} kWh "
+                    f"거래 가능일 {demand_response.eligible_days}일, 일별 여력 합산 "
+                    f"{demand_response.annual_reducible_kwh:,.0f} kWh "
                     f"(입찰 {demand_response.bid_hours_per_day:.1f}h/일). "
+                    f"등록값 × 일수로 어림하면 {demand_response.flat_reduction_kwh:,.0f} kWh 로 "
+                    "과소평가됩니다. "
                     f"무비용 감축 가능일 {demand_response.low_load_days}일. "
                     "투자비는 0원이지만 감축 미달 시 실적위약금이 있습니다(별표26). " + DR_ADVISORY
                 ),
@@ -413,8 +415,12 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
             [
                 ("DR 거래 가능일", f"{dr.eligible_days}일 / 전체 {dr.total_days}일"),
                 ("DR 제외일 (토·일·공휴일)", f"{dr.excluded_days}일"),
-                ("DR 등록 가능 용량 (보수적)", f"{dr.registrable_kw:,.0f} kW"),
+                ("DR 등록 권장 용량 (하위 10%)", f"{dr.registered_capacity_kw:,.0f} kW"),
                 ("DR 평균 기준 여력", f"{dr.mean_reducible_kw:,.0f} kW"),
+                (
+                    "DR 연간 감축 가능량 (일별 합산, 1h/일)",
+                    f"{dr.annual_reducible_kwh(1.0):,.0f} kWh",
+                ),
                 ("DR 무비용 감축 가능일", f"{len(dr.low_load_days)}일"),
                 ("DR 자원 유형", ", ".join(str(item) for item in dr.resource_types)),
                 ("DR 적합성", str(dr.potential)),

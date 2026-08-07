@@ -105,9 +105,24 @@ class WeatherRequest:
             raise ValueError(f"종료일이 시작일보다 빠릅니다: {self.start} ~ {self.end}")
 
     @property
+    def grid_cell(self) -> tuple[float, float]:
+        """이 요청이 조회할 ERA5 격자 중심 (:data:`kwise.pv.region.GRID_RESOLUTION_DEG`)."""
+        from kwise.pv.region import grid_cell
+
+        return grid_cell(self.latitude, self.longitude)
+
+    @property
     def cache_name(self) -> str:
+        """캐시 파일명. **좌표를 격자 단위로 반올림한다.**
+
+        Open-Meteo 가 쓰는 ERA5 격자는 25~31 km 다. 그보다 가까운 두 지점은 어차피
+        같은 셀을 조회하므로, 반올림해도 값이 달라지지 않고 캐시 적중률만 오른다.
+        서울 강남구와 서초구가 같은 파일을 쓰고, 좌표를 직접 넣은 사용자도 같은
+        격자면 그 파일을 공유한다. 7세션 케이스 스터디의 재조회를 크게 줄인다.
+        """
+        latitude, longitude = self.grid_cell
         return (
-            f"openmeteo_{self.latitude:.4f}_{self.longitude:.4f}"
+            f"openmeteo_{latitude:.4f}_{longitude:.4f}"
             f"_{self.start:%Y%m%d}_{self.end:%Y%m%d}_{self.timezone.replace('/', '-')}.parquet"
         )
 

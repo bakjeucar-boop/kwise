@@ -151,8 +151,8 @@ def test_capacity_reuses_the_base_load_ratio(sample_diagnosis: Diagnosis) -> Non
     assert profile.base_load_kw == pytest.approx(profile.day_mean_kw * ratio)
 
 
-def test_registrable_capacity_is_conservative(sample_diagnosis: Diagnosis) -> None:
-    """**등록 용량은 평균이 아니라 하위 10% 기준이다.**
+def test_registered_capacity_is_conservative(sample_diagnosis: Diagnosis) -> None:
+    """**등록 권장값은 평균이 아니라 하위 10% 기준이다.**
 
     평균으로 등록하면 절반의 날에 미달해 위약금이 난다 (별표26).
     """
@@ -160,15 +160,53 @@ def test_registrable_capacity_is_conservative(sample_diagnosis: Diagnosis) -> No
     assert profile is not None
     assert profile.day_floor_kw is not None and profile.day_mean_kw is not None
     assert profile.day_floor_kw < profile.day_mean_kw
-    assert 0 < profile.registrable_kw < profile.mean_reducible_kw
-    assert profile.registrable_kw == pytest.approx(632, abs=5)
+    assert 0 < profile.registered_capacity_kw < profile.mean_reducible_kw
+    assert profile.registered_capacity_kw == pytest.approx(632, abs=5)
     assert profile.mean_reducible_kw == pytest.approx(1_390, abs=5)
+
+
+def test_registration_and_low_load_percentiles_are_separate() -> None:
+    """등록 분위수(10%)와 저부하일 문턱(5%)은 쓰임이 다른 값이다."""
+    from kwise.diagnose.dr import LOW_LOAD_PERCENTILE, REGISTRATION_PERCENTILE
+
+    assert REGISTRATION_PERCENTILE == 0.10
+    assert LOW_LOAD_PERCENTILE == 0.05
+    assert REGISTRATION_PERCENTILE != LOW_LOAD_PERCENTILE
+
+
+def test_annual_reduction_sums_daily_headroom(sample_diagnosis: Diagnosis) -> None:
+    """**연간 감축 가능량은 등록값 × 일수가 아니라 거래일별 여력의 합이다.**
+
+    경제성DR 은 하루 전 입찰이라 매일 다른 양을 입찰한다. 등록값으로 곱하면
+    부하가 많은 날의 여력을 통째로 버려 연간 수익이 크게 과소평가된다.
+    """
+    profile = sample_diagnosis.dr
+    assert profile is not None
+    daily = profile.daily_reducible_kw
+    assert len(daily) == profile.eligible_days == 245
+    assert (daily >= 0).all()  # 기저부하 아래로 내려가지 않는다
+
+    annual = profile.annual_reducible_kwh(1.0)
+    assert annual == pytest.approx(float(daily.sum()))
+    assert annual == pytest.approx(341_921, rel=1e-3)
+
+    flat = profile.registered_capacity_kw * 1.0 * profile.eligible_days
+    assert flat < annual  # 등록값으로 곱하면 과소평가된다
+    assert 1 - flat / annual == pytest.approx(0.55, abs=0.02)
+
+
+def test_bid_hours_scale_the_annual_reduction(sample_diagnosis: Diagnosis) -> None:
+    profile = sample_diagnosis.dr
+    assert profile is not None
+    assert profile.annual_reducible_kwh(2.0) == pytest.approx(profile.annual_reducible_kwh(1.0) * 2)
+    with pytest.raises(ValueError, match="입찰 지속시간"):
+        profile.annual_reducible_kwh(0.0)
 
 
 def test_potential_grades_by_capacity(sample_diagnosis: Diagnosis) -> None:
     profile = sample_diagnosis.dr
     assert profile is not None
-    assert profile.potential is DrPotential.HIGH  # 632 kW ≥ 500
+    assert profile.potential is DrPotential.HIGH  # 등록 권장 632 kW ≥ 500
     assert profile.meets_reference_capacity  # 참고 문턱 100 kW
 
 
@@ -272,10 +310,21 @@ def test_reduction_is_counted_on_dr_days_only(sample_diagnosis: Diagnosis) -> No
     assert profile is not None
     result = evaluate_demand_response(profile, bid_hours_per_day=1.0)
     assert result.eligible_days == 245
-    assert result.max_reduction_kwh == pytest.approx(profile.registrable_kw * 1.0 * 245)
-    assert result.low_cost_reduction_kwh == pytest.approx(profile.registrable_kw * 1.0 * 13)
+    assert result.annual_reducible_kwh == pytest.approx(profile.annual_reducible_kwh(1.0))
+    assert result.low_cost_reduction_kwh == pytest.approx(profile.low_cost_reducible_kwh(1.0))
     assert result.investment_won == 0.0
     assert result.certainty is Certainty.MEDIUM
+
+
+def test_two_capacities_have_distinct_roles(sample_diagnosis: Diagnosis) -> None:
+    """등록 권장값은 계약용, 연간 감축량은 수익 추정용이다. 섞지 않는다."""
+    profile = sample_diagnosis.dr
+    assert profile is not None
+    result = evaluate_demand_response(profile)
+    assert result.registered_capacity_kw == pytest.approx(profile.registered_capacity_kw)
+    assert result.flat_reduction_kwh < result.annual_reducible_kwh
+    assert any("거래일별 여력을 합산한 값입니다" in note for note in result.notes)
+    assert any("과소평가" in note for note in result.notes)
 
 
 def test_missing_price_returns_a_reason_not_an_amount(sample_diagnosis: Diagnosis) -> None:
@@ -288,7 +337,7 @@ def test_missing_price_returns_a_reason_not_an_amount(sample_diagnosis: Diagnosi
     assert not result.is_priced
     assert result.settlement_label == UNPRICED_REASON
     assert "순편익가격" in result.settlement_label
-    assert result.max_reduction_kwh > 0  # 감축량은 낸다
+    assert result.annual_reducible_kwh > 0  # 감축량은 낸다
     assert any("정산 단가를 입력하지 않아" in message for message in result.warnings)
 
 
@@ -296,7 +345,7 @@ def test_price_produces_a_settlement(sample_diagnosis: Diagnosis) -> None:
     profile = sample_diagnosis.dr
     assert profile is not None
     result = evaluate_demand_response(profile, unit_price_won_per_kwh=150.0)
-    assert result.settlement_won == pytest.approx(result.max_reduction_kwh * 150.0)
+    assert result.settlement_won == pytest.approx(result.annual_reducible_kwh * 150.0)
     assert result.low_cost_settlement_won == pytest.approx(result.low_cost_reduction_kwh * 150.0)
     assert result.settlement_label != UNPRICED_REASON
 

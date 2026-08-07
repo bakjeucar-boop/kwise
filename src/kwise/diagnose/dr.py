@@ -40,6 +40,7 @@ __all__ = [
     "DR_REFERENCE_CAPACITY_KW",
     "LOW_LOAD_PERCENTILE",
     "NATIONAL_DR_MAX_CONTRACT_KW",
+    "REGISTRATION_PERCENTILE",
     "SMALL_MEDIUM_DR_INDUSTRIAL_MAX_KW",
     "DrPotential",
     "DrProfile",
@@ -61,8 +62,13 @@ SMALL_MEDIUM_DR_INDUSTRIAL_MAX_KW = 2_000.0
 
 # 감축 여력을 재는 주간 창. 경제성DR 입찰은 주간 시간대에 몰린다.
 DEFAULT_DAY_HOURS: tuple[int, int] = (9, 18)
-# 무비용 감축 가능일 판정 문턱 (요구사항서 6.6).
+# 무비용 감축 가능일 판정 문턱 (요구사항서 6.6). **아래 등록 문턱과 다른 값이다.**
 LOW_LOAD_PERCENTILE = 0.05
+# 등록 권장 용량의 분위수. 사업자와 계약할 때 등록하는 값이라 **어느 거래일에나
+# 지킬 수 있어야 한다** — 평균으로 등록하면 절반의 날에 미달하고 미달은
+# 위약금이다(별표26). 하위 10% 면 열에 아홉 날은 그 이상 여력이 있다.
+# 저부하일 식별의 5% 와는 쓰임이 달라 상수를 따로 둔다.
+REGISTRATION_PERCENTILE = 0.10
 # 적합성 등급의 상단. 규칙이 정하는 값이 아니라 본 도구의 구간이다.
 DEFAULT_HIGH_CAPACITY_KW = 500.0
 
@@ -165,9 +171,12 @@ class DrProfile:
 
     Attributes:
         eligible_days: 거래 가능일 수 (토·일·공휴일 제외). **이후 모든 산출의 분모다.**
-        registrable_kw: 등록 가능 용량 (보수적). 대상일 주간 부하의 하위 10%에서
-            기저부하를 뺀 값이다 — 어느 대상일에나 지킬 수 있어야 위약금을 피한다.
-        mean_reducible_kw: 대상일 주간 **평균** 부하 − 기저부하. 비교용 상단값이다.
+        registered_capacity_kw: **등록 권장값** — 사업자와 계약할 때 등록하는 용량.
+            대상일 주간 부하의 하위 10%에서 기저부하를 뺀 값이라 어느 거래일에나
+            지킬 수 있다. **연간 수익 추정에 이 값을 쓰면 안 된다.**
+        daily_reducible_kw: 거래일별 감축 여력 (그날 주간 평균 − 기저부하).
+            **연간 감축 가능량의 기준이다.**
+        mean_reducible_kw: 대상일 주간 **평균** 부하 − 기저부하. 비교용이다.
         low_load_days: 무비용 감축 가능일. 일평균 부하가 대상일 하위 5% 이하이고
             정전 구간이 아닌 날.
     """
@@ -181,8 +190,9 @@ class DrProfile:
     day_floor_kw: float | None
     base_load_kw: float | None
     base_load_ratio: float | None
-    registrable_kw: float
+    registered_capacity_kw: float
     mean_reducible_kw: float
+    daily_reducible_kw: pd.Series
 
     resource_types: tuple[DrResourceType, ...]
     potential: DrPotential
@@ -199,7 +209,24 @@ class DrProfile:
     @property
     def meets_reference_capacity(self) -> bool:
         """참고 문턱(100 kW)을 넘는가. 자원 단위 기준이라 확정 판정이 아니다."""
-        return self.registrable_kw >= DR_REFERENCE_CAPACITY_KW
+        return self.registered_capacity_kw >= DR_REFERENCE_CAPACITY_KW
+
+    def annual_reducible_kwh(self, bid_hours_per_day: float) -> float:
+        """연간 감축 가능량 — **거래일별 여력의 합**이다.
+
+        등록 권장값 × 일수로 계산하면 부하가 많은 날의 여력을 통째로 버린다.
+        경제성DR 은 하루 전 입찰이라 매일 다른 양을 입찰하기 때문이다.
+        """
+        if bid_hours_per_day <= 0:
+            raise ValueError(f"입찰 지속시간은 양수여야 합니다: {bid_hours_per_day}")
+        return float(self.daily_reducible_kw.sum()) * bid_hours_per_day
+
+    def low_cost_reducible_kwh(self, bid_hours_per_day: float) -> float:
+        """무비용 감축 가능일만 참여했을 때의 감축량. 그날의 여력을 쓴다."""
+        if bid_hours_per_day <= 0:
+            raise ValueError(f"입찰 지속시간은 양수여야 합니다: {bid_hours_per_day}")
+        days = self.daily_reducible_kw.reindex(list(self.low_load_days)).dropna()
+        return float(days.sum()) * bid_hours_per_day
 
 
 def _day_window(starts: pd.DatetimeIndex, day_hours: tuple[int, int]) -> pd.Series:
@@ -220,6 +247,7 @@ def dr_profile(
     outage_mask: pd.Series | None = None,
     day_hours: tuple[int, int] = DEFAULT_DAY_HOURS,
     low_load_percentile: float = LOW_LOAD_PERCENTILE,
+    registration_percentile: float = REGISTRATION_PERCENTILE,
     high_capacity_kw: float = DEFAULT_HIGH_CAPACITY_KW,
 ) -> DrProfile:
     """경제성DR 참여 여력을 진단한다 (요구사항서 6.6).
@@ -229,6 +257,9 @@ def dr_profile(
             다시 계산하지 않는다.
         outage_mask: 정전 슬롯 마스크. 무비용 감축 가능일에서 정전일을 뺀다.
         day_hours: 감축 여력을 재는 주간 창.
+        low_load_percentile: 무비용 감축 가능일 문턱 (기본 5%).
+        registration_percentile: 등록 권장 용량 분위수 (기본 10%).
+            **저부하일 문턱과 쓰임이 다른 값이다.**
     """
     observed = kw.dropna()
     if observed.empty:
@@ -253,32 +284,47 @@ def dr_profile(
 
     selected = observed[is_dr_day & in_window]
     day_mean = float(selected.mean()) if len(selected) else None
-    # 하위 10% — 어느 대상일에나 지킬 수 있는 수준. 평균을 쓰면 절반의 날은 못 지킨다.
-    day_floor = float(selected.quantile(0.10)) if len(selected) else None
+    # 등록 권장값의 바닥. 어느 거래일에나 지킬 수 있어야 한다 (별표26 위약금).
+    day_floor = float(selected.quantile(registration_percentile)) if len(selected) else None
 
     ratio = pattern.base_load_ratio  # 6.1 의 값을 재사용한다. 다시 계산하지 않는다
     base_kw: float | None = None
-    registrable = 0.0
+    registered = 0.0
     mean_reducible = 0.0
+    daily_reducible = pd.Series(dtype=float)
     if day_mean is not None and ratio is not None:
         base_kw = day_mean * ratio
         mean_reducible = max(0.0, day_mean - base_kw)
-        registrable = max(0.0, (day_floor or 0.0) - base_kw)
+        registered = max(0.0, (day_floor or 0.0) - base_kw)
+
+        # **연간 감축 가능량은 등록값 × 일수가 아니다.** 경제성DR 은 하루 전
+        # 입찰이라 매일 다른 양을 입찰한다. 등록값(하위 10%)으로 곱하면 부하가
+        # 많은 날의 여력을 통째로 버려 연간 수익이 크게 과소평가된다.
+        #   연간 감축 가능량 = Σ (거래일별 주간 평균 부하 − 기저부하)
+        per_day_mean = selected.groupby(day_of[selected.index]).mean()
+        daily_reducible = (per_day_mean - base_kw).clip(lower=0.0)
         notes.append(
             f"감축 여력 = 대상일 주간({day_hours[0]}~{day_hours[1]}시) 부하 − 기저부하. "
             f"기저부하는 6.1 의 기저부하 비율 {ratio:.1%} 를 그대로 썼습니다 "
-            f"({base_kw:,.0f} kW). 평균 기준 {mean_reducible:,.0f} kW 이지만, "
-            f"**등록 가능 용량은 하위 10% 기준 {registrable:,.0f} kW 로 보수적으로** "
-            "잡았습니다 — 평균으로 등록하면 절반의 날에 미달해 위약금이 납니다."
+            f"({base_kw:,.0f} kW)."
+        )
+        notes.append(
+            f"**두 값은 쓰임이 다릅니다.** 등록 권장 용량 {registered:,.0f} kW 는 "
+            f"하위 {registration_percentile:.0%} 기준으로, 사업자와 계약할 때 등록하는 "
+            "값입니다 — 평균으로 등록하면 절반의 날에 미달해 위약금이 납니다. "
+            f"반면 연간 감축 가능량은 **거래일별 여력을 합산**합니다 "
+            f"(일평균 {float(daily_reducible.mean()):,.0f} kW). 하루 전 입찰이라 "
+            "매일 다른 양을 입찰하므로, 등록값으로 곱하면 부하가 많은 날의 여력을 "
+            "버려 연간 수익이 과소평가됩니다."
         )
     else:
         warnings.append(
             "대상일 주간 관측치나 기저부하 비율이 없어 등록 가능 용량을 산출하지 못했습니다."
         )
 
-    if registrable < DR_REFERENCE_CAPACITY_KW:
+    if registered < DR_REFERENCE_CAPACITY_KW:
         warnings.append(
-            f"등록 가능 용량 {registrable:,.0f} kW 가 참고 문턱 "
+            f"등록 권장 용량 {registered:,.0f} kW 가 참고 문턱 "
             f"{DR_REFERENCE_CAPACITY_KW:,.0f} kW (0.1 MW-h) 아래입니다. "
             "이 문턱은 수요관리사업자가 **묶은 자원 단위** 기준이라 개별 고객에게 "
             "그대로 적용되지 않습니다 (제12.4.2.1조 제1항 2호). 다른 고객과 묶여 "
@@ -312,9 +358,9 @@ def dr_profile(
             "(제12.1.1조). 표준DR 은 계약종별 제한이 없습니다."
         )
 
-    if registrable >= high_capacity_kw:
+    if registered >= high_capacity_kw:
         potential = DrPotential.HIGH
-    elif registrable >= DR_REFERENCE_CAPACITY_KW:
+    elif registered >= DR_REFERENCE_CAPACITY_KW:
         potential = DrPotential.MEDIUM
     else:
         potential = DrPotential.LOW
@@ -328,8 +374,9 @@ def dr_profile(
         day_floor_kw=day_floor,
         base_load_kw=base_kw,
         base_load_ratio=ratio,
-        registrable_kw=registrable,
+        registered_capacity_kw=registered,
         mean_reducible_kw=mean_reducible,
+        daily_reducible_kw=daily_reducible,
         resource_types=resource_types,
         potential=potential,
         low_load_days=low_days,
