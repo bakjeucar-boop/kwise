@@ -15,7 +15,6 @@ import pandas as pd
 import pytest
 
 from kwise.diagnose import (
-    DR_REFERENCE_CAPACITY_KW,
     Diagnosis,
     DrPotential,
     DrProfile,
@@ -23,6 +22,7 @@ from kwise.diagnose import (
     dr_day_mask,
     dr_eligible_days,
     dr_profile,
+    dr_reference_capacity_kw,
     judge_resource_types,
 )
 from kwise.io import UsageData
@@ -167,11 +167,11 @@ def test_registered_capacity_is_conservative(sample_diagnosis: Diagnosis) -> Non
 
 def test_registration_and_low_load_percentiles_are_separate() -> None:
     """등록 분위수(10%)와 저부하일 문턱(5%)은 쓰임이 다른 값이다."""
-    from kwise.diagnose.dr import LOW_LOAD_PERCENTILE, REGISTRATION_PERCENTILE
+    from kwise.diagnose.dr import low_load_percentile, registration_percentile
 
-    assert REGISTRATION_PERCENTILE == 0.10
-    assert LOW_LOAD_PERCENTILE == 0.05
-    assert REGISTRATION_PERCENTILE != LOW_LOAD_PERCENTILE
+    assert registration_percentile() == 0.10
+    assert low_load_percentile() == 0.05
+    assert registration_percentile() != low_load_percentile()
 
 
 def test_annual_reduction_sums_daily_headroom(sample_diagnosis: Diagnosis) -> None:
@@ -214,7 +214,7 @@ def test_reference_threshold_is_a_resource_level_note(
     sample_usage: UsageData, sample_report: QualityReport, calendar: object
 ) -> None:
     """0.1 MW-h 문턱은 **자원 단위** 기준이다. 개별 고객 판정으로 쓰지 않는다."""
-    assert DR_REFERENCE_CAPACITY_KW == 100.0
+    assert dr_reference_capacity_kw() == 100.0
     tiny = sample_usage.kw * 0.02  # 등록 가능 용량이 문턱 아래로 내려간다
     profile = dr_profile(
         tiny,

@@ -49,19 +49,15 @@ s 값은 ``data\\pv_presets.json`` 에서 읽는다 — 하드코딩하지 않�
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
-from dataclasses import dataclass, field
-from functools import lru_cache
-from pathlib import Path
-from typing import Any
+from dataclasses import dataclass
 
 import pandas as pd
 
+from kwise.rules import assumption
+
 __all__ = [
-    "DEFAULT_SHARPNESS",
     "SCENARIO_KEYS",
-    "SHARPNESS_KEY",
     "ScenarioSummary",
     "SharpnessFactors",
     "iter_scenarios",
@@ -69,8 +65,6 @@ __all__ = [
     "sharpen",
     "summarize_scenarios",
 ]
-
-SHARPNESS_KEY = "sensitivity_sharpness"
 
 
 # 내부 키. **바꾸지 않는다** — 설정 파일과 케이스 정의가 이 이름을 쓴다.
@@ -89,10 +83,11 @@ class SharpnessFactors:
     이 축은 낙관·비관이 아니라 프로파일이 얼마나 뾰족한가이기 때문이다.
     """
 
-    conservative: float = 0.85
-    base: float = 1.00
-    optimistic: float = 1.25
-    labels: tuple[str, str, str] = field(default=("평탄형", "기준", "첨예형"))
+    # **기본값을 두지 않는다.** 값은 assumptions.json 이 준다 (요구사항서 12장).
+    conservative: float
+    base: float
+    optimistic: float
+    labels: tuple[str, str, str]
 
     def __post_init__(self) -> None:
         values = (self.conservative, self.base, self.optimistic)
@@ -118,34 +113,20 @@ class SharpnessFactors:
         return self.labels[1]
 
 
-@lru_cache(maxsize=1)
-def load_sharpness_factors(path: str | None = None) -> SharpnessFactors:
-    """``data\\pv_presets.json`` 의 ``sensitivity_sharpness`` 를 읽는다.
+def load_sharpness_factors() -> SharpnessFactors:
+    """``data\assumptions.json`` 에서 첨예도 계수와 라벨을 읽는다.
 
-    키가 없으면 :class:`SharpnessFactors` 의 기본값을 쓴다. 설정 파일이 없다고
-    계산이 멈출 이유는 없지만, **값은 코드가 아니라 설정에 둔다.**
+    **코드에 기본값을 두지 않는다.** 파일이 없거나 항목이 빠지면
+    :class:`~kwise.rules.RuleDataError` 로 멈춘다 — 기본값을 남겨 두면 파일을
+    고쳐도 반영되지 않는 사고가 나고, 값이 그럴듯해서 발견이 늦다.
     """
-    from kwise.pv.layout import preset_data_path
-
-    target = Path(path) if path is not None else preset_data_path()
-    if not target.is_file():
-        return SharpnessFactors()
-    with target.open(encoding="utf-8") as stream:
-        payload: dict[str, Any] = json.load(stream)
-    block = payload.get(SHARPNESS_KEY)
-    if not isinstance(block, dict):
-        return SharpnessFactors()
-    labels = block.get("labels")
-    defaults = SharpnessFactors()
+    labels = assumption("sensitivity.labels")
     return SharpnessFactors(
-        conservative=float(block.get("conservative", defaults.conservative)),
-        base=float(block.get("base", defaults.base)),
-        optimistic=float(block.get("optimistic", defaults.optimistic)),
-        labels=tuple(str(item) for item in labels) if isinstance(labels, list) else defaults.labels,  # type: ignore[arg-type]
+        conservative=float(assumption("sensitivity.sharpness.conservative")),
+        base=float(assumption("sensitivity.sharpness.base")),
+        optimistic=float(assumption("sensitivity.sharpness.optimistic")),
+        labels=(str(labels[0]), str(labels[1]), str(labels[2])),
     )
-
-
-DEFAULT_SHARPNESS = load_sharpness_factors()
 
 
 def sharpen(kw: pd.Series, sharpness: float) -> pd.Series:
@@ -197,17 +178,18 @@ class ScenarioSummary:
 
 def iter_scenarios(
     kw: pd.Series,
-    factors: SharpnessFactors = DEFAULT_SHARPNESS,
+    factors: SharpnessFactors | None = None,
 ) -> Iterator[tuple[str, float, pd.Series]]:
     """시나리오를 하나씩 낸다. 호출자가 요약만 챙기면 메모리가 한 벌로 유지된다."""
-    for name, sharpness in factors.items():
+    items = load_sharpness_factors() if factors is None else factors
+    for name, sharpness in items.items():
         yield name, sharpness, sharpen(kw, sharpness).rename(f"pv_kw_{name}")
 
 
 def summarize_scenarios(
     kw: pd.Series,
     interval_minutes: int,
-    factors: SharpnessFactors = DEFAULT_SHARPNESS,
+    factors: SharpnessFactors | None = None,
 ) -> tuple[ScenarioSummary, ...]:
     """감도 3종의 발전량·피크만 뽑는다. **발전량은 세 시나리오가 같아야 한다.**"""
     slot_hours = interval_minutes / 60.0

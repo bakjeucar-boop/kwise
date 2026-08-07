@@ -28,7 +28,7 @@ import pandas as pd
 
 from kwise.compare.combination import CombinationSpec, evaluate_combination
 from kwise.io import UsageData
-from kwise.pv import DEFAULT_SHARPNESS, SharpnessFactors
+from kwise.pv import SharpnessFactors, load_sharpness_factors
 from kwise.quality import QualityReport
 from kwise.tariff import BillingOptions, BillingResult, TariffTable
 
@@ -122,7 +122,7 @@ def sensitivity_comparison(
     baseline_bill: BillingResult,
     unit_pv_kw_per_kwp: pd.Series | None = None,
     charge_mask: pd.Series | None = None,
-    factors: SharpnessFactors = DEFAULT_SHARPNESS,
+    factors: SharpnessFactors | None = None,
     quality: QualityReport | None = None,
     options: BillingOptions | None = None,
 ) -> pd.DataFrame:
@@ -132,8 +132,9 @@ def sensitivity_comparison(
     """
     from dataclasses import replace
 
+    items = load_sharpness_factors() if factors is None else factors
     rows: list[dict[str, object]] = []
-    for label, sharpness in factors.items():
+    for label, sharpness in items.items():
         scenario = replace(spec, sharpness=sharpness)
         result = evaluate_combination(
             usage,
@@ -170,21 +171,22 @@ def sensitivity_ranges(
     frame: pd.DataFrame,
     *,
     metrics: tuple[tuple[str, str, int], ...] = RANGE_METRICS,
-    base_label: str = DEFAULT_SHARPNESS.base_label,
+    base_label: str | None = None,
 ) -> tuple[SensitivityRange, ...]:
     """감도 표를 **범위**로 접는다. 최댓값·최솟값은 ``min``/``max`` 로 뽑는다.
 
     어느 시나리오가 최댓값인지 미리 정하지 않는다 — 건물 유형에 따라 평탄형에서
     나올 수도 첨예형에서 나올 수도 있다.
     """
+    reference = load_sharpness_factors().base_label if base_label is None else base_label
     ranges: list[SensitivityRange] = []
     for metric, unit, decimals in metrics:
         if metric not in frame.columns:
             continue
         series = frame[metric].dropna()
         base = (
-            float(frame.loc[base_label, metric])
-            if base_label in frame.index and pd.notna(frame.loc[base_label, metric])
+            float(frame.loc[reference, metric])
+            if reference in frame.index and pd.notna(frame.loc[reference, metric])
             else None
         )
         if series.empty:
@@ -211,7 +213,7 @@ def sensitivity_range_frame(
     frame: pd.DataFrame,
     *,
     metrics: tuple[tuple[str, str, int], ...] = RANGE_METRICS,
-    base_label: str = DEFAULT_SHARPNESS.base_label,
+    base_label: str | None = None,
 ) -> pd.DataFrame:
     """산출물에 싣는 감도 표. **3열 나열이 아니라 범위다.**"""
     rows = [

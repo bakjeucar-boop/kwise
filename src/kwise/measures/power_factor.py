@@ -33,25 +33,31 @@ from kwise.io import UsageData
 from kwise.measures.base import Certainty, annualize, payback_years
 from kwise.quality import QualityReport
 from kwise.tariff import (
-    LAGGING_REBATE_CAP_PCT,
-    LAGGING_STANDARD_PCT,
-    LEADING_FLOOR_PCT,
-    LEADING_STANDARD_PCT,
     BillingOptions,
     BillingResult,
     TariffSelection,
     TariffTable,
     calculate_bill,
+    lagging_rebate_cap_pct,
+    lagging_standard_pct,
+    leading_floor_pct,
+    leading_standard_pct,
 )
 
 __all__ = [
-    "DEFAULT_TARGET_PCT",
     "PowerFactorResult",
+    "default_target_pct",
     "evaluate_power_factor",
 ]
 
-# 감액 상한. 이보다 올려도 요금은 더 내려가지 않는다 (제43조 ②).
-DEFAULT_TARGET_PCT = LAGGING_REBATE_CAP_PCT
+
+def default_target_pct() -> float:
+    """역률 개선의 기본 목표 — 감액 상한(97%)이다.
+
+    이보다 올려도 요금은 더 내려가지 않는다 (제43조 ②). 값은
+    ``data\rules_kr.json`` 에 있다.
+    """
+    return lagging_rebate_cap_pct()
 
 
 @dataclass(frozen=True, eq=False)
@@ -96,8 +102,8 @@ def evaluate_power_factor(
     table: TariffTable,
     selection: TariffSelection,
     *,
-    current_pct: float = LAGGING_STANDARD_PCT,
-    target_pct: float = DEFAULT_TARGET_PCT,
+    current_pct: float | None = None,
+    target_pct: float | None = None,
     investment_won: float = 0.0,
     baseline: BillingResult | None = None,
     quality: QualityReport | None = None,
@@ -113,6 +119,11 @@ def evaluate_power_factor(
         investment_won: 콘덴서 증설·조정 투자비. 사용자 입력이며 기본값이 없다시피
             0 이다 — 0 이면 회수기간을 '즉시' 로 본다.
     """
+    # 기본값은 파일에서 온다 (요구사항서 12장). 코드에 두지 않는다.
+    standard = lagging_standard_pct()
+    cap = lagging_rebate_cap_pct()
+    current_pct = standard if current_pct is None else current_pct
+    target_pct = default_target_pct() if target_pct is None else target_pct
     if target_pct < current_pct:
         raise ValueError(
             f"목표 역률({target_pct}%)이 현재({current_pct}%)보다 낮습니다. "
@@ -133,27 +144,27 @@ def evaluate_power_factor(
     saving = current_bill.total_won - target_bill.total_won
     annual = annualize(saving, current_bill.base_fee_months)
 
-    effective_target = min(target_pct, LAGGING_REBATE_CAP_PCT)
+    effective_target = min(target_pct, cap)
     notes = [
         "역률 개선은 요금표와 약관만으로 확정되는 계산입니다. 감도를 적용하지 "
         "않습니다 (요구사항서 9.2).",
         f"주간(08~22시) 지상역률 {current_pct:.1f}% → {target_pct:.1f}% 기준입니다. "
-        f"기준 {LAGGING_STANDARD_PCT:.0f}%, 매 1%당 기본요금의 0.2% "
+        f"기준 {standard:.0f}%, 매 1%당 기본요금의 0.2% "
         "(기본공급약관 제43조 ②).",
         "요금을 두 역률에서 각각 다시 계산했습니다. 기본요금 비율만 곱해 어림하지 않았습니다.",
     ]
     warnings: list[str] = []
-    if target_pct > LAGGING_REBATE_CAP_PCT:
+    if target_pct > cap:
         warnings.append(
-            f"목표 역률 {target_pct:.1f}% 가 감액 상한 {LAGGING_REBATE_CAP_PCT:.0f}% 를 "
+            f"목표 역률 {target_pct:.1f}% 가 감액 상한 {cap:.0f}% 를 "
             f"넘습니다. {effective_target:.0f}% 를 넘는 만큼은 요금이 더 줄지 않으므로 "
             "콘덴서 과투자입니다."
         )
     warnings.append(
         "**고정 콘덴서를 키우면 야간 경부하에서 진상으로 넘어갑니다.** 주간 부하에 "
         f"맞춘 용량이 야간에는 과다해지기 때문입니다. 야간(22~08시) 진상역률 기준은 "
-        f"{LEADING_STANDARD_PCT:.0f}% 이며 미달 시 매 1%당 기본요금의 0.2% 가 "
-        f"추가됩니다 (하한 {LEADING_FLOOR_PCT:.0f}%, 제43조 ② 2호). "
+        f"{leading_standard_pct():.0f}% 이며 미달 시 매 1%당 기본요금의 0.2% 가 "
+        f"추가됩니다 (하한 {leading_floor_pct():.0f}%, 제43조 ② 2호). "
         "지상으로 유지되는 한 야간 역률은 100% 로 간주되어 추가가 0 이므로 "
         "(같은 조 나목), 이 추가요금은 곧 **콘덴서 과투자의 신호**입니다."
     )
@@ -168,7 +179,7 @@ def evaluate_power_factor(
         "계량을 요구합니다). 청구서의 역률 항목을 확인하면 current_pct 로 넣어 "
         "바로 재계산됩니다."
     )
-    if current_pct < LAGGING_STANDARD_PCT:
+    if current_pct < standard:
         warnings.append(
             f"현재 역률 {current_pct:.1f}% 는 약관 제41조의 유지 의무(지상 92% 이상)에 "
             "미달합니다. 절감이 아니라 이미 나가고 있는 추가요금을 없애는 것입니다."

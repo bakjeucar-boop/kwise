@@ -19,13 +19,13 @@ from kwise.diagnose.contract import (
     assess_contract,
 )
 from kwise.diagnose.dr import (
-    DR_REFERENCE_CAPACITY_KW,
     DrPotential,
     DrProfile,
     DrResourceType,
     dr_day_mask,
     dr_eligible_days,
     dr_profile,
+    dr_reference_capacity_kw,
     judge_resource_types,
 )
 from kwise.diagnose.peak import DEFAULT_TOP_N, PeakProfile, peak_profile
@@ -48,7 +48,6 @@ __all__ = [
     "DEFAULT_MEDIUM_SHARE",
     "DEFAULT_POWER_FACTOR_PCT",
     "DEFAULT_TOP_N",
-    "DR_REFERENCE_CAPACITY_KW",
     "MIDDAY_HOURS",
     "ChargeStructure",
     "ContractAdequacy",
@@ -67,6 +66,7 @@ __all__ = [
     "dr_day_mask",
     "dr_eligible_days",
     "dr_profile",
+    "dr_reference_capacity_kw",
     "judge_pv_potential",
     "judge_resource_types",
     "peak_profile",

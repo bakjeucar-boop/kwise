@@ -29,21 +29,21 @@ from kwise.measures import (
 from kwise.measures.solar import day_window_mask, power_factor_after_pct
 from kwise.quality import QualityReport
 from kwise.tariff import (
-    ADJUSTMENT_PER_PERCENT,
-    LAGGING_FLOOR_PCT,
-    LAGGING_REBATE_CAP_PCT,
-    LAGGING_STANDARD_PCT,
-    LEADING_FLOOR_PCT,
-    LEADING_LAGGING_DEEMED_PCT,
-    LEADING_STANDARD_PCT,
     BillingOptions,
     BillingResult,
     TariffSelection,
     TariffTable,
+    adjustment_per_percent,
     calculate_bill,
     deemed_leading_pct,
     lagging_adjustment_ratio,
+    lagging_floor_pct,
+    lagging_rebate_cap_pct,
+    lagging_standard_pct,
     leading_adjustment_ratio,
+    leading_floor_pct,
+    leading_lagging_deemed_pct,
+    leading_standard_pct,
     power_factor_charge,
 )
 
@@ -55,7 +55,7 @@ CURRENT = TariffSelection("general_b", "high_a", "I")
 
 def test_standard_is_92_not_90() -> None:
     """초판 요구사항서의 90% 는 오류였다 (제41조·제43조 ②)."""
-    assert LAGGING_STANDARD_PCT == 92.0
+    assert lagging_standard_pct() == 92.0
     assert lagging_adjustment_ratio(92.0) == pytest.approx(0.0)
     assert lagging_adjustment_ratio(90.0) == pytest.approx(0.004)  # 2%p 미달 → +0.4%
 
@@ -79,20 +79,20 @@ def test_lagging_ratio_runs_both_ways(pct: float, expected: float) -> None:
 def test_lagging_ratio_is_linear_in_one_percent_steps() -> None:
     steps = [lagging_adjustment_ratio(pct) for pct in (94.0, 93.0, 92.0, 91.0, 90.0)]
     diffs = [later - earlier for earlier, later in itertools.pairwise(steps)]
-    assert all(diff == pytest.approx(ADJUSTMENT_PER_PERCENT) for diff in diffs)
+    assert all(diff == pytest.approx(adjustment_per_percent()) for diff in diffs)
 
 
 def test_lagging_is_clamped_at_60_and_97() -> None:
     """60% 아래·97% 위는 더 세지 않는다 (제43조 ②)."""
-    assert lagging_adjustment_ratio(55.0) == lagging_adjustment_ratio(LAGGING_FLOOR_PCT)
+    assert lagging_adjustment_ratio(55.0) == lagging_adjustment_ratio(lagging_floor_pct())
     assert lagging_adjustment_ratio(30.0) == pytest.approx(0.064)
-    assert lagging_adjustment_ratio(99.0) == lagging_adjustment_ratio(LAGGING_REBATE_CAP_PCT)
+    assert lagging_adjustment_ratio(99.0) == lagging_adjustment_ratio(lagging_rebate_cap_pct())
     assert lagging_adjustment_ratio(100.0) == pytest.approx(-0.010)
 
 
 def test_leading_standard_is_95_with_no_rebate() -> None:
     """야간(22~08시)은 진상 95% 기준이고 **감액이 없다** (제43조 ②)."""
-    assert LEADING_STANDARD_PCT == 95.0
+    assert leading_standard_pct() == 95.0
     assert leading_adjustment_ratio(95.0) == pytest.approx(0.0)
     assert leading_adjustment_ratio(90.0) == pytest.approx(0.010)  # 5%p 미달 → +1.0%
     assert leading_adjustment_ratio(98.0) == pytest.approx(0.0)  # 초과해도 감액 없음
@@ -133,7 +133,7 @@ def test_lagging_night_incurs_no_leading_penalty() -> None:
     """
     charge = power_factor_charge(1_000_000.0)
     assert charge.leading_pct is None
-    assert charge.leading_deemed_pct == LEADING_LAGGING_DEEMED_PCT == 100.0
+    assert charge.leading_deemed_pct == leading_lagging_deemed_pct() == 100.0
     assert charge.leading_ratio == pytest.approx(0.0)
     assert charge.leading_won == pytest.approx(0.0)
     assert any("지상으로 보아 역률 100% 간주" in note for note in charge.notes)
@@ -145,14 +145,14 @@ def test_deemed_leading_pct_follows_the_clause() -> None:
     assert deemed_leading_pct(None) == 100.0  # 미상 → 지상으로 본다
     assert deemed_leading_pct(85.0, is_leading=False) == 100.0  # 지상
     assert deemed_leading_pct(85.0) == 85.0  # 진상, 하한 위
-    assert deemed_leading_pct(40.0) == LEADING_FLOOR_PCT == 60.0  # 진상, 하한 미달
+    assert deemed_leading_pct(40.0) == leading_floor_pct() == 60.0  # 진상, 하한 미달
     # 지상 판정이면 60% 하한을 거치지 않고 곧장 100% 다.
     assert deemed_leading_pct(40.0, is_leading=False) == 100.0
 
 
 def test_leading_floor_is_from_the_clause_not_an_assumption() -> None:
     """하한 60% 는 나목에 명시된 간주값이다. 우리가 정한 값이 아니다."""
-    assert LEADING_FLOOR_PCT == 60.0
+    assert leading_floor_pct() == 60.0
     assert leading_adjustment_ratio(40.0) == leading_adjustment_ratio(60.0)
     assert leading_adjustment_ratio(60.0) == pytest.approx(0.070)  # 35%p × 0.2%
 
@@ -426,7 +426,7 @@ def test_generation_outside_the_window_does_not_move_the_factor() -> None:
 def test_solar_curve_prices_the_power_factor_damage(sample_curve: SolarCurve) -> None:
     """PV 가 역률을 떨어뜨린 만큼의 추가요금과, 그만큼 깎인 절감액을 낸다."""
     largest = sample_curve.points[-1]
-    assert largest.power_factor_after_pct < LAGGING_STANDARD_PCT
+    assert largest.power_factor_after_pct < lagging_standard_pct()
     assert largest.power_factor_extra_won > 0
     assert largest.saving_after_power_factor_won == pytest.approx(
         largest.total_saving_won - largest.power_factor_extra_won

@@ -21,3 +21,8 @@ data/source/*.pdf
 
 # 사전 취득 실패 목록은 실행마다 달라진다 (data\weather\ 자체는 커밋한다).
 data/weather/fetch_failures.json
+
+# 기준 데이터 편집 직전 스냅샷. 현재 값(data\*.json)과 출고값(data\defaults\)은 커밋한다.
+data/backup/
+# 손상 파일 사본
+data/*.damaged

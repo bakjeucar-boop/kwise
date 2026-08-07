@@ -48,7 +48,6 @@ from kwise.report.excel import (
     no_pv_sensitivity_frame,
 )
 from kwise.tariff import (
-    LAGGING_STANDARD_PCT,
     TariffSelection,
     TariffTable,
     calculate_bill,
@@ -85,7 +84,7 @@ class CaseSpec:
     ess_unit_cost_won_per_kw: float | None = None
     ess_total_investment_won: float | None = None
     # 역률 (기본공급약관 제41·42·43조). 기본 92% 는 무효전력계 미설치 간주값이다.
-    power_factor_pct: float = LAGGING_STANDARD_PCT
+    power_factor_pct: float | None = None
     power_factor_target_pct: float = 97.0
     power_factor_investment_won: float = 0.0
     # 경제성DR (전력시장운영규칙 제12장). 단가는 기본값이 없다 — 없으면 감축량만 낸다.

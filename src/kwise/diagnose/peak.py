@@ -33,10 +33,9 @@ import pandas as pd
 
 from kwise.io import slot_start
 from kwise.tariff import (
-    DEFAULT_CONTRACT_FLOOR_RATIO,
-    DEFAULT_DEMAND_MONTHS,
     apply_contract_floor,
     billing_demands,
+    default_demand_months,
     monthly_demand_basis,
 )
 
@@ -78,7 +77,7 @@ class PeakProfile:
     observed_slots: int
     demand_eligible_slots: int
     demand_eligible_applied: bool
-    demand_months: tuple[int, ...] = DEFAULT_DEMAND_MONTHS
+    demand_months: tuple[int, ...]
 
     @property
     def weekend_slots(self) -> int:
@@ -156,9 +155,9 @@ def peak_profile(
     top_n: int = DEFAULT_TOP_N,
     prior_peaks: Mapping[str, float] | None = None,
     demand_eligible: pd.Series | None = None,
-    demand_months: tuple[int, ...] = DEFAULT_DEMAND_MONTHS,
+    demand_months: tuple[int, ...] | None = None,
     contract_kw: float | None = None,
-    contract_floor_ratio: float | None = DEFAULT_CONTRACT_FLOOR_RATIO,
+    contract_floor_ratio: float | None = None,
 ) -> PeakProfile:
     """월별 최대수요, 상위 구간 분포, 시각별 평균 부하를 낸다.
 
@@ -192,7 +191,8 @@ def peak_profile(
         else pd.Series(True, index=observed.index)
     )
     basis = monthly_demand_basis(observed, month_series, eligible)
-    before_floor = billing_demands(basis, prior_peaks=prior_peaks, demand_months=demand_months)
+    months = default_demand_months() if demand_months is None else tuple(demand_months)
+    before_floor = billing_demands(basis, prior_peaks=prior_peaks, demand_months=months)
     demands = apply_contract_floor(
         before_floor,
         contract_kw=contract_kw,
@@ -236,7 +236,7 @@ def peak_profile(
         monthly=monthly,
         billing_demand_kw=float(max(demands.values())),
         billing_demand_before_floor_kw=float(max(before_floor.values())),
-        demand_months=demand_months,
+        demand_months=months,
         top_slots=top_slots,
         hour_counts=hour_counts,
         weekday_counts=weekday_counts,

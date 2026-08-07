@@ -15,7 +15,6 @@ import pvlib
 import pytest
 
 from kwise.pv import (
-    DEFAULT_SHARPNESS,
     ArrayConfig,
     PvSystemConfig,
     SharpnessFactors,
@@ -27,6 +26,7 @@ from kwise.pv import (
     align_to_load,
     cache_root,
     iter_scenarios,
+    load_sharpness_factors,
     load_weather,
     sharpen,
     simulate,
@@ -410,7 +410,7 @@ def test_request_for_index_pads_the_period() -> None:
 
 
 def test_default_sharpness_is_085_100_125() -> None:
-    assert DEFAULT_SHARPNESS.items() == (("평탄형", 0.85), ("기준", 1.00), ("첨예형", 1.25))
+    assert load_sharpness_factors().items() == (("평탄형", 0.85), ("기준", 1.00), ("첨예형", 1.25))
 
 
 def test_labels_are_separate_from_the_internal_keys() -> None:
@@ -422,26 +422,33 @@ def test_labels_are_separate_from_the_internal_keys() -> None:
     from kwise.pv import SCENARIO_KEYS
 
     assert SCENARIO_KEYS == ("conservative", "base", "optimistic")
-    assert DEFAULT_SHARPNESS.keyed_items() == (
+    assert load_sharpness_factors().keyed_items() == (
         ("conservative", "평탄형", 0.85),
         ("base", "기준", 1.00),
         ("optimistic", "첨예형", 1.25),
     )
-    assert DEFAULT_SHARPNESS.base_label == "기준"
+    assert load_sharpness_factors().base_label == "기준"
 
 
-def test_sharpness_comes_from_the_preset_file() -> None:
-    """s 값은 코드가 아니라 pv_presets.json 에 있다 — 하드코딩하지 않는다."""
-    import json
+def test_sharpness_comes_from_the_assumptions_file() -> None:
+    """s 값과 라벨은 코드가 아니라 ``data\assumptions.json`` 에 있다 (12장)."""
+    from kwise.rules import assumption, assumptions
 
-    from kwise.pv.layout import preset_data_path
-    from kwise.pv.sensitivity import SHARPNESS_KEY
+    for key in (
+        "sensitivity.sharpness.conservative",
+        "sensitivity.sharpness.base",
+        "sensitivity.sharpness.optimistic",
+        "sensitivity.labels",
+    ):
+        assert key in assumptions()
+    assert assumption("sensitivity.sharpness.conservative") == 0.85
+    assert assumption("sensitivity.labels") == ["평탄형", "기준", "첨예형"]
 
-    with preset_data_path().open(encoding="utf-8") as stream:
-        payload = json.load(stream)
-    block = payload[SHARPNESS_KEY]
-    assert (block["conservative"], block["base"], block["optimistic"]) == (0.85, 1.0, 1.25)
-    assert block["labels"] == ["평탄형", "기준", "첨예형"]
+
+def test_sharpness_factors_have_no_code_defaults() -> None:
+    """**데이터클래스에 기본값이 없다.** 남아 있으면 파일을 고쳐도 반영되지 않는다."""
+    with pytest.raises(TypeError):
+        SharpnessFactors()  # type: ignore[call-arg]
 
 
 def test_sharpness_one_returns_the_original_exactly(aligned_day: pd.Series) -> None:
@@ -530,7 +537,9 @@ def test_summary_totals_are_equal_but_peaks_differ(aligned_day: pd.Series) -> No
 
 
 def test_custom_factors_are_allowed(aligned_day: pd.Series) -> None:
-    factors = SharpnessFactors(conservative=0.8, base=1.0, optimistic=1.1)
+    factors = SharpnessFactors(
+        conservative=0.8, base=1.0, optimistic=1.1, labels=("평탄", "기준", "첨예")
+    )
     summaries = summarize_scenarios(aligned_day, INTERVAL, factors)
     assert [item.sharpness for item in summaries] == [0.8, 1.0, 1.1]
 
@@ -543,10 +552,10 @@ def test_empty_series_survives() -> None:
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"conservative": -0.1},
-        {"conservative": 1.2, "optimistic": 0.9},
+        {"conservative": -0.1, "base": 1.0, "optimistic": 1.25},
+        {"conservative": 1.2, "base": 1.0, "optimistic": 0.9},
     ],
 )
 def test_invalid_factors_raise(kwargs: dict[str, float]) -> None:
     with pytest.raises(ValueError, match="첨예도 계수"):
-        SharpnessFactors(**kwargs)  # type: ignore[arg-type]
+        SharpnessFactors(labels=("평탄형", "기준", "첨예형"), **kwargs)

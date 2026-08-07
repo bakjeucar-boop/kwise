@@ -29,7 +29,6 @@ from kwise.pv.config import (
     PvSystemConfig,
 )
 from kwise.pv.layout import (
-    PRESET_FILENAME,
     DensityPreset,
     PvPresetError,
     PvPresets,
@@ -37,7 +36,6 @@ from kwise.pv.layout import (
     capacity_from_area_kwp,
     capacity_preview,
     load_pv_presets,
-    preset_data_path,
 )
 from kwise.pv.region import (
     GRID_RESOLUTION_DEG,
@@ -54,7 +52,6 @@ from kwise.pv.region import (
     region_data_path,
 )
 from kwise.pv.sensitivity import (
-    DEFAULT_SHARPNESS,
     SCENARIO_KEYS,
     ScenarioSummary,
     SharpnessFactors,
@@ -81,13 +78,11 @@ __all__ = [
     "DEFAULT_AZIMUTH_DEG",
     "DEFAULT_DC_AC_RATIO",
     "DEFAULT_GCR",
-    "DEFAULT_SHARPNESS",
     "DEFAULT_SYSTEM_LOSS",
     "DEFAULT_TILT_DEG",
     "GRID_RESOLUTION_DEG",
     "KOREA_LATITUDE_RANGE",
     "KOREA_LONGITUDE_RANGE",
-    "PRESET_FILENAME",
     "PROVINCE_ALIASES",
     "SCENARIO_KEYS",
     "WALL_TILT_DEG",
@@ -126,7 +121,6 @@ __all__ = [
     "load_regions",
     "load_sharpness_factors",
     "load_weather",
-    "preset_data_path",
     "region_data_path",
     "sharpen",
     "simulate",

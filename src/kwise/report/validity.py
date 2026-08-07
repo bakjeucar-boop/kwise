@@ -316,6 +316,10 @@ def _cross_case_checks(study: CaseStudy, capacity: float = 1_000.0) -> list[Chec
     return checks
 
 
+# 교차 판정에 필요한 케이스. 하나라도 없으면 그 판정은 성립하지 않는다.
+CROSS_CASE_KEYS = ("C1", "C2", "C3", "C4", "C5", "C6")
+
+
 def check_case_study(study: CaseStudy) -> tuple[Check, ...]:
     """케이스 전체를 판정한다. **실패가 하나라도 있으면 계산 오류다.**"""
     checks: list[Check] = []
@@ -323,7 +327,22 @@ def check_case_study(study: CaseStudy) -> tuple[Check, ...]:
         checks.extend(_basic_checks(result))
         checks.extend(_sensitivity_checks(result))
         checks.extend(_measure_checks(result))
-    checks.extend(_cross_case_checks(study))
+
+    present = {result.definition.key for result in study.results}
+    missing = [key for key in CROSS_CASE_KEYS if key not in present]
+    if missing:
+        # **건너뛴 사실을 남긴다.** 조용히 빼면 "전부 통과" 로 읽힌다.
+        checks.append(
+            Check(
+                "교차",
+                "교차 판정 건너뜀 (일부 케이스만 실행)",
+                True,
+                f"빠진 케이스: {', '.join(missing)}. 요금적용전력 3규칙 검증은 "
+                "여섯 케이스를 모두 돌려야 성립한다.",
+            )
+        )
+    else:
+        checks.extend(_cross_case_checks(study))
     return tuple(checks)
 
 

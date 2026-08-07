@@ -34,6 +34,7 @@ import pandas as pd
 
 from kwise.io import UsageData
 from kwise.quality import QualityReport
+from kwise.rules import assumption
 from kwise.tariff import (
     BillingOptions,
     TariffSelection,
@@ -43,16 +44,18 @@ from kwise.tariff import (
 )
 
 __all__ = [
-    "DEFAULT_CYCLES_PER_DAY",
     "ArbitrageValue",
     "SeasonSpread",
     "arbitrage_value",
     "c_rate",
+    "default_cycles_per_day",
     "peak_days_by_season",
 ]
 
-# 평일 1사이클. 피크컷용 배터리를 매 평일 한 번 돌린다는 가정이다.
-DEFAULT_CYCLES_PER_DAY = 1.0
+
+def default_cycles_per_day() -> float:
+    """평일 1사이클. 피크컷용 배터리를 매 평일 한 번 돌린다는 가정이다 (판단값)."""
+    return float(assumption("ess.cycles_per_day"))
 
 
 @dataclass(frozen=True)
@@ -178,7 +181,7 @@ def arbitrage_value(
     usable_kwh: float,
     round_trip: float,
     base_fee_months: float,
-    cycles_per_day: float = DEFAULT_CYCLES_PER_DAY,
+    cycles_per_day: float | None = None,
     capex_energy_won_per_kwh: float | None = None,
     quality: QualityReport | None = None,
     options: BillingOptions | None = None,
@@ -193,6 +196,7 @@ def arbitrage_value(
     """
     if not 0 < round_trip <= 1:
         raise ValueError(f"왕복효율은 0 초과 1 이하여야 합니다: {round_trip}")
+    cycles_per_day = default_cycles_per_day() if cycles_per_day is None else cycles_per_day
     if cycles_per_day < 0:
         raise ValueError(f"사이클 수는 음수일 수 없습니다: {cycles_per_day}")
     _ = quality  # 결측은 단가·달력 계산에 영향을 주지 않는다

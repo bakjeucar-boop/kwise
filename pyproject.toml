@@ -63,6 +63,10 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN401"]
+# 기준 데이터 값은 JSON 에서 오므로 본디 Any 다. 형을 좁히면 거짓말이 된다.
+"src/kwise/rules/*" = ["ANN401"]
+# 되읽기 도구도 같은 이유다 — 엑셀 셀 값은 형이 정해져 있지 않다.
+"tools/build_rules.py" = ["ANN401"]
 
 # ---------------------------------------------------------------- mypy
 

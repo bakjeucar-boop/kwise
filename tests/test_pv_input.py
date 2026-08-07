@@ -37,7 +37,6 @@ from kwise.pv import (
     list_sigungu,
     load_pv_presets,
     load_regions,
-    preset_data_path,
     region_data_path,
 )
 from kwise.pv.region import SEJONG_COORDINATE, SEJONG_KEY
@@ -200,8 +199,10 @@ def test_cache_name_still_separates_period_and_timezone() -> None:
 
 
 def test_presets_come_from_the_data_file() -> None:
-    """프리셋은 ``data\\pv_presets.json`` 에 있다. 하드코딩하지 않는다."""
-    assert preset_data_path().is_file()
+    """프리셋은 ``data\assumptions.json`` 에 있다. **코드에 기본값을 두지 않는다.**"""
+    from kwise.rules import assumptions
+
+    assert "pv.densities" in assumptions()
     presets = load_pv_presets()
     # 내부 키와 표시 라벨을 분리한다 — 산출물에는 구어체를 쓰지 않는다.
     assert tuple(item.key for item in presets.densities) == ("high", "normal", "low")

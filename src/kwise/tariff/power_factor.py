@@ -41,39 +41,66 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from kwise.rules import rule_value
+
 __all__ = [
-    "ADJUSTMENT_PER_PERCENT",
-    "DAY_WINDOW",
-    "LAGGING_FLOOR_PCT",
-    "LAGGING_REBATE_CAP_PCT",
-    "LAGGING_STANDARD_PCT",
-    "LEADING_FLOOR_PCT",
-    "LEADING_LAGGING_DEEMED_PCT",
-    "LEADING_STANDARD_PCT",
     "PowerFactorCharge",
+    "adjustment_per_percent",
+    "day_window",
     "deemed_leading_pct",
     "lagging_adjustment_ratio",
+    "lagging_floor_pct",
+    "lagging_rebate_cap_pct",
+    "lagging_standard_pct",
     "leading_adjustment_ratio",
+    "leading_floor_pct",
+    "leading_lagging_deemed_pct",
+    "leading_standard_pct",
     "power_factor_charge",
 ]
 
-# 제43조 ② — 매 1%당 기본요금의 0.2%
-ADJUSTMENT_PER_PERCENT = 0.002
+# 값은 모두 ``data\rules_kr.json`` 에 있다 (요구사항서 12장).
+# **모듈 상수로 붙잡지 않는다** — import 시점에 고정하면 파일을 고쳐도 그
+# 프로세스에서는 옛 값으로 계산된다. 코드에 기본값을 남기는 것과 같은 사고다.
 
-# 08~22시 지상역률 (구간 시작 시각 기준)
-DAY_WINDOW: tuple[int, int] = (8, 22)
-LAGGING_STANDARD_PCT = 92.0
-LAGGING_FLOOR_PCT = 60.0  # 이보다 낮아도 60%로 본다 → 추가 상한 6.4%
-LAGGING_REBATE_CAP_PCT = 97.0  # 이보다 높아도 97%로 본다 → 감액 상한 1.0%
 
-# 22~08시 진상역률
-LEADING_STANDARD_PCT = 95.0
-# 제43조 ② 2호 **나목** — 30분 단위 역률이 진상 60% 미달이면 60%로 간주한다.
-# 추정이 아니라 원문에 명시된 하한이다.
-LEADING_FLOOR_PCT = 60.0
-# 같은 나목 — 야간에 **지상**이면 역률을 100%로 간주한다. 기준 95%를 넘으므로
-# 추가요금이 0이 된다. 대부분의 건물이 여기 해당한다.
-LEADING_LAGGING_DEEMED_PCT = 100.0
+def adjustment_per_percent() -> float:
+    """역률 1%p 당 기본요금 조정률 (제43조 ②)."""
+    return float(rule_value("power_factor.adjustment_per_percent"))
+
+
+def day_window() -> tuple[int, int]:
+    """지상역률 판정 창 (구간 시작 시각 기준)."""
+    start, end = rule_value("power_factor.day_window")
+    return (int(start), int(end))
+
+
+def lagging_standard_pct() -> float:
+    return float(rule_value("power_factor.lagging_standard_pct"))
+
+
+def lagging_floor_pct() -> float:
+    """이보다 낮아도 이 값으로 본다 → 추가 상한 6.4%."""
+    return float(rule_value("power_factor.lagging_floor_pct"))
+
+
+def lagging_rebate_cap_pct() -> float:
+    """이보다 높아도 이 값으로 본다 → 감액 상한 1.0%."""
+    return float(rule_value("power_factor.lagging_rebate_cap_pct"))
+
+
+def leading_standard_pct() -> float:
+    return float(rule_value("power_factor.leading_standard_pct"))
+
+
+def leading_floor_pct() -> float:
+    """제43조 ② 2호 나목 — 추정이 아니라 원문에 명시된 하한이다."""
+    return float(rule_value("power_factor.leading_floor_pct"))
+
+
+def leading_lagging_deemed_pct() -> float:
+    """같은 나목 — 야간에 **지상**이면 이 역률로 간주한다. 추가요금이 0이 된다."""
+    return float(rule_value("power_factor.leading_lagging_deemed_pct"))
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -83,10 +110,10 @@ def _clamp(value: float, low: float, high: float) -> float:
 def lagging_adjustment_ratio(
     power_factor_pct: float,
     *,
-    standard_pct: float = LAGGING_STANDARD_PCT,
-    floor_pct: float = LAGGING_FLOOR_PCT,
-    rebate_cap_pct: float = LAGGING_REBATE_CAP_PCT,
-    per_percent: float = ADJUSTMENT_PER_PERCENT,
+    standard_pct: float | None = None,
+    floor_pct: float | None = None,
+    rebate_cap_pct: float | None = None,
+    per_percent: float | None = None,
 ) -> float:
     """주간(08~22시) 지상역률의 기본요금 조정 비율 (제43조 ②).
 
@@ -96,15 +123,19 @@ def lagging_adjustment_ratio(
     """
     if not 0 < power_factor_pct <= 100:
         raise ValueError(f"역률은 0~100% 여야 합니다: {power_factor_pct}")
-    effective = _clamp(power_factor_pct, floor_pct, rebate_cap_pct)
-    return (standard_pct - effective) * per_percent
+    standard = lagging_standard_pct() if standard_pct is None else standard_pct
+    floor = lagging_floor_pct() if floor_pct is None else floor_pct
+    cap = lagging_rebate_cap_pct() if rebate_cap_pct is None else rebate_cap_pct
+    rate = adjustment_per_percent() if per_percent is None else per_percent
+    effective = _clamp(power_factor_pct, floor, cap)
+    return (standard - effective) * rate
 
 
 def deemed_leading_pct(
     power_factor_pct: float | None,
     *,
     is_leading: bool = True,
-    floor_pct: float = LEADING_FLOOR_PCT,
+    floor_pct: float | None = None,
 ) -> float:
     """제43조 ② 2호 **나목**의 간주값을 적용한 야간 역률.
 
@@ -113,18 +144,18 @@ def deemed_leading_pct(
     대부분의 건물이 야간 경부하에서 지상이고, 진상은 콘덴서 과다의 결과다.
     """
     if power_factor_pct is None or not is_leading:
-        return LEADING_LAGGING_DEEMED_PCT
+        return leading_lagging_deemed_pct()
     if not 0 < power_factor_pct <= 100:
         raise ValueError(f"역률은 0~100% 여야 합니다: {power_factor_pct}")
-    return max(power_factor_pct, floor_pct)
+    return max(power_factor_pct, leading_floor_pct() if floor_pct is None else floor_pct)
 
 
 def leading_adjustment_ratio(
     power_factor_pct: float,
     *,
-    standard_pct: float = LEADING_STANDARD_PCT,
-    floor_pct: float = LEADING_FLOOR_PCT,
-    per_percent: float = ADJUSTMENT_PER_PERCENT,
+    standard_pct: float | None = None,
+    floor_pct: float | None = None,
+    per_percent: float | None = None,
 ) -> float:
     """야간(22~08시) 진상역률의 기본요금 조정 비율 (제43조 ② 2호).
 
@@ -135,8 +166,11 @@ def leading_adjustment_ratio(
     """
     if not 0 < power_factor_pct <= 100:
         raise ValueError(f"역률은 0~100% 여야 합니다: {power_factor_pct}")
-    effective = _clamp(power_factor_pct, floor_pct, standard_pct)
-    return (standard_pct - effective) * per_percent
+    standard = leading_standard_pct() if standard_pct is None else standard_pct
+    floor = leading_floor_pct() if floor_pct is None else floor_pct
+    rate = adjustment_per_percent() if per_percent is None else per_percent
+    effective = _clamp(power_factor_pct, floor, standard)
+    return (standard - effective) * rate
 
 
 @dataclass(frozen=True)
@@ -178,7 +212,7 @@ class PowerFactorCharge:
 def power_factor_charge(
     base_won: float,
     *,
-    lagging_pct: float = LAGGING_STANDARD_PCT,
+    lagging_pct: float | None = None,
     leading_pct: float | None = None,
 ) -> PowerFactorCharge:
     """기본요금에 대한 역률 추가·감액을 낸다 (제43조).
@@ -190,6 +224,9 @@ def power_factor_charge(
             지상으로 보아 100% 로 간주하고 추가를 0 으로 둔다. 진상은 고정
             콘덴서가 부하 대비 과다할 때 생기므로, 그 사실을 경고로 남긴다.
     """
+    standard = lagging_standard_pct()
+    floor = lagging_floor_pct()
+    lagging_pct = standard if lagging_pct is None else lagging_pct
     lagging_ratio = lagging_adjustment_ratio(lagging_pct)
     warnings: list[str] = []
     notes: list[str] = [
@@ -201,10 +238,10 @@ def power_factor_charge(
         "않았습니다 — 실제 첫 달 청구서와 어긋날 수 있습니다.",
     ]
 
-    if lagging_pct <= LAGGING_STANDARD_PCT:
+    if lagging_pct <= standard:
         notes.append(
             f"주간 지상역률 {lagging_pct:.1f}% — 기준 92% 대비 "
-            f"{max(0.0, LAGGING_STANDARD_PCT - lagging_pct):.1f}%p 미달, "
+            f"{max(0.0, standard - lagging_pct):.1f}%p 미달, "
             f"기본요금의 {lagging_ratio:+.1%} 추가."
         )
     else:
@@ -212,13 +249,13 @@ def power_factor_charge(
             f"주간 지상역률 {lagging_pct:.1f}% — 기준 92% 초과, "
             f"기본요금의 {lagging_ratio:+.1%} 감액 (97% 초과분은 인정되지 않습니다)."
         )
-    if lagging_pct < LAGGING_FLOOR_PCT:
+    if lagging_pct < floor:
         warnings.append(
-            f"주간 지상역률 {lagging_pct:.1f}% 가 {LAGGING_FLOOR_PCT:.0f}% 미만입니다. "
+            f"주간 지상역률 {lagging_pct:.1f}% 가 {floor:.0f}% 미만입니다. "
             "약관상 추가요금은 60% 까지만 계산되므로 실제 부담이 더 클 수 있고, "
             "역률 유지 의무(제41조) 위반으로 별도 조치 대상이 될 수 있습니다."
         )
-    if lagging_pct < LAGGING_STANDARD_PCT:
+    if lagging_pct < standard:
         warnings.append(
             f"주간 지상역률이 기준 92% 에 미달합니다 ({lagging_pct:.1f}%). "
             f"기본요금의 {lagging_ratio:.1%} 가 추가됩니다. 콘덴서 용량 조정을 "
@@ -243,7 +280,7 @@ def power_factor_charge(
     elif leading_ratio > 0:
         warnings.append(
             f"야간 진상역률 {leading_pct:.1f}% 가 기준 95% 에 미달합니다"
-            + (f" (하한 {LEADING_FLOOR_PCT:.0f}% 적용)" if deemed != leading_pct else "")
+            + (f" (하한 {leading_floor_pct():.0f}% 적용)" if deemed != leading_pct else "")
             + f". 기본요금의 {leading_ratio:.1%} 가 추가됩니다. "
             "**콘덴서 과보상입니다** — 부하가 줄어든 야간에 진상 무효전력이 남는 "
             "것이므로 고정 콘덴서 용량을 줄이거나 자동역률조정장치(APFR)로 "

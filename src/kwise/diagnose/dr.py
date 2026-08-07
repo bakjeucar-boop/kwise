@@ -32,45 +32,73 @@ import pandas as pd
 
 from kwise.io import slot_start
 from kwise.quality import LoadPattern
+from kwise.rules import assumption, rule_value
 from kwise.tariff import HolidayCalendar
 
 __all__ = [
-    "DEFAULT_DAY_HOURS",
-    "DEFAULT_HIGH_CAPACITY_KW",
-    "DR_REFERENCE_CAPACITY_KW",
-    "LOW_LOAD_PERCENTILE",
-    "NATIONAL_DR_MAX_CONTRACT_KW",
-    "REGISTRATION_PERCENTILE",
-    "SMALL_MEDIUM_DR_INDUSTRIAL_MAX_KW",
     "DrPotential",
     "DrProfile",
     "DrResourceType",
+    "default_day_hours",
+    "default_high_capacity_kw",
     "dr_day_mask",
     "dr_eligible_days",
     "dr_profile",
+    "dr_reference_capacity_kw",
     "judge_resource_types",
+    "low_load_percentile",
+    "national_dr_max_contract_kw",
+    "registration_percentile",
+    "small_medium_dr_industrial_max_kw",
 ]
 
-# 제12.4.2.1조 제1항 2호 — 거래시간별 감축가능용량 0.1 MW-h 이상.
-# **수요관리사업자가 묶은 자원 단위 기준이라 개별 고객에게 그대로 적용되지 않는다.**
-# 참고 문턱으로만 표시한다.
-DR_REFERENCE_CAPACITY_KW = 100.0
+# 값은 파일에 있다 (요구사항서 12장). 법령 유래는 ``rules_kr.json``,
+# 우리 판단값은 ``assumptions.json`` 이다 — **섞지 않는다.**
 
-# 제12.1.1조 — 자원 유형별 등록 요건
-NATIONAL_DR_MAX_CONTRACT_KW = 200.0
-SMALL_MEDIUM_DR_INDUSTRIAL_MAX_KW = 2_000.0
 
-# 감축 여력을 재는 주간 창. 경제성DR 입찰은 주간 시간대에 몰린다.
-DEFAULT_DAY_HOURS: tuple[int, int] = (9, 18)
-# 무비용 감축 가능일 판정 문턱 (요구사항서 6.6). **아래 등록 문턱과 다른 값이다.**
-LOW_LOAD_PERCENTILE = 0.05
-# 등록 권장 용량의 분위수. 사업자와 계약할 때 등록하는 값이라 **어느 거래일에나
-# 지킬 수 있어야 한다** — 평균으로 등록하면 절반의 날에 미달하고 미달은
-# 위약금이다(별표26). 하위 10% 면 열에 아홉 날은 그 이상 여력이 있다.
-# 저부하일 식별의 5% 와는 쓰임이 달라 상수를 따로 둔다.
-REGISTRATION_PERCENTILE = 0.10
-# 적합성 등급의 상단. 규칙이 정하는 값이 아니라 본 도구의 구간이다.
-DEFAULT_HIGH_CAPACITY_KW = 500.0
+def dr_reference_capacity_kw() -> float:
+    """제12.4.2.1조 제1항 2호 — 거래시간별 감축가능용량 0.1 MW-h.
+
+    **수요관리사업자가 묶은 자원 단위 기준이라 개별 고객에게 그대로 적용되지
+    않는다.** 참고 문턱으로만 표시한다.
+    """
+    return float(rule_value("dr.reference_capacity_kw"))
+
+
+def national_dr_max_contract_kw() -> float:
+    """제12.1.1조 — 국민DR 계약전력 상한."""
+    return float(rule_value("dr.national_max_contract_kw"))
+
+
+def small_medium_dr_industrial_max_kw() -> float:
+    """제12.1.1조 — 중소형DR 산업체 계약전력 상한."""
+    return float(rule_value("dr.small_medium_industrial_max_kw"))
+
+
+def default_day_hours() -> tuple[int, int]:
+    """감축 여력을 재는 주간 창. **판단값이다** — 규칙이 정한 창이 아니다."""
+    start, end = assumption("dr.day_hours")
+    return (int(start), int(end))
+
+
+def low_load_percentile() -> float:
+    """무비용 감축 가능일 판정 문턱 (6.6). **등록 문턱과 다른 값이다.**"""
+    return float(assumption("dr.low_load_percentile"))
+
+
+def registration_percentile() -> float:
+    """등록 권장 용량의 분위수.
+
+    사업자와 계약할 때 등록하는 값이라 **어느 거래일에나 지킬 수 있어야 한다** —
+    평균으로 등록하면 절반의 날에 미달하고 미달은 위약금이다(별표26).
+    저부하일 식별의 값과 쓰임이 달라 항목을 따로 둔다.
+    """
+    return float(assumption("dr.registration_percentile"))
+
+
+def default_high_capacity_kw() -> float:
+    """적합성 등급의 상단. 규칙이 정하는 값이 아니라 본 도구의 구간이다."""
+    return float(assumption("dr.high_capacity_kw"))
 
 
 class DrResourceType(StrEnum):
@@ -152,12 +180,12 @@ def judge_resource_types(
         # 종별을 모르면 중소형DR 여부를 단정할 수 없다. 표준DR 만 확실하다.
         pass
     elif contract_type.startswith("industrial"):
-        if contract_kw is not None and contract_kw <= SMALL_MEDIUM_DR_INDUSTRIAL_MAX_KW:
+        if contract_kw is not None and contract_kw <= small_medium_dr_industrial_max_kw():
             types.append(DrResourceType.SMALL_MEDIUM)
     else:  # 일반용·교육용 (주택용·농사용은 본 도구 범위 밖)
         types.append(DrResourceType.SMALL_MEDIUM)
 
-    if contract_kw is not None and contract_kw <= NATIONAL_DR_MAX_CONTRACT_KW:
+    if contract_kw is not None and contract_kw <= national_dr_max_contract_kw():
         types.append(DrResourceType.NATIONAL)
     return tuple(types)
 
@@ -209,7 +237,7 @@ class DrProfile:
     @property
     def meets_reference_capacity(self) -> bool:
         """참고 문턱(100 kW)을 넘는가. 자원 단위 기준이라 확정 판정이 아니다."""
-        return self.registered_capacity_kw >= DR_REFERENCE_CAPACITY_KW
+        return self.registered_capacity_kw >= dr_reference_capacity_kw()
 
     def annual_reducible_kwh(self, bid_hours_per_day: float) -> float:
         """연간 감축 가능량 — **거래일별 여력의 합**이다.
@@ -245,10 +273,10 @@ def dr_profile(
     contract_type: str | None = None,
     contract_kw: float | None = None,
     outage_mask: pd.Series | None = None,
-    day_hours: tuple[int, int] = DEFAULT_DAY_HOURS,
-    low_load_percentile: float = LOW_LOAD_PERCENTILE,
-    registration_percentile: float = REGISTRATION_PERCENTILE,
-    high_capacity_kw: float = DEFAULT_HIGH_CAPACITY_KW,
+    day_hours: tuple[int, int] | None = None,
+    low_load_quantile: float | None = None,
+    registration_quantile: float | None = None,
+    high_capacity_kw: float | None = None,
 ) -> DrProfile:
     """경제성DR 참여 여력을 진단한다 (요구사항서 6.6).
 
@@ -257,13 +285,22 @@ def dr_profile(
             다시 계산하지 않는다.
         outage_mask: 정전 슬롯 마스크. 무비용 감축 가능일에서 정전일을 뺀다.
         day_hours: 감축 여력을 재는 주간 창.
-        low_load_percentile: 무비용 감축 가능일 문턱 (기본 5%).
-        registration_percentile: 등록 권장 용량 분위수 (기본 10%).
+        low_load_quantile: 무비용 감축 가능일 문턱 (기본은 assumptions.json).
+        registration_quantile: 등록 권장 용량 분위수 (기본은 assumptions.json).
             **저부하일 문턱과 쓰임이 다른 값이다.**
     """
     observed = kw.dropna()
     if observed.empty:
         raise ValueError("관측된 수요가 없어 DR 참여 여력을 산출할 수 없습니다.")
+
+    # 기본값은 파일에서 온다 (요구사항서 12장). 코드에 두지 않는다.
+    day_hours = default_day_hours() if day_hours is None else day_hours
+    low_quantile = low_load_percentile() if low_load_quantile is None else low_load_quantile
+    registration = (
+        registration_percentile() if registration_quantile is None else registration_quantile
+    )
+    high_capacity_kw = default_high_capacity_kw() if high_capacity_kw is None else high_capacity_kw
+    reference_kw = dr_reference_capacity_kw()
 
     index = pd.DatetimeIndex(observed.index)
     starts = slot_start(index, interval_minutes)
@@ -285,7 +322,7 @@ def dr_profile(
     selected = observed[is_dr_day & in_window]
     day_mean = float(selected.mean()) if len(selected) else None
     # 등록 권장값의 바닥. 어느 거래일에나 지킬 수 있어야 한다 (별표26 위약금).
-    day_floor = float(selected.quantile(registration_percentile)) if len(selected) else None
+    day_floor = float(selected.quantile(registration)) if len(selected) else None
 
     ratio = pattern.base_load_ratio  # 6.1 의 값을 재사용한다. 다시 계산하지 않는다
     base_kw: float | None = None
@@ -310,7 +347,7 @@ def dr_profile(
         )
         notes.append(
             f"**두 값은 쓰임이 다릅니다.** 등록 권장 용량 {registered:,.0f} kW 는 "
-            f"하위 {registration_percentile:.0%} 기준으로, 사업자와 계약할 때 등록하는 "
+            f"하위 {registration:.0%} 기준으로, 사업자와 계약할 때 등록하는 "
             "값입니다 — 평균으로 등록하면 절반의 날에 미달해 위약금이 납니다. "
             f"반면 연간 감축 가능량은 **거래일별 여력을 합산**합니다 "
             f"(일평균 {float(daily_reducible.mean()):,.0f} kW). 하루 전 입찰이라 "
@@ -322,10 +359,10 @@ def dr_profile(
             "대상일 주간 관측치나 기저부하 비율이 없어 등록 가능 용량을 산출하지 못했습니다."
         )
 
-    if registered < DR_REFERENCE_CAPACITY_KW:
+    if registered < reference_kw:
         warnings.append(
             f"등록 권장 용량 {registered:,.0f} kW 가 참고 문턱 "
-            f"{DR_REFERENCE_CAPACITY_KW:,.0f} kW (0.1 MW-h) 아래입니다. "
+            f"{reference_kw:,.0f} kW (0.1 MW-h) 아래입니다. "
             "이 문턱은 수요관리사업자가 **묶은 자원 단위** 기준이라 개별 고객에게 "
             "그대로 적용되지 않습니다 (제12.4.2.1조 제1항 2호). 다른 고객과 묶여 "
             "참여할 수 있으므로 사업자와 상담하십시오."
@@ -337,7 +374,7 @@ def dr_profile(
     low_threshold: float | None = None
     low_days: tuple[pd.Timestamp, ...] = ()
     if len(daily_mean):
-        low_threshold = float(daily_mean.quantile(low_load_percentile))
+        low_threshold = float(daily_mean.quantile(low_quantile))
         candidates = daily_mean[daily_mean <= low_threshold].index
         outage_days: set[pd.Timestamp] = set()
         if outage_mask is not None:
@@ -346,7 +383,7 @@ def dr_profile(
         low_days = tuple(day for day in candidates if day not in outage_days)
         notes.append(
             f"무비용 감축 가능일 {len(low_days)}일 — 대상일 일평균 부하가 하위 "
-            f"{low_load_percentile:.0%}({low_threshold:,.0f} kW) 이하이고 정전 구간이 "
+            f"{low_quantile:.0%}({low_threshold:,.0f} kW) 이하이고 정전 구간이 "
             "아닌 날입니다. **기준선은 거래 가능일만으로 계산했습니다** — 주말이 "
             "섞이면 기준선이 내려가 평일 저부하일이 걸리지 않습니다."
         )
@@ -360,7 +397,7 @@ def dr_profile(
 
     if registered >= high_capacity_kw:
         potential = DrPotential.HIGH
-    elif registered >= DR_REFERENCE_CAPACITY_KW:
+    elif registered >= reference_kw:
         potential = DrPotential.MEDIUM
     else:
         potential = DrPotential.LOW

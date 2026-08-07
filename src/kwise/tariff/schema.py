@@ -17,9 +17,9 @@ from pathlib import Path
 from typing import Any
 
 from kwise.tariff.demand import (
-    DEFAULT_CONTRACT_FLOOR_RATIO,
-    DEFAULT_DEMAND_BANDS,
-    DEFAULT_DEMAND_MONTHS,
+    default_contract_floor_ratio,
+    default_demand_bands,
+    default_demand_months,
 )
 
 __all__ = [
@@ -124,9 +124,11 @@ class ContractType:
     effective_date: str | None
     options: tuple[str, ...]
     voltages: Mapping[str, VoltageRates]
-    demand_bands: tuple[str, ...] = DEFAULT_DEMAND_BANDS
-    demand_months: tuple[int, ...] = DEFAULT_DEMAND_MONTHS
-    contract_floor_ratio: float | None = DEFAULT_CONTRACT_FLOOR_RATIO
+    # 기본값을 두지 않는다. 요금표가 값을 주지 않으면 파싱 시점에
+    # ``rules_kr.json`` 에서 채운다 (요구사항서 12장).
+    demand_bands: tuple[str, ...]
+    demand_months: tuple[int, ...]
+    contract_floor_ratio: float | None
     base_fee_basis: str = BASE_FEE_BILLING_DEMAND
     time_of_use: bool = True
 
@@ -335,14 +337,16 @@ def _parse_contract(key: str, payload: Mapping[str, Any]) -> ContractType:
         effective_date=payload.get("effective_date"),
         options=options,
         voltages=voltages,
-        demand_bands=tuple(str(band) for band in payload.get("demand_bands", DEFAULT_DEMAND_BANDS)),
+        demand_bands=tuple(
+            str(band) for band in payload.get("demand_bands", default_demand_bands())
+        ),
         demand_months=tuple(
-            int(month) for month in payload.get("demand_months", DEFAULT_DEMAND_MONTHS)
+            int(month) for month in payload.get("demand_months", default_demand_months())
         ),
         contract_floor_ratio=(
             None
             if "contract_floor_ratio" in payload and payload["contract_floor_ratio"] is None
-            else float(payload.get("contract_floor_ratio", DEFAULT_CONTRACT_FLOOR_RATIO))
+            else float(payload.get("contract_floor_ratio", default_contract_floor_ratio()))
         ),
         base_fee_basis=base_fee_basis,
         time_of_use=bool(payload.get("time_of_use", True)),

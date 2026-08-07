@@ -33,13 +33,13 @@ from kwise.diagnose.summary import (
 from kwise.io import UsageData
 from kwise.quality import LoadPattern, QualityReport, check_quality, load_pattern, outage_slot_mask
 from kwise.tariff import (
-    DEFAULT_DEMAND_MONTHS,
     BillingOptions,
     TariffSelection,
     TariffTable,
     build_calendar,
     calculate_bill,
     classify_slots,
+    default_demand_months,
     demand_eligible_mask,
     switchable_selections,
 )
@@ -124,7 +124,7 @@ def diagnose(
         top_n=top_n,
         prior_peaks=opts.prior_peaks,
         demand_eligible=eligible,
-        demand_months=type_rules.demand_months if type_rules else DEFAULT_DEMAND_MONTHS,
+        demand_months=type_rules.demand_months if type_rules else default_demand_months(),
         contract_kw=contract.contract_kw if contract else None,
         contract_floor_ratio=type_rules.contract_floor_ratio if type_rules else None,
     )

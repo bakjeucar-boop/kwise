@@ -1,0 +1,187 @@
+{
+  "items": {
+    "dr.day_hours": {
+      "label": "DR 감축 여력 판정 주간 창 (시)",
+      "note": "경제성DR 입찰이 주간에 몰린다는 관찰에 따른 창이다.",
+      "source": "판단값",
+      "value": [
+        9,
+        18
+      ],
+      "verified_on": "2026-08-07"
+    },
+    "dr.high_capacity_kw": {
+      "label": "DR 적합성 '높음' 하한 (kW)",
+      "note": "규칙이 정하는 값이 아니라 본 도구의 구간이다.",
+      "source": "판단값",
+      "value": 500.0,
+      "verified_on": "2026-08-07"
+    },
+    "dr.low_load_percentile": {
+      "label": "무비용 감축 가능일 판정 분위수",
+      "note": "등록 분위수(10%)와 쓰임이 다르다. 섞지 않는다.",
+      "source": "판단값",
+      "value": 0.05,
+      "verified_on": "2026-08-07"
+    },
+    "dr.registration_percentile": {
+      "label": "DR 등록 권장 용량 분위수",
+      "note": "평균으로 등록하면 절반의 날에 미달하고 미달은 위약금이다(별표26). 하위 10% 면 열에 아홉 날은 그 이상 여력이 있다.",
+      "source": "판단값",
+      "value": 0.1,
+      "verified_on": "2026-08-07"
+    },
+    "ess.cycles_per_day": {
+      "label": "차익거래 평일 사이클 수",
+      "note": "피크컷용 배터리를 매 평일 한 번 돌린다는 가정이다.",
+      "source": "판단값",
+      "value": 1.0,
+      "verified_on": "2026-08-07"
+    },
+    "ess.dod": {
+      "label": "ESS 방전심도 (DoD)",
+      "note": "가용 용량 = 정격 × DoD.",
+      "source": "판단값",
+      "value": 0.9,
+      "verified_on": "2026-08-07"
+    },
+    "ess.high_rate_discharge_hours": {
+      "label": "고출력 셀 경고 임계 방전시간 (h)",
+      "note": "이보다 짧으면 2C 이상이라 정치형 LFP 통상 사양을 넘는다.",
+      "source": "판단값",
+      "value": 0.5,
+      "verified_on": "2026-08-07"
+    },
+    "ess.payback_target_years": {
+      "label": "손익분기 단가 역산 회수기간 (년)",
+      "note": "이 기간에 회수되는 kW당 단가를 역산해 참고단가 하한선과 견준다.",
+      "source": "판단값",
+      "value": 10.0,
+      "verified_on": "2026-08-07"
+    },
+    "ess.round_trip": {
+      "label": "ESS 왕복효율",
+      "note": "충·방전에 √효율씩 나눠 적용한다.",
+      "source": "판단값",
+      "value": 0.88,
+      "verified_on": "2026-08-07"
+    },
+    "expiry.reference_months": {
+      "label": "참고단가·판단값 만료 임계 (개월)",
+      "note": "ESS 참고단가 등 외부 자료의 재확인 주기다.",
+      "source": "판단값",
+      "value": 24,
+      "verified_on": "2026-08-07"
+    },
+    "expiry.statute_months": {
+      "label": "약관·규칙 만료 임계 (개월)",
+      "note": "약관·운영규칙은 요금표보다 드물게 바뀐다.",
+      "source": "판단값",
+      "value": 24,
+      "verified_on": "2026-08-07"
+    },
+    "expiry.tariff_months": {
+      "label": "요금 단가 만료 임계 (개월)",
+      "note": "한전 요금표는 연 1~2회 개정된다.",
+      "source": "판단값",
+      "value": 12,
+      "verified_on": "2026-08-07"
+    },
+    "pv.area_per_kwp_m2": {
+      "label": "kWp 당 소요 면적 (m²)",
+      "note": "모듈 효율 20% 기준. 설치 용량 ≈ 면적 × GCR ÷ 5.",
+      "source": "판단값",
+      "value": 5.0,
+      "verified_on": "2026-08-07"
+    },
+    "pv.default_azimuth_deg": {
+      "label": "기본 방위각 (도)",
+      "note": "남향.",
+      "source": "판단값",
+      "value": 180.0,
+      "verified_on": "2026-08-07"
+    },
+    "pv.default_density": {
+      "label": "기본 설치 밀도",
+      "note": "high / normal / low 중 하나.",
+      "source": "판단값",
+      "value": "normal",
+      "verified_on": "2026-08-07"
+    },
+    "pv.densities": {
+      "label": "PV 설치 밀도 프리셋",
+      "note": "밀도 하나가 GCR 과 경사각을 함께 정한다. 상충 관계를 병기한다.",
+      "source": "판단값",
+      "value": [
+        {
+          "description": "이격을 좁히고 경사를 낮춘다. 설치 면적이 부족할 때 고른다.",
+          "gcr": 0.55,
+          "key": "high",
+          "label": "높음",
+          "tilt_deg": 15.0,
+          "tradeoff": "면적당 용량이 가장 크다. 대신 이격이 좁아 앞열 그림자가 늘어 kWp당 발전량은 가장 작다."
+        },
+        {
+          "description": "표준 배치. 기본값이다.",
+          "gcr": 0.4,
+          "key": "normal",
+          "label": "보통",
+          "tilt_deg": 25.0,
+          "tradeoff": "면적당 용량과 kWp당 발전량의 균형점이다. 국내 옥상 설치의 일반적인 배치다."
+        },
+        {
+          "description": "이격을 넓히고 경사를 세운다. 면적에 여유가 있을 때 고른다.",
+          "gcr": 0.3,
+          "key": "low",
+          "label": "낮음",
+          "tilt_deg": 30.0,
+          "tradeoff": "kWp당 발전량이 가장 크다. 대신 같은 면적에 들어가는 용량이 가장 작다."
+        }
+      ],
+      "verified_on": "2026-08-07"
+    },
+    "pv.density_label": {
+      "label": "설치 밀도 입력 라벨",
+      "note": "산출물에 구어체를 쓰지 않는다.",
+      "source": "판단값",
+      "value": "설치 밀도",
+      "verified_on": "2026-08-07"
+    },
+    "sensitivity.labels": {
+      "label": "감도 시나리오 표시 라벨",
+      "note": "내부 키(conservative/base/optimistic)와 분리한다.",
+      "source": "판단값",
+      "value": [
+        "평탄형",
+        "기준",
+        "첨예형"
+      ],
+      "verified_on": "2026-08-07"
+    },
+    "sensitivity.sharpness.base": {
+      "label": "감도 첨예도 s — 기준",
+      "note": "1.0 이면 시뮬레이션 결과 그대로다.",
+      "source": "판단값",
+      "value": 1.0,
+      "verified_on": "2026-08-07"
+    },
+    "sensitivity.sharpness.conservative": {
+      "label": "감도 첨예도 s — 평탄형",
+      "note": "요구사항서 9.2. 총량을 보존하고 첨예도만 조정한다.",
+      "source": "판단값",
+      "value": 0.85,
+      "verified_on": "2026-08-07"
+    },
+    "sensitivity.sharpness.optimistic": {
+      "label": "감도 첨예도 s — 첨예형",
+      "note": "이름은 프로파일 모양이지 절감액의 크기가 아니다.",
+      "source": "판단값",
+      "value": 1.25,
+      "verified_on": "2026-08-07"
+    }
+  },
+  "note": "우리가 정한 값이다. 근거를 대면 바꿀 수 있다. 법령 유래 값(rules_kr.json)과 섞지 않는다 — 섞으면 '이 숫자를 우리가 정한 것인가 법이 정한 것인가' 를 되물을 수 없다.",
+  "origin": "판단값",
+  "region": "kr",
+  "schema_version": "1.0"
+}

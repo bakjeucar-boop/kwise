@@ -26,29 +26,47 @@ from typing import Any
 
 import pandas as pd
 
+from kwise.rules import rule_value
+
 __all__ = [
-    "DEFAULT_CONTRACT_FLOOR_RATIO",
-    "DEFAULT_DEMAND_BANDS",
-    "DEFAULT_DEMAND_MONTHS",
-    "DEMAND_WINDOW_MONTHS",
     "apply_contract_floor",
     "billing_demands",
+    "default_contract_floor_ratio",
+    "default_demand_bands",
+    "default_demand_months",
     "demand_eligible_mask",
+    "demand_window_months",
     "is_demand_month",
     "monthly_demand_basis",
 ]
 
-# 중간부하·최대부하만 요금적용전력 대상이다.
-DEFAULT_DEMAND_BANDS: tuple[str, ...] = ("mid", "peak")
-# 하계 7·8·9월, 동계 12·1·2월. 전력량요금의 계절 정의와 다르다.
-DEFAULT_DEMAND_MONTHS: tuple[int, ...] = (7, 8, 9, 12, 1, 2)
-DEFAULT_CONTRACT_FLOOR_RATIO = 0.30
-DEMAND_WINDOW_MONTHS = 12
+# 값은 ``data\rules_kr.json`` 에 있다 (요구사항서 12장). **모듈 상수로 붙잡지
+# 않는다** — import 시점에 고정하면 파일을 고쳐도 옛 값으로 계산된다.
+
+
+def default_demand_bands() -> tuple[str, ...]:
+    """요금적용전력 대상 시간대. 중간·최대부하만이다."""
+    return tuple(str(band) for band in rule_value("demand.bands"))
+
+
+def default_demand_months() -> tuple[int, ...]:
+    """요금적용전력 대상월. **전력량요금의 계절 정의와 다르다.**"""
+    return tuple(int(month) for month in rule_value("demand.months"))
+
+
+def default_contract_floor_ratio() -> float:
+    """요금적용전력 하한 비율 (일반). 교육용(을)은 별도 항목이다."""
+    return float(rule_value("demand.contract_floor_ratio.default"))
+
+
+def demand_window_months() -> int:
+    """직전 몇 개월 중 최대를 쓰는가."""
+    return int(rule_value("demand.window_months"))
 
 
 def is_demand_month(
     month: int,
-    demand_months: Sequence[int] = DEFAULT_DEMAND_MONTHS,
+    demand_months: Sequence[int] | None = None,
 ) -> bool:
     """요금적용전력 **대상월**인가.
 
@@ -56,19 +74,20 @@ def is_demand_month(
     9월은 봄·가을철 단가를 쓰지만 대상월이고, 6월·11월은 여름·겨울 단가를 쓰지만
     대상월이 아니다.
     """
-    return int(month) in set(demand_months)
+    months = default_demand_months() if demand_months is None else demand_months
+    return int(month) in set(months)
 
 
 def demand_eligible_mask(
     bands: pd.Series,
     *,
-    demand_bands: Sequence[str] = DEFAULT_DEMAND_BANDS,
+    demand_bands: Sequence[str] | None = None,
 ) -> pd.Series:
     """요금적용전력 대상 슬롯 마스크 — 중간부하·최대부하만 참.
 
     공휴일은 요일 규칙에 따라 전량 경부하로 계량되므로 여기서 자동으로 빠진다.
     """
-    allowed = set(demand_bands)
+    allowed = set(default_demand_bands() if demand_bands is None else demand_bands)
     return pd.Series(
         [str(band) in allowed for band in bands], index=bands.index, name="demand_eligible"
     )
@@ -110,8 +129,8 @@ def billing_demands(
     monthly_peaks: Mapping[Any, float],
     *,
     prior_peaks: Mapping[Any, float] | None = None,
-    window: int = DEMAND_WINDOW_MONTHS,
-    demand_months: Sequence[int] = DEFAULT_DEMAND_MONTHS,
+    window: int | None = None,
+    demand_months: Sequence[int] | None = None,
 ) -> dict[pd.Period, float]:
     """요금적용전력 = max(대상월 피크, 당월 피크) — 직전 12개월 범위 내.
 
@@ -129,13 +148,15 @@ def billing_demands(
             period = _as_period(key)
             history[period] = max(history.get(period, float("-inf")), float(value))
 
+    span = demand_window_months() if window is None else window
+    span = demand_window_months() if window is None else window
     result: dict[pd.Period, float] = {}
     for month in sorted(peaks):
         candidates: list[float] = []
         current = history.get(month)
         if current is not None and not math.isnan(current):
             candidates.append(current)  # 당월은 대상월이 아니어도 항상 센다
-        for offset in range(1, window):
+        for offset in range(1, span):
             past = month - offset
             if not is_demand_month(past.month, demand_months):
                 continue  # 3~6월·10~11월 피크는 이월되지 않는다
@@ -150,7 +171,7 @@ def apply_contract_floor(
     demands: Mapping[Any, float],
     *,
     contract_kw: float | None,
-    floor_ratio: float | None = DEFAULT_CONTRACT_FLOOR_RATIO,
+    floor_ratio: float | None = None,
 ) -> dict[pd.Period, float]:
     """계약전력 하한을 씌운다. 계약전력이나 비율을 모르면 그대로 둔다.
 

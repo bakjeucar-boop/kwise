@@ -21,15 +21,16 @@ import pandas as pd
 
 from kwise.io import UsageData, slot_start
 from kwise.measures.arbitrage import (
-    DEFAULT_CYCLES_PER_DAY,
     ArbitrageValue,
     arbitrage_value,
     c_rate,
+    default_cycles_per_day,
 )
 from kwise.measures.base import Certainty, annualize, payback_years
 from kwise.measures.ess_cost import EssCostInput, EssCostReference, load_ess_cost_reference
 from kwise.measures.netload import with_load
 from kwise.quality import QualityReport
+from kwise.rules import assumption
 from kwise.tariff import (
     BillingOptions,
     BillingResult,
@@ -41,29 +42,42 @@ from kwise.tariff import (
 )
 
 __all__ = [
-    "DEFAULT_DOD",
-    "DEFAULT_PAYBACK_TARGET_YEARS",
-    "DEFAULT_ROUND_TRIP",
-    "HIGH_RATE_DISCHARGE_HOURS",
     "DispatchResult",
     "EssResult",
     "PeakExcess",
     "analyze_peak_excess",
+    "default_dod",
+    "default_payback_target_years",
+    "default_round_trip",
     "dispatch_peak_shaving",
     "ess_payback_curve",
     "evaluate_ess",
     "excess_slots_by_day",
+    "high_rate_discharge_hours",
     "light_band_mask",
     "required_discharge_hours",
     "size_for_target",
 ]
 
-DEFAULT_ROUND_TRIP = 0.88
-DEFAULT_DOD = 0.90
-DEFAULT_PAYBACK_TARGET_YEARS = 10.0
+# 값은 ``datassumptions.json`` 에 있다 (요구사항서 12장). 판단값이다.
 
-# 이 아래는 정치형 셀의 통상 연속 방전(0.5~1C)을 넘어선다. 고출력 셀 사양이다.
-HIGH_RATE_DISCHARGE_HOURS = 0.5
+
+def default_round_trip() -> float:
+    return float(assumption("ess.round_trip"))
+
+
+def default_dod() -> float:
+    return float(assumption("ess.dod"))
+
+
+def default_payback_target_years() -> float:
+    return float(assumption("ess.payback_target_years"))
+
+
+def high_rate_discharge_hours() -> float:
+    """이 아래는 정치형 셀의 통상 연속 방전(0.5~1C)을 넘어선다. 고출력 셀 사양이다."""
+    return float(assumption("ess.high_rate_discharge_hours"))
+
 
 # 회수기간 곡선에서 보여 줄 방전시간. 짧을수록 경제성이 좋다는 것을 보이는 표다.
 DEFAULT_CURVE_DISCHARGE_HOURS: tuple[float, ...] = (0.5, 1.0, 2.0, 4.0)
@@ -122,8 +136,8 @@ def analyze_peak_excess(kw: pd.Series, target_kw: float, interval_minutes: int) 
 def size_for_target(
     excess: PeakExcess,
     *,
-    dod: float = DEFAULT_DOD,
-    round_trip: float = DEFAULT_ROUND_TRIP,
+    dod: float | None = None,
+    round_trip: float | None = None,
     basis: str = "daily",
 ) -> tuple[float, float]:
     """목표에서 필요한 (출력 kW, 정격 용량 kWh) 를 낸다.
@@ -137,6 +151,8 @@ def size_for_target(
         basis: ``"daily"`` 하루 최대 (기본) / ``"event"`` 연속 초과 구간 최대 /
             ``"total"`` 기간 합계 (부록 B 규약. 배터리 사양으로는 과대).
     """
+    round_trip = default_round_trip() if round_trip is None else round_trip
+    dod = default_dod() if dod is None else dod
     energy = {
         "event": excess.max_event_excess_kwh,
         "daily": excess.max_daily_excess_kwh,
@@ -260,8 +276,8 @@ def dispatch_peak_shaving(
     capacity_kwh: float,
     charge_mask: pd.Series,
     interval_minutes: int,
-    round_trip: float = DEFAULT_ROUND_TRIP,
-    dod: float = DEFAULT_DOD,
+    round_trip: float | None = None,
+    dod: float | None = None,
     initial_soc_ratio: float = 1.0,
     charge_limit_kw: float | None = None,
     respect_target_when_charging: bool = True,
@@ -274,6 +290,8 @@ def dispatch_peak_shaving(
             끄면 경부하 시간대에 출력껏 충전하므로 기저부하 위에 새 피크가 생긴다.
             그 실패 양상을 재현하려는 경우에만 끈다.
     """
+    round_trip = default_round_trip() if round_trip is None else round_trip
+    dod = default_dod() if dod is None else dod
     if power_kw < 0 or capacity_kwh < 0:
         raise ValueError("출력과 용량은 음수일 수 없습니다.")
     if not 0 < round_trip <= 1:
@@ -409,10 +427,10 @@ def evaluate_ess(
     sizing_basis: str = "daily",
     charge_limit_kw: float | None = None,
     respect_target_when_charging: bool = True,
-    round_trip: float = DEFAULT_ROUND_TRIP,
-    dod: float = DEFAULT_DOD,
-    payback_target_years: float = DEFAULT_PAYBACK_TARGET_YEARS,
-    cycles_per_day: float = DEFAULT_CYCLES_PER_DAY,
+    round_trip: float | None = None,
+    dod: float | None = None,
+    payback_target_years: float | None = None,
+    cycles_per_day: float | None = None,
     reference: EssCostReference | None = None,
     baseline: BillingResult | None = None,
     quality: QualityReport | None = None,
@@ -427,6 +445,12 @@ def evaluate_ess(
         payback_target_years: 손익분기 단가를 역산할 회수기간 (기본 10년).
         cycles_per_day: 차익거래 평일 사이클 수 (기본 1).
     """
+    round_trip = default_round_trip() if round_trip is None else round_trip
+    dod = default_dod() if dod is None else dod
+    payback_target_years = (
+        default_payback_target_years() if payback_target_years is None else payback_target_years
+    )
+    cycles_per_day = default_cycles_per_day() if cycles_per_day is None else cycles_per_day
     opts = options if options is not None else BillingOptions()
     interval = usage.meta.interval_minutes
     excess = analyze_peak_excess(usage.kw, target_kw, interval)
@@ -513,7 +537,7 @@ def evaluate_ess(
             f"있습니다. 실제 달성 피크는 {dispatch.achieved_peak_kw:,.1f} kW 입니다. "
             "출력이나 용량을 키우십시오."
         )
-    if 0 < discharge_hours < HIGH_RATE_DISCHARGE_HOURS:
+    if 0 < discharge_hours < high_rate_discharge_hours():
         warnings.append(
             f"산출 사양이 {c_rate(discharge_hours):.1f}C 방전에 해당합니다 "
             f"(방전시간 {discharge_hours:.2f}h). 정치형 LFP 는 통상 0.5~1C 연속이므로 "
@@ -604,9 +628,9 @@ def ess_payback_curve(
     technology: str | None = None,
     reference: EssCostReference | None = None,
     charge_mask: pd.Series | None = None,
-    round_trip: float = DEFAULT_ROUND_TRIP,
-    dod: float = DEFAULT_DOD,
-    cycles_per_day: float = DEFAULT_CYCLES_PER_DAY,
+    round_trip: float | None = None,
+    dod: float | None = None,
+    cycles_per_day: float | None = None,
     baseline: BillingResult | None = None,
     quality: QualityReport | None = None,
     options: BillingOptions | None = None,
@@ -620,6 +644,9 @@ def ess_payback_curve(
     차익거래 잠재 수익을 더한 열을 함께 낸다 — 이쪽이 **상한**이다. 기본 열은
     순부하 재계산 절감액만 쓴 값이라 이중 계산이 없다.
     """
+    round_trip = default_round_trip() if round_trip is None else round_trip
+    dod = default_dod() if dod is None else dod
+    cycles_per_day = default_cycles_per_day() if cycles_per_day is None else cycles_per_day
     opts = options if options is not None else BillingOptions()
     interval = usage.meta.interval_minutes
     excess = analyze_peak_excess(usage.kw, target_kw, interval)

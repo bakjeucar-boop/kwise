@@ -28,18 +28,13 @@
 
 from __future__ import annotations
 
-import json
-import os
 from dataclasses import dataclass, field
-from functools import lru_cache
-from pathlib import Path
-from typing import Any
 
 from kwise.pv.config import ArrayConfig, PvSystemConfig
 from kwise.pv.region import Region
+from kwise.rules import assumption
 
 __all__ = [
-    "PRESET_FILENAME",
     "DensityPreset",
     "PvPresetError",
     "PvPresets",
@@ -47,10 +42,7 @@ __all__ = [
     "capacity_from_area_kwp",
     "capacity_preview",
     "load_pv_presets",
-    "preset_data_path",
 ]
-
-PRESET_FILENAME = "pv_presets.json"
 
 
 class PvPresetError(ValueError):
@@ -105,25 +97,15 @@ class PvPresets:
         return self.density(self.default_density)
 
 
-def preset_data_path() -> Path:
-    """프리셋 파일. 요금표와 같은 ``data\\`` 폴더에 둔다."""
-    override = os.environ.get("KWISE_TARIFF_DIR")
-    base = Path(override) if override else Path(__file__).resolve().parents[3] / "data"
-    return base / PRESET_FILENAME
+def load_pv_presets() -> PvPresets:
+    """``data\assumptions.json`` 에서 프리셋을 읽는다.
 
-
-@lru_cache(maxsize=1)
-def load_pv_presets(path: str | None = None) -> PvPresets:
-    """프리셋을 읽는다. **코드에 값을 두지 않는다.**"""
-    target = Path(path) if path is not None else preset_data_path()
-    if not target.is_file():
-        raise PvPresetError(f"프리셋 파일이 없습니다: {target}")
-    with target.open(encoding="utf-8") as stream:
-        payload: dict[str, Any] = json.load(stream)
-
-    raw = payload.get("densities")
+    **코드에 기본값을 두지 않는다** (요구사항서 12장). 항목이 빠지면
+    :class:`~kwise.rules.RuleDataError` 로 멈춘다.
+    """
+    raw = assumption("pv.densities")
     if not raw:
-        raise PvPresetError(f"설치 밀도 프리셋이 비어 있습니다: {target}")
+        raise PvPresetError("설치 밀도 프리셋이 비어 있습니다 (assumptions.json: pv.densities).")
     densities = tuple(
         DensityPreset(
             key=str(item["key"]),
@@ -135,15 +117,15 @@ def load_pv_presets(path: str | None = None) -> PvPresets:
         )
         for item in raw
     )
-    area_per_kwp = float(payload.get("area_per_kwp_m2", 5.0))
+    area_per_kwp = float(assumption("pv.area_per_kwp_m2"))
     if area_per_kwp <= 0:
         raise PvPresetError(f"kWp 당 면적은 양수여야 합니다: {area_per_kwp}")
     presets = PvPresets(
         densities=densities,
         area_per_kwp_m2=area_per_kwp,
-        default_azimuth_deg=float(payload.get("default_azimuth_deg", 180.0)),
-        default_density=str(payload.get("default_density", densities[0].key)),
-        density_label=str(payload.get("density_label", "설치 밀도")),
+        default_azimuth_deg=float(assumption("pv.default_azimuth_deg")),
+        default_density=str(assumption("pv.default_density")),
+        density_label=str(assumption("pv.density_label")),
     )
     _ = presets.default  # 기본 밀도가 목록에 있는지 여기서 확인한다
     return presets

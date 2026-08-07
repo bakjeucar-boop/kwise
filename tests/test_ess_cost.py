@@ -14,16 +14,16 @@ import pytest
 
 from kwise.io import UsageData
 from kwise.measures import (
-    DEFAULT_ROUND_TRIP,
-    HIGH_RATE_DISCHARGE_HOURS,
     EssCostInput,
     EssCostReferenceError,
     EssResult,
     analyze_peak_excess,
     arbitrage_value,
     c_rate,
+    default_round_trip,
     ess_payback_curve,
     evaluate_ess,
+    high_rate_discharge_hours,
     light_band_mask,
     load_ess_cost_reference,
     peak_days_by_season,
@@ -199,7 +199,7 @@ def test_discharge_hours_is_calculated_not_forced(sample_usage: UsageData) -> No
 
 def test_c_rate_warning_below_half_an_hour(sample_ess: EssResult) -> None:
     """0.5h 미만이면 고출력 셀 사양임을 경고한다."""
-    assert sample_ess.discharge_hours < HIGH_RATE_DISCHARGE_HOURS
+    assert sample_ess.discharge_hours < high_rate_discharge_hours()
     assert sample_ess.c_rate == pytest.approx(1.0 / sample_ess.discharge_hours)
     assert any("고출력 셀" in message for message in sample_ess.warnings)
     assert any("C 방전" in message for message in sample_ess.warnings)
@@ -222,7 +222,7 @@ def test_arbitrage_rates_come_from_the_tariff_table(
         tariff,
         SAMPLE_SELECTION,
         usable_kwh=1.0,
-        round_trip=DEFAULT_ROUND_TRIP,
+        round_trip=default_round_trip(),
         base_fee_months=sample_bill.base_fee_months,
     )
     rates = tariff.rates(SAMPLE_SELECTION)
@@ -252,7 +252,7 @@ def test_arbitrage_standalone_payback_outlives_the_battery(
         tariff,
         SAMPLE_SELECTION,
         usable_kwh=1.0,
-        round_trip=DEFAULT_ROUND_TRIP,
+        round_trip=default_round_trip(),
         base_fee_months=sample_bill.base_fee_months,
         capex_energy_won_per_kwh=reference.default.capex_energy_won_per_kwh,
     )
@@ -280,7 +280,7 @@ def test_arbitrage_scales_with_capacity(
         tariff,
         SAMPLE_SELECTION,
         usable_kwh=1.0,
-        round_trip=DEFAULT_ROUND_TRIP,
+        round_trip=default_round_trip(),
         base_fee_months=sample_bill.base_fee_months,
     )
     ten = arbitrage_value(
@@ -288,7 +288,7 @@ def test_arbitrage_scales_with_capacity(
         tariff,
         SAMPLE_SELECTION,
         usable_kwh=10.0,
-        round_trip=DEFAULT_ROUND_TRIP,
+        round_trip=default_round_trip(),
         base_fee_months=sample_bill.base_fee_months,
     )
     assert ten.annual_won == pytest.approx(one.annual_won * 10.0)
@@ -302,7 +302,7 @@ def test_cycles_per_day_is_configurable(
         tariff,
         SAMPLE_SELECTION,
         usable_kwh=1.0,
-        round_trip=DEFAULT_ROUND_TRIP,
+        round_trip=default_round_trip(),
         base_fee_months=sample_bill.base_fee_months,
     )
     doubled = arbitrage_value(
@@ -310,7 +310,7 @@ def test_cycles_per_day_is_configurable(
         tariff,
         SAMPLE_SELECTION,
         usable_kwh=1.0,
-        round_trip=DEFAULT_ROUND_TRIP,
+        round_trip=default_round_trip(),
         base_fee_months=sample_bill.base_fee_months,
         cycles_per_day=2.0,
     )

@@ -24,16 +24,16 @@ import pandas as pd
 from kwise.io import UsageData
 from kwise.quality import QualityReport, monthly_missing
 from kwise.tariff.demand import (
-    DEMAND_WINDOW_MONTHS,
     apply_contract_floor,
     billing_demands,
     demand_eligible_mask,
+    demand_window_months,
     monthly_demand_basis,
 )
 from kwise.tariff.holiday import DateLike, build_calendar
 from kwise.tariff.power_factor import (
-    LAGGING_STANDARD_PCT,
     PowerFactorCharge,
+    lagging_standard_pct,
     power_factor_charge,
 )
 from kwise.tariff.schema import (
@@ -46,8 +46,6 @@ from kwise.tariff.schema import (
 from kwise.tariff.tou import classify_slots
 
 __all__ = [
-    "DEMAND_WINDOW_MONTHS",
-    "LAGGING_STANDARD_PCT",
     "MISSING_LIMIT_RATIO",
     "NOT_INCLUDED_NOTICE",
     "AnnualEstimate",
@@ -57,6 +55,8 @@ __all__ = [
     "PowerFactorCharge",
     "billing_demands",
     "calculate_bill",
+    "demand_window_months",
+    "lagging_standard_pct",
 ]
 
 MISSING_LIMIT_RATIO = 0.05
@@ -87,7 +87,8 @@ class BillingOptions:
     # 역률 (기본공급약관 제41·42·43조). 기본값 92% 는 무효전력계 미설치 고객의
     # 간주값이며 이 값에서 추가·감액이 정확히 0 이다 — 모르는 채로 금액을
     # 만들어내지 않는다. 야간 진상역률은 근거가 없으면 None 으로 두고 경고만 낸다.
-    power_factor_pct: float = LAGGING_STANDARD_PCT
+    power_factor_pct: float | None = None
+    """주간 지상역률. None 이면 약관 제42조의 간주값(rules_kr.json)을 쓴다."""
     leading_power_factor_pct: float | None = None
 
 
@@ -171,7 +172,7 @@ class BillingResult:
         """12개월로 환산한다. 12개월 미만이면 경고를 붙인다."""
         if self.base_fee_months <= 0:
             raise ValueError("기본요금 개월수가 0 이라 환산할 수 없습니다.")
-        factor = DEMAND_WINDOW_MONTHS / self.base_fee_months
+        factor = demand_window_months() / self.base_fee_months
         warnings: list[str] = []
         if self.period_days < 365:
             warnings.append(

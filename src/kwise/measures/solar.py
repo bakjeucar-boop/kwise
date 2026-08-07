@@ -31,25 +31,25 @@ from kwise.measures.pv_cost import (
 from kwise.pv import PvSystemConfig, WeatherData, align_simulation, sharpen, simulate
 from kwise.quality import QualityReport
 from kwise.tariff import (
-    DAY_WINDOW,
-    LAGGING_STANDARD_PCT,
     BillingOptions,
     BillingResult,
     TariffSelection,
     TariffTable,
     calculate_bill,
+    day_window,
     lagging_adjustment_ratio,
+    lagging_standard_pct,
 )
 
 __all__ = [
     "DEFAULT_MODULE_DENSITY_KWP_PER_M2",
     "DEFAULT_STEPS",
     "DEFAULT_USABLE_RATIO",
-    "POWER_FACTOR_FLOOR_PCT",
     "SolarCurve",
     "SolarPoint",
     "day_window_mask",
     "power_factor_after_pct",
+    "power_factor_floor_pct",
     "roof_capacity_limit_kwp",
     "solar_curve",
     "unit_generation_kw",
@@ -58,8 +58,14 @@ __all__ = [
 DEFAULT_USABLE_RATIO = 0.6  # 옥상 가용 비율 (요구사항서 3.3)
 DEFAULT_MODULE_DENSITY_KWP_PER_M2 = 0.20
 DEFAULT_STEPS = 20
+
+
+def power_factor_floor_pct() -> float:
+    """약관 제41조의 유지 의무이자 제43조의 요금 기준. 이 아래로 떨어지면 돈이 나간다."""
+    return lagging_standard_pct()
+
+
 # 약관 제41조의 유지 의무이자 제43조의 요금 기준. 이 아래로 떨어지면 돈이 나간다.
-POWER_FACTOR_FLOOR_PCT = LAGGING_STANDARD_PCT
 
 
 def roof_capacity_limit_kwp(
@@ -105,7 +111,7 @@ def day_window_mask(index: pd.DatetimeIndex, interval_minutes: int) -> pd.Series
     첫 주간 슬롯은 ``08:15`` 다.
     """
     hours = slot_start(pd.DatetimeIndex(index), interval_minutes).hour
-    start, end = DAY_WINDOW
+    start, end = day_window()
     return pd.Series((hours >= start) & (hours < end), index=index, name="day_window")
 
 
@@ -219,7 +225,7 @@ def solar_curve(
     cost: PvCostInput | None = None,
     steps: int = DEFAULT_STEPS,
     sharpness: float = 1.0,
-    power_factor_pct: float = LAGGING_STANDARD_PCT,
+    power_factor_pct: float | None = None,
     baseline: BillingResult | None = None,
     quality: QualityReport | None = None,
     options: BillingOptions | None = None,
@@ -241,6 +247,8 @@ def solar_curve(
         raise ValueError(f"상한 용량은 음수일 수 없습니다: {max_capacity_kwp}")
 
     pricing = cost if cost is not None else PvCostInput.unpriced()
+    # 기본 역률은 약관 제42조의 간주값이다 (rules_kr.json). 코드에 두지 않는다.
+    power_factor_pct = lagging_standard_pct() if power_factor_pct is None else power_factor_pct
     opts = options if options is not None else BillingOptions()
     base_bill = (
         baseline
@@ -297,11 +305,11 @@ def solar_curve(
         )
 
     largest = points[-1]
-    if largest.power_factor_after_pct < POWER_FACTOR_FLOOR_PCT:
+    if largest.power_factor_after_pct < power_factor_floor_pct():
         warnings.append(
             f"PV {largest.capacity_kwp:,.0f} kWp 도입 시 예상 주간(08~22시) 지상역률이 "
             f"{largest.power_factor_after_pct:.1f}% 로 기준 "
-            f"{POWER_FACTOR_FLOOR_PCT:.0f}% 를 밑돕니다. 무효전력은 그대로인데 "
+            f"{power_factor_floor_pct():.0f}% 를 밑돕니다. 무효전력은 그대로인데 "
             "유효전력만 상쇄되기 때문입니다. 역률요금이 "
             f"{largest.power_factor_extra_won:,.0f} 원 늘어 절감액이 "
             f"{largest.total_saving_won:,.0f} → "
@@ -316,7 +324,7 @@ def solar_curve(
         "용량마다 요금을 다시 계산했습니다. 절감액을 빼기로 어림하지 않았습니다.",
         PV_COST_BASIS_NOTE,
         f"역률 판정 창은 08~22시(구간 시작 기준)이며 기준은 지상 "
-        f"{LAGGING_STANDARD_PCT:.0f}% 입니다 (기본공급약관 제43조 ②). "
+        f"{lagging_standard_pct():.0f}% 입니다 (기본공급약관 제43조 ②). "
         f"도입 전 추정 역률 {power_factor_pct:.1f}% 에서 시작합니다.",
         "역률요금은 추정 역률 기반 참고 산출입니다. 무효전력 실측이 없습니다 "
         "(약관 제42조는 30분 누적 계량을 요구하는데 우리 데이터는 15분이고 "
