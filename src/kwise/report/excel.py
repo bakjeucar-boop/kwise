@@ -48,6 +48,7 @@ from kwise.tariff import BillingResult
 
 __all__ = [
     "DEFAULT_OUTPUT_DIR",
+    "MEASURE_SHEET_COLUMNS",
     "NO_PV_SENSITIVITY_NOTE",
     "SHEET_ORDER",
     "ReportSections",
@@ -65,6 +66,17 @@ NO_PV_SENSITIVITY_NOTE = (
     "태양광이 없어 감도를 적용할 항목이 없습니다. 감도는 PV 출력의 첨예도에만 적용하며, "
     "요금제 전환·계약전력 조정·역률 개선은 확정 계산이라 감도를 쓰지 않습니다 "
     "(요구사항서 9.2)."
+)
+
+# 「수단별 결과」 시트의 열. 켠 수단이 없어도 이 구조는 유지한다.
+MEASURE_SHEET_COLUMNS: tuple[str, ...] = (
+    "수단",
+    "투자비(원)",
+    "절감액(원)",
+    "12개월 환산(원)",
+    "회수기간",
+    "확실성",
+    "비고",
 )
 
 DEFAULT_OUTPUT_DIR = Path("output")
@@ -404,6 +416,10 @@ def measure_summary_frame(
                     ),
                 }
             )
+    if not rows:
+        # 켠 수단이 하나도 없을 수 있다 (진단만 보는 경우). **열 구조는 유지한다** —
+        # 빈 DataFrame 에 set_index 를 걸면 KeyError 로 산출물 생성이 통째로 멈춘다.
+        return pd.DataFrame(columns=MEASURE_SHEET_COLUMNS).set_index("수단")
     return pd.DataFrame(rows).set_index("수단")
 
 

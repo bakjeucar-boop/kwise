@@ -28,6 +28,7 @@ __all__ = [
     "SOURCE_LINKS",
     "ExpiryWarning",
     "check_expiry",
+    "source_link_of",
     "weather_expiry",
 ]
 
@@ -85,6 +86,17 @@ def _scope_of(item: RuleItem) -> tuple[str, str, str]:
     if not item.is_statutory:
         return "판단값", "expiry.reference_months", "ESS 참고단가"
     return "약관·규칙", "expiry.statute_months", "기본공급약관"
+
+
+def source_link_of(item: RuleItem) -> tuple[str, str]:
+    """항목의 (구분, 원문 확인처 링크).
+
+    **만료 경고가 없어도 화면에는 확인처가 있어야 한다** (요구사항서 10.1 —
+    기준 데이터 화면). 근거를 값 옆에 두는 것이 그 화면의 존재 이유인데,
+    경고가 뜬 항목에만 링크를 달면 나머지는 근거를 따라갈 데가 없다.
+    """
+    scope, _threshold_key, link_key = _scope_of(item)
+    return scope, SOURCE_LINKS.get(link_key, "")
 
 
 def check_expiry(

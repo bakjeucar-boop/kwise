@@ -35,6 +35,7 @@ from kwise.io.columns import (
     detect_usage_columns,
     match_usage_column,
     normalize_column_name,
+    override_columns,
 )
 
 __all__ = [
@@ -59,6 +60,7 @@ __all__ = [
     "load_usage_bytes",
     "match_usage_column",
     "normalize_column_name",
+    "override_columns",
     "parse_usage_datetime",
     "parse_usage_energy",
     "slot_start",
@@ -477,6 +479,8 @@ def load_usage(
     *,
     encodings: Sequence[str] = DEFAULT_ENCODINGS,
     interval_minutes: int | None = None,
+    date_column: str | None = None,
+    energy_column: str | None = None,
 ) -> UsageData:
     """경로에서 사용량 데이터를 읽는다.
 
@@ -484,6 +488,8 @@ def load_usage(
         path: csv·xls·xlsx 경로.
         encodings: CSV 인코딩 시도 순서.
         interval_minutes: 강제 지정할 검침 간격. None 이면 자동 인식.
+        date_column: 검침일 열을 직접 지정한다. None 이면 자동 판정을 따른다.
+        energy_column: 전력량 열을 직접 지정한다. 같다.
     """
     file_path = Path(path)
     if not file_path.is_file():
@@ -493,6 +499,8 @@ def load_usage(
         file_path.name,
         encodings=encodings,
         interval_minutes=interval_minutes,
+        date_column=date_column,
+        energy_column=energy_column,
     )
 
 
@@ -502,10 +510,22 @@ def load_usage_bytes(
     *,
     encodings: Sequence[str] = DEFAULT_ENCODINGS,
     interval_minutes: int | None = None,
+    date_column: str | None = None,
+    energy_column: str | None = None,
 ) -> UsageData:
-    """업로드된 바이트에서 사용량 데이터를 읽는다. Streamlit 업로더용."""
+    """업로드된 바이트에서 사용량 데이터를 읽는다. Streamlit 업로더용.
+
+    ``date_column``·``energy_column`` 을 주면 자동 판정을 덮어쓴다 (요구사항서
+    10.1). **자동 탐지는 언젠가 실패하므로 화면에서 고칠 길이 있어야 한다.**
+    """
     suffix = Path(filename).suffix.lower()
     frame, encoding, detection = _read_frame(data, suffix, encodings)
+    try:
+        detection = override_columns(
+            detection, date_column=date_column, energy_column=energy_column
+        )
+    except ColumnDetectionError as exc:
+        raise UsageLoadError(str(exc)) from exc
     date_col, energy_col = detection.date_column, detection.energy_column
     frame = frame.dropna(how="all").dropna(axis=1, how="all")
     for column in (date_col, energy_col):

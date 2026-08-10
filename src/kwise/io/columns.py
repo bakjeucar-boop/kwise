@@ -30,7 +30,7 @@ import re
 import unicodedata
 import warnings
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
@@ -48,6 +48,7 @@ __all__ = [
     "find_header_row",
     "match_usage_column",
     "normalize_column_name",
+    "override_columns",
     "score_date_column",
     "score_energy_column",
 ]
@@ -136,16 +137,91 @@ class ColumnDetection:
 
     @property
     def strategy(self) -> str:
-        """두 열을 어떻게 찾았는지 한 낱말로. ``name`` / ``content`` / ``mixed``."""
+        """두 열을 어떻게 찾았는지 한 낱말로. ``name`` / ``content`` / ``user`` / ``mixed``."""
         if self.date_strategy == self.energy_strategy:
             return self.date_strategy
         return "mixed"
 
+    @property
+    def strategy_label(self) -> str:
+        """전략을 사람 말로. 두 열이 다르게 판정됐으면 둘을 나란히 적는다."""
+        if self.strategy != "mixed":
+            return _STRATEGY_LABELS.get(self.strategy, self.strategy)
+        date_how = _STRATEGY_LABELS.get(self.date_strategy, self.date_strategy)
+        energy_how = _STRATEGY_LABELS.get(self.energy_strategy, self.energy_strategy)
+        return f"검침일 {date_how}·전력량 {energy_how}"
+
     def describe(self) -> str:
         """산출물·UI 에 그대로 쓸 한 줄."""
-        how = {"name": "열 이름", "content": "값 패턴", "mixed": "열 이름+값 패턴"}[self.strategy]
         row = "" if self.header_row == 0 else f" (헤더 {self.header_row + 1}행)"
-        return f"검침일='{self.date_column}', 전력량='{self.energy_column}' — {how} 으로 판정{row}"
+        return (
+            f"검침일='{self.date_column}', 전력량='{self.energy_column}' — "
+            f"{self.strategy_label} 으로 판정{row}"
+        )
+
+
+_STRATEGY_LABELS: dict[str, str] = {
+    "name": "열 이름",
+    "content": "값 패턴",
+    "user": "사용자 지정",
+}
+
+
+def override_columns(
+    detection: ColumnDetection,
+    *,
+    date_column: str | None = None,
+    energy_column: str | None = None,
+) -> ColumnDetection:
+    """사용자가 고른 열로 판정을 덮어쓴다 (요구사항서 10.1 — 진단 화면).
+
+    **자동 탐지는 언젠가 실패한다.** 양식이 바뀌면 세 단이 모두 엉뚱한 열을 고를
+    수 있으므로 화면에서 고칠 길을 열어 둔다. 고쳤다는 사실은 전략(``user``)과
+    경고에 남는다 — 산출물만 보고는 자동 판정인지 알 수 없으면 안 된다.
+
+    Args:
+        detection: 자동 판정 결과.
+        date_column: 검침일로 쓸 열. ``None`` 이면 자동 판정을 그대로 둔다.
+        energy_column: 전력량으로 쓸 열. 같다.
+
+    Raises:
+        ColumnDetectionError: 파일에 없는 열을 지정했거나 두 열이 같을 때.
+    """
+    if date_column is None and energy_column is None:
+        return detection
+
+    date_col = date_column if date_column is not None else detection.date_column
+    energy_col = energy_column if energy_column is not None else detection.energy_column
+    known = set(detection.columns)
+    for role, column in (("검침일", date_col), ("전력량", energy_col)):
+        if known and column not in known:
+            raise ColumnDetectionError(
+                f"{role} 열 '{column}' 이 파일에 없습니다. 열 목록: {list(detection.columns)}"
+            )
+    if date_col == energy_col:
+        raise ColumnDetectionError(f"검침일과 전력량에 같은 열을 지정했습니다: '{date_col}'")
+
+    # **바꾼 것만 '사용자 지정' 으로 남긴다.** 화면이 두 드롭다운을 늘 함께 넘기므로,
+    # 넘겼다는 사실만으로 표시를 바꾸면 손대지 않은 판정까지 사용자 몫이 된다.
+    date_changed = date_col != detection.date_column
+    energy_changed = energy_col != detection.energy_column
+    if not (date_changed or energy_changed):
+        return detection
+
+    notes: list[str] = []
+    if date_changed:
+        notes.append(f"검침일 '{detection.date_column}' → '{date_col}'")
+    if energy_changed:
+        notes.append(f"전력량 '{detection.energy_column}' → '{energy_col}'")
+
+    return replace(
+        detection,
+        date_column=date_col,
+        energy_column=energy_col,
+        date_strategy="user" if date_changed else detection.date_strategy,
+        energy_strategy="user" if energy_changed else detection.energy_strategy,
+        warnings=(*detection.warnings, "사용자가 열 판정을 고쳤습니다: " + ", ".join(notes) + "."),
+    )
 
 
 # --------------------------------------------------------------------- 2단 이름 매칭

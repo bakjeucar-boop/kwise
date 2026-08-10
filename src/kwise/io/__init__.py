@@ -6,6 +6,7 @@ from kwise.io.columns import (
     ColumnDetectionError,
     detect_usage_columns,
     find_header_row,
+    override_columns,
     score_date_column,
     score_energy_column,
 )
@@ -57,6 +58,7 @@ __all__ = [
     "load_usage_bytes",
     "match_usage_column",
     "normalize_column_name",
+    "override_columns",
     "parse_usage_datetime",
     "parse_usage_energy",
     "score_date_column",

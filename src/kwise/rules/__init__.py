@@ -32,6 +32,7 @@ from kwise.rules.expiry import (
     SOURCE_LINKS,
     ExpiryWarning,
     check_expiry,
+    source_link_of,
     weather_expiry,
 )
 from kwise.rules.schema import (
@@ -95,6 +96,7 @@ __all__ = [
     "rule_value",
     "rules",
     "set_value",
+    "source_link_of",
     "weather_expiry",
 ]
 

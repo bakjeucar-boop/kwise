@@ -20,6 +20,27 @@ kWise 는 대한민국 전용 도구입니다. 요금 체계(한전 기본공급
 약관·규칙: 한전 기본공급약관 / 전력거래소 전력시장운영규칙
           (data\source\*.txt - PDF 원본은 저장소에 두지 않습니다)
 
+실행하는 법
+-----------
+화면 (Streamlit)
+     .venv\Scripts\streamlit.exe run src\kwise\ui\app.py
+     브라우저가 열립니다. 옆단에서 화면을 고릅니다.
+
+       1단계 · 진단       파일만 올려도 결과가 나옵니다. 계약 정보 넷만 묻습니다
+       2단계 · 개선 수단   카드로 켜고 끕니다. 투자비 순으로 놓았습니다
+       3단계 · 비교       조합·감도·검토 범위·Excel 내려받기
+       기준 데이터        값 옆에 근거·확인일을 두고 고칩니다
+
+     업로드한 파일은 서버에 저장하지 않습니다. 내려받기용 Excel 도 만든 즉시
+     지웁니다. 앱을 켤 때 묵은 임시 폴더를 쓸어냅니다.
+
+     화면의 [자세히] 링크는 docs\MANUAL.html 로 갑니다. 매뉴얼은 10세션에서
+     쓰므로 지금은 비활성입니다. 앵커 이름은 docs\MANUAL_ANCHORS.md 에
+     확정해 두었습니다.
+
+배치 (CLI)
+     .venv\Scripts\python.exe -m kwise.cli run --cases cases.yaml
+
 기준 데이터 갱신 절차
 ---------------------
 법령 유래 수치와 판단값은 코드가 아니라 파일에 있습니다.
@@ -100,6 +121,7 @@ CLAUDE.md                    프로젝트 규약 - 클로드코드가 자동으�
 PROCEED.md                   진행 이력 - 이전 결정사항이 채워져 있음
 docs\ENVIRONMENT.md          Windows 11 실행 환경
 docs\REQUIREMENTS_kwise.md   요구사항서
+docs\MANUAL_ANCHORS.md       매뉴얼 앵커 목록 (생성물 - 10세션이 씁니다)
 
 별도로 준비할 것
 ----------------
