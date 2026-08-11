@@ -12,10 +12,13 @@ __all__ = [
     "KNOWN_LIMITS",
     "NOT_INCLUDED_NOTICE",
     "TENTATIVE_BASE_FEE_BASIS_WARNING",
+    "TRUNCATION_FOOTNOTE",
     "UNPRICED_REASONS",
     "format_won",
 ]
 
+from kwise import money
+from kwise.money import TRUNCATION_FOOTNOTE
 from kwise.tariff import NOT_INCLUDED_NOTICE, TENTATIVE_BASE_FEE_BASIS_WARNING
 
 # 요구사항서 9.4 — 필수 경고
@@ -96,7 +99,9 @@ UNPRICED_REASONS: dict[str, str] = {
 
 
 def format_won(value: float | None, *, reason: str = UNPRICED_REASONS["contract"]) -> str:
-    """금액을 문자열로. **None 이면 빈칸이 아니라 사유를 적는다.**"""
-    if value is None:
-        return reason
-    return f"{value:,.0f}"
+    """금액을 문자열로. **None 이면 빈칸이 아니라 사유를 적는다.**
+
+    표기 규칙은 :mod:`kwise.money` 한 곳이 쥔다 — 천 원 단위 절사다 (14세션).
+    열 이름이 ``(원)`` 을 달고 있는 Excel 칸용이라 단위를 붙이지 않는다.
+    """
+    return money.won_plain(value, reason=reason)

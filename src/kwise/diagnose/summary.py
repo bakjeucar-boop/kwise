@@ -22,6 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from kwise import money
 from kwise.diagnose.peak import PeakProfile
 from kwise.tariff import TariffSelection
 
@@ -122,9 +123,8 @@ class ImprovementSummary:
 
 
 def _won(value: float | None) -> str:
-    if value is None:
-        return "산출 보류"
-    return f"{value / 10_000:,.0f}만원"
+    """**표기 규칙은 :mod:`kwise.money` 한 곳이 쥔다** (14세션)."""
+    return money.won_short(value, reason="산출 보류")
 
 
 def build_lines(summary: ImprovementSummary) -> tuple[str, ...]:

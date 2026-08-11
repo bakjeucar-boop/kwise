@@ -318,7 +318,8 @@ def test_summary_carries_the_quality_warnings(summary_text: str) -> None:
 
 
 def test_format_won_writes_a_reason_instead_of_a_blank() -> None:
-    assert format_won(1_234_567.0) == "1,234,567"
+    # 표기는 천 단위 절사다 (14세션). 내부 계산은 원 단위 그대로다.
+    assert format_won(1_234_567.0) == "1,234,000"
     assert format_won(None) == UNPRICED_REASONS["contract"]
     assert format_won(None, reason=UNPRICED_REASONS["external_price"]).startswith("미산출")
 

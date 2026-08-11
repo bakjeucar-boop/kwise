@@ -462,7 +462,8 @@ def test_measure_sheet_shows_the_reason_when_price_is_missing(
     profile = sample_diagnosis.dr
     assert profile is not None
     row = measure_summary_frame(demand_response=evaluate_demand_response(profile)).iloc[0]
-    assert row["투자비(원)"] == 0.0
+    # 금액 칸은 전부 문자열이다 — 천 단위 절사 표기를 한 곳에서 찍는다 (14세션).
+    assert row["투자비(원)"] == "0"
     assert row["절감액(원)"] == UNPRICED_REASON
     assert str(row["확실성"]) == str(Certainty.MEDIUM)
     assert "수요관리사업자를 통해서만" in row["비고"]

@@ -364,7 +364,7 @@ def test_금액을_모르면_사유를_낸다() -> None:
     assert text.won(None) != ""
     assert "미산출" in text.won(None)
     assert text.won(None, reason="단가 미입력") == "단가 미입력"
-    assert text.won(1_234_567) == "1,234,567원"
+    assert text.won(1_234_567) == "1,234,000원"  # 천 단위 절사 (14세션)
 
 
 def test_금액을_억_만원으로_줄인다() -> None:
@@ -373,7 +373,7 @@ def test_금액을_억_만원으로_줄인다() -> None:
     assert text.won_short(200_000_000) == "2억원"
     assert text.won_short(53_580_000) == "5,358만원"
     assert text.won_short(-53_580_000) == "-5,358만원"
-    assert text.won_short(4_200) == "4,200원"
+    assert text.won_short(4_200) == "4,000원"  # 만원 미만도 천 단위 절사 (14세션)
 
 
 def test_회수기간_0년을_즉시_회수로_적는다() -> None:

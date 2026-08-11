@@ -11,6 +11,9 @@
     화면 지표 카드   :func:`won_short` — ``1억 2,340만원``. 한눈에 크기를 본다
     표·본문·산출물   :func:`won` — ``123,400,000원``. 대조할 수 있다
 
+**규칙 자체는 :mod:`kwise.money` 한 곳에 있다** (14세션). 여기 있는 것은 화면용
+껍데기다 — 화면·Excel·Word 가 같은 절사(천 원 단위)를 쓴다.
+
 모르는 값은 **빈칸이나 0 으로 두지 않는다.** 0원은 "공짜" 로, 회수기간 0년은
 "즉시 회수" 로 읽힌다. 사유를 적는 것이 규약이다 (요구사항서 7.5).
 """
@@ -19,12 +22,15 @@ from __future__ import annotations
 
 import re
 
+from kwise import money
 from kwise.measures import Certainty
+from kwise.money import TRUNCATION_FOOTNOTE
 from kwise.report.notices import format_won
 
 __all__ = [
     "DASH",
     "RANGE",
+    "TRUNCATION_FOOTNOTE",
     "certainty_badge",
     "count",
     "days",
@@ -51,15 +57,13 @@ RANGE = "–"
 그 사이를 ~~취소선~~ 으로 그린다 (13세션). 계산 모듈이 내는 물결표는
 :func:`markdown_safe` 가 렌더 직전에 escape 한다."""
 
-_EOK = 100_000_000
-_MAN = 10_000
-
 
 def won(value: float | None, *, reason: str | None = None) -> str:
-    """원 단위 금액. ``None`` 이면 **사유**를 낸다 (빈칸·0원 금지)."""
-    if value is None:
-        return format_won(None) if reason is None else reason
-    return f"{value:,.0f}원"
+    """원 단위 금액. **천 원 단위로 절사해 보인다** (14세션).
+
+    ``None`` 이면 **사유**를 낸다 (빈칸·0원 금지).
+    """
+    return money.won(value, reason=format_won(None) if reason is None else reason)
 
 
 def won_short(value: float | None, *, reason: str | None = None) -> str:
@@ -68,18 +72,7 @@ def won_short(value: float | None, *, reason: str | None = None) -> str:
     ``1억 2,340만원`` 꼴이다. ``1.23억원`` 보다 자릿수가 그대로 읽힌다 —
     억 단위 소수는 만원 자리를 감춘다.
     """
-    if value is None:
-        return format_won(None) if reason is None else reason
-    sign = "-" if value < 0 else ""
-    size = round(abs(value))
-    if size < _MAN:
-        return f"{sign}{size:,}원"
-    # **버리지 않고 반올림한다.** 31,518,402 원은 3,151 만원이 아니라 3,152 만원이다.
-    total_man = round(size / _MAN)
-    eok, man = divmod(total_man, _MAN)
-    if eok == 0:
-        return f"{sign}{man:,}만원"
-    return f"{sign}{eok:,}억원" if man == 0 else f"{sign}{eok:,}억 {man:,}만원"
+    return money.won_short(value, reason=format_won(None) if reason is None else reason)
 
 
 def money_range(base: float | None, low: float | None, high: float | None) -> str:

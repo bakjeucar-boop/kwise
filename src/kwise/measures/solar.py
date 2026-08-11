@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from kwise import money
 from kwise.io import UsageData, slot_start
 from kwise.measures.base import Certainty, annualize, payback_years
 from kwise.measures.netload import apply_generation
@@ -318,9 +319,9 @@ def solar_curve(
             f"{largest.power_factor_after_pct:.1f}% 로 기준 "
             f"{power_factor_floor_pct():.0f}% 를 밑돕니다. 무효전력은 그대로인데 "
             "유효전력만 상쇄되기 때문입니다. 역률요금이 "
-            f"{largest.power_factor_extra_won:,.0f} 원 늘어 절감액이 "
-            f"{largest.total_saving_won:,.0f} → "
-            f"{largest.saving_after_power_factor_won:,.0f} 원이 됩니다. "
+            f"{money.won(largest.power_factor_extra_won, reason='—')} 늘어 절감액이 "
+            f"{money.won(largest.total_saving_won, reason='—')} → "
+            f"{money.won(largest.saving_after_power_factor_won, reason='—')} 이 됩니다. "
             "콘덴서 용량 조정이 필요합니다 (기본공급약관 제41·43조, 요구사항서 5.7)."
         )
     notes = [
@@ -345,7 +346,8 @@ def solar_curve(
         )
     elif pricing.total_won is not None:
         notes.append(
-            f"투자비를 총액 {pricing.total_won:,.0f} 원으로 고정했습니다 (출처: {pricing.source})."
+            f"투자비를 총액 {money.won(pricing.total_won, reason='—')} 으로 고정했습니다 "
+            f"(출처: {pricing.source})."
         )
         warnings.append(
             "총액을 직접 넣으면 **용량 곡선의 모든 점에 같은 총액**이 적용됩니다. "

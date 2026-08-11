@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from kwise import money
 from kwise.io import UsageData, slot_start
 from kwise.measures.arbitrage import (
     ArbitrageValue,
@@ -517,8 +518,8 @@ def evaluate_ess(
         cost = EssCostInput.of_total(
             quote.total_won,
             source=(
-                f"조달 사례 모델 — 설비 {quote.equipment_won:,.0f}원 + 전기공사 "
-                f"{quote.electrical_won:,.0f}원"
+                f"조달 사례 모델 — 설비 {money.won(quote.equipment_won, reason='—')} "
+                f"+ 전기공사 {money.won(quote.electrical_won, reason='—')}"
             ),
         )
     investment = cost.investment_won(power)
@@ -618,9 +619,11 @@ def evaluate_ess(
         "차익거래 수익은 용량(kWh)에 비례하며, 투자비도 용량에 크게 비례합니다. "
         "따라서 용량을 늘릴수록 회수기간이 나빠집니다.",
         cost_model.formula + " — 조달 사례 회귀입니다.",
-        f"투자비 = 설비 {quote.equipment_won:,.0f}원 + 전기공사 {quote.electrical_won:,.0f}원 "
-        f"(옥외 기준 {quote.electrical_low_won:,.0f}~{quote.electrical_high_won:,.0f}원 구간의 "
-        f"대표값) = {quote.total_won:,.0f}원.",
+        f"투자비 = 설비 {money.won(quote.equipment_won, reason='—')} + 전기공사 "
+        f"{money.won(quote.electrical_won, reason='—')} (옥외 기준 "
+        f"{money.won(quote.electrical_low_won, reason='—')}~"
+        f"{money.won(quote.electrical_high_won, reason='—')} 구간의 대표값) "
+        f"= {money.won(quote.total_won, reason='—')}.",
         feasibility.message(),
         f"왕복효율 {round_trip:.0%}, DoD {dod:.0%} 를 적용했습니다.",
         "열화·수명은 반영하지 않았습니다.",

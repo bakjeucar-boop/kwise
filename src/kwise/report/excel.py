@@ -42,6 +42,7 @@ from kwise.report.notices import (
     DATA_SOURCES,
     KNOWN_LIMITS,
     NOT_INCLUDED_NOTICE,
+    TRUNCATION_FOOTNOTE,
     UNPRICED_REASONS,
     format_won,
 )
@@ -185,20 +186,22 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
         ]
     )
 
-    rows.append(("요금", "기본요금", f"{bill.total_base_won:,.0f} 원"))
+    rows.append(("요금", "기본요금", f"{format_won(bill.total_base_won)} 원"))
     charge = bill.power_factor
     rows.append(
         (
             "요금",
             "역률요금",
-            f"{bill.total_power_factor_won:,.0f} 원 "
+            f"{format_won(bill.total_power_factor_won)} 원 "
             f"({'감액' if charge.is_rebate else '추가'}, 기본요금의 "
             f"{charge.total_ratio:+.1%}, 주간 지상 {charge.lagging_pct:.1f}%)",
         )
     )
-    rows.append(("요금", "전력량요금", f"{bill.total_energy_won:,.0f} 원"))
-    rows.append(("요금", "합계 (관측 기준)", f"{bill.total_won:,.0f} 원"))
-    rows.append(("요금", "합계 (결측 보정 기준)", f"{bill.total_won_adjusted:,.0f} 원"))
+    rows.append(("요금", "전력량요금", f"{format_won(bill.total_energy_won)} 원"))
+    rows.append(("요금", "합계 (관측 기준)", f"{format_won(bill.total_won)} 원"))
+    rows.append(("요금", "합계 (결측 보정 기준)", f"{format_won(bill.total_won_adjusted)} 원"))
+    # 항목을 각각 절사하므로 항목 합과 합계 표시가 어긋날 수 있다 (14세션).
+    rows.append(("요금", "표기 안내", TRUNCATION_FOOTNOTE))
 
     diagnosis = sections.diagnosis
     if diagnosis is not None:
@@ -269,7 +272,7 @@ def measure_summary_frame(
         rows.append(
             {
                 "수단": f"선택요금 전환 ({switch.current.selection} → {switch.best.selection})",
-                "투자비(원)": 0.0,
+                "투자비(원)": format_won(0.0),
                 "절감액(원)": format_won(switch.saving_won),
                 "12개월 환산(원)": format_won(switch.annual_saving_won),
                 "회수기간": "즉시",
@@ -284,7 +287,7 @@ def measure_summary_frame(
                     f"계약전력 조정 ({contract.contract_kw:,.0f} → "
                     f"{contract.suggested_contract_kw:,.0f} kW)"
                 ),
-                "투자비(원)": 0.0,
+                "투자비(원)": format_won(0.0),
                 "절감액(원)": format_won(contract.saving_won, reason=UNPRICED_REASONS["contract"]),
                 "12개월 환산(원)": format_won(
                     contract.annual_saving_won, reason=UNPRICED_REASONS["contract"]
@@ -298,7 +301,7 @@ def measure_summary_frame(
         rows.append(
             {
                 "수단": f"경제성DR (등록 {demand_response.registered_capacity_kw:,.0f} kW)",
-                "투자비(원)": 0.0,
+                "투자비(원)": format_won(0.0),
                 "절감액(원)": demand_response.settlement_label,
                 "12개월 환산(원)": demand_response.settlement_label,
                 "회수기간": "즉시" if demand_response.is_priced else UNPRICED_REASONS["no_saving"],
@@ -321,7 +324,7 @@ def measure_summary_frame(
                 "수단": (
                     f"역률 개선 ({power_factor.current_pct:.1f} → {power_factor.target_pct:.1f}%)"
                 ),
-                "투자비(원)": power_factor.investment_won,
+                "투자비(원)": format_won(power_factor.investment_won),
                 "절감액(원)": format_won(power_factor.saving_won),
                 "12개월 환산(원)": format_won(power_factor.annual_saving_won),
                 "회수기간": (
@@ -335,8 +338,8 @@ def measure_summary_frame(
                 "비고": (
                     f"주간(08~22시) 지상역률 기준 92%, 매 1%당 기본요금의 0.2% "
                     f"(기본공급약관 제43조). 현재 역률요금 "
-                    f"{power_factor.current_charge_won:,.0f} 원 → "
-                    f"{power_factor.target_charge_won:,.0f} 원. "
+                    f"{format_won(power_factor.current_charge_won)} 원 → "
+                    f"{format_won(power_factor.target_charge_won)} 원. "
                     "야간 진상 95% 조항에 걸리지 않도록 시간대별 투입을 제어하십시오."
                 ),
             }
@@ -345,7 +348,7 @@ def measure_summary_frame(
         rows.append(
             {
                 "수단": f"태양광 {solar.capacity_kwp:,.0f} kWp",
-                "투자비(원)": solar.investment_won,
+                "투자비(원)": format_won(solar.investment_won, reason=UNPRICED_REASONS["pv_price"]),
                 "절감액(원)": format_won(solar.total_saving_won),
                 "12개월 환산(원)": format_won(solar.annual_saving_won),
                 "회수기간": (
@@ -369,7 +372,7 @@ def measure_summary_frame(
                     f"ESS 목표 {ess.excess.target_kw:,.0f} kW "
                     f"({ess.power_kw:,.0f} kW / {ess.capacity_kwh:,.0f} kWh)"
                 ),
-                "투자비(원)": ess.investment_won,
+                "투자비(원)": format_won(ess.investment_won),
                 "절감액(원)": format_won(ess.total_saving_won),
                 "12개월 환산(원)": format_won(ess.annual_saving_won),
                 "회수기간": (
@@ -397,7 +400,7 @@ def measure_summary_frame(
             rows.append(
                 {
                     "수단": "└ 차익거래 잠재 (경부하 충전 → 최대부하 방전)",
-                    "투자비(원)": None,
+                    "투자비(원)": format_won(None, reason="—"),
                     "절감액(원)": UNPRICED_REASONS["arbitrage_not_summed"],
                     "12개월 환산(원)": format_won(arbitrage.annual_won),
                     "회수기간": (

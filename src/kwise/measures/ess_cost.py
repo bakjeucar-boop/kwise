@@ -39,6 +39,8 @@ from typing import Any
 
 import pandas as pd
 
+from kwise import money
+
 __all__ = [
     "MODEL_FILENAME",
     "REFERENCE_FILENAME",
@@ -502,9 +504,9 @@ class EssCostModel:
                 "사례": str(case["label"]),
                 "출력": f"{float(case['power_kw']):,.0f} kW",
                 "용량": f"{float(case['capacity_kwh']):,.1f} kWh",
-                "설비비": f"{float(case['equipment_won']):,.0f}원",
+                "설비비": money.won(float(case["equipment_won"]), reason="—"),
                 "전기공사": (
-                    f"{float(case['electrical_won']):,.0f}원"
+                    money.won(float(case["electrical_won"]), reason="—")
                     if case.get("electrical_won") is not None
                     else "설비비에 포함"
                 ),
@@ -518,7 +520,8 @@ class EssCostModel:
     @property
     def formula(self) -> str:
         return (
-            f"설비비 = {self.fixed_won:,.0f}원 + {self.per_kwh_won:,.0f}원 × 용량(kWh) "
+            f"설비비 = {money.won(self.fixed_won, reason='—')} + "
+            f"{self.per_kwh_won:,.0f}원/kWh × 용량(kWh) "
             f"(사례 {self.sample_size}건, R² {self.r2:.4f}, 적합 {self.fitted_on})"
         )
 
