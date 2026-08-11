@@ -25,6 +25,13 @@ from kwise.diagnose import (
     dr_reference_capacity_kw,
     judge_resource_types,
 )
+from kwise.diagnose.dr import (
+    dr_annual_hours_cap,
+    dr_daily_hours_cap,
+    dr_event_hours,
+    dr_max_events_per_day,
+    dr_operating_windows,
+)
 from kwise.io import UsageData
 from kwise.measures import (
     Certainty,
@@ -161,8 +168,9 @@ def test_registered_capacity_is_conservative(sample_diagnosis: Diagnosis) -> Non
     assert profile.day_floor_kw is not None and profile.day_mean_kw is not None
     assert profile.day_floor_kw < profile.day_mean_kw
     assert 0 < profile.registered_capacity_kw < profile.mean_reducible_kw
-    assert profile.registered_capacity_kw == pytest.approx(632, abs=5)
-    assert profile.mean_reducible_kw == pytest.approx(1_390, abs=5)
+    # 09~12·13~20시 창 기준이다 (13세션). 저녁 두 시간이 들어와 하위 10% 가 내려갔다.
+    assert profile.registered_capacity_kw == pytest.approx(236, abs=5)
+    assert profile.mean_reducible_kw == pytest.approx(1_303, abs=5)
 
 
 def test_registration_and_low_load_percentiles_are_separate() -> None:
@@ -174,39 +182,56 @@ def test_registration_and_low_load_percentiles_are_separate() -> None:
     assert registration_percentile() != low_load_percentile()
 
 
-def test_annual_reduction_sums_daily_headroom(sample_diagnosis: Diagnosis) -> None:
-    """**연간 감축 가능량은 등록값 × 일수가 아니라 거래일별 여력의 합이다.**
+def test_annual_reduction_is_capped_at_sixty_hours(sample_diagnosis: Diagnosis) -> None:
+    """**연간 감축 가능량 = 등록용량 × min(참여시간, 60).**
 
-    경제성DR 은 하루 전 입찰이라 매일 다른 양을 입찰한다. 등록값으로 곱하면
-    부하가 많은 날의 여력을 통째로 버려 연간 수익이 크게 과소평가된다.
+    거래 가능일 245일에 하루 1시간씩 참여한다고 보던 옛 계산은 제도 한도를
+    무시해 20배 넘게 과대였다 (13세션).
     """
     profile = sample_diagnosis.dr
     assert profile is not None
-    daily = profile.daily_reducible_kw
-    assert len(daily) == profile.eligible_days == 245
-    assert (daily >= 0).all()  # 기저부하 아래로 내려가지 않는다
+    cap = dr_annual_hours_cap()
+    assert cap == 60.0
 
-    annual = profile.annual_reducible_kwh(1.0)
-    assert annual == pytest.approx(float(daily.sum()))
-    assert annual == pytest.approx(341_921, rel=1e-3)
+    annual = profile.annual_reducible_kwh()
+    assert profile.usable_hours() == cap
+    assert annual == pytest.approx(profile.registered_capacity_kw * cap)
+    assert annual == pytest.approx(14_184, rel=1e-3)
 
-    flat = profile.registered_capacity_kw * 1.0 * profile.eligible_days
-    assert flat < annual  # 등록값으로 곱하면 과소평가된다
-    assert 1 - flat / annual == pytest.approx(0.55, abs=0.02)
+    # 한도를 넘겨 달라고 해도 잘린다.
+    assert profile.annual_reducible_kwh(200.0) == pytest.approx(annual)
+    assert profile.annual_reducible_kwh(20.0) == pytest.approx(annual / 3)
+
+    uncapped = profile.uncapped_reducible_kwh(1.0)
+    assert uncapped > annual * 20  # 옛 방식이 얼마나 부풀었는지
 
 
-def test_bid_hours_scale_the_annual_reduction(sample_diagnosis: Diagnosis) -> None:
+def test_daily_cap_limits_when_days_are_few(sample_diagnosis: Diagnosis) -> None:
+    """참여 가능일이 적으면 **하루 한도 × 일수**가 먼저 걸린다."""
     profile = sample_diagnosis.dr
     assert profile is not None
-    assert profile.annual_reducible_kwh(2.0) == pytest.approx(profile.annual_reducible_kwh(1.0) * 2)
-    with pytest.raises(ValueError, match="입찰 지속시간"):
-        profile.annual_reducible_kwh(0.0)
+    daily_cap = dr_daily_hours_cap()
+    assert daily_cap == dr_max_events_per_day() * dr_event_hours()[1]
+    assert profile.usable_hours(days=2) == pytest.approx(2 * daily_cap)
+    assert profile.usable_hours(days=0) == 0.0
+
+
+def test_reduction_is_measured_in_the_operating_window(sample_diagnosis: Diagnosis) -> None:
+    """감축 여력은 **운영 시간대**의 부하로만 잰다. 점심은 빠진다."""
+    profile = sample_diagnosis.dr
+    assert profile is not None
+    assert profile.windows == ((9, 12), (13, 20))
+    assert dr_operating_windows() == profile.windows
+    hours = {hour for start, end in profile.windows for hour in range(start, end)}
+    assert 12 not in hours  # 점심
+    assert 20 not in hours  # 운영 종료
+    assert 8 not in hours
 
 
 def test_potential_grades_by_capacity(sample_diagnosis: Diagnosis) -> None:
     profile = sample_diagnosis.dr
     assert profile is not None
-    assert profile.potential is DrPotential.HIGH  # 등록 권장 632 kW ≥ 500
+    assert profile.potential is DrPotential.MEDIUM  # 등록 권장 236 kW
     assert profile.meets_reference_capacity  # 참고 문턱 100 kW
 
 
@@ -308,10 +333,10 @@ def test_reduction_is_counted_on_dr_days_only(sample_diagnosis: Diagnosis) -> No
     """연간 감축 가능량은 **거래 가능일 기준으로만** 낸다."""
     profile = sample_diagnosis.dr
     assert profile is not None
-    result = evaluate_demand_response(profile, bid_hours_per_day=1.0)
+    result = evaluate_demand_response(profile)
     assert result.eligible_days == 245
-    assert result.annual_reducible_kwh == pytest.approx(profile.annual_reducible_kwh(1.0))
-    assert result.low_cost_reduction_kwh == pytest.approx(profile.low_cost_reducible_kwh(1.0))
+    assert result.annual_reducible_kwh == pytest.approx(profile.annual_reducible_kwh())
+    assert result.low_cost_reduction_kwh == pytest.approx(profile.low_cost_reducible_kwh())
     assert result.investment_won == 0.0
     assert result.certainty is Certainty.MEDIUM
 
@@ -322,9 +347,9 @@ def test_two_capacities_have_distinct_roles(sample_diagnosis: Diagnosis) -> None
     assert profile is not None
     result = evaluate_demand_response(profile)
     assert result.registered_capacity_kw == pytest.approx(profile.registered_capacity_kw)
-    assert result.flat_reduction_kwh < result.annual_reducible_kwh
-    assert any("거래일별 여력을 합산한 값입니다" in note for note in result.notes)
-    assert any("과소평가" in note for note in result.notes)
+    assert result.uncapped_reducible_kwh > result.annual_reducible_kwh
+    assert any("등록용량" in note and "참여시간" in note for note in result.notes)
+    assert any("과대" in note for note in result.notes)
 
 
 def test_missing_price_returns_a_reason_not_an_amount(sample_diagnosis: Diagnosis) -> None:
@@ -360,11 +385,11 @@ def test_shortfall_penalty_follows_appendix_26() -> None:
 
 
 def test_penalty_risk_is_reported(sample_diagnosis: Diagnosis) -> None:
-    """투자비는 0원이지만 리스크는 0이 아니다."""
+    """투자비는 0원이지만 리스크는 0이 아니다. 1회 최대 지속시간 기준이다."""
     profile = sample_diagnosis.dr
     assert profile is not None
     result = evaluate_demand_response(profile, day_ahead_price_won_per_kwh=120.0)
-    assert result.penalty_per_shortfall_kw_won == pytest.approx(120.0)
+    assert result.penalty_per_shortfall_kw_won == pytest.approx(120.0 * dr_event_hours()[1])
     assert any("실적위약금" in message for message in result.warnings)
 
     without = evaluate_demand_response(profile)
@@ -394,8 +419,8 @@ def test_advisory_names_the_aggregator(sample_diagnosis: Diagnosis) -> None:
 def test_invalid_inputs_are_rejected(sample_diagnosis: Diagnosis) -> None:
     profile = sample_diagnosis.dr
     assert profile is not None
-    with pytest.raises(ValueError, match="입찰 지속시간"):
-        evaluate_demand_response(profile, bid_hours_per_day=0.0)
+    with pytest.raises(ValueError, match="예상 참여시간"):
+        evaluate_demand_response(profile, expected_hours=0.0)
     with pytest.raises(ValueError, match="감축계획량"):
         evaluate_demand_response(profile, reduction_kw=-1.0)
 

@@ -103,6 +103,27 @@ def _hour_window(key: str, value: Any) -> list[ValidationIssue]:
     return issues
 
 
+def _hour_windows(key: str, value: Any) -> list[ValidationIssue]:
+    """[[시작, 끝], …] 구간 목록. 경제성DR 운영 시간대처럼 구간이 둘 이상인 값."""
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or not value:
+        return [ValidationIssue(key, f"구간 목록이어야 합니다: {value!r}")]
+    issues: list[ValidationIssue] = []
+    for window in value:
+        issues.extend(_hour_window(key, window))
+    return issues
+
+
+def _ratio_range(key: str, value: Any) -> list[ValidationIssue]:
+    """[하한, 상한] 비율. 하한이 상한보다 크면 화면 권장 구간이 뒤집힌다."""
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or len(value) != 2:
+        return [ValidationIssue(key, f"[하한, 상한] 두 값이어야 합니다: {value!r}")]
+    issues = _ratio(key, value[0]) + _ratio(key, value[1])
+    low, high = _number(value[0]), _number(value[1])
+    if low is not None and high is not None and low > high:
+        issues.append(ValidationIssue(key, f"하한이 상한보다 큽니다: {low} > {high}"))
+    return issues
+
+
 # 항목별 단일 검사. 키가 없으면 그 검사는 건너뛴다 (항목이 늘어도 깨지지 않는다).
 _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "demand.contract_floor_ratio.default": _ratio,
@@ -135,6 +156,11 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "ess.payback_target_years": _positive,
     "pv.area_per_kwp_m2": _positive,
     "contract.margin_ratio": _ratio,
+    "contract.margin_range": _ratio_range,
+    "dr.annual_hours_cap": _positive,
+    "dr.max_events_per_day": _positive,
+    "dr.operating_hours": _hour_windows,
+    "dr.event_hours": _hour_window,
     "progress.total_seconds": _positive,
     "progress.slow_stage_seconds": _positive,
     "progress.weights": _weights,

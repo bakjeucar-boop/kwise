@@ -50,11 +50,18 @@ __all__ = [
 _HEIGHT = 260
 
 
-def monthly_peak_chart(peak: PeakProfile) -> alt.LayerChart:
+def monthly_peak_chart(peak: PeakProfile, *, split: bool = True) -> alt.LayerChart:
+    """월별 최대수요.
+
+    Args:
+        split: 관측 최대와 요금적용 대상 최대를 **따로 그릴지**. 둘이 같은 값이면
+            막대 두 개가 겹쳐 보여 뜻이 없다 — 한 계열만 그린다 (13세션).
+    """
     frame = monthly_peak_frame(peak)
+    values = ["관측 최대(kW)", "요금적용 대상 최대(kW)"] if split else ["관측 최대(kW)"]
     long = frame.melt(
         id_vars=["월", "발생 시각"],
-        value_vars=["관측 최대(kW)", "요금적용 대상 최대(kW)"],
+        value_vars=values,
         var_name="구분",
         value_name="kW",
     )
@@ -77,8 +84,12 @@ def monthly_peak_chart(peak: PeakProfile) -> alt.LayerChart:
     return (bars + rule).properties(height=_HEIGHT)
 
 
-def top_hour_chart(peak: PeakProfile) -> alt.Chart:
-    long = top_hour_frame(peak).melt(id_vars="시각", var_name="기준", value_name="구간 수")
+def top_hour_chart(peak: PeakProfile, *, split: bool = True) -> alt.Chart:
+    """상위 구간의 시각 분포. 두 기준이 같으면 한 계열만 그린다 (13세션)."""
+    frame = top_hour_frame(peak)
+    if not split:
+        frame = frame[["시각", "요금적용전력 대상"]]
+    long = frame.melt(id_vars="시각", var_name="기준", value_name="구간 수")
     return (
         alt.Chart(long)
         .mark_bar()

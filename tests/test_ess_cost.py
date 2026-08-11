@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -30,7 +31,7 @@ from kwise.measures import (
     reference_table,
     required_discharge_hours,
 )
-from kwise.measures.ess_cost import reference_data_path
+from kwise.measures.ess_cost import load_ess_cost_model, reference_data_path
 from kwise.quality import QualityReport
 from kwise.tariff import BillingResult, TariffTable
 
@@ -101,11 +102,10 @@ def test_reference_is_never_auto_applied() -> None:
     reference = load_ess_cost_reference()
     assert reference.auto_apply is False
 
-    # 단가 입력은 기본값이 없다. 둘 중 하나를 반드시 준다.
-    with pytest.raises(ValueError, match="정확히 하나"):
-        EssCostInput()
-    with pytest.raises(ValueError, match="정확히 하나"):
+    # 단가와 총액을 함께 줄 수 없다. 둘 다 없으면 조달 사례 모델이 산정한다 (13세션).
+    with pytest.raises(ValueError, match="함께 줄 수 없습니다"):
         EssCostInput(unit_cost_won_per_kw=500_000.0, total_won=1_000_000.0)
+    assert EssCostInput.unpriced().is_unpriced
 
     # 참고단가를 쓰려면 from_reference 를 **직접** 부른다.
     picked = EssCostInput.from_reference(1.0)
@@ -127,17 +127,17 @@ def test_auto_apply_true_is_rejected(tmp_path: object) -> None:
         load_ess_cost_reference(str(target))
 
 
-def test_verdict_is_asymmetric() -> None:
-    """하한선 > 손익분기 → 강한 판정. 하한선 < 손익분기 → 약한 판정."""
+def test_fixed_verdict_phrase_is_gone() -> None:
+    """**값과 무관하게 나오던 고정 판정 문구를 지웠다** (13세션).
+
+    "경제성 없음 — 참고단가 하한선 …" 이 언제나 나와서 판정처럼 읽혔다.
+    판정은 성립 조건 계산에서 나온다.
+    """
     reference = load_ess_cost_reference()
-    lower_bound = reference.default.unit_cost_won_per_kw(1.0)
-
-    expensive = reference.verdict(lower_bound / 2, 1.0)
-    assert "경제성 없음" in expensive and "강한 판정" in expensive
-
-    cheap = reference.verdict(lower_bound * 2, 1.0)
-    assert "견적을 받아볼 가치" in cheap and "약한 판정" in cheap
-    assert "하한선" in cheap  # 실제 견적은 이보다 높다
+    assert not hasattr(reference, "verdict")
+    source = Path("src/kwise/measures/ess_cost.py").read_text(encoding="utf-8")
+    assert "강한 판정" not in source
+    assert "참고단가 하한선" not in source
 
 
 # --------------------------------------------------------------------- 단가 입력
@@ -372,3 +372,105 @@ def test_arbitrage_inclusive_payback_is_shorter(sample_ess: EssResult) -> None:
     assert sample_ess.payback_years is not None
     assert sample_ess.payback_with_arbitrage_years < sample_ess.payback_years
     assert any("상한입니다" in note for note in sample_ess.notes)
+
+
+# ================================================= 조달 사례 모델 (13세션)
+
+
+def test_model_coefficients_come_from_the_fit_script() -> None:
+    """**계수를 코드에 손으로 적지 않는다.** 파일에서 읽는다."""
+    model = load_ess_cost_model()
+    assert model.sample_size == 4
+    assert model.r2 > 0.999
+    assert model.fixed_won > 1e8  # 고정비가 지배적이다
+    source = Path("src/kwise/measures/ess_cost.py").read_text(encoding="utf-8")
+    assert str(int(model.per_kwh_won)) not in source
+    assert str(int(model.fixed_won)) not in source
+
+
+def test_single_unit_price_is_not_offered() -> None:
+    """총액÷용량이 세 배 변한다. 그 값을 단가라 부르면 판단이 틀어진다."""
+    model = load_ess_cost_model()
+    small = model.equipment_won(50.0) / 50.0
+    large = model.equipment_won(400.0) / 400.0
+    assert small > large * 2.5
+
+
+def test_quote_splits_equipment_and_electrical_work() -> None:
+    model = load_ess_cost_model()
+    quote = model.quote(150.0)
+    assert quote.in_range
+    assert quote.total_won == pytest.approx(quote.equipment_won + quote.electrical_won)
+    assert quote.electrical_low_won < quote.electrical_won < quote.electrical_high_won
+
+
+def test_quote_clamps_below_the_case_range() -> None:
+    """100 kWh 미만은 하한으로 올려 산정하고 **알린다.**"""
+    model = load_ess_cost_model()
+    quote = model.quote(40.0)
+    assert quote.applied_kwh == model.min_kwh
+    assert not quote.in_range
+    assert any("올려 산정" in note for note in quote.notes)
+
+    beyond = model.quote(600.0)
+    assert not beyond.in_range
+    assert any("참고값" in note for note in beyond.notes)
+
+
+def test_feasibility_uses_the_contract_base_fee(tariff: TariffTable, sample_ess: EssResult) -> None:
+    """**기본요금 단가는 계약종별에서 온다.** 하드코딩하지 않는다."""
+    feasibility = sample_ess.feasibility
+    assert feasibility is not None
+    expected = tariff.rates(SAMPLE_SELECTION).base_won_per_kw
+    assert feasibility.base_fee_won_per_kw == pytest.approx(expected)
+    assert feasibility.saving_won_per_kw == pytest.approx(expected * 12 * 10)
+
+
+def test_feasibility_names_the_required_reduction(sample_ess: EssResult) -> None:
+    """샘플(목표 5,200 kW)에서 필요 저감량 358 kW, 실제 93 kW."""
+    feasibility = sample_ess.feasibility
+    assert feasibility is not None
+    assert feasibility.required_reduction_kw == pytest.approx(358, abs=1)
+    assert feasibility.actual_reduction_kw == pytest.approx(93, abs=1)
+    assert not feasibility.feasible
+    assert "358 kW 이상" in feasibility.message()
+    assert "93 kW" in feasibility.message()
+
+
+def test_long_discharge_cannot_be_feasible() -> None:
+    """방전시간이 길면 배터리비가 절감액을 넘어 **규모와 무관하게** 성립하지 않는다."""
+    model = load_ess_cost_model()
+    quote = model.quote(150.0)
+    feasibility = model.feasibility(
+        discharge_hours=1.5,
+        base_fee_won_per_kw=8_320.0,
+        target_years=10.0,
+        actual_reduction_kw=10_000.0,
+        quote=quote,
+    )
+    assert feasibility.required_reduction_kw is None
+    assert not feasibility.feasible
+    assert "회수기간과 무관하게" in feasibility.message()
+
+
+def test_model_prices_when_no_input_is_given(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+) -> None:
+    """단가·총액이 없으면 **조달 사례 모델**이 투자비를 낸다 (13세션)."""
+    result = evaluate_ess(
+        sample_usage,
+        tariff,
+        SAMPLE_SELECTION,
+        target_kw=5_200.0,
+        cost=EssCostInput.unpriced(),
+        charge_mask=light_band_mask(sample_usage, tariff, selection=SAMPLE_SELECTION),
+        baseline=sample_bill,
+        quality=sample_report,
+    )
+    assert result.quote is not None
+    assert result.investment_won == pytest.approx(result.quote.total_won)
+    assert "조달 사례 모델" in result.cost.source
+    assert any("배터리 수명" in message for message in result.warnings)

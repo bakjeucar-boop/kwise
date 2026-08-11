@@ -11,13 +11,19 @@
 공지하고 수요관리사업자 수수료가 별도라 우리가 만들 수 있는 값이 아니다.
 단가가 없으면 감축량(kWh)만 내고 금액은 "단가 미입력"으로 표시한다.
 
-**등록 권장 용량과 연간 감축 가능량은 쓰임이 다르다.**
+**참여에는 제도 한도가 있다 (13세션에 바로잡았다).**
 
-    registered_capacity_kw   하위 10% 기준 — 사업자와 계약할 때 등록하는 값
-    annual_reducible_kwh     **거래일별 여력의 합** — 연간 수익 추정 기준
+    연간 총 한도   감축 시험 포함 연 60시간
+    하루 한도      최대 2회, 1회당 1~4시간
+    참여 요일      평일만 (토·일·공휴일 제외)
+    운영 시간대    평일 09:00~20:00, 점심(12:00~13:00) 제외
 
-경제성DR 은 하루 전 입찰이라 매일 다른 양을 입찰한다. 등록값 × 일수로 계산하면
-부하가 많은 날의 여력을 통째로 버려 연간 수익이 크게 과소평가된다.
+    연간 감축 가능량 = 등록용량 × min(참여시간, 60)
+
+거래 가능일 245일에 하루 1시간씩 참여한다고 보면 **4배 이상 과대 산출된다.**
+그전 판은 그렇게 계산했다. 한도는 ``rules_kr.json`` 에 있고 **조문 원문 확인이
+필요한 상태**다 — 확인되는 연 60시간이 신뢰성DR 의무감축 기준일 수 있어, 확인
+전까지 보수적으로 적용한다.
 
 **투자비는 0원이지만 리스크는 0이 아니다.** 감축계획량을 채우지 못하면
 실적위약금이 붙는다 (별표26).
@@ -31,20 +37,29 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from kwise.diagnose.dr import DrProfile, DrResourceType
+from kwise.diagnose.dr import (
+    DrProfile,
+    DrResourceType,
+    dr_annual_hours_cap,
+    dr_event_hours,
+    dr_max_events_per_day,
+)
 from kwise.measures.base import Certainty
 
 __all__ = [
-    "DEFAULT_BID_HOURS_PER_DAY",
     "DR_ADVISORY",
+    "PARTICIPATION_WARNING",
     "UNPRICED_REASON",
     "DemandResponseResult",
     "evaluate_demand_response",
     "shortfall_penalty_won",
 ]
 
-# 입찰 지속시간. 규칙이 고정하지 않으므로 사용자가 바꿀 수 있게 둔다.
-DEFAULT_BID_HOURS_PER_DAY = 1.0
+PARTICIPATION_WARNING = (
+    "경제성DR 은 연간 최대 {cap:,.0f}시간까지 참여할 수 있습니다. "
+    "실제 참여시간은 시장 상황에 따라 이보다 훨씬 적습니다. "
+    "수요관리사업자와 상담해 예상 참여시간을 확인하십시오."
+)
 
 UNPRICED_REASON = (
     "미산출 — 정산 단가 미입력. 전력거래소가 매월 공지하는 순편익가격(입찰 "
@@ -80,10 +95,11 @@ class DemandResponseResult:
     Attributes:
         registered_capacity_kw: **등록 권장값.** 사업자와 계약할 때 등록하는 용량이며
             하위 10% 기준이라 어느 거래일에나 지킬 수 있다.
-        annual_reducible_kwh: **거래일별 여력의 합.** 연간 수익 추정은 이 값으로 한다.
-            등록값 × 일수가 아니다 — 하루 전 입찰이라 매일 다른 양을 입찰한다.
-        flat_reduction_kwh: 등록값 × 일수. **비교용으로만 둔다.** 이 값을 수익
-            추정에 쓰면 부하가 많은 날의 여력을 버려 크게 과소평가된다.
+        annual_hours: 실제로 적용한 연간 참여시간. **연 60시간 한도로 잘린 값**이다.
+        expected_hours: 사용자가 넣은 예상 참여시간. 없으면 연간 최대로 산출했다는 뜻이다.
+        annual_reducible_kwh: 등록용량 × 참여시간. **연간 한도가 적용된 값**이다.
+        uncapped_reducible_kwh: 한도를 적용하지 않은 옛 방식의 값. **비교용**이다 —
+            거래 가능일마다 하루 1시간씩 참여한다고 보면 얼마나 부풀려지는지 보인다.
         low_cost_reduction_kwh: 무비용 감축 가능일에만 참여했을 때의 감축량.
         settlement_won: 정산금. 단가가 없으면 None — 금액을 지어내지 않는다.
         penalty_per_shortfall_kw_won: 감축 미달 1 kW 당 위약금 (별표26). 리스크 크기다.
@@ -93,9 +109,11 @@ class DemandResponseResult:
     mean_reducible_kw: float
     eligible_days: int
     low_load_days: int
-    bid_hours_per_day: float
+    annual_hours: float
+    annual_hours_cap: float
+    expected_hours: float | None
     annual_reducible_kwh: float
-    flat_reduction_kwh: float
+    uncapped_reducible_kwh: float
     low_cost_reduction_kwh: float
 
     unit_price_won_per_kwh: float | None
@@ -110,6 +128,11 @@ class DemandResponseResult:
     certainty: Certainty = Certainty.MEDIUM
     warnings: tuple[str, ...] = field(default=())
     notes: tuple[str, ...] = field(default=())
+
+    @property
+    def is_capped(self) -> bool:
+        """연간 한도에 걸렸는가. 걸렸으면 화면 라벨이 '연간 최대 가능량' 이다."""
+        return self.annual_hours >= self.annual_hours_cap
 
     @property
     def is_priced(self) -> bool:
@@ -129,7 +152,7 @@ def evaluate_demand_response(
     unit_price_won_per_kwh: float | None = None,
     day_ahead_price_won_per_kwh: float | None = None,
     reduction_kw: float | None = None,
-    bid_hours_per_day: float = DEFAULT_BID_HOURS_PER_DAY,
+    expected_hours: float | None = None,
 ) -> DemandResponseResult:
     """경제성DR 참여 편익과 위약금 리스크를 낸다.
 
@@ -139,19 +162,22 @@ def evaluate_demand_response(
         day_ahead_price_won_per_kwh: 하루전에너지가격. 위약금 리스크 산정용이며
             없으면 리스크 금액을 내지 않는다.
         reduction_kw: 감축계획량. 기본은 진단의 보수적 등록 가능 용량이다.
-        bid_hours_per_day: 입찰 지속시간. 규칙이 고정하지 않는다.
+        expected_hours: 예상 연간 참여시간. **기본값이 없다** — 없으면 연간 한도
+            그대로가 적용되고 결과는 '연간 최대 가능량' 이 된다.
     """
-    if bid_hours_per_day <= 0:
-        raise ValueError(f"입찰 지속시간은 양수여야 합니다: {bid_hours_per_day}")
+    if expected_hours is not None and expected_hours <= 0:
+        raise ValueError(f"예상 참여시간은 양수여야 합니다: {expected_hours}")
     capacity = profile.registered_capacity_kw if reduction_kw is None else reduction_kw
     if capacity < 0:
         raise ValueError(f"감축계획량은 음수일 수 없습니다: {capacity}")
 
     # 감축량은 **거래 가능일 기준으로만** 낸다 (제12.4.2.1조 제1항 1호).
-    # **연간 감축 가능량은 거래일별 여력의 합이다.** 등록값 × 일수가 아니다.
-    annual_kwh = profile.annual_reducible_kwh(bid_hours_per_day)
-    flat_kwh = capacity * bid_hours_per_day * profile.eligible_days
-    low_cost_kwh = profile.low_cost_reducible_kwh(bid_hours_per_day)
+    # **연간 한도가 먼저 자른다.** 등록용량 × min(참여시간, 60) 이다.
+    cap = dr_annual_hours_cap()
+    hours = profile.usable_hours(expected_hours)
+    annual_kwh = capacity * hours
+    uncapped_kwh = profile.uncapped_reducible_kwh(1.0)
+    low_cost_kwh = capacity * profile.usable_hours(expected_hours, days=profile.low_load_days_count)
 
     settlement = None if unit_price_won_per_kwh is None else annual_kwh * unit_price_won_per_kwh
     low_cost_settlement = (
@@ -160,27 +186,36 @@ def evaluate_demand_response(
     penalty_per_kw = (
         None
         if day_ahead_price_won_per_kwh is None
-        else shortfall_penalty_won(1.0, 0.0, bid_hours_per_day, day_ahead_price_won_per_kwh)
+        else shortfall_penalty_won(1.0, 0.0, dr_event_hours()[1], day_ahead_price_won_per_kwh)
     )
 
     notes = [
         DR_ADVISORY,
         f"감축량은 거래 가능일 {profile.eligible_days}일 기준입니다. 토·일·공휴일은 "
         "입찰할 수 없습니다 (제12.4.2.1조 제1항 1호).",
-        f"**등록 권장 용량 {capacity:,.0f} kW** 는 대상일 주간 부하 하위 10% − "
+        f"**등록 권장 용량 {capacity:,.0f} kW** 는 대상일 운영 시간대 부하 하위 10% − "
         "기저부하입니다. 사업자와 계약할 때 등록하는 값이며, 평균 기준 여력 "
         f"{profile.mean_reducible_kw:,.0f} kW 로 등록하면 절반의 날에 미달합니다.",
-        f"**연간 감축 가능량 {annual_kwh:,.0f} kWh 는 거래일별 여력을 합산한 값입니다.** "
-        f"등록값 × 일수로 계산하면 {flat_kwh:,.0f} kWh 로 "
-        f"{(1 - flat_kwh / annual_kwh) if annual_kwh else 0:.0%} 과소평가됩니다 — "
-        "하루 전 입찰이라 매일 다른 양을 입찰하므로 부하가 많은 날의 여력을 "
-        "버릴 이유가 없습니다.",
+        f"**연간 감축 가능량 {annual_kwh:,.0f} kWh = 등록용량 {capacity:,.0f} kW × "
+        f"참여시간 {hours:,.0f}시간**입니다. 연간 한도가 {cap:,.0f}시간이라 그 이상은 "
+        "참여할 수 없습니다.",
+        f"한도를 적용하지 않고 거래 가능일마다 하루 1시간씩 참여한다고 보면 "
+        f"{uncapped_kwh:,.0f} kWh 입니다 — "
+        f"{(uncapped_kwh / annual_kwh) if annual_kwh else 0:,.1f}배 과대입니다. "
+        "그전 판이 그렇게 계산했습니다 (13세션에 바로잡았습니다).",
+        f"운영 시간대는 {profile.window_label} 입니다. 점심시간은 빠집니다. "
+        f"하루 한도는 {dr_max_events_per_day()}회 × 최대 "
+        f"{dr_event_hours()[1]:,.0f}시간입니다.",
         "**기본요금 절감은 계산하지 않았습니다.** SMP 기준으로 산발적으로 입찰하므로 "
         "참여일이 연중 최대수요일과 겹칠 확률이 낮습니다. 편익은 정산금 하나로 봅니다.",
-        f"입찰 지속시간을 {bid_hours_per_day:.1f}시간으로 두었습니다. 규칙이 고정하는 "
-        "값이 아니므로 사업자와 협의한 값으로 바꾸십시오.",
     ]
+    if expected_hours is None:
+        notes.append(
+            "예상 참여시간을 넣지 않아 **연간 최대**로 산출했습니다. 값을 넣으면 "
+            "그 시간으로 다시 계산합니다."
+        )
     warnings: list[str] = [
+        PARTICIPATION_WARNING.format(cap=cap),
         "**투자비는 0원이지만 리스크는 0이 아닙니다.** 감축계획량을 채우지 못하면 "
         "실적위약금 = (감축계획량 − 실제감축량) × Max(하루전에너지가격, 0) 이 "
         "부과됩니다 (별표26).",
@@ -212,9 +247,11 @@ def evaluate_demand_response(
         mean_reducible_kw=profile.mean_reducible_kw,
         eligible_days=profile.eligible_days,
         low_load_days=len(profile.low_load_days),
-        bid_hours_per_day=bid_hours_per_day,
+        annual_hours=hours,
+        annual_hours_cap=cap,
+        expected_hours=expected_hours,
         annual_reducible_kwh=annual_kwh,
-        flat_reduction_kwh=flat_kwh,
+        uncapped_reducible_kwh=uncapped_kwh,
         low_cost_reduction_kwh=low_cost_kwh,
         unit_price_won_per_kwh=unit_price_won_per_kwh,
         settlement_won=settlement,

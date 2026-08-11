@@ -1,0 +1,137 @@
+{
+  "schema_version": "0.1",
+  "fitted_on": "2026-08-11",
+  "source_file": "ess_cost_cases.json",
+  "vat_rate": 0.1,
+  "equipment": {
+    "fixed_won": 106924633,
+    "per_kwh_won": 839891,
+    "r2": 0.99958,
+    "sample_size": 4,
+    "note": "설비비 = 고정비 + 용량단가 × 용량(kWh). 고정비가 지배적이라 단일 kWh당 단가로 표현하지 않는다."
+  },
+  "electrical_work": {
+    "bands": [
+      {
+        "max_kwh": 200.0,
+        "low_won": 62623000,
+        "high_won": 83059292,
+        "typical_won": 70968955,
+        "sample_size": 3
+      },
+      {
+        "max_kwh": 400.0,
+        "low_won": 140639091,
+        "high_won": 140639091,
+        "typical_won": 140639091,
+        "sample_size": 1
+      }
+    ],
+    "indoor_ratio": 0.37,
+    "indoor_basis": "탄광박물관 턴키 1건",
+    "note": "옥외 컨테이너 기준이다. 구간 사이는 선형 보간한다. 실내 설치는 비율을 곱하는데 근거가 한 건뿐이라 참고값이다."
+  },
+  "applicable_range": {
+    "min_kwh": 100.0,
+    "max_kwh": 400.0,
+    "note": "이 구간 밖은 사례가 없다. 아래는 하한 용량으로 올려 산정하고, 위는 참고값으로 표시한다."
+  },
+  "holdout": [
+    {
+      "capacity_kwh": 100.0,
+      "actual_won": 191951000.0,
+      "predicted_won": 190099528.48265,
+      "error_ratio": -0.00965
+    },
+    {
+      "capacity_kwh": 150.0,
+      "actual_won": 234912000.0,
+      "predicted_won": 232053921.42979,
+      "error_ratio": -0.01217
+    },
+    {
+      "capacity_kwh": 156.4,
+      "actual_won": 234950000.0,
+      "predicted_won": 239629225.03226,
+      "error_ratio": 0.01992
+    },
+    {
+      "capacity_kwh": 400.0,
+      "actual_won": 443174000.0,
+      "predicted_won": 432041487.55662,
+      "error_ratio": -0.02512
+    }
+  ],
+  "cases": [
+    {
+      "key": "gangwon_police",
+      "label": "강원경찰청",
+      "power_kw": 50.0,
+      "capacity_kwh": 100.0,
+      "equipment_won": 191951000.0,
+      "electrical_won": 83059292.0,
+      "install": "outdoor",
+      "category": "regression"
+    },
+    {
+      "key": "jeonnam_police",
+      "label": "전남경찰청",
+      "power_kw": 75.0,
+      "capacity_kwh": 150.0,
+      "equipment_won": 234912000.0,
+      "electrical_won": 62623000.0,
+      "install": "outdoor",
+      "category": "regression"
+    },
+    {
+      "key": "gyeongin_univ",
+      "label": "경인교대",
+      "power_kw": 100.0,
+      "capacity_kwh": 156.4,
+      "equipment_won": 234950000.0,
+      "electrical_won": 67224573.0,
+      "install": "outdoor",
+      "category": "regression"
+    },
+    {
+      "key": "gyeongbuk_police",
+      "label": "경북경찰청",
+      "power_kw": 100.0,
+      "capacity_kwh": 400.0,
+      "equipment_won": 443174000.0,
+      "electrical_won": 140639090.9090909,
+      "install": "outdoor",
+      "category": "regression"
+    },
+    {
+      "key": "coal_museum",
+      "label": "탄광박물관",
+      "power_kw": 100.0,
+      "capacity_kwh": 150.0,
+      "equipment_won": 259186000.0,
+      "electrical_won": null,
+      "install": "indoor",
+      "category": "reference"
+    },
+    {
+      "key": "yeongam_landfill",
+      "label": "영암매립장",
+      "power_kw": 300.0,
+      "capacity_kwh": 300.0,
+      "equipment_won": 300000000.0,
+      "electrical_won": null,
+      "install": "outdoor",
+      "category": "reference"
+    },
+    {
+      "key": "mall_cabinet",
+      "label": "종합쇼핑몰",
+      "power_kw": 50.0,
+      "capacity_kwh": 50.0,
+      "equipment_won": 117962600.0,
+      "electrical_won": null,
+      "install": "indoor",
+      "category": "catalog"
+    }
+  ]
+}

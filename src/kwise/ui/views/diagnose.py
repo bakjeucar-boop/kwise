@@ -24,6 +24,7 @@ import streamlit as st
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
 from kwise.quality import QualityReport
+from kwise.report import localize
 from kwise.tariff import TENTATIVE_BASE_FEE_BASIS_WARNING, TariffTable
 from kwise.ui import charts
 from kwise.ui import text as fmt
@@ -37,7 +38,7 @@ from kwise.ui.cache import (
 )
 from kwise.ui.labels import option_label, selection_label
 from kwise.ui.nav import next_step_button
-from kwise.ui.notices import Severity, screen_notices
+from kwise.ui.notices import Severity, partition, screen_notices
 from kwise.ui.pipeline import (
     ContractForm,
     contract_type_choices,
@@ -83,7 +84,7 @@ def render(table: TariffTable) -> None:
     _headline_block(usage, diagnosis)
     _tentative_basis_block(table, form)
     _notice_block(quality, diagnosis)
-    _quality_block(usage, quality)
+    _quality_block(usage, quality, diagnosis)
     _pattern_block(diagnosis)
     _peak_block(diagnosis)
     _structure_block(diagnosis)
@@ -98,8 +99,15 @@ def render(table: TariffTable) -> None:
 def _headline_block(usage: UsageData, diagnosis: Diagnosis) -> None:
     """**지표 카드 넷.** 숫자와 단위만 둔다 — 설명은 카드 밖이다."""
     meta = usage.meta
-    columns = st.columns(4)
-    columns[0].metric("분석 기간", fmt.period(meta.start, meta.end, meta.period_days))
+    # 기간은 **값이 아니라 delta 자리**에 둔다. 지표 값 글꼴이 커서 한 줄에 들어가지
+    # 않고 `2023-04-25 – 2024-` 까지만 보였다 (13세션). delta 는 글씨가 작다.
+    columns = st.columns([1.2, 1, 1, 1])
+    columns[0].metric(
+        "분석 기간",
+        fmt.days(meta.period_days),
+        fmt.period(meta.start, meta.end),
+        delta_color="off",
+    )
     columns[1].metric("최대수요", fmt.kw(meta.max_demand_kw))
     columns[2].metric("부하율", fmt.ratio_pct(diagnosis.pattern.load_factor))
     # 1년치가 아닌 자료를 "연간" 이라 적으면 그 자체가 오독이다. 라벨을 기간에 맞춘다.
@@ -107,9 +115,16 @@ def _headline_block(usage: UsageData, diagnosis: Diagnosis) -> None:
     columns[3].metric("연간 사용량" if span >= 350 else "기간 사용량", fmt.mwh(meta.total_kwh))
 
 
+# 결측 관련 문구는 「데이터 품질」 블록이 한 묶음으로 낸다. 위쪽 경고에서 뺀다.
+MISSING_MARKERS = ("결측", "보간")
+
+
 def _notice_block(quality: QualityReport, diagnosis: Diagnosis) -> None:
     """**차단과 주의만.** 참고 등급은 Excel 요약과 보고서 5장으로 간다 (10.7)."""
-    for notice in screen_notices(quality.warnings, diagnosis.warnings):
+    _missing, rest = partition(
+        screen_notices(quality.warnings, diagnosis.warnings), MISSING_MARKERS
+    )
+    for notice in rest:
         if notice.severity is Severity.BLOCK:
             st.error(notice.text)
         else:
@@ -368,7 +383,31 @@ def _summary_block(table: TariffTable, diagnosis: Diagnosis) -> None:
 # --------------------------------------------------------------------- 데이터 품질
 
 
-def _quality_block(usage: UsageData, quality: QualityReport) -> None:
+def missing_lines(quality: QualityReport) -> tuple[str, ...]:
+    """결측 안내 **한 묶음** (13세션).
+
+    같은 사실이 세 군데서 세 번 나왔다 — 총 결측, 최장 연속, 월별 편중이 각각
+    다른 문장으로 흩어져 있었다. 한 블록에 세 줄로 모은다. 세부는 확인사항으로.
+    """
+    lines = [
+        f"결측 {fmt.count(quality.missing_slots, '구간')} / "
+        f"{fmt.count(quality.expected_slots, '구간')} "
+        f"({fmt.ratio_pct(quality.missing_ratio)}) · 보간하지 않고 계산에서 제외"
+    ]
+    gap = quality.longest_gap
+    if gap is not None:
+        lines.append(
+            f"최장 연속 {fmt.count(gap.days, '일', decimals=2)} "
+            f"({gap.start:%Y-%m-%d} {fmt.RANGE} {gap.end:%m-%d})"
+        )
+    for month in quality.flagged_months:
+        lines.append(
+            f"{month.month} 결측률 {fmt.ratio_pct(month.ratio)} → 해당 월 최대수요는 신뢰 제한"
+        )
+    return tuple(lines)
+
+
+def _quality_block(usage: UsageData, quality: QualityReport, diagnosis: Diagnosis) -> None:
     """경고는 위쪽 :func:`_notice_block` 이 이미 냈다. 여기는 사실만 적는다."""
     st.subheader("데이터 품질")
     meta = usage.meta
@@ -377,18 +416,24 @@ def _quality_block(usage: UsageData, quality: QualityReport) -> None:
     columns[1].metric("결측", f"{fmt.ratio_pct(quality.missing_ratio)}")
     columns[2].metric("정전 추정", fmt.count(len(quality.outages), "건"))
 
-    # **결측 편중은 결과 해석을 바꾼다.** 발생 지점에 한 번만 적는다.
-    if quality.skew.flagged:
-        st.warning(
-            f"결측이 피크 시간대에 몰려 있습니다 (편중 배수 "
-            f"{fmt.count(quality.skew.multiple, decimals=2)}). "
-            "그 달의 최대수요가 실제보다 낮게 잡혔을 수 있습니다."
-        )
-    st.caption(
-        f"결측 {fmt.count(meta.missing_rows, '구간')} / 전체 "
-        f"{fmt.count(meta.expected_rows, '구간')}. **보간하지 않습니다** — 계산에서 "
-        "제외하고 그 사실을 표시합니다. " + detail_suffix("data-quality")
+    with st.container(border=True):
+        for line in missing_lines(quality):
+            st.write(line)
+        # **결측 편중은 결과 해석을 바꾼다.** 발생 지점에 한 번만 적는다.
+        if quality.skew.flagged:
+            st.write(
+                f"피크 시간대 편중 배수 {fmt.count(quality.skew.multiple, decimals=2)} → "
+                "그 달의 최대수요가 실제보다 낮게 잡혔을 수 있음"
+            )
+    # 세부는 확인사항으로 내린다. 위쪽 경고 목록에서는 뺐다 (13세션).
+    details, _rest = partition(
+        screen_notices(quality.warnings, diagnosis.warnings), MISSING_MARKERS
     )
+    if details:
+        with st.expander(f"확인사항 {len(details)}건", expanded=False):
+            for item in details:
+                st.write(f"- {item.text}")
+    st.caption(detail_suffix("data-quality"))
 
 
 # --------------------------------------------------------------------- 부하 패턴
@@ -416,22 +461,30 @@ def _peak_block(diagnosis: Diagnosis) -> None:
     """**차트가 먼저다.** 상위 구간 분포가 태양광 판단의 근거다 (6.2)."""
     st.subheader("피크 특성")
     peak = diagnosis.peak
+    # **같은 값이면 한 줄로 접는다** (13세션). 연간 최대가 중간·최대부하 시간대에
+    # 있으면 관측 최대와 요금적용 대상 최대가 같은 값이다 — 두 칸을 나란히 두면
+    # 둘이 다른 개념인 줄 알고 차이를 찾게 된다. 야간 피크형에서만 갈린다.
+    split = peak.billing_demand_kw < peak.peak_kw * 0.99
     columns = st.columns(3)
-    columns[0].metric("관측 최대수요", fmt.kw(peak.peak_kw))
-    columns[1].metric("요금적용전력", fmt.kw(peak.billing_demand_kw))
+    if split:
+        columns[0].metric("관측 최대수요", fmt.kw(peak.peak_kw))
+        columns[1].metric("요금적용전력", fmt.kw(peak.billing_demand_kw))
+    else:
+        columns[0].metric("최대수요 = 요금적용전력", fmt.kw(peak.peak_kw))
+        columns[1].metric("상위 구간 정오 비중", fmt.ratio_pct(diagnosis.summary.pv_midday_share))
     columns[2].metric(
         "상위 구간 주말 비중",
         fmt.ratio_pct(peak.weekend_slots / peak.top_n if peak.top_n else None),
     )
-    st.altair_chart(charts.monthly_peak_chart(peak), width="stretch")
-    st.altair_chart(charts.top_hour_chart(peak), width="stretch")
-    st.altair_chart(charts.hourly_profile_chart(peak), width="stretch")
-    if peak.billing_demand_kw < peak.peak_kw * 0.99:
+    if split:
         st.caption(
-            f"관측 최대 {fmt.kw(peak.peak_kw)} 보다 요금적용전력이 낮습니다 — "
-            "경부하 시간대의 피크는 요금적용전력이 되지 않습니다. "
+            f"관측 최대 {fmt.kw(peak.peak_kw)} 중 경부하 시간대 구간은 요금적용전력 "
+            f"대상에서 제외되어 {fmt.kw(peak.billing_demand_kw)} 가 적용됩니다. "
             + detail_suffix("billing-demand")
         )
+    st.altair_chart(charts.monthly_peak_chart(peak, split=split), width="stretch")
+    st.altair_chart(charts.top_hour_chart(peak, split=split), width="stretch")
+    st.altair_chart(charts.hourly_profile_chart(peak), width="stretch")
     st.caption(
         "상위 구간의 시각 분포가 **태양광 기여 가능성을 즉시 보여 주는 지표**입니다. "
         + detail_suffix("peak-profile")
@@ -456,7 +509,8 @@ def _structure_block(diagnosis: Diagnosis) -> None:
         "이보다 큽니다. " + detail_suffix("not-included")
     )
     with st.expander("월별 명세", expanded=False):
-        st.dataframe(structure.monthly, width="stretch")
+        # **열 이름을 한글로 낸다.** 번역표는 `kwise.report.columns` 한 곳에 있다.
+        st.dataframe(localize(structure.monthly, index_name="월"), width="stretch")
 
 
 # --------------------------------------------------------------------- 계약전력 적정성

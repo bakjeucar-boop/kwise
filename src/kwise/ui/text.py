@@ -17,11 +17,14 @@
 
 from __future__ import annotations
 
+import re
+
 from kwise.measures import Certainty
 from kwise.report.notices import format_won
 
 __all__ = [
     "DASH",
+    "RANGE",
     "certainty_badge",
     "count",
     "days",
@@ -29,6 +32,7 @@ __all__ = [
     "kw",
     "kwh",
     "kwp",
+    "markdown_safe",
     "money_range",
     "months",
     "mwh",
@@ -42,6 +46,10 @@ __all__ = [
 ]
 
 DASH = "—"
+RANGE = "–"
+"""범위 기호. **물결표를 쓰지 않는다** — 한 줄에 둘이 들어가면 Streamlit 이
+그 사이를 ~~취소선~~ 으로 그린다 (13세션). 계산 모듈이 내는 물결표는
+:func:`markdown_safe` 가 렌더 직전에 escape 한다."""
 
 _EOK = 100_000_000
 _MAN = 10_000
@@ -75,7 +83,7 @@ def won_short(value: float | None, *, reason: str | None = None) -> str:
 
 
 def money_range(base: float | None, low: float | None, high: float | None) -> str:
-    """``3,152만원 (2,897 ~ 3,266만원)`` — 감도 범위를 기준값 옆에 붙인다 (9.2).
+    """``3,152만원 (2,897 – 3,266만원)`` — 감도 범위를 기준값 옆에 붙인다 (9.2).
 
     **3열로 나열하지 않는다.** 세 값을 나란히 놓으면 "어느 쪽이 좋은 값인가" 를
     찾게 되는데 이 축에는 좋고 나쁨이 없다.
@@ -90,7 +98,7 @@ def money_range(base: float | None, low: float | None, high: float | None) -> st
         if first.endswith(unit) and second.endswith(unit):
             first = first[: -len(unit)]
             break
-    return f"{text} ({first} ~ {second})"
+    return f"{text} ({first} {RANGE} {second})"
 
 
 def kw(value: float | None, *, decimals: int = 1) -> str:
@@ -139,14 +147,24 @@ def months(value: float | None, *, decimals: int = 1) -> str:
 
 
 def period(start: object, end: object, span_days: float | None = None) -> str:
-    """``2023-04-25 ~ 2024-04-27 (369일)`` — **한 줄에 들어가는 길이**로 맞춘다."""
-    text = f"{start:%Y-%m-%d} ~ {end:%Y-%m-%d}"
+    """``2023-04-25 – 2024-04-27 (369일)`` — **한 줄에 들어가는 길이**로 맞춘다."""
+    text = f"{start:%Y-%m-%d} {RANGE} {end:%Y-%m-%d}"
     return text if span_days is None else f"{text} ({span_days:,.0f}일)"
 
 
 def range_text(base: str, low: str, high: str) -> str:
-    """``3,152만원 (2,897 ~ 3,266만원)`` — 감도 범위를 기준값 옆에 붙인다 (9.2)."""
-    return f"{base} ({low} ~ {high})"
+    """``3,152만원 (2,897 – 3,266만원)`` — 감도 범위를 기준값 옆에 붙인다 (9.2)."""
+    return f"{base} ({low} {RANGE} {high})"
+
+
+def markdown_safe(value: str) -> str:
+    """계산 모듈이 낸 문구를 화면에 그대로 실을 수 있게 한다 (13세션).
+
+    ``야간 22~8시 · 운영 9~18시`` 처럼 **물결표가 한 줄에 둘** 있으면 Streamlit 이
+    그 사이를 취소선으로 그린다. 계산 모듈의 문구는 Excel·보고서로도 가므로
+    거기서 고치지 않고 **화면에 실을 때 escape** 한다.
+    """
+    return re.sub(r"(?<!\\)~", r"\\~", value)
 
 
 def payback(years: float | None, *, investment_won: float | None = None) -> str:

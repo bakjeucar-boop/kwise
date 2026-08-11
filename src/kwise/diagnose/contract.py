@@ -44,6 +44,16 @@ def default_margin_ratio() -> float:
     return float(assumption("contract.margin_ratio"))
 
 
+def margin_range() -> tuple[float, float]:
+    """권장 여유율 범위. **근거는 기준 데이터의 note 에 있다** (13세션).
+
+    하한은 월 최대수요의 통상 진폭, 상한은 그 이상 확보하면 절감이 사라지는
+    지점이다. 화면 슬라이더의 권장 구간 표시에 쓴다.
+    """
+    low, high = assumption("contract.margin_range")
+    return (float(low), float(high))
+
+
 _MARGIN_NOTICE = (
     "기본요금은 직전 12개월 중 최대수요로 결정됩니다. 계약전력을 하향할 경우, "
     "예측 오차와 기상 변동을 고려하여 충분한 여유를 확보하십시오. "

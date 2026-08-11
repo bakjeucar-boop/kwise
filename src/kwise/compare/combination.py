@@ -22,6 +22,7 @@ import pandas as pd
 
 from kwise.io import UsageData
 from kwise.measures import (
+    AppliedMeasure,
     Certainty,
     DispatchResult,
     annualize,
@@ -95,15 +96,30 @@ class CombinationSpec:
         return self.ess_target_kw is not None
 
     @property
-    def measures(self) -> tuple[str, ...]:
-        names: list[str] = []
+    def applied(self) -> tuple[AppliedMeasure, ...]:
+        """적용된 수단 — **등록 키와 파라미터**다. 라벨은 조회로 얻는다 (13세션).
+
+        표시 문자열을 키 자리에 담았다가 라벨 조회가 막혀 3단계 화면이 통째로
+        죽은 적이 있다. 파라미터가 붙는 수단(계약전력·ESS·태양광)이라도 키는
+        등록 키 그대로다.
+        """
+        items: list[AppliedMeasure] = []
         if self.pv_capacity_kwp > 0:
-            names.append(f"태양광 {self.pv_capacity_kwp:,.0f} kWp")
-        if self.has_ess:
-            names.append(f"ESS 목표 {self.ess_target_kw:,.0f} kW")
+            items.append(AppliedMeasure("solar", (("capacity_kwp", self.pv_capacity_kwp),)))
+        if self.ess_target_kw is not None:
+            items.append(AppliedMeasure("ess", (("target_kw", self.ess_target_kw),)))
         if self.contract_kw is not None:
-            names.append(f"계약전력 {self.contract_kw:,.0f} kW")
-        return tuple(names)
+            items.append(AppliedMeasure("contract", (("contract_kw", self.contract_kw),)))
+        return tuple(items)
+
+    @property
+    def measure_keys(self) -> tuple[str, ...]:
+        """등록 키만. 필터·집계에 쓴다."""
+        return tuple(item.key for item in self.applied)
+
+    @property
+    def measure_labels(self) -> tuple[str, ...]:
+        return tuple(item.label for item in self.applied)
 
 
 @dataclass(frozen=True, eq=False)
@@ -151,7 +167,7 @@ class ComparisonResult:
         rows = [
             {
                 "조합": item.name,
-                "수단": ", ".join(item.spec.measures) or "—",
+                "수단": ", ".join(item.spec.measure_labels) or "—",
                 "요금(원)": item.total_won,
                 "절감액(원)": item.saving_won,
                 "12개월 환산 절감액(원)": item.annual_saving_won,

@@ -380,8 +380,9 @@ def cached_ess(
     elif unit_cost_won_per_kw is not None:
         cost = EssCostInput.of_unit_cost(unit_cost_won_per_kw)
     else:
-        # **0 원으로 때우지 않는다.** 회수기간이 0년이 되어 "즉시 회수" 로 읽힌다.
-        raise ValueError("ESS 단가(원/kW) 또는 총 투자비를 넣어야 계산합니다 (요구사항서 7.6).")
+        # 입력이 없으면 **조달 사례 모델**이 산정한다 (13세션). 0 원으로 때우지
+        # 않는 것은 그대로다 — 0 원이면 회수기간이 "즉시 회수" 로 읽힌다.
+        cost = EssCostInput.unpriced()
     return evaluate_ess(
         _usage,
         _table,

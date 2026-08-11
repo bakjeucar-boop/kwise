@@ -365,10 +365,14 @@ def test_expiry_warns_after_the_threshold(sandbox: Path) -> None:
     assert warnings
     keys = {item.key for item in warnings}
     assert "power_factor.lagging_standard_pct" in keys
-    first = warnings[0]
-    assert first.basis == "확인일"
-    assert first.link  # 원문 확인처를 함께 안내한다
-    assert "확인" in first.message()
+    verified = next(item for item in warnings if item.key == "power_factor.lagging_standard_pct")
+    assert verified.basis == "확인일"
+    assert verified.link  # 원문 확인처를 함께 안내한다
+    assert "확인" in verified.message()
+
+    # **확인일이 없는 항목은 시행일로 잰다.** 경제성DR 한도가 그 상태다 (13세션).
+    pending = [item for item in warnings if item.key == "dr.annual_hours_cap"]
+    assert pending and pending[0].basis == "시행일"
 
 
 def test_expiry_thresholds_come_from_assumptions(sandbox: Path) -> None:

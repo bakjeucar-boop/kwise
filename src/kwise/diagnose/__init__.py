@@ -17,6 +17,7 @@ from kwise.diagnose.contract import (
     assess_contract,
     deemed_power_factor_pct,
     default_margin_ratio,
+    margin_range,
 )
 from kwise.diagnose.dr import (
     DrPotential,
@@ -69,6 +70,7 @@ __all__ = [
     "dr_reference_capacity_kw",
     "judge_pv_potential",
     "judge_resource_types",
+    "margin_range",
     "peak_profile",
     "pv_basis_label",
 ]

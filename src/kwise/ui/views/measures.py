@@ -11,17 +11,18 @@ from __future__ import annotations
 
 import streamlit as st
 
-from kwise.diagnose import Diagnosis
+from kwise.diagnose import Diagnosis, default_margin_ratio, margin_range
+from kwise.diagnose.dr import dr_annual_hours_cap, dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData
 from kwise.measures import (
     ELIGIBILITY_NOTICE,
+    PARTICIPATION_WARNING,
     analyze_peak_excess,
     default_target_pct,
     evaluate_demand_response,
     high_rate_discharge_hours,
-    load_ess_cost_reference,
+    load_ess_cost_model,
     power_factor_floor_pct,
-    reference_table,
     required_discharge_hours,
 )
 from kwise.pv import capacity_preview, list_provinces, list_sigungu, load_pv_presets
@@ -109,10 +110,20 @@ def _card(
     갈라 두어, 켜 두고 접어 놓아도 3단계 조합에는 그대로 들어간다.
     """
     icon = _ICONS[spec.key]
-    enabled = st.toggle(f"{icon} {spec.title}", key=toggle_key(spec.key))
+    # 절 번호와 이름을 **묶음 머리(투자 0원)와 같은 크기**로 둔다. 굵게 하지 않는다 —
+    # 토글 라벨 크기로는 카드 경계가 보이지 않았다 (13세션).
+    st.markdown(
+        f"<div style='font-size:1.15rem;padding-top:0.4rem'>{icon} {spec.title}</div>",
+        unsafe_allow_html=True,
+    )
+    enabled = st.toggle("검토에 포함", key=toggle_key(spec.key))
+    opened_key = f"_kwise_opened_{spec.key}"
+    just_enabled = enabled and not bool(st.session_state.get(opened_key))
+    st.session_state[opened_key] = enabled
     if not enabled:
         return
-    with st.expander(f"{icon} {spec.title} — 입력과 결과", expanded=False):
+    # **켜면 펼친다.** 켠 뒤 다시 펼치게 하면 두 번 눌러야 결과가 보인다 (13세션).
+    with st.expander(f"{spec.title} — 입력과 결과", expanded=just_enabled):
         st.caption(spec.headline + " " + detail_suffix(spec.anchor))
         handler = _HANDLERS[spec.key]
         handler(usage, table, form, diagnosis, quality, baseline)
@@ -175,15 +186,34 @@ def _contract(
     if form.contract_kw is None or baseline is None:
         st.warning("계약전력을 입력해야 조정 여지를 봅니다 (1단계 계약 정보).")
         return
-    margin = st.slider(
-        "확보할 여유율",
-        min_value=0.0,
-        max_value=0.3,
-        value=0.1,
-        step=0.01,
-        format="%.0f%%",
-        key=input_key("contract", "margin"),
-    )
+    # **여유가 없으면 슬라이더를 감춘다** (13세션). 움직여도 0% 라 고장으로 보인다.
+    peak = diagnosis.peak.billing_demand_kw
+    headroom = (form.contract_kw - peak) / form.contract_kw if form.contract_kw else 0.0
+    low, high = margin_range()
+    if headroom <= low:
+        st.write(
+            f"현재 계약전력 {fmt.kw(form.contract_kw, decimals=0)} 는 요금적용전력 "
+            f"{fmt.kw(peak)} 대비 여유가 {fmt.ratio_pct(headroom)} 입니다. "
+            "하향 여지가 없습니다."
+        )
+        margin = default_margin_ratio()
+    else:
+        margin = st.slider(
+            "확보할 여유율",
+            min_value=0.0,
+            max_value=0.3,
+            value=default_margin_ratio(),
+            step=0.01,
+            format="%.0f%%",
+            key=input_key("contract", "margin"),
+        )
+        st.caption(
+            "확보할 여유율은 향후 부하 증가와 예측 오차에 대비한 완충입니다. "
+            "높이면 안전하지만 절감액이 줄고, 낮추면 절감액이 늘지만 초과 시 "
+            "위약금과 12개월 기본요금 상승 위험이 커집니다. 권장 "
+            f"{fmt.ratio_pct(low, decimals=0)}–{fmt.ratio_pct(high, decimals=0)}. "
+            + detail_suffix("contract-adequacy")
+        )
     result = cached_contract_adjustment(
         usage,
         baseline,  # type: ignore[arg-type]
@@ -230,48 +260,53 @@ def _demand_response(
             if priced
             else None
         )
+    cap = dr_annual_hours_cap()
     with right:
-        # **예상 참여일에 기본값을 두지 않는다.** 지어내면 그 값으로 금액이 난다.
-        known_days = st.checkbox("예상 참여일 수를 안다", value=False)
-        expected_days = (
+        # **예상 참여시간에 기본값을 두지 않는다.** 지어내면 그 값으로 금액이 난다.
+        known_hours = st.checkbox("예상 연간 참여시간을 안다", value=False)
+        expected_hours = (
             st.number_input(
-                "예상 참여일 (일)",
-                min_value=1,
-                max_value=int(diagnosis.dr.eligible_days),
-                value=int(diagnosis.dr.eligible_days),
-                step=1,
-                key=input_key("demand_response", "days"),
+                "예상 연간 참여시간 (시간)",
+                min_value=1.0,
+                max_value=float(cap),
+                value=float(cap),
+                step=1.0,
+                help=f"연간 한도는 {cap:,.0f}시간입니다. 그 이상은 넣을 수 없습니다.",
+                key=input_key("demand_response", "hours"),
             )
-            if known_days
+            if known_hours
             else None
         )
-    result = evaluate_demand_response(diagnosis.dr, unit_price_won_per_kwh=unit_price or None)
+    result = evaluate_demand_response(
+        diagnosis.dr,
+        unit_price_won_per_kwh=unit_price or None,
+        expected_hours=expected_hours,
+    )
 
-    # **라벨이 '최대'다.** 거래 가능일 전체에 참여한다고 본 이론적 최대치다.
-    share = (expected_days / result.eligible_days) if expected_days else 1.0
+    # **라벨에 한도를 적는다.** 연 60시간을 다 쓴다고 본 값이라 최대치다 (13세션).
     columns = st.columns(3)
     columns[0].metric("거래 가능일", fmt.days(result.eligible_days))
     columns[1].metric("등록 권장 용량", fmt.kw(result.registered_capacity_kw))
     columns[2].metric(
-        "예상 감축량" if expected_days else "연간 최대 가능량",
-        fmt.kwh(result.annual_reducible_kwh * share),
+        "예상 감축량" if expected_hours else f"연간 최대 가능량 (연 {cap:,.0f}시간 한도 적용)",
+        fmt.kwh(result.annual_reducible_kwh),
     )
-    if expected_days:
-        st.caption(
-            f"참여 {fmt.days(expected_days)} 기준입니다. 거래 가능일 전체"
-            f"({fmt.days(result.eligible_days)}) 기준 최대 가능량은 "
-            f"{fmt.kwh(result.annual_reducible_kwh)} 입니다."
-        )
-    st.warning(
-        "거래 가능일 전체에 참여한다고 가정한 최대치입니다. 실제 참여일은 시장 상황에 "
-        "따라 크게 줄어듭니다. **수요관리사업자와 상담해 예상 참여일을 확인하십시오.**"
+    st.caption(
+        f"운영 시간대 {fmt.markdown_safe(diagnosis.dr.window_label)} · 하루 한도 "
+        f"{dr_max_events_per_day()}회 × 최대 {fmt.hours(dr_event_hours()[1], decimals=0)} · "
+        f"적용 참여시간 {fmt.hours(result.annual_hours, decimals=0)}"
     )
+    st.warning(PARTICIPATION_WARNING.format(cap=cap))
     if result.is_priced:
-        st.metric("정산금", fmt.won_short((result.settlement_won or 0.0) * share))
+        st.metric("정산금", fmt.won_short(result.settlement_won))
     st.caption(
         "자원 유형 — " + (", ".join(str(item) for item in result.resource_types) or "판정 불가")
     )
-    _notes(result.warnings, result.notes)
+    # 참여 한도 문구는 바로 위에 냈다. 확인사항에서 한 번 더 내지 않는다 (10.7).
+    _notes(
+        tuple(item for item in result.warnings if "연간 최대" not in item),
+        result.notes,
+    )
 
 
 # --------------------------------------------------------------------- 7.4
@@ -393,7 +428,7 @@ def _solar(
             region_keys,
             index=region_keys.index(region_default),
             format_func=lambda key: region_labels[key],
-            help="기상 격자가 25~31 km 라 같은 격자면 결과가 같습니다.",
+            help="기상 격자가 25–31 km 라 같은 격자면 결과가 같습니다.",
         )
 
     unit_cost = st.number_input(
@@ -440,11 +475,23 @@ def _solar(
         unit_cost_won_per_kwp=unit_cost or None,
         total_investment_won=total_cost or None,
     )
-    set_solar_inputs(inputs)
-
     if inputs.resolved_capacity_kwp(presets) <= 0:
         st.warning("면적 또는 용량을 넣어야 계산합니다.")
         return
+
+    # **계산 버튼을 둔다** (13세션). 값 하나만 바꿔도 다시 도는 구간이라
+    # (파이프라인의 절반이 여기다) 입력하는 동안 화면이 계속 멈췄다.
+    if st.button("태양광 계산", type="primary", key="solar_run"):
+        set_solar_inputs(inputs)
+        st.rerun()
+    saved_run = get_solar_inputs()
+    if saved_run is None:
+        st.info("면적·설치 밀도·지역·단가를 넣고 「태양광 계산」 을 누르십시오.")
+        return
+    stale = saved_run != inputs
+    if stale:
+        st.warning("입력이 변경되었습니다 — 다시 계산하십시오. 아래는 이전 결과입니다.")
+    inputs = saved_run
 
     # 4·5단계 — **파이프라인에서 가장 오래 걸리는 구간이다** (실측 43%).
     # 아무 말 없이 몇 초를 멈추면 사용자는 화면이 죽은 줄 안다.
@@ -476,6 +523,8 @@ def _solar(
             )
     st.caption(f"기상 출처 — {source}. " + detail_suffix("weather-source"))
     point = curve.points[-1]
+    if stale:
+        st.caption("**묵은 결과** — 지금 화면의 입력이 아니라 마지막 계산의 입력 기준입니다.")
     columns = st.columns(4)
     columns[0].metric("용량", fmt.kwp(point.capacity_kwp))
     columns[1].metric("발전량", fmt.kwh(point.generation_kwh))
@@ -518,26 +567,19 @@ def _ess(
 
     excess = analyze_peak_excess(usage.kw, target, usage.meta.interval_minutes)
     hours = required_discharge_hours(excess)
-    reference = load_ess_cost_reference()
-    # 화면에는 **방전시간과 환산단가 한 줄** (10.2 적용 예).
-    st.caption(
-        f"산출된 방전시간 {fmt.hours(hours)} · 참고단가 표에서 해당 행을 강조합니다. "
-        + detail_suffix("ess-cost-reference")
-    )
-    # 표는 접어 둔다. 단가를 넣기 전에 볼 참고자료이지 결과가 아니다 (10.7).
-    with st.expander("참고단가 표", expanded=False):
-        st.dataframe(reference_table(reference, highlight_hours=hours), width="stretch")
+    model = load_ess_cost_model()
+    st.caption(f"산출된 방전시간 {fmt.hours(hours)} · " + detail_suffix("ess-cost-reference"))
     # **고출력 셀 사양 경고는 화면에 남긴다** (10.2 예외).
     if hours < high_rate_discharge_hours():
         st.warning(
             f"방전시간이 {fmt.hours(hours)} 로 짧습니다. 고출력 셀 사양이 되어 "
-            "참고단가보다 단가가 높아집니다."
+            "조달 사례보다 단가가 높아질 수 있습니다."
         )
 
     cost_left, cost_right = st.columns(2)
     with cost_left:
         unit_cost = st.number_input(
-            "단가 (원/kW)",
+            "단가 (원/kW) — 0 이면 조달 사례 모델",
             min_value=0.0,
             value=0.0,
             step=10_000.0,
@@ -551,11 +593,6 @@ def _ess(
             step=1_000_000.0,
             key=input_key("ess", "total_cost"),
         )
-    if not unit_cost and not total_cost:
-        st.info(
-            "단가나 총 투자비를 넣으면 회수기간을 산출합니다. 참고단가는 자동 적용하지 않습니다."
-        )
-        return
 
     result = cached_ess(
         usage,
@@ -580,8 +617,35 @@ def _ess(
         fmt.payback(result.payback_years, investment_won=result.investment_won),
         fmt.certainty_badge(result.certainty),
     )
-    if result.reference_verdict:
-        st.caption(result.reference_verdict)
+    # **투자비는 설비와 전기공사를 나눠 적는다** (13세션). 합계만 보이면 실내·옥외
+    # 차이가 어디서 오는지 알 수 없다.
+    quote = result.quote
+    if quote is not None:
+        st.write(
+            f"설비 **{fmt.won(quote.equipment_won)}** + 전기공사 "
+            f"**{fmt.won(quote.electrical_won)}** = **{fmt.won(quote.total_won)}**"
+        )
+        st.caption(
+            f"전기공사는 옥외 기준 {fmt.won(quote.electrical_low_won)} – "
+            f"{fmt.won(quote.electrical_high_won)} 구간의 대표값입니다. "
+            f"{fmt.markdown_safe(model.formula)}"
+        )
+    # **성립 조건이 핵심 산출물이다.** 고정 문구가 아니라 계산에서 나온다.
+    feasibility = result.feasibility
+    if feasibility is not None:
+        st.markdown(f"**성립 조건** — {fmt.markdown_safe(feasibility.message())}")
+        grid = st.columns(3)
+        grid[0].metric("kW당 배터리비", fmt.won(feasibility.battery_won_per_kw))
+        grid[1].metric(
+            f"{feasibility.target_years:,.0f}년 절감/kW", fmt.won(feasibility.saving_won_per_kw)
+        )
+        grid[2].metric("마진/kW", fmt.won(feasibility.margin_won_per_kw))
+    with st.expander("조달 사례", expanded=False):
+        st.dataframe(model.case_table(), hide_index=True, width="stretch")
+        st.caption(
+            "회귀에는 옥외 컨테이너형 관급 설비 네 건만 썼습니다. 실내형·이동형·"
+            "카탈로그가는 설치 조건이 달라 같은 선에 놓을 수 없습니다."
+        )
     _notes(result.warnings, result.notes)
 
 
@@ -629,7 +693,7 @@ def _surplus(
         hide_index=True,
         width="stretch",
     )
-    st.info(ELIGIBILITY_NOTICE)
+    st.info(fmt.markdown_safe(ELIGIBILITY_NOTICE))
     _notes((), result.notes)
 
 

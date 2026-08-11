@@ -23,6 +23,9 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from kwise.compare import CombinationSpec
+from kwise.io import load_usage
+from kwise.measures import AppliedMeasure, measure_kind
 from kwise.report.excel import SHEET_ORDER
 from kwise.tariff import TariffSelection, TariffTable, load_tariff
 from kwise.ui import text
@@ -30,6 +33,7 @@ from kwise.ui.anchors import MANUAL_FILENAME, app_static_dir, manual_href
 from kwise.ui.labels import contract_label, option_label, selection_label, voltage_label
 from kwise.ui.notices import Severity, classify, dedupe, report_notices, screen_notices
 from kwise.ui.pipeline import ContractForm
+from kwise.ui.views.diagnose import missing_lines
 
 VIEWS = Path("src") / "kwise" / "ui" / "views"
 APP = Path("src") / "kwise" / "ui" / "app.py"
@@ -247,7 +251,7 @@ def test_감도_상세는_excel_에_남는다() -> None:
 
 
 def test_감도를_기준값_괄호_범위로_적는다() -> None:
-    assert text.money_range(31_518_402, 28_968_918, 32_657_891) == "3,152만원 (2,897 ~ 3,266만원)"
+    assert text.money_range(31_518_402, 28_968_918, 32_657_891) == "3,152만원 (2,897 – 3,266만원)"
 
 
 # ======================================================== 표기
@@ -256,7 +260,7 @@ def test_감도를_기준값_괄호_범위로_적는다() -> None:
 def test_기간을_자르지_않는다() -> None:
     """``2023-04-25 ~ 2024-04-2`` 처럼 끝이 잘리면 안 된다."""
     start, end = dt.date(2023, 4, 25), dt.date(2024, 4, 27)
-    assert text.period(start, end, 369) == "2023-04-25 ~ 2024-04-27 (369일)"
+    assert text.period(start, end, 369) == "2023-04-25 – 2024-04-27 (369일)"
 
 
 @pytest.mark.parametrize(
@@ -288,7 +292,7 @@ def test_숫자를_직접_찍지_않는다(name: str) -> None:
 SAMPLE = Path("input") / "사용량조회_20240429.csv"
 
 
-def _running(*, option: str = "II", **state: object) -> AppTest:
+def _running(*, option: str = "II", contract_kw: float = 6_000.0, **state: object) -> AppTest:
     """실제 파일을 올린 상태로 앱을 띄운다.
 
     **화면 코드는 순수 모듈 시험으로 다 잡히지 않는다.** 배치를 바꾸다 이름 하나를
@@ -298,7 +302,7 @@ def _running(*, option: str = "II", **state: object) -> AppTest:
     running.session_state["upload_bytes"] = SAMPLE.read_bytes()
     running.session_state["upload_name"] = SAMPLE.name
     running.session_state["contract_form"] = ContractForm(
-        contract_type="general_b", voltage="high_a", option=option, contract_kw=6000.0
+        contract_type="general_b", voltage="high_a", option=option, contract_kw=contract_kw
     )
     for key, value in state.items():
         running.session_state[key] = value
@@ -320,7 +324,18 @@ def test_진단_화면이_지표부터_낸다(app: AppTest) -> None:
 def test_진단_지표에_세_자리_콤마가_있다(app: AppTest) -> None:
     values = {item.label: item.value for item in app.metric}
     assert "," in values["연간 사용량"]
-    assert "~" in values["분석 기간"] and "일)" in values["분석 기간"]
+
+
+def test_분석_기간이_잘리지_않는다(app: AppTest) -> None:
+    """지표 값 자리에 두면 글꼴이 커서 `2023-04-25 – 2024-` 까지만 보였다 (13세션).
+
+    일수를 값에, 날짜 범위를 **delta 자리**(작은 글씨)에 둔다.
+    """
+    period = next(item for item in app.metric if item.label == "분석 기간")
+    assert period.value.endswith("일")
+    assert period.delta is not None
+    assert text.RANGE in period.delta
+    assert period.delta.startswith("2023-04-25") and period.delta.endswith("2024-04-27")
 
 
 def test_개선_여지가_맨_아래에_온다(app: AppTest) -> None:
@@ -360,13 +375,16 @@ def test_다음_단계_단추로_옮겨간다() -> None:
 
 @pytest.fixture(scope="module")
 def compare_app() -> AppTest:
-    """요금제 전환만 켜고 3단계로 간다. 조합이 둘이라 계산이 짧다.
+    """요금제 전환·계약전력 조정을 켜고 3단계로 간다.
 
     현행을 **선택Ⅰ** 로 둔다. 이미 가장 유리한 요금제면 전환 조합이 만들어지지 않는다.
     """
+    # **계약전력 조정을 함께 켠다.** 파라미터가 붙는 수단이라 13세션의 KeyError
+    # 재현 경로다 — 표시 문자열이 키 자리로 흘러들면 여기서 화면이 죽는다.
     return _running(
         option="I",
         measure_on_tariff_switch=True,
+        measure_on_contract=True,
         nav_page="3단계 · 비교",
     )
 
@@ -404,3 +422,123 @@ def test_수단_화면이_기준선을_한_번_밝힌다() -> None:
     notices = [item.value for item in screen.info]
     assert any("현재 요금제를 유지한다고 보고" in item for item in notices), notices
     assert any("3단계" in item for item in notices)
+
+
+# ======================================================== 13세션
+
+
+def test_조합에는_등록_키가_들어간다() -> None:
+    """**표시 문자열을 키 자리에 담지 않는다** (13세션).
+
+    `계약전력 5,500 kW` 가 키로 흘러들어 라벨 조회가 막히고 3단계 화면이
+    통째로 죽었다. 키는 등록 키, 파라미터는 따로, 라벨은 조회로.
+    """
+    spec = CombinationSpec(
+        name="선택요금 전환 + 계약전력",
+        selection=TariffSelection("general_b", "high_a", "II"),
+        contract_kw=5_500.0,
+        pv_capacity_kwp=1_000.0,
+        ess_target_kw=4_800.0,
+    )
+    assert spec.measure_keys == ("solar", "ess", "contract")
+    for key in spec.measure_keys:
+        measure_kind(key)  # 등록되지 않았으면 여기서 KeyError 가 난다
+    assert "계약전력 조정 (5,500 kW)" in spec.measure_labels
+    assert "태양광 (1,000 kWp)" in spec.measure_labels
+
+
+def test_등록되지_않은_키는_화면을_죽이지_않는다() -> None:
+    """라벨을 못 만들면 **키를 그대로 보인다.** 표 한 칸 때문에 화면을 잃지 않는다."""
+    unknown = AppliedMeasure("계약전력 5,500 kW")
+    assert unknown.label == "계약전력 5,500 kW"
+
+
+TILDE = re.compile(r"(?<!\\)~")
+
+
+@pytest.mark.parametrize("name", SCREEN_VIEWS)
+def test_화면_문자열에_맨_물결표가_없다(name: str) -> None:
+    """물결표 둘이 한 줄에 있으면 Streamlit 이 그 사이를 취소선으로 그린다 (13세션).
+
+    화면 문구는 en dash 를 쓰고, 계산 모듈이 낸 문구는 렌더 직전에 escape 한다.
+    """
+    offenders = [item for item in _strings(VIEWS / name) if TILDE.search(item)]
+    assert not offenders, offenders
+
+
+def test_계산_모듈_문구를_escape_한다() -> None:
+    notices = screen_notices(["야간 22~8시 · 운영 9~18시 를 지키지 못했습니다"])
+    assert notices
+    assert not TILDE.search(notices[0].text)
+
+
+def test_화면에_영문_열_이름이_없다(app: AppTest) -> None:
+    """`days_in_month` 같은 코드 열 이름을 그대로 내지 않는다 (13세션)."""
+    for frame in app.dataframe:
+        columns = [str(name) for name in frame.value.columns]
+        assert not [name for name in columns if re.fullmatch(r"[a-z][a-z0-9_]*", name)], columns
+
+
+def test_렌더된_문자열에_맨_물결표가_없다(app: AppTest) -> None:
+    rendered = (
+        [item.value for item in app.markdown]
+        + [item.value for item in app.warning]
+        + [item.value for item in app.info]
+        + [item.value for item in app.error]
+    )
+    offenders = [item for item in rendered if TILDE.search(item)]
+    assert not offenders, offenders
+
+
+def test_결측_안내가_한_블록이다(app: AppTest) -> None:
+    """같은 사실을 세 번 말하던 것을 세 줄 한 묶음으로 합쳤다 (13세션)."""
+    from kwise.quality import check_quality
+
+    quality = check_quality(load_usage(SAMPLE))
+    lines = missing_lines(quality)
+    assert len(lines) == 3
+    assert "보간하지 않고" in lines[0]
+    assert lines[1].startswith("최장 연속")
+    assert "신뢰 제한" in lines[2]
+
+    # 위쪽 경고 목록에는 결측 문구가 남아 있지 않다.
+    shown = [item.value for item in app.warning]
+    assert not [item for item in shown if "결측" in item], shown
+
+
+def test_같은_값이면_피크_지표를_한_줄로_접는다(app: AppTest) -> None:
+    """샘플은 연간 최대가 중간부하 시간대라 관측 최대와 요금적용전력이 같다."""
+    labels = [item.label for item in app.metric]
+    assert "최대수요 = 요금적용전력" in labels
+    assert "관측 최대수요" not in labels
+
+
+def test_계약전력_여유가_없으면_슬라이더를_감춘다() -> None:
+    """움직여도 0% 인 슬라이더는 고장으로 보인다 (13세션)."""
+    # 샘플의 실제 계약전력 5,500 kW 는 요금적용전력 5,293 kW 대비 여유가 3.8% 다.
+    screen = _running(contract_kw=5_500.0, nav_page="2단계 · 개선 수단", measure_on_contract=True)
+    assert not screen.exception, screen.exception
+    assert not [item for item in screen.slider if "여유율" in item.label]
+    body = " ".join(item.value for item in screen.markdown)
+    assert "하향 여지가 없습니다" in body
+
+
+def test_태양광에_계산_단추가_있다() -> None:
+    """값 하나만 바꿔도 다시 도는 구간이라 단추를 눌러야 돈다 (13세션)."""
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_solar=True)
+    assert not screen.exception, screen.exception
+    assert screen.button(key="solar_run")
+    body = " ".join(item.value for item in screen.info)
+    assert "「태양광 계산」 을 누르십시오" in body
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    assert "입력이 변경되었습니다 — 다시 계산하십시오" in source
+
+
+def test_비교_화면은_표가_먼저다(compare_app: AppTest) -> None:
+    """어느 조합을 왜 권하는지 말하려면 견줄 것이 먼저 보여야 한다 (13세션)."""
+    headings = [item.value for item in compare_app.subheader]
+    assert headings.index("조합별 비교") < next(
+        index for index, value in enumerate(headings) if value.startswith("권장안")
+    )
+    # 수단별 그래프는 화면에서 뺐다 — 보고서 4장에만 둔다.
+    assert len(compare_app.get("arrow_vega_lite_chart")) == 0

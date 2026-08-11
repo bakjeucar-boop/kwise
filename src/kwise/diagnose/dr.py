@@ -39,10 +39,14 @@ __all__ = [
     "DrPotential",
     "DrProfile",
     "DrResourceType",
-    "default_day_hours",
     "default_high_capacity_kw",
+    "dr_annual_hours_cap",
+    "dr_daily_hours_cap",
     "dr_day_mask",
     "dr_eligible_days",
+    "dr_event_hours",
+    "dr_max_events_per_day",
+    "dr_operating_windows",
     "dr_profile",
     "dr_reference_capacity_kw",
     "judge_resource_types",
@@ -75,10 +79,39 @@ def small_medium_dr_industrial_max_kw() -> float:
     return float(rule_value("dr.small_medium_industrial_max_kw"))
 
 
-def default_day_hours() -> tuple[int, int]:
-    """감축 여력을 재는 주간 창. **판단값이다** — 규칙이 정한 창이 아니다."""
-    start, end = assumption("dr.day_hours")
-    return (int(start), int(end))
+def dr_operating_windows() -> tuple[tuple[int, int], ...]:
+    """경제성DR 운영 시간대. **평일 09~12시·13~20시** (점심 제외).
+
+    감축 여력은 이 구간의 부하로만 잰다. 하루 전체 평균으로 재면 참여할 수 없는
+    시간대의 부하까지 여력으로 세어 과대 산출된다 (13세션).
+    """
+    windows = rule_value("dr.operating_hours")
+    return tuple((int(start), int(end)) for start, end in windows)
+
+
+def dr_annual_hours_cap() -> float:
+    """연간 참여 한도 (시간). 감축 시험을 포함한 상한이다.
+
+    **원문 확인이 필요한 값이다.** 확인되는 연 60시간이 신뢰성DR 의무감축 기준일
+    수 있다. 확인 전까지 보수적으로 적용한다 — 빼면 4배 이상 과대 산출된다.
+    """
+    return float(rule_value("dr.annual_hours_cap"))
+
+
+def dr_max_events_per_day() -> int:
+    """하루 최대 발령 횟수."""
+    return int(rule_value("dr.max_events_per_day"))
+
+
+def dr_event_hours() -> tuple[float, float]:
+    """1회 지속시간 범위 (시간)."""
+    low, high = rule_value("dr.event_hours")
+    return (float(low), float(high))
+
+
+def dr_daily_hours_cap() -> float:
+    """하루 상한 시간 = 최대 발령 횟수 × 1회 최대 지속시간."""
+    return dr_max_events_per_day() * dr_event_hours()[1]
 
 
 def low_load_percentile() -> float:
@@ -212,7 +245,7 @@ class DrProfile:
     eligible_days: int
     total_days: int
     excluded_days: int
-    day_hours: tuple[int, int]
+    windows: tuple[tuple[int, int], ...]
 
     day_mean_kw: float | None
     day_floor_kw: float | None
@@ -239,29 +272,64 @@ class DrProfile:
         """참고 문턱(100 kW)을 넘는가. 자원 단위 기준이라 확정 판정이 아니다."""
         return self.registered_capacity_kw >= dr_reference_capacity_kw()
 
-    def annual_reducible_kwh(self, bid_hours_per_day: float) -> float:
-        """연간 감축 가능량 — **거래일별 여력의 합**이다.
+    @property
+    def low_load_days_count(self) -> int:
+        return len(self.low_load_days)
 
-        등록 권장값 × 일수로 계산하면 부하가 많은 날의 여력을 통째로 버린다.
-        경제성DR 은 하루 전 입찰이라 매일 다른 양을 입찰하기 때문이다.
+    @property
+    def window_label(self) -> str:
+        return _window_label(self.windows)
+
+    def usable_hours(self, hours: float | None = None, *, days: int | None = None) -> float:
+        """실제로 참여할 수 있는 연간 시간.
+
+        **연간 한도와 하루 한도가 함께 자른다** (13세션).
+
+            연간 한도   감축 시험 포함 연 60시간
+            하루 한도   최대 2회 × 1회 4시간 = 8시간
+
+        ``hours`` 를 주지 않으면 **연간 최대**를 쓴다. 참여 가능일이 적으면
+        하루 한도 × 일수가 먼저 걸린다.
         """
+        cap = dr_annual_hours_cap()
+        available = (self.eligible_days if days is None else days) * dr_daily_hours_cap()
+        wanted = cap if hours is None else min(float(hours), cap)
+        return max(0.0, min(wanted, cap, available))
+
+    def annual_reducible_kwh(self, hours: float | None = None) -> float:
+        """연간 감축 가능량 = **등록용량 × 참여시간**, 연 60시간으로 자른다.
+
+        예전에는 거래 가능일마다 하루 1시간씩 참여한다고 보아 245시간을 곱했다.
+        제도에는 연간 한도가 있어 그 값은 **4배 이상 과대**였다 (13세션).
+        """
+        return self.registered_capacity_kw * self.usable_hours(hours)
+
+    def uncapped_reducible_kwh(self, bid_hours_per_day: float = 1.0) -> float:
+        """한도를 적용하지 않은 값. **비교용으로만 둔다** — 얼마나 과대였는지 보인다."""
         if bid_hours_per_day <= 0:
             raise ValueError(f"입찰 지속시간은 양수여야 합니다: {bid_hours_per_day}")
         return float(self.daily_reducible_kw.sum()) * bid_hours_per_day
 
-    def low_cost_reducible_kwh(self, bid_hours_per_day: float) -> float:
-        """무비용 감축 가능일만 참여했을 때의 감축량. 그날의 여력을 쓴다."""
-        if bid_hours_per_day <= 0:
-            raise ValueError(f"입찰 지속시간은 양수여야 합니다: {bid_hours_per_day}")
-        days = self.daily_reducible_kw.reindex(list(self.low_load_days)).dropna()
-        return float(days.sum()) * bid_hours_per_day
+    def low_cost_reducible_kwh(self, hours: float | None = None) -> float:
+        """무비용 감축 가능일에만 참여했을 때. **그 일수가 하루 한도로 자른다.**"""
+        return self.registered_capacity_kw * self.usable_hours(hours, days=len(self.low_load_days))
 
 
-def _day_window(starts: pd.DatetimeIndex, day_hours: tuple[int, int]) -> pd.Series:
-    start, end = day_hours
+def _window_label(windows: tuple[tuple[int, int], ...]) -> str:
+    """``09~12시 · 13~20시``. 화면에 실릴 때는 물결표를 escape 한다."""
+    return " · ".join(f"{start:02d}~{end:02d}시" for start, end in windows)
+
+
+def _operating_window(starts: pd.DatetimeIndex, windows: tuple[tuple[int, int], ...]) -> pd.Series:
+    """운영 시간대 마스크. **구간이 둘 이상**이다 (점심이 빠진다)."""
     hours = starts.hour
-    inside = (hours >= start) & (hours < end) if start <= end else (hours >= start) | (hours < end)
-    return pd.Series(inside, index=starts)
+    inside = pd.Series(False, index=range(len(starts)))
+    for start, end in windows:
+        band = (
+            (hours >= start) & (hours < end) if start <= end else (hours >= start) | (hours < end)
+        )
+        inside = inside | pd.Series(band, index=range(len(starts)))
+    return pd.Series(inside.to_numpy(), index=starts)
 
 
 def dr_profile(
@@ -273,7 +341,7 @@ def dr_profile(
     contract_type: str | None = None,
     contract_kw: float | None = None,
     outage_mask: pd.Series | None = None,
-    day_hours: tuple[int, int] | None = None,
+    windows: tuple[tuple[int, int], ...] | None = None,
     low_load_quantile: float | None = None,
     registration_quantile: float | None = None,
     high_capacity_kw: float | None = None,
@@ -284,7 +352,7 @@ def dr_profile(
         pattern: 6.1 부하 패턴. **기저부하 비율을 여기서 가져다 쓴다.**
             다시 계산하지 않는다.
         outage_mask: 정전 슬롯 마스크. 무비용 감축 가능일에서 정전일을 뺀다.
-        day_hours: 감축 여력을 재는 주간 창.
+        windows: 감축 여력을 재는 운영 시간대. 기본은 규칙 값(09~12·13~20시).
         low_load_quantile: 무비용 감축 가능일 문턱 (기본은 assumptions.json).
         registration_quantile: 등록 권장 용량 분위수 (기본은 assumptions.json).
             **저부하일 문턱과 쓰임이 다른 값이다.**
@@ -294,7 +362,7 @@ def dr_profile(
         raise ValueError("관측된 수요가 없어 DR 참여 여력을 산출할 수 없습니다.")
 
     # 기본값은 파일에서 온다 (요구사항서 12장). 코드에 두지 않는다.
-    day_hours = default_day_hours() if day_hours is None else day_hours
+    windows = dr_operating_windows() if windows is None else windows
     low_quantile = low_load_percentile() if low_load_quantile is None else low_load_quantile
     registration = (
         registration_percentile() if registration_quantile is None else registration_quantile
@@ -308,7 +376,7 @@ def dr_profile(
     all_days = pd.DatetimeIndex(pd.Series(starts.normalize()).unique())
     day_of = pd.Series(starts.normalize(), index=observed.index)
     is_dr_day = day_of.isin(set(eligible_days))
-    in_window = pd.Series(_day_window(starts, day_hours).to_numpy(), index=observed.index)
+    in_window = pd.Series(_operating_window(starts, windows).to_numpy(), index=observed.index)
 
     warnings: list[str] = []
     notes: list[str] = [
@@ -341,18 +409,20 @@ def dr_profile(
         per_day_mean = selected.groupby(day_of[selected.index]).mean()
         daily_reducible = (per_day_mean - base_kw).clip(lower=0.0)
         notes.append(
-            f"감축 여력 = 대상일 주간({day_hours[0]}~{day_hours[1]}시) 부하 − 기저부하. "
+            f"감축 여력 = 대상일 운영 시간대({_window_label(windows)}) 부하 − 기저부하. "
             f"기저부하는 6.1 의 기저부하 비율 {ratio:.1%} 를 그대로 썼습니다 "
             f"({base_kw:,.0f} kW)."
         )
         notes.append(
-            f"**두 값은 쓰임이 다릅니다.** 등록 권장 용량 {registered:,.0f} kW 는 "
-            f"하위 {registration:.0%} 기준으로, 사업자와 계약할 때 등록하는 "
-            "값입니다 — 평균으로 등록하면 절반의 날에 미달해 위약금이 납니다. "
-            f"반면 연간 감축 가능량은 **거래일별 여력을 합산**합니다 "
-            f"(일평균 {float(daily_reducible.mean()):,.0f} kW). 하루 전 입찰이라 "
-            "매일 다른 양을 입찰하므로, 등록값으로 곱하면 부하가 많은 날의 여력을 "
-            "버려 연간 수익이 과소평가됩니다."
+            f"등록 권장 용량 {registered:,.0f} kW 는 하위 {registration:.0%} 기준입니다 — "
+            "사업자와 계약할 때 등록하는 값이며, 평균으로 등록하면 절반의 날에 "
+            "미달해 위약금이 납니다 (별표26)."
+        )
+        notes.append(
+            f"**연간 감축 가능량은 등록용량 × 참여시간이고 연 "
+            f"{dr_annual_hours_cap():,.0f}시간으로 잘립니다.** 하루 한도는 "
+            f"{dr_max_events_per_day()}회 × 최대 {dr_event_hours()[1]:,.0f}시간입니다. "
+            "거래 가능일마다 하루 1시간씩 참여한다고 보면 4배 이상 과대 산출됩니다."
         )
     else:
         warnings.append(
@@ -406,7 +476,7 @@ def dr_profile(
         eligible_days=len(eligible_days),
         total_days=len(all_days),
         excluded_days=len(all_days) - len(eligible_days),
-        day_hours=day_hours,
+        windows=windows,
         day_mean_kw=day_mean,
         day_floor_kw=day_floor,
         base_load_kw=base_kw,

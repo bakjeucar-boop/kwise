@@ -27,7 +27,15 @@ from kwise.measures.arbitrage import (
     default_cycles_per_day,
 )
 from kwise.measures.base import Certainty, annualize, payback_years
-from kwise.measures.ess_cost import EssCostInput, EssCostReference, load_ess_cost_reference
+from kwise.measures.ess_cost import (
+    EssCostInput,
+    EssCostModel,
+    EssCostReference,
+    EssQuote,
+    Feasibility,
+    load_ess_cost_model,
+    load_ess_cost_reference,
+)
 from kwise.measures.netload import with_load
 from kwise.quality import QualityReport
 from kwise.rules import assumption
@@ -377,6 +385,8 @@ class EssResult:
         payback_with_arbitrage_years: 차익거래 잠재 수익까지 더한 회수기간. **상한**이다.
         outlook_payback_years: 2030년 전망 단가 기준 회수기간.
             "지금은 안 됨" 을 "언제쯤 되는가" 로 바꾼다.
+        quote: 조달 사례 모델 견적 — **설비비와 전기공사비를 나눠** 담는다 (13세션).
+        feasibility: **성립 조건.** 회수기간만으로는 "왜 안 되는가" 를 알 수 없다.
     """
 
     excess: PeakExcess
@@ -399,7 +409,8 @@ class EssResult:
     outlook_payback_years: float | None = None
     outlook_payback_with_arbitrage_years: float | None = None
     outlook_label: str = ""
-    reference_verdict: str = ""
+    quote: EssQuote | None = None
+    feasibility: Feasibility | None = None
     certainty: Certainty = Certainty.MEDIUM_LOW
     warnings: tuple[str, ...] = field(default=())
     notes: tuple[str, ...] = field(default=())
@@ -412,6 +423,11 @@ class EssResult:
     @property
     def unit_cost_won_per_kw(self) -> float | None:
         return self.cost.unit_cost_won_per_kw
+
+
+def _base_fee_won_per_kw(table: TariffTable, selection: TariffSelection) -> float:
+    """기본요금 단가. **요금표에서 가져온다** — 성립 조건에 하드코딩하지 않는다."""
+    return float(table.rates(selection).base_won_per_kw)
 
 
 def evaluate_ess(
@@ -432,6 +448,8 @@ def evaluate_ess(
     payback_target_years: float | None = None,
     cycles_per_day: float | None = None,
     reference: EssCostReference | None = None,
+    model: EssCostModel | None = None,
+    indoor: bool = False,
     baseline: BillingResult | None = None,
     quality: QualityReport | None = None,
     options: BillingOptions | None = None,
@@ -444,6 +462,8 @@ def evaluate_ess(
         power_kw, capacity_kwh: 주지 않으면 목표에서 역산한다.
         payback_target_years: 손익분기 단가를 역산할 회수기간 (기본 10년).
         cycles_per_day: 차익거래 평일 사이클 수 (기본 1).
+        model: 조달 사례 투자비 모델. 단가·총액을 넣지 않으면 **이 모델로 산정**한다.
+        indoor: 실내 설치. 전기공사비가 줄어든다 (근거 1건이라 참고값).
     """
     round_trip = default_round_trip() if round_trip is None else round_trip
     dod = default_dod() if dod is None else dod
@@ -489,7 +509,18 @@ def evaluate_ess(
     after = with_load(usage, dispatch.net_kw, source_suffix=" + ESS")
     bill = calculate_bill(after, table, selection, options=opts, quality=quality)
 
-    # 투자비 = 출력 × kW당 단가. 총액을 직접 넣었으면 그 값을 그대로 쓴다.
+    # **투자비는 조달 사례 모델이 기본이다** (13세션). 설비비와 전기공사비를 나눠
+    # 산정하고, 사용자가 단가나 총액을 넣었으면 그쪽이 이긴다.
+    cost_model = model if model is not None else load_ess_cost_model()
+    quote = cost_model.quote(capacity, indoor=indoor)
+    if cost.is_unpriced:
+        cost = EssCostInput.of_total(
+            quote.total_won,
+            source=(
+                f"조달 사례 모델 — 설비 {quote.equipment_won:,.0f}원 + 전기공사 "
+                f"{quote.electrical_won:,.0f}원"
+            ),
+        )
     investment = cost.investment_won(power)
     saving = base_bill.total_won - bill.total_won
     annual_saving = annualize(saving, base_bill.base_fee_months)
@@ -541,7 +572,7 @@ def evaluate_ess(
         warnings.append(
             f"산출 사양이 {c_rate(discharge_hours):.1f}C 방전에 해당합니다 "
             f"(방전시간 {discharge_hours:.2f}h). 정치형 LFP 는 통상 0.5~1C 연속이므로 "
-            "고출력 셀 사양이며, 참고단가보다 비쌀 수 있습니다."
+            "고출력 셀 사양이며, 조달 사례보다 비쌀 수 있습니다."
         )
     if (
         breakeven is not None
@@ -553,7 +584,23 @@ def evaluate_ess(
             f"{cost.unit_cost_won_per_kw:,.0f} 원/kW 보다 낮습니다. "
             f"{payback_target_years:.0f}년 회수는 성립하지 않습니다."
         )
-    verdict = ref.verdict(breakeven, discharge_hours)
+    # **성립 조건** — 고정 문구 대신 계산에서 판정이 나온다 (13세션).
+    rated_hours = capacity / power if power > 0 else 0.0
+    feasibility = cost_model.feasibility(
+        discharge_hours=rated_hours,
+        base_fee_won_per_kw=_base_fee_won_per_kw(table, selection),
+        target_years=payback_target_years,
+        actual_reduction_kw=base_bill.billing_demand_kw - bill.billing_demand_kw,
+        quote=quote,
+    )
+    if not feasibility.feasible:
+        warnings.append(feasibility.message())
+    realized_payback = payback_years(investment, annual_saving)
+    if realized_payback is not None and realized_payback > payback_target_years:
+        warnings.append(
+            f"회수기간 {realized_payback:,.1f}년이 배터리 수명 기준 "
+            f"{payback_target_years:,.0f}년을 넘습니다. 교체 없이는 회수되지 않습니다."
+        )
 
     notes = [
         "규칙기반 피크컷 단일 전략입니다. 목표 초과분을 방전하고 경부하에 충전합니다. "
@@ -570,8 +617,11 @@ def evaluate_ess(
         "**수익 구조** — 피크저감 수익은 출력(kW)에 비례해 용량을 늘려도 늘지 않고, "
         "차익거래 수익은 용량(kWh)에 비례하며, 투자비도 용량에 크게 비례합니다. "
         "따라서 용량을 늘릴수록 회수기간이 나빠집니다.",
-        f"참고단가 출처: {ref.citation}. {ref.lower_bound_note}",
-        verdict,
+        cost_model.formula + " — 조달 사례 회귀입니다.",
+        f"투자비 = 설비 {quote.equipment_won:,.0f}원 + 전기공사 {quote.electrical_won:,.0f}원 "
+        f"(옥외 기준 {quote.electrical_low_won:,.0f}~{quote.electrical_high_won:,.0f}원 구간의 "
+        f"대표값) = {quote.total_won:,.0f}원.",
+        feasibility.message(),
         f"왕복효율 {round_trip:.0%}, DoD {dod:.0%} 를 적용했습니다.",
         "열화·수명은 반영하지 않았습니다.",
     ]
@@ -589,6 +639,7 @@ def evaluate_ess(
             f"피크컷 디스패치가 이미 가정 사이클의 {overlap:.0%} 를 돌리고 있어 그만큼은 "
             "절감액에 이미 들어 있습니다."
         )
+    notes.extend(quote.notes)
     notes.extend(arbitrage.notes)
 
     return EssResult(
@@ -612,7 +663,8 @@ def evaluate_ess(
         outlook_payback_years=outlook_payback,
         outlook_payback_with_arbitrage_years=outlook_payback_with_arbitrage,
         outlook_label=ref.outlook.label,
-        reference_verdict=verdict,
+        quote=quote,
+        feasibility=feasibility,
         warnings=tuple(warnings),
         notes=tuple(notes),
     )

@@ -24,6 +24,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 
+from kwise.ui.text import markdown_safe
+
 __all__ = [
     "INFO_PATTERNS",
     "WARN_PATTERNS",
@@ -31,6 +33,7 @@ __all__ = [
     "Severity",
     "classify",
     "dedupe",
+    "partition",
     "report_notices",
     "screen_notices",
 ]
@@ -150,9 +153,33 @@ def _notices(messages: Iterable[str]) -> tuple[Notice, ...]:
 
 
 def screen_notices(*groups: Iterable[str]) -> tuple[Notice, ...]:
-    """화면에 띄울 것 — **차단과 주의만.** 참고는 보고서로 간다."""
+    """화면에 띄울 것 — **차단과 주의만.** 참고는 보고서로 간다.
+
+    문구는 :func:`kwise.ui.text.markdown_safe` 를 거친다. 계산 모듈이 내는
+    ``08~22시`` 같은 표기가 한 줄에 둘 있으면 취소선이 되기 때문이다 (13세션).
+    산출물로 가는 :func:`report_notices` 는 escape 하지 않는다 — Excel·Word 는
+    마크다운을 해석하지 않는다.
+    """
     merged = [text for group in groups for text in group]
-    return tuple(item for item in _notices(merged) if item.on_screen)
+    return tuple(
+        Notice(item.severity, markdown_safe(item.text))
+        for item in _notices(merged)
+        if item.on_screen
+    )
+
+
+def partition(
+    notices: Iterable[Notice], patterns: Iterable[str]
+) -> tuple[tuple[Notice, ...], tuple[Notice, ...]]:
+    """(패턴에 걸린 것, 나머지). **같은 사실을 두 곳에 내지 않으려고** 쓴다.
+
+    결측 안내처럼 전용 블록이 따로 있는 것들은 위쪽 경고 목록에서 빼고 그 블록의
+    확인사항으로 내린다 (13세션).
+    """
+    keys = tuple(patterns)
+    matched = tuple(item for item in notices if any(key in item.text for key in keys))
+    rest = tuple(item for item in notices if not any(key in item.text for key in keys))
+    return matched, rest
 
 
 def report_notices(*groups: Iterable[str]) -> tuple[Notice, ...]:

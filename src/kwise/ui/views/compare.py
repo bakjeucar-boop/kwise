@@ -23,6 +23,7 @@ from kwise.compare import (
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
 from kwise.measures import (
+    AppliedMeasure,
     Certainty,
     ContractAdjustment,
     DemandResponseResult,
@@ -45,7 +46,6 @@ from kwise.report import (
     no_pv_sensitivity_frame,
 )
 from kwise.tariff import BillingResult, TariffTable
-from kwise.ui import charts
 from kwise.ui import text as fmt
 from kwise.ui.anchors import detail_suffix
 from kwise.ui.artifacts import recall, remember
@@ -145,7 +145,17 @@ def render(
             report,
         )
 
-    # **지표 카드가 먼저, 차트, 표가 마지막이다** (12세션).
+    # **표가 먼저, 권장안이 나중이다** (13세션). 어느 조합을 왜 권하는지 말하려면
+    # 견줄 것이 먼저 보여야 한다. 수단별 그래프는 화면에서 빼고 보고서 4장에 둔다.
+    st.subheader("조합별 비교")
+    st.dataframe(_comparison_frame(comparison), hide_index=True, width="stretch")
+    st.caption(
+        "절감액 내림차순입니다. 조합마다 요금을 다시 계산했습니다 — 수단별 절감액의 "
+        "합이 아닙니다. " + detail_suffix("certainty")
+    )
+    for notice in screen_notices(comparison.warnings):
+        st.warning(notice.text)
+
     best = comparison.best
     st.subheader(f"권장안 — {best.name}")
     columns = st.columns(4)
@@ -155,15 +165,7 @@ def render(
         "회수기간", fmt.payback(best.payback_years, investment_won=best.investment_won)
     )
     columns[3].metric("확실성", str(best.certainty))
-
-    st.altair_chart(charts.combination_chart(comparison), width="stretch")
-    st.dataframe(_comparison_frame(comparison), hide_index=True, width="stretch")
-    st.caption(
-        "조합마다 요금을 다시 계산했습니다. 수단별 절감액의 합이 아닙니다. "
-        + detail_suffix("certainty")
-    )
-    for notice in screen_notices(comparison.warnings):
-        st.warning(notice.text)
+    st.write(_recommendation(comparison))
 
     sensitivity_frame, sensitivity_ranges = _sensitivity_block(
         usage, table, baseline, unit_profile, quality, form, specs
@@ -186,23 +188,57 @@ def render(
     # 시트와 보고서 5장에만 싣는다 (10.7).
 
 
-def _measure_labels(keys: tuple[str, ...]) -> str:
-    """``solar, ess`` 를 ``태양광, ESS`` 로. **화면에 코드 식별자를 내지 않는다** (10.7)."""
-    return ", ".join(measure(key).label for key in keys) or "—"
+def _recommendation(comparison: ComparisonResult) -> str:
+    """**표에서 어느 조합을 왜 권하는지** 한 문단 (13세션)."""
+    best = comparison.best
+    others = [item for item in comparison.combinations if item is not best]
+    runner = max(others, key=lambda item: item.saving_won) if others else None
+    body = f"**{best.name}** 이 12개월 환산 {fmt.won_short(best.annual_saving_won)} 로 가장 큽니다"
+    if runner is not None:
+        gap = best.annual_saving_won - runner.annual_saving_won
+        body += f" — 다음 조합({runner.name})보다 {fmt.won_short(gap)} 많습니다"
+    body += ". "
+    if best.investment_won:
+        body += (
+            f"투자비 {fmt.won_short(best.investment_won)} 로 회수기간은 "
+            f"{fmt.payback(best.payback_years, investment_won=best.investment_won)} 이며, "
+        )
+    else:
+        body += "투자 없이 얻는 절감이며, "
+    body += f"확실성은 {best.certainty} 입니다 — 조합의 등급은 가장 낮은 구성 요소를 따릅니다."
+    return body
+
+
+def _measure_labels(applied: tuple[AppliedMeasure, ...]) -> str:
+    """``태양광 (1,000 kWp), 계약전력 조정 (5,500 kW)``.
+
+    **등록되지 않은 키가 와도 화면을 죽이지 않는다** (13세션). 라벨을 만들지
+    못하면 키를 그대로 보이고 경고 한 줄을 남긴다 — 표 한 칸 때문에 3단계가
+    통째로 사라지는 편보다 낫다.
+    """
+    labels: list[str] = []
+    for item in applied:
+        try:
+            measure(item.key)
+        except KeyError:
+            st.warning(f"등록되지 않은 개선 수단이 조합에 들어 있습니다: {item.key}")
+        labels.append(item.label)
+    return ", ".join(labels) or "—"
 
 
 def _comparison_frame(comparison: ComparisonResult) -> pd.DataFrame:
     """화면용 조합 표. 숫자는 문자열로 굳혀 세 자리 콤마를 보장한다."""
+    ordered = sorted(comparison.combinations, key=lambda item: -item.annual_saving_won)
     rows = [
         {
             "조합": item.name,
-            "수단": _measure_labels(item.spec.measures),
+            "수단": _measure_labels(item.spec.applied),
             "12개월 환산 절감액": fmt.won(item.annual_saving_won),
             "투자비": fmt.won(item.investment_won, reason="—"),
             "회수기간": fmt.payback(item.payback_years, investment_won=item.investment_won),
             "확실성": str(item.certainty),
         }
-        for item in comparison.combinations
+        for item in ordered
     ]
     return pd.DataFrame(rows)
 
@@ -397,7 +433,7 @@ def _sensitivity_block(
         st.write(
             f"- **{item.metric}** {fmt.money_range(item.base, item.low, item.high)}"
             if item.unit == "원"
-            else f"- **{item.metric}** {item.text()}"
+            else f"- **{item.metric}** {fmt.markdown_safe(item.text())}"
         )
     st.caption(
         "태양광 발전 프로파일의 불확실성을 반영한 범위입니다. " + detail_suffix("sensitivity")

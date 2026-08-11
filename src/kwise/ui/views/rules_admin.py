@@ -43,6 +43,7 @@ from kwise.ui.rules_view import (
     header_text,
     weather_panel,
 )
+from kwise.ui.text import markdown_safe
 
 __all__ = ["render", "render_alerts"]
 
@@ -66,7 +67,7 @@ def render_alerts() -> None:
     if warnings:
         with st.expander(f"⚠ 기준 데이터 확인 필요 {len(warnings)}건", expanded=False):
             for warning in warnings:
-                st.write(f"- {warning.message()}")
+                st.write(f"- {markdown_safe(warning.message())}")
 
 
 def render() -> None:
@@ -189,7 +190,7 @@ def _report(result: EditResult) -> None:
     else:
         st.error(result.message)
         for issue in result.issues:
-            st.write(f"- {issue}")
+            st.write(f"- {markdown_safe(str(issue))}")
 
 
 # --------------------------------------------------------------------- 원복 세 경로

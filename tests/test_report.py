@@ -11,6 +11,7 @@ pvlib 결과는 항상 tz-aware 이고, Excel 이 파일을 열고 있으면 덮
 from __future__ import annotations
 
 import datetime as dt
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -34,6 +35,7 @@ from kwise.report import (
     ReportSections,
     ReportWriteError,
     build_sheets,
+    column_label,
     export_report,
     format_won,
     load_batch_config,
@@ -155,11 +157,19 @@ def test_timeseries_can_be_switched_off(
 def test_monthly_sheet_shows_both_demand_columns(
     sample_sheets: dict[str, pd.DataFrame],
 ) -> None:
-    """관측 최대와 요금적용전력을 함께 싣는다. 둘은 다른 값이다 (5.2)."""
+    """관측 최대와 요금적용전력을 함께 싣는다. 둘은 다른 값이다 (5.2).
+
+    열 이름은 **한글이다** — 번역표는 `kwise.report.columns` 한 곳에 있다 (13세션).
+    """
     monthly = sample_sheets["월별 집계"]
-    assert {"max_demand_kw", "billing_demand_kw", "missing_ratio"} <= set(monthly.columns)
+    assert {
+        column_label("max_demand_kw"),
+        column_label("billing_demand_kw"),
+        column_label("missing_ratio"),
+    } <= set(monthly.columns)
+    assert not [name for name in monthly.columns if re.fullmatch(r"[a-z_]+", str(name))]
     august = monthly.loc["2023-08"]
-    assert august["max_demand_kw"] < august["billing_demand_kw"]
+    assert august[column_label("max_demand_kw")] < august[column_label("billing_demand_kw")]
 
 
 # --------------------------------------------------------------------- tz 해제

@@ -16,6 +16,7 @@ from kwise.report.batch import (
     run_case,
     summary_frame,
 )
+from kwise.report.columns import COLUMN_LABELS, column_label, localize
 from kwise.report.document import (
     CHAPTER_COMPARISON,
     CHAPTER_DIAGNOSIS,
@@ -69,6 +70,7 @@ __all__ = [
     "CHAPTER_MEASURES",
     "CHAPTER_SCOPE",
     "CHAPTER_SUMMARY",
+    "COLUMN_LABELS",
     "CONTRACT_CHANGE_WARNING",
     "DATA_SOURCES",
     "DEFAULT_OUTPUT_DIR",
@@ -89,6 +91,7 @@ __all__ = [
     "band_frame",
     "build_document",
     "build_sheets",
+    "column_label",
     "combination_frame",
     "document_bytes",
     "document_path",
@@ -97,6 +100,7 @@ __all__ = [
     "format_won",
     "hourly_profile_frame",
     "load_batch_config",
+    "localize",
     "measure_entries",
     "measure_summary_frame",
     "monthly_peak_frame",

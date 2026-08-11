@@ -1,0 +1,98 @@
+{
+  "schema_version": "0.1",
+  "source": {
+    "title": "국내 ESS 조달 사례",
+    "publisher": "조달 공고·계약 자료",
+    "basis_year": 2025,
+    "note": "관급 설비비와 전기공사비를 나눠 적는다. 회귀에는 옥외 컨테이너형 관급 설비 4건만 쓴다 — 실내형·이동형·카탈로그가는 설치 조건이 달라 같은 선에 놓을 수 없다. 참고 사례는 표에만 싣는다."
+  },
+  "vat_rate": 0.1,
+  "cases": [
+    {
+      "key": "gangwon_police",
+      "label": "강원경찰청",
+      "power_kw": 50.0,
+      "capacity_kwh": 100.0,
+      "equipment_won": 191951000,
+      "electrical_won": 83059292,
+      "vat_included": false,
+      "install": "outdoor",
+      "category": "regression",
+      "note": "옥외 컨테이너. 관급 설비 + 전기공사 별도."
+    },
+    {
+      "key": "jeonnam_police",
+      "label": "전남경찰청",
+      "power_kw": 75.0,
+      "capacity_kwh": 150.0,
+      "equipment_won": 234912000,
+      "electrical_won": 62623000,
+      "vat_included": false,
+      "install": "outdoor",
+      "category": "regression",
+      "note": "옥외 컨테이너. 관급 설비 + 전기공사 별도."
+    },
+    {
+      "key": "gyeongin_univ",
+      "label": "경인교대",
+      "power_kw": 100.0,
+      "capacity_kwh": 156.4,
+      "equipment_won": 234950000,
+      "electrical_won": 67224573,
+      "vat_included": false,
+      "install": "outdoor",
+      "category": "regression",
+      "note": "옥외 컨테이너. 관급 설비 + 전기공사 별도."
+    },
+    {
+      "key": "gyeongbuk_police",
+      "label": "경북경찰청",
+      "power_kw": 100.0,
+      "capacity_kwh": 400.0,
+      "equipment_won": 443174000,
+      "electrical_won": 154703000,
+      "vat_included": true,
+      "install": "outdoor",
+      "category": "regression",
+      "note": "옥외 컨테이너. 전기공사비가 부가세 포함이라 회귀 전에 부가세를 뺀다."
+    },
+    {
+      "key": "coal_museum",
+      "label": "탄광박물관",
+      "power_kw": 100.0,
+      "capacity_kwh": 150.0,
+      "equipment_won": 259186000,
+      "electrical_won": null,
+      "vat_included": false,
+      "install": "indoor",
+      "category": "reference",
+      "turnkey": true,
+      "note": "실내 설치 턴키 (설치 포함). 설비비와 공사비가 갈라지지 않아 회귀에서 뺀다. 실내 공사비 비율의 유일한 근거다."
+    },
+    {
+      "key": "yeongam_landfill",
+      "label": "영암매립장",
+      "power_kw": 300.0,
+      "capacity_kwh": 300.0,
+      "equipment_won": 300000000,
+      "electrical_won": null,
+      "vat_included": false,
+      "install": "outdoor",
+      "category": "reference",
+      "note": "이동형 28 kWh 를 포함한 묶음 계약이라 용량 기준이 다르다. 회귀에서 뺀다."
+    },
+    {
+      "key": "mall_cabinet",
+      "label": "종합쇼핑몰",
+      "power_kw": 50.0,
+      "capacity_kwh": 50.0,
+      "capacity_estimated": true,
+      "equipment_won": 117962600,
+      "electrical_won": null,
+      "vat_included": false,
+      "install": "indoor",
+      "category": "catalog",
+      "note": "실내 캐비닛형 카탈로그가. 용량은 추정치다. 회귀에서 뺀다."
+    }
+  ]
+}

@@ -17,6 +17,7 @@ __all__ = [
     "TIER_INVESTMENT",
     "TIER_LOW",
     "TIER_NONE",
+    "AppliedMeasure",
     "MeasureKind",
     "measure_kind",
     "measure_numbers",
@@ -63,3 +64,39 @@ def measure_kind(key: str) -> MeasureKind:
 
 def measure_numbers() -> tuple[str, ...]:
     return tuple(item.number for item in MEASURE_CATALOG)
+
+
+# 파라미터 이름 → 단위. 라벨을 만들 때만 쓴다.
+_PARAM_UNITS: dict[str, str] = {
+    "capacity_kwp": "kWp",
+    "target_kw": "kW",
+    "contract_kw": "kW",
+    "capacity_kwh": "kWh",
+}
+
+
+@dataclass(frozen=True)
+class AppliedMeasure:
+    """조합에 들어간 수단 하나 — **등록 키와 파라미터**.
+
+    표시용 문자열을 키 자리에 담으면 안 된다. 「계약전력 5,500 kW」 같은 값이
+    키로 흘러들면 :func:`measure_kind` 가 막혀 화면 전체가 죽는다 (13세션).
+    키와 파라미터를 갈라 두고 라벨은 **조회로** 만든다.
+    """
+
+    key: str
+    params: tuple[tuple[str, float], ...] = ()
+
+    @property
+    def label(self) -> str:
+        """``계약전력 조정 (5,500 kW)``. 등록되지 않은 키면 키를 그대로 낸다."""
+        try:
+            name = measure_kind(self.key).label
+        except KeyError:
+            return self.key
+        if not self.params:
+            return name
+        parts = [
+            f"{value:,.0f} {_PARAM_UNITS.get(field, '')}".strip() for field, value in self.params
+        ]
+        return f"{name} ({' · '.join(parts)})"
