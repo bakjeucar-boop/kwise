@@ -90,8 +90,6 @@ class CaseSpec:
     # 경제성DR (전력시장운영규칙 제12장). 단가는 기본값이 없다 — 없으면 감축량만 낸다.
     dr_unit_price_won_per_kwh: float | None = None
     dr_day_ahead_price_won_per_kwh: float | None = None
-    dr_expected_hours: float | None = None
-    """예상 연간 참여시간. None 이면 연간 한도(60시간) 기준 최대치다."""
     latitude: float = 37.5
     longitude: float = 127.0
     altitude_m: float = 0.0
@@ -314,7 +312,6 @@ def run_case(
             diagnosis.dr,
             unit_price_won_per_kwh=case.dr_unit_price_won_per_kwh,
             day_ahead_price_won_per_kwh=case.dr_day_ahead_price_won_per_kwh,
-            expected_hours=case.dr_expected_hours,
         )
         if diagnosis.dr is not None
         else None

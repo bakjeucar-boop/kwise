@@ -5,7 +5,31 @@
     신뢰성DR   수급 비상 시 **의무** 감축. 용량요금 + 실적금.      → 범위 밖
     경제성DR   하루 전 **자발적** 입찰. 실적금만. 설비 투자 불필요.  → 대상
 
-**거래일 제약이 이 모듈의 핵심이다 (제12.4.2.1조 제1항 1호).**
+**연간 참여 일수 제한은 없다** (14세션에 바로잡았다). 13세션에 넣었던 「연 60시간
+한도」는 전력거래소 확인 결과 경제성DR 의 제약이 아니다. 기회가 있을 때마다
+참여할 수 있다.
+
+남는 제약은 넷이다.
+
+    하루 한도    최대 2회, 1회 1~4시간 — 하루 8시간
+    참여 요일    평일만. 토·일·공휴일 제외 (제12.4.2.1조 제1항 1호)
+    운영 시간대  09:00~20:00, 점심(12:00~13:00) 제외
+    미이행 제재  **6개월 입찰 제한.** 과대 산정의 대가가 크다
+
+**따라서 실질 제약은 「감축할 여력이 있는 날이 며칠이냐」 하나다.** 그 날을
+데이터에서 찾는다.
+
+    ① 기준선     주말·공휴일의 운영 시간대 평균 부하. 건물이 사실상 비어 있는 수준
+    ② 저부하 평일 대상일 중 그 시간대 평균이 기준선의 일정 배수 이하인 날
+    ③ 감축 여력   평일 정상 평균 − 그날 실제 부하
+    ④ 참여 시간   하루 8시간을 상한으로 하되 저부하가 실제로 지속되는 시간까지
+    ⑤ 감축 가능량 Σ(저부하일별 감축 여력 × 그날 참여 가능 시간)
+
+**보수적으로 잡는다.** 미이행이 6개월 입찰 제한이라 과대 산정의 대가가 크다.
+등록 권장 용량은 저부하일 여력 분포의 **하위값**이다 — 평균으로 등록하면 절반의
+날에 미달한다.
+
+**거래일 제약이 이 모듈의 두 번째 축이다 (제12.4.2.1조 제1항 1호).**
 
     "관공서의 공휴일에 관한 규정"의 공휴일과 **토요일**을 제외한 평일의
     거래일에만 입찰할 수 있다.
@@ -17,9 +41,6 @@
 (최대부하 → 중간부하로 낮출 뿐) 일요일만 공휴일로 계량한다. DR 은 토·일·공휴일이
 모두 똑같이 제외다. 그래서 :func:`dr_day_mask` 를 :mod:`kwise.tariff.tou` 와
 **따로 둔다.** 같은 함수로 판정하면 두 규칙이 조용히 섞인다.
-
-산정은 **보수적으로** 한다. 과대 산정은 감축 미달로 이어지고, 미달은 위약금이다
-(별표26).
 """
 
 from __future__ import annotations
@@ -31,16 +52,16 @@ from enum import StrEnum
 import pandas as pd
 
 from kwise.io import slot_start
-from kwise.quality import LoadPattern
 from kwise.rules import assumption, rule_value
 from kwise.tariff import HolidayCalendar
 
 __all__ = [
+    "PARTICIPATION_NOTICE",
     "DrPotential",
     "DrProfile",
     "DrResourceType",
     "default_high_capacity_kw",
-    "dr_annual_hours_cap",
+    "dr_bid_restriction_months",
     "dr_daily_hours_cap",
     "dr_day_mask",
     "dr_eligible_days",
@@ -50,11 +71,20 @@ __all__ = [
     "dr_profile",
     "dr_reference_capacity_kw",
     "judge_resource_types",
-    "low_load_percentile",
+    "low_load_multiple",
     "national_dr_max_contract_kw",
     "registration_percentile",
+    "resource_type_labels",
     "small_medium_dr_industrial_max_kw",
 ]
+
+PARTICIPATION_NOTICE = (
+    "연간 참여 일수 제한은 없으나 하루 최대 2회(총 {daily:,.0f}시간)이며 평일 "
+    "{window}에만 가능합니다. 낙찰 후 감축을 이행하지 못하면 {months:,.0f}개월 "
+    "입찰 제한을 받을 수 있으므로 감축 가능량은 보수적으로 산정했습니다. "
+    "실제 참여는 수요관리사업자와 상담해 결정하십시오."
+)
+"""화면·산출물이 같이 쓰는 안내 (14세션 4절). 점심시간은 운영 시간대에서 빠진다."""
 
 # 값은 파일에 있다 (요구사항서 12장). 법령 유래는 ``rules_kr.json``,
 # 우리 판단값은 ``assumptions.json`` 이다 — **섞지 않는다.**
@@ -89,15 +119,6 @@ def dr_operating_windows() -> tuple[tuple[int, int], ...]:
     return tuple((int(start), int(end)) for start, end in windows)
 
 
-def dr_annual_hours_cap() -> float:
-    """연간 참여 한도 (시간). 감축 시험을 포함한 상한이다.
-
-    **원문 확인이 필요한 값이다.** 확인되는 연 60시간이 신뢰성DR 의무감축 기준일
-    수 있다. 확인 전까지 보수적으로 적용한다 — 빼면 4배 이상 과대 산출된다.
-    """
-    return float(rule_value("dr.annual_hours_cap"))
-
-
 def dr_max_events_per_day() -> int:
     """하루 최대 발령 횟수."""
     return int(rule_value("dr.max_events_per_day"))
@@ -110,21 +131,36 @@ def dr_event_hours() -> tuple[float, float]:
 
 
 def dr_daily_hours_cap() -> float:
-    """하루 상한 시간 = 최대 발령 횟수 × 1회 최대 지속시간."""
+    """하루 상한 시간 = 최대 발령 횟수 × 1회 최대 지속시간.
+
+    **연간 한도는 없다** (14세션). 남는 상한은 이 하루 한도뿐이다.
+    """
     return dr_max_events_per_day() * dr_event_hours()[1]
 
 
-def low_load_percentile() -> float:
-    """무비용 감축 가능일 판정 문턱 (6.6). **등록 문턱과 다른 값이다.**"""
-    return float(assumption("dr.low_load_percentile"))
+def dr_bid_restriction_months() -> float:
+    """미이행 시 입찰 제한 기간 (개월).
+
+    **이 제재가 보수적 산정의 근거다.** 과대 산정으로 감축을 이행하지 못하면
+    반년 동안 참여 자체가 막힌다.
+    """
+    return float(rule_value("dr.bid_restriction_months"))
+
+
+def low_load_multiple() -> float:
+    """저부하 평일 판정 배수 (6.6).
+
+    주말·공휴일 기준선의 이 배수 이하이면 「사무실을 비운 날」로 본다 —
+    창립기념일·워크숍처럼 감축 여력이 실제로 있는 날이다.
+    """
+    return float(assumption("dr.low_load_multiple"))
 
 
 def registration_percentile() -> float:
     """등록 권장 용량의 분위수.
 
-    사업자와 계약할 때 등록하는 값이라 **어느 거래일에나 지킬 수 있어야 한다** —
-    평균으로 등록하면 절반의 날에 미달하고 미달은 위약금이다(별표26).
-    저부하일 식별의 값과 쓰임이 달라 항목을 따로 둔다.
+    사업자와 계약할 때 등록하는 값이라 **어느 참여일에나 지킬 수 있어야 한다** —
+    평균으로 등록하면 절반의 날에 미달하고 미달은 6개월 입찰 제한이다.
     """
     return float(assumption("dr.registration_percentile"))
 
@@ -228,18 +264,22 @@ def judge_resource_types(
 
 @dataclass(frozen=True, eq=False)
 class DrProfile:
-    """경제성DR 참여 여력.
+    """경제성DR 참여 여력 (14세션에 산출 방식을 갈아치웠다).
 
     Attributes:
-        eligible_days: 거래 가능일 수 (토·일·공휴일 제외). **이후 모든 산출의 분모다.**
-        registered_capacity_kw: **등록 권장값** — 사업자와 계약할 때 등록하는 용량.
-            대상일 주간 부하의 하위 10%에서 기저부하를 뺀 값이라 어느 거래일에나
-            지킬 수 있다. **연간 수익 추정에 이 값을 쓰면 안 된다.**
-        daily_reducible_kw: 거래일별 감축 여력 (그날 주간 평균 − 기저부하).
-            **연간 감축 가능량의 기준이다.**
-        mean_reducible_kw: 대상일 주간 **평균** 부하 − 기저부하. 비교용이다.
-        low_load_days: 무비용 감축 가능일. 일평균 부하가 대상일 하위 5% 이하이고
-            정전 구간이 아닌 날.
+        eligible_days: 거래 가능일 수 (토·일·공휴일 제외).
+        weekend_baseline_kw: **① 기준선.** 주말·공휴일 운영 시간대 평균 부하.
+            건물이 사실상 비어 있을 때의 수준이다.
+        low_load_threshold_kw: 기준선 × :func:`low_load_multiple`.
+        low_load_days: **② 저부하 평일.** 대상일 중 운영 시간대 평균이 문턱 이하인 날.
+        normal_weekday_mean_kw: 저부하일을 뺀 **평일 정상 평균**. ③ 의 기준이다.
+        daily_reducible_kw: **③ 저부하일별 감축 여력** (평일 정상 평균 − 실제 부하).
+        daily_hours: **④ 저부하일별 참여 가능 시간.** 하루 한도로 자른다.
+        registered_capacity_kw: **등록 권장값.** 저부하일 여력 분포의 하위값이라
+            어느 참여일에나 지킬 수 있다. 평균으로 등록하면 절반의 날에 미달한다.
+        period_reducible_kwh: **⑤ 관측 기간의 감축 가능량** Σ(여력 × 시간).
+        annual_reducible_kwh: 관측 기간을 365일로 환산한 값. 기간이 1년이 아닐 수
+            있어 **환산 사실을 노트에 적는다.**
     """
 
     eligible_days: int
@@ -247,18 +287,26 @@ class DrProfile:
     excluded_days: int
     windows: tuple[tuple[int, int], ...]
 
-    day_mean_kw: float | None
-    day_floor_kw: float | None
-    base_load_kw: float | None
-    base_load_ratio: float | None
+    weekend_days: int
+    weekend_baseline_kw: float | None
+    low_load_multiple: float
+    low_load_threshold_kw: float | None
+    weekday_mean_kw: float | None
+    normal_weekday_mean_kw: float | None
+
+    low_load_days: tuple[pd.Timestamp, ...]
+    daily_reducible_kw: pd.Series
+    daily_hours: pd.Series
+    daily_hours_cap: float
+
     registered_capacity_kw: float
     mean_reducible_kw: float
-    daily_reducible_kw: pd.Series
+    period_reducible_kwh: float
+    annual_reducible_kwh: float
 
     resource_types: tuple[DrResourceType, ...]
     potential: DrPotential
-    low_load_days: tuple[pd.Timestamp, ...] = field(default=())
-    low_load_threshold_kw: float | None = None
+    bid_restriction_months: float
     warnings: tuple[str, ...] = field(default=())
     notes: tuple[str, ...] = field(default=())
 
@@ -277,42 +325,41 @@ class DrProfile:
         return len(self.low_load_days)
 
     @property
+    def total_participation_hours(self) -> float:
+        """저부하일에 실제로 참여할 수 있는 시간의 합."""
+        return float(self.daily_hours.sum()) if len(self.daily_hours) else 0.0
+
+    @property
     def window_label(self) -> str:
         return _window_label(self.windows)
 
-    def usable_hours(self, hours: float | None = None, *, days: int | None = None) -> float:
-        """실제로 참여할 수 있는 연간 시간.
+    @property
+    def notice(self) -> str:
+        """화면·산출물이 같이 쓰는 안내 한 문단."""
+        return PARTICIPATION_NOTICE.format(
+            daily=self.daily_hours_cap,
+            window=self.window_label,
+            months=self.bid_restriction_months,
+        )
 
-        **연간 한도와 하루 한도가 함께 자른다** (13세션).
+    def low_load_day_table(self) -> pd.DataFrame:
+        """저부하 평일 목록. **어떤 날인지 보여 준다** (14세션 4절).
 
-            연간 한도   감축 시험 포함 연 60시간
-            하루 한도   최대 2회 × 1회 4시간 = 8시간
-
-        ``hours`` 를 주지 않으면 **연간 최대**를 쓴다. 참여 가능일이 적으면
-        하루 한도 × 일수가 먼저 걸린다.
+        창립기념일·워크숍처럼 사무실을 비우는 날일 가능성이 높아, 목록을 보면
+        사용자가 스스로 맞는 날인지 판정할 수 있다.
         """
-        cap = dr_annual_hours_cap()
-        available = (self.eligible_days if days is None else days) * dr_daily_hours_cap()
-        wanted = cap if hours is None else min(float(hours), cap)
-        return max(0.0, min(wanted, cap, available))
+        days = list(self.low_load_days)
+        return pd.DataFrame(
+            {
+                "날짜": [f"{day:%Y-%m-%d}" for day in days],
+                "요일": [_WEEKDAYS[day.weekday()] for day in days],
+                "감축 여력(kW)": [float(self.daily_reducible_kw.get(day, 0.0)) for day in days],
+                "참여 가능 시간(h)": [float(self.daily_hours.get(day, 0.0)) for day in days],
+            }
+        )
 
-    def annual_reducible_kwh(self, hours: float | None = None) -> float:
-        """연간 감축 가능량 = **등록용량 × 참여시간**, 연 60시간으로 자른다.
 
-        예전에는 거래 가능일마다 하루 1시간씩 참여한다고 보아 245시간을 곱했다.
-        제도에는 연간 한도가 있어 그 값은 **4배 이상 과대**였다 (13세션).
-        """
-        return self.registered_capacity_kw * self.usable_hours(hours)
-
-    def uncapped_reducible_kwh(self, bid_hours_per_day: float = 1.0) -> float:
-        """한도를 적용하지 않은 값. **비교용으로만 둔다** — 얼마나 과대였는지 보인다."""
-        if bid_hours_per_day <= 0:
-            raise ValueError(f"입찰 지속시간은 양수여야 합니다: {bid_hours_per_day}")
-        return float(self.daily_reducible_kw.sum()) * bid_hours_per_day
-
-    def low_cost_reducible_kwh(self, hours: float | None = None) -> float:
-        """무비용 감축 가능일에만 참여했을 때. **그 일수가 하루 한도로 자른다.**"""
-        return self.registered_capacity_kw * self.usable_hours(hours, days=len(self.low_load_days))
+_WEEKDAYS = ("월", "화", "수", "목", "금", "토", "일")
 
 
 def _window_label(windows: tuple[tuple[int, int], ...]) -> str:
@@ -332,30 +379,69 @@ def _operating_window(starts: pd.DatetimeIndex, windows: tuple[tuple[int, int], 
     return pd.Series(inside.to_numpy(), index=starts)
 
 
+def _empty_profile(
+    *,
+    eligible_days: int,
+    total_days: int,
+    windows: tuple[tuple[int, int], ...],
+    weekend_days: int,
+    weekend_baseline_kw: float | None,
+    multiple: float,
+    threshold: float | None,
+    weekday_mean: float | None,
+    resource_types: tuple[DrResourceType, ...],
+    warnings: list[str],
+    notes: list[str],
+) -> DrProfile:
+    """저부하 평일이 없을 때. **0 을 내되 이유를 적는다.**"""
+    return DrProfile(
+        eligible_days=eligible_days,
+        total_days=total_days,
+        excluded_days=total_days - eligible_days,
+        windows=windows,
+        weekend_days=weekend_days,
+        weekend_baseline_kw=weekend_baseline_kw,
+        low_load_multiple=multiple,
+        low_load_threshold_kw=threshold,
+        weekday_mean_kw=weekday_mean,
+        normal_weekday_mean_kw=weekday_mean,
+        low_load_days=(),
+        daily_reducible_kw=pd.Series(dtype=float),
+        daily_hours=pd.Series(dtype=float),
+        daily_hours_cap=dr_daily_hours_cap(),
+        registered_capacity_kw=0.0,
+        mean_reducible_kw=0.0,
+        period_reducible_kwh=0.0,
+        annual_reducible_kwh=0.0,
+        resource_types=resource_types,
+        potential=DrPotential.LOW,
+        bid_restriction_months=dr_bid_restriction_months(),
+        warnings=tuple(warnings),
+        notes=tuple(notes),
+    )
+
+
 def dr_profile(
     kw: pd.Series,
     interval_minutes: int,
     calendar: HolidayCalendar,
     *,
-    pattern: LoadPattern,
     contract_type: str | None = None,
     contract_kw: float | None = None,
     outage_mask: pd.Series | None = None,
     windows: tuple[tuple[int, int], ...] | None = None,
-    low_load_quantile: float | None = None,
+    low_load_ratio: float | None = None,
     registration_quantile: float | None = None,
     high_capacity_kw: float | None = None,
 ) -> DrProfile:
-    """경제성DR 참여 여력을 진단한다 (요구사항서 6.6).
+    """경제성DR 참여 여력을 진단한다 (요구사항서 6.6 · 14세션 4절).
 
     Args:
-        pattern: 6.1 부하 패턴. **기저부하 비율을 여기서 가져다 쓴다.**
-            다시 계산하지 않는다.
-        outage_mask: 정전 슬롯 마스크. 무비용 감축 가능일에서 정전일을 뺀다.
+        outage_mask: 정전 슬롯 마스크. 저부하 평일에서 정전일을 뺀다 — 정전은
+            감축 여력이 아니다.
         windows: 감축 여력을 재는 운영 시간대. 기본은 규칙 값(09~12·13~20시).
-        low_load_quantile: 무비용 감축 가능일 문턱 (기본은 assumptions.json).
-        registration_quantile: 등록 권장 용량 분위수 (기본은 assumptions.json).
-            **저부하일 문턱과 쓰임이 다른 값이다.**
+        low_load_ratio: 저부하 평일 판정 배수 (기본은 assumptions.json 의 1.2).
+        registration_quantile: 등록 권장 용량 분위수. **보수적으로 하위값을 쓴다.**
     """
     observed = kw.dropna()
     if observed.empty:
@@ -363,12 +449,14 @@ def dr_profile(
 
     # 기본값은 파일에서 온다 (요구사항서 12장). 코드에 두지 않는다.
     windows = dr_operating_windows() if windows is None else windows
-    low_quantile = low_load_percentile() if low_load_quantile is None else low_load_quantile
+    multiple = low_load_multiple() if low_load_ratio is None else low_load_ratio
     registration = (
         registration_percentile() if registration_quantile is None else registration_quantile
     )
     high_capacity_kw = default_high_capacity_kw() if high_capacity_kw is None else high_capacity_kw
     reference_kw = dr_reference_capacity_kw()
+    daily_cap = dr_daily_hours_cap()
+    slot_hours = interval_minutes / 60.0
 
     index = pd.DatetimeIndex(observed.index)
     starts = slot_start(index, interval_minutes)
@@ -378,6 +466,7 @@ def dr_profile(
     is_dr_day = day_of.isin(set(eligible_days))
     in_window = pd.Series(_operating_window(starts, windows).to_numpy(), index=observed.index)
 
+    resource_types = judge_resource_types(contract_type, contract_kw)
     warnings: list[str] = []
     notes: list[str] = [
         "경제성DR 은 '관공서의 공휴일에 관한 규정'의 공휴일과 토요일을 제외한 "
@@ -385,49 +474,126 @@ def dr_profile(
         f"기간 {len(all_days)}일 중 거래 가능일은 {len(eligible_days)}일입니다.",
         "요금 계량의 평일 판정과 다릅니다. 요금은 토요일을 중간부하로 낮출 뿐 "
         "공휴일로 보지 않지만, DR 은 토·일·공휴일이 모두 제외입니다.",
+        "**연간 참여 일수 제한은 없습니다** (14세션에 바로잡았습니다). 남는 제약은 "
+        f"하루 {dr_max_events_per_day()}회 × 최대 {dr_event_hours()[1]:,.0f}시간"
+        f"(하루 {daily_cap:,.0f}시간)과 운영 시간대"
+        f"({_window_label(windows)}) 뿐이므로, 실질 제약은 「감축할 여력이 있는 날이 "
+        "며칠이냐」 하나입니다.",
     ]
-
-    selected = observed[is_dr_day & in_window]
-    day_mean = float(selected.mean()) if len(selected) else None
-    # 등록 권장값의 바닥. 어느 거래일에나 지킬 수 있어야 한다 (별표26 위약금).
-    day_floor = float(selected.quantile(registration)) if len(selected) else None
-
-    ratio = pattern.base_load_ratio  # 6.1 의 값을 재사용한다. 다시 계산하지 않는다
-    base_kw: float | None = None
-    registered = 0.0
-    mean_reducible = 0.0
-    daily_reducible = pd.Series(dtype=float)
-    if day_mean is not None and ratio is not None:
-        base_kw = day_mean * ratio
-        mean_reducible = max(0.0, day_mean - base_kw)
-        registered = max(0.0, (day_floor or 0.0) - base_kw)
-
-        # **연간 감축 가능량은 등록값 × 일수가 아니다.** 경제성DR 은 하루 전
-        # 입찰이라 매일 다른 양을 입찰한다. 등록값(하위 10%)으로 곱하면 부하가
-        # 많은 날의 여력을 통째로 버려 연간 수익이 크게 과소평가된다.
-        #   연간 감축 가능량 = Σ (거래일별 주간 평균 부하 − 기저부하)
-        per_day_mean = selected.groupby(day_of[selected.index]).mean()
-        daily_reducible = (per_day_mean - base_kw).clip(lower=0.0)
-        notes.append(
-            f"감축 여력 = 대상일 운영 시간대({_window_label(windows)}) 부하 − 기저부하. "
-            f"기저부하는 6.1 의 기저부하 비율 {ratio:.1%} 를 그대로 썼습니다 "
-            f"({base_kw:,.0f} kW)."
-        )
-        notes.append(
-            f"등록 권장 용량 {registered:,.0f} kW 는 하위 {registration:.0%} 기준입니다 — "
-            "사업자와 계약할 때 등록하는 값이며, 평균으로 등록하면 절반의 날에 "
-            "미달해 위약금이 납니다 (별표26)."
-        )
-        notes.append(
-            f"**연간 감축 가능량은 등록용량 × 참여시간이고 연 "
-            f"{dr_annual_hours_cap():,.0f}시간으로 잘립니다.** 하루 한도는 "
-            f"{dr_max_events_per_day()}회 × 최대 {dr_event_hours()[1]:,.0f}시간입니다. "
-            "거래 가능일마다 하루 1시간씩 참여한다고 보면 4배 이상 과대 산출됩니다."
-        )
-    else:
+    if contract_kw is None:
         warnings.append(
-            "대상일 주간 관측치나 기저부하 비율이 없어 등록 가능 용량을 산출하지 못했습니다."
+            "계약전력이 없어 국민DR·중소형DR 해당 여부를 확정하지 못했습니다 "
+            "(제12.1.1조). 표준DR 은 계약종별 제한이 없습니다."
         )
+
+    # ① 기준선 — **주말·공휴일**의 운영 시간대 평균. 건물이 사실상 비어 있는 수준이다.
+    off_day = ~is_dr_day
+    weekend_slots = observed[off_day & in_window]
+    weekend_days = int(day_of[off_day].nunique())
+    weekday_slots = observed[is_dr_day & in_window]
+    weekday_mean = float(weekday_slots.mean()) if len(weekday_slots) else None
+
+    if not len(weekend_slots) or not len(weekday_slots):
+        warnings.append(
+            "주말·공휴일 또는 평일의 운영 시간대 관측치가 없어 저부하 평일을 "
+            "찾지 못했습니다. 감축 가능량을 산출하지 않습니다."
+        )
+        return _empty_profile(
+            eligible_days=len(eligible_days),
+            total_days=len(all_days),
+            windows=windows,
+            weekend_days=weekend_days,
+            weekend_baseline_kw=float(weekend_slots.mean()) if len(weekend_slots) else None,
+            multiple=multiple,
+            threshold=None,
+            weekday_mean=weekday_mean,
+            resource_types=resource_types,
+            warnings=warnings,
+            notes=notes,
+        )
+
+    baseline_kw = float(weekend_slots.mean())
+    threshold = baseline_kw * multiple
+    notes.append(
+        f"기준선 {baseline_kw:,.0f} kW 는 주말·공휴일 {weekend_days}일의 운영 시간대 "
+        f"평균 부하입니다. 건물이 사실상 비어 있을 때의 수준이며, 저부하 평일 문턱은 "
+        f"그 {multiple:.2g}배인 {threshold:,.0f} kW 입니다."
+    )
+
+    # ② 저부하 평일 — 대상일 중 운영 시간대 평균이 문턱 이하인 날. 정전일은 뺀다.
+    day_mean = weekday_slots.groupby(day_of[weekday_slots.index]).mean()
+    outage_days: set[pd.Timestamp] = set()
+    if outage_mask is not None:
+        flagged = outage_mask.reindex(observed.index).fillna(False).astype(bool)
+        outage_days = set(day_of[flagged])
+    low_days = tuple(day for day in day_mean[day_mean <= threshold].index if day not in outage_days)
+    normal_days = [day for day in day_mean.index if day not in low_days]
+    normal_mean = float(day_mean[normal_days].mean()) if normal_days else weekday_mean
+
+    if not low_days or normal_mean is None:
+        warnings.append(
+            f"저부하 평일이 없습니다 — 대상일 {len(day_mean)}일 가운데 운영 시간대 "
+            f"평균이 문턱 {threshold:,.0f} kW 이하인 날이 없습니다. 감축은 실제 운영 "
+            "축소를 뜻하므로 생산·재실 영향과 함께 검토하십시오."
+        )
+        return _empty_profile(
+            eligible_days=len(eligible_days),
+            total_days=len(all_days),
+            windows=windows,
+            weekend_days=weekend_days,
+            weekend_baseline_kw=baseline_kw,
+            multiple=multiple,
+            threshold=threshold,
+            weekday_mean=weekday_mean,
+            resource_types=resource_types,
+            warnings=warnings,
+            notes=notes,
+        )
+
+    # ③④ 저부하일별 감축 여력과 참여 가능 시간.
+    #
+    # 여력은 **참여할 슬롯의 부하**로 잰다 — 하루 평균으로 재면 참여하지 않는
+    # 시간대의 높은 부하가 여력을 깎는다. 시간은 저부하가 실제로 지속되는 만큼만
+    # 세고 하루 한도로 자른다.
+    low_index = pd.Index(low_days)
+    window_frame = pd.DataFrame(
+        {"kw": weekday_slots, "day": day_of[weekday_slots.index]},
+    )
+    picked = window_frame[
+        window_frame["day"].isin(set(low_days)) & (window_frame["kw"] <= threshold)
+    ]
+    slot_counts = picked.groupby("day")["kw"].size().reindex(low_index, fill_value=0)
+    picked_mean = picked.groupby("day")["kw"].mean().reindex(low_index)
+
+    hours = (slot_counts.astype(float) * slot_hours).clip(upper=daily_cap)
+    reducible = (normal_mean - picked_mean).clip(lower=0.0).fillna(0.0)
+    hours.index.name = "day"
+    reducible.index.name = "day"
+
+    period_kwh = float((reducible * hours).sum())
+    annual_kwh = period_kwh * 365.0 / len(all_days) if len(all_days) else 0.0
+
+    # **보수적으로.** 등록값은 하위 분위수다 — 미이행이 6개월 입찰 제한이다.
+    positive = reducible[reducible > 0]
+    registered = float(positive.quantile(registration)) if len(positive) else 0.0
+    mean_reducible = float(reducible.mean())
+
+    notes.append(
+        f"저부하 평일 {len(low_days)}일을 찾았습니다. 감축 여력은 평일 정상 평균 "
+        f"{normal_mean:,.0f} kW 에서 그날 실제 부하를 뺀 값이고, 참여 시간은 저부하가 "
+        f"지속되는 시간을 하루 한도 {daily_cap:,.0f}시간으로 자른 값입니다."
+    )
+    notes.append(
+        f"**감축 가능량 {annual_kwh:,.0f} kWh/년** = Σ(저부하일별 감축 여력 × 그날 "
+        f"참여 가능 시간). 관측 기간 {len(all_days)}일의 합 {period_kwh:,.0f} kWh 를 "
+        "365일로 환산했습니다."
+    )
+    notes.append(
+        f"**등록 권장 용량 {registered:,.0f} kW** 는 저부하일 여력 분포의 하위 "
+        f"{registration:.0%} 입니다. 사업자와 계약할 때 등록하는 값이며, 평균 "
+        f"{mean_reducible:,.0f} kW 로 등록하면 절반의 날에 미달합니다 — 미달은 "
+        f"{dr_bid_restriction_months():,.0f}개월 입찰 제한입니다."
+    )
 
     if registered < reference_kw:
         warnings.append(
@@ -436,33 +602,6 @@ def dr_profile(
             "이 문턱은 수요관리사업자가 **묶은 자원 단위** 기준이라 개별 고객에게 "
             "그대로 적용되지 않습니다 (제12.4.2.1조 제1항 2호). 다른 고객과 묶여 "
             "참여할 수 있으므로 사업자와 상담하십시오."
-        )
-
-    # 무비용 감축 가능일 — 기준선은 **반드시 대상일만으로** 계산한다.
-    # 주말이 섞이면 기준선이 내려가 평일 저부하일이 걸리지 않는다.
-    daily_mean = observed[is_dr_day].groupby(day_of[is_dr_day]).mean()
-    low_threshold: float | None = None
-    low_days: tuple[pd.Timestamp, ...] = ()
-    if len(daily_mean):
-        low_threshold = float(daily_mean.quantile(low_quantile))
-        candidates = daily_mean[daily_mean <= low_threshold].index
-        outage_days: set[pd.Timestamp] = set()
-        if outage_mask is not None:
-            flagged = outage_mask.reindex(observed.index).fillna(False).astype(bool)
-            outage_days = set(day_of[flagged])
-        low_days = tuple(day for day in candidates if day not in outage_days)
-        notes.append(
-            f"무비용 감축 가능일 {len(low_days)}일 — 대상일 일평균 부하가 하위 "
-            f"{low_quantile:.0%}({low_threshold:,.0f} kW) 이하이고 정전 구간이 "
-            "아닌 날입니다. **기준선은 거래 가능일만으로 계산했습니다** — 주말이 "
-            "섞이면 기준선이 내려가 평일 저부하일이 걸리지 않습니다."
-        )
-
-    resource_types = judge_resource_types(contract_type, contract_kw)
-    if contract_kw is None:
-        warnings.append(
-            "계약전력이 없어 국민DR·중소형DR 해당 여부를 확정하지 못했습니다 "
-            "(제12.1.1조). 표준DR 은 계약종별 제한이 없습니다."
         )
 
     if registered >= high_capacity_kw:
@@ -477,17 +616,23 @@ def dr_profile(
         total_days=len(all_days),
         excluded_days=len(all_days) - len(eligible_days),
         windows=windows,
-        day_mean_kw=day_mean,
-        day_floor_kw=day_floor,
-        base_load_kw=base_kw,
-        base_load_ratio=ratio,
+        weekend_days=weekend_days,
+        weekend_baseline_kw=baseline_kw,
+        low_load_multiple=multiple,
+        low_load_threshold_kw=threshold,
+        weekday_mean_kw=weekday_mean,
+        normal_weekday_mean_kw=normal_mean,
+        low_load_days=tuple(low_days),
+        daily_reducible_kw=reducible,
+        daily_hours=hours,
+        daily_hours_cap=daily_cap,
         registered_capacity_kw=registered,
         mean_reducible_kw=mean_reducible,
-        daily_reducible_kw=daily_reducible,
+        period_reducible_kwh=period_kwh,
+        annual_reducible_kwh=annual_kwh,
         resource_types=resource_types,
         potential=potential,
-        low_load_days=low_days,
-        low_load_threshold_kw=low_threshold,
+        bid_restriction_months=dr_bid_restriction_months(),
         warnings=tuple(warnings),
         notes=tuple(notes),
     )

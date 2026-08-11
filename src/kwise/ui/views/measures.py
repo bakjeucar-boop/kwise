@@ -22,11 +22,10 @@ from __future__ import annotations
 import streamlit as st
 
 from kwise.diagnose import Diagnosis, default_margin_ratio, margin_range
-from kwise.diagnose.dr import dr_annual_hours_cap, dr_event_hours, dr_max_events_per_day
+from kwise.diagnose.dr import dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData
 from kwise.measures import (
     ELIGIBILITY_NOTICE,
-    PARTICIPATION_WARNING,
     analyze_peak_excess,
     default_target_pct,
     evaluate_demand_response,
@@ -281,66 +280,57 @@ def _demand_response(
         _overview(spec)
         st.warning("경제성DR 참여 여력을 산출하지 못했습니다.")
         return
-    left, right = st.columns(2)
-    with left:
-        priced = st.checkbox("정산 단가를 안다 (사업자 제시값)", value=False)
-        unit_price = (
-            st.number_input(
-                "정산 단가 (원/kWh)",
-                min_value=0.0,
-                value=0.0,
-                step=1.0,
-                key=input_key("demand_response", "unit_price"),
-            )
-            if priced
-            else None
+    priced = st.checkbox("정산 단가를 안다 (사업자 제시값)", value=False)
+    unit_price = (
+        st.number_input(
+            "정산 단가 (원/kWh)",
+            min_value=0.0,
+            value=0.0,
+            step=1.0,
+            key=input_key("demand_response", "unit_price"),
         )
-    cap = dr_annual_hours_cap()
-    with right:
-        # **예상 참여시간에 기본값을 두지 않는다.** 지어내면 그 값으로 금액이 난다.
-        known_hours = st.checkbox("예상 연간 참여시간을 안다", value=False)
-        expected_hours = (
-            st.number_input(
-                "예상 연간 참여시간 (시간)",
-                min_value=1.0,
-                max_value=float(cap),
-                value=float(cap),
-                step=1.0,
-                help=f"연간 한도는 {cap:,.0f}시간입니다. 그 이상은 넣을 수 없습니다.",
-                key=input_key("demand_response", "hours"),
-            )
-            if known_hours
-            else None
-        )
-    result = evaluate_demand_response(
-        diagnosis.dr,
-        unit_price_won_per_kwh=unit_price or None,
-        expected_hours=expected_hours,
+        if priced
+        else None
     )
+    result = evaluate_demand_response(diagnosis.dr, unit_price_won_per_kwh=unit_price or None)
 
     _overview(spec)
-    # **라벨에 한도를 적는다.** 연 60시간을 다 쓴다고 본 값이라 최대치다 (13세션).
+    # **연간 한도가 없으므로 실질 제약은 저부하 평일 수 하나다** (14세션 4절).
     columns = st.columns(3)
     columns[0].metric("거래 가능일", fmt.days(result.eligible_days))
-    columns[1].metric("등록 권장 용량", fmt.kw(result.registered_capacity_kw))
-    columns[2].metric(
-        "예상 감축량" if expected_hours else f"연간 최대 가능량 (연 {cap:,.0f}시간 한도 적용)",
-        fmt.kwh(result.annual_reducible_kwh),
-    )
+    columns[1].metric("저부하 평일", fmt.days(result.low_load_days))
+    columns[2].metric("등록 권장 용량", fmt.kw(result.registered_capacity_kw))
+    st.metric("연간 감축 가능량", fmt.kwh(result.annual_reducible_kwh))
     st.caption(
         f"운영 시간대 {fmt.markdown_safe(diagnosis.dr.window_label)} · 하루 한도 "
-        f"{dr_max_events_per_day()}회 × 최대 {fmt.hours(dr_event_hours()[1], decimals=0)} · "
-        f"적용 참여시간 {fmt.hours(result.annual_hours, decimals=0)}"
+        f"{dr_max_events_per_day()}회 × 최대 {fmt.hours(dr_event_hours()[1], decimals=0)} "
+        f"(하루 {fmt.hours(result.daily_hours_cap, decimals=0)}) · 참여 가능 시간 합 "
+        f"{fmt.hours(result.participation_hours, decimals=0)}"
     )
-    st.warning(PARTICIPATION_WARNING.format(cap=cap))
+    if result.weekend_baseline_kw is not None and result.low_load_threshold_kw is not None:
+        st.caption(
+            f"저부하 판정 기준선은 주말·공휴일 운영 시간대 평균 "
+            f"{fmt.kw(result.weekend_baseline_kw)} 이고, 그 "
+            f"{diagnosis.dr.low_load_multiple:.2g}배인 "
+            f"{fmt.kw(result.low_load_threshold_kw)} 이하인 평일을 셌습니다."
+        )
+    # **어떤 날인지 보여 준다.** 창립기념일·워크숍처럼 사무실을 비우는 날일 가능성이
+    # 높아, 목록을 보면 사용자가 스스로 맞는 날인지 판정할 수 있다 (14세션 4절).
+    if result.low_load_days:
+        with st.expander(f"저부하 평일 {result.low_load_days}일", expanded=False):
+            st.dataframe(result.low_load_day_table, hide_index=True, width="stretch")
+            st.caption("사무실을 비우는 날(창립기념일·워크숍 등)일 가능성이 높습니다.")
+    else:
+        st.write("저부하 평일이 없어 감축 가능량을 0 으로 두었습니다.")
+    st.warning(fmt.markdown_safe(result.participation_notice))
     if result.is_priced:
         st.metric("정산금", fmt.won_short(result.settlement_won))
     st.caption(
         "자원 유형 — " + (", ".join(str(item) for item in result.resource_types) or "판정 불가")
     )
-    # 참여 한도 문구는 바로 위에 냈다. 확인사항에서 한 번 더 내지 않는다 (10.7).
+    # 참여 안내는 바로 위에 냈다. 확인사항에서 한 번 더 내지 않는다 (10.7).
     _notes(
-        tuple(item for item in result.warnings if "연간 최대" not in item),
+        tuple(item for item in result.warnings if not item.startswith("낙찰 후 감축을")),
         result.notes,
     )
 

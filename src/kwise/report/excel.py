@@ -311,13 +311,13 @@ def measure_summary_frame(
                 "회수기간": "즉시" if demand_response.is_priced else UNPRICED_REASONS["no_saving"],
                 "확실성": str(demand_response.certainty),
                 "비고": (
-                    f"거래 가능일 {demand_response.eligible_days}일, 연간 감축 가능량 "
+                    f"거래 가능일 {demand_response.eligible_days}일 중 저부하 평일 "
+                    f"{demand_response.low_load_days}일. 연간 감축 가능량 "
                     f"{demand_response.annual_reducible_kwh:,.0f} kWh "
-                    f"(등록용량 × 참여 {demand_response.annual_hours:,.0f}시간, "
-                    f"연간 한도 {demand_response.annual_hours_cap:,.0f}시간). "
-                    f"한도를 빼면 {demand_response.uncapped_reducible_kwh:,.0f} kWh 로 "
-                    "과대 산출됩니다. "
-                    f"무비용 감축 가능일 {demand_response.low_load_days}일. "
+                    f"= Σ(저부하일별 감축 여력 × 참여 가능 시간, 합 "
+                    f"{demand_response.participation_hours:,.0f}시간, 하루 상한 "
+                    f"{demand_response.daily_hours_cap:,.0f}시간). "
+                    f"{demand_response.participation_notice} "
                     "투자비는 0원이지만 감축 미달 시 실적위약금이 있습니다(별표26). " + DR_ADVISORY
                 ),
             }
@@ -484,14 +484,26 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
             [
                 ("DR 거래 가능일", f"{dr.eligible_days}일 / 전체 {dr.total_days}일"),
                 ("DR 제외일 (토·일·공휴일)", f"{dr.excluded_days}일"),
-                ("DR 등록 권장 용량 (하위 10%)", f"{dr.registered_capacity_kw:,.0f} kW"),
+                (
+                    "DR 등록 권장 용량 (저부하일 여력 하위값)",
+                    f"{dr.registered_capacity_kw:,.0f} kW",
+                ),
                 ("DR 평균 기준 여력", f"{dr.mean_reducible_kw:,.0f} kW"),
                 ("DR 운영 시간대", dr.window_label),
                 (
-                    f"DR 연간 감축 가능량 (연 {dr.usable_hours():,.0f}시간 한도)",
-                    f"{dr.annual_reducible_kwh():,.0f} kWh",
+                    "DR 저부하 판정 기준선 (주말·공휴일 평균 × 배수)",
+                    f"{dr.weekend_baseline_kw:,.0f} kW × {dr.low_load_multiple:.2g} = "
+                    f"{dr.low_load_threshold_kw:,.0f} kW"
+                    if dr.weekend_baseline_kw is not None and dr.low_load_threshold_kw is not None
+                    else "산출 보류 — 주말·공휴일 관측치 없음",
                 ),
-                ("DR 무비용 감축 가능일", f"{len(dr.low_load_days)}일"),
+                ("DR 저부하 평일", f"{dr.low_load_days_count}일"),
+                (
+                    f"DR 연간 감축 가능량 (참여 {dr.total_participation_hours:,.0f}시간, "
+                    f"하루 상한 {dr.daily_hours_cap:,.0f}시간)",
+                    f"{dr.annual_reducible_kwh:,.0f} kWh",
+                ),
+                ("DR 참여 안내", dr.notice),
                 ("DR 자원 유형", ", ".join(str(item) for item in dr.resource_types)),
                 ("DR 적합성", str(dr.potential)),
             ]

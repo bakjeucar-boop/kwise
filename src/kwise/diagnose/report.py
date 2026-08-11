@@ -138,7 +138,6 @@ def diagnose(
         usage.kw,
         interval,
         calendar,
-        pattern=pattern,
         contract_type=contract_type,
         contract_kw=contract.contract_kw if contract else None,
         outage_mask=outage_slot_mask(index, report.outages),

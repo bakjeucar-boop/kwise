@@ -1,8 +1,13 @@
 """경제성DR 참여 여력 (요구사항서 6.6, 7.3 / 전력시장운영규칙 제12장).
 
-**거래일 제약이 이 모듈의 전부다.** 제12.4.2.1조 제1항 1호는 "관공서의 공휴일에
+**거래일 제약이 이 모듈의 한 축이다.** 제12.4.2.1조 제1항 1호는 "관공서의 공휴일에
 관한 규정"의 공휴일과 **토요일**을 제외한 평일에만 입찰할 수 있게 한다. 이 제약을
 빼면 감축 가능량이 30% 이상 과대평가된다.
+
+**나머지 한 축은 저부하 평일이다** (14세션). 연간 참여 일수 제한이 없으므로 실질
+제약은 「감축할 여력이 있는 날이 며칠이냐」 하나다. 13세션의 연 60시간 한도는
+경제성DR 의 제약이 아니어서 지웠다 — 코드에도 기준 데이터에도 남지 않았는지
+:func:`test_연간_한도가_사라졌다` 가 지킨다.
 
 **요금 계량의 '평일' 과 정의가 다르다.** 요금은 토요일을 최대부하 → 중간부하로
 낮출 뿐 공휴일로 보지 않지만, DR 은 토·일·공휴일이 모두 똑같이 제외다.
@@ -10,6 +15,8 @@
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -26,11 +33,13 @@ from kwise.diagnose import (
     judge_resource_types,
 )
 from kwise.diagnose.dr import (
-    dr_annual_hours_cap,
+    dr_bid_restriction_months,
     dr_daily_hours_cap,
     dr_event_hours,
     dr_max_events_per_day,
     dr_operating_windows,
+    low_load_multiple,
+    registration_percentile,
 )
 from kwise.io import UsageData
 from kwise.measures import (
@@ -39,7 +48,8 @@ from kwise.measures import (
     shortfall_penalty_won,
 )
 from kwise.measures.demand_response import UNPRICED_REASON
-from kwise.quality import QualityReport, load_pattern
+from kwise.rules import rule_value
+from kwise.rules.schema import RuleDataError
 from kwise.tariff import BillingResult, TariffTable, build_calendar, classify_slots
 
 # 2024-03: 01(금, 삼일절) 02(토) 03(일) … 30(토) 31(일)
@@ -144,80 +154,111 @@ def test_sample_is_standard_and_small_medium(sample_diagnosis: Diagnosis) -> Non
     assert profile.resource_types == (DrResourceType.STANDARD, DrResourceType.SMALL_MEDIUM)
 
 
-# --------------------------------------------------------------------- 감축 여력
+# --------------------------------------------------------------------- 저부하 평일 (14세션)
 
 
-def test_capacity_reuses_the_base_load_ratio(sample_diagnosis: Diagnosis) -> None:
-    """6.1 의 기저부하 비율을 그대로 쓴다. 다시 계산하지 않는다."""
+def test_연간_한도가_사라졌다() -> None:
+    """**연 60시간 한도는 경제성DR 의 제약이 아니었다** (14세션에 지웠다).
+
+    코드에도 기준 데이터에도 남아 있으면 안 된다 — 남으면 다음 사람이 그것을
+    근거로 다시 곱한다.
+    """
+    import kwise.diagnose.dr as module
+
+    assert not hasattr(module, "dr_annual_hours_cap")
+    assert not hasattr(module, "low_load_percentile")
+    with pytest.raises(RuleDataError, match=r"dr\.annual_hours_cap"):
+        rule_value("dr.annual_hours_cap")
+
+    offenders = [
+        str(path)
+        for path in Path("src/kwise").rglob("*.py")
+        if "annual_hours_cap" in path.read_text(encoding="utf-8")
+    ]
+    assert not offenders, offenders
+
+
+def test_남는_제약은_하루_한도와_제재다() -> None:
+    """하루 2회 × 최대 4시간 = 8시간. 미이행은 6개월 입찰 제한."""
+    assert dr_max_events_per_day() == 2
+    assert dr_event_hours() == (1.0, 4.0)
+    assert dr_daily_hours_cap() == 8.0
+    assert dr_bid_restriction_months() == 6.0
+
+
+def test_기준선은_주말_공휴일_운영시간대_평균이다(sample_diagnosis: Diagnosis) -> None:
+    """① 건물이 사실상 비어 있을 때의 수준을 기준선으로 삼는다."""
     profile = sample_diagnosis.dr
     assert profile is not None
-    ratio = sample_diagnosis.pattern.base_load_ratio
-    assert ratio is not None
-    assert profile.base_load_ratio == ratio
-    assert profile.day_mean_kw is not None
-    assert profile.base_load_kw == pytest.approx(profile.day_mean_kw * ratio)
+    baseline = profile.weekend_baseline_kw
+    assert baseline is not None
+    assert profile.weekend_days == 114
+    assert baseline == pytest.approx(2_095, abs=5)
+    # ② 문턱은 기준선 × 배수. 배수는 assumptions.json 에 있다.
+    assert profile.low_load_multiple == low_load_multiple() == 1.2
+    assert profile.low_load_threshold_kw == pytest.approx(baseline * profile.low_load_multiple)
+    assert profile.low_load_threshold_kw == pytest.approx(2_514, abs=5)
 
 
-def test_registered_capacity_is_conservative(sample_diagnosis: Diagnosis) -> None:
-    """**등록 권장값은 평균이 아니라 하위 10% 기준이다.**
+def test_저부하_평일을_데이터에서_찾는다(sample_diagnosis: Diagnosis) -> None:
+    """**실질 제약은 감축할 여력이 있는 날이 며칠이냐 하나다.**
 
-    평균으로 등록하면 절반의 날에 미달해 위약금이 난다 (별표26).
+    샘플에서 걸린 이틀은 근로자의 날과 추석 연휴 사이의 월요일 — 사무실을 비운
+    날이다. 하위 분위수 방식은 「항상 그만큼」 을 뽑아 이 사실을 가렸다.
     """
     profile = sample_diagnosis.dr
     assert profile is not None
-    assert profile.day_floor_kw is not None and profile.day_mean_kw is not None
-    assert profile.day_floor_kw < profile.day_mean_kw
-    assert 0 < profile.registered_capacity_kw < profile.mean_reducible_kw
-    # 09~12·13~20시 창 기준이다 (13세션). 저녁 두 시간이 들어와 하위 10% 가 내려갔다.
-    assert profile.registered_capacity_kw == pytest.approx(236, abs=5)
-    assert profile.mean_reducible_kw == pytest.approx(1_303, abs=5)
+    assert profile.low_load_days_count == 2
+    assert [f"{day:%Y-%m-%d}" for day in profile.low_load_days] == ["2023-05-01", "2023-10-02"]
+    assert all(day.weekday() < 5 for day in profile.low_load_days)
+    assert profile.low_load_threshold_kw is not None
+    assert profile.normal_weekday_mean_kw is not None
+    assert profile.normal_weekday_mean_kw > profile.low_load_threshold_kw
 
 
-def test_registration_and_low_load_percentiles_are_separate() -> None:
-    """등록 분위수(10%)와 저부하일 문턱(5%)은 쓰임이 다른 값이다."""
-    from kwise.diagnose.dr import low_load_percentile, registration_percentile
+def test_저부하_평일_목록을_보여_준다(sample_diagnosis: Diagnosis) -> None:
+    """어떤 날인지 알아야 사용자가 맞는 날인지 판정할 수 있다 (14세션 4절)."""
+    profile = sample_diagnosis.dr
+    assert profile is not None
+    table = profile.low_load_day_table()
+    assert list(table.columns) == ["날짜", "요일", "감축 여력(kW)", "참여 가능 시간(h)"]
+    assert len(table) == profile.low_load_days_count
+    assert set(table["요일"]) <= {"월", "화", "수", "목", "금"}
 
+
+def test_참여_시간은_하루_여덟_시간으로_잘린다(sample_diagnosis: Diagnosis) -> None:
+    """④ 하루 최대 2회 × 4시간이 상한이다. 저부하가 더 오래 가도 8시간을 넘지 않는다."""
+    profile = sample_diagnosis.dr
+    assert profile is not None
+    assert profile.daily_hours_cap == 8.0
+    assert bool((profile.daily_hours <= 8.0 + 1e-9).all())
+    assert profile.total_participation_hours == pytest.approx(16.0)
+
+
+def test_감축_가능량은_저부하일별_곱의_합이다(sample_diagnosis: Diagnosis) -> None:
+    """⑤ Σ(저부하일별 감축 여력 × 그날 참여 가능 시간)."""
+    profile = sample_diagnosis.dr
+    assert profile is not None
+    expected = float((profile.daily_reducible_kw * profile.daily_hours).sum())
+    assert profile.period_reducible_kwh == pytest.approx(expected)
+    # 관측 기간을 365일로 환산한다. 기간이 1년이 아닐 수 있다.
+    assert profile.annual_reducible_kwh == pytest.approx(expected * 365.0 / profile.total_days)
+    assert profile.annual_reducible_kwh == pytest.approx(31_133, rel=1e-3)
+
+
+def test_등록_권장_용량은_저부하일_분포의_하위값이다(sample_diagnosis: Diagnosis) -> None:
+    """**보수적으로.** 미이행이 6개월 입찰 제한이라 과대 산정의 대가가 크다."""
+    profile = sample_diagnosis.dr
+    assert profile is not None
     assert registration_percentile() == 0.10
-    assert low_load_percentile() == 0.05
-    assert registration_percentile() != low_load_percentile()
+    assert 0 < profile.registered_capacity_kw <= profile.mean_reducible_kw
+    assert profile.registered_capacity_kw == pytest.approx(
+        float(profile.daily_reducible_kw.quantile(0.10))
+    )
 
 
-def test_annual_reduction_is_capped_at_sixty_hours(sample_diagnosis: Diagnosis) -> None:
-    """**연간 감축 가능량 = 등록용량 × min(참여시간, 60).**
-
-    거래 가능일 245일에 하루 1시간씩 참여한다고 보던 옛 계산은 제도 한도를
-    무시해 20배 넘게 과대였다 (13세션).
-    """
-    profile = sample_diagnosis.dr
-    assert profile is not None
-    cap = dr_annual_hours_cap()
-    assert cap == 60.0
-
-    annual = profile.annual_reducible_kwh()
-    assert profile.usable_hours() == cap
-    assert annual == pytest.approx(profile.registered_capacity_kw * cap)
-    assert annual == pytest.approx(14_184, rel=1e-3)
-
-    # 한도를 넘겨 달라고 해도 잘린다.
-    assert profile.annual_reducible_kwh(200.0) == pytest.approx(annual)
-    assert profile.annual_reducible_kwh(20.0) == pytest.approx(annual / 3)
-
-    uncapped = profile.uncapped_reducible_kwh(1.0)
-    assert uncapped > annual * 20  # 옛 방식이 얼마나 부풀었는지
-
-
-def test_daily_cap_limits_when_days_are_few(sample_diagnosis: Diagnosis) -> None:
-    """참여 가능일이 적으면 **하루 한도 × 일수**가 먼저 걸린다."""
-    profile = sample_diagnosis.dr
-    assert profile is not None
-    daily_cap = dr_daily_hours_cap()
-    assert daily_cap == dr_max_events_per_day() * dr_event_hours()[1]
-    assert profile.usable_hours(days=2) == pytest.approx(2 * daily_cap)
-    assert profile.usable_hours(days=0) == 0.0
-
-
-def test_reduction_is_measured_in_the_operating_window(sample_diagnosis: Diagnosis) -> None:
-    """감축 여력은 **운영 시간대**의 부하로만 잰다. 점심은 빠진다."""
+def test_감축_여력은_운영_시간대로만_잰다(sample_diagnosis: Diagnosis) -> None:
+    """③ 점심과 야간은 빠진다. 참여할 수 없는 시간의 부하를 여력으로 세지 않는다."""
     profile = sample_diagnosis.dr
     assert profile is not None
     assert profile.windows == ((9, 12), (13, 20))
@@ -228,16 +269,65 @@ def test_reduction_is_measured_in_the_operating_window(sample_diagnosis: Diagnos
     assert 8 not in hours
 
 
-def test_potential_grades_by_capacity(sample_diagnosis: Diagnosis) -> None:
-    profile = sample_diagnosis.dr
-    assert profile is not None
-    assert profile.potential is DrPotential.MEDIUM  # 등록 권장 236 kW
-    assert profile.meets_reference_capacity  # 참고 문턱 100 kW
+def test_배수를_올리면_저부하일이_늘어난다(sample_usage: UsageData, calendar: object) -> None:
+    """배수가 판정을 정한다. 값은 assumptions.json 에 있다."""
+    loose = dr_profile(
+        sample_usage.kw,
+        15,
+        calendar,  # type: ignore[arg-type]
+        contract_type="general_b",
+        low_load_ratio=1.6,
+    )
+    tight = dr_profile(
+        sample_usage.kw,
+        15,
+        calendar,  # type: ignore[arg-type]
+        contract_type="general_b",
+        low_load_ratio=1.0,
+    )
+    assert loose.low_load_days_count > tight.low_load_days_count
+    assert loose.annual_reducible_kwh > tight.annual_reducible_kwh
 
 
-def test_reference_threshold_is_a_resource_level_note(
-    sample_usage: UsageData, sample_report: QualityReport, calendar: object
+def test_저부하일이_없으면_영을_내고_이유를_적는다(
+    sample_usage: UsageData, calendar: object
 ) -> None:
+    """**0 을 내되 빈칸으로 두지 않는다.**"""
+    profile = dr_profile(
+        sample_usage.kw,
+        15,
+        calendar,  # type: ignore[arg-type]
+        contract_type="general_b",
+        low_load_ratio=0.1,  # 아무 날도 걸리지 않는 문턱
+    )
+    assert profile.low_load_days_count == 0
+    assert profile.annual_reducible_kwh == 0.0
+    assert profile.registered_capacity_kw == 0.0
+    assert profile.potential is DrPotential.LOW
+    assert any("저부하 평일이 없습니다" in message for message in profile.warnings)
+
+
+def test_정전일은_저부하_평일이_아니다(sample_usage: UsageData, calendar: object) -> None:
+    """정전으로 부하가 낮았던 날은 감축 여력이 아니다."""
+    without = dr_profile(
+        sample_usage.kw,
+        15,
+        calendar,  # type: ignore[arg-type]
+        contract_type="general_b",
+    )
+    blanket = pd.Series(True, index=sample_usage.kw.index)  # 전 구간을 정전으로 본다
+    with_outage = dr_profile(
+        sample_usage.kw,
+        15,
+        calendar,  # type: ignore[arg-type]
+        contract_type="general_b",
+        outage_mask=blanket,
+    )
+    assert without.low_load_days_count > 0
+    assert with_outage.low_load_days_count == 0
+
+
+def test_참고_문턱은_자원_단위_기준이다(sample_usage: UsageData, calendar: object) -> None:
     """0.1 MW-h 문턱은 **자원 단위** 기준이다. 개별 고객 판정으로 쓰지 않는다."""
     assert dr_reference_capacity_kw() == 100.0
     tiny = sample_usage.kw * 0.02  # 등록 가능 용량이 문턱 아래로 내려간다
@@ -245,7 +335,6 @@ def test_reference_threshold_is_a_resource_level_note(
         tiny,
         15,
         calendar,  # type: ignore[arg-type]
-        pattern=load_pattern(tiny, 15),
         contract_type="general_b",
         contract_kw=110.0,
     )
@@ -254,105 +343,47 @@ def test_reference_threshold_is_a_resource_level_note(
     assert any("묶은 자원 단위" in message for message in profile.warnings)
 
 
-# --------------------------------------------------------------------- 무비용 감축 가능일
-
-
-def test_low_load_threshold_uses_dr_days_only(sample_diagnosis: Diagnosis) -> None:
-    """**기준선은 거래 가능일만으로 계산한다.**
-
-    주말이 섞이면 기준선이 내려가 평일 저부하일이 걸리지 않는다.
-    """
+def test_적합성_등급은_등록_용량으로_매긴다(sample_diagnosis: Diagnosis) -> None:
     profile = sample_diagnosis.dr
     assert profile is not None
-    assert profile.low_load_threshold_kw == pytest.approx(2_516, abs=5)
-    assert len(profile.low_load_days) == 13
-    # 뽑힌 날은 모두 거래 가능일이다 — 주말·공휴일이 섞이지 않는다.
-    assert all(day.weekday() < 5 for day in profile.low_load_days)
-    assert any("거래 가능일만으로 계산" in note for note in profile.notes)
+    assert profile.potential is DrPotential.HIGH  # 등록 권장 1,838 kW
+    assert profile.meets_reference_capacity
 
 
-def test_threshold_would_drop_if_weekends_were_mixed_in(
-    sample_usage: UsageData, calendar: object
-) -> None:
-    """회귀로 고정 — 전 일자로 재면 기준선이 내려간다."""
-    from kwise.io import slot_start
-
-    starts = slot_start(pd.DatetimeIndex(sample_usage.kw.dropna().index), 15)
-    day_of = pd.Series(starts.normalize(), index=sample_usage.kw.dropna().index)
-    all_day_mean = sample_usage.kw.dropna().groupby(day_of).mean()
-    mixed_threshold = float(all_day_mean.quantile(0.05))
-
-    profile = dr_profile(
-        sample_usage.kw,
-        15,
-        calendar,  # type: ignore[arg-type]
-        pattern=load_pattern(sample_usage.kw, 15),
-        contract_type="general_b",
-        contract_kw=5_500.0,
-    )
-    assert profile.low_load_threshold_kw is not None
-    assert mixed_threshold < profile.low_load_threshold_kw  # 주말이 기준선을 끌어내린다
-
-
-def test_outage_days_are_excluded_from_low_load_days(
-    sample_usage: UsageData, calendar: object
-) -> None:
-    """정전으로 부하가 낮았던 날은 '무비용 감축 가능' 이 아니다."""
-    pattern = load_pattern(sample_usage.kw, 15)
-    without = dr_profile(
-        sample_usage.kw,
-        15,
-        calendar,  # type: ignore[arg-type]
-        pattern=pattern,
-        contract_type="general_b",
-    )
-    blanket = pd.Series(True, index=sample_usage.kw.index)  # 전 구간을 정전으로 본다
-    with_outage = dr_profile(
-        sample_usage.kw,
-        15,
-        calendar,  # type: ignore[arg-type]
-        pattern=pattern,
-        contract_type="general_b",
-        outage_mask=blanket,
-    )
-    assert len(without.low_load_days) > 0
-    assert len(with_outage.low_load_days) == 0
-
-
-def test_empty_series_is_rejected(calendar: object) -> None:
+def test_관측치가_없으면_거부한다(calendar: object) -> None:
     empty = pd.Series(float("nan"), index=pd.date_range("2024-03-01", periods=8, freq="15min"))
     with pytest.raises(ValueError, match="관측된 수요가 없어"):
-        dr_profile(empty, 15, calendar, pattern=load_pattern(sample := empty.fillna(1.0), 15))  # type: ignore[arg-type]
-    assert sample is not None
+        dr_profile(empty, 15, calendar)  # type: ignore[arg-type]
 
 
 # --------------------------------------------------------------------- 7.3 수단
 
 
-def test_reduction_is_counted_on_dr_days_only(sample_diagnosis: Diagnosis) -> None:
-    """연간 감축 가능량은 **거래 가능일 기준으로만** 낸다."""
+def test_수단은_진단의_감축량을_그대로_쓴다(sample_diagnosis: Diagnosis) -> None:
+    """감축량을 두 곳에서 만들면 어긋난다. 7.3 은 6.6 의 값을 옮길 뿐이다."""
     profile = sample_diagnosis.dr
     assert profile is not None
     result = evaluate_demand_response(profile)
     assert result.eligible_days == 245
-    assert result.annual_reducible_kwh == pytest.approx(profile.annual_reducible_kwh())
-    assert result.low_cost_reduction_kwh == pytest.approx(profile.low_cost_reducible_kwh())
+    assert result.low_load_days == profile.low_load_days_count
+    assert result.annual_reducible_kwh == pytest.approx(profile.annual_reducible_kwh)
+    assert result.participation_hours == pytest.approx(profile.total_participation_hours)
     assert result.investment_won == 0.0
     assert result.certainty is Certainty.MEDIUM
 
 
-def test_two_capacities_have_distinct_roles(sample_diagnosis: Diagnosis) -> None:
-    """등록 권장값은 계약용, 연간 감축량은 수익 추정용이다. 섞지 않는다."""
+def test_안내_문구가_제약_셋을_모두_적는다(sample_diagnosis: Diagnosis) -> None:
+    """연간 제한 없음 · 하루 2회 8시간 · 6개월 입찰 제한."""
     profile = sample_diagnosis.dr
     assert profile is not None
-    result = evaluate_demand_response(profile)
-    assert result.registered_capacity_kw == pytest.approx(profile.registered_capacity_kw)
-    assert result.uncapped_reducible_kwh > result.annual_reducible_kwh
-    assert any("등록용량" in note and "참여시간" in note for note in result.notes)
-    assert any("과대" in note for note in result.notes)
+    notice = evaluate_demand_response(profile).participation_notice
+    assert "연간 참여 일수 제한은 없으나" in notice
+    assert "하루 최대 2회(총 8시간)" in notice
+    assert "6개월 입찰 제한" in notice
+    assert "수요관리사업자와 상담해 결정하십시오" in notice
 
 
-def test_missing_price_returns_a_reason_not_an_amount(sample_diagnosis: Diagnosis) -> None:
+def test_단가가_없으면_사유를_낸다(sample_diagnosis: Diagnosis) -> None:
     """**정산 단가는 우리가 만들 수 없다.** 없으면 감축량만 내고 사유를 적는다."""
     profile = sample_diagnosis.dr
     assert profile is not None
@@ -366,16 +397,25 @@ def test_missing_price_returns_a_reason_not_an_amount(sample_diagnosis: Diagnosi
     assert any("정산 단가를 입력하지 않아" in message for message in result.warnings)
 
 
-def test_price_produces_a_settlement(sample_diagnosis: Diagnosis) -> None:
+def test_단가가_있으면_정산금을_낸다(sample_diagnosis: Diagnosis) -> None:
     profile = sample_diagnosis.dr
     assert profile is not None
     result = evaluate_demand_response(profile, unit_price_won_per_kwh=150.0)
     assert result.settlement_won == pytest.approx(result.annual_reducible_kwh * 150.0)
-    assert result.low_cost_settlement_won == pytest.approx(result.low_cost_reduction_kwh * 150.0)
     assert result.settlement_label != UNPRICED_REASON
 
 
-def test_shortfall_penalty_follows_appendix_26() -> None:
+def test_등록값을_바꾸면_감축량이_비례해_움직인다(sample_diagnosis: Diagnosis) -> None:
+    """등록값과 감축량을 따로 놀게 두면 정산금이 근거를 잃는다."""
+    profile = sample_diagnosis.dr
+    assert profile is not None
+    base = evaluate_demand_response(profile)
+    half = evaluate_demand_response(profile, reduction_kw=profile.registered_capacity_kw / 2)
+    assert half.registered_capacity_kw == pytest.approx(profile.registered_capacity_kw / 2)
+    assert half.annual_reducible_kwh == pytest.approx(base.annual_reducible_kwh / 2)
+
+
+def test_실적위약금은_별표26을_따른다() -> None:
     """실적위약금 = (감축계획량 − 실제감축량) × Max(하루전에너지가격, 0)."""
     assert shortfall_penalty_won(100.0, 60.0, 1.0, 120.0) == pytest.approx(4_800.0)
     assert shortfall_penalty_won(100.0, 60.0, 2.0, 120.0) == pytest.approx(9_600.0)
@@ -384,7 +424,7 @@ def test_shortfall_penalty_follows_appendix_26() -> None:
     assert shortfall_penalty_won(100.0, 0.0, 1.0, -50.0) == 0.0  # 음수 가격은 0 으로
 
 
-def test_penalty_risk_is_reported(sample_diagnosis: Diagnosis) -> None:
+def test_위약금_리스크를_적는다(sample_diagnosis: Diagnosis) -> None:
     """투자비는 0원이지만 리스크는 0이 아니다. 1회 최대 지속시간 기준이다."""
     profile = sample_diagnosis.dr
     assert profile is not None
@@ -397,7 +437,7 @@ def test_penalty_risk_is_reported(sample_diagnosis: Diagnosis) -> None:
     assert any("하루전에너지가격" in message for message in without.warnings)
 
 
-def test_base_fee_saving_is_not_claimed(sample_diagnosis: Diagnosis) -> None:
+def test_기본요금_절감을_주장하지_않는다(sample_diagnosis: Diagnosis) -> None:
     """SMP 기준 산발 입찰이라 연중 최대수요일과 겹칠 확률이 낮다. 편익은 정산금뿐이다."""
     profile = sample_diagnosis.dr
     assert profile is not None
@@ -406,26 +446,22 @@ def test_base_fee_saving_is_not_claimed(sample_diagnosis: Diagnosis) -> None:
     assert any("기본요금 절감은 계산하지 않았습니다" in note for note in result.notes)
 
 
-def test_advisory_names_the_aggregator(sample_diagnosis: Diagnosis) -> None:
-    """수요관리사업자를 통해서만 참여할 수 있다는 것을 반드시 적는다."""
+def test_수요관리사업자를_반드시_적는다(sample_diagnosis: Diagnosis) -> None:
     profile = sample_diagnosis.dr
     assert profile is not None
-    result = evaluate_demand_response(profile)
-    joined = " ".join(result.notes)
+    joined = " ".join(evaluate_demand_response(profile).notes)
     assert "수요관리사업자를 통해서만" in joined
     assert "위약금 조항은 사업자와 상담" in joined
 
 
-def test_invalid_inputs_are_rejected(sample_diagnosis: Diagnosis) -> None:
+def test_음수_감축계획량을_막는다(sample_diagnosis: Diagnosis) -> None:
     profile = sample_diagnosis.dr
     assert profile is not None
-    with pytest.raises(ValueError, match="예상 참여시간"):
-        evaluate_demand_response(profile, expected_hours=0.0)
     with pytest.raises(ValueError, match="감축계획량"):
         evaluate_demand_response(profile, reduction_kw=-1.0)
 
 
-def test_profile_is_carried_in_the_diagnosis(sample_diagnosis: Diagnosis) -> None:
+def test_진단_한_벌에_들어_있다(sample_diagnosis: Diagnosis) -> None:
     """6.6 은 진단 한 벌에 들어 있다. 설비 정보를 묻지 않는다."""
     assert isinstance(sample_diagnosis.dr, DrProfile)
     assert sample_diagnosis.dr.eligible_days > 0
@@ -434,28 +470,30 @@ def test_profile_is_carried_in_the_diagnosis(sample_diagnosis: Diagnosis) -> Non
 # --------------------------------------------------------------------- 산출물
 
 
-def test_diagnosis_sheet_carries_the_dr_rows(
+def test_진단_시트에_DR_행이_실린다(
     sample_diagnosis: Diagnosis, sample_usage: UsageData, sample_bill: BillingResult
 ) -> None:
-    """진단 시트에 거래 가능일과 등록 가능 용량이 실린다 (6.6)."""
+    """진단 시트에 거래 가능일·저부하 평일·등록 가능 용량이 실린다 (6.6)."""
     from kwise.report import ReportSections, build_sheets
 
     profile = sample_diagnosis.dr
     assert profile is not None
-    usage, bill = sample_usage, sample_bill
     sections = ReportSections(
-        usage=usage, bill=bill, diagnosis=sample_diagnosis, include_timeseries=False
+        usage=sample_usage,
+        bill=sample_bill,
+        diagnosis=sample_diagnosis,
+        include_timeseries=False,
     )
     values = build_sheets(sections)["진단"]["값"]
     assert values["DR 거래 가능일"] == f"{profile.eligible_days}일 / 전체 {profile.total_days}일"
     assert values["DR 제외일 (토·일·공휴일)"] == f"{profile.excluded_days}일"
+    assert values["DR 저부하 평일"] == f"{profile.low_load_days_count}일"
     assert values["DR 적합성"] == str(profile.potential)
     assert "표준DR" in values["DR 자원 유형"]
+    assert "6개월 입찰 제한" in values["DR 참여 안내"]
 
 
-def test_measure_sheet_shows_the_reason_when_price_is_missing(
-    sample_diagnosis: Diagnosis,
-) -> None:
+def test_수단_시트가_사유로_채워진다(sample_diagnosis: Diagnosis) -> None:
     """수단별 시트의 DR 행은 빈칸이 아니라 사유로 채워진다."""
     from kwise.report import measure_summary_frame
 
@@ -467,4 +505,4 @@ def test_measure_sheet_shows_the_reason_when_price_is_missing(
     assert row["절감액(원)"] == UNPRICED_REASON
     assert str(row["확실성"]) == str(Certainty.MEDIUM)
     assert "수요관리사업자를 통해서만" in row["비고"]
-    assert "실적위약금" in row["비고"]
+    assert "저부하 평일" in row["비고"]

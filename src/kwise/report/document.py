@@ -208,8 +208,9 @@ def measure_entries(
         entries["demand_response"] = MeasureEntry(
             kind=measure_kind("demand_response"),
             conclusion=(
-                f"거래 가능일 {demand_response.eligible_days}일에 "
-                f"등록 권장 {demand_response.registered_capacity_kw:,.0f} kW, "
+                f"거래 가능일 {demand_response.eligible_days}일 가운데 저부하 평일 "
+                f"{demand_response.low_load_days}일에 등록 권장 "
+                f"{demand_response.registered_capacity_kw:,.0f} kW, "
                 f"연간 감축 가능량 {demand_response.annual_reducible_kwh:,.0f} kWh 입니다."
             ),
             saving=(

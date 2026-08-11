@@ -97,7 +97,7 @@ def test_law_derived_values_are_where_they_should_be(sandbox: Path) -> None:
     assert assumption("ess.dod") == 0.90
     assert assumption("ess.payback_target_years") == 10.0
     assert assumption("dr.registration_percentile") == 0.10
-    assert assumption("dr.low_load_percentile") == 0.05
+    assert assumption("dr.low_load_multiple") == 1.2
     assert assumption("pv.area_per_kwp_m2") == 5.0
 
 
@@ -370,8 +370,19 @@ def test_expiry_warns_after_the_threshold(sandbox: Path) -> None:
     assert verified.link  # 원문 확인처를 함께 안내한다
     assert "확인" in verified.message()
 
-    # **확인일이 없는 항목은 시행일로 잰다.** 경제성DR 한도가 그 상태다 (13세션).
-    pending = [item for item in warnings if item.key == "dr.annual_hours_cap"]
+    # **확인일이 없는 항목은 시행일로 잰다.** 지금은 모든 항목에 확인일이 있으므로
+    # (14세션에 DR 네 항목을 확인해 채웠다) 하나를 지워 그 경로를 확인한다.
+    stripped = json.loads((sandbox / "rules_kr.json").read_text(encoding="utf-8"))
+    stripped["items"]["dr.max_events_per_day"].pop("verified_on")
+    (sandbox / "rules_kr.json").write_text(
+        json.dumps(stripped, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    reload_rules()
+    pending = [
+        item
+        for item in check_expiry(rules(), assumptions(), today=late)
+        if item.key == "dr.max_events_per_day"
+    ]
     assert pending and pending[0].basis == "시행일"
 
 
