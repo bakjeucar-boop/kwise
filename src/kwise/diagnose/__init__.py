@@ -12,11 +12,11 @@
 """
 
 from kwise.diagnose.contract import (
-    DEFAULT_MARGIN_RATIO,
-    DEFAULT_POWER_FACTOR_PCT,
     ContractAdequacy,
     ContractInfo,
     assess_contract,
+    deemed_power_factor_pct,
+    default_margin_ratio,
 )
 from kwise.diagnose.dr import (
     DrPotential,
@@ -44,9 +44,7 @@ from kwise.diagnose.summary import (
 
 __all__ = [
     "DEFAULT_HIGH_SHARE",
-    "DEFAULT_MARGIN_RATIO",
     "DEFAULT_MEDIUM_SHARE",
-    "DEFAULT_POWER_FACTOR_PCT",
     "DEFAULT_TOP_N",
     "MIDDAY_HOURS",
     "ChargeStructure",
@@ -62,6 +60,8 @@ __all__ = [
     "assess_contract",
     "build_lines",
     "charge_structure",
+    "deemed_power_factor_pct",
+    "default_margin_ratio",
     "diagnose",
     "dr_day_mask",
     "dr_eligible_days",

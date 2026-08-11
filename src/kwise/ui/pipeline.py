@@ -51,7 +51,7 @@ from kwise.tariff import (
     TariffSelection,
     TariffTable,
     calculate_bill,
-    lagging_standard_pct,
+    deemed_lagging_pct,
     list_contract_types,
     list_options,
     list_voltages,
@@ -80,13 +80,13 @@ __all__ = [
 
 
 def default_lagging_pct() -> float:
-    """주간 지상역률 입력의 기본값.
+    """주간 지상역률 입력의 기본값 = 약관 제42조의 **간주값**.
 
     **모듈 상수로 붙잡지 않는다.** 기준 데이터를 화면에서 고치면 그 다음 조회부터
-    새 값이 나와야 한다 (12장). 92% 는 약관 제42조의 무효전력계 미설치 간주값이고
-    그 값에서 역률 조정액이 0 이다.
+    새 값이 나와야 한다 (12장). 기준(제41조)이 아니라 간주값(제42조)을 쓴다 —
+    오늘은 둘 다 92% 라 조정액이 0 이지만 근거 조문이 다르다.
     """
-    return lagging_standard_pct()
+    return deemed_lagging_pct()
 
 
 @dataclass(frozen=True)

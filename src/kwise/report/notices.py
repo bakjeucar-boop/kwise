@@ -11,11 +11,12 @@ __all__ = [
     "DATA_SOURCES",
     "KNOWN_LIMITS",
     "NOT_INCLUDED_NOTICE",
+    "TENTATIVE_BASE_FEE_BASIS_WARNING",
     "UNPRICED_REASONS",
     "format_won",
 ]
 
-from kwise.tariff import NOT_INCLUDED_NOTICE
+from kwise.tariff import NOT_INCLUDED_NOTICE, TENTATIVE_BASE_FEE_BASIS_WARNING
 
 # 요구사항서 9.4 — 필수 경고
 CONTRACT_CHANGE_WARNING = (

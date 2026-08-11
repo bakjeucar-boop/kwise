@@ -18,18 +18,31 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from kwise.rules import assumption, rule_value
 from kwise.tariff import TariffSelection
 
 __all__ = [
-    "DEFAULT_MARGIN_RATIO",
-    "DEFAULT_POWER_FACTOR_PCT",
     "ContractAdequacy",
     "ContractInfo",
     "assess_contract",
+    "deemed_power_factor_pct",
+    "default_margin_ratio",
 ]
 
-DEFAULT_MARGIN_RATIO = 0.10
-DEFAULT_POWER_FACTOR_PCT = 92.0
+
+def deemed_power_factor_pct() -> float:
+    """역률을 모를 때 쓰는 간주 지상역률 (약관 제42조).
+
+    **모듈 상수로 붙잡지 않는다.** import 시점에 고정하면 기준 데이터를 고쳐도
+    그 프로세스에서는 옛 값으로 계산된다 (8세션 준비 결정).
+    """
+    return float(rule_value("power_factor.deemed_lagging_pct"))
+
+
+def default_margin_ratio() -> float:
+    """계약전력 권장 여유율. 판단값이다 (``assumptions.json``)."""
+    return float(assumption("contract.margin_ratio"))
+
 
 _MARGIN_NOTICE = (
     "기본요금은 직전 12개월 중 최대수요로 결정됩니다. 계약전력을 하향할 경우, "
@@ -52,7 +65,8 @@ class ContractInfo:
 
     selection: TariffSelection
     contract_kw: float | None = None
-    power_factor_pct: float = DEFAULT_POWER_FACTOR_PCT
+    power_factor_pct: float = field(default_factory=deemed_power_factor_pct)
+    """주지 않으면 약관 제42조의 간주값. **생성 시점에 파일에서 읽는다.**"""
 
     def __post_init__(self) -> None:
         if self.contract_kw is not None and self.contract_kw <= 0:
@@ -96,7 +110,7 @@ def assess_contract(
     billing_demand_kw: float,
     base_rate_won_per_kw: float,
     base_fee_months: float,
-    margin_ratio: float = DEFAULT_MARGIN_RATIO,
+    margin_ratio: float | None = None,
     contract_floor_ratio: float | None = None,
     step_kw: float = 1.0,
 ) -> ContractAdequacy:
@@ -104,12 +118,14 @@ def assess_contract(
 
     Args:
         billing_demand_kw: 요금적용전력 (12개월 규칙 적용값).
+        margin_ratio: 권장 계약전력에 얹을 여유율. None 이면 판단값을 읽는다.
         contract_floor_ratio: 요금적용전력의 계약전력 대비 하한 비율.
             None 이면 절감액을 산출하지 않는다.
         step_kw: 계약전력 조정 단위.
     """
     if contract_kw <= 0:
         raise ValueError(f"계약전력은 양수여야 합니다: {contract_kw}")
+    margin_ratio = default_margin_ratio() if margin_ratio is None else margin_ratio
 
     observed = kw.dropna()
     max_demand = float(observed.max()) if len(observed) else 0.0

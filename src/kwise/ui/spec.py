@@ -17,6 +17,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from kwise.measures import MEASURE_CATALOG, TIER_NONE, MeasureKind
+
 __all__ = [
     "MEASURES",
     "NO_INVESTMENT_KEYS",
@@ -32,92 +34,85 @@ __all__ = [
 class MeasureSpec:
     """카드 하나.
 
+    번호·라벨·투자 구분은 :data:`kwise.measures.MEASURE_CATALOG` 에서 온다 —
+    보고서와 화면이 같은 목록을 봐야 어긋나지 않는다. 여기 더하는 것은 **화면에만
+    필요한 것** 셋뿐이다.
+
     Attributes:
-        key: 화면 상태 키. 세션 상태와 조합 구성에 쓴다.
-        number: 요구사항서 절 번호. 카드 제목에 그대로 붙인다.
-        label: 카드 제목.
-        tier: 투자 구분. 카드를 묶는 소제목이 된다.
+        kind: 공용 목록의 한 항목 (키·번호·라벨·투자 구분).
         anchor: [자세히] 링크가 갈 매뉴얼 앵커.
         headline: **화면에 두는 한 줄.** 없으면 입력을 못 하거나 결과를 오독하는 것만.
         needs_pv: 태양광 결과가 있어야 켤 수 있는 수단인가.
     """
 
-    key: str
-    number: str
-    label: str
-    tier: str
+    kind: MeasureKind
     anchor: str
     headline: str
     needs_pv: bool = False
 
     @property
+    def key(self) -> str:
+        return self.kind.key
+
+    @property
+    def number(self) -> str:
+        return self.kind.number
+
+    @property
+    def label(self) -> str:
+        return self.kind.label
+
+    @property
+    def tier(self) -> str:
+        return self.kind.tier
+
+    @property
     def title(self) -> str:
-        return f"{self.number} {self.label}"
+        return self.kind.title
 
 
-MEASURES: tuple[MeasureSpec, ...] = (
-    MeasureSpec(
-        key="tariff_switch",
-        number="7.1",
-        label="선택요금 전환",
-        tier="투자 0원",
-        anchor="measure-tariff-switch",
-        headline="현행 선택요금과 같은 종별·전압의 다른 선택요금을 모두 다시 계산해 견줍니다.",
+# 화면에만 필요한 것 — 앵커와 한 줄 설명. 순서는 공용 목록이 정한다.
+_SCREEN: dict[str, tuple[str, str, bool]] = {
+    "tariff_switch": (
+        "measure-tariff-switch",
+        "현행 선택요금과 같은 종별·전압의 다른 선택요금을 모두 다시 계산해 견줍니다.",
+        False,
     ),
-    MeasureSpec(
-        key="contract",
-        number="7.2",
-        label="계약전력 조정",
-        tier="투자 0원",
-        anchor="measure-contract",
-        headline="여유율과 하향 여지를 봅니다. 하향은 되돌리기 어렵고 초과 시 위약이 따릅니다.",
+    "contract": (
+        "measure-contract",
+        "여유율과 하향 여지를 봅니다. 하향은 되돌리기 어렵고 초과 시 위약이 따릅니다.",
+        False,
     ),
-    MeasureSpec(
-        key="demand_response",
-        number="7.3",
-        label="경제성DR",
-        tier="투자 0원",
-        anchor="measure-dr",
-        headline="감축 가능량까지만 냅니다. 정산 단가는 사업자 상담이 필요합니다.",
+    "demand_response": (
+        "measure-dr",
+        "감축 가능량까지만 냅니다. 정산 단가는 사업자 상담이 필요합니다.",
+        False,
     ),
-    MeasureSpec(
-        key="power_factor",
-        number="7.4",
-        label="역률 개선",
-        tier="저투자 (콘덴서·APFR)",
-        anchor="measure-power-factor",
-        headline="현재 역률과 도입 후 역률로 각각 요금을 다시 계산합니다.",
+    "power_factor": (
+        "measure-power-factor",
+        "현재 역률과 도입 후 역률로 각각 요금을 다시 계산합니다.",
+        False,
     ),
-    MeasureSpec(
-        key="solar",
-        number="7.5",
-        label="태양광",
-        tier="투자",
-        anchor="measure-solar",
-        headline="면적·설치 밀도·지역 셋만 받아 용량 곡선을 훑습니다.",
+    "solar": ("measure-solar", "면적·설치 밀도·지역 셋만 받아 용량 곡선을 훑습니다.", False),
+    "ess": ("measure-ess", "목표 요금적용전력에서 출력·용량·방전시간을 역산합니다.", False),
+    "surplus": (
+        "measure-surplus",
+        "태양광 잉여 전력의 활용 시나리오입니다. 자격요건은 판정하지 않습니다.",
+        True,
     ),
+}
+
+MEASURES: tuple[MeasureSpec, ...] = tuple(
     MeasureSpec(
-        key="ess",
-        number="7.6",
-        label="ESS",
-        tier="투자",
-        anchor="measure-ess",
-        headline="목표 요금적용전력에서 출력·용량·방전시간을 역산합니다.",
-    ),
-    MeasureSpec(
-        key="surplus",
-        number="7.7",
-        label="잉여 활용",
-        tier="투자",
-        anchor="measure-surplus",
-        headline="태양광 잉여 전력의 활용 시나리오입니다. 자격요건은 판정하지 않습니다.",
-        needs_pv=True,
-    ),
+        kind=kind,
+        anchor=_SCREEN[kind.key][0],
+        headline=_SCREEN[kind.key][1],
+        needs_pv=_SCREEN[kind.key][2],
+    )
+    for kind in MEASURE_CATALOG
 )
 
-NO_INVESTMENT_KEYS: tuple[str, ...] = tuple(
-    item.key for item in MEASURES if item.tier == "투자 0원"
-)
+NO_INVESTMENT_KEYS: tuple[str, ...] = tuple(item.key for item in MEASURES if item.tier == TIER_NONE)
 
 _BY_KEY: dict[str, MeasureSpec] = {item.key: item for item in MEASURES}
 

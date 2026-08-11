@@ -418,3 +418,79 @@ def test_expiry_warnings_bundle_everything(sandbox: Path) -> None:
     # 기상을 빼고 볼 수도 있어야 한다.
     only_rules = expiry_warnings(today=dt.date(2028, 10, 1), include_weather=False)
     assert not any(item.scope == "기상" for item in only_rules)
+
+
+# ===================================================================== 9세션 — 남은 상수
+
+
+def test_계약_기본값이_코드에_남아_있지_않다() -> None:
+    r"""``diagnose\contract.py`` 의 모듈 상수 둘을 파일로 옮겼다 (9세션).
+
+    **코드에 기본값이 남으면 파일을 고쳐도 반영되지 않는다.** 값이 그럴듯해서
+    결과를 다 쓰고 나서야 발견된다 — 8세션 준비에서 스무남은 개를 옮길 때
+    빠뜨렸던 둘이다.
+    """
+    import kwise.diagnose.contract as module
+
+    assert not hasattr(module, "DEFAULT_POWER_FACTOR_PCT")
+    assert not hasattr(module, "DEFAULT_MARGIN_RATIO")
+
+
+def test_간주_역률과_여유율을_파일에서_읽는다() -> None:
+    from kwise.diagnose import deemed_power_factor_pct, default_margin_ratio
+    from kwise.rules import assumption, rule_value
+
+    assert deemed_power_factor_pct() == float(rule_value("power_factor.deemed_lagging_pct"))
+    assert default_margin_ratio() == float(assumption("contract.margin_ratio"))
+
+
+def test_간주_역률은_기준과_별개_항목이다() -> None:
+    """근거 조문이 다르다 — 제42조(간주) vs 제41조(기준).
+
+    한 값으로 묶어 두면 기준만 개정됐을 때 **모르는 고객의 역률까지 따라 움직여**
+    실측하지 않은 값으로 조정액이 생긴다.
+    """
+    from kwise.rules import rules
+
+    deemed = rules()["power_factor.deemed_lagging_pct"]
+    standard = rules()["power_factor.lagging_standard_pct"]
+    assert deemed.value == standard.value == 92.0  # 오늘은 같다
+    assert "제42조" in deemed.source
+    assert deemed.source != standard.source  # 근거는 다르다
+
+
+def test_역률을_모르면_간주값으로_채운다() -> None:
+    """그 값에서 추가·감액이 정확히 0 원이다 (제42조)."""
+    from kwise.tariff import power_factor_charge
+    from kwise.tariff.power_factor import deemed_lagging_pct
+
+    charge = power_factor_charge(1_000_000.0)
+    assert charge.lagging_pct == deemed_lagging_pct()
+    assert charge.total_won == 0.0
+
+
+def test_계약_정보_기본_역률이_생성_시점에_읽힌다(sandbox: Path) -> None:
+    """데이터클래스 필드 기본값으로 두면 **import 시점에 고정**된다.
+
+    ``default_factory`` 라야 화면에서 파일을 고친 뒤 만든 객체가 새 값을 쓴다.
+    """
+    from kwise.diagnose import ContractInfo
+    from kwise.rules import set_value
+    from kwise.tariff import TariffSelection
+
+    selection = TariffSelection("general_b", "high_a", "I")
+    assert ContractInfo(selection).power_factor_pct == 92.0
+
+    assert set_value("power_factor.deemed_lagging_pct", 88.0).ok
+    assert ContractInfo(selection).power_factor_pct == 88.0
+
+
+def test_여유율_기본값이_호출_시점에_읽힌다(sandbox: Path) -> None:
+    from kwise.diagnose import default_margin_ratio
+    from kwise.measures import evaluate_contract_adjustment
+    from kwise.rules import set_value
+
+    assert default_margin_ratio() == 0.1
+    assert set_value("contract.margin_ratio", 0.25).ok
+    assert default_margin_ratio() == 0.25
+    _ = evaluate_contract_adjustment  # 서명이 None 기본값을 받는지는 mypy 가 본다

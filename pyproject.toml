@@ -18,6 +18,9 @@ dependencies = [
     "streamlit>=1.35",
     "altair>=5.3",
     "openpyxl>=3.1",
+    # 9세션 — 의사결정자용 Word 보고서. 표는 Word 표 객체로, 차트만 png 다.
+    "python-docx>=1.1",
+    "matplotlib>=3.8",
     "pyarrow>=15.0",
     "requests>=2.31",
     "typer>=0.12",
@@ -81,7 +84,15 @@ disallow_untyped_calls = false
 warn_return_any = false
 
 [[tool.mypy.overrides]]
-module = ["pandas.*", "numpy.*", "pvlib.*", "holidays.*", "streamlit.*", "altair.*"]
+module = [
+    "pandas.*",
+    "numpy.*",
+    "pvlib.*",
+    "holidays.*",
+    "streamlit.*",
+    "altair.*",
+    "matplotlib.*",
+]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------- pytest

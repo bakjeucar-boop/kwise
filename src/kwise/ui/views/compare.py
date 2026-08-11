@@ -9,6 +9,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
+
 import pandas as pd
 import streamlit as st
 
@@ -17,12 +20,32 @@ from kwise.compare import (
     SENSITIVITY_NOTE,
     CombinationSpec,
     ComparisonResult,
+    SensitivityRange,
 )
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
-from kwise.measures import default_target_pct, evaluate_demand_response
+from kwise.measures import (
+    Certainty,
+    ContractAdjustment,
+    DemandResponseResult,
+    EssResult,
+    PowerFactorResult,
+    SolarPoint,
+    SurplusResult,
+    TariffSwitchResult,
+    default_target_pct,
+    evaluate_demand_response,
+)
 from kwise.quality import QualityReport
-from kwise.report import ReportSections, measure_summary_frame, no_pv_sensitivity_frame
+from kwise.report import (
+    DocumentSections,
+    MeasureEntry,
+    ReportSections,
+    document_bytes,
+    measure_entries,
+    measure_summary_frame,
+    no_pv_sensitivity_frame,
+)
 from kwise.report.notices import KNOWN_LIMITS, NOT_INCLUDED_NOTICE
 from kwise.tariff import BillingResult, TariffTable
 from kwise.ui import charts
@@ -42,7 +65,7 @@ from kwise.ui.cache import (
 )
 from kwise.ui.pipeline import ContractForm, combination_specs
 from kwise.ui.session import build_report_bytes
-from kwise.ui.spec import review_scope
+from kwise.ui.spec import ReviewScope, review_scope
 from kwise.ui.state import (
     enabled_measures,
     get_solar_inputs,
@@ -139,13 +162,22 @@ def render(
     for message in comparison.warnings:
         st.warning(message)
 
-    sensitivity_frame = _sensitivity_block(
+    sensitivity_frame, sensitivity_ranges = _sensitivity_block(
         usage, table, baseline, unit_profile, quality, form, specs
     )
-    measure_rows = _measure_rows(
+    results = _measure_results(
         usage, table, form, diagnosis, quality, baseline, enabled, unit_profile
     )
-    _download_block(usage, baseline, diagnosis, comparison, sensitivity_frame, measure_rows)
+    _download_block(
+        usage,
+        baseline,
+        diagnosis,
+        comparison,
+        sensitivity_frame,
+        sensitivity_ranges,
+        results,
+        scope,
+    )
 
     with st.expander("미포함 요금요소와 알려진 한계", expanded=False):
         st.write(NOT_INCLUDED_NOTICE)
@@ -158,7 +190,49 @@ def _options_key(form: ContractForm) -> str:
     return f"{form.contract_kw}|{form.lagging_pct}|{form.leading_power_factor_pct}"
 
 
-def _measure_rows(
+@dataclass(frozen=True)
+class _MeasureResults:
+    """켠 수단의 계산 결과 한 벌.
+
+    **Excel 시트와 Word 3장이 같은 것을 봐야 한다.** 각자 모으면 한쪽에만 든
+    수단이 생기고, 두 산출물을 나란히 놓고서야 드러난다.
+    """
+
+    switch: TariffSwitchResult | None = None
+    contract: ContractAdjustment | None = None
+    demand_response: DemandResponseResult | None = None
+    power_factor: PowerFactorResult | None = None
+    solar: SolarPoint | None = None
+    solar_certainty: Certainty | None = None
+    solar_unpriced_reason: str = ""
+    ess: EssResult | None = None
+    surplus: SurplusResult | None = None
+
+    def excel_frame(self) -> pd.DataFrame:
+        return measure_summary_frame(
+            switch=self.switch,
+            contract=self.contract,
+            demand_response=self.demand_response,
+            power_factor=self.power_factor,
+            ess=self.ess,
+            solar=self.solar,
+        )
+
+    def entries(self) -> tuple[MeasureEntry, ...]:
+        return measure_entries(
+            switch=self.switch,
+            contract=self.contract,
+            demand_response=self.demand_response,
+            power_factor=self.power_factor,
+            solar=self.solar,
+            solar_certainty=self.solar_certainty,
+            solar_unpriced_reason=self.solar_unpriced_reason,
+            ess=self.ess,
+            surplus=self.surplus,
+        )
+
+
+def _measure_results(
     usage: UsageData,
     table: TariffTable,
     form: ContractForm,
@@ -167,11 +241,10 @@ def _measure_rows(
     baseline: BillingResult,
     enabled: tuple[str, ...],
     unit_profile: pd.Series | None,
-) -> pd.DataFrame:
-    """산출물의 「수단별 결과」 시트.
+) -> _MeasureResults:
+    """**켠 수단만 계산한다.** 2단계에서 이미 돌린 것들이라 캐시에 걸린다.
 
-    **켠 수단만 담는다.** 2단계에서 이미 계산한 것들이라 캐시에 걸린다. 하나도
-    켜지 않았으면 빈 표가 나가고, 무엇을 보지 않았는지는 「검토 범위」가 밝힌다.
+    하나도 켜지 않았으면 비어 있고, 무엇을 보지 않았는지는 「검토 범위」가 밝힌다.
     """
     token = usage_token(usage)
     stamp = rules_stamp()
@@ -216,11 +289,17 @@ def _measure_rows(
         )
 
     solar = None
+    solar_certainty = None
+    solar_reason = ""
     inputs = get_solar_inputs()
     if "solar" in enabled and inputs is not None and unit_profile is not None:
-        solar = cached_solar(
+        curve = cached_solar(
             usage, table, unit_profile, baseline, quality, token, form, inputs, stamp
-        ).points[-1]
+        )
+        solar = curve.points[-1]
+        solar_certainty = curve.certainty
+        # 단가를 넣지 않았으면 **투자비 칸에 사유가 들어간다** (7.5).
+        solar_reason = curve.cost.reason
 
     ess = None
     ess_target = measure_float("ess", "target")
@@ -241,13 +320,15 @@ def _measure_rows(
                 stamp,
             )
 
-    return measure_summary_frame(
+    return _MeasureResults(
         switch=switch,
         contract=contract,
         demand_response=demand_response,
         power_factor=power_factor,
-        ess=ess,
         solar=solar,
+        solar_certainty=solar_certainty,
+        solar_unpriced_reason=solar_reason,
+        ess=ess,
     )
 
 
@@ -259,7 +340,7 @@ def _sensitivity_block(
     quality: QualityReport,
     form: ContractForm,
     specs: tuple[CombinationSpec, ...],
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, tuple[SensitivityRange, ...]]:
     st.subheader("감도")
     pv_specs = [spec for spec in specs if spec.has_pv]
     if not pv_specs or unit_profile is None:
@@ -267,7 +348,7 @@ def _sensitivity_block(
             "태양광이 없어 감도를 적용할 항목이 없습니다. 감도는 PV 출력의 첨예도에만 "
             "적용하며 요금제 전환·계약전력 조정·역률 개선은 확정 계산입니다."
         )
-        return no_pv_sensitivity_frame()
+        return no_pv_sensitivity_frame(), ()
 
     frame, ranges = cached_sensitivity(
         usage,
@@ -289,7 +370,7 @@ def _sensitivity_block(
     with st.expander("근거 — 시나리오 3행 원자료", expanded=False):
         st.dataframe(frame, width="stretch")
         st.caption(SENSITIVITY_NOTE)
-    return frame
+    return frame, ranges
 
 
 def _download_block(
@@ -298,33 +379,71 @@ def _download_block(
     diagnosis: Diagnosis,
     comparison: ComparisonResult,
     sensitivity: pd.DataFrame,
-    measure_rows: pd.DataFrame,
+    sensitivity_ranges: tuple[SensitivityRange, ...],
+    results: _MeasureResults,
+    scope: ReviewScope,
 ) -> None:
+    """산출물 둘 — 분석자용 Excel 과 의사결정자용 Word (10.3·10.5)."""
     st.subheader("내려받기")
-    st.caption(
-        "아홉 시트 통합문서입니다. 파일명에 날짜·시각이 붙습니다. " + detail_suffix("excel-report")
-    )
-    include_timeseries = st.checkbox("15분 시계열 시트 포함", value=True)
-    if not st.button("Excel 만들기", type="primary"):
-        return
-    sections = ReportSections(
-        usage=usage,
-        bill=baseline,
-        diagnosis=diagnosis,
-        comparison=comparison,
-        sensitivity=sensitivity,
-        measure_rows=measure_rows,
-        include_timeseries=include_timeseries,
-    )
+    excel_tab, word_tab = st.tabs(["Excel — 분석자용", "Word 보고서 — 의사결정자용"])
+
+    with excel_tab:
+        st.caption(
+            "아홉 시트 통합문서입니다. 파일명에 날짜·시각이 붙습니다. "
+            + detail_suffix("excel-report")
+        )
+        include_timeseries = st.checkbox("15분 시계열 시트 포함", value=True)
+        if st.button("Excel 만들기", type="primary", key="build_excel"):
+            sections = ReportSections(
+                usage=usage,
+                bill=baseline,
+                diagnosis=diagnosis,
+                comparison=comparison,
+                sensitivity=sensitivity,
+                measure_rows=results.excel_frame(),
+                include_timeseries=include_timeseries,
+            )
+            _offer(
+                lambda: build_report_bytes(sections, session_id=session_id()),
+                label="Excel 내려받기",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_excel",
+            )
+
+    with word_tab:
+        st.caption(
+            "결론부터 쓴 다섯 장짜리 보고서입니다. **표는 Word 표 객체라** 제안서에 "
+            "그대로 복사해 쓸 수 있습니다."
+        )
+        building = st.text_input(
+            "건물명", value=usage.meta.source_name, help="표지와 본문에 들어갑니다."
+        )
+        if st.button("Word 보고서 만들기", type="primary", key="build_word"):
+            document = DocumentSections(
+                usage=usage,
+                bill=baseline,
+                diagnosis=diagnosis,
+                comparison=comparison,
+                sensitivity=sensitivity_ranges,
+                measures=results.entries(),
+                building_name=building,
+                reviewed_labels=scope.reviewed_labels,
+                skipped_labels=scope.skipped_labels,
+            )
+            _offer(
+                lambda: document_bytes(document),
+                label="Word 내려받기",
+                mime=("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+                key="dl_word",
+            )
+
+
+def _offer(make: Callable[[], tuple[bytes, str]], *, label: str, mime: str, key: str) -> None:
+    """만들고 바로 내려받게 한다. **서버에 남기지 않는다** (10.2)."""
     try:
-        payload, filename = build_report_bytes(sections, session_id=session_id())
+        payload, filename = make()
     except Exception as exc:
-        st.error(f"Excel 을 만들지 못했습니다.\n\n{exc}")
+        st.error(f"{label} — 만들지 못했습니다.\n\n{exc}")
         return
-    st.download_button(
-        "내려받기",
-        data=payload,
-        file_name=filename,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+    st.download_button(label, data=payload, file_name=filename, mime=mime, key=key)
     st.caption("서버에는 남기지 않습니다 — 만든 즉시 지웠습니다.")

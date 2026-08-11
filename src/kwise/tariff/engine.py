@@ -48,6 +48,7 @@ from kwise.tariff.tou import classify_slots
 __all__ = [
     "MISSING_LIMIT_RATIO",
     "NOT_INCLUDED_NOTICE",
+    "TENTATIVE_BASE_FEE_BASIS_WARNING",
     "AnnualEstimate",
     "BillingOptions",
     "BillingResult",
@@ -68,6 +69,20 @@ NOT_INCLUDED_NOTICE = (
     "본 결과는 기본요금과 전력량요금만 산출한 값입니다. 기후환경요금, 연료비조정요금, "
     "부가가치세, 전력산업기반기금은 포함되지 않았습니다. 이들은 모두 사용전력량에 "
     "비례하므로 실제 절감액은 본 결과보다 다소 크게 나타납니다."
+)
+
+# 갑 종별 기본요금 기준은 **잠정이다** (미해결 항목 — 약관 제38조).
+#
+# 제68조 ②의 기준은 갑/을 구분이 아니라 **최대수요전력계 설치 여부**다. 현재
+# 구현(갑=계약전력)은 관행적 대응이며, 특히 일반용(갑)Ⅱ 는 시간대별 구분계량기
+# 고객이라 최대수요계를 함께 갖추었을 수 있다. 그렇다면 기본요금이 요금적용전력
+# 기준이어야 하고 **금액이 통째로 달라진다.**
+#
+# PoC 범위(일반용(을))에서는 이 경로를 타지 않아 샘플에 영향이 없다. 그래서
+# 갑 종별을 실제로 쓸 때 조용히 틀리기 쉽다 — 결과에 반드시 함께 싣는다.
+TENTATIVE_BASE_FEE_BASIS_WARNING = (
+    "갑 종별의 기본요금 기준은 약관 제38조 확인 전까지 잠정입니다. "
+    "최대수요전력계가 설치된 고객이면 결과가 달라질 수 있습니다."
 )
 
 
@@ -429,6 +444,8 @@ def calculate_bill(
     warnings: list[str] = []
     if contract.base_fee_on_contract:
         # 갑 종별이다. 요금적용전력 하한·이월 규칙은 기본요금에 관여하지 않는다.
+        # **기준 자체가 잠정임을 먼저 밝힌다** — 뒤의 경고들은 이 전제 위에 있다.
+        warnings.append(TENTATIVE_BASE_FEE_BASIS_WARNING)
         observed_peak = float(usage.kw.max())
         if observed_peak > (opts.contract_kw or 0.0):
             warnings.append(

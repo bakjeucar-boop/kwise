@@ -20,7 +20,7 @@ from enum import StrEnum
 
 import pandas as pd
 
-from kwise.diagnose import DEFAULT_MARGIN_RATIO
+from kwise.diagnose import default_margin_ratio
 from kwise.io import UsageData
 from kwise.measures.base import Certainty, annualize
 from kwise.tariff import BillingResult
@@ -112,7 +112,7 @@ def evaluate_contract_adjustment(
     *,
     contract_kw: float,
     contract_floor_ratio: float | None = None,
-    margin_ratio: float = DEFAULT_MARGIN_RATIO,
+    margin_ratio: float | None = None,
     step_kw: float = 1.0,
 ) -> ContractAdjustment:
     """계약전력을 낮출 여지와, 하한 규정을 아는 경우의 절감액을 낸다.
@@ -121,10 +121,11 @@ def evaluate_contract_adjustment(
         contract_floor_ratio: 요금적용전력의 계약전력 대비 하한 비율.
             None 이면 요금표의 종별 속성(일반용(을) 30%)을 쓴다. 종별 속성마저
             비어 있으면 '미확인' 을 돌려주고 금액을 만들지 않는다.
-        margin_ratio: 권장 계약전력에 얹을 여유율.
+        margin_ratio: 권장 계약전력에 얹을 여유율. None 이면 판단값을 읽는다.
     """
     if contract_kw <= 0:
         raise ValueError(f"계약전력은 양수여야 합니다: {contract_kw}")
+    margin_ratio = default_margin_ratio() if margin_ratio is None else margin_ratio
 
     ratio = contract_floor_ratio if contract_floor_ratio is not None else bill.contract_floor_ratio
     observed = usage.kw.dropna()

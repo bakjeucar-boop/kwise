@@ -193,12 +193,15 @@ def test_계약전력이_요금_엔진_설정까지_간다() -> None:
 
 
 def test_역률_기본값을_기준_데이터에서_읽는다() -> None:
-    """**모듈 상수로 붙잡지 않는다** — 파일을 고치면 화면 기본값도 따라야 한다."""
-    from kwise.tariff import lagging_standard_pct
+    """**모듈 상수로 붙잡지 않는다** — 파일을 고치면 화면 기본값도 따라야 한다.
+
+    기준(제41조)이 아니라 **간주값(제42조)**을 쓴다. 오늘은 둘 다 92% 다.
+    """
+    from kwise.tariff import deemed_lagging_pct
 
     form = ContractForm("general_b", "high_a", "I")
-    assert form.lagging_pct == lagging_standard_pct() == default_lagging_pct()
-    assert form.billing_options().power_factor_pct == lagging_standard_pct()
+    assert form.lagging_pct == deemed_lagging_pct() == default_lagging_pct()
+    assert form.billing_options().power_factor_pct == deemed_lagging_pct()
 
 
 def test_야간_진상역률은_기본값이_없다() -> None:
@@ -535,8 +538,10 @@ def test_확인_기록이_없으면_그렇게_적는다() -> None:
 
 def test_실제_항목_전부에_원문_확인처가_붙는다() -> None:
     """**경고가 없어도 근거를 따라갈 데가 있어야 한다.**"""
-    rows = build_rows(describe_items(), expiry_warnings(include_weather=False))
-    assert len(rows) == 47
+    items = describe_items()
+    rows = build_rows(items, expiry_warnings(include_weather=False))
+    # 항목이 조용히 사라지는 것을 막는 잣대다. 늘리는 것은 정상, 줄면 확인한다.
+    assert len(rows) == len(items) == 49  # rules_kr 27 + assumptions 22
     assert all(row.link.startswith(("한국", "국가", "에너지", "Open")) for row in rows)
     assert all("http" in row.link for row in rows)
 

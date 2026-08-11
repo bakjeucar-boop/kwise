@@ -22,6 +22,15 @@ from kwise.measures.arbitrage import (
     peak_days_by_season,
 )
 from kwise.measures.base import Certainty, annualize, lowest_certainty, payback_years
+from kwise.measures.catalog import (
+    MEASURE_CATALOG,
+    TIER_INVESTMENT,
+    TIER_LOW,
+    TIER_NONE,
+    MeasureKind,
+    measure_kind,
+    measure_numbers,
+)
 from kwise.measures.contract import (
     MARGIN_NOTICE,
     ContractAdjustment,
@@ -107,10 +116,14 @@ __all__ = [
     "DR_ADVISORY",
     "ELIGIBILITY_NOTICE",
     "MARGIN_NOTICE",
+    "MEASURE_CATALOG",
     "PV_COST_BASIS_NOTE",
     "PV_REFERENCE_NOTE",
     "PV_UNPRICED_REASON",
     "SCALE_ECONOMY_NOTE",
+    "TIER_INVESTMENT",
+    "TIER_LOW",
+    "TIER_NONE",
     "ArbitrageValue",
     "Certainty",
     "ContractAdjustment",
@@ -122,6 +135,7 @@ __all__ = [
     "EssCostReferenceError",
     "EssResult",
     "EssTechnologyCost",
+    "MeasureKind",
     "NetLoad",
     "OptionQuote",
     "PeakExcess",
@@ -158,6 +172,8 @@ __all__ = [
     "light_band_mask",
     "load_ess_cost_reference",
     "lowest_certainty",
+    "measure_kind",
+    "measure_numbers",
     "payback_years",
     "peak_days_by_season",
     "power_factor_after_pct",

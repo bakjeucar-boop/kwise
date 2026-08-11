@@ -18,6 +18,7 @@ from kwise.io import UsageData, load_usage
 from kwise.quality import QualityReport
 from kwise.tariff import (
     NOT_INCLUDED_NOTICE,
+    TENTATIVE_BASE_FEE_BASIS_WARNING,
     BillingOptions,
     BillingResult,
     TariffSelection,
@@ -664,3 +665,35 @@ def test_hand_case_night_peak_is_excluded_from_billing_demand(
     assert row["max_demand_kw"] == pytest.approx(1_200.0)
     assert row["billing_demand_kw"] == pytest.approx(400.0)  # 경부하는 대상이 아니다
     assert row["base_won"] == pytest.approx(400.0 * BASE_A_I)
+
+
+# ===================================================================== 9세션 — 갑 종별 잠정 경고
+
+
+def test_갑_종별에_기본요금_기준_잠정_경고가_붙는다(
+    tariff: TariffTable, sample_usage: UsageData
+) -> None:
+    """약관 제38조 확인 전까지 갑 종별 기본요금 기준은 잠정이다 (미해결 항목).
+
+    **PoC 범위(일반용(을))에서는 이 경로를 타지 않아 샘플에 영향이 없다.**
+    그래서 갑 종별을 실제로 쓸 때 조용히 틀리기 쉽다 — 결과에 함께 싣는다.
+    """
+    bill = calculate_bill(
+        sample_usage,
+        tariff,
+        TariffSelection("general_a_2", "high_a", "I"),
+        options=BillingOptions(contract_kw=5_800.0),
+    )
+    assert TENTATIVE_BASE_FEE_BASIS_WARNING in bill.warnings
+    assert "제38조" in TENTATIVE_BASE_FEE_BASIS_WARNING
+
+
+def test_을_종별에는_잠정_경고가_붙지_않는다(tariff: TariffTable, sample_usage: UsageData) -> None:
+    """을 종별 기본요금은 요금적용전력 기준이 확정이다. 없는 불확실성을 만들지 않는다."""
+    bill = calculate_bill(
+        sample_usage,
+        tariff,
+        TariffSelection("general_b", "high_a", "I"),
+        options=BillingOptions(contract_kw=5_800.0),
+    )
+    assert TENTATIVE_BASE_FEE_BASIS_WARNING not in bill.warnings

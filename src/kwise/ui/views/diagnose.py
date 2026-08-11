@@ -14,7 +14,7 @@ import streamlit as st
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
 from kwise.quality import QualityReport
-from kwise.tariff import TariffTable
+from kwise.tariff import TENTATIVE_BASE_FEE_BASIS_WARNING, TariffTable
 from kwise.ui import charts
 from kwise.ui import text as fmt
 from kwise.ui.anchors import detail_suffix
@@ -67,6 +67,7 @@ def render(table: TariffTable) -> None:
         rules_stamp(),
     )
 
+    _tentative_basis_block(table, form)
     _summary_block(diagnosis)
     _quality_block(usage, quality)
     _pattern_block(diagnosis)
@@ -249,6 +250,27 @@ def _contract_block(table: TariffTable, usage: UsageData) -> ContractForm | None
             "금액은 계약 정보가 있어야 산출합니다 (요구사항서 6장)."
         )
     return saved
+
+
+# --------------------------------------------------------------------- 갑 종별 잠정 경고
+
+
+def _tentative_basis_block(table: TariffTable, form: ContractForm | None) -> None:
+    """갑 종별 기본요금 기준이 잠정임을 **접지 않고** 알린다 (미해결 — 약관 제38조).
+
+    PoC 범위(일반용(을))에서는 이 경로를 타지 않아 샘플에 영향이 없다. 그래서
+    갑 종별을 실제로 쓸 때 조용히 틀리기 쉽다 — 화면 위쪽에 남긴다.
+    """
+    if form is None:
+        return
+    contract_type = table.contract(form.contract_type)
+    if not contract_type.base_fee_on_contract:
+        return
+    st.warning(
+        f"**{contract_type.label}** — {TENTATIVE_BASE_FEE_BASIS_WARNING} "
+        f"현재는 계약전력 {fmt.kw(form.contract_kw)} 기준으로 계산합니다. "
+        + detail_suffix("measure-contract")
+    )
 
 
 # --------------------------------------------------------------------- 개선 여지 요약

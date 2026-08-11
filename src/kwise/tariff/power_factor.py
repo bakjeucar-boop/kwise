@@ -47,6 +47,7 @@ __all__ = [
     "PowerFactorCharge",
     "adjustment_per_percent",
     "day_window",
+    "deemed_lagging_pct",
     "deemed_leading_pct",
     "lagging_adjustment_ratio",
     "lagging_floor_pct",
@@ -76,7 +77,18 @@ def day_window() -> tuple[int, int]:
 
 
 def lagging_standard_pct() -> float:
+    """역률요금의 **기준** (제41조). 이 값을 넘으면 감액, 못 미치면 추가다."""
     return float(rule_value("power_factor.lagging_standard_pct"))
+
+
+def deemed_lagging_pct() -> float:
+    """무효전력계가 없을 때의 **간주** 지상역률 (제42조).
+
+    기준(:func:`lagging_standard_pct`)과 우연히 같은 92% 지만 **근거 조문이
+    다르다.** 한 값으로 묶어 두면, 기준만 개정됐을 때 "모르는 고객" 의 역률까지
+    따라 움직여 조정액이 0 이 아니게 된다 — 실측하지 않은 값으로 금액이 생긴다.
+    """
+    return float(rule_value("power_factor.deemed_lagging_pct"))
 
 
 def lagging_floor_pct() -> float:
@@ -219,14 +231,17 @@ def power_factor_charge(
 
     Args:
         base_won: 대상 기본요금. 부분 월 계수가 이미 곱해진 값을 넘긴다.
-        lagging_pct: 주간 지상역률. 기본값 92% 는 제42조의 간주값이라 조정이 0 이다.
+        lagging_pct: 주간 지상역률. None 이면 제42조의 간주값(무효전력계 미설치)을
+            쓴다. 그 값에서 추가·감액이 0 원이다.
         leading_pct: 야간 **진상**역률. None 이면 제43조 ② 2호 나목에 따라
             지상으로 보아 100% 로 간주하고 추가를 0 으로 둔다. 진상은 고정
             콘덴서가 부하 대비 과다할 때 생기므로, 그 사실을 경고로 남긴다.
     """
     standard = lagging_standard_pct()
     floor = lagging_floor_pct()
-    lagging_pct = standard if lagging_pct is None else lagging_pct
+    # **기준이 아니라 간주값으로 채운다** (제42조). 둘은 오늘 같은 92% 지만
+    # 조문이 다르므로, 기준이 개정돼도 모르는 고객의 역률은 따라가지 않는다.
+    lagging_pct = deemed_lagging_pct() if lagging_pct is None else lagging_pct
     lagging_ratio = lagging_adjustment_ratio(lagging_pct)
     warnings: list[str] = []
     notes: list[str] = [
