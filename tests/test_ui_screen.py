@@ -416,12 +416,16 @@ def test_엑셀을_내려받아도_결과가_남는다(compare_app: AppTest) -> 
 
 
 def test_수단_화면이_기준선을_한_번_밝힌다() -> None:
-    """ "현재 요금제를 유지한 값" 이라는 말이 화면에 한 번은 있어야 한다."""
+    """**독립 평가라는 사실과 기준선**이 화면에 한 번은 적혀 있어야 한다 (14세션 2절).
+
+    배경색 상자(``st.info``) 대신 본문 글로 낸다 — 등급(차단·주의)이 색을 쓴다.
+    """
     screen = _running(nav_page="2단계 · 개선 수단", measure_on_tariff_switch=True)
     assert not screen.exception, screen.exception
-    notices = [item.value for item in screen.info]
-    assert any("현재 요금제를 유지한다고 보고" in item for item in notices), notices
-    assert any("3단계" in item for item in notices)
+    body = [item.value for item in screen.markdown]
+    assert any("따로따로" in str(item) for item in body), body
+    assert any("현재 요금제와 현재 사용량" in str(item) for item in body), body
+    assert any("3단계 합산효과" in str(item) for item in body), body
 
 
 # ======================================================== 13세션
@@ -542,3 +546,78 @@ def test_비교_화면은_표가_먼저다(compare_app: AppTest) -> None:
     )
     # 수단별 그래프는 화면에서 뺐다 — 보고서 4장에만 둔다.
     assert len(compare_app.get("arrow_vega_lite_chart")) == 0
+
+
+# ======================================================== 14세션 · 2단계 독립 평가
+
+
+def test_잉여_활용_카드는_태양광이_없어도_열린다() -> None:
+    """**다른 카드 때문에 비활성이 되는 카드는 없다** (14세션 2-3).
+
+    태양광을 켜지 않으면 잉여가 0 인 것이지 검토할 수 없는 것이 아니다.
+    잠그면 "쓸 수 없는 수단" 으로 읽힌다.
+    """
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_surplus=True)
+    assert not screen.exception, screen.exception
+    body = " ".join(str(item.value) for item in screen.markdown)
+    assert "태양광을 켜지 않아 잉여가 0 입니다." in body
+    # 입력이 잠기지 않는다 — 단가는 그대로 받는다.
+    assert any("잉여 판매 단가" in str(item.label) for item in screen.number_input)
+    # 잉여 0 을 지표로 보인다. 빈 카드가 아니다.
+    assert any(item.label == "잉여 전력량" for item in screen.metric)
+
+
+def test_카드_개요가_결과_위에_나온다() -> None:
+    """무엇을 어떻게 개선하는지 두세 줄 (14세션 2-2)."""
+    from kwise.ui.spec import measure
+
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_tariff_switch=True)
+    assert not screen.exception, screen.exception
+    body = " ".join(str(item.value) for item in screen.markdown)
+    assert measure("tariff_switch").overview in body
+
+
+def test_계약전력_카드가_3단계를_가리킨다() -> None:
+    """7.2 는 현재 부하 기준이고, 조합 기준 추가 하향은 3단계다 (14세션 2-4)."""
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_contract=True)
+    assert not screen.exception, screen.exception
+    body = " ".join(str(item.value) for item in screen.caption)
+    assert "현재 부하 기준의 하향 여지" in body, body
+    assert "3단계 합산효과에서 추가 하향 여지가 계산됩니다" in body, body
+
+
+def test_폐기된_배치_지시가_코드에_없다() -> None:
+    """«투자비 순으로 배치»·«종속 항목» 은 14세션에 폐기됐다."""
+    banned = ("투자비 순으로 배치", "투자비 순이다", "투자비 순으로 놓았습니다", "종속 항목")
+    offenders: list[str] = []
+    for path in Path("src").rglob("*.py"):
+        text_body = path.read_text(encoding="utf-8")
+        offenders.extend(f"{path}: {word}" for word in banned if word in text_body)
+    assert not offenders, offenders
+
+
+# 화면을 실제로 띄워 **켜고 끄며** 값이 흔들리지 않는지 본다. 순수 함수 시험으로는
+# "다른 카드의 결과를 입력으로 쓰지 않는다" 를 증명하지 못한다 — 배선이 문제다.
+INDEPENDENT_MEASURES = ("tariff_switch", "contract", "power_factor", "ess")
+
+
+def _metrics(*keys: str) -> list[tuple[str, str]]:
+    state: dict[str, object] = {f"measure_on_{key}": True for key in keys}
+    screen = _running(nav_page="2단계 · 개선 수단", **state)  # type: ignore[arg-type]
+    assert not screen.exception, screen.exception
+    return [(str(item.label), str(item.value)) for item in screen.metric]
+
+
+def _contains(whole: list[tuple[str, str]], part: list[tuple[str, str]]) -> bool:
+    """``part`` 가 ``whole`` 안에 **잇달아** 들어 있는가."""
+    span = len(part)
+    return any(whole[start : start + span] == part for start in range(len(whole) - span + 1))
+
+
+@pytest.mark.parametrize("key", INDEPENDENT_MEASURES)
+def test_수단을_함께_켜도_카드_값이_불변이다(key: str) -> None:
+    """**독립 평가** (14세션 2절) — 다른 수단을 켜고 끄든 이 카드의 숫자가 같다."""
+    alone = _metrics(key)
+    together = _metrics(*INDEPENDENT_MEASURES)
+    assert alone, key
+    assert _contains(together, alone), (key, alone, together)

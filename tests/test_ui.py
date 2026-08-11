@@ -148,15 +148,38 @@ def test_투자_0원_수단이_셋이다() -> None:
     assert NO_INVESTMENT_KEYS == ("tariff_switch", "contract", "demand_response")
 
 
-def test_투자비_구분이_순서대로_나온다() -> None:
-    """카드를 위에서 아래로 읽으면 투자비가 커진다."""
-    order = {"투자 0원": 0, "저투자 (콘덴서·APFR)": 1, "투자": 2}
-    tiers = [order[item.tier] for item in MEASURES]
-    assert tiers == sorted(tiers)
+def test_카드가_7장_번호_순이다() -> None:
+    """**7.1~7.7 원래 순서다** (14세션 2-1). 투자비로 다시 늘어놓지 않는다."""
+    assert [item.number for item in MEASURES] == [
+        "7.1",
+        "7.2",
+        "7.3",
+        "7.4",
+        "7.5",
+        "7.6",
+        "7.7",
+    ]
+    assert [item.key for item in MEASURES] == [
+        "tariff_switch",
+        "contract",
+        "demand_response",
+        "power_factor",
+        "solar",
+        "ess",
+        "surplus",
+    ]
 
 
-def test_잉여_활용만_태양광을_요구한다() -> None:
-    assert [item.key for item in MEASURES if item.needs_pv] == ["surplus"]
+def test_모든_카드에_개요가_있다() -> None:
+    """무엇을 어떻게 개선하는지 두세 줄 (14세션 2-2)."""
+    for item in MEASURES:
+        assert len(item.overview) >= 40, item.key
+        assert item.overview != item.headline, item.key
+
+
+def test_카드가_다른_수단을_요구하지_않는다() -> None:
+    """**종속 구분이 없다** (14세션 2절). 어떤 카드도 선행 수단을 전제하지 않는다."""
+    assert not hasattr(MEASURES[0], "needs_pv")
 
 
 def test_검토_범위가_켠_것과_안_켠_것을_가른다() -> None:

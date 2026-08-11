@@ -1,12 +1,16 @@
-"""개선 수단 평가 (요구사항서 7장). **투자비 순으로 배치한다.**
+"""개선 수단 평가 (요구사항서 7장). **7장 번호 순(7.1~7.7)이다.**
 
-    투자 0원  evaluate_tariff_switch()        7.1 선택요금 전환
-              evaluate_contract_adjustment()  7.2 계약전력 조정
-              evaluate_demand_response()      7.3 경제성DR 참여
-    소액 투자 evaluate_power_factor()         7.4 역률 개선 (콘덴서·APFR)
-    투자      solar_curve()                   7.5 태양광 용량 곡선
-              evaluate_ess()                  7.6 ESS 목표 피크 역산
-              evaluate_surplus()              7.7 잉여 활용
+    evaluate_tariff_switch()        7.1 선택요금 전환
+    evaluate_contract_adjustment()  7.2 계약전력 조정
+    evaluate_demand_response()      7.3 경제성DR 참여
+    evaluate_power_factor()         7.4 역률 개선 (콘덴서·APFR)
+    solar_curve()                   7.5 태양광 용량 곡선
+    evaluate_ess()                  7.6 ESS 목표 피크 역산
+    evaluate_surplus()              7.7 잉여 활용
+
+**모두 독립 평가다** (14세션 2절). 기준선은 언제나 현행 요금제·현행 사용량이며,
+한 수단의 결과가 다른 수단의 입력이 되지 않는다. 상호작용은
+:mod:`kwise.compare` 의 조합 재계산에서만 다룬다.
 
 절감액은 언제나 재계산이다. 수단을 적용한 15분 부하를 만들어
 :func:`kwise.tariff.calculate_bill` 을 다시 부른다. 그 부하를 만드는 일은

@@ -1,10 +1,20 @@
 """2단계 · 개선 수단 (요구사항서 7장·10.1).
 
-카드로 켜고 끈다. **투자비 순으로 배치하고 접힌 상태로 시작한다.** 순서는
-:data:`kwise.ui.spec.MEASURES` 가 쥐고 있으며 바꾸지 않는다.
+카드로 켜고 끈다. **7장 번호 순(7.1~7.7)으로 배치하고 접힌 상태로 시작한다.**
+순서는 :data:`kwise.ui.spec.MEASURES` 가 쥐고 있으며 바꾸지 않는다.
 
-**태양광을 켜지 않아도 1단계와 투자 0원 수단은 그대로 동작한다.** 켜지 않은
-수단은 3단계 조합 비교와 산출물에서 빠지고, 그 사실을 「검토 범위」가 밝힌다.
+**모든 개선안은 독립 평가다** (14세션 2절).
+
+    기준선   언제나 **현행 요금제·현행 사용량**이다. 최적 요금제로 바꾼 뒤의
+             단가나 다른 수단 적용 후의 부하를 쓰지 않는다.
+    뜻       각 카드의 절감액은 "지금 이 수단만 도입하면 얼마" 다.
+    불변     어떤 수단을 켜고 끄든 다른 카드의 숫자가 바뀌지 않는다.
+    비활성   **다른 카드 때문에 비활성이 되는 카드는 없다.** 태양광을 켜지 않아도
+             잉여 활용 카드는 열려 있고 잉여가 0 이라는 사실만 적는다.
+
+상호작용(요금제가 바뀐다·기본요금 기반이 달라진다)은 **3단계 합산효과**에서만
+다룬다. 켜지 않은 수단은 3단계 조합 비교와 산출물에서 빠지고, 그 사실을
+「검토 범위」가 밝힌다.
 """
 
 from __future__ import annotations
@@ -61,14 +71,12 @@ def render(
     quality: QualityReport,
 ) -> None:
     st.header("🛠 2단계 · 개선 수단")
-    st.caption(
-        "투자비 순으로 놓았습니다. 켠 수단만 3단계 비교와 산출물에 들어갑니다. "
-        + detail_suffix("combination")
-    )
+    st.caption("7.1부터 7.7까지 차례로 놓았습니다. " + detail_suffix("combination"))
     # **기준선을 한 번만 밝힌다.** 카드마다 되풀이하면 읽히지 않는다 (10.7).
-    st.info(
-        "이 절감액은 현재 요금제를 유지한다고 보고 계산했습니다. "
-        "요금제를 함께 바꾸면 3단계 조합 비교에서 다시 계산됩니다."
+    st.write(
+        "각 개선안은 **따로따로** 평가합니다. 카드의 절감액은 「지금 이 수단만 "
+        "도입하면 얼마」이며, 기준은 언제나 현재 요금제와 현재 사용량입니다. "
+        "수단을 함께 켰을 때의 최종 효과는 3단계 합산효과에서 다시 계산합니다."
     )
     baseline = diagnosis.structure.bill if diagnosis.structure is not None else None
 
@@ -126,13 +134,24 @@ def _card(
     with st.expander(f"{spec.title} — 입력과 결과", expanded=just_enabled):
         st.caption(spec.headline + " " + detail_suffix(spec.anchor))
         handler = _HANDLERS[spec.key]
-        handler(usage, table, form, diagnosis, quality, baseline)
+        handler(spec, usage, table, form, diagnosis, quality, baseline)
+
+
+def _overview(spec: MeasureSpec) -> None:
+    """무엇을 어떻게 개선하는지 두세 줄 (14세션 2-2).
+
+    **입력 아래, 결과 숫자 위에 놓는다.** 결과를 읽기 직전에 무엇을 보고 있는지
+    한 번 짚어 주는 자리다 — 카드 맨 위에 두면 입력을 채우는 동안 스크롤 밖으로
+    밀려나 읽히지 않는다.
+    """
+    st.markdown(f"> {spec.overview}")
 
 
 # --------------------------------------------------------------------- 7.1
 
 
 def _tariff_switch(
+    spec: MeasureSpec,
     usage: UsageData,
     table: TariffTable,
     form: ContractForm,
@@ -149,6 +168,7 @@ def _tariff_switch(
         form,
         rules_stamp(),
     )
+    _overview(spec)
     columns = st.columns(3)
     columns[0].metric("현행", option_label(result.current.selection.option))
     columns[1].metric("가장 유리한 요금제", option_label(result.best.selection.option))
@@ -176,6 +196,7 @@ def _tariff_switch(
 
 
 def _contract(
+    spec: MeasureSpec,
     usage: UsageData,
     table: TariffTable,
     form: ContractForm,
@@ -184,6 +205,7 @@ def _contract(
     baseline: object,
 ) -> None:
     if form.contract_kw is None or baseline is None:
+        _overview(spec)
         st.warning("계약전력을 입력해야 조정 여지를 봅니다 (1단계 계약 정보).")
         return
     # **여유가 없으면 슬라이더를 감춘다** (13세션). 움직여도 0% 라 고장으로 보인다.
@@ -196,7 +218,11 @@ def _contract(
             f"{fmt.kw(peak)} 대비 여유가 {fmt.ratio_pct(headroom)} 입니다. "
             "하향 여지가 없습니다."
         )
+        # **여유율을 세션에 남긴다.** 슬라이더를 감춘 경우에도 3단계가 같은 값을
+        # 읽어야 2단계 카드와 숫자가 어긋나지 않는다 (14세션 5-1). 위젯이 이번
+        # 실행에서 만들어지지 않았으므로 키를 직접 써도 된다.
         margin = default_margin_ratio()
+        st.session_state[input_key("contract", "margin")] = margin
     else:
         margin = st.slider(
             "확보할 여유율",
@@ -223,11 +249,18 @@ def _contract(
         margin,
         rules_stamp(),
     )
+    _overview(spec)
     columns = st.columns(4)
     columns[0].metric("현행 계약전력", fmt.kw(result.contract_kw))
     columns[1].metric("권장", fmt.kw(result.suggested_contract_kw))
     columns[2].metric("하향 여지", fmt.kw(result.reduction_kw))
     columns[3].metric("절감액", fmt.won_short(result.saving_won, reason=result.saving_basis))
+    # **이 숫자는 현재 부하 기준이다** (14세션 2-4). 다른 수단을 켰다고 바뀌지
+    # 않으며, 조합 기준의 추가 하향 여지는 3단계에서 따로 낸다.
+    st.caption(
+        "현재 부하 기준의 하향 여지입니다. 다른 수단을 함께 켜면 3단계 합산효과에서 "
+        "추가 하향 여지가 계산됩니다."
+    )
     # 계약전력 변경 위험(9.4)은 result.warnings 에 들어 있다. 확인사항에서 한 번만 낸다.
     _notes(result.warnings, result.notes)
 
@@ -236,6 +269,7 @@ def _contract(
 
 
 def _demand_response(
+    spec: MeasureSpec,
     usage: UsageData,
     table: TariffTable,
     form: ContractForm,
@@ -244,6 +278,7 @@ def _demand_response(
     baseline: object,
 ) -> None:
     if diagnosis.dr is None:
+        _overview(spec)
         st.warning("경제성DR 참여 여력을 산출하지 못했습니다.")
         return
     left, right = st.columns(2)
@@ -283,6 +318,7 @@ def _demand_response(
         expected_hours=expected_hours,
     )
 
+    _overview(spec)
     # **라벨에 한도를 적는다.** 연 60시간을 다 쓴다고 본 값이라 최대치다 (13세션).
     columns = st.columns(3)
     columns[0].metric("거래 가능일", fmt.days(result.eligible_days))
@@ -313,6 +349,7 @@ def _demand_response(
 
 
 def _power_factor(
+    spec: MeasureSpec,
     usage: UsageData,
     table: TariffTable,
     form: ContractForm,
@@ -350,6 +387,7 @@ def _power_factor(
         investment,
         rules_stamp(),
     )
+    _overview(spec)
     columns = st.columns(4)
     columns[0].metric("현재 역률", fmt.pct(result.current_pct))
     columns[1].metric("도입 후", fmt.pct(result.target_pct))
@@ -373,6 +411,7 @@ def _power_factor(
 
 
 def _solar(
+    spec: MeasureSpec,
     usage: UsageData,
     table: TariffTable,
     form: ContractForm,
@@ -525,6 +564,7 @@ def _solar(
     point = curve.points[-1]
     if stale:
         st.caption("**묵은 결과** — 지금 화면의 입력이 아니라 마지막 계산의 입력 기준입니다.")
+    _overview(spec)
     columns = st.columns(4)
     columns[0].metric("용량", fmt.kwp(point.capacity_kwp))
     columns[1].metric("발전량", fmt.kwh(point.generation_kwh))
@@ -544,6 +584,7 @@ def _solar(
 
 
 def _ess(
+    spec: MeasureSpec,
     usage: UsageData,
     table: TariffTable,
     form: ContractForm,
@@ -606,6 +647,7 @@ def _ess(
         total_cost or None,
         rules_stamp(),
     )
+    _overview(spec)
     columns = st.columns(4)
     columns[0].metric(
         "출력 / 용량", f"{fmt.kw(result.power_kw, decimals=0)} / {fmt.kwh(result.capacity_kwh)}"
@@ -653,6 +695,7 @@ def _ess(
 
 
 def _surplus(
+    spec: MeasureSpec,
     usage: UsageData,
     table: TariffTable,
     form: ContractForm,
@@ -660,18 +703,37 @@ def _surplus(
     quality: QualityReport,
     baseline: object,
 ) -> None:
-    inputs = get_solar_inputs()
-    if inputs is None:
-        st.warning("태양광을 먼저 켜야 잉여 전력이 나옵니다 (7.5).")
-        return
-    presets = load_pv_presets()
-    capacity = inputs.resolved_capacity_kwp(presets)
-    if capacity <= 0:
-        st.warning("태양광 용량이 0 입니다.")
-        return
+    """**다른 카드 때문에 비활성이 되지 않는다** (14세션 2-3).
+
+    태양광이 없으면 잉여가 0 인 것이지 이 수단을 검토할 수 없는 것이 아니다.
+    카드를 잠그면 "쓸 수 없는 수단" 으로 읽히므로, 열어 두고 **잉여가 0 이라는
+    사실만** 적는다.
+    """
     price = st.number_input(
-        "외부 구매 단가 (원/kWh) — 0 이면 미산출", min_value=0.0, value=0.0, step=1.0
+        "잉여 판매 단가 (원/kWh) — 0 이면 미산출",
+        min_value=0.0,
+        value=0.0,
+        step=1.0,
+        key=input_key("surplus", "price"),
+        help="우리가 파는 쪽의 단가입니다. 넣지 않으면 외부 판매 금액을 산출하지 않습니다.",
     )
+    _overview(spec)
+
+    inputs = get_solar_inputs()
+    presets = load_pv_presets()
+    capacity = inputs.resolved_capacity_kwp(presets) if inputs is not None else 0.0
+    if inputs is None or capacity <= 0:
+        columns = st.columns(3)
+        columns[0].metric("잉여 전력량", fmt.kwh(0.0))
+        columns[1].metric("발전량 대비", fmt.DASH)
+        columns[2].metric("주말 비중", fmt.DASH)
+        st.write("태양광을 켜지 않아 잉여가 0 입니다.")
+        st.caption(
+            "7.5 태양광을 켜고 계산하면 잉여량과 활용 시나리오가 여기에 나옵니다. "
+            + fmt.markdown_safe(ELIGIBILITY_NOTICE)
+        )
+        return
+
     try:
         unit_profile, _source = cached_unit_pv(usage, usage_token(usage), inputs, rules_stamp())
     except Exception as exc:
