@@ -28,6 +28,7 @@ from kwise.measures.pv_cost import (
     SCALE_ECONOMY_NOTE,
     PvCostInput,
 )
+from kwise.progress import ProgressReporter, record
 from kwise.pv import PvSystemConfig, WeatherData, align_simulation, sharpen, simulate
 from kwise.quality import QualityReport
 from kwise.tariff import (
@@ -229,6 +230,7 @@ def solar_curve(
     baseline: BillingResult | None = None,
     quality: QualityReport | None = None,
     options: BillingOptions | None = None,
+    progress: ProgressReporter | None = None,
 ) -> SolarCurve:
     """0 부터 상한까지 용량을 키우며 절감액을 재계산한다.
 
@@ -240,7 +242,11 @@ def solar_curve(
             태양광은 인용할 참고단가가 없어 기본값을 지어내지 않는다.
         sharpness: 감도 첨예도 계수 (9.2). PV 출력에만 적용한다. 일별 총량을
             보존하고 곡선의 뾰족한 정도만 바꾼다.
+        progress: 진행 보고자 (10.6). **선택 인자다** — 주지 않아도 그대로 돈다.
+            이 함수가 파이프라인에서 가장 오래 걸리는 구간이라(실측 43%) 여기서
+            진행이 보이지 않으면 화면이 멈춘 것처럼 읽힌다.
     """
+    report = record(progress)
     if steps < 1:
         raise ValueError(f"단계 수는 1 이상이어야 합니다: {steps}")
     if max_capacity_kwp < 0:
@@ -264,6 +270,7 @@ def solar_curve(
     warnings: list[str] = []
     for step in range(steps + 1):  # 0 kWp 포함
         capacity = max_capacity_kwp * step / steps
+        report.step(step, f"용량 곡선 {step}/{steps} — {capacity:,.0f} kWp")
         generation = unit * capacity
         net = apply_generation(usage, generation)
         bill = calculate_bill(net.usage, table, selection, options=opts, quality=quality)

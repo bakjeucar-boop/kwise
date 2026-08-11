@@ -26,6 +26,7 @@ from rich.table import Table
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from kwise.progress import RichProgress  # noqa: E402
 from kwise.report.casestudy import (  # noqa: E402
     DEFAULT_CAPACITIES_KWP,
     build_case_definitions,
@@ -47,6 +48,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--cases", nargs="*", default=None, help="돌릴 케이스 키 (기본 전체)")
     parser.add_argument("--case-dir", default=str(DEFAULT_CASE_DIR))
+    parser.add_argument(
+        "--progress",
+        action="store_true",
+        help="단계별 진행을 rich 로 표시한다 (화면과 같은 콜백을 쓴다)",
+    )
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument(
         "--capacities",
@@ -91,11 +97,14 @@ def main(argv: list[str] | None = None) -> int:
         "순차 실행"
     )
     table = load_tariff()
+    # **화면과 같은 콜백이다.** 계산 쪽은 어느 쪽이 붙었는지 모른다 (10.6).
+    reporter = RichProgress(console) if args.progress else None
     study = run_case_study(
         definitions,
         table,
         capacities_kwp=tuple(args.capacities),
         pv_unit_cost_won_per_kwp=args.pv_unit_cost,
+        progress=reporter,
     )
 
     checks = check_case_study(study)

@@ -77,6 +77,21 @@ def _months(key: str, value: Any) -> list[ValidationIssue]:
     return issues
 
 
+def _weights(key: str, value: Any) -> list[ValidationIssue]:
+    """진행률 가중치. **합이 1 에서 크게 벗어나면 막대가 끝까지 안 간다.**"""
+    if not isinstance(value, Mapping):
+        return [ValidationIssue(key, f"단계별 가중치 사전이어야 합니다: {value!r}")]
+    issues: list[ValidationIssue] = []
+    for stage, weight in value.items():
+        number = _number(weight)
+        if number is None or not 0.0 <= number <= 1.0:
+            issues.append(ValidationIssue(key, f"{stage} 가중치는 0~1 이어야 합니다: {weight!r}"))
+    total = sum(_number(weight) or 0.0 for weight in value.values())
+    if value and abs(total - 1.0) > 0.01:
+        issues.append(ValidationIssue(key, f"가중치 합이 1.0 이어야 합니다: {total:.4f}"))
+    return issues
+
+
 def _hour_window(key: str, value: Any) -> list[ValidationIssue]:
     if not isinstance(value, Sequence) or len(value) != 2:
         return [ValidationIssue(key, f"[시작, 끝] 두 값이어야 합니다: {value!r}")]
@@ -120,6 +135,9 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "ess.payback_target_years": _positive,
     "pv.area_per_kwp_m2": _positive,
     "contract.margin_ratio": _ratio,
+    "progress.total_seconds": _positive,
+    "progress.slow_stage_seconds": _positive,
+    "progress.weights": _weights,
     "expiry.tariff_months": _positive,
     "expiry.statute_months": _positive,
     "expiry.reference_months": _positive,

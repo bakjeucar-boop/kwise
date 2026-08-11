@@ -36,6 +36,7 @@ from kwise.measures import (
 from kwise.measures.contract import evaluate_contract_adjustment
 from kwise.measures.ess import analyze_peak_excess
 from kwise.measures.pv_cost import PV_UNPRICED_REASON, PvCostInput
+from kwise.progress import ProgressReporter, record
 from kwise.pv import sharpen
 from kwise.quality import QualityReport
 from kwise.tariff import (
@@ -389,8 +390,14 @@ def compare_combinations(
     unit_pv_kw_per_kwp: pd.Series | None = None,
     quality: QualityReport | None = None,
     options: BillingOptions | None = None,
+    progress: ProgressReporter | None = None,
 ) -> ComparisonResult:
-    """조합을 순차로 평가한다. 첫 조합이 기준선이다."""
+    """조합을 순차로 평가한다. 첫 조합이 기준선이다.
+
+    ``progress`` 는 **선택 인자다** (10.6). 조합마다 요금을 다시 계산하므로
+    조합 수가 늘면 그대로 길어진다 — 몇 번째를 돌고 있는지 보여 준다.
+    """
+    report = record(progress)
     if not specs:
         raise ValueError("비교할 조합이 없습니다.")
     opts = options if options is not None else BillingOptions()
@@ -403,7 +410,8 @@ def compare_combinations(
     mask = light_band_mask(usage, table, selection=specs[0].selection, options=opts)
 
     results: list[CombinationResult] = []
-    for spec in specs:  # 순차 처리. 시계열은 조합 하나 분량만 살아 있다
+    for index, spec in enumerate(specs):  # 순차 처리. 시계열은 조합 하나 분량만 살아 있다
+        report.step(index + 1, f"{index + 1}/{len(specs)} {spec.name}")
         results.append(
             evaluate_combination(
                 usage,

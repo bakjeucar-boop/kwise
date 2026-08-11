@@ -39,12 +39,22 @@ kWise 는 대한민국 전용 도구입니다. 요금 체계(한전 기본공급
      업로드한 파일은 서버에 저장하지 않습니다. 내려받기용 산출물도 만든 즉시
      지웁니다. 앱을 켤 때 묵은 임시 폴더를 쓸어냅니다.
 
-     화면의 [자세히] 링크는 docs\MANUAL.html 로 갑니다. 매뉴얼은 10세션에서
-     쓰므로 지금은 비활성입니다. 앵커 이름은 docs\MANUAL_ANCHORS.md 에
-     확정해 두었습니다.
+     화면의 [자세히] 링크는 docs\MANUAL.html 로 갑니다. 매뉴얼은 아직 없어
+     비활성입니다. 앵커 이름은 docs\MANUAL_ANCHORS.md 에 확정해 두었습니다.
+
+     오래 걸리는 계산은 단계별 진행과 전체 진행률(%)을 보여 줍니다.
+     태양광 용량 곡선이 전체의 절반가량이라 그 구간이 가장 깁니다.
 
 배치 (CLI)
      .venv\Scripts\python.exe -m kwise.cli run --cases cases.yaml
+     .venv\Scripts\python.exe tools\run_casestudy.py --progress
+       --progress 를 주면 단계별 진행이 표시됩니다 (화면과 같은 콜백입니다).
+
+성능 실측
+     .venv\Scripts\python.exe tools\run_benchmark.py
+     구간별 소요·메모리·요금 재계산 횟수를 잽니다. 진행률 가중치의 근거이므로
+     계산을 고쳤으면 다시 돌려 assumptions.json 의 progress.* 를 갱신하십시오.
+     샘플 한 벌 9.4초 · 최대 RSS 273 MB (2026-08-11).
 
 기준 데이터 갱신 절차
 ---------------------

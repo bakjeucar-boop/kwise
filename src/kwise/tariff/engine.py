@@ -308,10 +308,19 @@ def calculate_bill(
         region_group=opts.region_group,
     )
 
+    # 월 라벨을 **한 번만** 풀어 둔다.
+    #
+    # ``slots["month"]`` 는 Period 열이다. ``to_numpy()`` 는 그때마다 3만 5천 개를
+    # 파이썬 ``Period`` 객체로 상자에 넣는데(pandas 의 ``_box_func``), 아래에서
+    # 월별 루프까지 돌면 같은 일을 열몇 번 되풀이한다. 실측에서 이 한 줄이
+    # ``calculate_bill`` 의 **74%** 를 먹고 있었다 (0.63초 중 0.47초).
+    # 요금 곡선이 이 함수를 21번 부르므로 그대로 21배가 된다.
+    month_labels = slots["month"].to_numpy()
+
     energy = usage.energy_kwh()  # 그리드 이탈분이 포함된 시계열
     frame = pd.DataFrame(
         {
-            "month": slots["month"].to_numpy(),
+            "month": month_labels,
             "season": slots["season"].to_numpy(),
             "band": slots["band"].to_numpy(),
             "discount": slots["discount_rate"].to_numpy(),
@@ -320,7 +329,7 @@ def calculate_bill(
     )
     grouped = frame.groupby(["month", "season", "band", "discount"], observed=True)["kwh"].sum()
 
-    months = sorted({_as_period(month) for month in slots["month"]})
+    months = sorted({_as_period(month) for month in month_labels})
     band_kwh: dict[pd.Period, dict[str, float]] = {
         month: dict.fromkeys(BANDS, 0.0) for month in months
     }
@@ -337,12 +346,12 @@ def calculate_bill(
         season_of[period] = str(season)
 
     # 관측 최대수요 — 보고용. 경부하 슬롯도 들어간다.
-    peaks = usage.kw.groupby(slots["month"].to_numpy(), observed=True).max()
+    peaks = usage.kw.groupby(month_labels, observed=True).max()
     monthly_peaks = {_as_period(month): float(value) for month, value in peaks.items()}
 
     # 요금적용전력 대상 최대수요 — 경부하 제외 (요구사항서 5.2 ①).
     eligible = demand_eligible_mask(slots["band"], demand_bands=contract.demand_bands)
-    basis = monthly_demand_basis(usage.kw, slots["month"], eligible)
+    basis = monthly_demand_basis(usage.kw, month_labels, eligible)
     # 대상월 규칙 (5.2 ②) → 계약전력 하한 (5.2 ③)
     before_floor = billing_demands(
         basis, prior_peaks=opts.prior_peaks, demand_months=contract.demand_months
@@ -394,7 +403,7 @@ def calculate_bill(
 
     rows: list[dict[str, Any]] = []
     for month in months:
-        month_mask = slots["month"].to_numpy() == month
+        month_mask = month_labels == month
         month_kw = usage.kw[month_mask]
         peak_kw = monthly_peaks.get(month, float("nan"))
         peak_at = pd.Timestamp(month_kw.idxmax()) if month_kw.notna().any() else pd.NaT

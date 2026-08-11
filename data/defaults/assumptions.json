@@ -94,6 +94,36 @@
       "value": 12,
       "verified_on": "2026-08-07"
     },
+    "progress.slow_stage_seconds": {
+      "label": "예상 소요를 미리 알릴 단계 임계 (초)",
+      "note": "이보다 오래 걸릴 단계는 시작 전에 얼마나 걸리는지 알린다.",
+      "source": "판단값",
+      "value": 3.0,
+      "verified_on": "2026-08-11"
+    },
+    "progress.total_seconds": {
+      "label": "샘플 한 벌 전체 실측 소요 (초)",
+      "note": "샘플 한 벌을 끝까지 도는 실측 시간 (9.4초). 예상 소요 안내에 쓴다 — 가중치 × 이 값이 단계별 예상이다.",
+      "source": "판단값",
+      "value": 9.4,
+      "verified_on": "2026-08-11"
+    },
+    "progress.weights": {
+      "label": "진행률 단계 가중치",
+      "note": "tools\run_benchmark.py 의 실측값이다 (2026-08-11, 샘플 34,358행). 균등 분할하면 태양광 구간에서 막대가 멈춘 것처럼 보인다 — 그 한 구간이 전체의 절반이다. 합은 1.0 이다.",
+      "source": "판단값",
+      "value": {
+        "compare": 0.1943,
+        "diagnose": 0.0772,
+        "export": 0.0861,
+        "measures": 0.1154,
+        "quality": 0.0014,
+        "read": 0.0075,
+        "solar": 0.5178,
+        "weather": 0.0004
+      },
+      "verified_on": "2026-08-11"
+    },
     "pv.area_per_kwp_m2": {
       "label": "kWp 당 소요 면적 (m²)",
       "note": "모듈 효율 20% 기준. 설치 용량 ≈ 면적 × GCR ÷ 5.",

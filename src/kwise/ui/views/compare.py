@@ -64,6 +64,7 @@ from kwise.ui.cache import (
     usage_token,
 )
 from kwise.ui.pipeline import ContractForm, combination_specs
+from kwise.ui.progress import progress_panel
 from kwise.ui.session import build_report_bytes
 from kwise.ui.spec import ReviewScope, review_scope
 from kwise.ui.state import (
@@ -128,18 +129,22 @@ def render(
         st.info("2단계에서 수단을 하나 이상 켜면 조합을 비교합니다.")
         return
 
-    comparison = cached_comparison(
-        usage,
-        table,
-        baseline,
-        unit_profile,
-        quality,
-        usage_token(usage),
-        specs,
-        _options_key(form),
-        rules_stamp(),
-        form.billing_options(),
-    )
+    # 7단계. 조합마다 요금을 다시 계산하므로 조합 수가 늘면 그대로 길어진다.
+    panel, runner = progress_panel("조합을 비교하는 중…")
+    with panel, runner.running("compare", total_steps=len(specs)) as report:
+        comparison = cached_comparison(
+            usage,
+            table,
+            baseline,
+            unit_profile,
+            quality,
+            usage_token(usage),
+            specs,
+            _options_key(form),
+            rules_stamp(),
+            form.billing_options(),
+            report,
+        )
 
     frame = comparison.frame()
     st.dataframe(frame, width="stretch")
@@ -350,18 +355,21 @@ def _sensitivity_block(
         )
         return no_pv_sensitivity_frame(), ()
 
-    frame, ranges = cached_sensitivity(
-        usage,
-        table,
-        baseline,
-        unit_profile,
-        quality,
-        usage_token(usage),
-        pv_specs[-1],
-        _options_key(form),
-        rules_stamp(),
-        form.billing_options(),
-    )
+    panel, runner = progress_panel("감도를 훑는 중…")
+    with panel, runner.running("compare", total_steps=3) as report:
+        frame, ranges = cached_sensitivity(
+            usage,
+            table,
+            baseline,
+            unit_profile,
+            quality,
+            usage_token(usage),
+            pv_specs[-1],
+            _options_key(form),
+            rules_stamp(),
+            form.billing_options(),
+            report,
+        )
     for item in ranges:
         if item.base is not None:
             st.write(f"- {item.text()}")

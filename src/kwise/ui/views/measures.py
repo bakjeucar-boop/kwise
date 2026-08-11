@@ -43,6 +43,7 @@ from kwise.ui.cache import (
     usage_token,
 )
 from kwise.ui.pipeline import ContractForm, SolarInputs
+from kwise.ui.progress import progress_panel
 from kwise.ui.spec import MEASURES, MeasureSpec
 from kwise.ui.state import get_solar_inputs, input_key, set_solar_inputs, toggle_key
 
@@ -375,24 +376,35 @@ def _solar(
         st.warning("면적 또는 용량을 넣어야 계산합니다.")
         return
 
-    try:
-        unit_profile, source = cached_unit_pv(usage, usage_token(usage), inputs, rules_stamp())
-    except Exception as exc:
-        st.error(f"기상 자료를 얻지 못해 계산하지 않았습니다.\n\n{exc}")
-        return
-    st.caption(f"기상 출처 — {source}. " + detail_suffix("weather-source"))
+    # 4·5단계 — **파이프라인에서 가장 오래 걸리는 구간이다** (실측 43%).
+    # 아무 말 없이 몇 초를 멈추면 사용자는 화면이 죽은 줄 안다.
+    panel, runner = progress_panel("태양광을 계산하는 중…")
+    with panel:
+        with runner.running("weather"):
+            try:
+                unit_profile, source = cached_unit_pv(
+                    usage, usage_token(usage), inputs, rules_stamp()
+                )
+            except Exception as exc:
+                st.error(f"기상 자료를 얻지 못해 계산하지 않았습니다.\n\n{exc}")
+                return
+        if source == "cache":
+            runner.skip("weather", "캐시 적중")
 
-    curve = cached_solar(
-        usage,
-        table,
-        unit_profile,
-        baseline,  # type: ignore[arg-type]
-        quality,
-        usage_token(usage),
-        form,
-        inputs,
-        rules_stamp(),
-    )
+        with runner.running("solar", total_steps=inputs.steps) as report:
+            curve = cached_solar(
+                usage,
+                table,
+                unit_profile,
+                baseline,  # type: ignore[arg-type]
+                quality,
+                usage_token(usage),
+                form,
+                inputs,
+                rules_stamp(),
+                report,
+            )
+    st.caption(f"기상 출처 — {source}. " + detail_suffix("weather-source"))
     point = curve.points[-1]
     columns = st.columns(4)
     columns[0].metric("용량", f"{point.capacity_kwp:,.0f} kWp")

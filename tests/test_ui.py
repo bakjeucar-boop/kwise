@@ -541,7 +541,7 @@ def test_실제_항목_전부에_원문_확인처가_붙는다() -> None:
     items = describe_items()
     rows = build_rows(items, expiry_warnings(include_weather=False))
     # 항목이 조용히 사라지는 것을 막는 잣대다. 늘리는 것은 정상, 줄면 확인한다.
-    assert len(rows) == len(items) == 49  # rules_kr 27 + assumptions 22
+    assert len(rows) == len(items) == 52  # rules_kr 27 + assumptions 25
     assert all(row.link.startswith(("한국", "국가", "에너지", "Open")) for row in rows)
     assert all("http" in row.link for row in rows)
 

@@ -33,6 +33,7 @@ from kwise.measures import (
     solar_curve,
     unit_generation_kw,
 )
+from kwise.progress import ProgressReporter
 from kwise.pv import (
     ArrayConfig,
     PvPresets,
@@ -376,8 +377,12 @@ def solar_result(
     baseline: BillingResult | None = None,
     quality: QualityReport | None = None,
     presets: PvPresets | None = None,
+    progress: ProgressReporter | None = None,
 ) -> SolarCurve:
-    """용량 곡선. 시뮬레이션은 한 번, 용량은 곱셈이다 (5세션 결정)."""
+    """용량 곡선. 시뮬레이션은 한 번, 용량은 곱셈이다 (5세션 결정).
+
+    **파이프라인에서 가장 오래 걸리는 구간이다** (실측 43%). 진행을 넘긴다.
+    """
     return solar_curve(
         usage,
         table,
@@ -390,6 +395,7 @@ def solar_result(
         baseline=baseline,
         quality=quality,
         options=form.billing_options(),
+        progress=progress,
     )
 
 

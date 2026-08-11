@@ -24,6 +24,7 @@ import math
 from collections.abc import Hashable, Mapping, Sequence
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from kwise.rules import rule_value
@@ -95,16 +96,21 @@ def demand_eligible_mask(
 
 def monthly_demand_basis(
     kw: pd.Series,
-    months: pd.Series,
+    months: pd.Series | np.ndarray,
     eligible: pd.Series,
 ) -> dict[pd.Period, float]:
     """월별 요금적용전력 대상 최대수요. 경부하 슬롯을 뺀 최대값이다.
 
     대상 슬롯이 하나도 없는 달은 0 이 된다 (관측 자체가 없는 경우).
+
+    ``months`` 로 **이미 풀어 둔 ndarray 를 받을 수 있다.** Period 열을
+    ``to_numpy()`` 하면 3만 개를 파이썬 객체로 상자에 넣는 비용이 드는데,
+    부르는 쪽이 그 일을 이미 했다면 되풀이할 이유가 없다.
     """
+    labels = months if isinstance(months, np.ndarray) else months.to_numpy()
     frame = pd.DataFrame(
         {
-            "month": months.to_numpy(),
+            "month": labels,
             "kw": kw.to_numpy(dtype=float),
             "eligible": eligible.to_numpy(dtype=bool),
         }
@@ -148,7 +154,6 @@ def billing_demands(
             period = _as_period(key)
             history[period] = max(history.get(period, float("-inf")), float(value))
 
-    span = demand_window_months() if window is None else window
     span = demand_window_months() if window is None else window
     result: dict[pd.Period, float] = {}
     for month in sorted(peaks):

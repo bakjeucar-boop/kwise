@@ -28,6 +28,7 @@ import pandas as pd
 
 from kwise.compare.combination import CombinationSpec, evaluate_combination
 from kwise.io import UsageData
+from kwise.progress import ProgressReporter, record
 from kwise.pv import SharpnessFactors, load_sharpness_factors
 from kwise.quality import QualityReport
 from kwise.tariff import BillingOptions, BillingResult, TariffTable
@@ -125,16 +126,20 @@ def sensitivity_comparison(
     factors: SharpnessFactors | None = None,
     quality: QualityReport | None = None,
     options: BillingOptions | None = None,
+    progress: ProgressReporter | None = None,
 ) -> pd.DataFrame:
     """한 조합을 감도 3종으로 평가한 **원자료** 표.
 
     표시는 :func:`sensitivity_range_frame` 의 범위 쪽을 쓴다. 이 표는 근거다.
+    ``progress`` 는 선택 인자다 (10.6) — 시나리오마다 요금을 다시 계산한다.
     """
     from dataclasses import replace
 
+    report = record(progress)
     items = load_sharpness_factors() if factors is None else factors
     rows: list[dict[str, object]] = []
-    for label, sharpness in items.items():
+    for index, (label, sharpness) in enumerate(items.items()):
+        report.step(index + 1, f"{index + 1}/{len(items.labels)} {label}")
         scenario = replace(spec, sharpness=sharpness)
         result = evaluate_combination(
             usage,

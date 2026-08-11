@@ -49,10 +49,12 @@ from kwise.measures import (
     evaluate_surplus,
     evaluate_tariff_switch,
 )
+from kwise.progress import ProgressReporter
 from kwise.quality import QualityReport
 from kwise.rules import EditResult, RuleOrigin, assumptions, reload_rules, rules
 from kwise.tariff import BillingOptions, BillingResult, TariffTable, load_tariff
 from kwise.ui import pipeline
+from kwise.ui.memo import clear_memo, session_memo
 from kwise.ui.pipeline import ContractForm, SolarInputs
 
 __all__ = [
@@ -74,6 +76,7 @@ __all__ = [
     "clear_calc_cache",
     "form_token",
     "rules_stamp",
+    "upload_digest",
     "usage_token",
 ]
 
@@ -94,12 +97,30 @@ def rules_stamp() -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
+def upload_digest() -> str:
+    """올린 파일 **내용**의 지문. 세션이 없으면 빈 문자열이다.
+
+    ``st.cache_data`` 는 **프로세스 전역**이라 동시 접속자가 캐시를 공유한다
+    (Streamlit Cloud 배포 시). 요약 정보(파일명·기간·총량)만으로 키를 만들면
+    서로 다른 파일이 같은 키를 가질 여지가 남고, 그때 옆 사람의 결과가 나온다.
+    내용 해시를 키에 물려 그 여지를 없앤다.
+    """
+    try:
+        data = st.session_state.get("upload_bytes")
+    except Exception:
+        return ""
+    if not isinstance(data, bytes):
+        return ""
+    return hashlib.sha256(data).hexdigest()[:16]
+
+
 def usage_token(usage: UsageData) -> str:
-    """부하 데이터의 지문. 파일·열 판정·간격이 같으면 같은 값이다."""
+    """부하 데이터의 지문. **올린 파일 내용까지 물린다** (동시 사용 대비)."""
     meta = usage.meta
     text = "|".join(
         str(part)
         for part in (
+            upload_digest(),
             meta.source_name,
             meta.date_column,
             meta.energy_column,
@@ -132,9 +153,14 @@ def form_token(form: ContractForm) -> str:
 
 
 def clear_calc_cache() -> None:
-    """계산 캐시를 통째로 비운다. **기준 데이터 편집 뒤에 반드시 부른다.**"""
+    """계산 캐시를 통째로 비운다. **기준 데이터 편집 뒤에 반드시 부른다.**
+
+    캐시가 두 갈래(전역 ``st.cache_data`` + 세션 기억)이므로 **둘 다** 비운다.
+    한쪽만 비우면 화면 절반은 새 값, 절반은 옛 값이 된다.
+    """
     reload_rules()
     st.cache_data.clear()
+    clear_memo()
 
 
 def apply_rule_edit(result: EditResult) -> EditResult:
@@ -210,7 +236,6 @@ def cached_unit_pv(
     return pipeline.unit_pv_profile(_usage, inputs)
 
 
-@st.cache_data(show_spinner="태양광 용량 곡선을 훑는 중…")
 def cached_solar(
     _usage: UsageData,
     _table: TariffTable,
@@ -221,13 +246,29 @@ def cached_solar(
     form: ContractForm,
     inputs: SolarInputs,
     stamp: str,
+    _progress: ProgressReporter | None = None,
 ) -> SolarCurve:
-    return pipeline.solar_result(
-        _usage, _table, form, inputs, _unit, baseline=_baseline, quality=_quality
+    """**세션 기억을 쓴다** — ``st.cache_data`` 는 진행 표시와 함께 못 쓴다.
+
+    기억에 있으면 본문이 돌지 않아 ``step()`` 도 불리지 않는다. 그것이 맞다 —
+    즉시 끝난 단계에 진행을 그릴 이유가 없다.
+    """
+    key = f"solar|{token}|{form_token(form)}|{inputs}|{stamp}"
+    return session_memo(
+        key,
+        lambda: pipeline.solar_result(
+            _usage,
+            _table,
+            form,
+            inputs,
+            _unit,
+            baseline=_baseline,
+            quality=_quality,
+            progress=_progress,
+        ),
     )
 
 
-@st.cache_data(show_spinner="조합마다 요금을 다시 계산하는 중…")
 def cached_comparison(
     _usage: UsageData,
     _table: TariffTable,
@@ -239,15 +280,21 @@ def cached_comparison(
     options_key: str,
     stamp: str,
     _options: BillingOptions | None = None,
+    _progress: ProgressReporter | None = None,
 ) -> ComparisonResult:
-    return compare_combinations(
-        _usage,
-        _table,
-        specs,
-        baseline_bill=_baseline,
-        unit_pv_kw_per_kwp=_unit,
-        quality=_quality,
-        options=_options,
+    key = f"compare|{token}|{specs}|{options_key}|{stamp}"
+    return session_memo(
+        key,
+        lambda: compare_combinations(
+            _usage,
+            _table,
+            specs,
+            baseline_bill=_baseline,
+            unit_pv_kw_per_kwp=_unit,
+            quality=_quality,
+            options=_options,
+            progress=_progress,
+        ),
     )
 
 
@@ -370,7 +417,6 @@ def cached_surplus(
     )
 
 
-@st.cache_data(show_spinner="감도를 훑는 중… (시나리오 3종)")
 def cached_sensitivity(
     _usage: UsageData,
     _table: TariffTable,
@@ -382,14 +428,19 @@ def cached_sensitivity(
     options_key: str,
     stamp: str,
     _options: BillingOptions | None = None,
+    _progress: ProgressReporter | None = None,
 ) -> tuple[pd.DataFrame, tuple[SensitivityRange, ...]]:
-    frame = sensitivity_comparison(
-        _usage,
-        _table,
-        spec,
-        baseline_bill=_baseline,
-        unit_pv_kw_per_kwp=_unit,
-        quality=_quality,
-        options=_options,
-    )
-    return frame, sensitivity_ranges(frame)
+    def build() -> tuple[pd.DataFrame, tuple[SensitivityRange, ...]]:
+        frame = sensitivity_comparison(
+            _usage,
+            _table,
+            spec,
+            baseline_bill=_baseline,
+            unit_pv_kw_per_kwp=_unit,
+            quality=_quality,
+            options=_options,
+            progress=_progress,
+        )
+        return frame, sensitivity_ranges(frame)
+
+    return session_memo(f"sensitivity|{token}|{spec}|{options_key}|{stamp}", build)

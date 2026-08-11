@@ -40,6 +40,7 @@ from kwise.measures import (
     solar_curve,
     unit_generation_kw,
 )
+from kwise.progress import ProgressReporter, StageRunner, record
 from kwise.pv import (
     ArrayConfig,
     PvSystemConfig,
@@ -253,21 +254,36 @@ def run_one_case(
     unit_pv: pd.Series | None = None,
     weather_source: str = "cache",
     pv_unit_cost_won_per_kwp: float | None = None,
+    progress: ProgressReporter | None = None,
 ) -> CaseResult:
-    """케이스 하나를 처음부터 끝까지 돌린다. **요금은 매번 재계산한다.**"""
+    """케이스 하나를 처음부터 끝까지 돌린다. **요금은 매번 재계산한다.**
+
+    ``progress`` 는 선택 인자다 (10.6). CLI 는 여기에 rich 를 붙이고 화면은
+    Streamlit 을 붙인다 — **이 함수는 어느 쪽인지 모른다.**
+    """
     started = time.perf_counter()
-    usage = load_usage(definition.usage_path)
-    quality = check_quality(usage)
+    runner = StageRunner(record(progress))
+
+    with runner.running("read"):
+        usage = load_usage(definition.usage_path)
+    with runner.running("quality"):
+        quality = check_quality(usage)
     contract_kw = float(usage.kw.max()) * CONTRACT_MARGIN
     contract = ContractInfo(definition.selection, contract_kw=contract_kw)
-    diagnosis = diagnose(usage, table, contract, quality=quality)
-    baseline = calculate_bill(usage, table, definition.selection, quality=quality)
+    with runner.running("diagnose"):
+        diagnosis = diagnose(usage, table, contract, quality=quality)
+        baseline = calculate_bill(usage, table, definition.selection, quality=quality)
 
     profile = unit_pv
     if profile is None:
-        weather = _weather_for(usage)
-        weather_source = weather.source
-        profile = unit_generation_kw(usage, weather, _pv_config())
+        with runner.running("weather"):
+            weather = _weather_for(usage)
+            weather_source = weather.source
+            profile = unit_generation_kw(usage, weather, _pv_config())
+        if weather_source == "cache":
+            runner.skip("weather", "캐시 적중")
+    else:
+        runner.skip("weather", "단위 프로파일을 넘겨받음")
     profile = profile.reindex(pd.DatetimeIndex(usage.kw.index)).fillna(0.0)
 
     # ---- PV 용량 축
@@ -278,7 +294,10 @@ def run_one_case(
     )
     pv_rows: list[dict[str, object]] = []
     sensitivity_rows: list[dict[str, object]] = []
-    for capacity in capacities_kwp:
+    reporter = record(progress)
+    reporter.stage("solar", len(capacities_kwp))
+    for index, capacity in enumerate(capacities_kwp):
+        reporter.step(index + 1, f"용량 {capacity:,.0f} kWp ({index + 1}/{len(capacities_kwp)})")
         curve = solar_curve(
             usage,
             table,
@@ -343,7 +362,10 @@ def run_one_case(
                 }
             )
 
+    reporter.done("solar")
+
     # ---- 선택요금 (현행 종별·전압 안에서만)
+    reporter.stage("measures")
     selection_rows: list[dict[str, object]] = []
     for candidate in switchable_selections(table, definition.selection):
         total = diagnosis.option_totals.get(candidate.option)
@@ -409,6 +431,8 @@ def run_one_case(
             }
         )
 
+    reporter.done("measures")
+
     elapsed = time.perf_counter() - started
     return CaseResult(
         definition=definition,
@@ -433,6 +457,7 @@ def run_case_study(
     *,
     capacities_kwp: Sequence[float] = DEFAULT_CAPACITIES_KWP,
     pv_unit_cost_won_per_kwp: float | None = None,
+    progress: ProgressReporter | None = None,
 ) -> CaseStudy:
     """케이스를 **순차로** 돌린다. 여섯 벌의 시계열을 동시에 들지 않는다.
 
@@ -457,6 +482,7 @@ def run_case_study(
                 unit_pv=profile,
                 weather_source=weather.source,
                 pv_unit_cost_won_per_kwp=pv_unit_cost_won_per_kwp,
+                progress=progress,
             )
         )
     return CaseStudy(
