@@ -368,7 +368,9 @@ def test_금액을_모르면_사유를_낸다() -> None:
 
 
 def test_금액을_억_만원으로_줄인다() -> None:
-    assert text.won_short(123_456_789) == "1.23억원"
+    """**억과 만원을 같이 적는다.** ``1.23억원`` 은 읽는 사람이 다시 환산해야 한다."""
+    assert text.won_short(123_456_789) == "1억 2,346만원"
+    assert text.won_short(200_000_000) == "2억원"
     assert text.won_short(53_580_000) == "5,358만원"
     assert text.won_short(-53_580_000) == "-5,358만원"
     assert text.won_short(4_200) == "4,200원"

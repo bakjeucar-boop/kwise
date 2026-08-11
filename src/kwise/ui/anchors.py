@@ -35,6 +35,7 @@ __all__ = [
     "anchor",
     "anchor_document",
     "anchor_keys",
+    "app_static_dir",
     "detail_suffix",
     "manual_available",
     "manual_href",
@@ -49,12 +50,21 @@ MANUAL_FILENAME = "MANUAL.html"
 # **Streamlit 은 임의 경로의 파일을 내주지 않는다.** ``docs\MANUAL.html`` 을
 # 상대 링크로 걸면 브라우저가 ``/MANUAL.html`` 을 찾다가 404 를 받는다.
 # 정적 서빙(``enableStaticServing``)이 내주는 자리에 사본을 두고 그쪽으로 건다.
+#
+# **그 자리는 실행 스크립트 옆이다.** Streamlit 은
+# ``Path(main_script).parent / "static"`` 만 내준다 (``file_util.get_app_static_dir``).
+# 저장소 뿌리에 두면 파일은 있는데 404 가 난다 — 12세션에서 실제로 그랬다.
 STATIC_DIRNAME = "static"
 STATIC_ROUTE = "app/static"
 
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[3]
+
+
+def app_static_dir() -> Path:
+    """Streamlit 이 내주는 폴더. ``src\\kwise\\ui\\static\\`` 이다."""
+    return Path(__file__).resolve().parent / STATIC_DIRNAME
 
 
 def manual_path(docs_dir: Path | None = None) -> Path:
@@ -64,9 +74,14 @@ def manual_path(docs_dir: Path | None = None) -> Path:
 
 
 def static_manual_path(root: Path | None = None) -> Path:
-    """Streamlit 이 내주는 사본 경로. ``<프로젝트>\\static\\MANUAL.html``."""
-    base = root if root is not None else _project_root()
-    return base / STATIC_DIRNAME / MANUAL_FILENAME
+    """Streamlit 이 내주는 사본 경로.
+
+    ``root`` 를 주면 그 아래 ``static\\`` 을 본다 (시험용). 주지 않으면 실행
+    스크립트 옆 — ``src\\kwise\\ui\\static\\MANUAL.html`` 이다.
+    """
+    if root is not None:
+        return root / STATIC_DIRNAME / MANUAL_FILENAME
+    return app_static_dir() / MANUAL_FILENAME
 
 
 def manual_available(docs_dir: Path | None = None, *, root: Path | None = None) -> bool:

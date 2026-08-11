@@ -32,6 +32,7 @@ from kwise.rules import (
     rules,
     set_value,
 )
+from kwise.tariff import load_tariff
 from kwise.ui.anchors import detail_suffix
 from kwise.ui.cache import apply_rule_edit
 from kwise.ui.rules_view import (
@@ -80,6 +81,7 @@ def render() -> None:
     counts = count_rows(rows)
     st.markdown(f"### {header_text(counts)}")
 
+    _tariff_block()
     _restore_block()
     st.divider()
 
@@ -89,6 +91,27 @@ def render() -> None:
     st.divider()
     _weather_block()
     _history_block()
+
+
+# --------------------------------------------------------------------- 요금표
+
+
+def _tariff_block() -> None:
+    """요금표 검증 여부. **이 화면에만 둔다.**
+
+    옆단과 진단 화면에도 걸어 두었더니 매 화면에서 같은 문장을 읽게 되었다.
+    쓰는 사람이 손댈 곳은 여기 하나이므로 여기서만 밝힌다 (12세션).
+    """
+    table = load_tariff()
+    with st.container(border=True):
+        st.markdown(f"**요금표** — {table.source or '출처 미기재'} ({table.effective_date} 시행)")
+        if table.verified:
+            st.caption("실제 청구서와 대조해 확인했습니다.")
+        else:
+            st.caption(
+                "아직 실제 청구서와 대조하지 않았습니다. 단가는 공표 자료 그대로이며, "
+                "청구서로 한 번 맞춰 보면 확신이 올라갑니다."
+            )
 
 
 # --------------------------------------------------------------------- 항목 한 줄

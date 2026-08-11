@@ -31,6 +31,7 @@ from kwise.ui.cache import (
     rules_stamp,
     usage_token,
 )
+from kwise.ui.nav import PAGE_KEY, PAGES
 from kwise.ui.pipeline import ContractForm
 from kwise.ui.session import purge_stale
 from kwise.ui.state import get_form, upload
@@ -38,7 +39,6 @@ from kwise.ui.views import compare, diagnose, measures, rules_admin
 
 __all__ = ["main"]
 
-_PAGES = ("1단계 · 진단", "2단계 · 개선 수단", "3단계 · 비교", "기준 데이터")
 _PURGED = "_kwise_purged"
 
 
@@ -52,21 +52,22 @@ def main() -> None:
 
     st.sidebar.title("kWise")
     st.sidebar.caption(f"버전 {__version__} · 대한민국 전용")
-    page = st.sidebar.radio("화면", _PAGES, label_visibility="collapsed")
+    # **단계 하단 이동 단추와 같은 세션 키를 쓴다** — 두 벌이면 표시가 어긋난다.
+    page = st.sidebar.radio("화면", PAGES, key=PAGE_KEY, label_visibility="collapsed")
     st.sidebar.divider()
     st.sidebar.caption("기본요금과 전력량요금만 계산합니다. 인증·신고용 산출물이 아닙니다.")
 
     rules_admin.render_alerts()
 
-    if page == _PAGES[3]:
+    if page == PAGES[3]:
         rules_admin.render()
         return
 
+    # 요금표 검증 상태는 **참고 등급**이다. 사이드바에 띄우지 않고 기준 데이터
+    # 화면과 산출물에만 둔다 (10.7).
     table = cached_tariff(rules_stamp())
-    if not table.verified:
-        st.sidebar.warning(f"요금표 {table.effective_date} — 청구서로 검증되지 않았습니다.")
 
-    if page == _PAGES[0]:
+    if page == PAGES[0]:
         diagnose.render(table)
         return
 
@@ -76,7 +77,7 @@ def main() -> None:
         return
     usage, quality, form, diagnosis = context
 
-    if page == _PAGES[1]:
+    if page == PAGES[1]:
         measures.render(usage, table, form, diagnosis, quality)
     else:
         compare.render(usage, table, form, diagnosis, quality)

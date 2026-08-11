@@ -16,8 +16,6 @@ import pandas as pd
 import streamlit as st
 
 from kwise.compare import (
-    SCENARIO_NAME_CAVEAT,
-    SENSITIVITY_NOTE,
     CombinationSpec,
     ComparisonResult,
     SensitivityRange,
@@ -46,11 +44,11 @@ from kwise.report import (
     measure_summary_frame,
     no_pv_sensitivity_frame,
 )
-from kwise.report.notices import KNOWN_LIMITS, NOT_INCLUDED_NOTICE
 from kwise.tariff import BillingResult, TariffTable
 from kwise.ui import charts
 from kwise.ui import text as fmt
 from kwise.ui.anchors import detail_suffix
+from kwise.ui.artifacts import recall, remember
 from kwise.ui.cache import (
     cached_comparison,
     cached_contract_adjustment,
@@ -63,10 +61,11 @@ from kwise.ui.cache import (
     rules_stamp,
     usage_token,
 )
+from kwise.ui.notices import screen_notices
 from kwise.ui.pipeline import ContractForm, combination_specs
 from kwise.ui.progress import progress_panel
 from kwise.ui.session import build_report_bytes
-from kwise.ui.spec import ReviewScope, review_scope
+from kwise.ui.spec import ReviewScope, measure, review_scope
 from kwise.ui.state import (
     enabled_measures,
     get_solar_inputs,
@@ -85,7 +84,7 @@ def render(
     diagnosis: Diagnosis,
     quality: QualityReport,
 ) -> None:
-    st.header("3단계 · 비교")
+    st.header("⚖ 3단계 · 비교")
     enabled = enabled_measures()
     scope = review_scope(enabled)
 
@@ -146,26 +145,25 @@ def render(
             report,
         )
 
-    frame = comparison.frame()
-    st.dataframe(frame, width="stretch")
+    # **지표 카드가 먼저, 차트, 표가 마지막이다** (12세션).
+    best = comparison.best
+    st.subheader(f"권장안 — {best.name}")
+    columns = st.columns(4)
+    columns[0].metric("12개월 환산 절감액", fmt.won_short(best.annual_saving_won))
+    columns[1].metric("투자비", fmt.won_short(best.investment_won, reason="미산출 — 단가 미입력"))
+    columns[2].metric(
+        "회수기간", fmt.payback(best.payback_years, investment_won=best.investment_won)
+    )
+    columns[3].metric("확실성", str(best.certainty))
+
     st.altair_chart(charts.combination_chart(comparison), width="stretch")
+    st.dataframe(_comparison_frame(comparison), hide_index=True, width="stretch")
     st.caption(
         "조합마다 요금을 다시 계산했습니다. 수단별 절감액의 합이 아닙니다. "
         + detail_suffix("certainty")
     )
-
-    best = comparison.best
-    columns = st.columns(4)
-    columns[0].metric("최선 조합", best.name)
-    columns[1].metric("절감액", fmt.won_short(best.saving_won))
-    columns[2].metric("투자비", fmt.won_short(best.investment_won, reason="미산출 — 단가 미입력"))
-    columns[3].metric(
-        "회수기간",
-        fmt.payback(best.payback_years, investment_won=best.investment_won),
-        fmt.certainty_badge(best.certainty),
-    )
-    for message in comparison.warnings:
-        st.warning(message)
+    for notice in screen_notices(comparison.warnings):
+        st.warning(notice.text)
 
     sensitivity_frame, sensitivity_ranges = _sensitivity_block(
         usage, table, baseline, unit_profile, quality, form, specs
@@ -184,11 +182,29 @@ def render(
         scope,
     )
 
-    with st.expander("미포함 요금요소와 알려진 한계", expanded=False):
-        st.write(NOT_INCLUDED_NOTICE)
-        for limit in KNOWN_LIMITS:
-            st.write(f"- {limit}")
-        st.caption(detail_suffix("known-limits"))
+    # 미포함 요금요소·알려진 한계는 **참고 등급**이다. 화면에서 빼고 Excel 요약
+    # 시트와 보고서 5장에만 싣는다 (10.7).
+
+
+def _measure_labels(keys: tuple[str, ...]) -> str:
+    """``solar, ess`` 를 ``태양광, ESS`` 로. **화면에 코드 식별자를 내지 않는다** (10.7)."""
+    return ", ".join(measure(key).label for key in keys) or "—"
+
+
+def _comparison_frame(comparison: ComparisonResult) -> pd.DataFrame:
+    """화면용 조합 표. 숫자는 문자열로 굳혀 세 자리 콤마를 보장한다."""
+    rows = [
+        {
+            "조합": item.name,
+            "수단": _measure_labels(item.spec.measures),
+            "12개월 환산 절감액": fmt.won(item.annual_saving_won),
+            "투자비": fmt.won(item.investment_won, reason="—"),
+            "회수기간": fmt.payback(item.payback_years, investment_won=item.investment_won),
+            "확실성": str(item.certainty),
+        }
+        for item in comparison.combinations
+    ]
+    return pd.DataFrame(rows)
 
 
 def _options_key(form: ContractForm) -> str:
@@ -370,14 +386,22 @@ def _sensitivity_block(
             form.billing_options(),
             report,
         )
+    # **기준값 옆에 범위만 붙인다** (9.2·12세션).
+    #
+    # 감도 차트와 3행 원자료 표를 화면에서 뺐다. 계산 표의 숫자와 감도 숫자가
+    # 나란히 놓이면 어느 것이 결과인지 알 수 없고, 그래프는 뜻이 읽히지 않는다.
+    # 근거가 필요한 사람은 Excel 「감도 상세」 시트를 본다.
     for item in ranges:
-        if item.base is not None:
-            st.write(f"- {item.text()}")
-    st.altair_chart(charts.sensitivity_chart(ranges), width="stretch")
-    st.caption(SCENARIO_NAME_CAVEAT + " " + detail_suffix("sensitivity"))
-    with st.expander("근거 — 시나리오 3행 원자료", expanded=False):
-        st.dataframe(frame, width="stretch")
-        st.caption(SENSITIVITY_NOTE)
+        if item.base is None:
+            continue
+        st.write(
+            f"- **{item.metric}** {fmt.money_range(item.base, item.low, item.high)}"
+            if item.unit == "원"
+            else f"- **{item.metric}** {item.text()}"
+        )
+    st.caption(
+        "태양광 발전 프로파일의 불확실성을 반영한 범위입니다. " + detail_suffix("sensitivity")
+    )
     return frame, ranges
 
 
@@ -393,6 +417,7 @@ def _download_block(
 ) -> None:
     """산출물 둘 — 분석자용 Excel 과 의사결정자용 Word (10.3·10.5)."""
     st.subheader("내려받기")
+    token = f"{usage_token(usage)}|{rules_stamp()}|{len(comparison.combinations)}"
     excel_tab, word_tab = st.tabs(["Excel — 분석자용", "Word 보고서 — 의사결정자용"])
 
     with excel_tab:
@@ -401,6 +426,7 @@ def _download_block(
             + detail_suffix("excel-report")
         )
         include_timeseries = st.checkbox("15분 시계열 시트 포함", value=True)
+        excel_token = f"{token}|{include_timeseries}"
         if st.button("Excel 만들기", type="primary", key="build_excel"):
             sections = ReportSections(
                 usage=usage,
@@ -411,12 +437,19 @@ def _download_block(
                 measure_rows=results.excel_frame(),
                 include_timeseries=include_timeseries,
             )
-            _offer(
+            _build(
                 lambda: build_report_bytes(sections, session_id=session_id()),
-                label="Excel 내려받기",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="dl_excel",
+                slot="excel",
+                label="Excel",
+                token=excel_token,
             )
+        _offer(
+            slot="excel",
+            token=excel_token,
+            label="Excel 내려받기",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_excel",
+        )
 
     with word_tab:
         st.caption(
@@ -426,6 +459,7 @@ def _download_block(
         building = st.text_input(
             "건물명", value=usage.meta.source_name, help="표지와 본문에 들어갑니다."
         )
+        word_token = f"{token}|{building}"
         if st.button("Word 보고서 만들기", type="primary", key="build_word"):
             document = DocumentSections(
                 usage=usage,
@@ -438,20 +472,43 @@ def _download_block(
                 reviewed_labels=scope.reviewed_labels,
                 skipped_labels=scope.skipped_labels,
             )
-            _offer(
+            _build(
                 lambda: document_bytes(document),
-                label="Word 내려받기",
-                mime=("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
-                key="dl_word",
+                slot="word",
+                label="Word 보고서",
+                token=word_token,
             )
+        _offer(
+            slot="word",
+            token=word_token,
+            label="Word 내려받기",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            key="dl_word",
+        )
 
 
-def _offer(make: Callable[[], tuple[bytes, str]], *, label: str, mime: str, key: str) -> None:
-    """만들고 바로 내려받게 한다. **서버에 남기지 않는다** (10.2)."""
+def _build(make: Callable[[], tuple[bytes, str]], *, slot: str, label: str, token: str) -> None:
+    """만들어 **세션에 담는다.** 내려받기 단추는 담긴 것을 참조만 한다.
+
+    바이트를 담지 않고 만들기 분기 안에서 단추를 그리면, 그 단추를 누른 rerun 에서
+    만들기 분기가 다시 타지 않아 **단추도 화면 결과도 사라진다** (12세션).
+    """
     try:
         payload, filename = make()
     except Exception as exc:
         st.error(f"{label} — 만들지 못했습니다.\n\n{exc}")
         return
-    st.download_button(label, data=payload, file_name=filename, mime=mime, key=key)
-    st.caption("서버에는 남기지 않습니다 — 만든 즉시 지웠습니다.")
+    remember(slot, payload, filename, token=token)
+
+
+def _offer(*, slot: str, token: str, label: str, mime: str, key: str) -> None:
+    """담아 둔 바이트를 내려받게 한다. **서버에 남기지 않는다** (10.2)."""
+    artifact = recall(slot, token=token)
+    if artifact is None:
+        return
+    st.download_button(
+        label, data=artifact.payload, file_name=artifact.filename, mime=mime, key=key
+    )
+    st.caption(
+        f"{artifact.filename} · {fmt.count(artifact.kilobytes, 'KB')} — 서버에는 남기지 않습니다."
+    )

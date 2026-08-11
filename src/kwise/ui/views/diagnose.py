@@ -1,9 +1,19 @@
-"""1단계 · 진단 (요구사항서 10.1).
+"""1단계 · 진단 (요구사항서 10.1·10.7).
 
 **업로드 즉시, 설비 정보 없이** 나오는 화면이다. 묻는 것은 계약 정보 넷뿐이다.
 
-화면 순서를 뒤집지 않는다 — **개선 여지 요약이 최상단**이다. 이것이 사용자가
-처음 보는 숫자이고, 태양광부터 묻는 구조가 가리는 바로 그 값이다 (6.5).
+순서는 **진단을 다 본 뒤 "그래서 무엇을 할 수 있나" 로 잇는다** (12세션).
+
+    지표 카드 → 데이터 품질 → 부하 패턴 → 피크 특성 → 요금 구조
+    → 계약전력 적정성 → **개선 여지 요약** → 2단계로
+
+개선 여지 요약을 최상단에 두었더니 진단을 보기 전에 금액이 떠서 혼란스러웠다.
+맨 아래, 다음 단계 단추 바로 위가 제자리다.
+
+**차트를 표보다 앞에 둔다.** 월별 최대수요·상위 구간 시각 분포·시간대별
+프로파일이 진단의 핵심인데 표 뒤에 있으면 눈에 들어오지 않는다.
+
+안내는 심각도로 거른다 — **화면에는 차단과 주의만** (:mod:`kwise.ui.notices`).
 """
 
 from __future__ import annotations
@@ -25,6 +35,9 @@ from kwise.ui.cache import (
     rules_stamp,
     usage_token,
 )
+from kwise.ui.labels import option_label, selection_label
+from kwise.ui.nav import next_step_button
+from kwise.ui.notices import Severity, screen_notices
 from kwise.ui.pipeline import (
     ContractForm,
     contract_type_choices,
@@ -41,7 +54,7 @@ _COLUMN_KEYS = ("diag_date_column", "diag_energy_column")
 
 
 def render(table: TariffTable) -> None:
-    st.header("1단계 · 진단")
+    st.header("📊 1단계 · 진단")
     st.caption(
         "파일만 올려도 결과가 나옵니다. 설비 정보는 묻지 않습니다. "
         + detail_suffix("improvement-summary")
@@ -67,14 +80,40 @@ def render(table: TariffTable) -> None:
         rules_stamp(),
     )
 
+    _headline_block(usage, diagnosis)
     _tentative_basis_block(table, form)
-    _summary_block(diagnosis)
+    _notice_block(quality, diagnosis)
     _quality_block(usage, quality)
     _pattern_block(diagnosis)
     _peak_block(diagnosis)
     _structure_block(diagnosis)
     _contract_adequacy_block(diagnosis)
-    _warning_block(diagnosis)
+    _summary_block(table, diagnosis)
+    next_step_button("2단계 · 개선 수단", key="go_measures")
+
+
+# --------------------------------------------------------------------- 지표·안내
+
+
+def _headline_block(usage: UsageData, diagnosis: Diagnosis) -> None:
+    """**지표 카드 넷.** 숫자와 단위만 둔다 — 설명은 카드 밖이다."""
+    meta = usage.meta
+    columns = st.columns(4)
+    columns[0].metric("분석 기간", fmt.period(meta.start, meta.end, meta.period_days))
+    columns[1].metric("최대수요", fmt.kw(meta.max_demand_kw))
+    columns[2].metric("부하율", fmt.ratio_pct(diagnosis.pattern.load_factor))
+    # 1년치가 아닌 자료를 "연간" 이라 적으면 그 자체가 오독이다. 라벨을 기간에 맞춘다.
+    span = meta.period_days or 0
+    columns[3].metric("연간 사용량" if span >= 350 else "기간 사용량", fmt.mwh(meta.total_kwh))
+
+
+def _notice_block(quality: QualityReport, diagnosis: Diagnosis) -> None:
+    """**차단과 주의만.** 참고 등급은 Excel 요약과 보고서 5장으로 간다 (10.7)."""
+    for notice in screen_notices(quality.warnings, diagnosis.warnings):
+        if notice.severity is Severity.BLOCK:
+            st.error(notice.text)
+        else:
+            st.warning(notice.text)
 
 
 # --------------------------------------------------------------------- 업로드·열 인식
@@ -160,75 +199,86 @@ def _contract_block(table: TariffTable, usage: UsageData) -> ContractForm | None
     type_labels = {key: label for key, label in types}
 
     with st.expander("계약 정보 (4)", expanded=saved is None):
-        default_type = saved.contract_type if saved else type_keys[0]
-        contract_type = st.selectbox(
-            "계약종별",
-            type_keys,
-            index=type_keys.index(default_type) if default_type in type_keys else 0,
-            format_func=lambda key: type_labels[key],
-            help="데이터로는 추정할 수 없습니다. 청구서를 보고 고르십시오.",
-        )
-        guess = guess_contract(usage, contract_type)
+        # **2열로 나눈다.** 넷을 세로로 쌓으면 스크롤이 생겨 한눈에 안 들어온다.
+        left, right = st.columns(2)
+        with left:
+            default_type = saved.contract_type if saved else type_keys[0]
+            contract_type = st.selectbox(
+                "계약종별",
+                type_keys,
+                index=type_keys.index(default_type) if default_type in type_keys else 0,
+                format_func=lambda key: type_labels[key],
+                help="데이터로는 추정할 수 없습니다. 청구서를 보고 고르십시오.",
+            )
+            guess = guess_contract(usage, contract_type)
 
-        voltages = voltage_choices(table, contract_type)
-        voltage_keys = [key for key, _label in voltages]
-        voltage_labels = {key: label for key, label in voltages}
-        default_voltage = (
-            saved.voltage if saved and saved.voltage in voltage_keys else voltage_keys[0]
-        )
-        voltage = st.selectbox(
-            "전압구분",
-            voltage_keys,
-            index=voltage_keys.index(default_voltage),
-            format_func=lambda key: voltage_labels[key],
-        )
-
-        contract_kw = st.number_input(
-            "계약전력 (kW)",
-            min_value=0.0,
-            value=float(saved.contract_kw) if saved and saved.contract_kw else guess.contract_kw,
-            step=1.0,
-            help="청구서 기재값입니다. 계약 적정성 진단이 이 값을 전제로 합니다.",
-        )
-
-        options = option_choices(table, contract_type, voltage)
-        default_option = saved.option if saved and saved.option in options else options[0]
-        option = st.selectbox(
-            "선택요금",
-            options,
-            index=options.index(default_option),
-            help="현행 선택요금입니다. 다른 선택요금은 2단계에서 모두 다시 계산합니다.",
-        )
+            voltages = voltage_choices(table, contract_type)
+            voltage_keys = [key for key, _label in voltages]
+            voltage_labels = {key: label for key, label in voltages}
+            default_voltage = (
+                saved.voltage if saved and saved.voltage in voltage_keys else voltage_keys[0]
+            )
+            voltage = st.selectbox(
+                "전압구분",
+                voltage_keys,
+                index=voltage_keys.index(default_voltage),
+                format_func=lambda key: voltage_labels[key],
+            )
+        with right:
+            contract_kw = st.number_input(
+                "계약전력 (kW)",
+                min_value=0.0,
+                value=(
+                    float(saved.contract_kw) if saved and saved.contract_kw else guess.contract_kw
+                ),
+                step=1.0,
+                help="청구서 기재값입니다. 계약 적정성 진단이 이 값을 전제로 합니다.",
+            )
+            options = option_choices(table, contract_type, voltage)
+            default_option = saved.option if saved and saved.option in options else options[0]
+            option = st.selectbox(
+                "선택요금",
+                options,
+                index=options.index(default_option),
+                format_func=option_label,
+                help="현행 선택요금입니다. 다른 선택요금은 2단계에서 모두 다시 계산합니다.",
+            )
 
         st.caption(
             f"추정 — 갑/을 {guess.tier_hint} · 관측 최대 {fmt.kw(guess.max_demand_kw)} · "
-            f"연간 이용시간 {guess.utilization_hours:,.0f}시간. " + detail_suffix("contract-info")
+            f"연간 이용시간 {fmt.count(guess.utilization_hours, '시간')}. "
+            + detail_suffix("contract-info")
         )
-        for note in guess.notes:
-            st.caption(f"· {note}")
+        st.caption(
+            "계약전력은 **청구서 기재값**을 넣으십시오. 위 값은 관측 최대에 여유를 얹은 "
+            "가늠이며, 계약 적정성 진단이 이 값을 전제로 합니다."
+        )
 
         with st.expander("역률 (선택)", expanded=False):
-            lagging = st.number_input(
-                "주간 지상역률 (%)",
-                min_value=1.0,
-                max_value=100.0,
-                value=float(saved.lagging_pct) if saved else default_lagging_pct(),
-                step=0.1,
-                help="약관 제42조의 무효전력계 미설치 간주값입니다. 이 값에서 조정액이 0원입니다.",
-            )
-            known_leading = st.checkbox(
-                "야간 진상역률을 안다",
-                value=saved.leading_power_factor_pct is not None if saved else False,
-            )
-            leading = (
-                st.number_input(
-                    "야간 진상역률 (%)", min_value=1.0, max_value=100.0, value=95.0, step=0.1
+            pf_left, pf_right = st.columns(2)
+            with pf_left:
+                lagging = st.number_input(
+                    "주간 지상역률 (%)",
+                    min_value=1.0,
+                    max_value=100.0,
+                    value=float(saved.lagging_pct) if saved else default_lagging_pct(),
+                    step=0.1,
+                    help="모르면 그대로 두십시오. 이 값에서 조정액이 0원입니다.",
                 )
-                if known_leading
-                else None
-            )
+            with pf_right:
+                known_leading = st.checkbox(
+                    "야간 진상역률을 안다",
+                    value=saved.leading_power_factor_pct is not None if saved else False,
+                )
+                leading = (
+                    st.number_input(
+                        "야간 진상역률 (%)", min_value=1.0, max_value=100.0, value=95.0, step=0.1
+                    )
+                    if known_leading
+                    else None
+                )
             st.caption(
-                "모르면 지상으로 간주해 추가요금 0원입니다 (제43조 ② 2호 나목). "
+                "모르면 지상으로 간주해 추가요금이 없습니다. "
                 + detail_suffix("measure-power-factor")
             )
 
@@ -247,7 +297,7 @@ def _contract_block(table: TariffTable, usage: UsageData) -> ContractForm | None
     if saved is None:
         st.warning(
             "계약 정보를 확정하기 전까지는 부하 패턴과 피크 특성만 나옵니다. "
-            "금액은 계약 정보가 있어야 산출합니다 (요구사항서 6장)."
+            "금액은 계약 정보가 있어야 산출합니다."
         )
     return saved
 
@@ -276,75 +326,69 @@ def _tentative_basis_block(table: TariffTable, form: ContractForm | None) -> Non
 # --------------------------------------------------------------------- 개선 여지 요약
 
 
-def _summary_block(diagnosis: Diagnosis) -> None:
-    """**최상단.** 투자 없이 가능한 절감액이 첫 숫자다 (6.5)."""
+def _summary_block(table: TariffTable, diagnosis: Diagnosis) -> None:
+    """**진단을 다 본 뒤** "그래서 무엇을 할 수 있나" (6.5).
+
+    화면에 코드 식별자를 내지 않는다 — 요금제 이름은 요금 데이터에서 가져온다.
+    """
     st.subheader("개선 여지 — 투자 없이 가능한 절감액")
     summary = diagnosis.summary
+    if summary.no_investment_saving_won is not None:
+        saved_won = fmt.won_short(summary.no_investment_saving_won)
+        st.success(f"투자 없이 **{saved_won}** 줄일 수 있습니다.")
+
     left, middle, right = st.columns(3)
     left.metric(
         "선택요금 전환",
         fmt.won_short(summary.tariff_switch_saving_won, reason="계약 정보 필요"),
-        help="같은 종별·전압의 다른 선택요금을 모두 다시 계산한 값입니다.",
     )
     middle.metric(
         "계약전력 조정",
-        fmt.won_short(summary.contract_saving_won, reason="미산출"),
-        help="하한 규정에 걸려 있을 때만 금액이 납니다.",
+        fmt.won_short(summary.contract_saving_won, reason="여유 없음"),
     )
-    right.metric(
-        "태양광 기여 가능성",
-        str(summary.pv_potential),
-        help=f"판정 모집단 — {summary.pv_basis}",
-    )
-    if summary.no_investment_saving_won is not None:
-        st.success(
-            f"투자 없이 **{fmt.won(summary.no_investment_saving_won)}** "
-            f"({summary.period_label or '기간'} 기준)"
+    right.metric("태양광 기여 가능성", str(summary.pv_potential))
+
+    if summary.best_selection is not None:
+        best = selection_label(table, summary.best_selection)
+        current = (
+            selection_label(table, summary.current_selection)
+            if summary.current_selection is not None
+            else ""
         )
-    for line in summary.lines:
-        st.caption(line)
+        if summary.best_selection != summary.current_selection:
+            st.write(f"가장 유리한 요금제는 **{best}** 입니다. 현재는 {current} 입니다.")
+        else:
+            st.write(f"현재 요금제(**{current}**)가 이미 가장 유리합니다.")
+    st.caption(
+        f"상위 구간의 {summary.pv_midday_share:.0%}가 정오 시간대입니다. "
+        f"산출 기간은 {summary.period_label or '—'} 입니다. " + detail_suffix("improvement-summary")
+    )
 
 
 # --------------------------------------------------------------------- 데이터 품질
 
 
 def _quality_block(usage: UsageData, quality: QualityReport) -> None:
+    """경고는 위쪽 :func:`_notice_block` 이 이미 냈다. 여기는 사실만 적는다."""
     st.subheader("데이터 품질")
     meta = usage.meta
-    columns = st.columns(4)
-    columns[0].metric("기간", f"{meta.start:%Y-%m-%d} ~ {meta.end:%Y-%m-%d}")
-    columns[1].metric("검침 간격", f"{meta.interval_minutes}분")
-    columns[2].metric("결측률", fmt.ratio_pct(quality.missing_ratio))
-    columns[3].metric("총 사용량", fmt.mwh(meta.total_kwh))
+    columns = st.columns(3)
+    columns[0].metric("검침 간격", f"{meta.interval_minutes}분")
+    columns[1].metric("결측", f"{fmt.ratio_pct(quality.missing_ratio)}")
+    columns[2].metric("정전 추정", fmt.count(len(quality.outages), "건"))
 
-    if quality.outages:
-        st.caption(f"정전 추정 {len(quality.outages)}건 — 편중 판정에서 제외했습니다.")
-    if quality.longest_gap is not None:
-        gap = quality.longest_gap
-        st.caption(
-            f"최장 연속 결측 {gap.slots}슬롯 "
-            f"({gap.start:%Y-%m-%d %H:%M} ~ {gap.end:%Y-%m-%d %H:%M})"
-        )
-    st.caption(
-        "결측은 보간하지 않습니다. 계산에서 제외하고 그 사실을 표시합니다. "
-        + detail_suffix("data-quality")
-    )
-
-    # **결측 편중은 경고다. 매뉴얼로 보내지 않는다** — 결과 해석을 바꾼다.
+    # **결측 편중은 결과 해석을 바꾼다.** 발생 지점에 한 번만 적는다.
     if quality.skew.flagged:
         st.warning(
-            f"결측이 피크 시간대에 몰려 있습니다 (편중 배수 {quality.skew.multiple:,.2f}). "
+            f"결측이 피크 시간대에 몰려 있습니다 (편중 배수 "
+            f"{fmt.count(quality.skew.multiple, decimals=2)}). "
             "그 달의 최대수요가 실제보다 낮게 잡혔을 수 있습니다."
         )
-    if quality.flagged_months:
-        st.warning(
-            "결측률이 높은 달 — "
-            + ", ".join(f"{item.month} {item.ratio:.1%}" for item in quality.flagged_months)
-            + ". 최대수요를 '신뢰 제한' 으로 봅니다."
-        )
-    with st.expander("품질 경고 전체", expanded=False):
-        for message in quality.warnings:
-            st.write(f"- {message}")
+    st.caption(
+        f"결측 {fmt.count(meta.missing_rows, '구간')} / 전체 "
+        f"{fmt.count(meta.expected_rows, '구간')}. **보간하지 않습니다** — 계산에서 "
+        "제외하고 그 사실을 표시합니다. " + detail_suffix("data-quality")
+    )
 
 
 # --------------------------------------------------------------------- 부하 패턴
@@ -369,6 +413,7 @@ def _pattern_block(diagnosis: Diagnosis) -> None:
 
 
 def _peak_block(diagnosis: Diagnosis) -> None:
+    """**차트가 먼저다.** 상위 구간 분포가 태양광 판단의 근거다 (6.2)."""
     st.subheader("피크 특성")
     peak = diagnosis.peak
     columns = st.columns(3)
@@ -378,20 +423,19 @@ def _peak_block(diagnosis: Diagnosis) -> None:
         "상위 구간 주말 비중",
         fmt.ratio_pct(peak.weekend_slots / peak.top_n if peak.top_n else None),
     )
-    if peak.billing_demand_kw < peak.peak_kw * 0.99:
-        st.info(
-            f"관측 최대({fmt.kw(peak.peak_kw)})보다 요금적용전력이 낮습니다 — "
-            "경부하 시간대의 피크는 요금적용전력이 되지 않습니다 (약관 5.2 ①). "
-            + detail_suffix("billing-demand")
-        )
     st.altair_chart(charts.monthly_peak_chart(peak), width="stretch")
     st.altair_chart(charts.top_hour_chart(peak), width="stretch")
+    st.altair_chart(charts.hourly_profile_chart(peak), width="stretch")
+    if peak.billing_demand_kw < peak.peak_kw * 0.99:
+        st.caption(
+            f"관측 최대 {fmt.kw(peak.peak_kw)} 보다 요금적용전력이 낮습니다 — "
+            "경부하 시간대의 피크는 요금적용전력이 되지 않습니다. "
+            + detail_suffix("billing-demand")
+        )
     st.caption(
         "상위 구간의 시각 분포가 **태양광 기여 가능성을 즉시 보여 주는 지표**입니다. "
         + detail_suffix("peak-profile")
     )
-    with st.expander("시간대별 평균 부하", expanded=False):
-        st.altair_chart(charts.hourly_profile_chart(peak), width="stretch")
 
 
 # --------------------------------------------------------------------- 요금 구조
@@ -430,18 +474,5 @@ def _contract_adequacy_block(diagnosis: Diagnosis) -> None:
     columns[3].metric(
         "예상 절감액", fmt.won_short(adequacy.saving_won, reason=adequacy.saving_basis)
     )
-    # **계약전력 변경 위험은 화면에 남긴다** (9.4). 매뉴얼로 보내면 읽지 않는다.
-    st.warning(
-        "기본요금은 직전 12개월 중 최대수요로 결정됩니다. 계약전력을 하향할 경우, "
-        "예측 오차와 기상 변동을 고려하여 충분한 여유를 확보하십시오. "
-        "한 번의 초과가 12개월간 적용됩니다."
-    )
+    # 계약전력 변경 위험(9.4)은 위쪽 안내가 이미 냈다. 여기서 되풀이하지 않는다.
     st.caption(detail_suffix("contract-adequacy"))
-
-
-def _warning_block(diagnosis: Diagnosis) -> None:
-    if not diagnosis.warnings:
-        return
-    with st.expander(f"진단 경고 {len(diagnosis.warnings)}건", expanded=False):
-        for message in diagnosis.warnings:
-            st.write(f"- {message}")

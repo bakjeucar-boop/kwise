@@ -21,13 +21,13 @@ from rich.console import Console
 from rich.table import Table
 
 from kwise.docsite import DEFAULT_DOCS, build_page, collect_anchors
-from kwise.ui.anchors import ANCHORS, STATIC_DIRNAME, anchor_keys
+from kwise.ui.anchors import ANCHORS, anchor_keys, app_static_dir
 
 console = Console()
 
 # Streamlit 정적 서빙 설정. 없으면 화면의 [자세히] 링크가 404 로 간다.
 _CONFIG = """\
-# 화면의 [자세히] 링크가 static\\MANUAL.html 로 갑니다 (요구사항서 13장).
+# 화면의 [자세히] 링크가 src\\kwise\\ui\\static\\MANUAL.html 로 갑니다 (13장).
 # 이 설정이 없으면 Streamlit 이 파일을 내주지 않아 링크가 404 가 됩니다.
 [server]
 enableStaticServing = true
@@ -35,8 +35,13 @@ enableStaticServing = true
 
 
 def publish_static(pages: tuple[Path, ...], root: Path) -> Path:
-    """산출물을 ``static\\`` 에 복사한다. **Streamlit 이 여기만 내준다.**"""
-    target = root / STATIC_DIRNAME
+    """산출물을 Streamlit 이 내주는 자리에 복사한다.
+
+    **그 자리는 실행 스크립트 옆이다** — ``src\\kwise\\ui\\static\\``.
+    Streamlit 은 ``Path(main_script).parent / "static"`` 만 내주므로 저장소
+    뿌리에 두면 파일은 있는데 링크가 404 가 난다 (12세션에서 실제로 그랬다).
+    """
+    target = app_static_dir()
     target.mkdir(parents=True, exist_ok=True)
     for page in pages:
         (target / page.name).write_text(page.read_text(encoding="utf-8"), encoding="utf-8")

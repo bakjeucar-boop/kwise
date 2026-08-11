@@ -31,6 +31,7 @@ from kwise.ui.anchors import (
     MANUAL_FILENAME,
     STATIC_ROUTE,
     anchor_keys,
+    app_static_dir,
     detail_suffix,
     manual_href,
 )
@@ -209,13 +210,15 @@ def test_링크가_활성화되었다() -> None:
 
 def test_링크가_streamlit_이_내주는_경로로_간다() -> None:
     """``docs\\`` 는 Streamlit 이 내주지 않는다. 정적 사본 경로여야 한다."""
-    assert (Path(STATIC_DIR := "static") / MANUAL_FILENAME).is_file(), (
+    # Streamlit 의 정적 폴더는 **주 스크립트 옆의 ``static\\``** 이다 (12세션).
+    # 저장소 뿌리에 두면 내주지 않아 [자세히] 가 File not found 로 떨어진다.
+    assert (app_static_dir() / MANUAL_FILENAME).is_file(), (
         "tools\\build_docs.py 가 정적 사본을 만들어야 합니다."
     )
     href = manual_href("pv-density")
     assert href is not None
     assert href.startswith(STATIC_ROUTE), href
-    assert STATIC_DIR in STATIC_ROUTE
+    assert app_static_dir().name in STATIC_ROUTE
 
 
 def test_모든_앵커_링크가_매뉴얼_id_와_일치한다() -> None:
