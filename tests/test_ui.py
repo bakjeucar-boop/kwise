@@ -79,16 +79,18 @@ def test_없는_앵커는_바로_실패한다() -> None:
 
 
 def test_매뉴얼이_없으면_링크가_비활성이다(tmp_path: Path) -> None:
-    assert manual_href("certainty", docs_dir=tmp_path) is None
-    suffix = detail_suffix("certainty", docs_dir=tmp_path)
+    """**뿌리까지 비워야 한다** — 정적 사본이 있으면 그쪽으로 살아난다 (11세션)."""
+    assert manual_href("certainty", docs_dir=tmp_path, root=tmp_path) is None
+    suffix = detail_suffix("certainty", docs_dir=tmp_path, root=tmp_path)
     assert "매뉴얼 준비 중" in suffix
     assert "](" not in suffix  # 마크다운 링크가 아니다
 
 
 def test_매뉴얼이_생기면_링크가_살아난다(tmp_path: Path) -> None:
     (tmp_path / "MANUAL.html").write_text("<html></html>", encoding="utf-8")
-    assert manual_href("certainty", docs_dir=tmp_path) == "MANUAL.html#certainty"
-    assert "MANUAL.html#certainty" in detail_suffix("certainty", docs_dir=tmp_path)
+    href = manual_href("certainty", docs_dir=tmp_path, root=tmp_path)
+    assert href == "MANUAL.html#certainty"
+    assert href in detail_suffix("certainty", docs_dir=tmp_path, root=tmp_path)
 
 
 def test_앵커_문서가_정본과_같다() -> None:

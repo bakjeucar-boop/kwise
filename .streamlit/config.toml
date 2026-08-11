@@ -1,0 +1,4 @@
+# 화면의 [자세히] 링크가 static\MANUAL.html 로 갑니다 (요구사항서 13장).
+# 이 설정이 없으면 Streamlit 이 파일을 내주지 않아 링크가 404 가 됩니다.
+[server]
+enableStaticServing = true

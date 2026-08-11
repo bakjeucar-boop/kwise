@@ -5,13 +5,16 @@
     화면에 둘 것     없으면 입력을 못 하거나 결과를 오독하는 것
     매뉴얼로 보낼 것  출처·근거 조문·제도 설명·원리·배경
 
-형태는 **화면에 한 줄 + [자세히] 링크**다. 링크는 ``docs\\MANUAL.html`` 의 앵커로
-간다. 매뉴얼은 10세션에서 쓰므로 지금은 **링크를 비활성으로 둔다** — 없는 문서로
-보내면 화면을 못 믿게 된다.
+형태는 **화면에 한 줄 + [자세히] 링크**다. 링크는 매뉴얼의 앵커로 간다.
 
-**앵커 이름은 여기서 확정한다.** 문서를 쓸 때 이 목록을 그대로 ``id`` 로 쓰면
-링크가 저절로 살아난다. 목록은 ``docs\\MANUAL_ANCHORS.md`` 로도 내보내며
-(``tools\\export_manual_anchors.py``), 두 벌이 어긋나지 않는지 테스트가 지킨다.
+**앵커 이름은 여기서 확정한다.** 매뉴얼(``docs\\MANUAL.md``)이 이 목록을 그대로
+``id`` 로 쓰므로 문서를 만들면 링크가 저절로 살아난다. 목록은
+``docs\\MANUAL_ANCHORS.md`` 로도 내보내며 (``tools\\export_manual_anchors.py``),
+두 벌이 어긋나지 않는지 테스트가 지킨다.
+
+**매뉴얼이 없으면 링크를 비활성으로 둔다** — 없는 문서로 보내면 화면을 못 믿게
+된다. 있으면 Streamlit 이 내주는 ``app/static/`` 경로로 건다
+(:func:`manual_href`).
 
 **예외 — 경고는 화면에 남긴다.** 역률 미달, 고출력 셀 사양, 결측 편중, 계약전력
 변경 위험처럼 결과 해석을 바꾸는 것은 매뉴얼로 보내면 안 읽는다.
@@ -26,6 +29,8 @@ __all__ = [
     "ANCHORS",
     "ANCHOR_DOC_FILENAME",
     "MANUAL_FILENAME",
+    "STATIC_DIRNAME",
+    "STATIC_ROUTE",
     "ManualAnchor",
     "anchor",
     "anchor_document",
@@ -34,22 +39,43 @@ __all__ = [
     "manual_available",
     "manual_href",
     "manual_path",
+    "static_manual_path",
 ]
 
 ANCHOR_DOC_FILENAME = "MANUAL_ANCHORS.md"
 
 MANUAL_FILENAME = "MANUAL.html"
 
+# **Streamlit 은 임의 경로의 파일을 내주지 않는다.** ``docs\MANUAL.html`` 을
+# 상대 링크로 걸면 브라우저가 ``/MANUAL.html`` 을 찾다가 404 를 받는다.
+# 정적 서빙(``enableStaticServing``)이 내주는 자리에 사본을 두고 그쪽으로 건다.
+STATIC_DIRNAME = "static"
+STATIC_ROUTE = "app/static"
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
 
 def manual_path(docs_dir: Path | None = None) -> Path:
-    """매뉴얼 경로. 기본은 ``<프로젝트>\\docs\\MANUAL.html``."""
-    base = docs_dir if docs_dir is not None else Path(__file__).resolve().parents[3] / "docs"
+    """매뉴얼 원본 경로. 기본은 ``<프로젝트>\\docs\\MANUAL.html``."""
+    base = docs_dir if docs_dir is not None else _project_root() / "docs"
     return base / MANUAL_FILENAME
 
 
-def manual_available(docs_dir: Path | None = None) -> bool:
-    """매뉴얼이 있으면 참. 없으면 [자세히] 를 **비활성**으로 그린다."""
-    return manual_path(docs_dir).is_file()
+def static_manual_path(root: Path | None = None) -> Path:
+    """Streamlit 이 내주는 사본 경로. ``<프로젝트>\\static\\MANUAL.html``."""
+    base = root if root is not None else _project_root()
+    return base / STATIC_DIRNAME / MANUAL_FILENAME
+
+
+def manual_available(docs_dir: Path | None = None, *, root: Path | None = None) -> bool:
+    """링크를 걸 수 있는가. **내줄 수 있는 사본이 있어야 참이다.**
+
+    원본만 있고 정적 사본이 없으면 링크가 404 로 간다. 죽은 링크를 화면에
+    내느니 비활성으로 두는 편이 낫다 — 없는 문서로 보내면 화면을 못 믿게 된다.
+    """
+    return static_manual_path(root).is_file() or manual_path(docs_dir).is_file()
 
 
 @dataclass(frozen=True)
@@ -321,16 +347,24 @@ def anchor(key: str) -> ManualAnchor:
         raise KeyError(f"등록되지 않은 매뉴얼 앵커입니다: {key!r}") from exc
 
 
-def manual_href(key: str, *, docs_dir: Path | None = None) -> str | None:
-    """링크 주소. **매뉴얼이 아직 없으면 ``None``** 이고 화면은 비활성으로 그린다."""
+def manual_href(key: str, *, docs_dir: Path | None = None, root: Path | None = None) -> str | None:
+    """링크 주소. **매뉴얼이 아직 없으면 ``None``** 이고 화면은 비활성으로 그린다.
+
+    정적 사본이 있으면 Streamlit 이 내주는 ``app/static/`` 경로를 쓴다. 사본이
+    없고 원본만 있으면 파일을 직접 열어 보는 경우이므로 상대 경로를 준다.
+    """
     item = anchor(key)
-    return item.href if manual_available(docs_dir) else None
+    if static_manual_path(root).is_file():
+        return f"{STATIC_ROUTE}/{item.href}"
+    if manual_path(docs_dir).is_file():
+        return item.href
+    return None
 
 
-def detail_suffix(key: str, *, docs_dir: Path | None = None) -> str:
+def detail_suffix(key: str, *, docs_dir: Path | None = None, root: Path | None = None) -> str:
     """화면 한 줄 뒤에 붙일 ``[자세히]``. 마크다운 문자열을 돌려준다."""
     item = anchor(key)
-    href = manual_href(key, docs_dir=docs_dir)
+    href = manual_href(key, docs_dir=docs_dir, root=root)
     if href is None:
         return f":grey[[자세히 — 매뉴얼 준비 중: {item.title}]]"
     return f"[[자세히 — {item.title}]]({href})"
