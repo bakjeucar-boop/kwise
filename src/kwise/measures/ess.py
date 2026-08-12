@@ -51,15 +51,21 @@ from kwise.tariff import (
 )
 
 __all__ = [
+    "U_SHAPE_REASON",
     "DispatchResult",
     "EssResult",
+    "EssTargetCurve",
+    "EssTargetPoint",
     "PeakExcess",
     "analyze_peak_excess",
     "default_dod",
     "default_payback_target_years",
     "default_round_trip",
+    "default_target_search_ratio",
+    "default_target_step_kw",
     "dispatch_peak_shaving",
     "ess_payback_curve",
+    "ess_target_curve",
     "evaluate_ess",
     "excess_slots_by_day",
     "high_rate_discharge_hours",
@@ -86,6 +92,16 @@ def default_payback_target_years() -> float:
 def high_rate_discharge_hours() -> float:
     """이 아래는 정치형 셀의 통상 연속 방전(0.5~1C)을 넘어선다. 고출력 셀 사양이다."""
     return float(assumption("ess.high_rate_discharge_hours"))
+
+
+def default_target_step_kw() -> float:
+    """최적 목표를 훑는 격자 (14세션 3-1). **곡선이 격자에 민감하다.**"""
+    return float(assumption("ess.target_step_kw"))
+
+
+def default_target_search_ratio() -> float:
+    """탐색 하한 비율. 현행 요금적용전력의 이 배까지 내려가며 훑는다."""
+    return float(assumption("ess.target_search_ratio"))
 
 
 # 회수기간 곡선에서 보여 줄 방전시간. 짧을수록 경제성이 좋다는 것을 보이는 표다.
@@ -189,6 +205,229 @@ def required_discharge_hours(excess: PeakExcess) -> float:
     if excess.max_excess_kw <= 0:
         return 0.0
     return excess.max_daily_excess_kwh / excess.max_excess_kw
+
+
+U_SHAPE_REASON = (
+    "왼쪽은 최소 규모 {minimum:,.0f} kWh 를 다 못 쓰는 구간이고, 오른쪽은 용량이 "
+    "급증해 투자비가 늘어나는 구간입니다."
+)
+"""회수기간 곡선이 U자인 이유 (14세션 3-2).
+
+**물리적 최적이 아니라 조달 규격의 산물이다.** 시장 최소 규모가 없으면 목표를
+올릴수록 회수기간이 계속 좋아지기만 한다.
+"""
+
+
+@dataclass(frozen=True)
+class EssTargetPoint:
+    """목표 하나에서 나오는 사양·투자비·회수기간 (14세션 3-1).
+
+    Attributes:
+        reduction_kw: 저감량 = 현행 요금적용전력 − 목표. **절감액의 근거다.**
+        power_kw: 필요 출력 = 목표 초과분의 최대값.
+        required_capacity_kwh: 필요 용량 = 하루치 초과 에너지 합의 연중 최대값.
+        billed_capacity_kwh: 과금 용량 = ``max(필요 용량, 시장 최소 규모)``.
+        at_market_minimum: 최소 규모에 걸렸는가. 걸린 구간이 U자의 왼쪽 팔이다.
+    """
+
+    target_kw: float
+    reduction_kw: float
+    power_kw: float
+    required_capacity_kwh: float
+    billed_capacity_kwh: float
+    discharge_hours: float
+    equipment_won: float
+    electrical_won: float
+    investment_won: float
+    annual_saving_won: float
+    payback_years: float | None
+    at_market_minimum: bool
+
+    @property
+    def spec_label(self) -> str:
+        """``5,170 kW · 저감 123 kW · 143 kW / 101 kWh · 24.6년`` — 표식에 붙인다."""
+        payback = "—" if self.payback_years is None else f"{self.payback_years:,.1f}년"
+        return (
+            f"{self.target_kw:,.0f} kW · 저감 {self.reduction_kw:,.0f} kW · "
+            f"{self.power_kw:,.0f} kW / {self.required_capacity_kwh:,.0f} kWh · {payback}"
+        )
+
+
+@dataclass(frozen=True)
+class EssTargetCurve:
+    """목표별 회수기간 곡선. **U자다** (14세션 3-2).
+
+    목표를 낮출수록 저감량이 커져 절감액이 늘지만 필요 용량이 급증해 투자비가 더
+    빨리 오른다. 반대로 목표를 높이면 필요 용량이 시장 최소 규모 아래로 내려가
+    투자비가 더 줄지 않는데 절감액만 준다. 그 사이에 최소 지점이 생긴다.
+
+    **절감액은 기본요금만 본 개략치다.** 목표를 고르는 데 쓰고, 고른 뒤의 금액은
+    :func:`evaluate_ess` 가 요금을 다시 계산해 낸다.
+    """
+
+    points: tuple[EssTargetPoint, ...]
+    best: EssTargetPoint | None
+    baseline_demand_kw: float
+    observed_peak_kw: float
+    base_fee_won_per_kw: float
+    market_minimum_kwh: float
+    step_kw: float
+
+    @property
+    def u_shape_reason(self) -> str:
+        return U_SHAPE_REASON.format(minimum=self.market_minimum_kwh)
+
+    def frame(self) -> pd.DataFrame:
+        """곡선 전체. 차트가 그대로 그린다."""
+        return pd.DataFrame(
+            {
+                "목표 요금적용전력(kW)": [item.target_kw for item in self.points],
+                "저감량(kW)": [item.reduction_kw for item in self.points],
+                "필요 출력(kW)": [item.power_kw for item in self.points],
+                "필요 용량(kWh)": [item.required_capacity_kwh for item in self.points],
+                "과금 용량(kWh)": [item.billed_capacity_kwh for item in self.points],
+                "방전시간(h)": [item.discharge_hours for item in self.points],
+                "투자비(원)": [item.investment_won for item in self.points],
+                "연간 절감액(원)": [item.annual_saving_won for item in self.points],
+                "회수기간(년)": [item.payback_years for item in self.points],
+                "최소 규모 적용": [item.at_market_minimum for item in self.points],
+            }
+        )
+
+    # 최소 지점에서 몇 격자 떨어진 곳을 보일지. **바깥으로 갈수록 성기게** 잡는다 —
+    # 최소 지점 바로 옆의 변화가 가장 크고, 멀어지면 단조롭게 나빠질 뿐이다.
+    _HIGHLIGHT_OFFSETS: tuple[int, ...] = (3, 1, 0, -2, -7)
+
+    def highlights(self) -> tuple[EssTargetPoint, ...]:
+        """최소 지점 둘레의 대표 지점 대여섯 개 (14세션 3-2).
+
+        곡선만으로는 "목표를 조금만 낮춰도 용량이 급증한다" 가 숫자로 읽히지
+        않는다. **최소 지점을 가운데 두고** 양쪽을 보인다.
+        """
+        priced = [item for item in self.points if item.payback_years is not None]
+        if not priced or self.best is None:
+            return ()
+        center = priced.index(self.best)
+        picked = sorted(
+            {min(max(center - offset, 0), len(priced) - 1) for offset in self._HIGHLIGHT_OFFSETS}
+        )
+        return tuple(priced[index] for index in picked)
+
+
+def _daily_excess(
+    values: pd.Series, day_codes: pd.Series, target_kw: float, slot_hours: float
+) -> tuple[float, float]:
+    """목표 하나의 (필요 출력 kW, 필요 용량 kWh).
+
+    필요 용량은 **하루치 초과 에너지 합의 연중 최대값**이다. 충전 기회가 야간뿐이라
+    하루치를 한 번에 담아야 한다.
+    """
+    excess = (values - target_kw).clip(lower=0.0)
+    power = float(excess.max())
+    if power <= 0:
+        return 0.0, 0.0
+    daily = (excess * slot_hours).groupby(day_codes).sum()
+    return power, float(daily.max())
+
+
+def ess_target_curve(
+    kw: pd.Series,
+    interval_minutes: int,
+    *,
+    baseline_demand_kw: float,
+    base_fee_won_per_kw: float,
+    model: EssCostModel | None = None,
+    step_kw: float | None = None,
+    search_ratio: float | None = None,
+    indoor: bool = False,
+) -> EssTargetCurve:
+    """목표를 훑어 회수기간 최소 지점을 찾는다 (14세션 3-1).
+
+    ::
+
+        필요 출력 = 초과분 최대값 (kW)
+        필요 용량 = 하루치 초과 에너지 합의 연중 최대값 (kWh)
+        과금 용량 = max(필요 용량, 시장 최소 규모)
+        투자비   = 고정비 + 용량단가 × 과금 용량 + 전기공사
+        절감액   = 저감량(kW) × 기본요금단가 × 12
+        회수기간 = 투자비 ÷ 절감액
+
+    **기본요금단가는 현행 요금제 기준이다** (14세션 2절). 최적 요금제로 바꾼 뒤의
+    단가를 쓰면 ESS 절감액이 선택요금 전환에 딸려 움직여 독립 평가가 깨진다.
+
+    Args:
+        baseline_demand_kw: 현행 요금적용전력. 저감량의 기준이다.
+        step_kw: 탐색 격자. **10 kW 이하로 둔다** — 50 kW 간격이면 최소 지점을
+            50 kW 옆에서 놓친다 (샘플에서 26.7년 vs 24.6년).
+        search_ratio: 탐색 하한 비율. 기본은 현행 요금적용전력의 0.7배까지.
+    """
+    if baseline_demand_kw <= 0:
+        raise ValueError(f"현행 요금적용전력은 양수여야 합니다: {baseline_demand_kw}")
+    cost_model = model if model is not None else load_ess_cost_model()
+    step = default_target_step_kw() if step_kw is None else step_kw
+    ratio = default_target_search_ratio() if search_ratio is None else search_ratio
+    if step <= 0:
+        raise ValueError(f"탐색 격자는 양수여야 합니다: {step}")
+    if not 0 < ratio < 1:
+        raise ValueError(f"탐색 하한 비율은 0 초과 1 미만이어야 합니다: {ratio}")
+
+    observed = kw.dropna()
+    if observed.empty:
+        raise ValueError("관측된 수요가 없어 ESS 목표를 훑을 수 없습니다.")
+    slot_hours = interval_minutes / 60.0
+    day_codes = pd.Series(
+        slot_start(pd.DatetimeIndex(observed.index), interval_minutes).normalize(),
+        index=observed.index,
+    )
+
+    # **격자를 눈금에 맞춘다.** 현행값에서 그냥 빼 내려가면 5,283.44 kW 같은 목표가
+    # 나와 읽히지 않고, 다른 건물과 견줄 수도 없다.
+    lowest = baseline_demand_kw * ratio
+    first = math.floor(baseline_demand_kw / step) * step
+    if first >= baseline_demand_kw:
+        first -= step
+    count = math.floor((first - lowest) / step) + 1
+    targets = [first - step * index for index in range(max(count, 0))]
+
+    points: list[EssTargetPoint] = []
+    for target in targets:
+        power, capacity = _daily_excess(observed, day_codes, target, slot_hours)
+        if power <= 0:
+            continue
+        billed = cost_model.billed_capacity_kwh(capacity)
+        equipment = cost_model.equipment_won(billed)
+        electrical = cost_model.electrical_won(billed, indoor=indoor)
+        investment = equipment + electrical
+        reduction = max(0.0, baseline_demand_kw - target)
+        annual = reduction * base_fee_won_per_kw * 12.0
+        points.append(
+            EssTargetPoint(
+                target_kw=target,
+                reduction_kw=reduction,
+                power_kw=power,
+                required_capacity_kwh=capacity,
+                billed_capacity_kwh=billed,
+                discharge_hours=capacity / power if power > 0 else 0.0,
+                equipment_won=equipment,
+                electrical_won=electrical,
+                investment_won=investment,
+                annual_saving_won=annual,
+                payback_years=payback_years(investment, annual),
+                at_market_minimum=capacity < cost_model.market_minimum_kwh,
+            )
+        )
+
+    priced = [item for item in points if item.payback_years is not None]
+    best = min(priced, key=lambda item: item.payback_years or math.inf) if priced else None
+    return EssTargetCurve(
+        points=tuple(points),
+        best=best,
+        baseline_demand_kw=baseline_demand_kw,
+        observed_peak_kw=float(observed.max()),
+        base_fee_won_per_kw=base_fee_won_per_kw,
+        market_minimum_kwh=cost_model.market_minimum_kwh,
+        step_kw=step,
+    )
 
 
 @dataclass(frozen=True, eq=False)
@@ -582,8 +821,8 @@ def evaluate_ess(
     ):
         warnings.append(
             f"손익분기 단가 {breakeven:,.0f} 원/kW 가 입력 단가 "
-            f"{cost.unit_cost_won_per_kw:,.0f} 원/kW 보다 낮습니다. "
-            f"{payback_target_years:.0f}년 회수는 성립하지 않습니다."
+            f"{cost.unit_cost_won_per_kw:,.0f} 원/kW 보다 낮습니다 "
+            f"({payback_target_years:.0f}년 회수 기준)."
         )
     # **성립 조건** — 고정 문구 대신 계산에서 판정이 나온다 (13세션).
     rated_hours = capacity / power if power > 0 else 0.0
@@ -598,9 +837,10 @@ def evaluate_ess(
         warnings.append(feasibility.message())
     realized_payback = payback_years(investment, annual_saving)
     if realized_payback is not None and realized_payback > payback_target_years:
+        # **판정하지 않는다** (14세션 3-3). 두 수를 나란히 놓고 판단은 사용자에게 둔다.
         warnings.append(
-            f"회수기간 {realized_payback:,.1f}년이 배터리 수명 기준 "
-            f"{payback_target_years:,.0f}년을 넘습니다. 교체 없이는 회수되지 않습니다."
+            f"회수기간 {realized_payback:,.1f}년 — 배터리 보증 수명 "
+            f"{payback_target_years:,.0f}년을 초과합니다."
         )
 
     notes = [

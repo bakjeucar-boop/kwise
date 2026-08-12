@@ -14,12 +14,14 @@ import pandas as pd
 
 from kwise.compare import ComparisonResult, SensitivityRange
 from kwise.diagnose import ChargeStructure, PeakProfile
-from kwise.measures import SolarCurve
+from kwise.measures import EssTargetCurve, SolarCurve
 
 __all__ = [
     "BAND_LABELS",
     "band_frame",
     "combination_frame",
+    "ess_target_frame",
+    "ess_target_table",
     "hourly_profile_frame",
     "monthly_peak_frame",
     "sensitivity_frame",
@@ -93,6 +95,32 @@ def solar_curve_frame(curve: SolarCurve) -> pd.DataFrame:
             "전력량요금 절감(원)": [point.energy_saving_won for point in curve.points],
             "총 절감액(원)": [point.total_saving_won for point in curve.points],
             "요금적용전력(kW)": [point.billing_demand_kw for point in curve.points],
+        }
+    )
+
+
+def ess_target_frame(curve: EssTargetCurve) -> pd.DataFrame:
+    """ESS 회수기간 U곡선 (14세션 3-2).
+
+    **필요 용량을 함께 낸다.** 회수기간만 그리면 "목표를 조금만 낮춰도 용량이
+    급증한다" 가 보이지 않는다 — 그것이 곡선의 오른쪽 팔을 만드는 힘이다.
+    """
+    frame = curve.frame()
+    return frame[frame["회수기간(년)"].notna()].reset_index(drop=True)
+
+
+def ess_target_table(curve: EssTargetCurve) -> pd.DataFrame:
+    """곡선 아래에 두는 대표 지점 표. **최소 지점이 가운데 온다.**"""
+    return pd.DataFrame(
+        {
+            "목표(kW)": [item.target_kw for item in curve.highlights()],
+            "저감량(kW)": [item.reduction_kw for item in curve.highlights()],
+            "필요 출력(kW)": [item.power_kw for item in curve.highlights()],
+            "필요 용량(kWh)": [item.required_capacity_kwh for item in curve.highlights()],
+            "방전시간(h)": [item.discharge_hours for item in curve.highlights()],
+            "투자비(원)": [item.investment_won for item in curve.highlights()],
+            "연간 절감액(원)": [item.annual_saving_won for item in curve.highlights()],
+            "회수기간(년)": [item.payback_years for item in curve.highlights()],
         }
     )
 

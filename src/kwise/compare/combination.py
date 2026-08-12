@@ -29,6 +29,7 @@ from kwise.measures import (
     apply_generation,
     dispatch_peak_shaving,
     light_band_mask,
+    load_ess_cost_model,
     lowest_certainty,
     payback_years,
     size_for_target,
@@ -73,6 +74,8 @@ class CombinationSpec:
     ess_capacity_kwh: float | None = None
     ess_unit_cost_won_per_kw: float | None = None
     ess_total_investment_won: float | None = None
+    ess_fixed_won: float | None = None
+    ess_per_kwh_won: float | None = None
     ess_charge_limit_kw: float | None = None
     ess_respect_target_when_charging: bool = True
     contract_kw: float | None = None
@@ -318,11 +321,21 @@ def evaluate_combination(
         elif spec.ess_unit_cost_won_per_kw is not None:
             ess_investment = dispatch.power_kw * spec.ess_unit_cost_won_per_kw
         else:
-            ess_investment = None
-        if ess_investment is None:
-            investment = None
-            notes.append("미산출 — ESS 단가 미입력 (원/kW 또는 총액을 넣으십시오)")
-        elif investment is not None:
+            # **입력이 없으면 조달 사례 모델이 산정한다** (13세션·14세션 3-4).
+            # 2단계 카드와 같은 계수를 써야 두 화면의 투자비가 어긋나지 않는다.
+            model = load_ess_cost_model()
+            if spec.ess_fixed_won is not None or spec.ess_per_kwh_won is not None:
+                model = model.with_coefficients(
+                    fixed_won=(
+                        model.fixed_won if spec.ess_fixed_won is None else spec.ess_fixed_won
+                    ),
+                    per_kwh_won=(
+                        model.per_kwh_won if spec.ess_per_kwh_won is None else spec.ess_per_kwh_won
+                    ),
+                )
+            ess_investment = model.quote(dispatch.capacity_kwh).total_won
+            notes.append(model.formula + " — 조달 사례 회귀로 ESS 투자비를 산정했습니다.")
+        if investment is not None and ess_investment is not None:
             investment += ess_investment
 
     saving = baseline_bill.total_won - bill.total_won + (contract_saving or 0.0)

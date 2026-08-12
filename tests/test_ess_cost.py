@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
@@ -18,11 +19,13 @@ from kwise.measures import (
     EssCostInput,
     EssCostReferenceError,
     EssResult,
+    EssTargetCurve,
     analyze_peak_excess,
     arbitrage_value,
     c_rate,
     default_round_trip,
     ess_payback_curve,
+    ess_target_curve,
     evaluate_ess,
     high_rate_discharge_hours,
     light_band_mask,
@@ -33,6 +36,7 @@ from kwise.measures import (
 )
 from kwise.measures.ess_cost import load_ess_cost_model, reference_data_path
 from kwise.quality import QualityReport
+from kwise.report.frames import ess_target_table
 from kwise.tariff import BillingResult, TariffTable
 
 from .conftest import SAMPLE_SELECTION
@@ -405,12 +409,14 @@ def test_quote_splits_equipment_and_electrical_work() -> None:
 
 
 def test_quote_clamps_below_the_case_range() -> None:
-    """100 kWh 미만은 하한으로 올려 산정하고 **알린다.**"""
+    """**시장 최소 규모**(100 kWh) 아래는 그 규모로 산정하고 알린다 (14세션 3-5)."""
     model = load_ess_cost_model()
+    assert model.market_minimum_kwh == model.min_kwh == 100.0
+    assert model.billed_capacity_kwh(40.0) == 100.0
     quote = model.quote(40.0)
-    assert quote.applied_kwh == model.min_kwh
+    assert quote.applied_kwh == model.market_minimum_kwh
     assert not quote.in_range
-    assert any("올려 산정" in note for note in quote.notes)
+    assert any("시장 최소" in note for note in quote.notes)
 
     beyond = model.quote(600.0)
     assert not beyond.in_range
@@ -430,11 +436,13 @@ def test_feasibility_names_the_required_reduction(sample_ess: EssResult) -> None
     """샘플(목표 5,200 kW)에서 필요 저감량 358 kW, 실제 93 kW."""
     feasibility = sample_ess.feasibility
     assert feasibility is not None
-    assert feasibility.required_reduction_kw == pytest.approx(358, abs=1)
+    assert feasibility.required_reduction_kw == pytest.approx(358, abs=2)
     assert feasibility.actual_reduction_kw == pytest.approx(93, abs=1)
     assert not feasibility.feasible
-    assert "358 kW 이상" in feasibility.message()
+    # 사실만 적는다 — 필요한 값과 산출된 값을 나란히 놓는다 (14세션 3-3).
+    assert "필요한 저감량" in feasibility.message()
     assert "93 kW" in feasibility.message()
+    assert "성립하지" not in feasibility.message()
 
 
 def test_long_discharge_cannot_be_feasible() -> None:
@@ -450,7 +458,10 @@ def test_long_discharge_cannot_be_feasible() -> None:
     )
     assert feasibility.required_reduction_kw is None
     assert not feasibility.feasible
-    assert "회수기간과 무관하게" in feasibility.message()
+    # **판정 문장을 쓰지 않는다** (14세션 3-3). 두 값을 나란히 놓는 데서 그친다.
+    message = feasibility.message()
+    assert "kW당 배터리비" in message and "기본요금 절감액" in message
+    assert "성립하지" not in message
 
 
 def test_model_prices_when_no_input_is_given(
@@ -473,4 +484,196 @@ def test_model_prices_when_no_input_is_given(
     assert result.quote is not None
     assert result.investment_won == pytest.approx(result.quote.total_won)
     assert "조달 사례 모델" in result.cost.source
-    assert any("배터리 수명" in message for message in result.warnings)
+    assert any("배터리 보증 수명" in message for message in result.warnings)
+
+
+# ============================================================ 14세션 · 목표 재설계
+
+
+def test_계수_기본값이_천_단위다() -> None:
+    """**적합값을 원 단위로 두면** 사례 넷으로 다섯째 자리까지 맞는 척한다 (14세션 1절)."""
+    model = load_ess_cost_model()
+    assert model.fixed_won == 106_925_000.0
+    assert model.per_kwh_won == 840_000.0
+    assert model.fixed_won % 1_000 == 0
+    assert model.per_kwh_won % 1_000 == 0
+
+
+def test_반올림_재현_오차가_일_점_오_퍼센트_안이다() -> None:
+    """반올림해도 사실상 달라지지 않아야 쓴다."""
+    model = load_ess_cost_model()
+    assert model.rounding, "반올림 재현 결과가 없습니다 — 재적합 스크립트를 다시 도십시오."
+    assert model.max_rounding_error <= 0.015
+    for row in model.rounding:
+        predicted = model.fixed_won + model.per_kwh_won * float(row["capacity_kwh"])
+        assert predicted == pytest.approx(float(row["predicted_won"]))
+
+
+def test_계수를_둘만_갈아_끼운다() -> None:
+    """**kW당 단가로는 표현할 수 없다** (14세션 3-4). kW 가 설명 변수가 아니다."""
+    model = load_ess_cost_model()
+    assert not model.adjusted
+    tuned = model.with_coefficients(fixed_won=100_000_000.0, per_kwh_won=800_000.0)
+    assert tuned.adjusted
+    assert tuned.equipment_won(100.0) == pytest.approx(180_000_000.0)
+    # 같은 100 kW 라도 용량이 다르면 총액이 크게 다르다.
+    assert model.equipment_won(156.4) != model.equipment_won(400.0)
+    with pytest.raises(ValueError, match="계수는 음수"):
+        model.with_coefficients(fixed_won=-1.0, per_kwh_won=1.0)
+
+
+def test_카탈로그_사례_문구를_정정했다() -> None:
+    """종합쇼핑몰 제품은 **장치비용만**이고 설치공사는 별도다 (14세션 3-4)."""
+    model = load_ess_cost_model()
+    catalog = next(case for case in model.cases if case["key"] == "mall_cabinet")
+    assert catalog["category"] == "catalog"  # 분류는 그대로 둔다
+    note = str(catalog["note"])
+    assert "장치비용" in note
+    assert "설치공사는 별도" in note
+    assert "옥외 컨테이너·소방·공조" in note
+    # 표에 비고 열이 있어야 화면에서 이 정정이 보인다.
+    assert "비고" in model.case_table().columns
+
+
+# --------------------------------------------------------------------- U곡선
+
+
+@pytest.fixture(scope="module")
+def target_curve(sample_usage: UsageData, tariff: TariffTable) -> EssTargetCurve:
+    """샘플의 목표 곡선. **기본요금단가는 현행 요금제(선택Ⅰ) 기준이다.**"""
+    return ess_target_curve(
+        sample_usage.kw,
+        15,
+        baseline_demand_kw=5_293.44,
+        base_fee_won_per_kw=float(tariff.rates(SAMPLE_SELECTION).base_won_per_kw),
+    )
+
+
+def test_최적_목표를_자동으로_찾는다(target_curve: EssTargetCurve) -> None:
+    """**사용자가 찍게 두면 대개 틀린 자리를 찍는다** (14세션 3-1)."""
+    best = target_curve.best
+    assert best is not None
+    assert best.target_kw == pytest.approx(5_170.0)
+    assert best.payback_years == pytest.approx(24.6, abs=0.2)
+    # 최소 지점이 실제로 최소다.
+    others = [
+        item.payback_years
+        for item in target_curve.points
+        if item.payback_years is not None and item is not best
+    ]
+    assert all(value >= (best.payback_years or 0.0) for value in others)
+
+
+def test_격자가_성기면_최소_지점을_놓친다(
+    sample_usage: UsageData, tariff: TariffTable, target_curve: EssTargetCurve
+) -> None:
+    """**곡선이 격자에 민감하다** (14세션 3-1).
+
+    50 kW 간격이면 5,150 kW 에서 26.7년으로 멈추고, 10 kW 간격이라야
+    5,170 kW 24.6년을 찾는다. 기본 격자를 10 kW 이하로 두는 이유다.
+    """
+    assert target_curve.step_kw <= 10.0
+    coarse = ess_target_curve(
+        sample_usage.kw,
+        15,
+        baseline_demand_kw=5_293.44,
+        base_fee_won_per_kw=float(tariff.rates(SAMPLE_SELECTION).base_won_per_kw),
+        step_kw=50.0,
+    )
+    assert coarse.best is not None and target_curve.best is not None
+    assert coarse.best.target_kw == pytest.approx(5_150.0)
+    assert coarse.best.payback_years == pytest.approx(26.7, abs=0.3)
+    assert (coarse.best.payback_years or 0.0) > (target_curve.best.payback_years or 0.0)
+
+
+def test_검산값과_일치한다(target_curve: EssTargetCurve) -> None:
+    """14세션 3-2 의 검산값 (관측 최대수요 기준 개략치)."""
+    frame = target_curve.frame().set_index("목표 요금적용전력(kW)")
+    expected = {
+        5_200.0: (93.0, 35.0, 100.0, 32.3),
+        5_180.0: (113.0, 72.0, 100.0, 26.6),
+        5_170.0: (123.0, 101.0, 101.0, 24.6),
+        5_150.0: (143.0, 183.0, 183.0, 26.7),
+    }
+    for target, (reduction, capacity, billed, payback) in expected.items():
+        row = frame.loc[target]
+        assert float(row["저감량(kW)"]) == pytest.approx(reduction, abs=1)
+        assert float(row["필요 용량(kWh)"]) == pytest.approx(capacity, abs=1)
+        assert float(row["과금 용량(kWh)"]) == pytest.approx(billed, abs=1)
+        assert float(row["회수기간(년)"]) == pytest.approx(payback, abs=0.3)
+
+
+def test_곡선이_U자다(target_curve: EssTargetCurve) -> None:
+    """**최소 지점이 최소 규모 경계 근처에 생긴다.** 조달 규격의 산물이다."""
+    best = target_curve.best
+    assert best is not None
+    frame = target_curve.frame()
+    left = frame[frame["목표 요금적용전력(kW)"] < best.target_kw]["회수기간(년)"]
+    right = frame[frame["목표 요금적용전력(kW)"] > best.target_kw]["회수기간(년)"]
+    assert float(left.iloc[0]) > (best.payback_years or 0.0)  # 왼쪽으로 나빠진다
+    assert float(right.iloc[-1]) > (best.payback_years or 0.0)  # 오른쪽으로도 나빠진다
+    # 최소 규모에 걸리는 구간이 실제로 있다 — 그것이 왼쪽 팔을 만든다.
+    assert bool(frame["최소 규모 적용"].any())
+    assert "최소 규모 100 kWh" in target_curve.u_shape_reason
+    assert target_curve.market_minimum_kwh == 100.0
+
+
+def test_대표_지점_표가_최소_지점을_품는다(target_curve: EssTargetCurve) -> None:
+    """곡선 아래 표는 최소 지점을 가운데 두고 다섯~여섯 줄이다 (14세션 3-2)."""
+    highlights = target_curve.highlights()
+    assert 5 <= len(highlights) <= 6
+    assert target_curve.best in highlights
+    targets = [item.target_kw for item in highlights]
+    assert targets == sorted(targets, reverse=True)
+    table = ess_target_table(target_curve)
+    assert list(table.columns) == [
+        "목표(kW)",
+        "저감량(kW)",
+        "필요 출력(kW)",
+        "필요 용량(kWh)",
+        "방전시간(h)",
+        "투자비(원)",
+        "연간 절감액(원)",
+        "회수기간(년)",
+    ]
+    assert len(table) == len(highlights)
+
+
+def test_절감액은_현행_요금제_단가로_낸다(sample_usage: UsageData, tariff: TariffTable) -> None:
+    """**최적 요금제로 바꾼 뒤의 단가를 쓰지 않는다** (14세션 2절 독립 평가).
+
+    선택Ⅰ과 선택Ⅱ는 기본요금 단가가 다르다. ESS 절감액이 요금제 전환에 딸려
+    움직이면 두 카드가 서로에게 영향을 주게 된다.
+    """
+    current = float(tariff.rates(SAMPLE_SELECTION).base_won_per_kw)
+    other = float(tariff.rates(replace(SAMPLE_SELECTION, option="II")).base_won_per_kw)
+    assert current != other
+
+    curve = ess_target_curve(
+        sample_usage.kw, 15, baseline_demand_kw=5_293.44, base_fee_won_per_kw=current
+    )
+    assert curve.base_fee_won_per_kw == current
+    point = curve.points[0]
+    assert point.annual_saving_won == pytest.approx(point.reduction_kw * current * 12.0)
+    assert point.annual_saving_won != pytest.approx(point.reduction_kw * other * 12.0)
+
+
+def test_잘못된_입력을_막는다(sample_usage: UsageData) -> None:
+    with pytest.raises(ValueError, match="현행 요금적용전력"):
+        ess_target_curve(sample_usage.kw, 15, baseline_demand_kw=0.0, base_fee_won_per_kw=7_220.0)
+    with pytest.raises(ValueError, match="탐색 격자"):
+        ess_target_curve(
+            sample_usage.kw,
+            15,
+            baseline_demand_kw=5_293.44,
+            base_fee_won_per_kw=7_220.0,
+            step_kw=0.0,
+        )
+    with pytest.raises(ValueError, match="탐색 하한 비율"):
+        ess_target_curve(
+            sample_usage.kw,
+            15,
+            baseline_demand_kw=5_293.44,
+            base_fee_won_per_kw=7_220.0,
+            search_ratio=1.5,
+        )

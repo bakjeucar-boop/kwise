@@ -121,8 +121,9 @@ def render(
         pv_unit_cost_won_per_kwp=inputs.unit_cost_won_per_kwp if inputs else None,
         pv_total_investment_won=inputs.total_investment_won if inputs else None,
         ess_target_kw=ess_target,
-        ess_unit_cost_won_per_kw=measure_float("ess", "unit_cost"),
         ess_total_investment_won=measure_float("ess", "total_cost"),
+        ess_fixed_won=measure_float("ess", "fixed_cost"),
+        ess_per_kwh_won=measure_float("ess", "per_kwh_cost"),
     )
     if len(specs) == 1:
         st.info("2단계에서 수단을 하나 이상 켜면 조합을 비교합니다.")
@@ -361,21 +362,20 @@ def _measure_results(
     ess = None
     ess_target = measure_float("ess", "target")
     if "ess" in enabled and ess_target is not None:
-        unit_cost = measure_float("ess", "unit_cost")
-        total_cost = measure_float("ess", "total_cost")
-        if unit_cost is not None or total_cost is not None:
-            ess = cached_ess(
-                usage,
-                table,
-                baseline,
-                quality,
-                token,
-                form,
-                ess_target,
-                unit_cost,
-                total_cost,
-                stamp,
-            )
+        # **2단계와 같은 인자로 부른다** — 캐시에 걸려 같은 값이 나온다 (14세션 5-1).
+        ess = cached_ess(
+            usage,
+            table,
+            baseline,
+            quality,
+            token,
+            form,
+            ess_target,
+            measure_float("ess", "total_cost"),
+            stamp,
+            measure_float("ess", "fixed_cost"),
+            measure_float("ess", "per_kwh_cost"),
+        )
 
     return _MeasureResults(
         switch=switch,

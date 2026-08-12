@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -332,8 +332,8 @@ class Feasibility:
     """**성립 조건** — 이 사양으로 회수가 되려면 얼마나 낮춰야 하는가 (7.6).
 
     회수기간 하나로는 "왜 안 되는가" 를 알 수 없다. 배터리 비용이 kW당 절감액을
-    넘어서면 규모를 어떻게 잡아도 성립하지 않는데, 그 사실이 회수기간 숫자에는
-    드러나지 않는다.
+    넘어서면 규모를 어떻게 잡아도 회수되지 않는데, 그 사실이 회수기간 숫자에는
+    드러나지 않는다. **판정은 하지 않는다** (14세션 3-3) — 두 값을 나란히 낸다.
 
         kW당 배터리비 = 용량단가 × 방전시간
         10년 절감/kW  = 기본요금단가 × 12 × 목표연수
@@ -359,19 +359,23 @@ class Feasibility:
         return self.actual_reduction_kw >= self.required_reduction_kw
 
     def message(self) -> str:
-        """화면과 산출물이 같이 쓰는 한 문장. **판정은 계산에서 나온다.**"""
+        """화면과 산출물이 같이 쓰는 한 문장.
+
+        **판정 문장을 쓰지 않는다** (14세션 3-3). 단정은 사용자가 할 일이고,
+        여기서는 두 값을 나란히 놓는 데서 그친다.
+        """
         if self.required_reduction_kw is None:
             return (
-                f"방전시간 {self.discharge_hours:,.2f}시간에서는 배터리 비용 "
-                f"{self.battery_won_per_kw:,.0f} 원/kW 가 기본요금 절감액 "
-                f"{self.saving_won_per_kw:,.0f} 원/kW 를 초과해 회수기간과 무관하게 "
-                "성립하지 않습니다."
+                f"방전시간 {self.discharge_hours:,.2f}시간에서 kW당 배터리비 "
+                f"{money.won(self.battery_won_per_kw, reason='—')}이 "
+                f"{self.target_years:,.0f}년 기본요금 절감액 "
+                f"{money.won(self.saving_won_per_kw, reason='—')}을 넘습니다."
             )
         return (
             f"현재 사양(방전 {self.discharge_hours:,.2f}시간)에서 "
-            f"{self.target_years:,.0f}년 회수가 성립하려면 요금적용전력을 "
-            f"{self.required_reduction_kw:,.0f} kW 이상 낮출 수 있어야 합니다. "
-            f"산출된 저감량은 {self.actual_reduction_kw:,.0f} kW 입니다."
+            f"{self.target_years:,.0f}년 회수에 필요한 저감량은 "
+            f"{self.required_reduction_kw:,.0f} kW 이고, 산출된 저감량은 "
+            f"{self.actual_reduction_kw:,.0f} kW 입니다."
         )
 
 
@@ -399,7 +403,55 @@ class EssCostModel:
     max_kwh: float
     fitted_on: str
     holdout: tuple[Mapping[str, float], ...] = field(default=())
+    rounding: tuple[Mapping[str, float], ...] = field(default=())
     cases: tuple[Mapping[str, Any], ...] = field(default=())
+    adjusted: bool = False
+    """사용자가 계수를 조정했는가 (14세션 3-4). 화면이 「계수 조정됨」을 표시한다."""
+
+    # ------------------------------------------------------------- 계수 조정
+
+    def with_coefficients(self, *, fixed_won: float, per_kwh_won: float) -> EssCostModel:
+        """두 계수만 갈아 끼운다 (14세션 3-4).
+
+        **kW당 단가로는 표현할 수 없다.** 같은 100 kW 인데 용량이 156.4 kWh 면
+        2.35억, 400 kWh 면 4.43억이다 — kW 가 설명 변수가 아니다. 단가가 바뀌면
+        이 두 값만 갱신하면 된다.
+        """
+        if fixed_won < 0 or per_kwh_won < 0:
+            raise ValueError(f"계수는 음수일 수 없습니다: {fixed_won}, {per_kwh_won}")
+        changed = fixed_won != self.fixed_won or per_kwh_won != self.per_kwh_won
+        return replace(
+            self,
+            fixed_won=fixed_won,
+            per_kwh_won=per_kwh_won,
+            adjusted=self.adjusted or changed,
+        )
+
+    @property
+    def market_minimum_kwh(self) -> float:
+        """**시장 최소 규모.** 이보다 작게는 조달되지 않아 과금 용량의 하한이다.
+
+        회수기간 U곡선의 왼쪽 팔이 여기서 나온다 — 목표를 높여 필요 용량이 줄어도
+        이 하한 아래로는 투자비가 내려가지 않으므로 회수기간이 다시 나빠진다.
+        **물리적 최적이 아니라 조달 규격의 산물이다.**
+        """
+        return self.min_kwh
+
+    def billed_capacity_kwh(self, capacity_kwh: float) -> float:
+        """과금 용량 = ``max(필요 용량, 시장 최소 규모)``."""
+        return max(capacity_kwh, self.market_minimum_kwh)
+
+    @property
+    def coefficient_source(self) -> str:
+        """계수 출처와 최종 적합일. 화면이 그대로 싣는다 (14세션 3-4)."""
+        return f"조달 사례 {self.sample_size}건 기준, {self.fitted_on} 적합"
+
+    @property
+    def max_rounding_error(self) -> float:
+        """천 원 반올림으로 생긴 재현 오차의 최대 절대값."""
+        if not self.rounding:
+            return 0.0
+        return max(abs(float(row["error_ratio"])) for row in self.rounding)
 
     # ------------------------------------------------------------- 설비·공사
 
@@ -441,9 +493,9 @@ class EssCostModel:
             applied = self.min_kwh
             in_range = False
             notes.append(
-                f"용량 {capacity_kwh:,.1f} kWh 는 사례 하한 {self.min_kwh:,.0f} kWh 아래라 "
-                f"{self.min_kwh:,.0f} kWh 로 올려 산정했습니다. 고정비가 지배적이라 "
-                "더 작게 만들어도 투자비가 그만큼 줄지 않습니다."
+                f"산출 용량 {capacity_kwh:,.1f} kWh — 시장 최소 "
+                f"{self.market_minimum_kwh:,.0f} kWh 기준으로 산정했습니다. 고정비가 "
+                "지배적이라 더 작게 만들어도 투자비가 그만큼 줄지 않습니다."
             )
         elif capacity_kwh > self.max_kwh:
             in_range = False
@@ -512,6 +564,7 @@ class EssCostModel:
                 ),
                 "설치": installs.get(str(case.get("install")), str(case.get("install"))),
                 "쓰임": kinds.get(str(case.get("category")), str(case.get("category"))),
+                "비고": str(case.get("note", "")),
             }
             for case in self.cases
         ]
@@ -519,10 +572,11 @@ class EssCostModel:
 
     @property
     def formula(self) -> str:
+        adjusted = " · **계수 조정됨**" if self.adjusted else ""
         return (
             f"설비비 = {money.won(self.fixed_won, reason='—')} + "
             f"{self.per_kwh_won:,.0f}원/kWh × 용량(kWh) "
-            f"(사례 {self.sample_size}건, R² {self.r2:.4f}, 적합 {self.fitted_on})"
+            f"({self.coefficient_source}, R² {self.r2:.4f}){adjusted}"
         )
 
 
@@ -562,5 +616,6 @@ def load_ess_cost_model(path: str | None = None) -> EssCostModel:
         max_kwh=float(scope.get("max_kwh", bands[-1].max_kwh)),
         fitted_on=str(payload.get("fitted_on", "")),
         holdout=tuple(payload.get("holdout", ())),
+        rounding=tuple(payload.get("rounding", ())),
         cases=tuple(payload.get("cases", ())),
     )

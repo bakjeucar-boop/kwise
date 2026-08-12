@@ -154,6 +154,8 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "ess.round_trip": _ratio,
     "ess.dod": _ratio,
     "ess.payback_target_years": _positive,
+    "ess.target_step_kw": _positive,
+    "ess.target_search_ratio": _ratio,
     "pv.area_per_kwp_m2": _positive,
     "contract.margin_ratio": _ratio,
     "contract.margin_range": _ratio_range,

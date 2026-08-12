@@ -545,7 +545,7 @@ def test_비교_화면은_표가_먼저다(compare_app: AppTest) -> None:
         index for index, value in enumerate(headings) if value.startswith("권장안")
     )
     # 수단별 그래프는 화면에서 뺐다 — 보고서 4장에만 둔다.
-    assert len(compare_app.get("arrow_vega_lite_chart")) == 0
+    assert len(compare_app.get("vega_lite_chart")) == 0
 
 
 # ======================================================== 14세션 · 2단계 독립 평가
@@ -621,3 +621,81 @@ def test_수단을_함께_켜도_카드_값이_불변이다(key: str) -> None:
     together = _metrics(*INDEPENDENT_MEASURES)
     assert alone, key
     assert _contains(together, alone), (key, alone, together)
+
+
+# ======================================================== 14세션 · ESS 목표 재설계
+
+
+@pytest.fixture(scope="module")
+def ess_screen() -> AppTest:
+    return _running(nav_page="2단계 · 개선 수단", measure_on_ess=True)
+
+
+def test_ESS_목표_슬라이더가_없다(ess_screen: AppTest) -> None:
+    """**목표를 사용자가 찍게 두면 대개 틀린 자리를 찍는다** (14세션 3-2).
+
+    곡선이 목표를 정하므로 슬라이더도 목표 입력칸도 두지 않는다.
+    """
+    assert not ess_screen.exception, ess_screen.exception
+    labels = [str(item.label) for item in ess_screen.number_input]
+    assert not [item for item in labels if "목표 요금적용전력" in item], labels
+    assert not [item for item in ess_screen.slider if "목표" in str(item.label)]
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    assert 'input_key("ess", "unit_cost")' not in source, "kW당 단가 입력이 남아 있습니다."
+
+
+def test_ESS_곡선과_표가_나온다(ess_screen: AppTest) -> None:
+    """U곡선 + 대표 지점 표 (14세션 3-2)."""
+    assert not ess_screen.exception, ess_screen.exception
+    assert len(ess_screen.get("vega_lite_chart")) >= 1, "회수기간 곡선이 없습니다."
+    body = " ".join(str(item.value) for item in ess_screen.caption)
+    assert "회수기간이 가장 짧은 목표는" in body
+    assert "물리적 최적이 아니라 조달 규격의 산물입니다" in body
+    assert "왼쪽은 최소 규모" in body and "오른쪽은 용량이 급증" in body
+
+
+def test_ESS_최소점_표식이_검산값과_맞는다() -> None:
+    """곡선의 표식은 최소 지점의 사양을 그대로 적는다 (14세션 3-2)."""
+    from kwise.measures import ess_target_curve
+    from kwise.tariff import TariffSelection
+
+    usage = load_usage(SAMPLE)
+    table = load_tariff()
+    selection = TariffSelection("general_b", "high_a", "I")
+    curve = ess_target_curve(
+        usage.kw,
+        15,
+        baseline_demand_kw=5_293.44,
+        base_fee_won_per_kw=float(table.rates(selection).base_won_per_kw),
+    )
+    assert curve.best is not None
+    label = curve.best.spec_label
+    assert label.startswith("5,170 kW · 저감 123 kW")
+    assert "24.6년" in label
+
+
+def test_ESS_계수를_둘로_받는다(ess_screen: AppTest) -> None:
+    """**kW당 단가로는 표현할 수 없다** (14세션 3-4)."""
+    assert not ess_screen.exception, ess_screen.exception
+    labels = [str(item.label) for item in ess_screen.number_input]
+    assert any("고정비 (원)" in item for item in labels), labels
+    assert any("용량단가 (원/kWh)" in item for item in labels), labels
+    assert any("견적 총액 직접 입력" in item for item in labels), labels
+    body = " ".join(str(item.value) for item in ess_screen.caption)
+    assert "조달 사례 4건 기준" in body and "적합" in body
+
+
+def test_ESS_출력과_용량이_잘리지_않는다(ess_screen: AppTest) -> None:
+    """``529 kW / 4,094...`` 로 잘리던 자리다. 방전시간까지 보인다 (14세션 3-5)."""
+    assert not ess_screen.exception, ess_screen.exception
+    card = next(item for item in ess_screen.metric if item.label == "출력 / 용량")
+    assert " kW / " in str(card.value) and "kWh" in str(card.value)
+    assert "방전" in str(card.delta) and "시간" in str(card.delta)
+
+
+def test_ESS_판정_문장을_쓰지_않는다() -> None:
+    """「어느 목표에서도 성립하지 않습니다」 같은 단정을 쓰지 않는다 (14세션 3-3)."""
+    banned = ("성립하지 않습니다", "경제성 없음", "어느 목표에서도")
+    for path in (VIEWS / "measures.py", Path("src/kwise/measures/ess_cost.py")):
+        body = path.read_text(encoding="utf-8")
+        assert not [word for word in banned if word in body], path

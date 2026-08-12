@@ -26,16 +26,15 @@ from kwise.diagnose.dr import dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData
 from kwise.measures import (
     ELIGIBILITY_NOTICE,
-    analyze_peak_excess,
     default_target_pct,
     evaluate_demand_response,
     high_rate_discharge_hours,
     load_ess_cost_model,
     power_factor_floor_pct,
-    required_discharge_hours,
 )
 from kwise.pv import capacity_preview, list_provinces, list_sigungu, load_pv_presets
 from kwise.quality import QualityReport
+from kwise.report.columns import localize
 from kwise.tariff import TariffTable
 from kwise.ui import charts
 from kwise.ui import text as fmt
@@ -43,11 +42,13 @@ from kwise.ui.anchors import detail_suffix
 from kwise.ui.cache import (
     cached_contract_adjustment,
     cached_ess,
+    cached_ess_targets,
     cached_power_factor,
     cached_solar,
     cached_surplus,
     cached_tariff_switch,
     cached_unit_pv,
+    ess_cost_model,
     rules_stamp,
     usage_token,
 )
@@ -582,48 +583,55 @@ def _ess(
     quality: QualityReport,
     baseline: object,
 ) -> None:
+    """**목표 슬라이더가 없다** (14세션 3-2).
+
+    목표를 사용자가 찍게 두면 대개 틀린 자리를 찍는다 — 피크의 90%에서는 용량이
+    4,000 kWh 를 넘고, 조금만 올리면 방전시간이 0.4시간까지 줄어 고출력 셀이 된다.
+    회수기간 곡선을 그리고 **최소 지점을 기본값으로** 삼는다.
+    """
     peak = diagnosis.peak.billing_demand_kw
-    target = st.number_input(
-        "목표 요금적용전력 (kW)",
-        min_value=0.0,
-        max_value=float(peak),
-        value=float(round(peak * 0.9)),
-        step=10.0,
-        help="출력·용량·방전시간이 여기서 역산됩니다.",
-        key=input_key("ess", "target"),
-    )
-    if target <= 0 or target >= peak:
-        st.warning("현재 요금적용전력보다 낮은 목표를 넣어야 계산합니다.")
+    if peak <= 0:
+        st.warning("요금적용전력을 산출하지 못해 ESS 목표를 훑을 수 없습니다.")
         return
+    # **기본요금단가는 현행 요금제 기준이다** (14세션 2절). 최적 요금제로 바꾼 뒤의
+    # 단가를 쓰면 ESS 절감액이 선택요금 전환에 딸려 움직여 독립 평가가 깨진다.
+    base_fee = float(table.rates(form.selection).base_won_per_kw)
 
-    excess = analyze_peak_excess(usage.kw, target, usage.meta.interval_minutes)
-    hours = required_discharge_hours(excess)
-    model = load_ess_cost_model()
-    st.caption(f"산출된 방전시간 {fmt.hours(hours)} · " + detail_suffix("ess-cost-reference"))
-    # **고출력 셀 사양 경고는 화면에 남긴다** (10.2 예외).
-    if hours < high_rate_discharge_hours():
-        st.warning(
-            f"방전시간이 {fmt.hours(hours)} 로 짧습니다. 고출력 셀 사양이 되어 "
-            "조달 사례보다 단가가 높아질 수 있습니다."
-        )
+    total_cost, fixed_won, per_kwh_won = _ess_cost_inputs()
+    _overview(spec)
 
-    cost_left, cost_right = st.columns(2)
-    with cost_left:
-        unit_cost = st.number_input(
-            "단가 (원/kW) — 0 이면 조달 사례 모델",
-            min_value=0.0,
-            value=0.0,
-            step=10_000.0,
-            key=input_key("ess", "unit_cost"),
-        )
-    with cost_right:
-        total_cost = st.number_input(
-            "총 투자비 직접 입력 (원) — 0 이면 단가 사용",
-            min_value=0.0,
-            value=0.0,
-            step=1_000_000.0,
-            key=input_key("ess", "total_cost"),
-        )
+    curve = cached_ess_targets(
+        usage,
+        usage_token(usage),
+        float(peak),
+        base_fee,
+        fixed_won,
+        per_kwh_won,
+        rules_stamp(),
+    )
+    best = curve.best
+    if best is None:
+        st.warning("어떤 목표에서도 초과 구간이 없어 곡선을 그리지 못했습니다.")
+        return
+    model = ess_cost_model(fixed_won, per_kwh_won)
+
+    st.altair_chart(charts.ess_target_chart(curve), width="stretch")
+    st.caption(
+        f"회수기간이 가장 짧은 목표는 **{fmt.kw(best.target_kw, decimals=0)}** 입니다 — "
+        f"{fmt.markdown_safe(curve.u_shape_reason)} **물리적 최적이 아니라 조달 규격의 "
+        "산물입니다.** 회색 점선은 필요 용량(kWh)이며, 목표를 조금만 낮춰도 급증하는 "
+        "것이 오른쪽 팔을 만듭니다."
+    )
+    st.dataframe(localize(charts.ess_target_table(curve)), hide_index=True, width="stretch")
+    st.caption(
+        "위 곡선과 표는 **기본요금 절감만 본 개략치**입니다 (현행 요금제 기본요금단가 "
+        f"{fmt.count(base_fee, ' 원/kW')} × 12개월). 아래 결과는 고른 목표에서 요금을 "
+        "다시 계산하고 왕복효율·DoD 를 반영한 값입니다."
+    )
+
+    # 목표는 곡선이 정한다. 세션에는 남겨 3단계가 같은 값을 읽게 한다.
+    target = best.target_kw
+    st.session_state[input_key("ess", "target")] = target
 
     result = cached_ess(
         usage,
@@ -633,14 +641,18 @@ def _ess(
         usage_token(usage),
         form,
         target,
-        unit_cost or None,
         total_cost or None,
         rules_stamp(),
+        fixed_won,
+        per_kwh_won,
     )
-    _overview(spec)
+    st.subheader(f"최적 목표 {fmt.kw(target, decimals=0)} 기준")
     columns = st.columns(4)
+    # **잘리지 않게 방전시간까지 한 칸에 담는다** (14세션 3-5).
     columns[0].metric(
-        "출력 / 용량", f"{fmt.kw(result.power_kw, decimals=0)} / {fmt.kwh(result.capacity_kwh)}"
+        "출력 / 용량",
+        f"{fmt.kw(result.power_kw, decimals=0)} / {fmt.kwh(result.capacity_kwh)}",
+        f"방전 {fmt.hours(result.discharge_hours, decimals=1)}",
     )
     columns[1].metric("절감액", fmt.won_short(result.total_saving_won))
     columns[2].metric("투자비", fmt.won_short(result.investment_won))
@@ -649,6 +661,19 @@ def _ess(
         fmt.payback(result.payback_years, investment_won=result.investment_won),
         fmt.certainty_badge(result.certainty),
     )
+    # **판정 문장을 쓰지 않는다** (14세션 3-3). 사실만 적고 판단은 사용자가 한다.
+    if result.payback_years is not None:
+        st.write(
+            f"최적 목표 {fmt.kw(target, decimals=0)} 기준 회수기간 "
+            f"{fmt.payback(result.payback_years)} — 배터리 보증 수명 "
+            f"{fmt.count(result.payback_target_years, '년')} 과 견주십시오."
+        )
+    # **고출력 셀 사양 경고는 화면에 남긴다** (10.2 예외).
+    if 0 < result.discharge_hours < high_rate_discharge_hours():
+        st.warning(
+            f"방전시간이 {fmt.hours(result.discharge_hours)} 로 짧습니다. 고출력 셀 "
+            "사양이 되어 조달 사례보다 단가가 높아질 수 있습니다."
+        )
     # **투자비는 설비와 전기공사를 나눠 적는다** (13세션). 합계만 보이면 실내·옥외
     # 차이가 어디서 오는지 알 수 없다.
     quote = result.quote
@@ -657,12 +682,17 @@ def _ess(
             f"설비 **{fmt.won(quote.equipment_won)}** + 전기공사 "
             f"**{fmt.won(quote.electrical_won)}** = **{fmt.won(quote.total_won)}**"
         )
+        if quote.applied_kwh > quote.capacity_kwh:
+            st.caption(
+                f"산출 용량 {fmt.kwh(quote.capacity_kwh, decimals=1)} — 시장 최소 "
+                f"{fmt.kwh(model.market_minimum_kwh)} 기준으로 산정했습니다."
+            )
         st.caption(
             f"전기공사는 옥외 기준 {fmt.won(quote.electrical_low_won)} – "
             f"{fmt.won(quote.electrical_high_won)} 구간의 대표값입니다. "
             f"{fmt.markdown_safe(model.formula)}"
         )
-    # **성립 조건이 핵심 산출물이다.** 고정 문구가 아니라 계산에서 나온다.
+    # 성립 조건은 **두 값을 나란히 놓는 데서 그친다.** 단정하지 않는다.
     feasibility = result.feasibility
     if feasibility is not None:
         st.markdown(f"**성립 조건** — {fmt.markdown_safe(feasibility.message())}")
@@ -679,6 +709,48 @@ def _ess(
             "카탈로그가는 설치 조건이 달라 같은 선에 놓을 수 없습니다."
         )
     _notes(result.warnings, result.notes)
+
+
+def _ess_cost_inputs() -> tuple[float, float | None, float | None]:
+    """단가 입력 — **2계수 방식이다** (14세션 3-4).
+
+    kW당 단가로는 표현할 수 없다. 같은 100 kW 인데 용량이 156.4 kWh 면 2.35억,
+    400 kWh 면 4.43억이다 — kW 가 설명 변수가 아니다. 기본은 자동 산출이고,
+    확장 패널에서 **고정비와 용량단가 둘만** 조정한다.
+    """
+    model = load_ess_cost_model()
+    with st.expander("단가 조정 (접어 둠)", expanded=False):
+        st.caption(
+            f"기본값은 자동 산출입니다 — {model.coefficient_source}. "
+            "단가가 변하면 아래 두 값만 갱신하면 됩니다."
+        )
+        left, right = st.columns(2)
+        with left:
+            fixed = st.number_input(
+                "고정비 (원) — PCS·PMS·컨테이너·소방·공조·UPS·변압기",
+                min_value=0.0,
+                value=float(model.fixed_won),
+                step=1_000_000.0,
+                key=input_key("ess", "fixed_cost"),
+            )
+        with right:
+            per_kwh = st.number_input(
+                "용량단가 (원/kWh) — 배터리",
+                min_value=0.0,
+                value=float(model.per_kwh_won),
+                step=10_000.0,
+                key=input_key("ess", "per_kwh_cost"),
+            )
+        total = st.number_input(
+            "견적 총액 직접 입력 (원) — 0 이면 위 계수로 산정",
+            min_value=0.0,
+            value=0.0,
+            step=1_000_000.0,
+            key=input_key("ess", "total_cost"),
+        )
+        if fixed != model.fixed_won or per_kwh != model.per_kwh_won:
+            st.warning("계수 조정됨 — 조달 사례 회귀값이 아닙니다.")
+    return float(total), float(fixed), float(per_kwh)
 
 
 # --------------------------------------------------------------------- 7.7

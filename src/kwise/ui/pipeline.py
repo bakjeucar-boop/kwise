@@ -413,10 +413,12 @@ def combination_specs(
     ess_target_kw: float | None = None,
     ess_unit_cost_won_per_kw: float | None = None,
     ess_total_investment_won: float | None = None,
+    ess_fixed_won: float | None = None,
+    ess_per_kwh_won: float | None = None,
     contract_floor_ratio: float | None = None,
     sharpness: float = 1.0,
 ) -> tuple[CombinationSpec, ...]:
-    """켠 수단만으로 조합을 쌓는다. **투자비 순으로 누적한다.**
+    """켠 수단만으로 조합을 쌓는다. **7장 번호 순(7.1~7.7)으로 누적한다.**
 
     첫 조합은 언제나 기준선(현행)이다 — :func:`compare_combinations` 가 그렇게 읽는다.
     켜지 않은 수단은 여기 들어오지 않으므로 비교표와 산출물에서 함께 빠진다.
@@ -427,6 +429,8 @@ def combination_specs(
         "pv_total_investment_won": pv_total_investment_won,
         "ess_unit_cost_won_per_kw": ess_unit_cost_won_per_kw,
         "ess_total_investment_won": ess_total_investment_won,
+        "ess_fixed_won": ess_fixed_won,
+        "ess_per_kwh_won": ess_per_kwh_won,
         "contract_floor_ratio": contract_floor_ratio,
         "sharpness": sharpness,
     }

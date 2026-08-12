@@ -17,11 +17,13 @@ import pandas as pd
 
 from kwise.compare import ComparisonResult, SensitivityRange
 from kwise.diagnose import ChargeStructure, PeakProfile
-from kwise.measures import SolarCurve
+from kwise.measures import EssTargetCurve, SolarCurve
 from kwise.report.frames import (
     BAND_LABELS,
     band_frame,
     combination_frame,
+    ess_target_frame,
+    ess_target_table,
     hourly_profile_frame,
     monthly_peak_frame,
     sensitivity_frame,
@@ -35,6 +37,9 @@ __all__ = [
     "band_frame",
     "combination_chart",
     "combination_frame",
+    "ess_target_chart",
+    "ess_target_frame",
+    "ess_target_table",
     "hourly_profile_chart",
     "hourly_profile_frame",
     "monthly_peak_chart",
@@ -156,6 +161,61 @@ def solar_curve_chart(curve: SolarCurve) -> alt.Chart:
         )
         .properties(height=300)
     )
+
+
+def ess_target_chart(curve: EssTargetCurve) -> alt.LayerChart:
+    """ESS 회수기간 U곡선 (14세션 3-2).
+
+    **최소 지점에 표식을 찍고 그 지점의 사양을 함께 적는다.** 슬라이더 대신 이
+    곡선이 목표를 고르게 한다 — 사용자가 찍는 자리는 대개 틀린 자리다.
+
+    필요 용량을 **보조 축**으로 함께 그린다. 오른쪽 팔이 왜 나빠지는지는 회수기간
+    곡선만으로는 보이지 않는다 — 용량이 급증하는 것이 원인이다.
+    """
+    frame = ess_target_frame(curve)
+    base = alt.Chart(frame).encode(
+        x=alt.X(
+            "목표 요금적용전력(kW):Q", title="목표 요금적용전력 (kW)", scale=alt.Scale(zero=False)
+        )
+    )
+    tooltip = [
+        alt.Tooltip("목표 요금적용전력(kW):Q", format=",.0f"),
+        alt.Tooltip("저감량(kW):Q", format=",.0f"),
+        alt.Tooltip("필요 출력(kW):Q", format=",.0f"),
+        alt.Tooltip("필요 용량(kWh):Q", format=",.0f"),
+        alt.Tooltip("방전시간(h):Q", format=",.2f"),
+        alt.Tooltip("투자비(원):Q", format=",.0f"),
+        alt.Tooltip("회수기간(년):Q", format=",.1f"),
+    ]
+    payback = base.mark_line(color="#08519c").encode(
+        y=alt.Y("회수기간(년):Q", title="회수기간 (년)", scale=alt.Scale(zero=False)),
+        tooltip=tooltip,
+    )
+    capacity = base.mark_line(color="#bdbdbd", strokeDash=[4, 3]).encode(
+        y=alt.Y("필요 용량(kWh):Q", title="필요 용량 (kWh)", scale=alt.Scale(zero=False)),
+        tooltip=tooltip,
+    )
+    layers: list[alt.Chart] = [capacity, payback]
+    if curve.best is not None:
+        best = pd.DataFrame(
+            {
+                "목표 요금적용전력(kW)": [curve.best.target_kw],
+                "회수기간(년)": [curve.best.payback_years],
+                "사양": [curve.best.spec_label],
+            }
+        )
+        mark = alt.Chart(best)
+        layers.append(
+            mark.mark_point(size=140, filled=True, color="crimson").encode(
+                x="목표 요금적용전력(kW):Q", y="회수기간(년):Q", tooltip=["사양"]
+            )
+        )
+        layers.append(
+            mark.mark_text(dy=-14, color="crimson", fontWeight="bold").encode(
+                x="목표 요금적용전력(kW):Q", y="회수기간(년):Q", text="사양:N"
+            )
+        )
+    return alt.layer(*layers).resolve_scale(y="independent").properties(height=320)
 
 
 def combination_chart(comparison: ComparisonResult) -> alt.Chart:

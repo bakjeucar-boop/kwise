@@ -37,17 +37,21 @@ from kwise.io import UsageData, load_usage_bytes
 from kwise.measures import (
     ContractAdjustment,
     EssCostInput,
+    EssCostModel,
     EssResult,
+    EssTargetCurve,
     PowerFactorResult,
     SolarCurve,
     SurplusResult,
     TariffSwitchResult,
     apply_generation,
+    ess_target_curve,
     evaluate_contract_adjustment,
     evaluate_ess,
     evaluate_power_factor,
     evaluate_surplus,
     evaluate_tariff_switch,
+    load_ess_cost_model,
 )
 from kwise.progress import ProgressReporter
 from kwise.quality import QualityReport
@@ -64,6 +68,7 @@ __all__ = [
     "cached_contract_adjustment",
     "cached_diagnosis",
     "cached_ess",
+    "cached_ess_targets",
     "cached_power_factor",
     "cached_quality",
     "cached_sensitivity",
@@ -74,6 +79,7 @@ __all__ = [
     "cached_unit_pv",
     "cached_usage",
     "clear_calc_cache",
+    "ess_cost_model",
     "form_token",
     "rules_stamp",
     "upload_digest",
@@ -362,6 +368,39 @@ def cached_power_factor(
     )
 
 
+def ess_cost_model(
+    fixed_won: float | None = None, per_kwh_won: float | None = None
+) -> EssCostModel:
+    """조달 사례 모델. **두 계수만 갈아 끼울 수 있다** (14세션 3-4)."""
+    model = load_ess_cost_model()
+    if fixed_won is None and per_kwh_won is None:
+        return model
+    return model.with_coefficients(
+        fixed_won=model.fixed_won if fixed_won is None else fixed_won,
+        per_kwh_won=model.per_kwh_won if per_kwh_won is None else per_kwh_won,
+    )
+
+
+@st.cache_data(show_spinner="ESS 목표를 훑는 중…")
+def cached_ess_targets(
+    _usage: UsageData,
+    token: str,
+    baseline_demand_kw: float,
+    base_fee_won_per_kw: float,
+    fixed_won: float | None,
+    per_kwh_won: float | None,
+    stamp: str,
+) -> EssTargetCurve:
+    """목표별 회수기간 곡선. **기본요금단가는 현행 요금제 기준으로 받는다.**"""
+    return ess_target_curve(
+        _usage.kw,
+        _usage.meta.interval_minutes,
+        baseline_demand_kw=baseline_demand_kw,
+        base_fee_won_per_kw=base_fee_won_per_kw,
+        model=ess_cost_model(fixed_won, per_kwh_won),
+    )
+
+
 @st.cache_data(show_spinner="ESS 디스패치를 돌리는 중…")
 def cached_ess(
     _usage: UsageData,
@@ -371,24 +410,25 @@ def cached_ess(
     token: str,
     form: ContractForm,
     target_kw: float,
-    unit_cost_won_per_kw: float | None,
     total_investment_won: float | None,
     stamp: str,
+    fixed_won: float | None = None,
+    per_kwh_won: float | None = None,
 ) -> EssResult:
-    if total_investment_won is not None:
-        cost = EssCostInput.of_total(total_investment_won)
-    elif unit_cost_won_per_kw is not None:
-        cost = EssCostInput.of_unit_cost(unit_cost_won_per_kw)
-    else:
-        # 입력이 없으면 **조달 사례 모델**이 산정한다 (13세션). 0 원으로 때우지
-        # 않는 것은 그대로다 — 0 원이면 회수기간이 "즉시 회수" 로 읽힌다.
-        cost = EssCostInput.unpriced()
+    # 견적 총액을 넣었으면 그쪽이 이긴다. 아니면 **조달 사례 모델**이 산정한다.
+    # 0 원으로 때우지 않는다 — 0 원이면 회수기간이 "즉시 회수" 로 읽힌다.
+    cost = (
+        EssCostInput.of_total(total_investment_won)
+        if total_investment_won is not None
+        else EssCostInput.unpriced()
+    )
     return evaluate_ess(
         _usage,
         _table,
         form.selection,
         target_kw=target_kw,
         cost=cost,
+        model=ess_cost_model(fixed_won, per_kwh_won),
         baseline=_baseline,
         quality=_quality,
         options=form.billing_options(),
