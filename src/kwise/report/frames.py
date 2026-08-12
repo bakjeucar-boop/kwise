@@ -20,19 +20,23 @@ from kwise.diagnose import ChargeStructure, PeakProfile
 from kwise.diagnose.dr import DrProfile
 from kwise.io import UsageData, slot_start
 from kwise.measures import (
+    CapacityVerdict,
     DispatchResult,
     EssTargetCurve,
     PowerFactorResult,
     SolarCurve,
     TariffSwitchResult,
+    annualize,
 )
 from kwise.report.columns import option_label
 from kwise.report.days import day_profile
-from kwise.tariff import day_window
+from kwise.tariff import day_window, option_sort_key
 
 __all__ = [
     "BAND_LABELS",
+    "CAPACITY_ROWS",
     "DAY_TYPE_LABELS",
+    "TARIFF_PARTS",
     "band_frame",
     "combination_frame",
     "dr_daily_frame",
@@ -45,9 +49,11 @@ __all__ = [
     "power_triangle_frame",
     "sensitivity_frame",
     "solar_annual_frame",
+    "solar_capacity_table",
     "solar_curve_frame",
     "solar_day_frame",
     "surplus_daily_frame",
+    "tariff_delta_frame",
     "tariff_option_frame",
     "tariff_option_long_frame",
     "top_hour_frame",
@@ -119,6 +125,74 @@ def solar_curve_frame(curve: SolarCurve) -> pd.DataFrame:
             "전력량요금 절감(원)": [point.energy_saving_won for point in curve.points],
             "총 절감액(원)": [point.total_saving_won for point in curve.points],
             "요금적용전력(kW)": [point.billing_demand_kw for point in curve.points],
+        }
+    )
+
+
+#: 용량 표에 세울 지점 수 (17세션 3-3). 스무 줄은 아무도 읽지 않고, 셋은 곡선의
+#: 모양이 보이지 않는다.
+CAPACITY_ROWS = 5
+
+
+def solar_capacity_table(
+    curve: SolarCurve, *, verdict: CapacityVerdict | None = None, rows: int = CAPACITY_ROWS
+) -> pd.DataFrame:
+    """**대표 용량 몇 개를 표로** (17세션 3-3).
+
+    20단계 곡선은 Excel 로 보내고 화면에는 의미 있는 지점만 남긴다. **상한과
+    최적은 반드시 넣고** 나머지는 고르게 흩어 뽑는다 — 그래야 "용량을 키우면
+    무엇이 어떻게 변하는가" 가 표 하나로 읽힌다.
+
+    금액과 발전량은 **12개월 환산**이다. 회수기간이 연 단위라 같은 축에 두려면
+    기간값을 그대로 쓸 수 없다.
+    """
+    usable = [point for point in curve.points if point.capacity_kwp > 0]
+    if not usable:
+        return pd.DataFrame(
+            columns=[
+                "용량(kWp)",
+                "연간 발전량(kWh)",
+                "자가소비율",
+                "기본요금 절감(원)",
+                "전력량요금 절감(원)",
+                "투자비(원)",
+                "회수기간(년)",
+                "표식",
+            ]
+        )
+    months = curve.base_fee_months
+    limit = usable[-1]
+    best = verdict.best if verdict is not None else None
+    keep = {limit.capacity_kwp}
+    if best is not None:
+        keep.add(best.capacity_kwp)
+    # 남은 자리를 고르게 채운다. 이미 든 것은 건너뛴다.
+    span = max(rows - len(keep), 0)
+    if span:
+        step = max(len(usable) // (span + 1), 1)
+        for index in range(step, len(usable), step):
+            if len(keep) >= rows:
+                break
+            keep.add(usable[index - 1].capacity_kwp)
+    picked = sorted(
+        (point for point in usable if point.capacity_kwp in keep),
+        key=lambda point: point.capacity_kwp,
+    )
+    marks = {limit.capacity_kwp: "면적 상한"}
+    if best is not None:
+        marks[best.capacity_kwp] = (
+            "최적 · 면적 상한" if best.capacity_kwp == limit.capacity_kwp else "최적"
+        )
+    return pd.DataFrame(
+        {
+            "용량(kWp)": [point.capacity_kwp for point in picked],
+            "연간 발전량(kWh)": [annualize(point.generation_kwh, months) for point in picked],
+            "자가소비율": [point.self_consumption_ratio for point in picked],
+            "기본요금 절감(원)": [annualize(point.base_saving_won, months) for point in picked],
+            "전력량요금 절감(원)": [annualize(point.energy_saving_won, months) for point in picked],
+            "투자비(원)": [point.investment_won for point in picked],
+            "회수기간(년)": [point.payback_years for point in picked],
+            "표식": [marks.get(point.capacity_kwp, "") for point in picked],
         }
     )
 
@@ -195,25 +269,29 @@ DAY_TYPE_LABELS: dict[str, str] = {
 }
 
 
-def tariff_option_frame(switch: TariffSwitchResult) -> pd.DataFrame:
-    """요금제별 기본요금·전력량요금·합계 (15세션 2-1).
+#: 그룹 막대의 세 항목. **순서가 곧 읽는 순서다** (17세션 1-2).
+TARIFF_PARTS: tuple[str, ...] = ("기본요금", "전력량요금", "합계")
 
-    **누적 막대로 그린다.** 선택요금은 기본요금과 전력량요금을 맞바꾸는 제도라,
-    합계만 보면 왜 유리한지가 보이지 않는다.
+
+def tariff_option_frame(switch: TariffSwitchResult) -> pd.DataFrame:
+    """요금제별 기본요금·전력량요금·합계 (15세션 2-1 · 17세션 1-1).
+
+    **제도 순서(Ⅰ·Ⅱ·Ⅲ)로 늘어놓는다.** 절감액 순으로 정렬하면 자료마다
+    Ⅱ·Ⅲ·Ⅰ 처럼 뒤섞여 "왜 이 순서인가" 를 먼저 묻게 된다. 어느 쪽이 유리한지는
+    표식과 차액 차트가 말한다.
     """
     current = switch.current.key
     best = switch.best.key
+    ordered = sorted(switch.quotes, key=lambda quote: option_sort_key(quote.selection.option))
     rows: list[dict[str, object]] = []
-    for quote in switch.ranking:
-        base = quote.base_won
-        energy = quote.energy_won
+    for quote in ordered:
         mark = "현행" if quote.key == current else ("최적" if quote.key == best else "")
         rows.append(
             {
                 "요금제": option_label(quote.selection.option),
                 "표식": mark,
-                "기본요금(원)": base,
-                "전력량요금(원)": energy,
+                "기본요금(원)": quote.base_won,
+                "전력량요금(원)": quote.energy_won,
                 "합계(원)": quote.total_won,
                 "현행 대비(원)": quote.total_won - switch.current.total_won,
             }
@@ -222,24 +300,55 @@ def tariff_option_frame(switch: TariffSwitchResult) -> pd.DataFrame:
 
 
 def tariff_option_long_frame(switch: TariffSwitchResult) -> pd.DataFrame:
-    """누적 막대용 긴 형식.
+    """**그룹 막대**용 긴 형식 (17세션 1-2).
 
-    **상세를 모르는 요금제도 막대를 세운다.** 기본·전력량으로 가르지 못하면
-    합계 한 칸으로 낸다 — 빼 버리면 선택지가 조용히 사라진다.
+    쌓지 않고 나란히 세운다. 누적으로 그리면 합계는 보이지만 **기본요금끼리·
+    전력량요금끼리 견줄 수가 없다** — 선택요금은 그 둘을 맞바꾸는 제도라 정작
+    봐야 할 것이 항목별 크기다.
+
+    **상세를 모르는 요금제도 막대를 세운다.** 값이 없으면 합계 하나만 세우고
+    그 사실을 적는다 — 빼 버리면 선택지가 조용히 사라진다.
     """
     rows: list[dict[str, object]] = []
     for _, row in tariff_option_frame(switch).iterrows():
         base, energy = row["기본요금(원)"], row["전력량요금(원)"]
-        parts = (
-            (("기본요금", base), ("전력량요금", energy))
+        parts: tuple[tuple[str, float], ...] = (
+            (
+                ("기본요금", base),
+                ("전력량요금", energy),
+                ("합계", row["합계(원)"]),
+            )
             if pd.notna(base) and pd.notna(energy)
-            else (("합계 (상세 미산출)", row["합계(원)"]),)
+            else (("합계", row["합계(원)"]),)
         )
         rows.extend(
             {"요금제": row["요금제"], "표식": row["표식"], "구분": name, "원": float(value)}
             for name, value in parts
         )
     return pd.DataFrame(rows)
+
+
+def tariff_delta_frame(switch: TariffSwitchResult) -> pd.DataFrame:
+    """**현행 대비 차액만** 그리는 표 (17세션 1-3).
+
+    35억에서 5천만원이 줄어드는 것을 0 부터 시작하는 한 축에 그리면 막대 셋이
+    같은 높이로 보인다. 차액만 떼어 0 을 기준으로 좌우(위아래)로 뻗게 하면
+    같은 사실이 한눈에 읽힌다 — **이쪽이 축을 자르는 것보다 명확하다.**
+
+    부호 규약은 「현행 대비」 다. 음수가 절감이다.
+    """
+    frame = tariff_option_frame(switch)
+    return pd.DataFrame(
+        {
+            "요금제": frame["요금제"],
+            "표식": frame["표식"],
+            "현행 대비(원)": frame["현행 대비(원)"],
+            "방향": [
+                "절감" if value < 0 else ("증가" if value > 0 else "현행")
+                for value in frame["현행 대비(원)"]
+            ],
+        }
+    )
 
 
 def dr_daily_frame(profile: DrProfile) -> pd.DataFrame:

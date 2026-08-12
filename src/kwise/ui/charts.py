@@ -31,6 +31,8 @@ from kwise.measures import (
 from kwise.report.days import RepresentativeDay
 from kwise.report.frames import (
     BAND_LABELS,
+    CAPACITY_ROWS,
+    TARIFF_PARTS,
     band_frame,
     combination_frame,
     dr_daily_frame,
@@ -43,9 +45,11 @@ from kwise.report.frames import (
     power_triangle_frame,
     sensitivity_frame,
     solar_annual_frame,
+    solar_capacity_table,
     solar_curve_frame,
     solar_day_frame,
     surplus_daily_frame,
+    tariff_delta_frame,
     tariff_option_frame,
     tariff_option_long_frame,
     top_hour_frame,
@@ -53,6 +57,9 @@ from kwise.report.frames import (
 
 __all__ = [
     "BAND_LABELS",
+    "CAPACITY_ROWS",
+    "PEAK_ZOOM_HOURS",
+    "TARIFF_PARTS",
     "band_chart",
     "band_frame",
     "combination_chart",
@@ -76,12 +83,16 @@ __all__ = [
     "sensitivity_frame",
     "solar_annual_chart",
     "solar_annual_frame",
+    "solar_capacity_table",
     "solar_curve_chart",
     "solar_curve_frame",
     "solar_day_chart",
     "solar_day_frame",
+    "solar_saving_ratio",
     "surplus_daily_chart",
     "surplus_daily_frame",
+    "tariff_delta_chart",
+    "tariff_delta_frame",
     "tariff_option_chart",
     "tariff_option_frame",
     "tariff_option_long_frame",
@@ -90,6 +101,23 @@ __all__ = [
 ]
 
 _HEIGHT = 260
+
+# ===================================================================== 17세션 0절 · 스케일
+#
+# **차이가 큰 두 값을 한 축에 그리면 변화가 안 보인다.** 35억 위에서 5천만원이
+# 움직이거나 5,000 kW 부하에 수백 kW 발전을 얹으면, 0 부터 시작하는 축에서는
+# 두 값이 같은 자리에 겹친다. 규약 셋을 여기 모아 둔다.
+#
+#     ① 금액·전력 축은 **0 부터 시작하지 않는다.** 축 제목에 그 사실을 적는다
+#     ② 절대값과 변화량은 **차트를 나눈다.** 한 축에 억과 백만을 같이 두지 않는다
+#     ③ 두 선이 붙어 보이면 **그 사이를 색으로 채운다**
+
+#: 값의 범위에 맞춰 축을 자른다. 축 제목에 "0 부터 시작하지 않습니다" 를 적는다.
+_CUT_SCALE = alt.Scale(zero=False, nice=True)
+
+#: 범례를 **우측 하단**에 둔다 (17세션 2절). 우측 상단이면 값이 커질 때
+#: 라벨·표식을 가린다 — 값을 바꿔 보는 화면에서 그 가림이 반복된다.
+_LEGEND_BOTTOM = alt.Legend(orient="bottom-right", direction="vertical", fillColor="white")
 
 
 def monthly_peak_chart(peak: PeakProfile, *, split: bool = True) -> alt.LayerChart:
@@ -323,42 +351,77 @@ _BAND_COLORS = alt.Scale(
 )
 
 
-def tariff_option_chart(switch: TariffSwitchResult) -> alt.LayerChart:
-    """요금제별 기본·전력량 누적 막대 (15세션 2-1).
+def tariff_option_chart(switch: TariffSwitchResult) -> alt.Chart:
+    """요금제별 기본·전력량·합계 **그룹 막대** (17세션 1-2).
 
-    **선택요금은 기본요금과 전력량요금을 맞바꾸는 제도다.** 합계만 보면 왜
-    유리한지 알 수 없어 누적으로 그린다. 현행·최적에 표식을 찍고 막대 위에
-    합계와 현행 대비 차액을 적는다.
+    쌓지 않고 나란히 세운다. 누적은 합계만 보이고 **기본요금끼리·전력량요금끼리
+    견줄 수가 없는데**, 선택요금은 바로 그 둘을 맞바꾸는 제도다.
+
+    **축을 0 부터 시작하지 않는다** (17세션 0절). 35억 위에서 5천만원이 움직이는
+    것을 0 부터 그리면 막대 셋이 같은 높이로 보인다. 얼마나 줄어드는지는
+    :func:`tariff_delta_chart` 가 따로 낸다.
     """
     long = tariff_option_long_frame(switch)
-    wide = tariff_option_frame(switch)
-    order = list(wide["요금제"])
-    wide = wide.assign(
-        요약=[
-            f"{money.won_short(total, reason='—')}"
-            + ("" if abs(delta) < 1 else f" ({money.won_short(delta, reason='—')})")
-            + (f" · {mark}" if mark else "")
-            for total, delta, mark in zip(
-                wide["합계(원)"], wide["현행 대비(원)"], wide["표식"], strict=True
-            )
-        ]
-    )
-    bars = (
+    order = list(tariff_option_frame(switch)["요금제"])
+    return (
         alt.Chart(long)
         .mark_bar()
         .encode(
             x=alt.X("요금제:N", title=None, sort=order),
-            y=alt.Y("원:Q", title="요금 (원)"),
-            color=alt.Color("구분:N", title=None),
+            xOffset=alt.XOffset("구분:N", sort=list(TARIFF_PARTS)),
+            y=alt.Y("원:Q", title="요금 (원) — 0 부터 시작하지 않습니다", scale=_CUT_SCALE),
+            color=alt.Color(
+                "구분:N",
+                title=None,
+                sort=list(TARIFF_PARTS),
+                scale=alt.Scale(domain=list(TARIFF_PARTS), range=["#6baed6", "#fd8d3c", "#31a354"]),
+                legend=_LEGEND_BOTTOM,
+            ),
             tooltip=["요금제", "구분", alt.Tooltip("원:Q", format=",.0f")],
+        )
+        .properties(height=300)
+    )
+
+
+def tariff_delta_chart(switch: TariffSwitchResult) -> alt.LayerChart:
+    """**현행 대비 차액만** 그리는 막대 (17세션 1-3).
+
+    0 을 기준으로 좌우로 뻗는다 — 절감은 왼쪽, 증가는 오른쪽이다. 절대 금액을
+    지우고 변화만 남기면 "얼마나 줄어드는가" 가 한눈에 읽힌다.
+    """
+    frame = tariff_delta_frame(switch)
+    labelled = frame.assign(
+        설명=[
+            (money.won_short(value, reason="—") if abs(value) >= 1 else "현행")
+            + (f" · {mark}" if mark else "")
+            for value, mark in zip(frame["현행 대비(원)"], frame["표식"], strict=True)
+        ]
+    )
+    order = list(frame["요금제"])
+    bars = (
+        alt.Chart(labelled)
+        .mark_bar()
+        .encode(
+            y=alt.Y("요금제:N", title=None, sort=order),
+            x=alt.X("현행 대비(원):Q", title="현행 대비 (원) — 왼쪽이 절감"),
+            color=alt.Color(
+                "방향:N",
+                title=None,
+                scale=alt.Scale(
+                    domain=["절감", "현행", "증가"], range=["#31a354", "#bdbdbd", "#de2d26"]
+                ),
+                legend=_LEGEND_BOTTOM,
+            ),
+            tooltip=["요금제", alt.Tooltip("현행 대비(원):Q", format=",.0f")],
         )
     )
     labels = (
-        alt.Chart(wide)
-        .mark_text(dy=-8, fontWeight="bold")
-        .encode(x=alt.X("요금제:N", sort=order), y=alt.Y("합계(원):Q"), text="요약:N")
+        alt.Chart(labelled)
+        .mark_text(align="left", dx=6, fontWeight="bold")
+        .encode(y=alt.Y("요금제:N", sort=order), x="현행 대비(원):Q", text="설명:N")
     )
-    return (bars + labels).properties(height=300)
+    zero = alt.Chart(pd.DataFrame({"기준": [0.0]})).mark_rule(color="#525252").encode(x="기준:Q")
+    return (zero + bars + labels).properties(height=140)
 
 
 def dr_daily_chart(profile: DrProfile) -> alt.LayerChart | alt.FacetChart:
@@ -439,26 +502,43 @@ def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
         .encode(
             x=alt.X("유효전력:Q", title="유효전력 (기준 1)"),
             y=alt.Y("무효전력:Q", title="무효전력"),
-            color=alt.Color("구분:N", title=None),
+            color=alt.Color("구분:N", title=None, legend=_LEGEND_BOTTOM),
             order="순서:Q",
             tooltip=["구분"],
         )
     )
+    # **각도와 역률을 도형 옆에 직접 적는다** (17세션 2절). 범례에 기대면 값을
+    # 바꿔 보는 동안 어느 선이 어느 쪽인지 매번 다시 찾아야 한다.
+    marked = frame.assign(
+        설명=[
+            f"{row['구분']} — 역률 {row['역률(%)']:.1f}% · {row['각도(도)']:.1f}°"
+            for _, row in frame.iterrows()
+        ],
+        각도라벨=[f"{row['각도(도)']:.1f}°" for _, row in frame.iterrows()],
+        각도y=[row["무효전력"] * 0.28 for _, row in frame.iterrows()],
+    )
     labels = (
-        alt.Chart(
-            frame.assign(
-                설명=[
-                    f"{row['구분']} — 역률 {row['역률(%)']:.0f}% · {row['각도(도)']:.0f}°"
-                    for _, row in frame.iterrows()
-                ]
-            )
-        )
-        .mark_text(dx=6, align="left")
+        alt.Chart(marked)
+        .mark_text(dx=6, align="left", fontWeight="bold")
         .encode(
-            x="유효전력:Q", y="무효전력:Q", text="설명:N", color=alt.Color("구분:N", title=None)
+            x="유효전력:Q",
+            y="무효전력:Q",
+            text="설명:N",
+            color=alt.Color("구분:N", title=None, legend=_LEGEND_BOTTOM),
         )
     )
-    return (shape + labels).properties(height=280)
+    # 원점 쪽 각도 표기 — **각이 좁아지는 모습**이 이 그림의 전부다.
+    angles = (
+        alt.Chart(marked)
+        .mark_text(dx=4, align="left", fontSize=11)
+        .encode(
+            x=alt.value(46),
+            y=alt.Y("각도y:Q"),
+            text="각도라벨:N",
+            color=alt.Color("구분:N", title=None, legend=_LEGEND_BOTTOM),
+        )
+    )
+    return (shape + labels + angles).properties(height=280)
 
 
 def power_factor_day_chart(
@@ -480,98 +560,175 @@ def power_factor_day_chart(
         .mark_point(size=18, opacity=0.35, color="#fd8d3c")
         .encode(x="시각:T", y="부하(kW):Q", tooltip=["구간"])
     )
-    return (load + window).properties(height=280)
+    return (load + window).properties(height=280).configure_legend(orient="bottom-right")
 
 
-def solar_annual_chart(usage: UsageData, generation_kw: pd.Series) -> alt.Chart:
-    """연간 일별 계통 수전·자가소비·잉여 (15세션 2-4 ①).
+def solar_saving_ratio(usage: UsageData, generation_kw: pd.Series) -> float | None:
+    """자가소비로 줄어든 **계통 수전 비율**. 화면 문구가 쓴다 (17세션 3-4)."""
+    frame = solar_annual_frame(usage, generation_kw)
+    total = float(frame["사용량(kWh)"].sum())
+    if total <= 0:
+        return None
+    return float(frame["자가소비(kWh)"].sum()) / total
 
-    **계통에서 받는 양이 줄어드는 모습**을 보인다. 자가소비와 잉여를 갈라 쌓아
-    발전량을 다 쓰는지도 함께 읽히게 한다.
+
+def solar_annual_chart(usage: UsageData, generation_kw: pd.Series) -> alt.LayerChart:
+    """연간 일별 — **주인공은 사용량이 줄어드는 모습이다** (17세션 3-4).
+
+    셋을 쌓아 올리던 그림은 발전량(자가소비·잉여)에 색이 들어가 **그쪽이 주인공**
+    처럼 보였다. 정작 봐야 할 것은 「계통에서 받는 양이 얼마나 줄었는가」 다.
+
+        원래 사용량 선  ─────────────
+                        ▓▓▓ 절감분 (자가소비)
+        순사용량 영역   ░░░░░░░░░░░░░
+
+    두 선 사이를 색으로 채우면 그 간격이 곧 절감이다. 잉여는 **자가소비로 쓰지
+    못하고 남은 몫**이라 별개 선으로 얇게만 얹는다.
     """
     frame = solar_annual_frame(usage, generation_kw)
-    long = frame.melt(
-        id_vars="날짜",
-        value_vars=["계통 수전(kWh)", "자가소비(kWh)", "잉여(kWh)"],
-        var_name="구분",
-        value_name="kWh",
-    )
-    return (
-        alt.Chart(long)
-        .mark_area()
+    saved = (
+        alt.Chart(frame.assign(구분="절감분 (자가소비)"))
+        .mark_area(opacity=0.85)
         .encode(
             x=alt.X("날짜:T", title="날짜"),
-            y=alt.Y("kWh:Q", title="일별 전력량 (kWh)"),
+            y=alt.Y("계통 수전(kWh):Q", title="일별 전력량 (kWh)"),
+            y2=alt.Y2("사용량(kWh)"),
             color=alt.Color(
                 "구분:N",
                 title=None,
-                scale=alt.Scale(
-                    domain=["계통 수전(kWh)", "자가소비(kWh)", "잉여(kWh)"],
-                    range=["#9ecae1", "#31a354", "#fdd0a2"],
-                ),
+                scale=alt.Scale(domain=["절감분 (자가소비)"], range=["#31a354"]),
+                legend=_LEGEND_BOTTOM,
             ),
-            tooltip=[alt.Tooltip("날짜:T"), "구분", alt.Tooltip("kWh:Q", format=",.0f")],
+            tooltip=[
+                alt.Tooltip("날짜:T"),
+                alt.Tooltip("사용량(kWh):Q", format=",.0f"),
+                alt.Tooltip("계통 수전(kWh):Q", format=",.0f"),
+                alt.Tooltip("자가소비(kWh):Q", format=",.0f"),
+            ],
         )
-        .properties(height=300)
     )
+    grid = (
+        alt.Chart(frame)
+        .mark_area(opacity=0.55, color="#9ecae1")
+        .encode(x="날짜:T", y=alt.Y("계통 수전(kWh):Q"))
+    )
+    demand = (
+        alt.Chart(frame)
+        .mark_line(color="#08519c", strokeWidth=1.2)
+        .encode(x="날짜:T", y=alt.Y("사용량(kWh):Q", title="일별 전력량 (kWh)"))
+    )
+    surplus = (
+        alt.Chart(frame)
+        .mark_line(color="#f16913", strokeWidth=1.0, strokeDash=[4, 3])
+        .encode(x="날짜:T", y=alt.Y("잉여(kWh):Q"))
+    )
+    return (grid + saved + demand + surplus).properties(height=300)
+
+
+#: 피크 확대 차트가 보일 앞뒤 시간 (17세션 3-5).
+PEAK_ZOOM_HOURS = 3
 
 
 def solar_day_chart(
-    usage: UsageData, generation_kw: pd.Series, day: RepresentativeDay
+    usage: UsageData,
+    generation_kw: pd.Series,
+    day: RepresentativeDay,
+    *,
+    zoom: bool = False,
 ) -> alt.LayerChart | alt.FacetChart:
-    """대표일의 원부하·순부하·발전량 (15세션 2-4 ②).
+    """대표일의 원부하·순부하와 **그 사이 저감분** (17세션 3-5).
 
-    **피크가 얼마나 내려가는지**가 전부다. 원부하 피크 시각에 표식을 찍고
-    저감량을 적는다.
+    5,000 kW 부하에 수백 kW 발전을 얹으면 0 부터 시작하는 축에서 두 선이 붙어
+    보인다. 셋을 바꿨다.
+
+        ① **축을 0 부터 시작하지 않는다** — 두 선의 간격이 벌어진다
+        ② **선 사이를 색으로 채운다** — 그 면적이 곧 저감이다
+        ③ 발전량 선을 뺐다 — 축이 다른 값을 같은 축에 얹으면 스케일이 다시 뭉갠다
+
+    Args:
+        zoom: 피크 시각 앞뒤 :data:`PEAK_ZOOM_HOURS` 시간만 그린다. 하루 전체는
+            간격이 좁아 보이므로 확대본을 곁들인다.
     """
     frame = solar_day_frame(usage, generation_kw, day.date)
-    long = frame.melt(
-        id_vars="시각",
-        value_vars=["원부하(kW)", "순부하(kW)", "발전량(kW)"],
-        var_name="구분",
-        value_name="kW",
-    )
-    lines = (
-        alt.Chart(long)
-        .mark_line()
+    title = f"{day.title} · 15분"
+    if len(frame) and zoom:
+        peak_at = pd.Timestamp(frame.loc[frame["원부하(kW)"].idxmax(), "시각"])
+        window = pd.Timedelta(hours=PEAK_ZOOM_HOURS)
+        times = pd.DatetimeIndex(frame["시각"])
+        frame = frame[(times >= peak_at - window) & (times <= peak_at + window)]
+        title = f"{day.title} · 피크 앞뒤 {PEAK_ZOOM_HOURS}시간"
+    if frame.empty:
+        blank = alt.Chart(pd.DataFrame({"시각": [], "kW": []})).mark_line()
+        return alt.layer(blank, blank).properties(height=280)
+
+    band = (
+        alt.Chart(frame.assign(구분="저감분"))
+        .mark_area(opacity=0.75)
         .encode(
-            x=alt.X("시각:T", title=f"{day.title} · 15분"),
-            y=alt.Y("kW:Q", title="출력 (kW)"),
+            x=alt.X("시각:T", title=title),
+            y=alt.Y("순부하(kW):Q", title="출력 (kW) — 0 부터 시작하지 않습니다", scale=_CUT_SCALE),
+            y2=alt.Y2("원부하(kW)"),
             color=alt.Color(
                 "구분:N",
                 title=None,
-                scale=alt.Scale(
-                    domain=["원부하(kW)", "순부하(kW)", "발전량(kW)"],
-                    range=["#9ecae1", "#08519c", "#f16913"],
-                ),
+                scale=alt.Scale(domain=["저감분"], range=["#31a354"]),
+                legend=_LEGEND_BOTTOM,
+            ),
+            tooltip=[
+                alt.Tooltip("시각:T"),
+                alt.Tooltip("원부하(kW):Q", format=",.0f"),
+                alt.Tooltip("순부하(kW):Q", format=",.0f"),
+                alt.Tooltip("발전량(kW):Q", format=",.0f"),
+            ],
+        )
+    )
+    long = frame.melt(
+        id_vars="시각", value_vars=["원부하(kW)", "순부하(kW)"], var_name="구분", value_name="kW"
+    )
+    lines = (
+        alt.Chart(long)
+        .mark_line(strokeWidth=1.8)
+        .encode(
+            x="시각:T",
+            y=alt.Y("kW:Q", title="출력 (kW) — 0 부터 시작하지 않습니다", scale=_CUT_SCALE),
+            color=alt.Color(
+                "구분:N",
+                title=None,
+                scale=alt.Scale(domain=["원부하(kW)", "순부하(kW)"], range=["#9ecae1", "#08519c"]),
+                legend=_LEGEND_BOTTOM,
             ),
             tooltip=[alt.Tooltip("시각:T"), "구분", alt.Tooltip("kW:Q", format=",.0f")],
         )
     )
-    layers: list[alt.Chart] = [lines]
-    if len(frame):
-        peak = frame.loc[frame["원부하(kW)"].idxmax()]
-        cut = float(peak["원부하(kW)"]) - float(peak["순부하(kW)"])
-        mark = pd.DataFrame(
-            [
-                {
-                    "시각": peak["시각"],
-                    "kW": float(peak["원부하(kW)"]),
-                    "설명": f"피크 −{cut:,.0f} kW",
-                }
-            ]
-        )
-        layers.append(
-            alt.Chart(mark)
-            .mark_point(size=150, filled=True, color="crimson")
-            .encode(x="시각:T", y="kW:Q", tooltip=["설명"])
-        )
-        layers.append(
-            alt.Chart(mark)
-            .mark_text(dy=-14, color="crimson", fontWeight="bold")
-            .encode(x="시각:T", y="kW:Q", text="설명:N")
-        )
-    return alt.layer(*layers).properties(height=300)
+    peak = frame.loc[frame["원부하(kW)"].idxmax()]
+    cut = float(peak["원부하(kW)"]) - float(peak["순부하(kW)"])
+    mark = pd.DataFrame(
+        [
+            {
+                "시각": peak["시각"],
+                "kW": float(peak["원부하(kW)"]),
+                "아래": float(peak["순부하(kW)"]),
+                "설명": f"피크 −{cut:,.0f} kW",
+            }
+        ]
+    )
+    # **화살표로 간격을 직접 가리킨다** — 숫자만 띄우면 어느 간격인지 헷갈린다.
+    arrow = (
+        alt.Chart(mark)
+        .mark_rule(color="crimson", strokeWidth=2)
+        .encode(x="시각:T", y="kW:Q", y2=alt.Y2("아래"))
+    )
+    caps = (
+        alt.Chart(mark)
+        .mark_point(shape="triangle-down", size=90, filled=True, color="crimson")
+        .encode(x="시각:T", y="아래:Q", tooltip=["설명"])
+    )
+    label = (
+        alt.Chart(mark)
+        .mark_text(dy=-12, color="crimson", fontWeight="bold")
+        .encode(x="시각:T", y="kW:Q", text="설명:N")
+    )
+    return (band + lines + arrow + caps + label).properties(height=300)
 
 
 def ess_day_chart(
@@ -580,64 +737,97 @@ def ess_day_chart(
     day: RepresentativeDay,
     *,
     bands: pd.Series | None = None,
-) -> alt.LayerChart | alt.FacetChart:
-    """대표일의 ESS 충·방전 구조 (15세션 2-5).
+) -> alt.VConcatChart:
+    """대표일의 ESS **2단 그림** (17세션 4-1).
 
-    계시별 시간대를 배경 띠로 깔아 **왜 그 시각에 담고 쓰는지**를 보인다.
-    충전은 위로, 방전은 아래로 부호를 갈라 영역으로 그린다.
+    한 축에 겹쳐 그렸더니 **온통 하얬다.** 부하가 5,000 kW 대인데 충·방전은
+    100 kW 대라, 공유 축에서 막대가 선 굵기만큼도 서지 않았다.
+
+        위 칸   원부하 · 순부하 · 목표선  — **축을 0 부터 시작하지 않는다**
+        아래 칸  충전(+) · 방전(−)        — 제 스케일을 가진 별도 패널
+
+    계시별 시간대 띠는 **옅게** 깔아 배경으로 둔다 — 왜 그 시각에 담고 쓰는지가
+    거기서 읽힌다.
     """
     frame = ess_day_frame(usage, dispatch, day.date, bands=bands)
-    layers: list[alt.Chart] = []
+    title = f"{day.title} · 15분"
+    if frame.empty:
+        empty = alt.Chart(pd.DataFrame({"시각": [], "kW": []})).mark_line().properties(height=200)
+        return alt.vconcat(empty, empty)
+
+    upper: list[alt.Chart] = []
     if "시간대" in frame.columns:
-        layers.append(
+        upper.append(
             alt.Chart(frame)
-            .mark_rect(opacity=0.5)
+            .mark_rect(opacity=0.18)
             .encode(
-                x=alt.X("시각:T", title=f"{day.title} · 15분"),
-                color=alt.Color("시간대:N", title="계시별 시간대", scale=_BAND_COLORS),
+                x=alt.X("시각:T", title=None),
+                color=alt.Color(
+                    "시간대:N", title="계시별 시간대", scale=_BAND_COLORS, legend=_LEGEND_BOTTOM
+                ),
                 tooltip=["시간대"],
             )
         )
-    flows = frame.melt(
-        id_vars="시각", value_vars=["충전(kW)", "방전(kW)"], var_name="구분", value_name="kW"
-    )
-    layers.append(
-        alt.Chart(flows[flows["kW"] > 0])
-        .mark_bar(opacity=0.85)
-        .encode(
-            x=alt.X("시각:T", title=f"{day.title} · 15분"),
-            y=alt.Y("kW:Q", title="출력 (kW)"),
-            color=alt.Color(
-                "구분:N",
-                title=None,
-                scale=alt.Scale(domain=["충전(kW)", "방전(kW)"], range=["#6baed6", "#e6550d"]),
-            ),
-            tooltip=[alt.Tooltip("시각:T"), "구분", alt.Tooltip("kW:Q", format=",.0f")],
-        )
-    )
-    long = frame.melt(
+    load = frame.melt(
         id_vars="시각", value_vars=["원부하(kW)", "순부하(kW)"], var_name="구분", value_name="kW"
     )
-    layers.append(
-        alt.Chart(long)
-        .mark_line()
+    upper.append(
+        alt.Chart(frame.assign(구분="저감분"))
+        .mark_area(opacity=0.7, color="#31a354")
         .encode(
-            x="시각:T",
-            y=alt.Y("kW:Q", title="출력 (kW)"),
+            x=alt.X("시각:T", title=None),
+            y=alt.Y("순부하(kW):Q", title="부하 (kW) — 0 부터 시작하지 않습니다", scale=_CUT_SCALE),
+            y2=alt.Y2("원부하(kW)"),
+        )
+    )
+    upper.append(
+        alt.Chart(load)
+        .mark_line(strokeWidth=1.8)
+        .encode(
+            x=alt.X("시각:T", title=None),
+            y=alt.Y("kW:Q", title="부하 (kW) — 0 부터 시작하지 않습니다", scale=_CUT_SCALE),
             color=alt.Color(
                 "구분:N",
                 title=None,
                 scale=alt.Scale(domain=["원부하(kW)", "순부하(kW)"], range=["#9ecae1", "#08519c"]),
+                legend=_LEGEND_BOTTOM,
             ),
             tooltip=[alt.Tooltip("시각:T"), "구분", alt.Tooltip("kW:Q", format=",.0f")],
         )
     )
-    layers.append(
+    upper.append(
         alt.Chart(pd.DataFrame({"목표(kW)": [dispatch.target_kw]}))
-        .mark_rule(strokeDash=[6, 4], color="crimson")
+        .mark_rule(strokeDash=[6, 4], color="crimson", strokeWidth=1.6)
         .encode(y="목표(kW):Q", tooltip=[alt.Tooltip("목표(kW):Q", format=",.0f")])
     )
-    return alt.layer(*layers).resolve_scale(y="shared").properties(height=320)
+
+    # 아래 칸 — **충전은 위로, 방전은 아래로.** 부호를 갈라야 언제 담고 언제
+    # 쓰는지가 한눈에 들어온다.
+    flows = pd.concat(
+        [
+            frame[["시각"]].assign(구분="충전", kW=frame["충전(kW)"]),
+            frame[["시각"]].assign(구분="방전", kW=-frame["방전(kW)"]),
+        ]
+    )
+    lower = (
+        alt.Chart(flows[flows["kW"] != 0.0])
+        .mark_bar(opacity=0.95)
+        .encode(
+            x=alt.X("시각:T", title=title),
+            y=alt.Y("kW:Q", title="충전(+) · 방전(−) (kW)"),
+            color=alt.Color(
+                "구분:N",
+                title=None,
+                scale=alt.Scale(domain=["충전", "방전"], range=["#3182bd", "#e6550d"]),
+                legend=_LEGEND_BOTTOM,
+            ),
+            tooltip=[alt.Tooltip("시각:T"), "구분", alt.Tooltip("kW:Q", format=",.0f")],
+        )
+        .properties(height=140)
+    )
+    return alt.vconcat(alt.layer(*upper).properties(height=240), lower, spacing=6).resolve_scale(
+        color="independent"
+    )
 
 
 def surplus_daily_chart(usage: UsageData, surplus_kw: pd.Series) -> alt.Chart:

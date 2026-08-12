@@ -37,7 +37,7 @@ from kwise.measures import (
     load_ess_cost_model,
     power_factor_floor_pct,
 )
-from kwise.pv import capacity_preview, load_pv_presets
+from kwise.pv import PvPresets, capacity_preview, load_pv_presets
 from kwise.quality import QualityReport
 from kwise.report import CONTRACT_CHANGE_WARNING
 from kwise.report.columns import localize
@@ -274,10 +274,20 @@ def _tariff_switch(
         )
     else:
         st.write("현재 요금제가 이미 가장 유리합니다. 바꿀 이유가 없습니다.")
-    # **누적 막대로 본다** (15세션 2-1). 선택요금은 기본요금과 전력량요금을 맞바꾸는
-    # 제도라 합계만 보면 왜 유리한지가 보이지 않는다.
+    # **① 차액이 먼저다** (17세션 1-3). 35억 위에서 5천만원이 움직이는 것을 절대
+    # 금액 축에 그리면 막대 셋이 같은 높이로 보인다 — 변화만 떼어 먼저 보인다.
+    st.altair_chart(charts.tariff_delta_chart(result), width="stretch")
+    st.caption(
+        "현행을 0 으로 두고 좌우로 뻗은 막대입니다. 왼쪽(초록)이 절감입니다. "
+        + fmt.TRUNCATION_FOOTNOTE
+    )
+    # **② 그룹 막대** (17세션 1-2). 쌓으면 기본요금끼리·전력량요금끼리 견줄 수 없다.
     st.altair_chart(charts.tariff_option_chart(result), width="stretch")
-    st.caption("막대 위는 합계와 현행 대비 차액입니다. " + fmt.TRUNCATION_FOOTNOTE)
+    st.caption(
+        "요금제마다 기본요금·전력량요금·합계를 나란히 세웠습니다. **선택요금은 그 둘을 "
+        "맞바꾸는 제도**입니다 — 기본요금이 오르는 대신 전력량요금이 내려갑니다. "
+        "세로축은 0 부터 시작하지 않습니다."
+    )
     _notes(result.warnings, result.notes)
 
 
@@ -605,7 +615,12 @@ def _solar(
     # ---- 방위 (15세션 1-1). **각도가 아니라 8방위로 고른다.**
     tilt = presets.density(density).tilt_deg
     azimuth = _azimuth_picker(
-        usage, region_key, tilt_deg=tilt, gcr=presets.density(density).gcr, field="azimuth"
+        usage,
+        region_key,
+        tilt_deg=tilt,
+        gcr=presets.density(density).gcr,
+        field="azimuth",
+        calculated=saved,
     )
 
     unit_cost = st.number_input(
@@ -660,7 +675,14 @@ def _solar(
             step=50.0,
         )
         wall_azimuth = (
-            _azimuth_picker(usage, region_key, tilt_deg=90.0, gcr=1.0, field="wall_azimuth")
+            _azimuth_picker(
+                usage,
+                region_key,
+                tilt_deg=90.0,
+                gcr=1.0,
+                field="wall_azimuth",
+                calculated=saved,
+            )
             if wall_area > 0
             else None
         )
@@ -741,28 +763,72 @@ def _solar(
     # **투자비를 모르면 빈칸이나 0원이 아니라 사유다** (7.5).
     st.caption("투자비 — " + fmt.won(point.investment_won, reason=curve.cost.reason))
 
-    # **표를 나열하지 않고 한 줄로 판정한다** (15세션 1-3). 면적이 정해지면 용량이
-    # 정해지므로, 곡선이 단조롭게 좋아지기만 하면 20단계 표는 아무것도 알려주지 않는다.
+    # **한 줄 판정에 근거를 붙인다** (17세션 3-2). 숫자만 내면 "왜 하필 그
+    # 용량인가" 를 알 수 없다.
     verdict = curve.verdict()
     st.markdown(f"**용량 판정** — {verdict.sentence()}")
-    if verdict.show_curve:
-        # 최적이 상한보다 작을 때만 곡선을 펼치고 최소점에 표식을 찍는다.
+    st.caption(fmt.markdown_safe(verdict.basis_sentence()))
+
+    # **대표 지점을 표로** (17세션 3-3). 스무 줄은 아무도 읽지 않고, 곡선만으로는
+    # 용량을 키울 때 무엇이 어떻게 변하는지 수로 확인할 수 없다.
+    st.markdown("**용량별 비교**")
+    st.dataframe(
+        _capacity_view(charts.solar_capacity_table(curve, verdict=verdict)),
+        hide_index=True,
+        width="stretch",
+    )
+    st.caption(
+        f"의미 있는 지점 {charts.CAPACITY_ROWS}개만 골랐습니다 — 면적 상한과 최적은 항상 "
+        "들어갑니다. 금액과 발전량은 12개월 환산입니다. "
+        "20단계 상세는 Excel 「태양광 용량 곡선」 시트에 있습니다."
+    )
+    with st.expander("용량 곡선 (접어 둠)", expanded=False):
         st.altair_chart(charts.solar_curve_chart(curve, verdict=verdict), width="stretch")
-    else:
-        with st.expander("용량 곡선 (접어 둠)", expanded=False):
-            st.altair_chart(charts.solar_curve_chart(curve, verdict=verdict), width="stretch")
-        st.caption("20단계 상세는 Excel 「태양광 용량 곡선」 시트에 있습니다.")
 
     generation = unit_profile * point.capacity_kwp
     st.altair_chart(charts.solar_annual_chart(usage, generation), width="stretch")
+    ratio = charts.solar_saving_ratio(usage, generation)
     st.caption(
-        "계통에서 받는 양(연한 파랑)이 줄어드는 만큼이 절감입니다. "
-        "잉여(주황)가 크면 자가소비로 다 쓰지 못하는 구조입니다."
+        "**주인공은 계통에서 받는 양이 줄어드는 모습**입니다. 위 선이 원래 사용량, "
+        "그 아래 초록이 자가소비로 줄어든 몫, 연파랑이 그래도 계통에서 받는 양입니다. "
+        + (f"연간 사용량의 **{fmt.ratio_pct(ratio)}** 를 줄입니다. " if ratio else "")
+        + "주황 점선(잉여)이 크면 자가소비로 다 쓰지 못하는 구조입니다."
     )
     if day is not None:
         st.altair_chart(charts.solar_day_chart(usage, generation, day), width="stretch")
-        st.caption(f"{day.title} · 원부하 피크가 얼마나 내려가는지를 봅니다.")
+        st.caption(
+            f"{day.title} · 두 선 사이 초록이 저감분입니다. **세로축은 0 부터 시작하지 "
+            "않습니다** — 5,000 kW 대 부하에 수백 kW 를 얹으면 0 부터 그린 축에서는 "
+            "두 선이 붙어 보입니다."
+        )
+        st.altair_chart(charts.solar_day_chart(usage, generation, day, zoom=True), width="stretch")
+        st.caption(f"피크 앞뒤 {charts.PEAK_ZOOM_HOURS}시간만 확대한 그림입니다.")
     _notes(curve.warnings, curve.notes)
+
+
+def _capacity_view(frame: pd.DataFrame) -> pd.DataFrame:
+    """용량 표를 **사람이 읽는 문자열로** 굳힌다 (17세션 3-3)."""
+    if frame.empty:
+        return frame
+    return pd.DataFrame(
+        {
+            "용량(kWp)": [fmt.kwp(value) for value in frame["용량(kWp)"]],
+            "연간 발전량": [fmt.kwh(value) for value in frame["연간 발전량(kWh)"]],
+            "자가소비율": [fmt.ratio_pct(value) for value in frame["자가소비율"]],
+            "기본요금 절감": [fmt.won_short(value) for value in frame["기본요금 절감(원)"]],
+            "전력량요금 절감": [fmt.won_short(value) for value in frame["전력량요금 절감(원)"]],
+            "투자비": [
+                fmt.won_short(value, reason="미산출 — 단가 미입력") for value in frame["투자비(원)"]
+            ],
+            "회수기간": [
+                fmt.payback(years, investment_won=investment)
+                for years, investment in zip(
+                    frame["회수기간(년)"], frame["투자비(원)"], strict=True
+                )
+            ],
+            "표식": frame["표식"],
+        }
+    )
 
 
 def _azimuth_picker(
@@ -772,31 +838,43 @@ def _azimuth_picker(
     tilt_deg: float,
     gcr: float,
     field: str,
+    calculated: SolarInputs | None = None,
 ) -> float:
     """8방위 선택 (15세션 1-1). **상대 발전량을 라벨에 병기한다.**
 
-    비율은 하드코딩하지 않고 **선택된 지역·경사각으로 여덟 방위를 계산**해 낸다 —
+    비율은 하드코딩하지 않고 **지역·경사각으로 여덟 방위를 계산**해 낸다 —
     경사가 낮으면 방위 영향이 줄어들기 때문이다 (밀도 '높음' 은 경사 15°).
-    기상을 얻지 못하면 비율 없이 방위만 보인다.
+
+    **계산해 둔 것이 있을 때만 비율을 낸다** (17세션 3-1). 여덟 방위를 돌리는 데
+    0.85초가 걸리는데, 살아 있는 위젯 값으로 매기면 **옆단에서 시군구를 바꾸는
+    것만으로 그 0.85초가 돈다.** 태양광은 「계산」 단추를 눌러야 도는 카드이고,
+    그 규약은 라벨에도 적용된다 — 마지막 계산의 지역·경사각과 지금 고른 값이
+    같을 때만 비율을 얹고, 아니면 방위 이름만 보인다.
     """
     presets = load_pv_presets()
-    options: dict[str, str] = {}
-    try:
-        computed = cached_azimuth_options(
-            usage,
-            usage_token(usage),
-            region_key,
-            None,
-            None,
-            float(tilt_deg),
-            float(gcr),
-            0.14,
-            50.0,
-            rules_stamp(),
-        )
-        options = {item.key: item.label for item in computed}
-    except Exception:
-        options = {item.key: item.label for item in presets.azimuths}
+    matches = (
+        calculated is not None
+        and calculated.region_key == region_key
+        and abs(_tilt_of(calculated, presets) - float(tilt_deg)) < 1e-9
+    )
+    options: dict[str, str] = {item.key: item.label for item in presets.azimuths}
+    if matches:
+        try:
+            computed = cached_azimuth_options(
+                usage,
+                usage_token(usage),
+                region_key,
+                None,
+                None,
+                float(tilt_deg),
+                float(gcr),
+                0.14,
+                50.0,
+                rules_stamp(),
+            )
+            options = {item.key: item.label for item in computed}
+        except Exception:
+            options = {item.key: item.label for item in presets.azimuths}
 
     keys = [item.key for item in presets.azimuths]
     picked = st.radio(
@@ -812,10 +890,23 @@ def _azimuth_picker(
             f"1{fmt.RANGE}2% 로 예측 오차 안에 묻힙니다."
         ),
     )
+    if not matches:
+        _hint(
+            "방위별 상대 발전량은 「태양광 계산」 을 누른 뒤 라벨에 붙습니다 — "
+            "지역·경사각을 바꿀 때마다 여덟 방위를 다시 돌리지 않습니다."
+        )
     preset = presets.azimuth(str(picked))
     if preset.is_northward:
         _caution(preset.caution)
     return preset.azimuth_deg
+
+
+def _tilt_of(inputs: SolarInputs, presets: PvPresets) -> float:
+    """계산해 둔 입력의 경사각. 밀도 프리셋이 정한다."""
+    try:
+        return float(presets.density(inputs.density_key).tilt_deg)
+    except Exception:
+        return float("nan")
 
 
 # --------------------------------------------------------------------- 7.6
@@ -914,7 +1005,7 @@ def _ess(
         fmt.certainty_badge(result.certainty),
         help=fmt.TIPS["certainty"],
     )
-    # **언제 담고 언제 쓰는지**를 하루 곡선으로 보인다 (15세션 2-5).
+    # **언제 담고 언제 쓰는지**를 2단 그림으로 보인다 (15세션 2-5 · 17세션 4-1).
     if day is not None:
         st.altair_chart(
             charts.ess_day_chart(
@@ -928,8 +1019,10 @@ def _ess(
         discharged = float(frame["방전(kW)"].sum()) * slot_hours if len(frame) else 0.0
         cut = float(frame["원부하(kW)"].max() - frame["순부하(kW)"].max()) if len(frame) else 0.0
         st.caption(
-            f"{day.title} · 배경 띠가 계시별 시간대입니다 — 경부하에 담아 최대부하에 씁니다. "
-            f"그날 저감 {fmt.kw(cut)} · 충전 {fmt.kwh(charged)} · 방전 {fmt.kwh(discharged)}."
+            f"{day.title} · 위 칸이 부하(축은 0 부터 시작하지 않습니다), 아래 칸이 "
+            "충전(+)·방전(−)입니다. 배경 띠가 계시별 시간대예요 — 경부하에 담아 "
+            f"최대부하에 씁니다. **그날 저감 {fmt.kw(cut)} · 충전 {fmt.kwh(charged)} · "
+            f"방전 {fmt.kwh(discharged)}.**"
         )
     # **판정 문장을 쓰지 않는다** (14세션 3-3). 사실만 적고 판단은 사용자가 한다.
     if result.payback_years is not None:
@@ -944,41 +1037,46 @@ def _ess(
             f"방전시간이 {fmt.hours(result.discharge_hours)} 로 짧습니다. 고출력 셀 "
             "사양이 되어 조달 사례보다 단가가 높아질 수 있습니다."
         )
-    # **투자비는 설비와 전기공사를 나눠 적는다** (13세션). 합계만 보이면 실내·옥외
-    # 차이가 어디서 오는지 알 수 없다.
-    quote = result.quote
+    # **투자비 내역·계수·성립 조건은 확인사항으로 내린다** (17세션 4-2·4-3).
+    # 본문에는 투자비 합계·절감액·회수기간만 남긴다 — 위 지표 넷이 그것이다.
+    _notes(result.warnings, result.notes, _ess_details(result, model))
+
+
+def _ess_details(result: object, model: object) -> tuple[str, ...]:
+    """ESS 투자비 내역·계수·성립 조건 (17세션 4-2).
+
+    **본문에서 확인사항으로 내렸다.** 넉 줄이 결과 아래에 붙어 있으면 정작
+    읽어야 할 투자비 합계·절감액·회수기간이 그 사이에 묻힌다. 지운 것이 아니라
+    자리를 옮긴 것이다 — 근거는 접힌 상자 안에 그대로 있다.
+
+    조달 사례 표도 화면에서 뺐다 (4-3). 계수를 낸 원자료이므로 데이터와 재적합
+    스크립트에는 남아 있고, 여기 계수 한 줄이 그것을 갈음한다.
+    """
+    lines: list[str] = []
+    quote = getattr(result, "quote", None)
     if quote is not None:
-        st.write(
-            f"설비 **{fmt.won(quote.equipment_won)}** + 전기공사 "
-            f"**{fmt.won(quote.electrical_won)}** = **{fmt.won(quote.total_won)}**"
+        lines.append(
+            f"투자비 내역 — 설비 {fmt.won(quote.equipment_won)} + 전기공사 "
+            f"{fmt.won(quote.electrical_won)} = {fmt.won(quote.total_won)}"
         )
         if quote.applied_kwh > quote.capacity_kwh:
-            st.caption(
+            lines.append(
                 f"산출 용량 {fmt.kwh(quote.capacity_kwh, decimals=1)} — 시장 최소 "
-                f"{fmt.kwh(model.market_minimum_kwh)} 기준으로 산정했습니다."
+                f"{fmt.kwh(getattr(model, 'market_minimum_kwh', 0.0))} 기준으로 산정했습니다."
             )
-        st.caption(
+        lines.append(
             f"전기공사는 옥외 기준 {fmt.won(quote.electrical_low_won)} – "
-            f"{fmt.won(quote.electrical_high_won)} 구간의 대표값입니다. "
-            f"{fmt.markdown_safe(model.formula)}"
+            f"{fmt.won(quote.electrical_high_won)} 구간의 대표값입니다."
         )
-    # 성립 조건은 **두 값을 나란히 놓는 데서 그친다.** 단정하지 않는다.
-    feasibility = result.feasibility
+        lines.append(str(getattr(model, "formula", "")))
+    feasibility = getattr(result, "feasibility", None)
     if feasibility is not None:
-        st.markdown(f"**성립 조건** — {fmt.markdown_safe(feasibility.message())}")
-        grid = st.columns(3)
-        grid[0].metric("kW당 배터리비", fmt.won(feasibility.battery_won_per_kw))
-        grid[1].metric(
-            f"{feasibility.target_years:,.0f}년 절감/kW", fmt.won(feasibility.saving_won_per_kw)
-        )
-        grid[2].metric("마진/kW", fmt.won(feasibility.margin_won_per_kw))
-    with st.expander("조달 사례", expanded=False):
-        st.dataframe(model.case_table(), hide_index=True, width="stretch")
-        st.caption(
-            "회귀에는 옥외 컨테이너형 관급 설비 네 건만 썼습니다. 실내형·이동형·"
-            "카탈로그가는 설치 조건이 달라 같은 선에 놓을 수 없습니다."
-        )
-    _notes(result.warnings, result.notes)
+        lines.append(f"성립 조건 — {feasibility.message()}")
+    # **같은 사실을 두 번 적지 않는다.** ESS 는 경고·메모가 스물이 넘어, 옮겨 온
+    # 줄이 그 안의 문장과 겹치면 확인사항이 같은 말을 되풀이한다. 앞의 라벨
+    # (``성립 조건 — ``)을 떼고 알맹이로 견준다.
+    already = " \n".join((*getattr(result, "warnings", ()), *getattr(result, "notes", ())))
+    return tuple(line for line in lines if line and line.split(" — ")[-1] not in already)
 
 
 def _ess_cost_inputs() -> tuple[float, float | None, float | None]:
@@ -1103,18 +1201,28 @@ def _surplus(
 # --------------------------------------------------------------------- 공통
 
 
-def _notes(warnings: tuple[str, ...], notes: tuple[str, ...]) -> None:
+def _notes(
+    warnings: tuple[str, ...], notes: tuple[str, ...], details: tuple[str, ...] = ()
+) -> None:
     """**확인사항 하나로 합친다** (10.7).
 
     노란 상자 넷과 계산 메모가 따로 뜨던 구성은 무엇이 중요한지 가린다.
     주의 등급만 모아 접힌 상자 하나에 넣고, 참고 등급은 산출물로 보낸다.
+
+    Args:
+        details: 등급을 매기지 않는 **산출 내역** (17세션 4-2). 경고가 아니라
+            근거이므로 ⚠ 를 붙이지 않고 사실만 적는다. 본문에 두면 정작 읽어야
+            할 지표를 밀어낸다.
     """
     items = screen_notices(warnings, notes)
-    if not items:
+    if not items and not details:
         return
+    count = len(items) + len(details)
     # **배경색 상자를 쓰지 않는다** (15세션 4절). 열 줄이 같은 노란색으로 쌓이면
     # 무엇이 중요한지 오히려 알 수 없다. 차단만 색을 남기고 나머지는 아이콘으로.
-    with st.expander(f"확인사항 {len(items)}건", expanded=False):
+    with st.expander(f"확인사항 {count}건", expanded=False):
+        for line in details:
+            st.write(f"- {fmt.markdown_safe(line)}")
         for item in items:
             callout.render_notice(item)
 

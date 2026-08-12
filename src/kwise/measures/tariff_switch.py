@@ -124,10 +124,26 @@ def evaluate_tariff_switch(
         else calculate_bill(usage, table, best_selection, options=opts, quality=quality)
     )
 
+    # **모든 선택요금의 기본·전력량 내역을 낸다** (17세션 1-4).
+    #
+    # 상세를 현행·최적 둘만 내던 것은 계산을 아끼려는 최적화였는데, 화면이
+    # 나머지를 **「상세 미산출」** 로 그렸다. 값이 없는 것이 아니라 쪼개지 않았을
+    # 뿐인데 「산출하지 못했다」 로 읽혔다 — 요금제 비교 그래프에서 막대 하나만
+    # 통짜로 서 있으니 무엇이 다른지 볼 수 없었다.
+    #
+    # 갈아탈 수 있는 조합은 **같은 계약종별·전압 안의 선택요금뿐**이라 많아야
+    # 셋이다. 합계는 이미 있으므로 늘어나는 것은 한 벌 남짓이고, 합계·최적·
+    # 절감액은 그대로다.
     detailed = {
         str(current_selection): current_bill,
         str(best_selection): best_bill,
     }
+    for selection in selections:
+        if str(selection) in detailed:
+            continue
+        detailed[str(selection)] = calculate_bill(
+            usage, table, selection, options=opts, quality=quality
+        )
     quotes = tuple(
         OptionQuote(
             selection=selection,

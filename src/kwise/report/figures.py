@@ -20,6 +20,7 @@ import matplotlib
 matplotlib.use("Agg")  # GUI 없는 환경에서 돈다. import 순서를 지킨다.
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
 
@@ -40,6 +41,7 @@ from kwise.report.frames import (
     solar_annual_frame,
     solar_day_frame,
     surplus_daily_frame,
+    tariff_delta_frame,
     tariff_option_frame,
     top_hour_frame,
 )
@@ -217,33 +219,69 @@ def combination_png(comparison: ComparisonResult) -> bytes:
 
 
 def tariff_option_png(switch: TariffSwitchResult) -> bytes:
-    """요금제별 기본·전력량 누적 막대 (3장 · 7.1).
+    """요금제별 기본·전력량·합계 **그룹 막대**와 현행 대비 차액 (3장 · 7.1).
 
-    **선택요금은 기본요금과 전력량요금을 맞바꾸는 제도다.** 합계만 보면 왜
-    유리한지 알 수 없어 누적으로 그린다.
+    **쌓지 않고 나란히 세운다** (17세션 1-2). 누적은 합계만 보이고 기본요금끼리·
+    전력량요금끼리 견줄 수가 없는데, 선택요금은 바로 그 둘을 맞바꾸는 제도다.
+
+    아래 칸에 **현행 대비 차액**을 따로 낸다 (1-3). 35억 위의 5천만원은 같은
+    축에서 보이지 않는다.
     """
     apply_style()
     frame = tariff_option_frame(switch)
-    positions = range(len(frame))
-    figure, axes = plt.subplots(figsize=_SIZE)
-    base = frame["기본요금(원)"].fillna(0.0) / 1e8
-    energy = frame["전력량요금(원)"].fillna(0.0) / 1e8
-    axes.bar(list(positions), base, label="기본요금", color=_COLORS[0])
-    axes.bar(list(positions), energy, bottom=base, label="전력량요금", color=_COLORS[1])
-    for index, (total, mark) in enumerate(zip(frame["합계(원)"], frame["표식"], strict=True)):
-        suffix = f"\n{mark}" if mark else ""
-        axes.text(
+    delta = tariff_delta_frame(switch)
+    positions = np.arange(len(frame), dtype=float)
+    figure, (upper, lower) = plt.subplots(
+        2, 1, figsize=(_SIZE[0], _SIZE[1] * 1.45), height_ratios=(3, 1), sharex=True
+    )
+
+    width = 0.26
+    series = (
+        ("기본요금", frame["기본요금(원)"], _COLORS[0]),
+        ("전력량요금", frame["전력량요금(원)"], _COLORS[1]),
+        ("합계", frame["합계(원)"], _COLORS[2]),
+    )
+    for index, (label, values, color) in enumerate(series):
+        upper.bar(
+            positions + (index - 1) * width,
+            values.fillna(0.0) / 1e8,
+            width=width,
+            label=label,
+            color=color,
+        )
+    # **축을 0 부터 시작하지 않는다** (17세션 0절).
+    finite = [value / 1e8 for value in frame["합계(원)"] if pd.notna(value)]
+    finite += [value / 1e8 for value in frame["기본요금(원)"] if pd.notna(value)]
+    if finite:
+        span = max(finite) - min(finite)
+        upper.set_ylim(max(0.0, min(finite) - span * 0.15), max(finite) + span * 0.2)
+    upper.set_ylabel("억원 (0 부터 시작하지 않음)")
+    upper.legend(fontsize=8, loc="lower right")
+
+    colors = [
+        "#31a354" if value < 0 else ("#bdbdbd" if value == 0 else "#de2d26")
+        for value in delta["현행 대비(원)"]
+    ]
+    lower.bar(positions, delta["현행 대비(원)"] / 1e8, width=0.5, color=colors)
+    lower.axhline(0.0, color="#525252", linewidth=1.0)
+    for index, value in enumerate(delta["현행 대비(원)"]):
+        lower.text(
             index,
-            total / 1e8,
-            f"{total / 1e8:,.2f}억{suffix}",
+            value / 1e8,
+            "현행" if abs(value) < 1 else f"{value / 1e8:,.2f}억",
             ha="center",
-            va="bottom",
+            va="top" if value < 0 else "bottom",
             fontsize=8,
         )
-    axes.set_xticks(list(positions))
-    axes.set_xticklabels(frame["요금제"], fontsize=9)
-    axes.set_ylabel("억원")
-    axes.legend(fontsize=8)
+    lower.set_ylabel("현행 대비 (억원)")
+    lower.set_xticks(list(positions))
+    lower.set_xticklabels(
+        [
+            f"{name}\n{mark}" if mark else name
+            for name, mark in zip(frame["요금제"], frame["표식"], strict=True)
+        ],
+        fontsize=9,
+    )
     return render_png(figure)
 
 
@@ -306,39 +344,83 @@ def power_triangle_png(result: PowerFactorResult) -> bytes:
 
 
 def solar_day_png(usage: UsageData, generation_kw: pd.Series, day: RepresentativeDay) -> bytes:
-    """대표일의 원부하·순부하·발전량 (3장 · 7.5). **피크가 얼마나 내려가는지.**"""
+    """대표일의 원부하·순부하와 **그 사이 저감분** (3장 · 7.5 · 17세션 3-5).
+
+    **축을 0 부터 시작하지 않고 두 선 사이를 채운다.** 5,000 kW 대 부하에 수백
+    kW 를 얹으면 0 부터 그린 축에서 두 선이 붙어 보인다.
+    """
     apply_style()
     frame = solar_day_frame(usage, generation_kw, day.date)
     figure, axes = plt.subplots(figsize=_SIZE)
-    for name, color in (
-        ("원부하(kW)", _COLORS[1]),
-        ("순부하(kW)", _COLORS[0]),
-        ("발전량(kW)", _COLORS[2]),
-    ):
+    if len(frame):
+        axes.fill_between(
+            frame["시각"],
+            frame["순부하(kW)"],
+            frame["원부하(kW)"],
+            color="#31a354",
+            alpha=0.6,
+            label="저감분",
+        )
+    for name, color in (("원부하(kW)", _COLORS[1]), ("순부하(kW)", _COLORS[0])):
         axes.plot(frame["시각"], frame[name], label=name, color=color, linewidth=1.6)
-    axes.set_ylabel("출력 (kW)")
+    if len(frame):
+        low = float(frame["순부하(kW)"].min())
+        high = float(frame["원부하(kW)"].max())
+        margin = max((high - low) * 0.15, 1.0)
+        axes.set_ylim(low - margin, high + margin)
+        peak = frame.loc[frame["원부하(kW)"].idxmax()]
+        cut = float(peak["원부하(kW)"]) - float(peak["순부하(kW)"])
+        # **빼기표(U+2212)를 쓰지 않는다.** Malgun Gothic 에 글리프가 없어 png 에서
+        # 두부(□)가 된다 — `apply_style` 의 ``axes.unicode_minus = False`` 와 같은 이유다.
+        axes.annotate(
+            f"피크 -{cut:,.0f} kW",
+            xy=(peak["시각"], float(peak["원부하(kW)"])),
+            xytext=(0, 14),
+            textcoords="offset points",
+            ha="center",
+            fontsize=8,
+            color="crimson",
+            arrowprops={"arrowstyle": "->", "color": "crimson"},
+        )
+    axes.set_ylabel("출력 (kW) — 0 부터 시작하지 않음")
     axes.set_xlabel(f"{day.title} · 15분")
     axes.tick_params(axis="x", rotation=45, labelsize=8)
-    axes.legend(fontsize=8)
+    axes.legend(fontsize=8, loc="lower right")
     return render_png(figure)
 
 
 def solar_annual_png(usage: UsageData, generation_kw: pd.Series) -> bytes:
-    """연간 일별 계통 수전·자가소비·잉여 (3장 · 7.5)."""
+    """연간 일별 — **주인공은 사용량이 줄어드는 모습** (3장 · 7.5 · 17세션 3-4).
+
+    셋을 쌓아 올리던 그림은 발전량 쪽이 주인공처럼 보였다. 원래 사용량 선과
+    계통 수전 영역을 그리고 **그 사이를 절감분으로 채운다.**
+    """
     apply_style()
     frame = solar_annual_frame(usage, generation_kw)
     figure, axes = plt.subplots(figsize=_SIZE)
-    axes.stackplot(
+    axes.fill_between(
+        frame["날짜"], 0.0, frame["계통 수전(kWh)"], color="#9ecae1", alpha=0.8, label="계통 수전"
+    )
+    axes.fill_between(
         frame["날짜"],
         frame["계통 수전(kWh)"],
-        frame["자가소비(kWh)"],
+        frame["사용량(kWh)"],
+        color="#31a354",
+        alpha=0.85,
+        label="절감분 (자가소비)",
+    )
+    axes.plot(frame["날짜"], frame["사용량(kWh)"], color=_COLORS[0], linewidth=1.0, label="사용량")
+    axes.plot(
+        frame["날짜"],
         frame["잉여(kWh)"],
-        labels=["계통 수전", "자가소비", "잉여"],
-        colors=("#9ecae1", "#31a354", "#fdd0a2"),
+        color=_COLORS[2],
+        linewidth=0.9,
+        linestyle="--",
+        label="잉여",
     )
     axes.set_ylabel("일별 전력량 (kWh)")
     axes.tick_params(axis="x", rotation=45, labelsize=8)
-    axes.legend(fontsize=8, loc="upper right")
+    axes.legend(fontsize=8, loc="lower right", ncol=2)
     return render_png(figure)
 
 
@@ -349,25 +431,49 @@ def ess_day_png(
     *,
     bands: pd.Series | None = None,
 ) -> bytes:
-    """대표일의 ESS 충·방전 구조 (3장 · 7.6)."""
+    """대표일의 ESS **2단 그림** (3장 · 7.6 · 17세션 4-1).
+
+    한 축에 겹쳐 그리면 부하가 5,000 kW 대인데 충·방전은 100 kW 대라 막대가
+    선 굵기만큼도 서지 않는다. 위 칸에 부하, 아래 칸에 충·방전을 둔다.
+    """
     apply_style()
     frame = ess_day_frame(usage, dispatch, day.date, bands=bands)
-    figure, axes = plt.subplots(figsize=_SIZE)
-    axes.bar(frame["시각"], frame["충전(kW)"], width=0.008, label="충전", color=_COLORS[3])
-    axes.bar(frame["시각"], -frame["방전(kW)"], width=0.008, label="방전", color=_COLORS[2])
-    axes.plot(frame["시각"], frame["원부하(kW)"], label="원부하", color=_COLORS[1], linewidth=1.4)
-    axes.plot(frame["시각"], frame["순부하(kW)"], label="순부하", color=_COLORS[0], linewidth=1.6)
-    axes.axhline(
+    figure, (upper, lower) = plt.subplots(
+        2, 1, figsize=(_SIZE[0], _SIZE[1] * 1.5), height_ratios=(2.4, 1), sharex=True
+    )
+    if len(frame):
+        upper.fill_between(
+            frame["시각"],
+            frame["순부하(kW)"],
+            frame["원부하(kW)"],
+            color="#31a354",
+            alpha=0.6,
+            label="저감분",
+        )
+    upper.plot(frame["시각"], frame["원부하(kW)"], label="원부하", color=_COLORS[1], linewidth=1.4)
+    upper.plot(frame["시각"], frame["순부하(kW)"], label="순부하", color=_COLORS[0], linewidth=1.6)
+    upper.axhline(
         dispatch.target_kw,
         color="crimson",
         linestyle="--",
         linewidth=1.2,
         label=f"목표 {dispatch.target_kw:,.0f} kW",
     )
-    axes.set_ylabel("출력 (kW)")
-    axes.set_xlabel(f"{day.title} · 15분")
-    axes.tick_params(axis="x", rotation=45, labelsize=8)
-    axes.legend(fontsize=8, ncol=3)
+    if len(frame):
+        low = min(float(frame["순부하(kW)"].min()), dispatch.target_kw)
+        high = float(frame["원부하(kW)"].max())
+        margin = max((high - low) * 0.15, 1.0)
+        upper.set_ylim(low - margin, high + margin)
+    upper.set_ylabel("부하 (kW) — 0 부터 시작하지 않음")
+    upper.legend(fontsize=8, loc="lower right", ncol=2)
+
+    lower.bar(frame["시각"], frame["충전(kW)"], width=0.008, label="충전", color="#3182bd")
+    lower.bar(frame["시각"], -frame["방전(kW)"], width=0.008, label="방전", color="#e6550d")
+    lower.axhline(0.0, color="#525252", linewidth=0.8)
+    lower.set_ylabel("충전(+) · 방전(-) (kW)")
+    lower.set_xlabel(f"{day.title} · 15분")
+    lower.tick_params(axis="x", rotation=45, labelsize=8)
+    lower.legend(fontsize=8, loc="lower right", ncol=2)
     return render_png(figure)
 
 

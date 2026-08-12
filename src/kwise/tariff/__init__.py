@@ -37,8 +37,10 @@ from kwise.tariff.holiday import (
 )
 from kwise.tariff.labels import (
     OPTION_LABELS,
+    OPTION_ORDER,
     contract_label,
     option_label,
+    option_sort_key,
     selection_label,
     voltage_label,
 )
@@ -99,6 +101,7 @@ __all__ = [
     "MISSING_LIMIT_RATIO",
     "NOT_INCLUDED_NOTICE",
     "OPTION_LABELS",
+    "OPTION_ORDER",
     "TENTATIVE_BASE_FEE_BASIS_WARNING",
     "AnnualEstimate",
     "Band",
@@ -153,6 +156,7 @@ __all__ = [
     "monthly_demand_basis",
     "option_label",
     "option_pair_diffs",
+    "option_sort_key",
     "parse_tariff",
     "power_factor_charge",
     "selection_label",

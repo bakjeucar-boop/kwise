@@ -20,8 +20,10 @@ from kwise.tariff.schema import TariffSelection, TariffTable
 
 __all__ = [
     "OPTION_LABELS",
+    "OPTION_ORDER",
     "contract_label",
     "option_label",
+    "option_sort_key",
     "selection_label",
     "voltage_label",
 ]
@@ -36,9 +38,23 @@ OPTION_LABELS: dict[str, str] = {
 }
 
 
+#: 선택요금을 **제도 순서대로** 늘어놓는다 (17세션 1-1). 절감액 순으로 정렬하면
+#: 자료마다 Ⅱ·Ⅲ·Ⅰ 처럼 뒤섞여, 읽는 사람이 "왜 이 순서인가" 를 먼저 묻는다.
+#: 어느 쪽이 유리한지는 표식과 차액 차트가 말한다.
+OPTION_ORDER: tuple[str, ...] = ("I", "II", "III", "single")
+
+
 def option_label(option: str) -> str:
     """``II`` → ``선택Ⅱ``. 모르는 값은 그대로 둔다 — 지어내지 않는다."""
     return OPTION_LABELS.get(option, option)
+
+
+def option_sort_key(option: str) -> tuple[int, str]:
+    """제도 순서. **모르는 값은 뒤로 밀되 사라지지 않는다.**"""
+    try:
+        return (OPTION_ORDER.index(option), option)
+    except ValueError:
+        return (len(OPTION_ORDER), option)
 
 
 def contract_label(table: TariffTable, contract_type: str) -> str:

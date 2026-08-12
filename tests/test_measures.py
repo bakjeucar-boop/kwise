@@ -82,14 +82,18 @@ def test_switch_reports_both_baselines(sample_switch: TariffSwitchResult) -> Non
     assert result.ranking[0].selection == BEST
 
 
-def test_switch_details_only_for_the_two_baselines(sample_switch: TariffSwitchResult) -> None:
-    """상세(기본/전력량 분해)는 현행·최적 둘만. 나머지는 합계만 든다."""
-    priced = [quote for quote in sample_switch.quotes if quote.base_won is not None]
-    assert {quote.selection for quote in priced} == {CURRENT, BEST}
-    for quote in priced:
-        assert quote.base_won is not None
-        assert quote.energy_won is not None
+def test_switch_details_cover_every_option(sample_switch: TariffSwitchResult) -> None:
+    """**모든 선택요금이 기본/전력량으로 갈라진다** (17세션 1-4).
+
+    현행·최적 둘만 상세를 내던 것은 계산을 아끼려는 최적화였는데, 화면이 나머지를
+    「상세 미산출」 로 그렸다. 값이 없는 것이 아니라 쪼개지 않았을 뿐이다.
+    """
+    assert sample_switch.quotes
+    for quote in sample_switch.quotes:
+        assert quote.base_won is not None, quote.key
+        assert quote.energy_won is not None, quote.key
         assert quote.base_won + quote.energy_won == pytest.approx(quote.total_won)
+    assert {CURRENT, BEST} <= {quote.selection for quote in sample_switch.quotes}
 
 
 def test_switch_reuses_precomputed_totals(

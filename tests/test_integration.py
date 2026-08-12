@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import functools
 import re
 from collections.abc import Iterator
 from pathlib import Path
@@ -292,9 +293,25 @@ def test_최적이_면적_상한이면_곡선을_감춘다() -> None:
 
 
 @pytest.mark.usefixtures("real_weather")
-def test_방위_라벨에_상대_발전량이_붙는다() -> None:
+def test_계산_전에는_방위_라벨이_이름뿐이다() -> None:
+    """**옆단에서 시군구를 바꾸는 것만으로 여덟 방위를 돌리지 않는다** (17세션 3-1).
+
+    상대 발전량은 0.85초짜리 시뮬레이션 여덟 번이다. 태양광은 「계산」 단추를
+    눌러야 도는 카드이고, 그 규약은 라벨에도 적용된다.
+    """
+    app = _app(**_on("solar"))
+    assert not app.exception, app.exception
+    options = list(app.radio(key="measure_solar_azimuth").options)
+    assert options[0] == "남"
+    assert not [item for item in options if re.search(r"[+−]\d+%$", str(item))], options
+    assert "「태양광 계산」 을 누른 뒤 라벨에 붙습니다" in _text(app)
+
+
+@pytest.mark.usefixtures("real_weather")
+def test_계산한_뒤에는_방위_라벨에_상대_발전량이_붙는다() -> None:
     """**하드코딩하지 않는다** — 지역·경사각으로 계산한 값이다 (15세션 1-1)."""
     app = _app(**_on("solar"))
+    app.button(key="solar_run").click().run(timeout=900)
     assert not app.exception, app.exception
     options = list(app.radio(key="measure_solar_azimuth").options)
     assert options[0] == "남 (기준)"
@@ -543,3 +560,307 @@ def test_건물명이_없으면_산출물_제목이_미입력이다() -> None:
     # 같은 것을 두 곳에서 묻지 않는다 — 건물명 입력칸은 옆단 하나뿐이다.
     fields = [str(item.label) for item in app.text_input if "건물명" in str(item.label)]
     assert fields == ["건물명 (선택)"], fields
+
+
+# ===================================================================== 17세션 · 그래프 표시
+#
+# **표시만 본다.** 계산값은 5-4 회귀 시험이 지킨다 — 여기서 보는 것은 "축이
+# 잘렸는가 · 색이 있는가 · 자리를 옮겼는가" 다.
+
+
+@functools.cache
+def _material() -> tuple[object, object, object, object, object]:
+    """차트 재료 한 벌. **한 번만 만든다** — 요금 계산이 매번 돌면 시험이 느려진다."""
+    from kwise.io import load_usage
+    from kwise.measures import evaluate_power_factor, evaluate_tariff_switch
+    from kwise.report.days import find_day
+    from kwise.tariff import calculate_bill, load_tariff
+    from kwise.ui import pipeline
+
+    usage = load_usage(SAMPLE)
+    form = ContractForm(
+        contract_type="general_b", voltage="high_a", option="I", contract_kw=6_000.0
+    )
+    table = load_tariff()
+    quality = pipeline.load_quality(usage)
+    baseline = calculate_bill(
+        usage, table, form.selection, options=form.billing_options(), quality=quality
+    )
+    switch = evaluate_tariff_switch(
+        usage, table, form.selection, options=form.billing_options(), quality=quality
+    )
+    power_factor = evaluate_power_factor(
+        usage,
+        table,
+        form.selection,
+        baseline=baseline,
+        target_pct=97.0,
+        options=form.billing_options(),
+        quality=quality,
+    )
+    day = find_day(usage, "peak")
+    return usage, switch, power_factor, day, baseline
+
+
+def _rows(spec: dict[str, object], layer: dict[str, object]) -> list[dict[str, object]]:
+    """altair 는 자료를 ``datasets`` 에 이름으로 담는다. 그것을 풀어 준다."""
+    data = layer.get("data", {})
+    values = data.get("values")
+    if values is not None:
+        return list(values)
+    datasets = spec.get("datasets", {})
+    return list(datasets.get(data.get("name"), []))  # type: ignore[union-attr]
+
+
+def _fake_generation(usage: object) -> object:
+    """정오에 솟는 가짜 발전 프로파일. **기상 없이도 그림을 볼 수 있다.**"""
+    import numpy as np
+    import pandas as pd
+
+    index = pd.DatetimeIndex(usage.kw.index)  # type: ignore[attr-defined]
+    hours = index.hour + index.minute / 60.0
+    shape = np.clip(np.cos((hours - 12.5) / 6.0 * np.pi / 2.0), 0.0, None) ** 2
+    peak = float(usage.kw.max()) * 0.12  # type: ignore[attr-defined]
+    return pd.Series(shape * peak, index=index, name="발전량(kW)")
+
+
+def test_선택요금이_제도_순서로_나온다() -> None:
+    """**Ⅰ·Ⅱ·Ⅲ 순이다** (17세션 1-1). 절감액 순으로 정렬하면 자료마다 뒤섞인다."""
+    from kwise.tariff import option_sort_key
+    from kwise.ui.charts import tariff_option_frame
+
+    assert sorted(["III", "I", "II"], key=option_sort_key) == ["I", "II", "III"]
+    _usage, switch, _pf, _day, _base = _material()
+    assert list(tariff_option_frame(switch)["요금제"]) == ["선택Ⅰ", "선택Ⅱ", "선택Ⅲ"]
+
+
+def test_선택Ⅲ도_기본_전력량으로_갈라진다() -> None:
+    """**「상세 미산출」 은 값이 없어서가 아니었다** (17세션 1-4).
+
+    현행·최적 둘만 상세를 내던 최적화가 원인이다 — 갈아탈 수 있는 조합은 같은
+    계약종별·전압 안의 선택요금뿐이라 많아야 셋이고, 늘어나는 계산은 한 벌이다.
+    """
+    from kwise.ui.charts import tariff_option_frame, tariff_option_long_frame
+
+    _usage, switch, _pf, _day, _base = _material()
+    frame = tariff_option_frame(switch)
+    assert frame["기본요금(원)"].notna().all(), frame.to_string()
+    assert frame["전력량요금(원)"].notna().all(), frame.to_string()
+    assert set(tariff_option_long_frame(switch)["구분"]) == {"기본요금", "전력량요금", "합계"}
+
+
+def test_요금제_그래프가_그룹_막대이고_차액_차트가_따로_있다() -> None:
+    """쌓으면 항목별 비교가 안 된다 (17세션 1-2·1-3)."""
+    from kwise.ui.charts import tariff_delta_chart, tariff_option_chart
+
+    _usage, switch, _pf, _day, _base = _material()
+    grouped = tariff_option_chart(switch).to_dict()
+    assert "xOffset" in grouped["encoding"], list(grouped["encoding"])
+    assert grouped["encoding"]["y"]["scale"]["zero"] is False
+    assert "0 부터 시작하지 않습니다" in grouped["encoding"]["y"]["title"]
+
+    delta = tariff_delta_chart(switch).to_dict()
+    fields = {layer["encoding"]["x"].get("field") for layer in delta["layer"]}
+    assert "현행 대비(원)" in fields
+
+
+def test_화면에_상세_미산출이_없다() -> None:
+    app = _app(**_on("tariff_switch"))
+    assert not app.exception, app.exception
+    body = _text(app)
+    assert "상세 미산출" not in body
+    assert "왼쪽(초록)이 절감" in body
+
+
+def test_역률_범례가_우측_하단이다() -> None:
+    """지상역률 값을 바꾸면 우측 상단 범례가 글자를 가렸다 (17세션 2절)."""
+    from kwise.ui.charts import power_triangle_chart
+
+    _usage, _switch, power_factor, _day, _base = _material()
+    spec = power_triangle_chart(power_factor).to_dict()
+    orients = {
+        layer["encoding"]["color"]["legend"]["orient"]
+        for layer in spec["layer"]
+        if "legend" in layer["encoding"].get("color", {})
+    }
+    assert orients == {"bottom-right"}
+
+
+def test_전력삼각형에_각도와_역률을_직접_적는다() -> None:
+    """**범례 의존을 줄인다** (17세션 2절)."""
+    from kwise.ui.charts import power_triangle_chart
+
+    _usage, _switch, power_factor, _day, _base = _material()
+    spec = power_triangle_chart(power_factor).to_dict()
+    texts = [layer for layer in spec["layer"] if layer.get("mark", {}).get("type") == "text"]
+    values = [row for layer in texts for row in _rows(spec, layer)]
+    assert any(
+        "역률" in str(row.get("설명", "")) and "°" in str(row.get("설명", "")) for row in values
+    )
+    assert any(str(row.get("각도라벨", ""))[-1:] == "°" for row in values)
+
+
+@pytest.mark.usefixtures("real_weather")
+def test_태양광_판정_근거를_적는다() -> None:
+    """**왜 하필 그 용량인가** (17세션 3-2)."""
+    app = _app(**_on("solar"))
+    app.button(key="solar_run").click().run(timeout=900)
+    assert not app.exception, app.exception
+    body = _text(app)
+    assert "회수기간이 가장 짧은 용량입니다" in body or "절감액이 가장 큰" in body
+    assert "최적을 정한 것은" in body
+    limiters = ("설치 가능 면적 상한", "잉여 발생", "기본요금 절감 포화")
+    assert any(word in body for word in limiters), body
+
+
+@pytest.mark.usefixtures("real_weather")
+def test_태양광_용량_표가_다섯_줄이다() -> None:
+    """20단계는 Excel 로, 화면에는 의미 있는 지점만 (17세션 3-3)."""
+    from kwise.ui.charts import CAPACITY_ROWS
+
+    app = _app(**_on("solar"))
+    app.button(key="solar_run").click().run(timeout=900)
+    assert not app.exception, app.exception
+    frame = next(item.value for item in app.dataframe if "자가소비율" in list(item.value.columns))
+    assert len(frame) == CAPACITY_ROWS == 5
+    assert set(frame.columns) >= {
+        "용량(kWp)",
+        "연간 발전량",
+        "자가소비율",
+        "기본요금 절감",
+        "전력량요금 절감",
+        "투자비",
+        "회수기간",
+    }
+    assert "면적 상한" in " ".join(str(value) for value in frame["표식"])
+
+
+def test_태양광_연간_차트가_사용량_감소를_주인공으로_그린다() -> None:
+    """발전량만 색으로 채우던 그림을 뒤집었다 (17세션 3-4)."""
+    from kwise.ui.charts import solar_annual_chart, solar_saving_ratio
+
+    usage, _switch, _pf, _day, _base = _material()
+    generation = _fake_generation(usage)
+    spec = solar_annual_chart(usage, generation).to_dict()
+    filled = [
+        layer
+        for layer in spec["layer"]
+        if layer.get("mark", {}).get("type") == "area" and "y2" in layer["encoding"]
+    ]
+    assert filled, "원래 사용량과 순사용량 사이를 채우지 않았습니다."
+    assert filled[0]["encoding"]["y"]["field"] == "계통 수전(kWh)"
+    assert filled[0]["encoding"]["y2"]["field"] == "사용량(kWh)"
+    ratio = solar_saving_ratio(usage, generation)
+    assert ratio is not None and 0.0 < ratio < 1.0
+
+
+def test_일일_곡선의_축이_0부터가_아니고_저감분을_채운다() -> None:
+    """5,000 kW 부하에 수백 kW 를 얹으면 0 부터 그린 축에서 두 선이 붙는다 (3-5)."""
+    from kwise.ui.charts import PEAK_ZOOM_HOURS, solar_day_chart
+
+    usage, _switch, _pf, day, _base = _material()
+    generation = _fake_generation(usage)
+    spec = solar_day_chart(usage, generation, day).to_dict()
+    scales = [
+        layer["encoding"]["y"].get("scale", {})
+        for layer in spec["layer"]
+        if "y" in layer["encoding"]
+    ]
+    assert any(scale.get("zero") is False for scale in scales), scales
+    filled = [
+        layer
+        for layer in spec["layer"]
+        if layer.get("mark", {}).get("type") == "area" and "y2" in layer["encoding"]
+    ]
+    assert filled, "원부하와 순부하 사이를 채우지 않았습니다."
+    texts = [layer for layer in spec["layer"] if layer.get("mark", {}).get("type") == "text"]
+    values = [row for layer in texts for row in _rows(spec, layer)]
+    assert any("피크 −" in str(row.get("설명", "")) for row in values), values
+
+    zoomed = solar_day_chart(usage, generation, day, zoom=True).to_dict()
+    assert f"피크 앞뒤 {PEAK_ZOOM_HOURS}시간" in str(zoomed)
+
+
+def test_ESS_그래프가_2단이고_충방전에_색이_있다() -> None:
+    """겹쳐 그렸더니 온통 하얬다 (17세션 4-1)."""
+    from kwise.ui.charts import ess_day_chart
+
+    usage, _switch, _pf, day, dispatch = _dispatch()
+    spec = ess_day_chart(usage, dispatch, day).to_dict()
+    assert "vconcat" in spec, list(spec)
+    assert len(spec["vconcat"]) == 2
+    upper, lower = spec["vconcat"]
+    assert any(
+        layer["encoding"]["y"].get("scale", {}).get("zero") is False
+        for layer in upper["layer"]
+        if "y" in layer["encoding"]
+    )
+    assert lower["mark"]["type"] == "bar"
+    assert lower["encoding"]["color"]["scale"]["range"] == ["#3182bd", "#e6550d"]
+    assert "충전(+)" in lower["encoding"]["y"]["title"]
+
+
+def test_ESS_본문에_투자비_상세와_성립_조건이_없다() -> None:
+    """본문에는 투자비 합계·절감액·회수기간만 남긴다 (17세션 4-2)."""
+    source = (Path("src") / "kwise" / "ui" / "views" / "measures.py").read_text(encoding="utf-8")
+    body = source[source.index("def _ess(") : source.index("def _ess_details(")]
+    # 주석은 화면에 나가지 않는다.
+    body = " ".join(line for line in body.splitlines() if not line.lstrip().startswith("#"))
+    for banned in ("설비 **", "성립 조건", "kW당 배터리비"):
+        assert banned not in body, banned
+    assert "_notes(result.warnings, result.notes, _ess_details(result, model))" in source
+
+
+def test_화면에_조달_사례_표가_없다() -> None:
+    """계수 산출 근거는 데이터와 재적합 스크립트에 남긴다 (17세션 4-3)."""
+    source = (Path("src") / "kwise" / "ui" / "views" / "measures.py").read_text(encoding="utf-8")
+    assert "case_table()" not in source
+    app = _app(**_on("ess"))
+    assert not app.exception, app.exception
+    columns = {str(name) for item in app.dataframe for name in item.value.columns}
+    assert "설치 형태" not in columns, columns
+
+
+def test_ESS_확인사항에_투자비_상세가_있다() -> None:
+    app = _app(**_on("ess"))
+    assert not app.exception, app.exception
+    inside = "\n".join(
+        str(item.value)
+        for exp in app.expander
+        if "확인사항" in str(exp.label)
+        for item in list(exp.markdown) + list(exp.caption)
+    )
+    assert "투자비 내역" in inside
+    assert "회수에 필요한 저감량" in inside
+    assert "설비비 = " in inside
+
+
+@functools.cache
+def _dispatch() -> tuple[object, object, object, object, object]:
+    """ESS 디스패치 한 벌. 그림만 보므로 목표는 관측 최대의 97% 로 잡는다."""
+    from kwise.measures import EssCostInput, evaluate_ess
+
+    usage, switch, power_factor, day, baseline = _material()
+    result = evaluate_ess(
+        usage,
+        _table(),
+        _contract().selection,
+        target_kw=float(usage.kw.max()) * 0.97,  # type: ignore[attr-defined]
+        cost=EssCostInput(),
+        baseline=baseline,  # type: ignore[arg-type]
+        options=_contract().billing_options(),
+    )
+    return usage, switch, power_factor, day, result.dispatch
+
+
+def _contract() -> ContractForm:
+    return ContractForm(
+        contract_type="general_b", voltage="high_a", option="I", contract_kw=6_000.0
+    )
+
+
+@functools.cache
+def _table() -> object:
+    from kwise.tariff import load_tariff
+
+    return load_tariff()

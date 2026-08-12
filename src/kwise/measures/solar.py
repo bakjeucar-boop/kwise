@@ -266,6 +266,41 @@ class CapacityVerdict:
         tail = f" 그 이상은 {self.reason}." if self.reason else ""
         return f"{self.basis} 기준 최적은 {self.best.capacity_kwp:,.0f} kWp 입니다.{tail}"
 
+    @property
+    def limiter(self) -> str:
+        """**무엇이 최적을 정했는가** (17세션 3-2).
+
+        셋 중 하나다 — 더 지을 자리가 없거나, 더 지어도 남아돌거나, 더 지어도
+        기본요금이 더는 줄지 않거나.
+        """
+        if self.best is None:
+            return ""
+        if self.at_limit:
+            return "설치 가능 면적 상한"
+        if "잉여" in self.reason:
+            return "잉여 발생"
+        if "기본요금" in self.reason:
+            return "기본요금 절감 포화"
+        return ""
+
+    def basis_sentence(self) -> str:
+        """**어떻게 골랐는지** 한 줄 (17세션 3-2).
+
+        숫자만 내면 "왜 하필 그 용량인가" 를 알 수 없다. 고른 규칙과, 그 규칙을
+        어디서 멈추게 한 것이 무엇인지를 함께 적는다.
+        """
+        if self.best is None:
+            return ""
+        if self.basis == "회수기간":
+            head = (
+                "회수기간이 가장 짧은 용량입니다. 회수기간 차이가 예측 오차 안이면 "
+                "절감액이 큰 쪽을 고릅니다."
+            )
+        else:
+            head = "설치 단가를 넣지 않아 **절감액이 가장 큰** 용량을 골랐습니다."
+        limiter = self.limiter
+        return f"{head} 최적을 정한 것은 **{limiter}** 입니다." if limiter else head
+
 
 def _limiting_reason(curve: SolarCurve, best: SolarPoint, limit: SolarPoint) -> str:
     """최적이 상한보다 작은 이유. **판별해서 적는다** — 둘 중 무엇인지 알 수 있다."""
