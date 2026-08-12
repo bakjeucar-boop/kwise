@@ -276,12 +276,18 @@ reference/          기존 pv_peak_cut 코드. **읽기 전용**</code></pre></d
 <p><strong>판정 문장을 쓰지 않는다</strong> (14세션). 「성립하지 않습니다」·「경제성 없음」 같은 단정 대신 두 값을 나란히 놓고 사실만 적는다 — 곡선이 근거이므로 판단은 사용자가 한다. LCOS 참고단가는 차익거래 에너지 단가와 2030년 전망 회수기간에만 남겼다.</p>
 <p>차익거래 수익은 매 평일 한 사이클을 온전히 돌렸을 때의 잠재값이며 피크저감 절감액에 <strong>합산하지 않는다</strong> — 피크컷 디스패치가 이미 일부를 실현하고 있어 합산하면 이중 계산이다.</p>
 <h4 id="tech-surplus">7.7 잉여 활용</h4>
-<p>상계거래 금액은 그 슬롯의 계절·시간대 단가로 상계되므로 데이터에서 나온다. 잉여 판매는 단가가 없으면 산출하지 않는다 — <strong>우리가 파는 쪽이다.</strong> <strong>자격요건은 판정하지 않는다.</strong> 잉여가 0 이면 사유를 적고 단가 입력을 잠근다.</p>
+<p>상계거래 금액은 그 슬롯의 계절·시간대 단가로 상계되므로 데이터에서 나온다. 잉여 판매는 단가가 없으면 산출하지 않는다 — <strong>우리가 파는 쪽이다.</strong> <strong>자격요건은 판정하지 않는다.</strong> 잉여가 0 이면 그 사실만 적는다 — <strong>카드를 비활성으로 만들지 않는다</strong> (14세션 2-3).</p>
 <h3 id="tech-combination">4.4 조합 재계산 — 왜 단순 합이 아닌가</h3>
 <p><strong>수단별 절감액을 더하면 틀린다.</strong> 수단이 서로의 전제를 바꾸기 때문이다.</p>
-<div class="table-wrap"><table><thead><tr><th>상호작용</th><th>무슨 일이 일어나나</th></tr></thead><tbody><tr><td>태양광 → 선택요금</td><td>사용량이 줄면 <strong>최적 선택요금이 바뀐다.</strong> 기본요금 비중이 커지므로</td></tr><tr><td>태양광 → 역률</td><td>유효전력이 줄어 역률이 나빠진다. 기본요금에 추가가 붙는다</td></tr><tr><td>ESS → 기본요금</td><td>피크를 낮추면 기본요금 기반 자체가 달라진다</td></tr><tr><td>계약전력 → 하한</td><td>계약전력을 낮추면 요금적용전력 하한이 함께 내려간다</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>상호작용</th><th>무슨 일이 일어나나</th></tr></thead><tbody><tr><td>요금제 → 다른 수단</td><td>기준 단가가 바뀌어 계약전력·역률·ESS 절감액이 달라진다</td></tr><tr><td>태양광 → 선택요금</td><td>사용량이 줄면 <strong>최적 선택요금이 바뀐다.</strong> 기본요금 비중이 커지므로</td></tr><tr><td>태양광 → 역률</td><td>유효전력이 줄어 역률이 나빠진다. 기본요금에 추가가 붙는다</td></tr><tr><td>ESS → 기본요금</td><td>피크를 낮추면 기본요금 기반 자체가 달라진다</td></tr><tr><td>태양광·ESS → 역률 감액</td><td>역률 감액은 기본요금에 비례한다. 기본요금이 줄면 감액도 준다</td></tr><tr><td>계약전력 → 하한</td><td>계약전력을 낮추면 요금적용전력 하한이 함께 내려간다</td></tr></tbody></table></div>
 <p>그래서 조합마다 <strong>부하를 처음부터 다시 만들어</strong> 요금을 한 번 계산한다.</p>
 <div class="code"><pre><code>부하 → apply_generation(PV) → dispatch_peak_shaving(ESS) → calculate_bill()</code></pre></div>
+<p><strong>역률도 조합에 넣는다</strong> (14세션). 역률은 부하를 바꾸지 않고 기본요금 조정액만 바꾸므로 <code>BillingOptions.power_factor_pct</code> 로 얹는다. 넣지 않으면 위 표의 다섯째 줄(기본요금이 줄면 역률 감액도 준다)이 보이지 않는다.</p>
+<p><strong>3단계는 세 부분이다</strong> (14세션 5절).</p>
+<div class="table-wrap"><table><thead><tr><th>부분</th><th>무엇을</th><th>어디서</th></tr></thead><tbody><tr><td>① 개선안별 요약</td><td>독립 평가 결과 <strong>그대로</strong>. 재계산 금지</td><td><code>report.standalone</code></td></tr><tr><td>② 합산효과</td><td>조합 재계산 + <strong>단순 합과의 차이</strong></td><td><code>compare.combination</code></td></tr><tr><td>③ 조합 비교</td><td>조합을 쌓아 올려 견준다</td><td><code>compare.combination</code></td></tr></tbody></table></div>
+<p>②의 <strong>차이</strong>가 3단계의 존재 이유다. 차이가 생긴 이유는 위 표에서 <strong>실제로 발생한 것만</strong> 골라 적는다 — 해당 없는 줄을 적으면 없는 상호작용을 만들어낸다.</p>
+<p><strong>계약전력 추가 하향 여지는 ②에서만 낸다.</strong> 2단계 7.2 카드는 현재 부하 기준이라 다른 수단을 켜도 값이 바뀌지 않는다 (독립 평가). 조합 부하 기준의 여지는 <code>evaluate_contract_adjustment(usage, combined.bill, ...)</code> 로 따로 계산한다.</p>
+<p><strong>경제성DR·잉여 활용은 ②에 넣지 않는다.</strong> 요금이 아니라 별도 정산·수익이라 조합 부하에 얹을 수 없다. ①에는 그대로 있고, ②는 그 사실을 적는다 — 같은 것을 비교 하지 않으면 「차이」가 뜻을 잃는다.</p>
 <p><strong>조합 확실성은 가장 낮은 구성 요소를 따른다.</strong> 태양광과 ESS 를 함께 넣으면 조합 전체가 ESS 등급이다. 표에서 등급을 섞어 보여주면 의사결정이 흐려진다.</p>
 <p><strong>켠 수단만 조합에 들어간다.</strong> 켜지 않은 수단이 섞이면 &quot;보지 않은 것&quot;이 &quot;검토했더니 이만큼&quot;으로 둔갑한다. 반대로 조용히 빼면 &quot;효과가 없었다&quot;로 읽히므로 「검토 범위」로 명시한다.</p>
 <h3 id="tech-sensitivity">4.5 감도 — <code>sharpen()</code></h3>

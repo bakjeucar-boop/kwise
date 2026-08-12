@@ -16,7 +16,7 @@ ESS 충전이 새 피크를 만드는지도 확인한다. 경부하 시간대 �
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
@@ -35,7 +35,7 @@ from kwise.measures import (
     size_for_target,
     with_load,
 )
-from kwise.measures.contract import evaluate_contract_adjustment
+from kwise.measures.contract import ContractAdjustment, evaluate_contract_adjustment
 from kwise.measures.ess import analyze_peak_excess
 from kwise.measures.pv_cost import PV_UNPRICED_REASON, PvCostInput
 from kwise.progress import ProgressReporter, record
@@ -80,6 +80,10 @@ class CombinationSpec:
     ess_respect_target_when_charging: bool = True
     contract_kw: float | None = None
     contract_floor_ratio: float | None = None
+    power_factor_pct: float | None = None
+    """도입 후 지상역률 (7.4). **조합에 넣어야 상충이 보인다** — 역률 감액은
+    기본요금에 비례하므로 태양광·ESS 가 기본요금을 낮추면 감액도 함께 준다."""
+    power_factor_investment_won: float | None = None
 
     @property
     def pv_cost(self) -> PvCostInput:
@@ -99,6 +103,10 @@ class CombinationSpec:
         return self.ess_target_kw is not None
 
     @property
+    def has_power_factor(self) -> bool:
+        return self.power_factor_pct is not None
+
+    @property
     def applied(self) -> tuple[AppliedMeasure, ...]:
         """적용된 수단 — **등록 키와 파라미터**다. 라벨은 조회로 얻는다 (13세션).
 
@@ -113,6 +121,10 @@ class CombinationSpec:
             items.append(AppliedMeasure("ess", (("target_kw", self.ess_target_kw),)))
         if self.contract_kw is not None:
             items.append(AppliedMeasure("contract", (("contract_kw", self.contract_kw),)))
+        if self.power_factor_pct is not None:
+            items.append(
+                AppliedMeasure("power_factor", (("power_factor_pct", self.power_factor_pct),))
+            )
         return tuple(items)
 
     @property
@@ -142,6 +154,8 @@ class CombinationResult:
     self_consumption_ratio: float | None
     dispatch: DispatchResult | None = None
     contract_saving_won: float | None = None
+    contract_adjustment: ContractAdjustment | None = None
+    """조합 부하 기준의 계약전력 조정. **추가 하향 여지가 여기서 나온다** (14세션 5-2)."""
     warnings: tuple[str, ...] = field(default=())
     notes: tuple[str, ...] = field(default=())
 
@@ -216,6 +230,9 @@ def evaluate_combination(
         baseline_bill: 절감액의 기준선.
     """
     opts = options if options is not None else BillingOptions()
+    if spec.power_factor_pct is not None:
+        # 역률은 **요금 옵션**이다. 부하를 바꾸지 않고 기본요금 조정액만 바꾼다.
+        opts = replace(opts, power_factor_pct=spec.power_factor_pct)
     interval = usage.meta.interval_minutes
     warnings: list[str] = []
     notes: list[str] = []
@@ -292,6 +309,7 @@ def evaluate_combination(
     bill = calculate_bill(working, table, spec.selection, options=opts, quality=quality)
 
     contract_saving: float | None = None
+    adjustment: ContractAdjustment | None = None
     if spec.contract_kw is not None:
         adjustment = evaluate_contract_adjustment(
             working,
@@ -313,6 +331,8 @@ def evaluate_combination(
             notes.append(PV_UNPRICED_REASON)
         elif investment is not None:
             investment += pv_investment
+    if spec.power_factor_investment_won and investment is not None:
+        investment += spec.power_factor_investment_won
     if dispatch is not None:
         # ESS 투자비는 **출력 × kW당 단가**다 (7.6). 방전시간은 단가에 이미
         # 반영되어 있으므로 용량을 다시 곱하지 않는다.
@@ -354,6 +374,7 @@ def evaluate_combination(
         self_consumption_ratio=self_consumption,
         dispatch=dispatch,
         contract_saving_won=contract_saving,
+        contract_adjustment=adjustment,
         warnings=tuple(warnings),
         notes=tuple(notes),
     )

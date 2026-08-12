@@ -63,6 +63,15 @@ from kwise.report.notices import (
     UNPRICED_REASONS,
     format_won,
 )
+from kwise.report.standalone import (
+    SIMPLE_SUM_LABEL,
+    SIMPLE_SUM_NOTE,
+    StandaloneRow,
+    combinable_keys,
+    simple_sum_won,
+    standalone_frame,
+    standalone_rows,
+)
 
 __all__ = [
     "CHAPTER_COMPARISON",
@@ -79,6 +88,8 @@ __all__ = [
     "NOT_INCLUDED_NOTICE",
     "NO_PV_SENSITIVITY_NOTE",
     "SHEET_ORDER",
+    "SIMPLE_SUM_LABEL",
+    "SIMPLE_SUM_NOTE",
     "UNPRICED_REASONS",
     "BatchConfig",
     "BatchResult",
@@ -88,10 +99,12 @@ __all__ = [
     "MeasureEntry",
     "ReportSections",
     "ReportWriteError",
+    "StandaloneRow",
     "band_frame",
     "build_document",
     "build_sheets",
     "column_label",
+    "combinable_keys",
     "combination_frame",
     "document_bytes",
     "document_path",
@@ -109,7 +122,10 @@ __all__ = [
     "run_batch",
     "run_case",
     "sensitivity_frame",
+    "simple_sum_won",
     "solar_curve_frame",
+    "standalone_frame",
+    "standalone_rows",
     "strip_timezone",
     "summary_frame",
     "top_hour_frame",

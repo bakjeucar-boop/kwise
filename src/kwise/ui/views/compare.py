@@ -16,11 +16,12 @@ import pandas as pd
 import streamlit as st
 
 from kwise.compare import (
+    CombinationResult,
     CombinationSpec,
     ComparisonResult,
     SensitivityRange,
 )
-from kwise.diagnose import Diagnosis
+from kwise.diagnose import Diagnosis, default_margin_ratio
 from kwise.io import UsageData
 from kwise.measures import (
     AppliedMeasure,
@@ -33,17 +34,23 @@ from kwise.measures import (
     SurplusResult,
     TariffSwitchResult,
     default_target_pct,
+    evaluate_contract_adjustment,
     evaluate_demand_response,
 )
 from kwise.quality import QualityReport
 from kwise.report import (
+    SIMPLE_SUM_NOTE,
     DocumentSections,
     MeasureEntry,
     ReportSections,
+    StandaloneRow,
     document_bytes,
     measure_entries,
     measure_summary_frame,
     no_pv_sensitivity_frame,
+    simple_sum_won,
+    standalone_frame,
+    standalone_rows,
 )
 from kwise.tariff import BillingResult, TariffTable
 from kwise.ui import text as fmt
@@ -56,11 +63,13 @@ from kwise.ui.cache import (
     cached_power_factor,
     cached_sensitivity,
     cached_solar,
+    cached_surplus,
     cached_tariff_switch,
     cached_unit_pv,
     rules_stamp,
     usage_token,
 )
+from kwise.ui.labels import option_label
 from kwise.ui.notices import screen_notices
 from kwise.ui.pipeline import ContractForm, combination_specs
 from kwise.ui.progress import progress_panel
@@ -124,9 +133,26 @@ def render(
         ess_total_investment_won=measure_float("ess", "total_cost"),
         ess_fixed_won=measure_float("ess", "fixed_cost"),
         ess_per_kwh_won=measure_float("ess", "per_kwh_cost"),
+        power_factor_pct=(
+            measure_float("power_factor", "target") or default_target_pct()
+            if "power_factor" in enabled
+            else None
+        ),
+        power_factor_investment_won=measure_float("power_factor", "investment"),
     )
+
+    # **① 개선안별 요약이 먼저다** (14세션 5-1). 2단계에서 이미 계산한 값을 옮긴다.
+    results = _measure_results(
+        usage, table, form, diagnosis, quality, baseline, enabled, unit_profile
+    )
+    rows = results.standalone()
+    _standalone_block(rows)
+
     if len(specs) == 1:
-        st.info("2단계에서 수단을 하나 이상 켜면 조합을 비교합니다.")
+        st.info("2단계에서 요금에 영향을 주는 수단을 하나 이상 켜면 합산효과를 계산합니다.")
+        _download_block(
+            usage, baseline, diagnosis, None, no_pv_sensitivity_frame(), (), results, scope
+        )
         return
 
     # 7단계. 조합마다 요금을 다시 계산하므로 조합 수가 늘면 그대로 길어진다.
@@ -146,19 +172,21 @@ def render(
             report,
         )
 
-    # **표가 먼저, 권장안이 나중이다** (13세션). 어느 조합을 왜 권하는지 말하려면
-    # 견줄 것이 먼저 보여야 한다. 수단별 그래프는 화면에서 빼고 보고서 4장에 둔다.
-    st.subheader("조합별 비교")
+    # **② 합산효과 — 단순 합과의 차이가 3단계의 존재 이유다** (14세션 5-2).
+    _combined_block(usage, form, comparison, rows, results.contract)
+
+    # **③ 조합 비교.** 표가 먼저, 권장안이 나중이다 (13세션) — 어느 조합을 왜
+    # 권하는지 말하려면 견줄 것이 먼저 보여야 한다.
+    st.subheader("조합 비교")
     st.dataframe(_comparison_frame(comparison), hide_index=True, width="stretch")
     st.caption(
-        "절감액 내림차순입니다. 조합마다 요금을 다시 계산했습니다 — 수단별 절감액의 "
-        "합이 아닙니다. " + detail_suffix("certainty")
+        "절감액 내림차순입니다. **조합마다 요금을 다시 계산했습니다** — 수단별 "
+        "절감액의 합이 아닙니다. " + detail_suffix("certainty")
     )
     for notice in screen_notices(comparison.warnings):
         st.warning(notice.text)
 
     best = comparison.best
-    st.subheader(f"권장안 — {best.name}")
     columns = st.columns(4)
     columns[0].metric("12개월 환산 절감액", fmt.won_short(best.annual_saving_won))
     columns[1].metric("투자비", fmt.won_short(best.investment_won, reason="미산출 — 단가 미입력"))
@@ -170,9 +198,6 @@ def render(
 
     sensitivity_frame, sensitivity_ranges = _sensitivity_block(
         usage, table, baseline, unit_profile, quality, form, specs
-    )
-    results = _measure_results(
-        usage, table, form, diagnosis, quality, baseline, enabled, unit_profile
     )
     _download_block(
         usage,
@@ -187,6 +212,159 @@ def render(
 
     # 미포함 요금요소·알려진 한계는 **참고 등급**이다. 화면에서 빼고 Excel 요약
     # 시트와 보고서 5장에만 싣는다 (10.7).
+
+
+def _standalone_block(rows: tuple[StandaloneRow, ...]) -> None:
+    """**① 개선안별 요약** — 2단계 카드의 값을 그대로 옮긴다 (14세션 5-1).
+
+    여기서 다시 계산하지 않는다. 두 화면의 숫자가 어긋나면 어느 쪽을 믿어야 할지
+    알 수 없게 된다.
+    """
+    st.subheader("개선안별 요약")
+    if not rows:
+        st.info("2단계에서 수단을 하나도 켜지 않았습니다.")
+        return
+    st.dataframe(standalone_frame(rows), hide_index=True, width="stretch")
+    st.caption(
+        "각 줄은 **그 수단만 도입했을 때**의 값입니다 (현재 요금제·현재 사용량 기준). "
+        + SIMPLE_SUM_NOTE
+        + " "
+        + fmt.TRUNCATION_FOOTNOTE
+    )
+
+
+def _combined_block(
+    usage: UsageData,
+    form: ContractForm,
+    comparison: ComparisonResult,
+    rows: tuple[StandaloneRow, ...],
+    contract: ContractAdjustment | None,
+) -> None:
+    """**② 합산효과** — 단순 합과의 차이를 반드시 보인다 (14세션 5-2).
+
+    조합의 마지막 항목이 켠 수단을 모두 물린 것이다. 부하를 처음부터 다시 만들어
+    (``apply_generation`` → ``dispatch_peak_shaving``) 요금을 **한 번** 계산한다.
+    """
+    combined = comparison.combinations[-1]
+    simple = simple_sum_won(rows, combinable_only=True)
+    actual = combined.annual_saving_won
+    gap = actual - simple
+    ratio = gap / simple if simple else None
+
+    st.subheader("합산효과")
+    columns = st.columns(3)
+    columns[0].metric("단순 합", fmt.won_short(simple))
+    columns[1].metric("합산효과", fmt.won_short(actual))
+    columns[2].metric(
+        "차이",
+        fmt.won_short(gap),
+        fmt.ratio_pct(ratio) if ratio is not None else fmt.DASH,
+    )
+    st.caption(
+        f"**{combined.name}** 를 함께 도입했을 때의 12개월 환산 절감액입니다. "
+        "부하를 처음부터 다시 만들어 요금을 한 번 계산했습니다. " + fmt.TRUNCATION_FOOTNOTE
+    )
+    excluded = [row for row in rows if not row.combinable]
+    if excluded:
+        st.caption(
+            "합산효과에 넣지 않은 수단 — "
+            + ", ".join(row.title for row in excluded)
+            + ". 요금이 아니라 별도 정산·수익이라 조합 부하에 얹을 수 없습니다."
+        )
+
+    reasons = _interaction_reasons(comparison, combined, rows)
+    if reasons:
+        st.markdown("**차이가 생기는 이유**")
+        for reason in reasons:
+            st.markdown(f"- {fmt.markdown_safe(reason)}")
+
+    _contract_headroom(usage, form, combined, contract)
+
+
+def _interaction_reasons(
+    comparison: ComparisonResult,
+    combined: CombinationResult,
+    rows: tuple[StandaloneRow, ...],
+) -> list[str]:
+    """**실제로 발생한 상호작용만 적는다** (14세션 5-2). 해당 없으면 쓰지 않는다."""
+    reasons: list[str] = []
+    keys = set(combined.spec.measure_keys) | {
+        row.key for row in rows if row.combinable and row.annual_saving_won is not None
+    }
+    baseline = comparison.baseline
+    if combined.spec.selection != baseline.spec.selection:
+        reasons.append(
+            "**요금제가 바뀌면 다른 수단의 기준 단가가 바뀝니다.** 조합은 "
+            f"{option_label(combined.spec.selection.option)} 로 계산했으므로, 현행 "
+            "요금제를 기준으로 낸 2단계 값과 계약전력·역률·ESS 절감액이 다릅니다."
+        )
+    if "ess" in keys or "solar" in keys:
+        reasons.append(
+            "**기본요금 기반이 달라집니다.** 요금적용전력이 "
+            f"{fmt.kw(baseline.billing_demand_kw)} 에서 "
+            f"{fmt.kw(combined.billing_demand_kw)} 로 내려갔고, 그 위에서 남은 수단의 "
+            "절감액이 다시 매겨집니다."
+        )
+    if "power_factor" in keys and ("solar" in keys or "ess" in keys):
+        reasons.append(
+            "**역률 감액은 기본요금에 비례합니다.** 태양광·ESS 가 기본요금을 낮추면 "
+            "역률 감액도 함께 줄어 단순 합보다 작아집니다."
+        )
+    if "contract" in keys and ("solar" in keys or "ess" in keys):
+        reasons.append(
+            "**계약전력을 더 낮출 수 있습니다.** 태양광·ESS 로 요금적용전력이 "
+            "내려가면 계약전력 하향 여지가 커집니다 (아래 참조)."
+        )
+    return reasons
+
+
+def _contract_headroom(
+    usage: UsageData,
+    form: ContractForm,
+    combined: CombinationResult,
+    standalone: ContractAdjustment | None,
+) -> None:
+    """**계약전력 추가 하향 여지** — 조합 기준으로 여기서 낸다 (14세션 5-2).
+
+    2단계 7.2 카드는 **현재 부하** 기준이라 다른 수단을 켜도 값이 바뀌지 않는다.
+    조합 부하에서 얼마나 더 낮출 수 있는지는 이 자리에서만 계산한다.
+    """
+    if form.contract_kw is None:
+        return
+    margin = float(st.session_state.get(input_key("contract", "margin"), default_margin_ratio()))
+    adjustment = evaluate_contract_adjustment(
+        usage,
+        combined.bill,
+        contract_kw=form.contract_kw,
+        margin_ratio=margin,
+    )
+    already = (standalone.annual_saving_won or 0.0) if standalone is not None else 0.0
+    extra = (adjustment.annual_saving_won or 0.0) - already
+
+    st.markdown("**계약전력 추가 하향 여지**")
+    if adjustment.reduction_kw <= 0:
+        st.write("이 조합에서도 계약전력을 더 낮출 여지가 없습니다.")
+        return
+    text = (
+        f"이 조합이면 계약전력을 **{fmt.kw(adjustment.suggested_contract_kw, decimals=0)}** 로 "
+        f"낮출 수 있습니다 (현행 {fmt.kw(form.contract_kw, decimals=0)}, 여유율 "
+        f"{fmt.ratio_pct(margin, decimals=0)} 반영)."
+    )
+    if standalone is not None:
+        text += (
+            f" 현재 부하만 볼 때의 권장값은 "
+            f"{fmt.kw(standalone.suggested_contract_kw, decimals=0)} 였습니다."
+        )
+    if adjustment.annual_saving_won is None:
+        text += f" 금액은 {adjustment.saving_basis}."
+    elif extra > 0:
+        text += f" 추가 절감 **{fmt.won_short(extra)}/년**."
+    else:
+        text += (
+            " 다만 기본요금이 요금적용전력 기준이라 계약전력을 낮춰도 요금은 "
+            "줄지 않습니다 — 하한 규정에 걸리지 않습니다."
+        )
+    st.write(text)
 
 
 def _recommendation(comparison: ComparisonResult) -> str:
@@ -276,6 +454,20 @@ class _MeasureResults:
             solar=self.solar,
         )
 
+    def standalone(self) -> tuple[StandaloneRow, ...]:
+        """**① 개선안별 요약** — 2단계 카드 값을 그대로 옮긴다 (14세션 5-1)."""
+        return standalone_rows(
+            switch=self.switch,
+            contract=self.contract,
+            demand_response=self.demand_response,
+            power_factor=self.power_factor,
+            solar=self.solar,
+            solar_certainty=self.solar_certainty,
+            solar_investment_reason=self.solar_unpriced_reason,
+            ess=self.ess,
+            surplus=self.surplus,
+        )
+
     def entries(self) -> tuple[MeasureEntry, ...]:
         return measure_entries(
             switch=self.switch,
@@ -321,7 +513,9 @@ def _measure_results(
             token,
             form.contract_kw,
             None,
-            float(st.session_state.get(input_key("contract", "margin"), 0.1)),
+            # **2단계와 같은 여유율을 읽는다.** 슬라이더를 감춘 경우에도 2단계가
+            # 세션에 남겨 두므로 두 화면의 값이 어긋나지 않는다 (14세션 5-1).
+            float(st.session_state.get(input_key("contract", "margin"), default_margin_ratio())),
             stamp,
         )
 
@@ -377,6 +571,23 @@ def _measure_results(
             measure_float("ess", "per_kwh_cost"),
         )
 
+    # 7.7 — **태양광이 없으면 잉여도 없다.** 카드는 그 사실만 적고 열려 있으므로
+    # (14세션 2-3) 여기서도 계산할 것이 없다.
+    surplus = None
+    if "surplus" in enabled and inputs is not None and unit_profile is not None:
+        capacity = inputs.resolved_capacity_kwp()
+        if capacity > 0:
+            surplus = cached_surplus(
+                usage,
+                table,
+                unit_profile,
+                token,
+                form,
+                capacity,
+                measure_float("surplus", "price"),
+                stamp,
+            )
+
     return _MeasureResults(
         switch=switch,
         contract=contract,
@@ -386,6 +597,7 @@ def _measure_results(
         solar_certainty=solar_certainty,
         solar_unpriced_reason=solar_reason,
         ess=ess,
+        surplus=surplus,
     )
 
 
@@ -445,7 +657,7 @@ def _download_block(
     usage: UsageData,
     baseline: BillingResult,
     diagnosis: Diagnosis,
-    comparison: ComparisonResult,
+    comparison: ComparisonResult | None,
     sensitivity: pd.DataFrame,
     sensitivity_ranges: tuple[SensitivityRange, ...],
     results: _MeasureResults,
@@ -453,7 +665,8 @@ def _download_block(
 ) -> None:
     """산출물 둘 — 분석자용 Excel 과 의사결정자용 Word (10.3·10.5)."""
     st.subheader("내려받기")
-    token = f"{usage_token(usage)}|{rules_stamp()}|{len(comparison.combinations)}"
+    count = 0 if comparison is None else len(comparison.combinations)
+    token = f"{usage_token(usage)}|{rules_stamp()}|{count}"
     excel_tab, word_tab = st.tabs(["Excel — 분석자용", "Word 보고서 — 의사결정자용"])
 
     with excel_tab:

@@ -392,12 +392,15 @@ def compare_app() -> AppTest:
 def test_비교_화면이_권장안_지표부터_낸다(compare_app: AppTest) -> None:
     assert not compare_app.exception, compare_app.exception
     labels = [item.label for item in compare_app.metric]
-    assert labels[:4] == ["12개월 환산 절감액", "투자비", "회수기간", "확실성"]
+    # 14세션에 합산효과 지표 셋이 앞에 붙었다 (단순 합·합산효과·차이).
+    assert labels[:3] == ["단순 합", "합산효과", "차이"]
+    assert labels[3:7] == ["12개월 환산 절감액", "투자비", "회수기간", "확실성"]
 
 
 def test_비교_화면에_감도_원자료_표가_없다(compare_app: AppTest) -> None:
     """표는 조합 비교 하나뿐이다. 감도는 범위 한 줄로 적는다."""
-    assert len(compare_app.dataframe) == 1
+    # 개선안별 요약 + 조합 비교 두 표다 (14세션 5절). 감도 원자료 표는 없다.
+    assert len(compare_app.dataframe) == 2
 
 
 def test_엑셀을_내려받아도_결과가_남는다(compare_app: AppTest) -> None:
@@ -410,7 +413,7 @@ def test_엑셀을_내려받아도_결과가_남는다(compare_app: AppTest) -> 
     after = built.download_button(key="dl_excel").click().run(timeout=600)
     assert not after.exception, after.exception
     assert len(after.download_button) == 1, "내려받기 뒤 단추가 사라졌습니다."
-    assert [item.label for item in after.metric][:1] == ["12개월 환산 절감액"], (
+    assert [item.label for item in after.metric][:1] == ["단순 합"], (
         "내려받기 뒤 계산 결과가 사라졌습니다."
     )
 
@@ -541,9 +544,9 @@ def test_태양광에_계산_단추가_있다() -> None:
 def test_비교_화면은_표가_먼저다(compare_app: AppTest) -> None:
     """어느 조합을 왜 권하는지 말하려면 견줄 것이 먼저 보여야 한다 (13세션)."""
     headings = [item.value for item in compare_app.subheader]
-    assert headings.index("조합별 비교") < next(
-        index for index, value in enumerate(headings) if value.startswith("권장안")
-    )
+    # **개선안별 요약 → 합산효과 → 조합 비교** 순서다 (14세션 5절).
+    assert headings.index("개선안별 요약") < headings.index("합산효과")
+    assert headings.index("합산효과") < headings.index("조합 비교")
     # 수단별 그래프는 화면에서 뺐다 — 보고서 4장에만 둔다.
     assert len(compare_app.get("vega_lite_chart")) == 0
 
@@ -699,3 +702,101 @@ def test_ESS_판정_문장을_쓰지_않는다() -> None:
     for path in (VIEWS / "measures.py", Path("src/kwise/measures/ess_cost.py")):
         body = path.read_text(encoding="utf-8")
         assert not [word for word in banned if word in body], path
+
+
+# ======================================================== 14세션 · 3단계 세 부분
+
+
+@pytest.fixture(scope="module")
+def stage3() -> AppTest:
+    """요금에 영향을 주는 수단 넷을 켠 3단계 화면."""
+    return _running(
+        option="I",
+        nav_page="3단계 · 비교",
+        measure_on_tariff_switch=True,
+        measure_on_contract=True,
+        measure_on_power_factor=True,
+        measure_on_ess=True,
+        measure_ess_target=5_170.0,
+    )
+
+
+def test_3단계가_세_부분으로_나뉜다(stage3: AppTest) -> None:
+    """개선안별 요약 → 합산효과 → 조합 비교 (14세션 5절)."""
+    assert not stage3.exception, stage3.exception
+    headings = [str(item.value) for item in stage3.subheader]
+    assert headings.index("개선안별 요약") < headings.index("합산효과")
+    assert headings.index("합산효과") < headings.index("조합 비교")
+
+
+def test_단순_합과_합산효과와_차이를_모두_보인다(stage3: AppTest) -> None:
+    """**이것이 3단계의 존재 이유다** (14세션 5-2)."""
+    assert not stage3.exception, stage3.exception
+    labels = [str(item.label) for item in stage3.metric]
+    assert labels[:3] == ["단순 합", "합산효과", "차이"]
+    gap = next(item for item in stage3.metric if item.label == "차이")
+    assert str(gap.delta).endswith("%"), gap.delta  # 차이를 비율로도 낸다
+
+
+def test_차이가_생기는_이유를_적는다(stage3: AppTest) -> None:
+    """**실제로 발생한 상호작용만** 적는다 (14세션 5-2)."""
+    assert not stage3.exception, stage3.exception
+    body = " ".join(str(item.value) for item in stage3.markdown)
+    assert "차이가 생기는 이유" in body
+    assert "기본요금 기반이 달라집니다" in body
+
+
+def test_계약전력_추가_하향_여지가_나온다(stage3: AppTest) -> None:
+    """2단계 7.2 는 현재 부하 기준이고, 조합 기준 추가 여지는 여기서만 낸다 (5-2)."""
+    assert not stage3.exception, stage3.exception
+    body = " ".join(str(item.value) for item in stage3.markdown)
+    assert "계약전력 추가 하향 여지" in body
+    assert "이 조합이면 계약전력을" in body
+
+
+STAGE3_MEASURES: dict[str, object] = {
+    "measure_on_tariff_switch": True,
+    "measure_on_contract": True,
+    "measure_on_power_factor": True,
+    "measure_on_ess": True,
+    "measure_ess_target": 5_170.0,
+}
+
+
+def _after(metrics: list[tuple[str, str]], anchor: str, offset: int) -> str:
+    """카드 안에서 ``anchor`` 로부터 몇 칸 뒤의 지표 값. 카드 경계를 잡는 방법이다."""
+    index = next(position for position, (label, _) in enumerate(metrics) if label == anchor)
+    return metrics[index + offset][1]
+
+
+def test_개선안별_요약이_2단계_카드와_같은_값이다() -> None:
+    """**재계산하지 않는다** (14세션 5-1). 두 화면이 다르면 어느 쪽을 믿나.
+
+    회수기간은 두 화면이 같은 서식(``0.0년``)으로 찍으므로 문자열째로 견줄 수 있다.
+    """
+    card = _running(option="I", nav_page="2단계 · 개선 수단", **STAGE3_MEASURES)  # type: ignore[arg-type]
+    assert not card.exception, card.exception
+    metrics = [(str(item.label), str(item.value)) for item in card.metric]
+    card_payback = {
+        "7.4 역률 개선": _after(metrics, "현재 역률", 3),
+        "7.6 ESS": _after(metrics, "출력 / 용량", 3),
+    }
+
+    summary = _running(option="I", nav_page="3단계 · 비교", **STAGE3_MEASURES)  # type: ignore[arg-type]
+    assert not summary.exception, summary.exception
+    frame = summary.dataframe[0].value
+    rows = {str(row["수단"]): row for _, row in frame.iterrows()}
+
+    for title in ("7.1 선택요금 전환", "7.2 계약전력 조정", "7.4 역률 개선", "7.6 ESS"):
+        assert title in rows, rows.keys()
+    assert "단순 합" in rows
+    for title, expected in card_payback.items():
+        assert str(rows[title]["회수기간"]) == expected, title
+
+
+def test_합계_행에_단순_합이라고_적는다() -> None:
+    """수단별 절감액의 합은 최종 효과가 아니다 (14세션 5-1)."""
+    from kwise.report import SIMPLE_SUM_LABEL, SIMPLE_SUM_NOTE
+
+    assert SIMPLE_SUM_LABEL == "단순 합"
+    assert "최종 효과가 아닙니다" in SIMPLE_SUM_NOTE

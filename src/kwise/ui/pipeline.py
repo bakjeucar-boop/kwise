@@ -415,6 +415,8 @@ def combination_specs(
     ess_total_investment_won: float | None = None,
     ess_fixed_won: float | None = None,
     ess_per_kwh_won: float | None = None,
+    power_factor_pct: float | None = None,
+    power_factor_investment_won: float | None = None,
     contract_floor_ratio: float | None = None,
     sharpness: float = 1.0,
 ) -> tuple[CombinationSpec, ...]:
@@ -453,6 +455,17 @@ def combination_specs(
             name=f"{_plus(specs)}계약전력 조정",
             selection=selection,
             contract_kw=form.contract_kw,
+        )
+        specs.append(cursor)
+
+    # 7.4 — 역률은 부하를 바꾸지 않고 기본요금 조정액만 바꾼다. **조합에 넣어야
+    # 상충이 보인다** — 태양광·ESS 가 기본요금을 낮추면 역률 감액도 함께 준다.
+    if "power_factor" in chosen and power_factor_pct is not None:
+        cursor = replace(
+            cursor,
+            name=f"{_plus(specs)}역률 {power_factor_pct:,.0f}%",
+            power_factor_pct=power_factor_pct,
+            power_factor_investment_won=power_factor_investment_won,
         )
         specs.append(cursor)
 
