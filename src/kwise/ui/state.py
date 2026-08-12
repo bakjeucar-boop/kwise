@@ -13,6 +13,8 @@ import uuid
 
 import streamlit as st
 
+from kwise.io import UsageData
+from kwise.report.days import MAX_DEMAND_KEY, RepresentativeDay, find_day
 from kwise.ui.pipeline import ContractForm, SolarInputs
 from kwise.ui.spec import MEASURES
 
@@ -24,6 +26,7 @@ __all__ = [
     "get_solar_inputs",
     "input_key",
     "measure_float",
+    "reference_day",
     "session_id",
     "set_form",
     "set_solar_inputs",
@@ -105,6 +108,21 @@ def measure_float(measure_key: str, field: str) -> float | None:
         return None
     number = float(value)
     return number if number else None
+
+
+def reference_day(usage: UsageData) -> RepresentativeDay | None:
+    """**곡선 차트가 보는 대표일** (15세션 2절).
+
+    2단계가 위젯으로 고른 값을 세션에서 그대로 읽는다 — 3단계 보고서 차트도
+    같은 날을 봐야 화면과 문서가 어긋나지 않는다. 위젯을 그리지 않으므로
+    어느 화면에서 불러도 안전하다.
+    """
+    key = st.session_state.get(input_key("common", "ref_day")) or MAX_DEMAND_KEY
+    custom = st.session_state.get(input_key("common", "ref_day_custom"))
+    try:
+        return find_day(usage, str(key), custom=custom)
+    except ValueError:  # 관측치가 없으면 대표일도 없다
+        return None
 
 
 def enabled_measures() -> tuple[str, ...]:

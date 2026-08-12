@@ -23,6 +23,7 @@ from kwise.compare import (
     SensitivityRange,
 )
 from kwise.diagnose import Diagnosis, default_margin_ratio
+from kwise.diagnose.dr import DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
     AppliedMeasure,
@@ -35,6 +36,8 @@ from kwise.measures import (
     SolarPoint,
     SurplusResult,
     TariffSwitchResult,
+    apply_generation,
+    band_labels,
     default_target_pct,
     evaluate_contract_adjustment,
     evaluate_demand_response,
@@ -54,6 +57,7 @@ from kwise.report import (
     standalone_frame,
     standalone_rows,
 )
+from kwise.report.days import RepresentativeDay
 from kwise.tariff import BillingResult, TariffTable
 from kwise.ui import text as fmt
 from kwise.ui.anchors import detail_suffix
@@ -82,6 +86,7 @@ from kwise.ui.state import (
     get_solar_inputs,
     input_key,
     measure_float,
+    reference_day,
     session_id,
 )
 
@@ -201,7 +206,7 @@ def render(
     columns[2].metric(
         "회수기간", fmt.payback(best.payback_years, investment_won=best.investment_won)
     )
-    columns[3].metric("확실성", str(best.certainty))
+    columns[3].metric("확실성", str(best.certainty), help=fmt.TIPS["certainty"])
     st.write(_recommendation(comparison))
 
     sensitivity_frame, sensitivity_ranges = _sensitivity_block(
@@ -498,6 +503,14 @@ class _MeasureResults:
             surplus=self.surplus,
         )
 
+    # 차트 재료 (15세션 2절). **화면과 같은 프레임을 보고서에도 넘긴다.**
+    usage: UsageData | None = None
+    day: RepresentativeDay | None = None
+    dr_profile: DrProfile | None = None
+    solar_generation_kw: pd.Series | None = None
+    ess_bands: pd.Series | None = None
+    surplus_kw: pd.Series | None = None
+
     def entries(self) -> tuple[MeasureEntry, ...]:
         return measure_entries(
             switch=self.switch,
@@ -509,6 +522,12 @@ class _MeasureResults:
             solar_unpriced_reason=self.solar_unpriced_reason,
             ess=self.ess,
             surplus=self.surplus,
+            usage=self.usage,
+            day=self.day,
+            dr_profile=self.dr_profile,
+            solar_generation_kw=self.solar_generation_kw,
+            ess_bands=self.ess_bands,
+            surplus_kw=self.surplus_kw,
         )
 
 
@@ -620,6 +639,25 @@ def _measure_results(
                 stamp,
             )
 
+    # 보고서 차트 재료. **화면과 같은 대표일·같은 프로파일을 넘긴다** (15세션 2절).
+    day = reference_day(usage)
+    generation = None
+    if solar is not None and unit_profile is not None:
+        generation = unit_profile * solar.capacity_kwp
+    bands = None
+    if ess is not None:
+        try:
+            bands = band_labels(
+                usage, table, selection=form.selection, options=form.billing_options()
+            )
+        except Exception:
+            bands = None
+    surplus_kw = None
+    if surplus is not None and unit_profile is not None and inputs is not None:
+        surplus_kw = apply_generation(
+            usage, unit_profile * inputs.resolved_capacity_kwp()
+        ).surplus_kw
+
     return _MeasureResults(
         switch=switch,
         contract=contract,
@@ -631,6 +669,12 @@ def _measure_results(
         solar_unpriced_reason=solar_reason,
         ess=ess,
         surplus=surplus,
+        usage=usage,
+        day=day,
+        dr_profile=diagnosis.dr,
+        solar_generation_kw=generation,
+        ess_bands=bands,
+        surplus_kw=surplus_kw,
     )
 
 
@@ -643,7 +687,7 @@ def _sensitivity_block(
     form: ContractForm,
     specs: tuple[CombinationSpec, ...],
 ) -> tuple[pd.DataFrame, tuple[SensitivityRange, ...]]:
-    st.subheader("감도")
+    st.subheader("감도", help=fmt.TIPS["sensitivity"])
     pv_specs = [spec for spec in specs if spec.has_pv]
     if not pv_specs or unit_profile is None:
         st.info(

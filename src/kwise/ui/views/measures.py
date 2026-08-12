@@ -135,6 +135,8 @@ def _reference_day(usage: UsageData) -> RepresentativeDay | None:
                 max_value=usage.meta.end.date(),
                 key=input_key("common", "ref_day_custom"),
             )
+    # **세션에 남긴 값을 읽는 것은 :func:`kwise.ui.state.reference_day` 하나다.**
+    # 3단계 보고서 차트가 같은 날을 보게 하려면 읽는 곳이 하나여야 한다.
     return find_day(usage, str(picked), custom=custom)
 
 
@@ -246,7 +248,10 @@ def _tariff_switch(
     columns[0].metric("현행", option_label(result.current.selection.option))
     columns[1].metric("가장 유리한 요금제", option_label(result.best.selection.option))
     columns[2].metric(
-        "절감액", fmt.won_short(result.saving_won), fmt.certainty_badge(result.certainty)
+        "절감액",
+        fmt.won_short(result.saving_won),
+        fmt.certainty_badge(result.certainty),
+        help=fmt.TIPS["certainty"],
     )
     if result.switch_needed:
         st.write(
@@ -302,12 +307,10 @@ def _contract(
             step=0.01,
             format="%.0f%%",
             key=input_key("contract", "margin"),
+            help=fmt.TIPS["contract_margin"],
         )
         st.caption(
-            "확보할 여유율은 향후 부하 증가와 예측 오차에 대비한 완충입니다. "
-            "높이면 안전하지만 절감액이 줄고, 낮추면 절감액이 늘지만 초과 시 "
-            "위약금과 12개월 기본요금 상승 위험이 커집니다. 권장 "
-            f"{fmt.ratio_pct(low, decimals=0)}–{fmt.ratio_pct(high, decimals=0)}. "
+            f"권장 {fmt.ratio_pct(low, decimals=0)}–{fmt.ratio_pct(high, decimals=0)}. "
             + detail_suffix("contract-adequacy")
         )
     result = cached_contract_adjustment(
@@ -686,6 +689,7 @@ def _solar(
         "회수기간",
         fmt.payback(point.payback_years, investment_won=point.investment_won),
         fmt.certainty_badge(curve.certainty),
+        help=fmt.TIPS["certainty"],
     )
     # **투자비를 모르면 빈칸이나 0원이 아니라 사유다** (7.5).
     st.caption("투자비 — " + fmt.won(point.investment_won, reason=curve.cost.reason))
@@ -852,6 +856,7 @@ def _ess(
         "출력 / 용량",
         f"{fmt.kw(result.power_kw, decimals=0)} / {fmt.kwh(result.capacity_kwh)}",
         f"방전 {fmt.hours(result.discharge_hours, decimals=1)}",
+        help=fmt.TIPS["discharge_hours"],
     )
     columns[1].metric("절감액", fmt.won_short(result.total_saving_won))
     columns[2].metric("투자비", fmt.won_short(result.investment_won))
@@ -859,6 +864,7 @@ def _ess(
         "회수기간",
         fmt.payback(result.payback_years, investment_won=result.investment_won),
         fmt.certainty_badge(result.certainty),
+        help=fmt.TIPS["certainty"],
     )
     # **언제 담고 언제 쓰는지**를 하루 곡선으로 보인다 (15세션 2-5).
     if day is not None:

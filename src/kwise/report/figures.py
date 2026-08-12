@@ -20,14 +20,27 @@ import matplotlib
 matplotlib.use("Agg")  # GUI 없는 환경에서 돈다. import 순서를 지킨다.
 
 import matplotlib.pyplot as plt
+import pandas as pd
 from matplotlib.figure import Figure
 
 from kwise.compare import ComparisonResult
 from kwise.diagnose import PeakProfile
+from kwise.diagnose.dr import DrProfile
+from kwise.io import UsageData
+from kwise.measures import DispatchResult, PowerFactorResult, TariffSwitchResult
+from kwise.report.days import RepresentativeDay
 from kwise.report.frames import (
+    DAY_TYPE_LABELS,
     combination_frame,
+    dr_daily_frame,
+    ess_day_frame,
     hourly_profile_frame,
     monthly_peak_frame,
+    power_triangle_frame,
+    solar_annual_frame,
+    solar_day_frame,
+    surplus_daily_frame,
+    tariff_option_frame,
     top_hour_frame,
 )
 
@@ -36,9 +49,16 @@ __all__ = [
     "KOREAN_FONT",
     "apply_style",
     "combination_png",
+    "dr_daily_png",
+    "ess_day_png",
     "hourly_profile_png",
     "monthly_peak_png",
+    "power_triangle_png",
     "render_png",
+    "solar_annual_png",
+    "solar_day_png",
+    "surplus_daily_png",
+    "tariff_option_png",
     "top_hour_png",
 ]
 
@@ -47,6 +67,7 @@ KOREAN_FONT = "Malgun Gothic"
 FIGURE_DPI = 150
 _SIZE = (9.0, 3.6)
 _COLORS = ("#08519c", "#9ecae1", "#f16913", "#6baed6")
+_DAY_COLORS = ("#08519c", "#6baed6", "#fd8d3c", "#d94801")
 
 
 def apply_style() -> None:
@@ -186,4 +207,185 @@ def combination_png(comparison: ComparisonResult) -> bytes:
     axes.invert_yaxis()
     axes.set_xlabel("억원")
     axes.legend(fontsize=8, loc="lower right")
+    return render_png(figure)
+
+
+# ===================================================================== 15세션 · 수단별 차트
+#
+# 화면(altair)과 **같은 프레임**을 본다 (:mod:`kwise.report.frames`). 각자 만들면
+# 같은 이름의 차트가 서로 다른 수를 그리게 되고, 그 어긋남은 눈으로 잡히지 않는다.
+
+
+def tariff_option_png(switch: TariffSwitchResult) -> bytes:
+    """요금제별 기본·전력량 누적 막대 (3장 · 7.1).
+
+    **선택요금은 기본요금과 전력량요금을 맞바꾸는 제도다.** 합계만 보면 왜
+    유리한지 알 수 없어 누적으로 그린다.
+    """
+    apply_style()
+    frame = tariff_option_frame(switch)
+    positions = range(len(frame))
+    figure, axes = plt.subplots(figsize=_SIZE)
+    base = frame["기본요금(원)"].fillna(0.0) / 1e8
+    energy = frame["전력량요금(원)"].fillna(0.0) / 1e8
+    axes.bar(list(positions), base, label="기본요금", color=_COLORS[0])
+    axes.bar(list(positions), energy, bottom=base, label="전력량요금", color=_COLORS[1])
+    for index, (total, mark) in enumerate(zip(frame["합계(원)"], frame["표식"], strict=True)):
+        suffix = f"\n{mark}" if mark else ""
+        axes.text(
+            index,
+            total / 1e8,
+            f"{total / 1e8:,.2f}억{suffix}",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
+    axes.set_xticks(list(positions))
+    axes.set_xticklabels(frame["요금제"], fontsize=9)
+    axes.set_ylabel("억원")
+    axes.legend(fontsize=8)
+    return render_png(figure)
+
+
+def dr_daily_png(profile: DrProfile) -> bytes:
+    """연간 일별 운영시간대 평균 부하 (3장 · 7.3).
+
+    **기준선 근처로 내려온 평일이 감축 가능일이다.**
+    """
+    apply_style()
+    frame = dr_daily_frame(profile)
+    figure, axes = plt.subplots(figsize=_SIZE)
+    palette = dict(zip(DAY_TYPE_LABELS.values(), _DAY_COLORS, strict=True))
+    for kind, group in frame.groupby("구분", sort=False):
+        axes.scatter(
+            group["날짜"],
+            group["운영시간대 평균(kW)"],
+            s=8,
+            label=str(kind),
+            color=palette.get(str(kind), _COLORS[0]),
+        )
+    for value, name in (
+        (profile.weekend_baseline_kw, "주말·공휴일 평균"),
+        (profile.low_load_threshold_kw, "저부하 문턱"),
+    ):
+        if value is not None:
+            axes.axhline(value, color="crimson", linestyle="--", linewidth=1.0, label=name)
+    low = frame[frame["저부하 평일"]]
+    if len(low):
+        axes.scatter(
+            low["날짜"],
+            low["운영시간대 평균(kW)"],
+            s=70,
+            marker="v",
+            color="crimson",
+            label="저부하 평일",
+        )
+    axes.set_ylabel("운영 시간대 평균 부하 (kW)")
+    axes.tick_params(axis="x", rotation=45, labelsize=8)
+    axes.legend(fontsize=7, ncol=3)
+    return render_png(figure)
+
+
+def power_triangle_png(result: PowerFactorResult) -> bytes:
+    """전력삼각형 — 개선 전후 (3장 · 7.4). **각이 좁아지는 모습**이 전부다."""
+    apply_style()
+    frame = power_triangle_frame(result)
+    figure, axes = plt.subplots(figsize=(4.4, 3.4))
+    for color, (_, row) in zip(_COLORS, frame.iterrows(), strict=False):
+        axes.plot(
+            [0.0, row["유효전력"], row["유효전력"], 0.0],
+            [0.0, 0.0, row["무효전력"], 0.0],
+            color=color,
+            linewidth=1.8,
+            label=f"{row['구분']} — 역률 {row['역률(%)']:.0f}% · {row['각도(도)']:.0f}°",
+        )
+    axes.set_xlabel("유효전력 (기준 1)")
+    axes.set_ylabel("무효전력")
+    axes.legend(fontsize=8)
+    return render_png(figure)
+
+
+def solar_day_png(usage: UsageData, generation_kw: pd.Series, day: RepresentativeDay) -> bytes:
+    """대표일의 원부하·순부하·발전량 (3장 · 7.5). **피크가 얼마나 내려가는지.**"""
+    apply_style()
+    frame = solar_day_frame(usage, generation_kw, day.date)
+    figure, axes = plt.subplots(figsize=_SIZE)
+    for name, color in (
+        ("원부하(kW)", _COLORS[1]),
+        ("순부하(kW)", _COLORS[0]),
+        ("발전량(kW)", _COLORS[2]),
+    ):
+        axes.plot(frame["시각"], frame[name], label=name, color=color, linewidth=1.6)
+    axes.set_ylabel("출력 (kW)")
+    axes.set_xlabel(f"{day.title} · 15분")
+    axes.tick_params(axis="x", rotation=45, labelsize=8)
+    axes.legend(fontsize=8)
+    return render_png(figure)
+
+
+def solar_annual_png(usage: UsageData, generation_kw: pd.Series) -> bytes:
+    """연간 일별 계통 수전·자가소비·잉여 (3장 · 7.5)."""
+    apply_style()
+    frame = solar_annual_frame(usage, generation_kw)
+    figure, axes = plt.subplots(figsize=_SIZE)
+    axes.stackplot(
+        frame["날짜"],
+        frame["계통 수전(kWh)"],
+        frame["자가소비(kWh)"],
+        frame["잉여(kWh)"],
+        labels=["계통 수전", "자가소비", "잉여"],
+        colors=("#9ecae1", "#31a354", "#fdd0a2"),
+    )
+    axes.set_ylabel("일별 전력량 (kWh)")
+    axes.tick_params(axis="x", rotation=45, labelsize=8)
+    axes.legend(fontsize=8, loc="upper right")
+    return render_png(figure)
+
+
+def ess_day_png(
+    usage: UsageData,
+    dispatch: DispatchResult,
+    day: RepresentativeDay,
+    *,
+    bands: pd.Series | None = None,
+) -> bytes:
+    """대표일의 ESS 충·방전 구조 (3장 · 7.6)."""
+    apply_style()
+    frame = ess_day_frame(usage, dispatch, day.date, bands=bands)
+    figure, axes = plt.subplots(figsize=_SIZE)
+    axes.bar(frame["시각"], frame["충전(kW)"], width=0.008, label="충전", color=_COLORS[3])
+    axes.bar(frame["시각"], -frame["방전(kW)"], width=0.008, label="방전", color=_COLORS[2])
+    axes.plot(frame["시각"], frame["원부하(kW)"], label="원부하", color=_COLORS[1], linewidth=1.4)
+    axes.plot(frame["시각"], frame["순부하(kW)"], label="순부하", color=_COLORS[0], linewidth=1.6)
+    axes.axhline(
+        dispatch.target_kw,
+        color="crimson",
+        linestyle="--",
+        linewidth=1.2,
+        label=f"목표 {dispatch.target_kw:,.0f} kW",
+    )
+    axes.set_ylabel("출력 (kW)")
+    axes.set_xlabel(f"{day.title} · 15분")
+    axes.tick_params(axis="x", rotation=45, labelsize=8)
+    axes.legend(fontsize=8, ncol=3)
+    return render_png(figure)
+
+
+def surplus_daily_png(usage: UsageData, surplus_kw: pd.Series) -> bytes:
+    """연간 일별 잉여량 (3장 · 7.7). **주말에 몰리는지**가 보여야 한다."""
+    apply_style()
+    frame = surplus_daily_frame(usage, surplus_kw)
+    figure, axes = plt.subplots(figsize=_SIZE)
+    palette = {"평일": _COLORS[0], "토요일": _COLORS[3], "일요일": _COLORS[2]}
+    for kind, group in frame.groupby("구분", sort=False):
+        axes.bar(
+            group["날짜"],
+            group["잉여(kWh)"],
+            label=str(kind),
+            color=palette.get(str(kind), _COLORS[0]),
+            width=1.0,
+        )
+    axes.set_ylabel("일별 잉여 (kWh)")
+    axes.tick_params(axis="x", rotation=45, labelsize=8)
+    axes.legend(fontsize=8)
     return render_png(figure)

@@ -19,10 +19,11 @@ from __future__ import annotations
 
 import datetime as dt
 import io
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pandas as pd
 from docx import Document
 from docx.document import Document as DocumentType
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -31,6 +32,7 @@ from docx.shared import Inches, Pt
 
 from kwise.compare import SCENARIO_NAME_CAVEAT, ComparisonResult, SensitivityRange
 from kwise.diagnose import Diagnosis
+from kwise.diagnose.dr import DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
     MEASURE_CATALOG,
@@ -46,6 +48,7 @@ from kwise.measures import (
     measure_kind,
 )
 from kwise.report import figures
+from kwise.report.days import RepresentativeDay
 from kwise.report.notices import (
     CONTRACT_CHANGE_WARNING,
     DATA_SOURCES,
@@ -110,10 +113,25 @@ class MeasureEntry:
     payback: str
     certainty: str
     cautions: tuple[str, ...] = field(default=())
+    figure: bytes | None = None
+    """수단 차트 png (15세션). **화면과 같은 프레임을 본다** — 각자 만들면 어긋난다."""
+    figure_caption: str = ""
 
     @property
     def title(self) -> str:
         return self.kind.title
+
+
+def _safe_figure(make: Callable[[], bytes]) -> bytes | None:
+    """그림을 굽되 **실패해도 보고서를 죽이지 않는다.**
+
+    차트 하나 때문에 문서 전체를 잃는 편보다 그림 없이 표만 내는 편이 낫다
+    (13세션에 3단계 화면에서 같은 종류의 결함을 겪었다).
+    """
+    try:
+        return make()
+    except Exception:
+        return None
 
 
 def _won(value: float | None, *, reason: str | None = None) -> str:
@@ -155,8 +173,17 @@ def measure_entries(
     solar_unpriced_reason: str = "",
     ess: EssResult | None = None,
     surplus: SurplusResult | None = None,
+    usage: UsageData | None = None,
+    day: RepresentativeDay | None = None,
+    dr_profile: DrProfile | None = None,
+    solar_generation_kw: pd.Series | None = None,
+    ess_bands: pd.Series | None = None,
+    surplus_kw: pd.Series | None = None,
 ) -> tuple[MeasureEntry, ...]:
     """검토한 수단을 **7장 순서 그대로** 항목으로 만든다.
+
+    차트 재료(``usage`` 이하)를 주면 수단마다 그림을 함께 굽는다 (15세션 2절).
+    주지 않으면 표만 나온다 — 그림이 없다고 보고서가 실패하지 않는다.
 
     주지 않은 수단은 만들지 않는다 — 켜지 않은 수단이 보고서에 들어가면
     "검토하지 않은 것" 이 "검토했더니 이만큼" 으로 둔갑한다.
@@ -182,6 +209,8 @@ def measure_entries(
                 "설비 도입과 무관한 확정 계산입니다. 감도를 적용하지 않습니다.",
                 *switch.warnings,
             ),
+            figure=_safe_figure(lambda: figures.tariff_option_png(switch)),
+            figure_caption="요금제별 기본요금·전력량요금 구성",
         )
 
     if contract is not None:
@@ -227,6 +256,12 @@ def measure_entries(
                 "**수요관리사업자 상담이 필요합니다.**",
                 *demand_response.warnings,
             ),
+            figure=(
+                _safe_figure(lambda: figures.dr_daily_png(dr_profile))
+                if dr_profile is not None
+                else None
+            ),
+            figure_caption="연간 일별 운영시간대 평균 부하 — 기준선 근처가 감축 가능일",
         )
 
     if power_factor is not None:
@@ -242,6 +277,8 @@ def measure_entries(
             payback=_payback_text(power_factor.payback_years, power_factor.investment_won),
             certainty=str(power_factor.certainty),
             cautions=power_factor.warnings,
+            figure=_safe_figure(lambda: figures.power_triangle_png(power_factor)),
+            figure_caption="전력삼각형 — 각이 좁아질수록 역률이 좋아진다",
         )
 
     if solar is not None:
@@ -269,6 +306,12 @@ def measure_entries(
             if solar_certainty is not None
             else str(Certainty.MEDIUM),
             cautions=tuple(cautions),
+            figure=(
+                _safe_figure(lambda: figures.solar_day_png(usage, solar_generation_kw, day))
+                if usage is not None and day is not None and solar_generation_kw is not None
+                else None
+            ),
+            figure_caption="대표일의 원부하·순부하·발전량 — 피크가 얼마나 내려가는가",
         )
 
     if ess is not None:
@@ -287,6 +330,12 @@ def measure_entries(
                 "규칙기반 단일 디스패치이며 OPEX·열화·교체비를 넣지 않은 단순 회수기간입니다.",
                 *ess.warnings,
             ),
+            figure=(
+                _safe_figure(lambda: figures.ess_day_png(usage, ess.dispatch, day, bands=ess_bands))
+                if usage is not None and day is not None
+                else None
+            ),
+            figure_caption="대표일의 충·방전 — 경부하에 담아 최대부하에 쓴다",
         )
 
     if surplus is not None:
@@ -306,6 +355,12 @@ def measure_entries(
             investment=f"{_UNPRICED} — 계통 연계·설비 조건에 따릅니다",
             payback=f"{_UNPRICED} — 투자비를 모릅니다",
             certainty=str(Certainty.MEDIUM_LOW),
+            figure=(
+                _safe_figure(lambda: figures.surplus_daily_png(usage, surplus_kw))
+                if usage is not None and surplus_kw is not None and surplus.total_kwh > 0
+                else None
+            ),
+            figure_caption="연간 일별 잉여량 — 주말에 몰리면 자가소비가 어렵다",
             cautions=(
                 "상계거래·외부 구매의 **자격요건은 판정하지 않았습니다.** 금액만 참고하십시오.",
                 *surplus.notes,
@@ -665,6 +720,8 @@ def _chapter_measures(document: DocumentType, sections: DocumentSections, number
                 ["확실성", entry.certainty],
             ],
         )
+        if entry.figure is not None:
+            _add_figure(document, entry.figure, f"그림 {number}-{index}. {entry.figure_caption}")
         if entry.cautions:
             document.add_paragraph("주의사항")
             _add_bullets(document, entry.cautions)
