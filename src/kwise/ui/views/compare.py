@@ -1,4 +1,13 @@
-"""3단계 · 비교 (요구사항서 8장·9.2·10.1).
+"""3단계 · 개선안 조합 (요구사항서 8장·9.2·10.1).
+
+**조합은 사용자가 짠다** (16세션 5절). 개선안마다 체크박스를 두고, 기본은
+2단계에서 켠 수단 전부다. 미리 정해 둔 조합 세트를 나란히 놓고 고르게 하던
+방식은 **묻지 않은 것을 보여 주고 물은 것을 보여 주지 않았다** — 쓰는 사람은
+"태양광은 빼고 나머지" 처럼 자기 조합을 알고 있는데 목록에 없었다.
+
+    ① 개선안별 요약   2단계 카드 값 그대로
+    ② 합산효과       체크한 조합을 **부하부터 다시 만들어** 한 번 계산
+    ③ 내려받기       Excel · Word
 
 **조합마다 요금을 다시 계산한다.** 수단별 절감액을 더하지 않는다 — 태양광이
 사용량을 줄이면 최적 선택요금이 바뀌고 ESS 가 피크를 낮추면 기본요금 기반이 바뀐다.
@@ -9,7 +18,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -26,7 +34,6 @@ from kwise.diagnose import Diagnosis, default_margin_ratio
 from kwise.diagnose.dr import DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
-    AppliedMeasure,
     Certainty,
     ContractAdjustment,
     DemandResponseResult,
@@ -61,8 +68,9 @@ from kwise.report.days import RepresentativeDay
 from kwise.tariff import BillingResult, TariffTable
 from kwise.ui import callout
 from kwise.ui import text as fmt
-from kwise.ui.anchors import detail_suffix
+from kwise.ui.anchors import manual_tip
 from kwise.ui.artifacts import recall, remember
+from kwise.ui.building import NAME_MISSING, BuildingInfo
 from kwise.ui.cache import (
     cached_comparison,
     cached_contract_adjustment,
@@ -77,6 +85,7 @@ from kwise.ui.cache import (
     rules_stamp,
     usage_token,
 )
+from kwise.ui.context import AnalysisContext
 from kwise.ui.labels import option_label
 from kwise.ui.notices import screen_notices
 from kwise.ui.pipeline import ContractForm, combination_specs
@@ -96,15 +105,19 @@ __all__ = ["render"]
 
 
 def render(
-    usage: UsageData,
+    context: AnalysisContext,
     table: TariffTable,
-    form: ContractForm,
-    diagnosis: Diagnosis,
-    quality: QualityReport,
+    building: BuildingInfo | None = None,
 ) -> None:
-    st.header("⚖ 3단계 · 비교")
-    enabled = enabled_measures()
-    scope = review_scope(enabled)
+    usage, form, diagnosis, quality = (
+        context.usage,
+        context.form,
+        context.diagnosis,
+        context.quality,
+    )
+    st.header("⚖ 3단계 · 개선안 조합")
+    reviewed = enabled_measures()
+    scope = review_scope(reviewed)
 
     # ---- 검토 범위. **빠진 것을 조용히 빼지 않는다.**
     with st.container(border=True):
@@ -121,7 +134,7 @@ def render(
     unit_profile = None
     inputs = get_solar_inputs()
     capacity = 0.0
-    if "solar" in enabled and inputs is not None:
+    if "solar" in reviewed and inputs is not None:
         capacity = inputs.resolved_capacity_kwp()
         try:
             unit_profile, _source = cached_unit_pv(usage, usage_token(usage), inputs, rules_stamp())
@@ -129,13 +142,25 @@ def render(
             callout.blocked(f"기상 자료를 얻지 못해 태양광을 조합에서 뺐습니다. {exc}")
             capacity = 0.0
 
+    # **① 개선안별 요약이 먼저다** (14세션 5-1). 2단계에서 이미 계산한 값을 옮긴다.
+    # **조합에서 뺀 수단도 여기 남는다** — 뺀 것이 얼마짜리였는지 보여야 뺄지 말지
+    # 정할 수 있다 (16세션 5절).
+    results = _measure_results(
+        usage, table, form, diagnosis, quality, baseline, reviewed, unit_profile
+    )
+    rows = results.standalone()
+    _standalone_block(rows)
+
+    # **조합은 사용자가 짠다** (16세션 5절). 기본은 2단계에서 켠 수단 전부다.
+    enabled = _combination_picker(reviewed)
+
     # 2단계에서 넣은 값을 그대로 읽는다 (위젯 키로 세션에 남는다).
     ess_target = _ess_target(usage, table, form, diagnosis) if "ess" in enabled else None
     specs = combination_specs(
         form=form,
         best_selection=(diagnosis.summary.best_selection or form.selection),
         enabled=enabled,
-        pv_capacity_kwp=capacity if unit_profile is not None else 0.0,
+        pv_capacity_kwp=capacity if unit_profile is not None and "solar" in enabled else 0.0,
         pv_unit_cost_won_per_kwp=inputs.unit_cost_won_per_kwp if inputs else None,
         pv_total_investment_won=inputs.total_investment_won if inputs else None,
         ess_target_kw=ess_target,
@@ -150,17 +175,18 @@ def render(
         power_factor_investment_won=measure_float("power_factor", "investment"),
     )
 
-    # **① 개선안별 요약이 먼저다** (14세션 5-1). 2단계에서 이미 계산한 값을 옮긴다.
-    results = _measure_results(
-        usage, table, form, diagnosis, quality, baseline, enabled, unit_profile
-    )
-    rows = results.standalone()
-    _standalone_block(rows)
-
     if len(specs) == 1:
-        callout.note("2단계에서 요금에 영향을 주는 수단을 하나 이상 켜면 합산효과를 계산합니다.")
+        callout.note("요금에 영향을 주는 개선안을 하나 이상 고르면 합산효과를 계산합니다.")
         _download_block(
-            usage, baseline, diagnosis, None, no_pv_sensitivity_frame(), (), results, scope
+            usage,
+            baseline,
+            diagnosis,
+            None,
+            no_pv_sensitivity_frame(),
+            (),
+            results,
+            scope,
+            building,
         )
         return
 
@@ -182,34 +208,12 @@ def render(
         )
 
     # **② 합산효과 — 단순 합과의 차이가 3단계의 존재 이유다** (14세션 5-2).
-    _combined_block(usage, form, comparison, rows, results.contract)
-
-    # **③ 조합 비교.** 표가 먼저, 권장안이 나중이다 (13세션) — 어느 조합을 왜
-    # 권하는지 말하려면 견줄 것이 먼저 보여야 한다.
-    st.subheader("조합 비교")
-    margin = float(st.session_state.get(input_key("contract", "margin"), default_margin_ratio()))
-    st.dataframe(
-        _comparison_frame(comparison, contract_kw=form.contract_kw, margin=margin),
-        hide_index=True,
-        width="stretch",
-    )
-    st.caption(
-        "절감액 내림차순입니다. **조합마다 요금을 다시 계산했습니다** — 수단별 "
-        f"절감액의 합이 아닙니다. 계약전력 하향 여지는 여유율 "
-        f"{fmt.ratio_pct(margin, decimals=0)} 를 얹은 값입니다. " + detail_suffix("certainty")
-    )
-    for notice in screen_notices(comparison.warnings):
+    _combined_block(usage, form, comparison, rows, results.contract, enabled)
+    # **2단계 카드가 이미 낸 경고는 여기서 되풀이하지 않는다** (16세션 3절).
+    # 세 화면이 한 번에 그려지므로 같은 문장이 두 번 뜬다 — 조합 자체의 경고만 남긴다.
+    seen = results.warnings()
+    for notice in screen_notices(tuple(item for item in comparison.warnings if item not in seen)):
         callout.render_notice(notice)
-
-    best = comparison.best
-    columns = st.columns(4)
-    columns[0].metric("12개월 환산 절감액", fmt.won_short(best.annual_saving_won))
-    columns[1].metric("투자비", fmt.won_short(best.investment_won, reason="미산출 — 단가 미입력"))
-    columns[2].metric(
-        "회수기간", fmt.payback(best.payback_years, investment_won=best.investment_won)
-    )
-    columns[3].metric("확실성", str(best.certainty), help=fmt.TIPS["certainty"])
-    st.write(_recommendation(comparison))
 
     sensitivity_frame, sensitivity_ranges = _sensitivity_block(
         usage, table, baseline, unit_profile, quality, form, specs
@@ -223,10 +227,49 @@ def render(
         sensitivity_ranges,
         results,
         scope,
+        building,
     )
 
     # 미포함 요금요소·알려진 한계는 **참고 등급**이다. 화면에서 빼고 Excel 요약
     # 시트와 보고서 5장에만 싣는다 (10.7).
+
+
+_PICK_PREFIX = "combo_pick_"
+
+
+def _pick_key(measure_key: str) -> str:
+    return f"{_PICK_PREFIX}{measure_key}"
+
+
+def _combination_picker(reviewed: tuple[str, ...]) -> tuple[str, ...]:
+    """**조합을 사용자가 짠다** (16세션 5절).
+
+    기본은 2단계에서 켠 수단 전부다. 체크를 풀면 그 수단을 뺀 조합으로 합산효과를
+    다시 계산한다 — 조합마다 요금을 다시 계산하지만 캐시에 걸리므로 체크 한 번에
+    다시 도는 것은 바뀐 조합 하나뿐이다.
+
+    **7장 번호 순을 지킨다** — :func:`kwise.ui.state.enabled_measures` 가 그 순서로
+    준다. 순서가 바뀌면 조합 이름이 실행마다 달라진다.
+    """
+    st.subheader("조합 구성")
+    if not reviewed:
+        callout.note("2단계에서 개선안을 하나도 켜지 않아 조합할 것이 없습니다.")
+        return ()
+    columns = st.columns(min(len(reviewed), 4))
+    picked: list[str] = []
+    for index, key in enumerate(reviewed):
+        spec = measure(key)
+        with columns[index % len(columns)]:
+            # **기본이 참이다.** 2단계에서 켠 것을 3단계에서 다시 켜게 하면
+            # 같은 판단을 두 번 시킨다.
+            if st.checkbox(spec.label, value=True, key=_pick_key(key)):
+                picked.append(key)
+    st.caption(
+        "체크한 개선안만 합산효과에 넣습니다. 체크를 풀어도 위의 개선안별 요약에는 "
+        "남습니다 — 뺀 것이 얼마짜리였는지 보여야 뺄지 말지 정할 수 있습니다. "
+        "경제성DR·잉여 활용은 요금이 아니라 별도 정산이라 합산효과에 들어가지 않습니다."
+    )
+    return tuple(picked)
 
 
 def _standalone_block(rows: tuple[StandaloneRow, ...]) -> None:
@@ -254,14 +297,20 @@ def _combined_block(
     comparison: ComparisonResult,
     rows: tuple[StandaloneRow, ...],
     contract: ContractAdjustment | None,
+    chosen: tuple[str, ...],
 ) -> None:
     """**② 합산효과** — 단순 합과의 차이를 반드시 보인다 (14세션 5-2).
 
-    조합의 마지막 항목이 켠 수단을 모두 물린 것이다. 부하를 처음부터 다시 만들어
-    (``apply_generation`` → ``dispatch_peak_shaving``) 요금을 **한 번** 계산한다.
+    조합의 마지막 항목이 **고른 수단을 모두 물린 것**이다. 부하를 처음부터 다시
+    만들어 (``apply_generation`` → ``dispatch_peak_shaving``) 요금을 **한 번**
+    계산한다.
+
+    **단순 합도 고른 것만 더한다** (16세션 5절). 조합에서 뺀 수단을 단순 합에
+    넣으면 차이가 상호작용이 아니라 「뺀 만큼」이 되어 뜻이 달라진다.
     """
     combined = comparison.combinations[-1]
-    simple = simple_sum_won(rows, combinable_only=True)
+    picked = tuple(row for row in rows if row.key in set(chosen))
+    simple = simple_sum_won(picked, combinable_only=True)
     actual = combined.annual_saving_won
     gap = actual - simple
     ratio = gap / simple if simple else None
@@ -286,8 +335,11 @@ def _combined_block(
             + ", ".join(row.title for row in excluded)
             + ". 요금이 아니라 별도 정산·수익이라 조합 부하에 얹을 수 없습니다."
         )
+    dropped = [row for row in rows if row.combinable and row.key not in set(chosen)]
+    if dropped:
+        st.caption("조합에서 뺀 개선안 — " + ", ".join(row.title for row in dropped) + ".")
 
-    reasons = _interaction_reasons(comparison, combined, rows)
+    reasons = _interaction_reasons(comparison, combined, picked)
     if reasons:
         st.markdown("**차이가 생기는 이유**")
         for reason in reasons:
@@ -382,82 +434,6 @@ def _contract_headroom(
     st.write(text)
 
 
-def _recommendation(comparison: ComparisonResult) -> str:
-    """**표에서 어느 조합을 왜 권하는지** 한 문단 (13세션)."""
-    best = comparison.best
-    others = [item for item in comparison.combinations if item is not best]
-    runner = max(others, key=lambda item: item.saving_won) if others else None
-    body = f"**{best.name}** 이 12개월 환산 {fmt.won_short(best.annual_saving_won)} 로 가장 큽니다"
-    if runner is not None:
-        gap = best.annual_saving_won - runner.annual_saving_won
-        body += f" — 다음 조합({runner.name})보다 {fmt.won_short(gap)} 많습니다"
-    body += ". "
-    if best.investment_won:
-        body += (
-            f"투자비 {fmt.won_short(best.investment_won)} 로 회수기간은 "
-            f"{fmt.payback(best.payback_years, investment_won=best.investment_won)} 이며, "
-        )
-    else:
-        body += "투자 없이 얻는 절감이며, "
-    body += f"확실성은 {best.certainty} 입니다 — 조합의 등급은 가장 낮은 구성 요소를 따릅니다."
-    return body
-
-
-def _measure_labels(applied: tuple[AppliedMeasure, ...]) -> str:
-    """``태양광 (1,000 kWp), 계약전력 조정 (5,500 kW)``.
-
-    **등록되지 않은 키가 와도 화면을 죽이지 않는다** (13세션). 라벨을 만들지
-    못하면 키를 그대로 보이고 경고 한 줄을 남긴다 — 표 한 칸 때문에 3단계가
-    통째로 사라지는 편보다 낫다.
-    """
-    labels: list[str] = []
-    for item in applied:
-        try:
-            measure(item.key)
-        except KeyError:
-            callout.caution(f"등록되지 않은 개선 수단이 조합에 들어 있습니다: {item.key}")
-        labels.append(item.label)
-    return ", ".join(labels) or "—"
-
-
-def _comparison_frame(
-    comparison: ComparisonResult, *, contract_kw: float | None, margin: float
-) -> pd.DataFrame:
-    """화면용 조합 표. 숫자는 문자열로 굳혀 세 자리 콤마를 보장한다.
-
-    **계약전력 하향 여지를 조합마다 낸다** (14세션 5-2·5-3). 조합이 피크를 얼마나
-    낮추느냐에 따라 여지가 달라지는데, 그 사실은 조합을 나란히 놓아야 보인다.
-    """
-    ordered = sorted(comparison.combinations, key=lambda item: -item.annual_saving_won)
-    rows = [
-        {
-            "조합": item.name,
-            "수단": _measure_labels(item.spec.applied),
-            "12개월 환산 절감액": fmt.won(item.annual_saving_won),
-            "투자비": fmt.won(item.investment_won, reason="—"),
-            "회수기간": fmt.payback(item.payback_years, investment_won=item.investment_won),
-            "계약전력 하향 여지": _contract_room(item, contract_kw, margin),
-            "확실성": str(item.certainty),
-        }
-        for item in ordered
-    ]
-    return pd.DataFrame(rows)
-
-
-def _contract_room(item: CombinationResult, contract_kw: float | None, margin: float) -> str:
-    """조합 부하 기준으로 계약전력을 어디까지 낮출 수 있는가.
-
-    권장 계약전력 = 조합 요금적용전력 × (1 + 여유율), 1 kW 단위로 올림
-    """
-    if contract_kw is None:
-        return "—"
-    suggested = min(contract_kw, math.ceil(item.billing_demand_kw * (1.0 + margin)))
-    room = contract_kw - suggested
-    if room <= 0:
-        return "여지 없음"
-    return f"{fmt.kw(suggested, decimals=0)} (−{fmt.kw(room, decimals=0)})"
-
-
 def _ess_target(
     usage: UsageData, table: TariffTable, form: ContractForm, diagnosis: Diagnosis
 ) -> float | None:
@@ -516,6 +492,28 @@ class _MeasureResults:
             power_factor=self.power_factor,
             ess=self.ess,
             solar=self.solar,
+        )
+
+    def warnings(self) -> frozenset[str]:
+        """2단계 카드가 이미 낸 경고 (16세션 3절).
+
+        탭 구조라 2·3단계가 함께 그려진다. 조합 경고에 같은 문장이 들어 있으면
+        화면에 두 번 뜨므로, 3단계는 이 집합을 빼고 낸다.
+        """
+        sources = (
+            self.switch,
+            self.contract,
+            self.demand_response,
+            self.power_factor,
+            self.solar_curve,
+            self.ess,
+            self.surplus,
+        )
+        return frozenset(
+            item
+            for source in sources
+            if source is not None
+            for item in getattr(source, "warnings", ())
         )
 
     def standalone(self) -> tuple[StandaloneRow, ...]:
@@ -754,7 +752,8 @@ def _sensitivity_block(
             else f"- **{item.metric}** {fmt.markdown_safe(item.text())}"
         )
     st.caption(
-        "태양광 발전 프로파일의 불확실성을 반영한 범위입니다. " + detail_suffix("sensitivity")
+        "태양광 발전 프로파일의 불확실성을 반영한 범위입니다.",
+        help=manual_tip("sensitivity"),
     )
     return frame, ranges
 
@@ -768,6 +767,7 @@ def _download_block(
     sensitivity_ranges: tuple[SensitivityRange, ...],
     results: _MeasureResults,
     scope: ReviewScope,
+    building: BuildingInfo | None,
 ) -> None:
     """산출물 둘 — 분석자용 Excel 과 의사결정자용 Word (10.3·10.5)."""
     st.subheader("내려받기")
@@ -777,8 +777,8 @@ def _download_block(
 
     with excel_tab:
         st.caption(
-            "아홉 시트 통합문서입니다. 파일명에 날짜·시각이 붙습니다. "
-            + detail_suffix("excel-report")
+            "아홉 시트 통합문서입니다. 파일명에 날짜·시각이 붙습니다.",
+            help=manual_tip("excel-report"),
         )
         include_timeseries = st.checkbox("15분 시계열 시트 포함", value=True)
         excel_token = f"{token}|{include_timeseries}"
@@ -812,10 +812,11 @@ def _download_block(
             "결론부터 쓴 다섯 장짜리 보고서입니다. **표는 Word 표 객체라** 제안서에 "
             "그대로 복사해 쓸 수 있습니다."
         )
-        building = st.text_input(
-            "건물명", value=usage.meta.source_name, help="표지와 본문에 들어갑니다."
-        )
-        word_token = f"{token}|{building}"
+        # **건물명은 옆단에서 온다** (16세션 2절). 같은 것을 두 곳에서 물으면
+        # 두 값이 갈리고, 어느 쪽이 표지에 실릴지 알 수 없다.
+        name = building.title if building is not None else NAME_MISSING
+        st.caption(f"표지 이름 — **{name}** (옆단 「건물 정보」 에서 고칩니다)")
+        word_token = f"{token}|{name}"
         if st.button("Word 보고서 만들기", type="primary", key="build_word"):
             document = DocumentSections(
                 usage=usage,
@@ -824,7 +825,7 @@ def _download_block(
                 comparison=comparison,
                 sensitivity=sensitivity_ranges,
                 measures=results.entries(),
-                building_name=building,
+                building_name=name,
                 reviewed_labels=scope.reviewed_labels,
                 skipped_labels=scope.skipped_labels,
             )

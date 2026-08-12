@@ -3,7 +3,7 @@
     evaluate_tariff_switch()        7.1 선택요금 전환
     evaluate_contract_adjustment()  7.2 계약전력 조정
     evaluate_demand_response()      7.3 경제성DR 참여
-    evaluate_power_factor()         7.4 역률 개선 (콘덴서·APFR)
+    evaluate_power_factor()         7.4 역률 개선
     solar_curve()                   7.5 태양광 용량 곡선
     evaluate_ess()                  7.6 ESS 목표 피크 역산
     evaluate_surplus()              7.7 잉여 활용

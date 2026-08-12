@@ -26,15 +26,7 @@ from kwise.docsite import (
     render_markdown,
     slugify,
 )
-from kwise.ui.anchors import (
-    ANCHORS,
-    MANUAL_FILENAME,
-    STATIC_ROUTE,
-    anchor_keys,
-    app_static_dir,
-    detail_suffix,
-    manual_href,
-)
+from kwise.ui.anchors import ANCHORS, MANUAL_FILENAME, anchor_keys, manual_tip
 
 DOCS = Path("docs")
 SOURCES = ("TECHNICAL.md", "MANUAL.md")
@@ -179,7 +171,7 @@ def test_슬러그가_한글을_남긴다() -> None:
 
 
 def test_앵커_32개가_매뉴얼에_모두_있다() -> None:
-    """없으면 화면의 [자세히] 링크가 죽는다."""
+    """없으면 화면 툴팁의 요지에 대응하는 전문이 없다 (16세션 4절)."""
     present = set(collect_anchors((DOCS / "MANUAL.md").read_text(encoding="utf-8")))
     missing = [key for key in anchor_keys() if key not in present]
     assert missing == [], f"매뉴얼에 없는 앵커: {missing}"
@@ -195,51 +187,27 @@ def test_앵커_수가_32개다() -> None:
     assert len(ANCHORS) == 32
 
 
-# ===================================================================== ⑤ 화면 링크
+# ===================================================================== ⑤ 화면 툴팁
 
 
-def test_링크가_활성화되었다() -> None:
-    """매뉴얼을 만들었으므로 이제 살아 있어야 한다."""
-    href = manual_href("certainty")
-    assert href is not None, "매뉴얼이 있는데 링크가 비활성입니다."
-    assert href.endswith("#certainty")
-    suffix = detail_suffix("certainty")
-    assert "매뉴얼 준비 중" not in suffix
-    assert "](" in suffix
+def test_툴팁이_제목과_요지를_함께_준다() -> None:
+    """**링크가 아니라 툴팁이다** (16세션 4절). 화면에서 나가지 않고 요지를 읽는다."""
+    tip = manual_tip("certainty")
+    assert tip.startswith("확실성 등급")
+    assert "판정 근거" in tip
+    assert "](" not in tip and "http" not in tip
 
 
-def test_링크가_streamlit_이_내주는_경로로_간다() -> None:
-    """``docs\\`` 는 Streamlit 이 내주지 않는다. 정적 사본 경로여야 한다."""
-    # Streamlit 의 정적 폴더는 **주 스크립트 옆의 ``static\\``** 이다 (12세션).
-    # 저장소 뿌리에 두면 내주지 않아 [자세히] 가 File not found 로 떨어진다.
-    assert (app_static_dir() / MANUAL_FILENAME).is_file(), (
-        "tools\\build_docs.py 가 정적 사본을 만들어야 합니다."
-    )
-    href = manual_href("pv-density")
-    assert href is not None
-    assert href.startswith(STATIC_ROUTE), href
-    assert app_static_dir().name in STATIC_ROUTE
-
-
-def test_모든_앵커_링크가_매뉴얼_id_와_일치한다() -> None:
-    present = set(collect_anchors((DOCS / "MANUAL.md").read_text(encoding="utf-8")))
+def test_모든_앵커가_툴팁을_낸다() -> None:
     for item in ANCHORS:
-        href = manual_href(item.key)
-        assert href is not None
-        assert href.rsplit("#", 1)[1] in present
+        tip = manual_tip(item.key)
+        assert item.title in tip
+        assert len(tip) > len(item.title)
 
 
-def test_매뉴얼이_없으면_여전히_비활성이다(tmp_path: Path) -> None:
-    """빈 뿌리를 주면 사본도 원본도 없다."""
-    assert manual_href("certainty", docs_dir=tmp_path, root=tmp_path) is None
-    assert "매뉴얼 준비 중" in detail_suffix("certainty", docs_dir=tmp_path, root=tmp_path)
-
-
-def test_정적_사본이_없으면_상대_경로로_물러선다(tmp_path: Path) -> None:
-    """파일을 직접 열어 보는 경우다."""
-    (tmp_path / MANUAL_FILENAME).write_text("<html></html>", encoding="utf-8")
-    href = manual_href("certainty", docs_dir=tmp_path, root=tmp_path)
-    assert href == f"{MANUAL_FILENAME}#certainty"
+def test_등록되지_않은_앵커는_바로_실패한다() -> None:
+    with pytest.raises(KeyError):
+        manual_tip("없는-앵커")
 
 
 # ===================================================================== 문법

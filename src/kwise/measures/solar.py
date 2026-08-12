@@ -33,6 +33,7 @@ from kwise.measures.pv_cost import (
 from kwise.progress import ProgressReporter, record
 from kwise.pv import PvSystemConfig, WeatherData, align_simulation, sharpen, simulate
 from kwise.quality import QualityReport
+from kwise.rules import assumption
 from kwise.tariff import (
     BillingOptions,
     BillingResult,
@@ -51,7 +52,9 @@ __all__ = [
     "CapacityVerdict",
     "SolarCurve",
     "SolarPoint",
+    "capacity_verdict",
     "day_window_mask",
+    "payback_tie_ratio",
     "power_factor_after_pct",
     "power_factor_floor_pct",
     "roof_capacity_limit_kwp",
@@ -280,11 +283,28 @@ def _limiting_reason(curve: SolarCurve, best: SolarPoint, limit: SolarPoint) -> 
     return ""
 
 
+def payback_tie_ratio() -> float:
+    """회수기간이 **사실상 같다**고 볼 폭 (16세션 0-4). 기준 데이터에서 읽는다."""
+    return float(assumption("pv.payback_tie_ratio"))
+
+
 def capacity_verdict(curve: SolarCurve) -> CapacityVerdict:
     """이미 산출된 20단계 결과에서 최적 용량을 **고른다** (15세션 1-3).
 
     **산식을 새로 만들지 않는다.** 회수기간이 있으면 그 최소점을, 단가를 넣지
     않아 회수기간이 없으면 절감액(역률 악화분을 뺀 값) 최대점을 고른다.
+
+    **회수기간이 평평하면 절감액으로 가른다** (16세션 0-4). 단가가 kWp 당이면
+    투자비와 절감액이 모두 용량에 거의 비례해 회수기간이 용량과 무관해진다 —
+    실측 사례에서 8 kWp 가 8.060년, 상한 160 kWp 가 8.114년이었다. 그대로 최소점을
+    고르면 **상한의 1/20 을 최적이라 답한다.** 0.7% 차이는 발전량 예측 오차
+    (R² 0.8) 안에 묻히므로 뜻이 없다.
+
+        최소 회수기간의 :func:`payback_tie_ratio` 안에 드는 점들 가운데
+        절감액이 가장 큰 것을 고른다.
+
+    잉여가 생겨 회수기간이 **실제로** 꺾이면 꺾인 뒤의 점들이 이 폭을 벗어나므로
+    최소점이 그대로 남는다 — U곡선 판정은 달라지지 않는다.
     """
     usable = [point for point in curve.points if point.capacity_kwp > 0]
     if not usable:
@@ -294,7 +314,10 @@ def capacity_verdict(curve: SolarCurve) -> CapacityVerdict:
     priced = [point for point in usable if point.payback_years is not None]
     if priced:
         basis = "회수기간"
-        best = min(priced, key=lambda point: point.payback_years or math.inf)
+        shortest = min(point.payback_years or math.inf for point in priced)
+        ceiling = shortest * (1.0 + payback_tie_ratio())
+        tied = [point for point in priced if (point.payback_years or math.inf) <= ceiling]
+        best = max(tied, key=lambda point: point.saving_after_power_factor_won)
         ordered = [point.payback_years or math.inf for point in usable]
         monotonic = all(later <= earlier + 1e-9 for earlier, later in pairwise(ordered))
     else:
@@ -419,7 +442,7 @@ def solar_curve(
             f"{money.won(largest.power_factor_extra_won, reason='—')} 늘어 절감액이 "
             f"{money.won(largest.total_saving_won, reason='—')} → "
             f"{money.won(largest.saving_after_power_factor_won, reason='—')} 이 됩니다. "
-            "콘덴서 용량 조정이 필요합니다 (기본공급약관 제41·43조, 요구사항서 5.7)."
+            "역률 개선 설비 용량 조정이 필요합니다 (기본공급약관 제41·43조, 요구사항서 5.7)."
         )
     notes = [
         "발전량 예측은 피크 발전량을 과소 산출하는 경향이 있어 결과가 보수적입니다 "

@@ -25,7 +25,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from kwise.report import SHEET_ORDER
-from kwise.ui.nav import PAGES, STEP_PAGES
+from kwise.ui.nav import RULES_PAGE, TABS
 from kwise.ui.pipeline import ContractForm
 
 APP = (Path("src") / "kwise" / "ui" / "app.py").resolve()
@@ -74,6 +74,27 @@ def _on(*keys: str) -> dict[str, object]:
     return {f"measure_on_{key}": True for key in keys}
 
 
+# **탭 구조라 세 화면이 한 번에 그려진다** (16세션 1절). 지표 목록이 셋 이어
+# 붙으므로 경계로 갈라 본다 — 1단계의 마지막은 「기본요금 비중」, 3단계의 처음은
+# 「단순 합」이다.
+_DIAGNOSE_LAST = "기본요금 비중"
+_STAGE3_FIRST = "단순 합"
+
+
+def _stage2_metrics(app: AppTest) -> list[tuple[str, str]]:
+    """2단계 카드가 낸 지표만."""
+    pairs = [(str(item.label), str(item.value)) for item in app.metric]
+    labels = [label for label, _ in pairs]
+    start = labels.index(_DIAGNOSE_LAST) + 1 if _DIAGNOSE_LAST in labels else 0
+    end = labels.index(_STAGE3_FIRST) if _STAGE3_FIRST in labels else len(pairs)
+    return pairs[start:end]
+
+
+def _stage3_labels(app: AppTest) -> list[str]:
+    labels = [str(item.label) for item in app.metric]
+    return labels[labels.index(_STAGE3_FIRST) :] if _STAGE3_FIRST in labels else []
+
+
 def _text(app: AppTest) -> str:
     parts = [
         str(item.value)
@@ -88,16 +109,25 @@ def _text(app: AppTest) -> str:
 # ===================================================================== 5-1 화면 흐름
 
 
-@pytest.mark.parametrize("page", PAGES)
-def test_모든_화면이_예외_없이_뜬다(page: str) -> None:
-    app = _app(nav_page=page)
+def test_세_탭이_한_번에_뜬다() -> None:
+    """**탭 구조다** (16세션 1절). 한 실행에서 셋이 모두 그려진다."""
+    app = _app()
+    assert not app.exception, app.exception
+    headers = [str(item.value) for item in app.header]
+    for tab in TABS:
+        number = tab.split(" ", 1)[0]
+        assert any(number in item for item in headers), (number, headers)
+
+
+def test_기준_데이터_화면도_예외_없이_뜬다() -> None:
+    app = _app(nav_page=RULES_PAGE)
     assert not app.exception, app.exception
 
 
 @pytest.mark.parametrize("count", [0, 1, len(BILLED_MEASURES)])
 def test_수단을_0개_1개_전부_켜도_3단계가_돈다(count: int) -> None:
     """**수단 0개가 정상 경로다** — 진단만 보고 받아 가는 경우다."""
-    app = _app(nav_page=PAGES[2], **_on(*BILLED_MEASURES[:count]))
+    app = _app(**_on(*BILLED_MEASURES[:count]))
     assert not app.exception, app.exception
     body = _text(app)
     assert "개선안별 요약" in body
@@ -108,7 +138,7 @@ def test_수단을_0개_1개_전부_켜도_3단계가_돈다(count: int) -> None
 
 
 def test_모든_수단을_켜도_2단계가_돈다() -> None:
-    app = _app(nav_page=PAGES[1], **_on(*ALL_MEASURES))
+    app = _app(**_on(*ALL_MEASURES))
     assert not app.exception, app.exception
     body = _text(app)
     # 태양광은 계산 전이라 안내만, 잉여는 0 이라 사실만 적는다.
@@ -118,7 +148,7 @@ def test_모든_수단을_켜도_2단계가_돈다() -> None:
 
 def test_수단을_켜고_끄기를_반복해도_상태가_꼬이지_않는다() -> None:
     """토글을 되풀이해도 카드가 살아 있고 예외가 없어야 한다."""
-    app = _app(nav_page=PAGES[1], **_on("tariff_switch"))
+    app = _app(**_on("tariff_switch"))
     for _ in range(2):
         app.toggle(key="measure_on_tariff_switch").set_value(False).run()
         assert not app.exception, app.exception
@@ -127,43 +157,82 @@ def test_수단을_켜고_끄기를_반복해도_상태가_꼬이지_않는다()
     assert any(item.label == "가장 유리한 요금제" for item in app.metric)
 
 
-def test_사이드바와_하단_단추가_같은_상태를_쓴다() -> None:
-    """**두 벌을 두면 단추로 옮긴 뒤 옆단 표시가 어긋난다** (12세션)."""
-    app = _app(nav_page=PAGES[0])
-    app.button(key="go_measures").click().run()
-    assert app.session_state["nav_page"] == PAGES[1]
+def test_옆단은_건물_정보다() -> None:
+    """**계약 정보는 옆단에 없다** (16세션 2절). 건물이 아니라 계약이다."""
+    app = _app()
+    labels = [str(item.label) for item in app.sidebar.text_input]
+    labels += [str(item.label) for item in app.sidebar.selectbox]
+    labels += [str(item.label) for item in app.sidebar.number_input]
+    assert set(labels) == {
+        "건물명 (선택)",
+        "용도 (선택)",
+        "시도",
+        "시군구",
+        "연면적 (m², 선택)",
+        "준공연도 (선택)",
+    }
+    banned = ("계약종별", "전압구분", "계약전력", "선택요금")
+    assert not [item for item in labels if any(word in item for word in banned)], labels
 
-    app.sidebar.button(key=f"nav_{PAGES[2]}").click().run()
-    assert app.session_state["nav_page"] == PAGES[2]
+
+def test_기준_데이터로_갔다_돌아온다() -> None:
+    """**단계가 아니라 설정이다** — 옆단 하단의 별도 진입점 (16세션 1절)."""
+    app = _app()
+    app.sidebar.button(key="nav_rules").click().run()
+    assert app.session_state["nav_page"] == RULES_PAGE
     assert not app.exception, app.exception
+    app.sidebar.button(key="nav_analysis").click().run()
+    assert not app.exception, app.exception
+    assert any("1단계" in str(item.value) for item in app.header)
 
 
-def test_옆단이_단계_상태를_보인다() -> None:
-    app = _app(nav_page=PAGES[1], **_on("tariff_switch"))
-    labels = [str(item.label) for item in app.sidebar.button]
-    assert labels[0].startswith("① 진단") and "완료" in labels[0]
-    assert labels[1].startswith("② 개선 수단") and "현재" in labels[1]
-    assert labels[2].startswith("③ 조합 비교") and "대기" in labels[2]
-    # **기준 데이터는 단계가 아니다** — 번호 배지가 없다.
-    assert labels[3] == PAGES[3]
+def test_용도를_고르면_계약종별_후보가_좁아진다() -> None:
+    """좁히기이지 판정이 아니다 (16세션 2절)."""
+    from kwise.tariff import load_tariff
+    from kwise.tariff.schema import list_contract_types
+    from kwise.ui.building import narrow_contract_types
+
+    every = list_contract_types(load_tariff())
+    assert len(narrow_contract_types(every, "")) == len(every)
+    factory = narrow_contract_types(every, "factory")
+    assert factory and all(key.startswith("industrial") for key, _label in factory)
+    school = narrow_contract_types(every, "school")
+    assert school and all(key.startswith("education") for key, _label in school)
+    # 모르는 용도면 전 종별이다 — 고를 것이 사라지면 입력을 못 한다.
+    assert narrow_contract_types(every, "없는용도") == every
 
 
-def test_진행할_수_없는_단계는_눌리지_않는다() -> None:
-    app = _blank()
-    buttons = {str(item.label): item for item in app.sidebar.button}
-    locked = [item for label, item in buttons.items() if "진행 불가" in label]
-    assert len(locked) == 2, list(buttons)
-    assert all(item.disabled for item in locked)
+def test_연면적을_넣으면_원단위가_나온다() -> None:
+    """**없으면 줄 자체가 없다.** 국내 평균과 견주지 않는다 (16세션 2절)."""
+    from kwise.ui.building import BuildingInfo, intensity_kwh_per_m2
+
+    assert intensity_kwh_per_m2(1_000.0, None) is None
+    assert intensity_kwh_per_m2(1_000.0, BuildingInfo(region_key="서울특별시/강남구")) is None
+    value = intensity_kwh_per_m2(
+        1_000.0, BuildingInfo(region_key="서울특별시/강남구", floor_area_m2=250.0)
+    )
+    assert value == pytest.approx(4.0)
+
+
+def test_원단위가_화면에_한_줄로_나온다() -> None:
+    from kwise.ui.building import BuildingInfo
+
+    app = _app(building_info=BuildingInfo(region_key="서울특별시/강남구", floor_area_m2=20_000.0))
+    assert not app.exception, app.exception
+    assert "원단위" in _text(app)
+    assert "국내 평균" not in _text(app)
+
+
+def test_연면적이_없으면_원단위_줄이_없다() -> None:
+    app = _app()
+    assert "원단위" not in _text(app)
 
 
 @pytest.mark.parametrize("key", BILLED_MEASURES)
 def test_수단을_함께_켜도_카드_값이_불변이다(key: str) -> None:
     """**독립 평가** (14세션 2절) — 다른 수단을 켜고 끄든 이 카드의 숫자가 같다."""
-    alone = [(str(m.label), str(m.value)) for m in _app(nav_page=PAGES[1], **_on(key)).metric]
-    both = [
-        (str(m.label), str(m.value))
-        for m in _app(nav_page=PAGES[1], **_on(*BILLED_MEASURES)).metric
-    ]
+    alone = _stage2_metrics(_app(**_on(key)))
+    both = _stage2_metrics(_app(**_on(*BILLED_MEASURES)))
     span = len(alone)
     assert alone
     assert any(both[start : start + span] == alone for start in range(len(both) - span + 1)), (
@@ -174,7 +243,7 @@ def test_수단을_함께_켜도_카드_값이_불변이다(key: str) -> None:
 
 def test_대표일을_바꾸면_곡선_차트가_따라_바뀐다() -> None:
     """**세 곡선이 같은 날을 본다** (15세션 2절)."""
-    app = _app(nav_page=PAGES[1], **_on("power_factor", "ess"))
+    app = _app(**_on("power_factor", "ess"))
     assert not app.exception, app.exception
     assert "연간 최대수요일" in _text(app)
 
@@ -190,7 +259,7 @@ def test_대표일을_바꾸면_곡선_차트가_따라_바뀐다() -> None:
 
 @pytest.mark.usefixtures("real_weather")
 def test_태양광_계산_전에는_묵은_결과_경고가_없다() -> None:
-    app = _app(nav_page=PAGES[1], **_on("solar"))
+    app = _app(**_on("solar"))
     assert not app.exception, app.exception
     assert "입력이 변경되었습니다" not in _text(app)
 
@@ -198,7 +267,7 @@ def test_태양광_계산_전에는_묵은_결과_경고가_없다() -> None:
 @pytest.mark.usefixtures("real_weather")
 def test_입력을_바꾸면_묵은_결과라고_적는다() -> None:
     """계산 단추를 누르기 전 값은 **이전 계산의 것**이다. 그 사실을 적는다 (13세션)."""
-    app = _app(nav_page=PAGES[1], **_on("solar"))
+    app = _app(**_on("solar"))
     app.button(key="solar_run").click().run(timeout=900)
     assert not app.exception, app.exception
     assert "입력이 변경되었습니다" not in _text(app)
@@ -213,7 +282,7 @@ def test_입력을_바꾸면_묵은_결과라고_적는다() -> None:
 @pytest.mark.usefixtures("real_weather")
 def test_최적이_면적_상한이면_곡선을_감춘다() -> None:
     """**한 줄 판정으로 충분하다** (15세션 1-3). 곡선은 접어 둔다."""
-    app = _app(nav_page=PAGES[1], **_on("solar"))
+    app = _app(**_on("solar"))
     app.button(key="solar_run").click().run(timeout=900)
     assert not app.exception, app.exception
     body = _text(app)
@@ -225,7 +294,7 @@ def test_최적이_면적_상한이면_곡선을_감춘다() -> None:
 @pytest.mark.usefixtures("real_weather")
 def test_방위_라벨에_상대_발전량이_붙는다() -> None:
     """**하드코딩하지 않는다** — 지역·경사각으로 계산한 값이다 (15세션 1-1)."""
-    app = _app(nav_page=PAGES[1], **_on("solar"))
+    app = _app(**_on("solar"))
     assert not app.exception, app.exception
     options = list(app.radio(key="measure_solar_azimuth").options)
     assert options[0] == "남 (기준)"
@@ -243,7 +312,6 @@ def compare_screen() -> AppTest:
     running.session_state["contract_form"] = ContractForm(
         contract_type="general_b", voltage="high_a", option="I", contract_kw=6_000.0
     )
-    running.session_state["nav_page"] = PAGES[2]
     for key in BILLED_MEASURES:
         running.session_state[f"measure_on_{key}"] = True
     return running.run()
@@ -258,9 +326,10 @@ def test_엑셀을_만들고_내려받아도_결과가_남는다(compare_screen:
     after = built.download_button(key="dl_excel").click().run(timeout=900)
     assert not after.exception, after.exception
     assert len(after.download_button) == 1, "내려받기 뒤 단추가 사라졌습니다."
-    assert [item.label for item in after.metric][:1] == ["단순 합"], (
+    assert _stage3_labels(after)[:3] == ["단순 합", "합산효과", "차이"], (
         "내려받기 뒤 계산 결과가 사라졌습니다."
     )
+    assert _stage2_metrics(after), "내려받기 뒤 2단계 카드가 사라졌습니다."
 
 
 def test_워드를_만들고_내려받아도_결과가_남는다(compare_screen: AppTest) -> None:
@@ -269,12 +338,13 @@ def test_워드를_만들고_내려받아도_결과가_남는다(compare_screen:
     after = built.download_button(key="dl_word").click().run(timeout=900)
     assert not after.exception, after.exception
     assert after.download_button(key="dl_word"), "내려받기 뒤 단추가 사라졌습니다."
-    assert [item.label for item in after.metric][:1] == ["단순 합"]
+    assert _stage3_labels(after)[:3] == ["단순 합", "합산효과", "차이"]
+    assert _stage2_metrics(after), "내려받기 뒤 2단계 카드가 사라졌습니다."
 
 
 def test_수단이_없어도_두_산출물이_만들어진다() -> None:
     """진단만 보고 받아 가는 것이 정상 경로다 (8세션에 Excel 에서 잡았다)."""
-    app = _app(nav_page=PAGES[2])
+    app = _app()
     for build, download in (("build_excel", "dl_excel"), ("build_word", "dl_word")):
         after = app.button(key=build).click().run(timeout=900)
         assert not after.exception, after.exception
@@ -309,11 +379,14 @@ def test_산출물_파일명에_날짜_시각이_붙는다() -> None:
 # ===================================================================== 5-3 경계
 
 
-@pytest.mark.parametrize("page", STEP_PAGES[1:])
-def test_데이터가_없으면_2·3단계가_막힌다(page: str) -> None:
-    app = _blank(nav_page=page)
+def test_데이터가_없어도_탭을_막지_않는다() -> None:
+    """**진행 불가 탭도 막지 않고 안내만 낸다** (16세션 1절)."""
+    app = _blank()
     assert not app.exception, app.exception
-    assert any("1단계에서 파일을 올리고" in str(item.value) for item in app.error)
+    headers = [str(item.value) for item in app.header]
+    assert any("2단계" in item for item in headers)
+    assert any("3단계" in item for item in headers)
+    assert "「1단계 · 진단」 탭에서" in _text(app)
 
 
 def test_계약_정보가_없으면_금액을_내지_않는다() -> None:
@@ -327,26 +400,25 @@ def test_계약_정보가_없으면_금액을_내지_않는다() -> None:
 
 def test_잉여가_0_이어도_카드는_활성이다() -> None:
     """**독립 평가 원칙** — 다른 카드 때문에 비활성이 되지 않는다 (14세션 2-3)."""
-    app = _app(nav_page=PAGES[1], **_on("surplus"))
+    app = _app(**_on("surplus"))
     assert not app.exception, app.exception
     assert "태양광을 켜지 않아 잉여가 0 입니다." in _text(app)
     assert any("잉여 판매 단가" in str(item.label) for item in app.number_input)
 
 
-def test_하향_여지가_없으면_슬라이더를_감춘다() -> None:
-    """움직여도 0% 인 슬라이더는 고장으로 보인다 (13세션)."""
+def test_하향_여지가_없으면_여유율_입력을_감춘다() -> None:
+    """움직여도 0% 인 입력칸은 고장으로 보인다 (13세션)."""
     running = AppTest.from_file(str(APP), default_timeout=900)
     running.session_state["upload_bytes"] = SAMPLE.read_bytes()
     running.session_state["upload_name"] = SAMPLE.name
     running.session_state["contract_form"] = ContractForm(
         contract_type="general_b", voltage="high_a", option="I", contract_kw=5_400.0
     )
-    running.session_state["nav_page"] = PAGES[1]
     running.session_state["measure_on_contract"] = True
     app = running.run()
     assert not app.exception, app.exception
     assert "하향 여지가 없습니다" in _text(app)
-    assert not [item for item in app.slider if "여유율" in str(item.label)]
+    assert not [item for item in app.number_input if "여유율" in str(item.label)]
 
 
 def test_기상_취득에_실패해도_화면이_살아_있다(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -367,7 +439,7 @@ def test_기상_취득에_실패해도_화면이_살아_있다(monkeypatch: pyte
     monkeypatch.setattr(pipeline, "load_weather", refuse)
     st.cache_data.clear()
 
-    app = _app(nav_page=PAGES[1], **_on("solar"))
+    app = _app(**_on("solar"))
     app.button(key="solar_run").click().run(timeout=900)
     assert not app.exception, app.exception
     assert any("기상 자료를 얻지 못해" in str(item.value) for item in app.error)
@@ -408,51 +480,66 @@ def test_요금적용전력_회귀값이_그대로다(sample_diagnosis: object) 
 
 def test_3단계_요약이_2단계_카드와_같다() -> None:
     """**재계산하지 않는다** (14세션 5-1)."""
-    card = _app(nav_page=PAGES[1], **_on(*BILLED_MEASURES))
+    card = _app(**_on(*BILLED_MEASURES))
     metrics = [(str(item.label), str(item.value)) for item in card.metric]
     index = next(pos for pos, (label, _) in enumerate(metrics) if label == "출력 / 용량")
     ess_payback = metrics[index + 3][1]
 
-    summary = _app(nav_page=PAGES[2], **_on(*BILLED_MEASURES))
-    frame = summary.dataframe[0].value
+    frame = next(item.value for item in card.dataframe if "수단" in list(item.value.columns))
     rows = {str(row["수단"]): row for _, row in frame.iterrows()}
     assert str(rows["7.6 ESS"]["회수기간"]) == ess_payback
 
 
 def test_단순_합과_합산효과가_다르다() -> None:
     """**상호작용이 실제로 계산되는지** — 같으면 조합 재계산이 도는지 의심해야 한다."""
-    app = _app(nav_page=PAGES[2], **_on(*BILLED_MEASURES))
+    app = _app(**_on(*BILLED_MEASURES))
     metrics = {str(item.label): str(item.value) for item in app.metric}
     assert metrics["단순 합"] != metrics["합산효과"]
     gap = next(item for item in app.metric if item.label == "차이")
     assert str(gap.delta).endswith("%")
 
 
-@pytest.mark.parametrize("page", PAGES[:3])
-def test_화면에_코드_식별자가_없다(page: str) -> None:
+def test_화면에_코드_식별자가_없다() -> None:
     banned = re.compile(r"\b(general_b|high_a|tariff_switch|prior_peaks|verified=)\b")
-    app = _app(nav_page=page, **_on(*BILLED_MEASURES))
+    app = _app(**_on(*BILLED_MEASURES))
     offenders = [line for line in _text(app).splitlines() if banned.search(line)]
     assert not offenders, offenders
 
 
-@pytest.mark.parametrize("page", PAGES[:3])
-def test_이스케이프되지_않은_물결표가_없다(page: str) -> None:
+def test_이스케이프되지_않은_물결표가_없다() -> None:
     """물결표 둘이 한 줄에 있으면 그 사이가 취소선이 된다 (13세션)."""
-    app = _app(nav_page=page, **_on(*BILLED_MEASURES))
+    app = _app(**_on(*BILLED_MEASURES))
     offenders = [
         line for line in _text(app).splitlines() if len(re.findall(r"(?<!\\)~", line)) >= 2
     ]
     assert not offenders, offenders
 
 
-@pytest.mark.parametrize("page", PAGES[:3])
-def test_원_단위_금액이_모두_천의_배수다(page: str) -> None:
+def test_원_단위_금액이_모두_천의_배수다() -> None:
     """**표시만 절사하고 내부 계산은 원 단위다** (14세션 1절)."""
     pattern = re.compile(r"(?<![만억\d])(\d[\d,]*)원(?![/\w])")
-    app = _app(nav_page=page, **_on(*BILLED_MEASURES))
+    app = _app(**_on(*BILLED_MEASURES))
     blobs = [_text(app)] + [frame.value.to_string() for frame in app.dataframe]
     amounts = [match.group(1) for blob in blobs for match in pattern.finditer(blob)]
     assert amounts, "원 단위 금액을 찾지 못했습니다."
     offenders = [item for item in amounts if int(item.replace(",", "")) % 1_000]
     assert not offenders, offenders
+
+
+def test_건물명이_없으면_산출물_제목이_미입력이다() -> None:
+    """**빈 표지는 만들다 만 문서로 보인다** (16세션 2절)."""
+    from kwise.ui.building import NAME_MISSING, BuildingInfo
+
+    blank = BuildingInfo(region_key="서울특별시/강남구")
+    assert blank.title == NAME_MISSING
+    assert not blank.named
+    named = BuildingInfo(region_key="서울특별시/강남구", name=" 본사 ")
+    assert named.title == "본사"
+
+    app = _app(**_on(*BILLED_MEASURES))
+    assert not app.exception, app.exception
+    body = _text(app)
+    assert f"표지 이름 — **{NAME_MISSING}**" in body
+    # 같은 것을 두 곳에서 묻지 않는다 — 건물명 입력칸은 옆단 하나뿐이다.
+    fields = [str(item.label) for item in app.text_input if "건물명" in str(item.label)]
+    assert fields == ["건물명 (선택)"], fields

@@ -29,7 +29,6 @@ from kwise.measures import AppliedMeasure, measure_kind
 from kwise.report.excel import SHEET_ORDER
 from kwise.tariff import TariffSelection, TariffTable, load_tariff
 from kwise.ui import text
-from kwise.ui.anchors import MANUAL_FILENAME, app_static_dir, manual_href
 from kwise.ui.labels import contract_label, option_label, selection_label, voltage_label
 from kwise.ui.notices import Severity, classify, dedupe, report_notices, screen_notices
 from kwise.ui.pipeline import ContractForm
@@ -142,21 +141,33 @@ def test_비교_화면이_바이트를_세션에_담는다() -> None:
     assert "\n        _offer(\n" in source
 
 
-# ======================================================== ② [자세히] 링크
+# ======================================================== ② 화면에 링크가 없다
 
 
-def test_자세히가_실제_파일을_가리킨다() -> None:
-    assert (app_static_dir() / MANUAL_FILENAME).is_file(), (
-        "정적 사본이 없으면 링크가 File not found 로 떨어집니다."
-    )
-    href = manual_href("certainty")
-    assert href is not None
-    assert href.startswith("app/static/")
+def test_화면_소스에_하이퍼링크가_없다() -> None:
+    """**화면에서 링크를 전면 제거했다** (16세션 4절).
+
+    마크다운 링크(``[글](주소)``)도, 주소를 그대로 적은 자리도 없어야 한다.
+    요지는 ``help=`` 툴팁으로 나간다.
+    """
+    pattern = re.compile(r"\]\(\s*(?:https?://|app/static/|[A-Za-z0-9_.-]+\.html)")
+    offenders: list[str] = []
+    for path in sorted((Path("src") / "kwise" / "ui").rglob("*.py")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if line.lstrip().startswith("#"):
+                continue  # 주석은 화면에 나가지 않는다
+            if pattern.search(line):
+                offenders.append(f"{path}:{number} {line.strip()}")
+    assert offenders == [], "화면에 하이퍼링크가 남아 있습니다: " + " / ".join(offenders)
 
 
-def test_사본이_없으면_링크를_내지_않는다(tmp_path: Path) -> None:
-    """**죽은 링크를 내느니 비활성이 낫다.**"""
-    assert manual_href("certainty", docs_dir=tmp_path, root=tmp_path) is None
+def test_링크_기계장치를_걷어냈다() -> None:
+    """정적 사본·앵커 주소를 만드는 함수가 남아 있으면 다시 쓰이게 된다."""
+    import kwise.ui.anchors as anchors
+
+    for name in ("manual_href", "detail_suffix", "app_static_dir", "static_manual_path"):
+        assert not hasattr(anchors, name), f"{name} 이 남아 있습니다."
+    assert not (Path("src") / "kwise" / "ui" / "static").exists()
 
 
 # ======================================================== ③ 세 등급
@@ -224,12 +235,30 @@ def test_선택요금을_사람말로_적는다(table: TariffTable) -> None:
 # ======================================================== ⑤ 카드는 접혀 있다
 
 
-def test_개선_수단_카드가_모두_접혀_있다() -> None:
-    """일곱 개가 펼쳐져 있으면 화면이 스크롤 두 배가 된다."""
+def test_켜지_않은_카드는_펼쳐지지_않는다() -> None:
+    """일곱 개가 펼쳐져 있으면 화면이 스크롤 두 배가 된다.
+
+    16세션 0-2 로 **켠 카드는 펼친 채로 남는다.** 켜지 않은 카드는 확장 패널
+    자체가 만들어지지 않으므로, 카드 본문을 여는 자리는 토글 하나뿐이다.
+    """
     source = (VIEWS / "measures.py").read_text(encoding="utf-8")
-    expanders = re.findall(r"st\.expander\((.{0,120}?)\)", source, flags=re.S)
-    assert expanders
-    assert not [item for item in expanders if "expanded=True" in item]
+    assert "st.session_state[opened_key] = False" in source
+    body = source[source.index("def _card(") : source.index("def _band_series(")]
+    assert body.index("if not enabled:") < body.index("with st.expander(")
+
+
+def test_켠_카드는_다시_그려도_펼쳐져_있다() -> None:
+    """± 를 세 번 눌러도 카드가 접히지 않아야 한다 (16세션 0-2)."""
+    screen = _running(measure_on_power_factor=True)
+    assert not screen.exception, screen.exception
+    assert screen.session_state["_kwise_opened_power_factor"] is True
+    target = screen.number_input(key="measure_power_factor_target")
+    for _ in range(3):
+        target = screen.number_input(key="measure_power_factor_target")
+        screen = target.increment().run(timeout=600)
+        assert not screen.exception, screen.exception
+        assert screen.session_state["_kwise_opened_power_factor"] is True
+        assert screen.number_input(key="measure_power_factor_target") is not None
 
 
 def test_확인사항이_한_묶음이다() -> None:
@@ -309,6 +338,32 @@ def _running(*, option: str = "II", contract_kw: float = 6_000.0, **state: objec
     return running.run()
 
 
+# **탭 구조라 세 화면이 한 번에 그려진다** (16세션 1절). 지표 목록도 셋이 이어
+# 붙으므로, 어느 탭의 지표인지 경계로 갈라 본다. 1단계의 마지막 지표는
+# 「기본요금 비중」이고 3단계의 첫 지표는 「단순 합」이다.
+_DIAGNOSE_LAST = "기본요금 비중"
+_STAGE3_FIRST = "단순 합"
+
+
+def _labels(screen: AppTest) -> list[str]:
+    return [str(item.label) for item in screen.metric]
+
+
+def _stage2_metrics(screen: AppTest) -> list[tuple[str, str]]:
+    """2단계 카드가 낸 지표만. 앞의 진단과 뒤의 조합을 잘라 낸다."""
+    pairs = [(str(item.label), str(item.value)) for item in screen.metric]
+    labels = [label for label, _ in pairs]
+    start = labels.index(_DIAGNOSE_LAST) + 1 if _DIAGNOSE_LAST in labels else 0
+    end = labels.index(_STAGE3_FIRST) if _STAGE3_FIRST in labels else len(pairs)
+    return pairs[start:end]
+
+
+def _stage3_metrics(screen: AppTest) -> list[str]:
+    """3단계가 낸 지표만."""
+    labels = _labels(screen)
+    return labels[labels.index(_STAGE3_FIRST) :] if _STAGE3_FIRST in labels else []
+
+
 @pytest.fixture(scope="module")
 def app() -> AppTest:
     return _running()
@@ -338,14 +393,21 @@ def test_분석_기간이_잘리지_않는다(app: AppTest) -> None:
     assert period.delta.startswith("2023-04-25") and period.delta.endswith("2024-04-27")
 
 
-def test_개선_여지가_맨_아래에_온다(app: AppTest) -> None:
-    """진단을 다 본 뒤 "그래서 무엇을 할 수 있나" 가 온다 (6.5)."""
-    headings = [item.value for item in app.subheader]
-    assert headings.index("데이터 품질") < headings.index("부하 패턴")
-    assert headings.index("부하 패턴") < headings.index("피크 특성")
-    assert headings.index("피크 특성") < headings.index("현재 요금 구조")
-    assert headings.index("현재 요금 구조") < headings.index("계약전력 적정성")
-    assert headings[-1].startswith("개선 여지")
+def test_진단_순서가_16세션_3절_그대로다(app: AppTest) -> None:
+    """④ 품질 → ⑤ 부하 패턴 → ⑥ 피크 → ⑦ 요금 구조."""
+    headings = [str(item.value) for item in app.subheader]
+    order = ["데이터 품질", "부하 패턴", "피크 특성", "현재 요금 구조"]
+    assert [item for item in headings if item in order] == order
+
+
+def test_진단에_계약전력_적정성과_개선_여지가_없다(app: AppTest) -> None:
+    """**같은 금액을 두 화면에 다른 이름으로 두지 않는다** (16세션 3절).
+
+    적정성은 2단계 7.2 로 옮겼고 개선 여지는 7.1·7.2 와 겹쳐 지웠다.
+    """
+    headings = [str(item.value) for item in app.subheader]
+    assert "계약전력 적정성" not in headings
+    assert not [item for item in headings if item.startswith("개선 여지")]
 
 
 def test_화면에_참고_등급이_없다(app: AppTest) -> None:
@@ -366,11 +428,16 @@ def test_화면_어디에도_코드_식별자가_없다(app: AppTest) -> None:
     assert not CODE_WORDS.search(body), CODE_WORDS.findall(body)
 
 
-def test_다음_단계_단추로_옮겨간다() -> None:
-    moved = _running().button(key="go_measures").click().run()
-    assert not moved.exception, moved.exception
-    assert "2단계" in moved.header[0].value
-    assert moved.session_state["nav_page"] == "2단계 · 개선 수단"
+def test_세_화면이_한_번에_그려진다() -> None:
+    """**탭 구조다** (16세션 1절). 옆단 이동 목록도 하단 단추도 없다."""
+    screen = _running()
+    assert not screen.exception, screen.exception
+    headers = [str(item.value) for item in screen.header]
+    assert any("1단계" in item for item in headers)
+    assert any("2단계" in item for item in headers)
+    assert any("3단계" in item for item in headers)
+    keys = {item.key for item in screen.button}
+    assert "go_measures" not in keys and "go_compare" not in keys
 
 
 @pytest.fixture(scope="module")
@@ -385,27 +452,26 @@ def compare_app() -> AppTest:
         option="I",
         measure_on_tariff_switch=True,
         measure_on_contract=True,
-        nav_page="3단계 · 비교",
     )
 
 
-def test_비교_화면이_권장안_지표부터_낸다(compare_app: AppTest) -> None:
+def test_비교_화면이_합산효과_지표를_낸다(compare_app: AppTest) -> None:
     assert not compare_app.exception, compare_app.exception
-    labels = [item.label for item in compare_app.metric]
-    # 14세션에 합산효과 지표 셋이 앞에 붙었다 (단순 합·합산효과·차이).
-    assert labels[:3] == ["단순 합", "합산효과", "차이"]
-    assert labels[3:7] == ["12개월 환산 절감액", "투자비", "회수기간", "확실성"]
+    labels = [str(item.label) for item in compare_app.metric]
+    assert _stage3_metrics(compare_app)[:3] == ["단순 합", "합산효과", "차이"]
+    # **권장안 지표는 없앴다** (16세션 5절) — 미리 정의된 조합 세트가 사라졌다.
+    assert "12개월 환산 절감액" not in labels
 
 
 def test_비교_화면에_감도_원자료_표가_없다(compare_app: AppTest) -> None:
-    """표는 조합 비교 하나뿐이다. 감도는 범위 한 줄로 적는다."""
-    # 개선안별 요약 + 조합 비교 두 표다 (14세션 5절). 감도 원자료 표는 없다.
-    assert len(compare_app.dataframe) == 2
+    """3단계 표는 개선안별 요약 하나뿐이다. 감도는 범위 한 줄로 적는다."""
+    headings = [str(item.value) for item in compare_app.subheader]
+    assert "조합 비교" not in headings
+    assert "감도" in headings
 
 
 def test_엑셀을_내려받아도_결과가_남는다(compare_app: AppTest) -> None:
-    """**실제 화면에서** 내려받기 rerun 을 견디는지 본다 (12세션에서 잡은 문제)."""
-    compare_app.checkbox[0].set_value(False)  # 15분 시계열은 빼고 만든다
+    """**실제 화면에서** 내려받기 rerun 을 견디는지 본다 (12세션·16세션 0-1)."""
     built = compare_app.button(key="build_excel").click().run(timeout=600)
     assert not built.exception, built.exception
     assert len(built.download_button) == 1
@@ -413,7 +479,7 @@ def test_엑셀을_내려받아도_결과가_남는다(compare_app: AppTest) -> 
     after = built.download_button(key="dl_excel").click().run(timeout=600)
     assert not after.exception, after.exception
     assert len(after.download_button) == 1, "내려받기 뒤 단추가 사라졌습니다."
-    assert [item.label for item in after.metric][:1] == ["단순 합"], (
+    assert _stage3_metrics(after)[:3] == ["단순 합", "합산효과", "차이"], (
         "내려받기 뒤 계산 결과가 사라졌습니다."
     )
 
@@ -498,7 +564,7 @@ def test_렌더된_문자열에_맨_물결표가_없다(app: AppTest) -> None:
 
 
 def test_결측_안내가_한_블록이다(app: AppTest) -> None:
-    """같은 사실을 세 번 말하던 것을 세 줄 한 묶음으로 합쳤다 (13세션)."""
+    """같은 사실을 세 번 말하던 것을 세 줄 한 묶음으로 합쳤다 (13세션·16세션 3절)."""
     from kwise.quality import check_quality
 
     quality = check_quality(load_usage(SAMPLE))
@@ -542,14 +608,11 @@ def test_태양광에_계산_단추가_있다() -> None:
     assert "입력이 변경되었습니다 — 다시 계산하십시오" in source
 
 
-def test_비교_화면은_표가_먼저다(compare_app: AppTest) -> None:
-    """어느 조합을 왜 권하는지 말하려면 견줄 것이 먼저 보여야 한다 (13세션)."""
-    headings = [item.value for item in compare_app.subheader]
-    # **개선안별 요약 → 합산효과 → 조합 비교** 순서다 (14세션 5절).
-    assert headings.index("개선안별 요약") < headings.index("합산효과")
-    assert headings.index("합산효과") < headings.index("조합 비교")
-    # 수단별 그래프는 화면에서 뺐다 — 보고서 4장에만 둔다.
-    assert len(compare_app.get("vega_lite_chart")) == 0
+def test_비교_화면은_요약이_먼저다(compare_app: AppTest) -> None:
+    """**개선안별 요약 → 조합 구성 → 합산효과** 순서다 (16세션 5절)."""
+    headings = [str(item.value) for item in compare_app.subheader]
+    assert headings.index("개선안별 요약") < headings.index("조합 구성")
+    assert headings.index("조합 구성") < headings.index("합산효과")
 
 
 # ======================================================== 14세션 · 2단계 독립 평가
@@ -607,9 +670,9 @@ INDEPENDENT_MEASURES = ("tariff_switch", "contract", "power_factor", "ess")
 
 def _metrics(*keys: str) -> list[tuple[str, str]]:
     state: dict[str, object] = {f"measure_on_{key}": True for key in keys}
-    screen = _running(nav_page="2단계 · 개선 수단", **state)  # type: ignore[arg-type]
+    screen = _running(**state)  # type: ignore[arg-type]
     assert not screen.exception, screen.exception
-    return [(str(item.label), str(item.value)) for item in screen.metric]
+    return _stage2_metrics(screen)
 
 
 def _contains(whole: list[tuple[str, str]], part: list[tuple[str, str]]) -> bool:
@@ -708,12 +771,20 @@ def test_ESS_판정_문장을_쓰지_않는다() -> None:
 # ======================================================== 14세션 · 3단계 세 부분
 
 
+STAGE3_MEASURES: dict[str, object] = {
+    "measure_on_tariff_switch": True,
+    "measure_on_contract": True,
+    "measure_on_power_factor": True,
+    "measure_on_ess": True,
+    "measure_ess_target": 5_170.0,
+}
+
+
 @pytest.fixture(scope="module")
 def stage3() -> AppTest:
     """요금에 영향을 주는 수단 넷을 켠 3단계 화면."""
     return _running(
         option="I",
-        nav_page="3단계 · 비교",
         measure_on_tariff_switch=True,
         measure_on_contract=True,
         measure_on_power_factor=True,
@@ -723,18 +794,47 @@ def stage3() -> AppTest:
 
 
 def test_3단계가_세_부분으로_나뉜다(stage3: AppTest) -> None:
-    """개선안별 요약 → 합산효과 → 조합 비교 (14세션 5절)."""
+    """개선안별 요약 → 조합 구성 → 합산효과 → 내려받기 (16세션 5절)."""
     assert not stage3.exception, stage3.exception
     headings = [str(item.value) for item in stage3.subheader]
-    assert headings.index("개선안별 요약") < headings.index("합산효과")
-    assert headings.index("합산효과") < headings.index("조합 비교")
+    order = ["개선안별 요약", "조합 구성", "합산효과", "내려받기"]
+    assert [item for item in headings if item in order] == order
+    assert "조합 비교" not in headings, "미리 정의된 조합 세트 비교는 없앴다 (16세션 5절)."
+
+
+def test_개선안마다_체크박스가_있다(stage3: AppTest) -> None:
+    """**조합은 사용자가 짠다** (16세션 5절). 기본은 2단계에서 켠 수단 전부다."""
+    picks = [item for item in stage3.checkbox if str(item.key or "").startswith("combo_pick_")]
+    assert {str(item.key) for item in picks} == {
+        "combo_pick_tariff_switch",
+        "combo_pick_contract",
+        "combo_pick_power_factor",
+        "combo_pick_ess",
+    }
+    assert all(item.value for item in picks), "기본은 전부 체크다."
+
+
+def test_체크를_풀면_합산효과가_다시_계산된다() -> None:
+    """뺀 만큼 줄어야 한다 — 화면이 옛 값을 들고 있으면 안 된다.
+
+    **한 벌을 따로 띄운다.** 묶음 fixture 를 건드리면 뒤따르는 시험이 뺀 조합을
+    보게 된다.
+    """
+    screen = _running(option="I", **STAGE3_MEASURES)  # type: ignore[arg-type]
+    assert not screen.exception, screen.exception
+    before = {str(item.label): str(item.value) for item in screen.metric}
+    dropped = screen.checkbox(key="combo_pick_ess").set_value(False).run(timeout=600)
+    assert not dropped.exception, dropped.exception
+    after = {str(item.label): str(item.value) for item in dropped.metric}
+    assert after["합산효과"] != before["합산효과"]
+    body = " ".join(str(item.value) for item in dropped.caption)
+    assert "조합에서 뺀 개선안" in body, body
 
 
 def test_단순_합과_합산효과와_차이를_모두_보인다(stage3: AppTest) -> None:
     """**이것이 3단계의 존재 이유다** (14세션 5-2)."""
     assert not stage3.exception, stage3.exception
-    labels = [str(item.label) for item in stage3.metric]
-    assert labels[:3] == ["단순 합", "합산효과", "차이"]
+    assert _stage3_metrics(stage3)[:3] == ["단순 합", "합산효과", "차이"]
     gap = next(item for item in stage3.metric if item.label == "차이")
     assert str(gap.delta).endswith("%"), gap.delta  # 차이를 비율로도 낸다
 
@@ -755,15 +855,6 @@ def test_계약전력_추가_하향_여지가_나온다(stage3: AppTest) -> None
     assert "이 조합이면 계약전력을" in body
 
 
-STAGE3_MEASURES: dict[str, object] = {
-    "measure_on_tariff_switch": True,
-    "measure_on_contract": True,
-    "measure_on_power_factor": True,
-    "measure_on_ess": True,
-    "measure_ess_target": 5_170.0,
-}
-
-
 def _after(metrics: list[tuple[str, str]], anchor: str, offset: int) -> str:
     """카드 안에서 ``anchor`` 로부터 몇 칸 뒤의 지표 값. 카드 경계를 잡는 방법이다."""
     index = next(position for position, (label, _) in enumerate(metrics) if label == anchor)
@@ -775,17 +866,15 @@ def test_개선안별_요약이_2단계_카드와_같은_값이다() -> None:
 
     회수기간은 두 화면이 같은 서식(``0.0년``)으로 찍으므로 문자열째로 견줄 수 있다.
     """
-    card = _running(option="I", nav_page="2단계 · 개선 수단", **STAGE3_MEASURES)  # type: ignore[arg-type]
-    assert not card.exception, card.exception
-    metrics = [(str(item.label), str(item.value)) for item in card.metric]
+    screen = _running(option="I", **STAGE3_MEASURES)  # type: ignore[arg-type]
+    assert not screen.exception, screen.exception
+    metrics = _stage2_metrics(screen)
     card_payback = {
         "7.4 역률 개선": _after(metrics, "현재 역률", 3),
         "7.6 ESS": _after(metrics, "출력 / 용량", 3),
     }
 
-    summary = _running(option="I", nav_page="3단계 · 비교", **STAGE3_MEASURES)  # type: ignore[arg-type]
-    assert not summary.exception, summary.exception
-    frame = summary.dataframe[0].value
+    frame = next(item.value for item in screen.dataframe if "수단" in list(item.value.columns))
     rows = {str(row["수단"]): row for _, row in frame.iterrows()}
 
     for title in ("7.1 선택요금 전환", "7.2 계약전력 조정", "7.4 역률 개선", "7.6 ESS"):
@@ -840,10 +929,118 @@ def test_절사_각주가_화면에_있다(stage3: AppTest) -> None:
     assert text.TRUNCATION_FOOTNOTE in body
 
 
-def test_조합마다_계약전력_하향_여지가_나온다(stage3: AppTest) -> None:
-    """조합이 피크를 얼마나 낮추느냐에 따라 여지가 달라진다 (14세션 5-2·5-3)."""
+def test_조합_기준_하향_여지를_합산효과에서_낸다(stage3: AppTest) -> None:
+    """조합이 피크를 얼마나 낮추느냐에 따라 여지가 달라진다 (14세션 5-2·5-3).
+
+    조합 비교 표를 없앴으므로(16세션 5절) 이 사실은 합산효과 절의 글로 남는다.
+    """
     assert not stage3.exception, stage3.exception
-    frame = stage3.dataframe[1].value  # 두 번째 표가 조합 비교다
-    assert "계약전력 하향 여지" in frame.columns, list(frame.columns)
-    values = [str(item) for item in frame["계약전력 하향 여지"]]
-    assert any("kW" in item for item in values), values
+    body = " ".join(str(item.value) for item in stage3.markdown)
+    assert "계약전력 추가 하향 여지" in body
+    assert "kW" in body
+
+
+# ======================================================== 16세션 · 중복과 금지어
+
+
+def test_같은_지문이_화면에_두_번_나오지_않는다() -> None:
+    """**동일 지문 전수 검사** (16세션 3절).
+
+    같은 문장이 두 자리에 있으면 읽는 사람은 둘이 다른 사실인 줄 알고 차이를
+    찾는다. 세 탭이 한 번에 그려지므로 겹침이 그대로 드러난다.
+    """
+    from collections import Counter
+
+    screen = _running(**{f"measure_on_{key}": True for key in INDEPENDENT_MEASURES})
+    assert not screen.exception, screen.exception
+    lines = [
+        str(item.value).strip()
+        for group in (screen.markdown, screen.caption, screen.warning, screen.error)
+        for item in group
+        if len(str(item.value).strip()) >= 20
+    ]
+    repeated = [line for line, count in Counter(lines).items() if count > 1]
+    assert repeated == [], repeated
+
+
+def test_결측_안내가_세_줄을_넘지_않는다() -> None:
+    """편중된 달마다 한 줄씩 붙어 열두 줄이 되던 자리다 (16세션 3절)."""
+    import dataclasses
+
+    from kwise.quality import check_quality
+    from kwise.ui.views.diagnose import MISSING_LINE_LIMIT
+
+    quality = check_quality(load_usage(SAMPLE))
+    # 열두 달이 모두 편중된 자료. 달마다 한 줄씩 붙던 자리다.
+    flagged = tuple(dataclasses.replace(month, flagged=True) for month in quality.monthly[:12])
+    many = dataclasses.replace(quality, monthly=flagged)
+    assert len(many.flagged_months) == 12
+    lines = missing_lines(many)
+    assert len(lines) <= MISSING_LINE_LIMIT == 3
+    assert "결측률이 높은 달" in lines[-1]
+
+
+def test_계약전력_변경_경고가_7_2_카드에_있다() -> None:
+    """**바꾸자고 제안하는 자리가 이 경고의 제자리다** (16세션 3절)."""
+    from kwise.report import CONTRACT_CHANGE_WARNING
+
+    screen = _running(measure_on_contract=True)
+    assert not screen.exception, screen.exception
+    body = " ".join(
+        str(item.value) for group in (screen.markdown, screen.caption) for item in group
+    )
+    assert CONTRACT_CHANGE_WARNING in body
+    # 1단계에는 없다 — 같은 경고를 두 자리에 두지 않는다.
+    plain = _running()
+    assert CONTRACT_CHANGE_WARNING not in " ".join(
+        str(item.value) for group in (plain.markdown, plain.caption) for item in group
+    )
+
+
+def test_적정성_지표가_7_2_카드로_옮겨왔다() -> None:
+    screen = _running(measure_on_contract=True)
+    labels = [label for label, _ in _stage2_metrics(screen)]
+    assert "이용률" in labels
+    assert "하향 여지" in labels
+
+
+BANNED_WORDS = ("콘덴서", "APFR")
+
+
+def test_콘덴서와_자동역률조정장치라는_말이_없다() -> None:
+    """**「역률 개선」 으로만 적는다** (16세션 6-2). 화면·산출물·문서 전부다."""
+    roots = (Path("src") / "kwise", Path("docs"))
+    offenders: list[str] = []
+    for root in roots:
+        for path in sorted(root.rglob("*")):
+            if path.suffix not in {".py", ".md"} or path.name == "REQUIREMENTS_kwise.md":
+                continue
+            body = path.read_text(encoding="utf-8")
+            offenders.extend(f"{path}: {word}" for word in BANNED_WORDS if word in body)
+    assert offenders == [], offenders
+
+
+def test_투자_구분_이름에도_없다() -> None:
+    from kwise.measures.catalog import TIER_LOW
+
+    assert TIER_LOW == "저투자 (역률 개선)"
+
+
+def test_탭을_오가도_입력이_남는다() -> None:
+    """**한 실행에서 셋이 함께 그려지므로 옮길 때 잃을 것이 없다** (16세션 1절).
+
+    기준 데이터 화면으로 나갔다 돌아와도 켠 수단과 넣은 값이 그대로여야 한다.
+    """
+    screen = _running(measure_on_power_factor=True)
+    target = screen.number_input(key="measure_power_factor_target")
+    before = target.value
+    screen = target.set_value(95.0).run(timeout=600)
+    assert not screen.exception, screen.exception
+    assert before != 95.0
+
+    screen.sidebar.button(key="nav_rules").click().run(timeout=600)
+    screen.sidebar.button(key="nav_analysis").click().run(timeout=600)
+    assert not screen.exception, screen.exception
+    assert screen.session_state["measure_on_power_factor"] is True
+    assert screen.session_state["measure_power_factor_target"] == 95.0
+    assert screen.number_input(key="measure_power_factor_target").value == 95.0

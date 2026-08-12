@@ -1,5 +1,62 @@
 {
   "items": {
+    "building.uses": {
+      "label": "건물 용도와 계약종별 후보",
+      "note": "옆단에서 고른 건물 용도로 계약종별 드롭다운을 좁힌다. 약관의 계약종별 적용 기준을 그대로 옮긴 것이 아니라 흔한 대응을 적은 판단값이므로, 용도를 고르지 않으면 전 종별을 보인다. 최종 판단은 청구서 기재값이다.",
+      "source": "판단값",
+      "value": [
+        {
+          "key": "office",
+          "label": "사무실",
+          "contract_prefixes": [
+            "general"
+          ]
+        },
+        {
+          "key": "commerce",
+          "label": "상업시설",
+          "contract_prefixes": [
+            "general"
+          ]
+        },
+        {
+          "key": "hospital",
+          "label": "병원",
+          "contract_prefixes": [
+            "general"
+          ]
+        },
+        {
+          "key": "factory",
+          "label": "공장",
+          "contract_prefixes": [
+            "industrial"
+          ]
+        },
+        {
+          "key": "industry",
+          "label": "산업시설",
+          "contract_prefixes": [
+            "industrial"
+          ]
+        },
+        {
+          "key": "school",
+          "label": "학교",
+          "contract_prefixes": [
+            "education"
+          ]
+        },
+        {
+          "key": "education",
+          "label": "교육시설",
+          "contract_prefixes": [
+            "education"
+          ]
+        }
+      ],
+      "verified_on": "2026-08-12"
+    },
     "contract.margin_range": {
       "label": "계약전력 여유율 권장 범위",
       "note": "하한 10% 는 계절·기상 변동에 따른 월 최대수요의 통상 진폭을, 상한 20% 는 그 이상을 확보하면 기본요금 절감이 사실상 사라지는 지점을 본 값이다. 초과 한 번이 12개월 기본요금을 올리므로 하한 아래로는 권하지 않는다.",
@@ -260,6 +317,13 @@
       "source": "판단값",
       "value": "설치 밀도",
       "verified_on": "2026-08-07"
+    },
+    "pv.payback_tie_ratio": {
+      "label": "태양광 회수기간 동률 판정 폭",
+      "note": "단가가 kWp 당이면 투자비도 절감액도 용량에 거의 비례해 회수기간 곡선이 평평하다. 실제로 8.060년(8 kWp)과 8.114년(160 kWp)의 차이는 0.7% 인데, 최소점을 그대로 고르면 상한의 1/20 을 최적이라 답하게 된다. 발전량 예측 R² 가 0.8 이라 이 폭의 차이는 예측 오차 안에 묻히므로, 최소 회수기간의 이 비율 안에 드는 점들 가운데 절감액이 가장 큰 것을 고른다. 잉여가 생겨 회수기간이 실제로 꺾이는 경우에는 꺾인 뒤 점들이 이 폭을 벗어나므로 최소점이 그대로 남는다.",
+      "source": "판단값",
+      "value": 0.05,
+      "verified_on": "2026-08-12"
     },
     "sensitivity.labels": {
       "label": "감도 시나리오 표시 라벨",

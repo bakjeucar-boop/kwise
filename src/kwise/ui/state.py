@@ -20,6 +20,7 @@ from kwise.ui.spec import MEASURES
 
 __all__ = [
     "SESSION_ID",
+    "carry_inputs",
     "clear_upload",
     "enabled_measures",
     "get_form",
@@ -36,6 +37,9 @@ __all__ = [
 ]
 
 SESSION_ID = "_kwise_session_id"
+_CARRY = "_kwise_carried_inputs"
+#: 화면을 갈아 끼울 때 지켜야 할 위젯 키의 머리글자.
+_CARRY_PREFIXES = ("measure_", "diag_", "combo_pick_")
 _UPLOAD = "upload_bytes"
 _UPLOAD_NAME = "upload_name"
 _FORM = "contract_form"
@@ -47,6 +51,39 @@ def session_id() -> str:
     if SESSION_ID not in st.session_state:
         st.session_state[SESSION_ID] = uuid.uuid4().hex[:12]
     return str(st.session_state[SESSION_ID])
+
+
+def carry_inputs() -> None:
+    """화면이 갈릴 때 **위젯 값을 지킨다** (16세션 0-1).
+
+    Streamlit 은 **이번 실행에서 그리지 않은 위젯의 상태를 버린다.** 세 화면을
+    탭으로 묶어 늘 함께 그리므로 탭 사이에서는 문제가 없지만, 기준 데이터 화면은
+    분석 화면을 통째로 갈아 끼운다 — 다녀오면 켠 수단도 넣은 값도 초깃값으로
+    돌아갔다.
+
+    그래서 **매 실행에 그림자 사본을 뜨고, 없어진 키를 되돌려 놓는다.** 위젯을
+    만들기 전에 세션 키에 쓰면 위젯이 그 값을 안고 태어난다.
+
+        분석 화면   값이 있다 → 사본을 갱신한다
+        기준 데이터  위젯을 그리지 않는다 → 실행 끝에 버려진다
+        돌아오면    사본에서 되돌려 놓는다
+
+    이 함수는 **화면을 그리기 전에** 부른다.
+    """
+    shadow = st.session_state.get(_CARRY)
+    if not isinstance(shadow, dict):
+        shadow = {}
+    for key, value in shadow.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+    shadow.update(
+        {
+            key: st.session_state[key]
+            for key in list(st.session_state.keys())
+            if isinstance(key, str) and key.startswith(_CARRY_PREFIXES)
+        }
+    )
+    st.session_state[_CARRY] = shadow
 
 
 # --------------------------------------------------------------------- 업로드

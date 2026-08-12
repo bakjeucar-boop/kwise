@@ -282,7 +282,7 @@ def power_triangle_frame(result: PowerFactorResult) -> pd.DataFrame:
         무효전력 Q = P × tan(acos(역률))
         피상전력 S = √(P² + Q²) = P ÷ 역률
 
-    **유효전력을 1 로 두고 견준다.** 콘덴서는 무효전력만 줄이므로 유효전력은
+    **유효전력을 1 로 두고 견준다.** 역률 개선 설비는 무효전력만 줄이므로 유효전력은
     그대로다 — 각이 좁아지는 것이 개선의 전부다.
     """
     rows: list[dict[str, object]] = []

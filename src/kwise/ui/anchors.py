@@ -1,23 +1,26 @@
-"""매뉴얼 앵커 (요구사항서 10.2 — 화면과 매뉴얼의 역할 분담).
+r"""매뉴얼 앵커 (요구사항서 10.2 — 화면과 매뉴얼의 역할 분담).
 
 **화면에 설명을 길게 넣지 않는다.** 판단 기준은 하나다.
 
     화면에 둘 것     없으면 입력을 못 하거나 결과를 오독하는 것
     매뉴얼로 보낼 것  출처·근거 조문·제도 설명·원리·배경
 
-형태는 **화면에 한 줄 + [자세히] 링크**다. 링크는 매뉴얼의 앵커로 간다.
+형태는 **화면에 한 줄 + 정보 표시(ⓘ) 툴팁**이다 (16세션 4절).
 
-**앵커 이름은 여기서 확정한다.** 매뉴얼(``docs\\MANUAL.md``)이 이 목록을 그대로
-``id`` 로 쓰므로 문서를 만들면 링크가 저절로 살아난다. 목록은
-``docs\\MANUAL_ANCHORS.md`` 로도 내보내며 (``tools\\export_manual_anchors.py``),
+    바꾸기 전   화면 한 줄 + 「자세히」 링크가 정적 사본의 앵커로
+    바꾼 뒤     화면 한 줄 + ⓘ 에 얹힌 요지
+
+**화면에서 링크를 걷어냈다.** 새 창으로 나가면 하던 입력을 잃고, 매뉴얼이
+없으면 죽은 링크가 되며, 정적 사본을 두는 자리가 실행 방식마다 달라 404 가
+났다 (12세션에 겪었다). 요지는 툴팁에 얹으면 자리를 옮기지 않고 읽힌다.
+
+**앵커 목록은 남긴다.** 무엇을 화면에 두지 않기로 했는지가 여기 적혀 있고,
+매뉴얼(``docs\MANUAL.md``)이 이 목록을 그대로 ``id`` 로 쓴다. 목록은
+``docs\MANUAL_ANCHORS.md`` 로도 내보내며 (``tools\export_manual_anchors.py``),
 두 벌이 어긋나지 않는지 테스트가 지킨다.
 
-**매뉴얼이 없으면 링크를 비활성으로 둔다** — 없는 문서로 보내면 화면을 못 믿게
-된다. 있으면 Streamlit 이 내주는 ``app/static/`` 경로로 건다
-(:func:`manual_href`).
-
 **예외 — 경고는 화면에 남긴다.** 역률 미달, 고출력 셀 사양, 결측 편중, 계약전력
-변경 위험처럼 결과 해석을 바꾸는 것은 매뉴얼로 보내면 안 읽는다.
+변경 위험처럼 결과 해석을 바꾸는 것은 툴팁으로 보내도 안 읽는다.
 """
 
 from __future__ import annotations
@@ -29,68 +32,31 @@ __all__ = [
     "ANCHORS",
     "ANCHOR_DOC_FILENAME",
     "MANUAL_FILENAME",
-    "STATIC_DIRNAME",
-    "STATIC_ROUTE",
     "ManualAnchor",
     "anchor",
     "anchor_document",
     "anchor_keys",
-    "app_static_dir",
-    "detail_suffix",
-    "manual_available",
-    "manual_href",
     "manual_path",
-    "static_manual_path",
+    "manual_tip",
 ]
 
 ANCHOR_DOC_FILENAME = "MANUAL_ANCHORS.md"
 
 MANUAL_FILENAME = "MANUAL.html"
 
-# **Streamlit 은 임의 경로의 파일을 내주지 않는다.** ``docs\MANUAL.html`` 을
-# 상대 링크로 걸면 브라우저가 ``/MANUAL.html`` 을 찾다가 404 를 받는다.
-# 정적 서빙(``enableStaticServing``)이 내주는 자리에 사본을 두고 그쪽으로 건다.
-#
-# **그 자리는 실행 스크립트 옆이다.** Streamlit 은
-# ``Path(main_script).parent / "static"`` 만 내준다 (``file_util.get_app_static_dir``).
-# 저장소 뿌리에 두면 파일은 있는데 404 가 난다 — 12세션에서 실제로 그랬다.
-STATIC_DIRNAME = "static"
-STATIC_ROUTE = "app/static"
-
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-def app_static_dir() -> Path:
-    """Streamlit 이 내주는 폴더. ``src\\kwise\\ui\\static\\`` 이다."""
-    return Path(__file__).resolve().parent / STATIC_DIRNAME
-
-
 def manual_path(docs_dir: Path | None = None) -> Path:
-    """매뉴얼 원본 경로. 기본은 ``<프로젝트>\\docs\\MANUAL.html``."""
+    r"""매뉴얼 원본 경로. 기본은 ``<프로젝트>\docs\MANUAL.html``.
+
+    **화면은 이 파일을 열지 않는다** (16세션 4절). 문서를 만들고 검사하는
+    도구만 쓴다 — 화면에서 링크를 걷어냈기 때문이다.
+    """
     base = docs_dir if docs_dir is not None else _project_root() / "docs"
     return base / MANUAL_FILENAME
-
-
-def static_manual_path(root: Path | None = None) -> Path:
-    """Streamlit 이 내주는 사본 경로.
-
-    ``root`` 를 주면 그 아래 ``static\\`` 을 본다 (시험용). 주지 않으면 실행
-    스크립트 옆 — ``src\\kwise\\ui\\static\\MANUAL.html`` 이다.
-    """
-    if root is not None:
-        return root / STATIC_DIRNAME / MANUAL_FILENAME
-    return app_static_dir() / MANUAL_FILENAME
-
-
-def manual_available(docs_dir: Path | None = None, *, root: Path | None = None) -> bool:
-    """링크를 걸 수 있는가. **내줄 수 있는 사본이 있어야 참이다.**
-
-    원본만 있고 정적 사본이 없으면 링크가 404 로 간다. 죽은 링크를 화면에
-    내느니 비활성으로 두는 편이 낫다 — 없는 문서로 보내면 화면을 못 믿게 된다.
-    """
-    return static_manual_path(root).is_file() or manual_path(docs_dir).is_file()
 
 
 @dataclass(frozen=True)
@@ -98,9 +64,9 @@ class ManualAnchor:
     """매뉴얼 한 꼭지.
 
     Attributes:
-        key: HTML ``id``. 링크는 ``MANUAL.html#<key>`` 다.
-        title: 매뉴얼 소제목이자 링크 툴팁.
-        origin: **화면 어디에서 이 링크가 나가는가.** 문서를 쓸 때 순서를 잡는 축이다.
+        key: HTML ``id``. 매뉴얼 안의 자리다.
+        title: 매뉴얼 소제목이자 화면 툴팁의 첫머리.
+        origin: **화면 어디에서 이 요지가 필요한가.** 문서를 쓸 때 순서를 잡는 축이다.
         covers: 매뉴얼이 담을 것. 화면에 두지 않기로 한 내용이 여기 적힌다.
     """
 
@@ -110,8 +76,9 @@ class ManualAnchor:
     covers: str
 
     @property
-    def href(self) -> str:
-        return f"{MANUAL_FILENAME}#{self.key}"
+    def tip(self) -> str:
+        """화면 ⓘ 에 얹을 글. **제목과 요지를 한 덩이로** 준다."""
+        return f"{self.title} — {self.covers}"
 
 
 # 순서는 화면 흐름을 따른다 — 1단계 → 2단계 → 3단계 → 기준 데이터 → 공통.
@@ -147,10 +114,11 @@ ANCHORS: tuple[ManualAnchor, ...] = (
     ),
     ManualAnchor(
         "improvement-summary",
-        "개선 여지 요약",
-        "1단계 · 최상단",
-        "'투자 없이 가능한 절감액' 에 무엇을 넣고 무엇을 뺐는지, 태양광 기여 "
-        "가능성 등급의 판정 모집단이 요금적용전력 대상 슬롯인 이유.",
+        "1단계가 내는 것과 내지 않는 것",
+        "1단계 · 머리말",
+        "1단계는 진단만 하고 금액은 2단계에서 낸다 (16세션). 옛 '투자 없이 가능한 "
+        "절감액' 이 7.1·7.2 카드의 어디로 갔는지, 태양광 기여 가능성 등급의 판정 "
+        "모집단이 요금적용전력 대상 슬롯인 이유.",
     ),
     ManualAnchor(
         "load-pattern",
@@ -182,9 +150,10 @@ ANCHORS: tuple[ManualAnchor, ...] = (
     ManualAnchor(
         "contract-adequacy",
         "계약전력 적정성",
-        "1단계 · 계약전력",
+        "2단계 · 7.2 계약전력 조정 카드",
         "이용률과 여유율 산정, 하향 여지 계산, 하한 규정을 모를 때 금액을 내지 "
-        "않는 이유. 화면에는 여유율·하향 여지와 **변경 위험 경고**를 둔다.",
+        "않는 이유. 화면에는 여유율·하향 여지와 **변경 위험 경고**를 둔다 — "
+        "1단계가 아니라 바꿀지 말지를 정하는 카드 안이다 (16세션).",
     ),
     # ---------------------------------------------------------- 2단계 · 개선 수단
     ManualAnchor(
@@ -362,27 +331,12 @@ def anchor(key: str) -> ManualAnchor:
         raise KeyError(f"등록되지 않은 매뉴얼 앵커입니다: {key!r}") from exc
 
 
-def manual_href(key: str, *, docs_dir: Path | None = None, root: Path | None = None) -> str | None:
-    """링크 주소. **매뉴얼이 아직 없으면 ``None``** 이고 화면은 비활성으로 그린다.
+def manual_tip(key: str) -> str:
+    """화면 요소의 ``help=`` 에 넣을 글 (16세션 4절).
 
-    정적 사본이 있으면 Streamlit 이 내주는 ``app/static/`` 경로를 쓴다. 사본이
-    없고 원본만 있으면 파일을 직접 열어 보는 경우이므로 상대 경로를 준다.
+    **없는 키를 쓰면 바로 실패한다** — 빈 툴팁을 화면에 내지 않는다.
     """
-    item = anchor(key)
-    if static_manual_path(root).is_file():
-        return f"{STATIC_ROUTE}/{item.href}"
-    if manual_path(docs_dir).is_file():
-        return item.href
-    return None
-
-
-def detail_suffix(key: str, *, docs_dir: Path | None = None, root: Path | None = None) -> str:
-    """화면 한 줄 뒤에 붙일 ``[자세히]``. 마크다운 문자열을 돌려준다."""
-    item = anchor(key)
-    href = manual_href(key, docs_dir=docs_dir, root=root)
-    if href is None:
-        return f":grey[[자세히 — 매뉴얼 준비 중: {item.title}]]"
-    return f"[[자세히 — {item.title}]]({href})"
+    return anchor(key).tip
 
 
 _DOC_HEADER = f"""# 매뉴얼 앵커 목록
@@ -402,7 +356,7 @@ _DOC_HEADER = f"""# 매뉴얼 앵커 목록
 | 매뉴얼로 보낼 것 | 출처·근거 조문·제도 설명·원리·배경 |
 
 **예외 — 경고는 화면에 남긴다.** 역률 미달, 고출력 셀 사양, 결측 편중,
-계약전력 변경 위험처럼 결과 해석을 바꾸는 것은 매뉴얼로 보내면 안 읽는다.
+계약전력 변경 위험처럼 결과 해석을 바꾸는 것은 툴팁으로 보내도 안 읽는다.
 """
 
 

@@ -34,7 +34,7 @@ from kwise.rules import (
 )
 from kwise.tariff import load_tariff
 from kwise.ui import callout
-from kwise.ui.anchors import detail_suffix
+from kwise.ui.anchors import manual_tip
 from kwise.ui.cache import apply_rule_edit
 from kwise.ui.rules_view import (
     RuleRow,
@@ -75,7 +75,8 @@ def render() -> None:
     st.header("기준 데이터")
     st.caption(
         "법령 유래 값과 우리 판단값을 갈라 둡니다. 법령 항목은 함부로 고치지 말고, "
-        "판단값은 조정하라고 있는 것입니다. " + detail_suffix("rules-admin")
+        "판단값은 조정하라고 있는 것입니다.",
+        help=manual_tip("rules-admin"),
     )
 
     warnings = expiry_warnings(include_weather=False)
@@ -133,11 +134,9 @@ def _row(row: RuleRow) -> None:
             st.markdown(f"**{badge}** · {row.view.label}  \n`{row.key}`")
             if flags:
                 st.caption(" · ".join(flags))
-            # **근거를 값 옆에 둔다.** 원문 확인처는 근거 줄 옆이다.
-            source = row.source_text
-            if row.link:
-                source += f" · [원문 확인]({_url(row.link)})"
-            st.caption(source)
+            # **근거를 값 옆에 둔다.** 확인처는 링크가 아니라 툴팁이다
+            # (16세션 4절) — 화면에서 나가지 않고 조문 번호와 시행일을 읽는다.
+            st.caption(row.source_text, help=_source_tip(row))
             st.caption(f"확인일 — {row.verified_text}")
             if row.view.note:
                 st.caption(f"비고 — {row.view.note}")
@@ -201,8 +200,8 @@ def _report(result: EditResult) -> None:
 def _restore_block() -> None:
     st.markdown("#### 원복")
     st.caption(
-        "직전 상태 · 출고 상태 · 항목별 셋을 모두 씁니다. 항목별 되돌리기는 각 줄에 "
-        "있습니다. " + detail_suffix("rules-restore")
+        "직전 상태 · 출고 상태 · 항목별 셋을 모두 씁니다. 항목별 되돌리기는 각 줄에 있습니다.",
+        help=manual_tip("rules-restore"),
     )
     for origin in (RuleOrigin.STATUTORY, RuleOrigin.JUDGEMENT):
         columns = st.columns([2, 1, 1])
@@ -246,8 +245,8 @@ def _weather_block() -> None:
     # **만료 경고를 달지 않는다. 부분 취득은 정상 상태다.**
     st.caption(
         f"필요한 격자만 받아 두는 구조라 일부만 있어도 정상입니다. 없는 격자는 "
-        f"조회 시점에 Open-Meteo 에서 받습니다. 저장 위치 — `{panel.root}`. "
-        + detail_suffix("weather-archive")
+        f"조회 시점에 Open-Meteo 에서 받습니다. 저장 위치 — `{panel.root}`.",
+        help=manual_tip("weather-archive"),
     )
 
 
@@ -278,8 +277,28 @@ def _history_block() -> None:
         )
 
 
-def _url(link: str) -> str:
-    """확인처 문자열에서 주소만 뽑는다 (``설명 — https://…`` 꼴)."""
-    marker = "http"
-    index = link.find(marker)
-    return link[index:].split()[0] if index >= 0 else link
+def _source_tip(row: RuleRow) -> str:
+    """근거 툴팁 — **조문 번호와 시행일, 그리고 어디서 확인하는가** (16세션 4절).
+
+    링크를 걸면 화면 밖으로 나가고, 주소가 바뀌면 죽은 링크가 된다. 정작 필요한
+    것은 "무슨 조문인가" 이므로 조문과 시행일을 앞에 두고 확인처는 이름만 적는다.
+
+        한전 기본공급약관 제68조 제1항 (시행 2024-10-24) · 확인처 — 한전 사이버지점
+    """
+    parts = [row.source_text]
+    where = _source_name(row.link)
+    if where:
+        parts.append(f"확인처 — {where}")
+    if row.view.note:
+        parts.append(row.view.note)
+    return " · ".join(parts)
+
+
+def _source_name(link: str) -> str:
+    """확인처 문자열에서 **설명만** 뽑는다 (``설명 — https://…`` 꼴).
+
+    주소는 버린다 — 화면에 주소를 적으면 사람이 그것을 링크로 읽는다.
+    """
+    index = link.find("http")
+    text = link[:index] if index >= 0 else link
+    return text.strip().rstrip("—·-").strip()

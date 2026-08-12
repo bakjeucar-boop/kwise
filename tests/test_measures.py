@@ -24,6 +24,7 @@ from kwise.measures import (
     NetLoad,
     PvCostInput,
     SolarCurve,
+    SolarPoint,
     TariffSwitchResult,
     analyze_peak_excess,
     apply_generation,
@@ -364,7 +365,7 @@ def test_power_factor_warning_appears_below_the_standard(
     assert point.power_factor_after_pct < 92.0
     assert point.power_factor_extra_won > 0  # 92% 미만이므로 추가요금이다
     assert point.saving_after_power_factor_won < point.total_saving_won
-    assert any("콘덴서" in message for message in curve.warnings)
+    assert any("역률 개선 설비" in message for message in curve.warnings)
     assert any("제41·43조" in message for message in curve.warnings)
 
 
@@ -775,3 +776,90 @@ def test_investment_is_linear_in_capacity(sample_curve: SolarCurve) -> None:
 def test_both_cost_paths_cannot_be_given() -> None:
     with pytest.raises(ValueError, match="함께 줄 수 없습니다"):
         PvCostInput(unit_cost_won_per_kwp=1_000_000.0, total_won=5_000_000.0)
+
+
+# ===================================================================== 용량 판정 (16세션 0-4)
+
+
+def _point(capacity: float, *, saving: float, investment: float, payback: float) -> SolarPoint:
+    """판정만 시험하는 최소 점. 시계열은 필요 없다."""
+    return SolarPoint(
+        capacity_kwp=capacity,
+        generation_kwh=capacity * 1_200.0,
+        self_consumed_kwh=capacity * 1_200.0,
+        surplus_kwh=0.0,
+        self_consumption_ratio=1.0,
+        billing_demand_kw=5_000.0,
+        base_saving_won=saving * 0.2,
+        energy_saving_won=saving * 0.8,
+        total_saving_won=saving,
+        annual_saving_won=saving,
+        investment_won=investment,
+        payback_years=payback,
+        power_factor_after_pct=92.0,
+        power_factor_extra_won=0.0,
+    )
+
+
+def _curve(points: tuple[SolarPoint, ...]) -> SolarCurve:
+    return SolarCurve(
+        points=points,
+        selection=TariffSelection("general_b", "high_a", "I"),
+        baseline_total_won=0.0,
+        baseline_base_won=0.0,
+        baseline_energy_won=0.0,
+        sharpness=1.0,
+        max_capacity_kwp=points[-1].capacity_kwp,
+        cost=PvCostInput(unit_cost_won_per_kwp=1_500_000.0),
+        base_fee_months=12.0,
+    )
+
+
+def test_평평한_회수기간에서는_상한을_고른다() -> None:
+    """**첫 단계를 최적이라 답하던 자리다** (16세션 0-4).
+
+    kWp 당 단가면 투자비와 절감액이 함께 비례해 회수기간이 거의 같아진다.
+    실측에서 8 kWp 8.060년 · 160 kWp 8.114년이었고, 최소점을 그대로 고르니
+    **상한의 1/20** 이 최적으로 나왔다.
+    """
+    points = tuple(
+        _point(
+            capacity,
+            saving=1_488_896.0 * capacity / 8.0,
+            investment=1_500_000.0 * capacity,
+            payback=8.060 + 0.054 * (capacity - 8.0) / 152.0,
+        )
+        for capacity in (8.0, 40.0, 80.0, 120.0, 160.0)
+    )
+    verdict = _curve(points).verdict()
+    assert verdict.basis == "회수기간"
+    assert verdict.best is not None
+    assert verdict.best.capacity_kwp == 160.0
+    assert verdict.at_limit
+    assert not verdict.show_curve
+
+
+def test_회수기간이_실제로_꺾이면_최소점을_고른다() -> None:
+    """잉여가 생기면 회수기간이 동률 폭을 벗어난다 — U곡선 판정은 그대로다."""
+    paybacks = {8.0: 9.0, 40.0: 7.5, 80.0: 7.0, 120.0: 9.5, 160.0: 14.0}
+    points = tuple(
+        _point(
+            capacity,
+            saving=1_500_000.0 * capacity / paybacks[capacity] / 10.0,
+            investment=1_500_000.0 * capacity,
+            payback=paybacks[capacity],
+        )
+        for capacity in paybacks
+    )
+    verdict = _curve(points).verdict()
+    assert verdict.best is not None
+    assert verdict.best.capacity_kwp == 80.0
+    assert not verdict.at_limit
+    assert verdict.show_curve
+
+
+def test_동률_폭은_기준_데이터에서_온다() -> None:
+    """**코드에 기본값을 두지 않는다** (요구사항서 12장)."""
+    from kwise.measures.solar import payback_tie_ratio
+
+    assert 0.0 < payback_tie_ratio() < 0.5

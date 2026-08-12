@@ -25,7 +25,7 @@ from kwise.rules import ItemDiff, ItemView, RuleOrigin, describe_items, expiry_w
 from kwise.rules.expiry import ExpiryWarning
 from kwise.tariff import TariffSelection, TariffTable, load_tariff
 from kwise.ui import charts, session, text
-from kwise.ui.anchors import ANCHORS, anchor, anchor_keys, detail_suffix, manual_href
+from kwise.ui.anchors import ANCHORS, anchor, anchor_keys, manual_tip
 from kwise.ui.pipeline import (
     ContractForm,
     SolarInputs,
@@ -73,24 +73,17 @@ def test_앵커_설명이_비어_있지_않다() -> None:
 
 
 def test_없는_앵커는_바로_실패한다() -> None:
-    """죽은 링크를 화면에 내보내지 않는다."""
+    """빈 툴팁을 화면에 내보내지 않는다."""
     with pytest.raises(KeyError):
         anchor("없는-앵커")
 
 
-def test_매뉴얼이_없으면_링크가_비활성이다(tmp_path: Path) -> None:
-    """**뿌리까지 비워야 한다** — 정적 사본이 있으면 그쪽으로 살아난다 (11세션)."""
-    assert manual_href("certainty", docs_dir=tmp_path, root=tmp_path) is None
-    suffix = detail_suffix("certainty", docs_dir=tmp_path, root=tmp_path)
-    assert "매뉴얼 준비 중" in suffix
-    assert "](" not in suffix  # 마크다운 링크가 아니다
-
-
-def test_매뉴얼이_생기면_링크가_살아난다(tmp_path: Path) -> None:
-    (tmp_path / "MANUAL.html").write_text("<html></html>", encoding="utf-8")
-    href = manual_href("certainty", docs_dir=tmp_path, root=tmp_path)
-    assert href == "MANUAL.html#certainty"
-    assert href in detail_suffix("certainty", docs_dir=tmp_path, root=tmp_path)
+def test_툴팁에_링크가_없다() -> None:
+    """**화면에서 링크를 걷어냈다** (16세션 4절). 요지만 얹는다."""
+    tip = manual_tip("certainty")
+    assert "](" not in tip
+    assert "http" not in tip
+    assert "MANUAL.html" not in tip
 
 
 def test_앵커_문서가_정본과_같다() -> None:
@@ -103,14 +96,14 @@ def test_앵커_문서가_정본과_같다() -> None:
 
 
 def test_화면이_쓰는_앵커가_모두_등록되어_있다() -> None:
-    """뷰에서 ``detail_suffix("...")`` 로 부르는 키가 목록에 있어야 한다."""
+    """뷰에서 ``manual_tip("...")`` 로 부르는 키가 목록에 있어야 한다."""
     import re
 
     registered = set(anchor_keys())
     used: set[str] = set()
     for path in Path("src/kwise/ui").rglob("*.py"):
-        used |= set(re.findall(r'detail_suffix\(\s*"([^"]+)"', path.read_text(encoding="utf-8")))
-    assert used, "화면이 [자세히] 링크를 하나도 쓰지 않습니다."
+        used |= set(re.findall(r'manual_tip\(\s*"([^"]+)"', path.read_text(encoding="utf-8")))
+    assert used, "화면이 툴팁을 하나도 쓰지 않습니다."
     assert used <= registered, f"등록되지 않은 앵커: {sorted(used - registered)}"
 
 
@@ -568,7 +561,7 @@ def test_실제_항목_전부에_원문_확인처가_붙는다() -> None:
     items = describe_items()
     rows = build_rows(items, expiry_warnings(include_weather=False))
     # 항목이 조용히 사라지는 것을 막는 잣대다. 늘리는 것은 정상, 줄면 확인한다.
-    assert len(rows) == len(items) == 60  # rules_kr 31 + assumptions 29
+    assert len(rows) == len(items) == 62  # rules_kr 31 + assumptions 31
     assert all(row.link.startswith(("한국", "국가", "에너지", "Open")) for row in rows)
     assert all("http" in row.link for row in rows)
 

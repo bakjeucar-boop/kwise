@@ -25,7 +25,7 @@ __all__ = [
 ]
 
 TIER_NONE = "투자 0원"
-TIER_LOW = "저투자 (콘덴서·APFR)"
+TIER_LOW = "저투자 (역률 개선)"
 TIER_INVESTMENT = "투자"
 
 

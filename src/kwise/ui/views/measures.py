@@ -37,14 +37,16 @@ from kwise.measures import (
     load_ess_cost_model,
     power_factor_floor_pct,
 )
-from kwise.pv import capacity_preview, list_provinces, list_sigungu, load_pv_presets
+from kwise.pv import capacity_preview, load_pv_presets
 from kwise.quality import QualityReport
+from kwise.report import CONTRACT_CHANGE_WARNING
 from kwise.report.columns import localize
 from kwise.report.days import RepresentativeDay, find_day, representative_days
 from kwise.tariff import TariffTable
 from kwise.ui import callout, charts
 from kwise.ui import text as fmt
-from kwise.ui.anchors import detail_suffix
+from kwise.ui.anchors import manual_tip
+from kwise.ui.building import BuildingInfo
 from kwise.ui.cache import (
     cached_azimuth_options,
     cached_contract_adjustment,
@@ -59,8 +61,8 @@ from kwise.ui.cache import (
     rules_stamp,
     usage_token,
 )
+from kwise.ui.context import AnalysisContext
 from kwise.ui.labels import option_label, selection_label
-from kwise.ui.nav import next_step_button
 from kwise.ui.notices import screen_notices
 from kwise.ui.pipeline import ContractForm, SolarInputs
 from kwise.ui.progress import progress_panel
@@ -71,14 +73,18 @@ __all__ = ["render"]
 
 
 def render(
-    usage: UsageData,
+    context: AnalysisContext,
     table: TariffTable,
-    form: ContractForm,
-    diagnosis: Diagnosis,
-    quality: QualityReport,
+    building: BuildingInfo | None = None,
 ) -> None:
+    usage, form, diagnosis, quality = (
+        context.usage,
+        context.form,
+        context.diagnosis,
+        context.quality,
+    )
     st.header("🛠 2단계 · 개선 수단")
-    st.caption("7.1부터 7.7까지 차례로 놓았습니다. " + detail_suffix("combination"))
+    st.caption("7.1부터 7.7까지 차례로 놓았습니다.", help=manual_tip("combination"))
     # **기준선을 한 번만 밝힌다.** 카드마다 되풀이하면 읽히지 않는다 (10.7).
     st.write(
         "각 개선안은 **따로따로** 평가합니다. 카드의 절감액은 「지금 이 수단만 "
@@ -93,9 +99,7 @@ def render(
         if spec.tier != tier:
             tier = spec.tier
             st.subheader(tier)
-        _card(spec, usage, table, form, diagnosis, quality, baseline, day)
-
-    next_step_button("3단계 · 비교", key="go_compare")
+        _card(spec, usage, table, form, diagnosis, quality, baseline, day, building)
 
 
 # --------------------------------------------------------------------- 대표일
@@ -153,6 +157,10 @@ _ICONS: dict[str, str] = {
 }
 
 
+def _open_key(measure_key: str) -> str:
+    return f"_kwise_opened_{measure_key}"
+
+
 def _card(
     spec: MeasureSpec,
     usage: UsageData,
@@ -162,30 +170,36 @@ def _card(
     quality: QualityReport,
     baseline: object,
     day: RepresentativeDay | None,
+    building: BuildingInfo | None,
 ) -> None:
-    """**모든 카드가 접힌 상태로 시작한다.**
+    """**켜지 않은 카드는 접혀 있고, 켠 카드는 펼쳐진 채로 남는다** (16세션 0-2).
 
-    수단마다 펼침 상태가 다르면 어디까지 봤는지 알 수 없다. 켜는 것과 펴는 것을
-    갈라 두어, 켜 두고 접어 놓아도 3단계 조합에는 그대로 들어간다.
+    ± 단추 하나를 눌러도 rerun 이 일어나는데, 펼침 여부를 「방금 켰는가」로
+    판정하니 그 rerun 에서 카드가 도로 접혔다. 값을 세 번 조정하려면 세 번 다시
+    펴야 했다. **열림 상태를 세션에 담고 ``expanded=`` 에 그 값을 넣는다.**
+
+    Streamlit 은 사용자가 손으로 접은 것을 알려 주지 않으므로, 켜 둔 카드는
+    rerun 마다 다시 펼쳐진다. 접어 두고 싶으면 토글을 끈다 — 끄면 3단계 조합에서
+    빠지므로, 「켜 두고 접기」 는 애초에 두 뜻이 섞인 상태였다.
     """
     icon = _ICONS[spec.key]
-    # 절 번호와 이름을 **묶음 머리(투자 0원)와 같은 크기**로 둔다. 굵게 하지 않는다 —
-    # 토글 라벨 크기로는 카드 경계가 보이지 않았다 (13세션).
+    # 절 번호와 이름을 **묶음 머리보다 크게** 둔다 (16세션 6-1). 카드가 일곱이라
+    # 스크롤 중에 경계가 눈에 걸려야 하는데, 묶음 머리와 같은 크기로는 묻혔다.
     st.markdown(
-        f"<div style='font-size:1.15rem;padding-top:0.4rem'>{icon} {spec.title}</div>",
+        f"<div style='font-size:1.5rem;font-weight:600;padding-top:0.6rem'>"
+        f"{icon} {spec.title}</div>",
         unsafe_allow_html=True,
     )
     enabled = st.toggle("검토에 포함", key=toggle_key(spec.key))
-    opened_key = f"_kwise_opened_{spec.key}"
-    just_enabled = enabled and not bool(st.session_state.get(opened_key))
-    st.session_state[opened_key] = enabled
+    opened_key = _open_key(spec.key)
     if not enabled:
+        st.session_state[opened_key] = False
         return
-    # **켜면 펼친다.** 켠 뒤 다시 펼치게 하면 두 번 눌러야 결과가 보인다 (13세션).
-    with st.expander(f"{spec.title} — 입력과 결과", expanded=just_enabled):
-        st.caption(spec.headline + " " + detail_suffix(spec.anchor))
+    st.session_state[opened_key] = True
+    with st.expander(f"{spec.title} — 입력과 결과", expanded=True):
+        st.caption(spec.headline, help=manual_tip(spec.anchor))
         handler = _HANDLERS[spec.key]
-        handler(spec, usage, table, form, diagnosis, quality, baseline, day)
+        handler(spec, usage, table, form, diagnosis, quality, baseline, day, building)
 
 
 def _band_series(usage: UsageData, table: TariffTable, form: ContractForm) -> pd.Series | None:
@@ -233,6 +247,7 @@ def _tariff_switch(
     quality: QualityReport,
     baseline: object,
     day: RepresentativeDay | None,
+    building: BuildingInfo | None,
 ) -> None:
     result = cached_tariff_switch(
         usage,
@@ -278,12 +293,14 @@ def _contract(
     quality: QualityReport,
     baseline: object,
     day: RepresentativeDay | None,
+    building: BuildingInfo | None,
 ) -> None:
     if form.contract_kw is None or baseline is None:
         _overview(spec)
         _caution("계약전력을 입력해야 조정 여지를 봅니다 (1단계 계약 정보).")
         return
-    # **여유가 없으면 슬라이더를 감춘다** (13세션). 움직여도 0% 라 고장으로 보인다.
+    _adequacy(diagnosis)
+    # **여유가 없으면 입력칸을 감춘다** (13세션). 움직여도 0% 라 고장으로 보인다.
     peak = diagnosis.peak.billing_demand_kw
     headroom = (form.contract_kw - peak) / form.contract_kw if form.contract_kw else 0.0
     low, high = margin_range()
@@ -293,25 +310,27 @@ def _contract(
             f"{fmt.kw(peak)} 대비 여유가 {fmt.ratio_pct(headroom)} 입니다. "
             "하향 여지가 없습니다."
         )
-        # **여유율을 세션에 남긴다.** 슬라이더를 감춘 경우에도 3단계가 같은 값을
+        # **여유율을 세션에 남긴다.** 입력칸을 감춘 경우에도 3단계가 같은 값을
         # 읽어야 2단계 카드와 숫자가 어긋나지 않는다 (14세션 5-1). 위젯이 이번
         # 실행에서 만들어지지 않았으므로 키를 직접 써도 된다.
         margin = default_margin_ratio()
         st.session_state[input_key("contract", "margin")] = margin
     else:
-        margin = st.slider(
+        # **슬라이더가 아니라 수치 입력이다** (16세션 0-2). 슬라이더는 끄는 동안
+        # 실행이 이어져 화면이 계속 다시 그려진다 — ± 한 번에 한 번만 돈다.
+        margin = st.number_input(
             "확보할 여유율",
             min_value=0.0,
             max_value=0.3,
             value=default_margin_ratio(),
             step=0.01,
-            format="%.0f%%",
+            format="%.2f",
             key=input_key("contract", "margin"),
             help=fmt.TIPS["contract_margin"],
         )
         st.caption(
-            f"권장 {fmt.ratio_pct(low, decimals=0)}–{fmt.ratio_pct(high, decimals=0)}. "
-            + detail_suffix("contract-adequacy")
+            f"권장 {fmt.ratio_pct(low, decimals=0)}–{fmt.ratio_pct(high, decimals=0)}.",
+            help=manual_tip("contract-adequacy"),
         )
     result = cached_contract_adjustment(
         usage,
@@ -334,8 +353,35 @@ def _contract(
         "현재 부하 기준의 하향 여지입니다. 다른 수단을 함께 켜면 3단계 합산효과에서 "
         "추가 하향 여지가 계산됩니다."
     )
-    # 계약전력 변경 위험(9.4)은 result.warnings 에 들어 있다. 확인사항에서 한 번만 낸다.
-    _notes(result.warnings, result.notes)
+    # **계약전력 변경 경고는 이 카드에 둔다** (16세션 3절). 1단계에 있을 때는
+    # 계약전력을 바꿀 생각을 하기 전에 읽혀 지나쳤다 — 바꾸자고 제안하는 자리가
+    # 이 경고의 제자리다. **문구는 산출물과 같은 원문 그대로다.**
+    _caution(CONTRACT_CHANGE_WARNING)
+    _notes(
+        tuple(item for item in result.warnings if item != CONTRACT_CHANGE_WARNING),
+        result.notes,
+    )
+
+
+def _adequacy(diagnosis: Diagnosis) -> None:
+    """계약전력 적정성 — **1단계에서 이리로 옮겼다** (16세션 3절).
+
+    같은 금액이 1단계 「계약전력 적정성」과 이 카드에 다른 이름으로 있었다.
+    둘을 나란히 놓고 보면 어느 쪽을 믿어야 할지 알 수 없으므로, **바꿀지 말지를
+    정하는 자리** 하나에 모은다.
+    """
+    adequacy = diagnosis.contract
+    if adequacy is None:
+        return
+    st.markdown("**적정성**")
+    columns = st.columns(3)
+    columns[0].metric("계약전력", fmt.kw(adequacy.contract_kw))
+    columns[1].metric(
+        "이용률",
+        fmt.ratio_pct(adequacy.utilization),
+        help="요금적용전력 ÷ 계약전력. 낮으면 계약을 과하게 잡아 둔 것이다.",
+    )
+    columns[2].metric("하향 여지", fmt.kw(adequacy.reduction_kw))
 
 
 # --------------------------------------------------------------------- 7.3
@@ -350,6 +396,7 @@ def _demand_response(
     quality: QualityReport,
     baseline: object,
     day: RepresentativeDay | None,
+    building: BuildingInfo | None,
 ) -> None:
     if diagnosis.dr is None:
         _overview(spec)
@@ -429,6 +476,7 @@ def _power_factor(
     quality: QualityReport,
     baseline: object,
     day: RepresentativeDay | None,
+    building: BuildingInfo | None,
 ) -> None:
     floor = power_factor_floor_pct()
     left, right = st.columns(2)
@@ -443,7 +491,7 @@ def _power_factor(
         )
     with right:
         investment = st.number_input(
-            "콘덴서·APFR 투자비 (원)",
+            "역률 개선 투자비 (원)",
             min_value=0.0,
             value=0.0,
             step=100_000.0,
@@ -472,7 +520,7 @@ def _power_factor(
     triangle_col, day_col = st.columns(2)
     with triangle_col:
         st.altair_chart(charts.power_triangle_chart(result), width="stretch")
-        st.caption("각이 좁아질수록 역률이 좋아집니다. 콘덴서는 무효전력(세로)만 줄입니다.")
+        st.caption("각이 좁아질수록 역률이 좋아집니다. 역률 개선 설비는 무효전력(세로)만 줄입니다.")
     with day_col:
         if day is not None:
             st.altair_chart(
@@ -509,12 +557,21 @@ def _solar(
     quality: QualityReport,
     baseline: object,
     day: RepresentativeDay | None,
+    building: BuildingInfo | None,
 ) -> None:
     presets = load_pv_presets()
     saved = get_solar_inputs()
+    # **지역은 옆단에서 온다** (16세션 2절). 건물이 어디 있는지는 태양광만의
+    # 물음이 아니고, 카드 안에 두면 태양광을 켜야만 고칠 수 있었다.
+    region_key = building.region_key if building is not None else ""
+    if not region_key and saved is not None:
+        region_key = saved.region_key
+    if not region_key:
+        _caution("옆단에서 지역(시도·시군구)을 고르십시오. 기상 격자를 정하는 값입니다.")
+        return
 
-    # ---- 기본 입력 셋 (3.3). **3열로 나눈다** — 셋뿐이므로 한 줄에 들어간다.
-    area_col, density_col, region_col = st.columns(3)
+    # ---- 기본 입력 둘 (3.3). **2열로 나눈다** — 지역이 옆단으로 올라가 둘만 남았다.
+    area_col, density_col = st.columns(2)
     with area_col:
         area = st.number_input(
             "설치 가능 면적 (m²)",
@@ -543,26 +600,7 @@ def _solar(
             help="\n\n".join(f"**{item.label}** — {item.tradeoff}" for item in presets.densities),
         )
 
-    provinces = list_provinces()
-    default_region = saved.region_key if saved else None
-    province_default = default_region.split("/", 1)[0] if default_region else provinces[0]
-    with region_col:
-        province = st.selectbox(
-            "시도",
-            provinces,
-            index=provinces.index(province_default) if province_default in provinces else 0,
-        )
-        regions = list_sigungu(province)
-        region_keys = [item.key for item in regions]
-        region_labels = {item.key: item.name for item in regions}
-        region_default = default_region if default_region in region_keys else region_keys[0]
-        region_key = st.selectbox(
-            "시군구",
-            region_keys,
-            index=region_keys.index(region_default),
-            format_func=lambda key: region_labels[key],
-            help="기상 격자가 25–31 km 라 같은 격자면 결과가 같습니다.",
-        )
+    st.caption(f"지역 — {region_key.replace('/', ' ')} (옆단 「건물 정보」 에서 고칩니다)")
 
     # ---- 방위 (15세션 1-1). **각도가 아니라 8방위로 고른다.**
     tilt = presets.density(density).tilt_deg
@@ -597,7 +635,16 @@ def _solar(
                 help="8방위 격자(45도)에 없는 각도를 쓸 때만 넣습니다.",
             )
         with detail_right:
-            loss = st.slider("시스템 손실", min_value=0.0, max_value=0.4, value=0.14, step=0.01)
+            # 슬라이더 대신 수치 입력 (16세션 0-2) — 끄는 동안 실행이 이어지지 않는다.
+            loss = st.number_input(
+                "시스템 손실",
+                min_value=0.0,
+                max_value=0.4,
+                value=0.14,
+                step=0.01,
+                format="%.2f",
+                key=input_key("solar", "system_loss"),
+            )
             total_cost = st.number_input(
                 "총 투자비 직접 입력 (원) — 0 이면 단가 사용",
                 min_value=0.0,
@@ -676,7 +723,7 @@ def _solar(
                 rules_stamp(),
                 report,
             )
-    st.caption(f"기상 출처 — {source}. " + detail_suffix("weather-source"))
+    st.caption(f"기상 출처 — {source}.", help=manual_tip("weather-source"))
     point = curve.points[-1]
     if stale:
         st.caption("**묵은 결과** — 지금 화면의 입력이 아니라 마지막 계산의 입력 기준입니다.")
@@ -783,6 +830,7 @@ def _ess(
     quality: QualityReport,
     baseline: object,
     day: RepresentativeDay | None,
+    building: BuildingInfo | None,
 ) -> None:
     """**목표 슬라이더가 없다** (14세션 3-2).
 
@@ -987,6 +1035,7 @@ def _surplus(
     quality: QualityReport,
     baseline: object,
     day: RepresentativeDay | None,
+    building: BuildingInfo | None,
 ) -> None:
     """**다른 카드 때문에 비활성이 되지 않는다** (14세션 2-3).
 

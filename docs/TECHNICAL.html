@@ -212,7 +212,7 @@ reference/          기존 pv_peak_cut 코드. **읽기 전용**</code></pre></d
                             초과 시 1%p당 −0.2% (97%까지)
 야간 22~08시  진상 기준 95%. 미달 시 1%p당 +0.2%
               단, 지상이면 100%로 간주 → 추가 0</code></pre></div>
-<p><strong>야간 진상 페널티는 &#x27;콘덴서 과투자의 결과&#x27;다.</strong> 제43조 ② 2호 나목이 지상이면 100%로 간주하므로, 대부분의 건물은 야간 경부하에서 지상이라 추가가 0 이다. 진상은 고정 콘덴서가 부하 대비 과다할 때만 생긴다. 그래서 이 조항은 &quot;야간에도 역률을 관리하라&quot;가 아니라 <strong>&quot;주간 역률을 맞추려 콘덴서를 키우면 야간에 되돌려 받는다&quot;</strong>로 읽어야 한다.</p>
+<p><strong>야간 진상 페널티는 &#x27;역률 개선 설비 과투자의 결과&#x27;다.</strong> 제43조 ② 2호 나목이 지상이면 100%로 간주하므로, 대부분의 건물은 야간 경부하에서 지상이라 추가가 0 이다. 진상은 고정형 역률 개선 설비가 부하 대비 과다할 때만 생긴다. 그래서 이 조항은 &quot;야간에도 역률을 관리하라&quot;가 아니라 <strong>&quot;주간 역률을 맞추려 역률 개선 설비를 키우면 야간에 되돌려 받는다&quot;</strong>로 읽어야 한다.</p>
 <p><strong>92% 가 두 조문에서 온다. 항목을 갈라 두었다.</strong></p>
 <div class="table-wrap"><table><thead><tr><th>항목</th><th>조문</th><th>뜻</th></tr></thead><tbody><tr><td><code>power_factor.lagging_standard_pct</code></td><td>제41조·제43조 ②</td><td>역률요금의 <strong>기준</strong></td></tr><tr><td><code>power_factor.deemed_lagging_pct</code></td><td><strong>제42조</strong></td><td>무효전력계 미설치 시 <strong>간주값</strong></td></tr></tbody></table></div>
 <p>오늘은 둘 다 92% 라 묶고 싶어진다. 묶으면 <strong>기준만 90 으로 개정됐을 때 역률을 모르는 고객의 값까지 따라 내려가</strong> 조정액이 0 이 아니게 된다 — 실측하지 않은 값으로 금액이 생기는 것이다.</p>

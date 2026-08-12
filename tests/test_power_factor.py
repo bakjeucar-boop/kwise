@@ -128,8 +128,8 @@ def test_charge_splits_lagging_and_leading() -> None:
 def test_lagging_night_incurs_no_leading_penalty() -> None:
     """**야간이 지상이면 역률 100% 로 간주되어 진상 추가가 0 이다** (제43조 ② 2호 나목).
 
-    대부분의 건물이 야간 경부하에서 지상이다. 진상은 고정 콘덴서가 부하 대비
-    과다할 때 생기므로, 진상 추가요금은 곧 콘덴서 과투자의 신호다.
+    대부분의 건물이 야간 경부하에서 지상이다. 진상은 고정형 역률 개선 설비가 부하 대비
+    과다할 때 생기므로, 진상 추가요금은 곧 역률 개선 설비 과투자의 신호다.
     """
     charge = power_factor_charge(1_000_000.0)
     assert charge.leading_pct is None
@@ -137,7 +137,7 @@ def test_lagging_night_incurs_no_leading_penalty() -> None:
     assert charge.leading_ratio == pytest.approx(0.0)
     assert charge.leading_won == pytest.approx(0.0)
     assert any("지상으로 보아 역률 100% 간주" in note for note in charge.notes)
-    assert any("고정 콘덴서" in message for message in charge.warnings)
+    assert any("고정형 역률 개선 설비" in message for message in charge.warnings)
 
 
 def test_deemed_leading_pct_follows_the_clause() -> None:
@@ -333,7 +333,7 @@ def test_leading_risk_is_always_warned(
     tariff: TariffTable,
     sample_bill: BillingResult,
 ) -> None:
-    """콘덴서를 키우면 야간에 진상으로 넘어간다. 제43조 ② 의 95% 조항이다."""
+    """역률 개선 설비를 키우면 야간에 진상으로 넘어간다. 제43조 ② 의 95% 조항이다."""
     result = evaluate_power_factor(
         sample_usage, tariff, CURRENT, baseline=sample_bill, quality=sample_report
     )
@@ -431,7 +431,7 @@ def test_solar_curve_prices_the_power_factor_damage(sample_curve: SolarCurve) ->
     assert largest.saving_after_power_factor_won == pytest.approx(
         largest.total_saving_won - largest.power_factor_extra_won
     )
-    assert any("콘덴서" in message for message in sample_curve.warnings)
+    assert any("역률 개선 설비" in message for message in sample_curve.warnings)
     assert any("08~22시" in note for note in sample_curve.notes)
 
 
@@ -447,7 +447,7 @@ def test_improvement_warns_about_apfr_and_fixed_banks(
     tariff: TariffTable,
     sample_bill: BillingResult,
 ) -> None:
-    """야간 진상은 콘덴서 과투자의 결과다. APFR 회피책을 함께 안내한다.
+    """야간 진상은 역률 개선 설비 과투자의 결과다. 자동제어형 설비 회피책을 함께 안내한다.
 
     금액은 만들지 않는다 — 설치비는 설비 구성에 달렸고 사용자 입력이다.
     """
@@ -455,7 +455,7 @@ def test_improvement_warns_about_apfr_and_fixed_banks(
         sample_usage, tariff, CURRENT, baseline=sample_bill, quality=sample_report
     )
     joined = " ".join(result.warnings)
-    assert "고정 콘덴서" in joined
-    assert "APFR" in joined
-    assert "콘덴서 과투자의 신호" in joined
+    assert "고정형 역률 개선 설비" in joined
+    assert "자동제어형 역률 개선 설비" in joined
+    assert "역률 개선 설비 과투자의 신호" in joined
     assert result.investment_won == 0.0  # 금액을 지어내지 않는다
