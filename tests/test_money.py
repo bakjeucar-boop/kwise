@@ -106,3 +106,39 @@ def test_금액_표기를_직접_찍는_곳이_없다() -> None:
             if pattern.search(line):
                 offenders.append(f"{path.relative_to(SRC)}:{number} {line.strip()}")
     assert not offenders, "금액은 kwise.money 를 거쳐 찍는다:\n" + "\n".join(offenders)
+
+
+# ===================================================================== 산출물
+
+
+def test_엑셀의_금액_열이_절사되어_나간다() -> None:
+    """**Excel 도 천 단위 절사다** (14세션 1절). 내보낼 때만 자른다."""
+    import pandas as pd
+
+    from kwise.report.excel import truncate_money_columns
+
+    frame = pd.DataFrame(
+        {
+            "조합": ["기준선"],
+            "절감액(원)": [1_234_567.0],
+            "요금적용전력(kW)": [5_293.44],
+            "확실성": ["높음"],
+        }
+    )
+    trimmed = truncate_money_columns(frame)
+    assert trimmed["절감액(원)"].iloc[0] == 1_234_000.0
+    # 금액이 아닌 열은 건드리지 않는다.
+    assert trimmed["요금적용전력(kW)"].iloc[0] == 5_293.44
+    # 원본은 그대로다 — 계산 프레임을 손대면 회귀값이 흔들린다.
+    assert frame["절감액(원)"].iloc[0] == 1_234_567.0
+
+
+def test_결측_금액은_절사에서_건너뛴다() -> None:
+    import pandas as pd
+
+    from kwise.report.excel import truncate_money_columns
+
+    frame = pd.DataFrame({"투자비(원)": [None, 2_345_678.0]})
+    trimmed = truncate_money_columns(frame)
+    assert pd.isna(trimmed["투자비(원)"].iloc[0])
+    assert trimmed["투자비(원)"].iloc[1] == 2_345_000.0

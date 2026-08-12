@@ -800,3 +800,40 @@ def test_합계_행에_단순_합이라고_적는다() -> None:
 
     assert SIMPLE_SUM_LABEL == "단순 합"
     assert "최종 효과가 아닙니다" in SIMPLE_SUM_NOTE
+
+
+# ======================================================== 14세션 · 금액 표기
+
+
+WON_ON_SCREEN = re.compile(r"(?<![만억\d])(\d[\d,]*)원(?![/\w])")
+
+
+def _screen_amounts(screen: AppTest) -> list[str]:
+    """화면에 찍힌 **원 단위 금액** 을 모두 긁는다. 만원·억원 표기는 뺀다.
+
+    표(``st.dataframe``)까지 훑는다 — 금액은 대개 표 안에 있다.
+    """
+    blobs = [
+        str(item.value)
+        for group in (screen.metric, screen.markdown, screen.caption, screen.warning)
+        for item in group
+    ]
+    blobs += [str(item.delta) for item in screen.metric if item.delta]
+    blobs += [frame.value.to_string() for frame in screen.dataframe]
+    return [match.group(1) for blob in blobs for match in WON_ON_SCREEN.finditer(blob)]
+
+
+def test_화면의_원_단위_금액이_모두_천의_배수다(stage3: AppTest) -> None:
+    """**정규식 검사** (14세션 1절). 한 자리라도 새면 여기서 잡힌다."""
+    assert not stage3.exception, stage3.exception
+    amounts = _screen_amounts(stage3)
+    assert amounts, "화면에서 원 단위 금액을 찾지 못했습니다."
+    offenders = [item for item in amounts if int(item.replace(",", "")) % 1_000]
+    assert not offenders, offenders
+
+
+def test_절사_각주가_화면에_있다(stage3: AppTest) -> None:
+    """항목 합과 합계 표시가 어긋날 수 있다는 사실을 적는다 (14세션 1절)."""
+    assert not stage3.exception, stage3.exception
+    body = " ".join(str(item.value) for item in stage3.caption)
+    assert text.TRUNCATION_FOOTNOTE in body

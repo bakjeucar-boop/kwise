@@ -51,6 +51,7 @@ from kwise.report.notices import (
     DATA_SOURCES,
     KNOWN_LIMITS,
     NOT_INCLUDED_NOTICE,
+    TRUNCATION_FOOTNOTE,
     format_won,
 )
 from kwise.tariff import BillingResult
@@ -483,6 +484,8 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
         else ""
     )
     document.add_paragraph(caution + NOT_INCLUDED_NOTICE + " 자세한 한계는 마지막 장에 있습니다.")
+    # 금액은 천 원 단위로 절사해 적는다 (14세션 1절). 항목 합과 합계가 어긋날 수 있다.
+    document.add_paragraph(TRUNCATION_FOOTNOTE)
     document.add_page_break()
 
 
@@ -736,6 +739,7 @@ def _chapter_scope(document: DocumentType, sections: DocumentSections, number: i
 
     document.add_heading(f"{number}.1 미포함 요금요소", level=2)
     document.add_paragraph(NOT_INCLUDED_NOTICE)
+    document.add_paragraph(TRUNCATION_FOOTNOTE)
 
     document.add_heading(f"{number}.2 계약전력 변경 시 주의", level=2)
     document.add_paragraph(CONTRACT_CHANGE_WARNING)

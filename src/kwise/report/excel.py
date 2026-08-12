@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from kwise import money
 from kwise.compare import (
     SCENARIO_NAME_CAVEAT,
     SENSITIVITY_NOTE,
@@ -61,6 +62,7 @@ __all__ = [
     "no_pv_sensitivity_frame",
     "result_path",
     "strip_timezone",
+    "truncate_money_columns",
     "write_workbook",
 ]
 
@@ -613,7 +615,28 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
             sheets["감도 상세"] = sections.sensitivity
         else:
             sheets["감도"] = sections.sensitivity
-    return {name: sheets[name] for name in SHEET_ORDER if name in sheets}
+    return {name: truncate_money_columns(sheets[name]) for name in SHEET_ORDER if name in sheets}
+
+
+def truncate_money_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """``(원)`` 으로 끝나는 수치 열을 **천 원 단위로 절사한다** (14세션 1절).
+
+    **내보낼 때만 자른다.** 계산 프레임은 원 단위 그대로다 — 절사한 값으로
+    계산하면 합계가 어긋나고, 회귀 시험이 물고 있는 값이 흔들린다.
+    """
+    money_columns = [
+        name
+        for name in frame.columns
+        if str(name).endswith("(원)") and pd.api.types.is_numeric_dtype(frame[name])
+    ]
+    if not money_columns:
+        return frame
+    trimmed = frame.copy()
+    for name in money_columns:
+        trimmed[name] = trimmed[name].map(
+            lambda value: value if pd.isna(value) else money.truncate_won(float(value))
+        )
+    return trimmed
 
 
 def export_report(
