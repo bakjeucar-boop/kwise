@@ -34,6 +34,7 @@ from kwise.measures import (
     DemandResponseResult,
     EssResult,
     PowerFactorResult,
+    SolarCurve,
     SolarPoint,
     TariffSwitchResult,
 )
@@ -61,6 +62,7 @@ __all__ = [
     "measure_summary_frame",
     "no_pv_sensitivity_frame",
     "result_path",
+    "solar_curve_sheet",
     "strip_timezone",
     "truncate_money_columns",
     "write_workbook",
@@ -91,6 +93,7 @@ SHEET_ORDER: tuple[str, ...] = (
     "15분 시계열",
     "요금 계산 명세",
     "수단별 결과",
+    "태양광 용량 곡선",
     "조합 비교",
     "감도",
     "감도 상세",
@@ -157,6 +160,8 @@ class ReportSections:
     comparison: ComparisonResult | None = None
     sensitivity: pd.DataFrame | None = None
     measure_rows: pd.DataFrame | None = None
+    solar_curve: SolarCurve | None = None
+    """태양광 용량 곡선. **20단계 상세는 화면이 아니라 여기로 보낸다** (15세션 1-3)."""
     include_timeseries: bool = True
 
 
@@ -434,6 +439,40 @@ def measure_summary_frame(
     return pd.DataFrame(rows).set_index("수단")
 
 
+def solar_curve_sheet(curve: SolarCurve) -> pd.DataFrame:
+    """태양광 20단계 상세 (15세션 1-3).
+
+    화면은 **한 줄 판정**만 내고 이 표를 여기로 보낸다. 최적 지점에 표식을 남겨
+    화면의 판정과 대조할 수 있게 한다.
+    """
+    verdict = curve.verdict()
+    best = verdict.best.capacity_kwp if verdict.best is not None else None
+    rows = [
+        {
+            "용량(kWp)": point.capacity_kwp,
+            "발전량(kWh)": point.generation_kwh,
+            "자가소비(kWh)": point.self_consumed_kwh,
+            "잉여(kWh)": point.surplus_kwh,
+            "자가소비율": point.self_consumption_ratio,
+            "요금적용전력(kW)": point.billing_demand_kw,
+            "기본요금 절감(원)": point.base_saving_won,
+            "전력량요금 절감(원)": point.energy_saving_won,
+            "총 절감액(원)": point.total_saving_won,
+            "12개월 환산(원)": point.annual_saving_won,
+            "투자비(원)": point.investment_won,
+            "회수기간(년)": point.payback_years,
+            "도입 후 역률(%)": point.power_factor_after_pct,
+            "판정": (
+                "◀ " + verdict.basis + " 최적"
+                if best is not None and abs(point.capacity_kwp - best) < 1e-9
+                else ""
+            ),
+        }
+        for point in curve.points
+    ]
+    return pd.DataFrame(rows).set_index("용량(kWp)")
+
+
 def no_pv_sensitivity_frame() -> pd.DataFrame:
     """태양광이 없는 케이스의 감도 시트. 빈 시트 대신 사유를 적는다."""
     return pd.DataFrame([{"시나리오": "—", "내용": NO_PV_SENSITIVITY_NOTE}]).set_index("시나리오")
@@ -606,6 +645,10 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
     )
     if sections.measure_rows is not None:
         sheets["수단별 결과"] = sections.measure_rows
+    if sections.solar_curve is not None:
+        # **20단계 상세를 여기 싣는다** (15세션 1-3). 화면은 한 줄 판정만 낸다 —
+        # 곡선이 단조롭게 좋아지기만 하면 표가 아무것도 알려주지 않기 때문이다.
+        sheets["태양광 용량 곡선"] = solar_curve_sheet(sections.solar_curve)
     if sections.comparison is not None:
         sheets["조합 비교"] = sections.comparison.frame()
     if sections.sensitivity is not None:

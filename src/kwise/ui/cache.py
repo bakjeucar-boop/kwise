@@ -59,10 +59,11 @@ from kwise.rules import EditResult, RuleOrigin, assumptions, reload_rules, rules
 from kwise.tariff import BillingOptions, BillingResult, TariffTable, load_tariff
 from kwise.ui import pipeline
 from kwise.ui.memo import clear_memo, session_memo
-from kwise.ui.pipeline import ContractForm, SolarInputs
+from kwise.ui.pipeline import AzimuthOption, ContractForm, SolarInputs
 
 __all__ = [
     "apply_rule_edit",
+    "cached_azimuth_options",
     "cached_baseline_bill",
     "cached_comparison",
     "cached_contract_adjustment",
@@ -240,6 +241,35 @@ def cached_unit_pv(
     _usage: UsageData, token: str, inputs: SolarInputs, stamp: str
 ) -> tuple[pd.Series, str]:
     return pipeline.unit_pv_profile(_usage, inputs)
+
+
+@st.cache_data(show_spinner="여덟 방위를 견주는 중…")
+def cached_azimuth_options(
+    _usage: UsageData,
+    token: str,
+    region_key: str,
+    latitude: float | None,
+    longitude: float | None,
+    tilt_deg: float,
+    gcr: float,
+    system_loss_ratio: float,
+    altitude_m: float,
+    stamp: str,
+) -> tuple[AzimuthOption, ...]:
+    """방위별 상대 발전량 (15세션 1-1).
+
+    **캐시 키에 면적·밀도 라벨을 넣지 않는다.** 용량 1 kWp 로 고정해 비율만
+    내므로 면적이 바뀌어도 값이 같다 — 넣으면 면적을 만질 때마다 여덟 번씩
+    다시 돈다.
+    """
+    inputs = SolarInputs(
+        region_key=region_key,
+        latitude=latitude,
+        longitude=longitude,
+        system_loss_ratio=system_loss_ratio,
+        altitude_m=altitude_m,
+    )
+    return pipeline.azimuth_options(_usage, inputs, tilt_deg=tilt_deg, gcr=gcr)
 
 
 def cached_solar(

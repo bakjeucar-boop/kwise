@@ -535,7 +535,8 @@ def test_태양광에_계산_단추가_있다() -> None:
     screen = _running(nav_page="2단계 · 개선 수단", measure_on_solar=True)
     assert not screen.exception, screen.exception
     assert screen.button(key="solar_run")
-    body = " ".join(item.value for item in screen.info)
+    # 안내는 배경 없는 작은 글씨다 (15세션 4절) — ``st.info`` 상자를 쓰지 않는다.
+    body = " ".join(str(item.value) for item in screen.caption)
     assert "「태양광 계산」 을 누르십시오" in body
     source = (VIEWS / "measures.py").read_text(encoding="utf-8")
     assert "입력이 변경되었습니다 — 다시 계산하십시오" in source

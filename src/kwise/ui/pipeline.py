@@ -36,6 +36,7 @@ from kwise.measures import (
 from kwise.progress import ProgressReporter
 from kwise.pv import (
     ArrayConfig,
+    AzimuthPreset,
     PvPresets,
     PvSystemConfig,
     WeatherData,
@@ -59,9 +60,11 @@ from kwise.tariff import (
 )
 
 __all__ = [
+    "AzimuthOption",
     "ContractForm",
     "ContractGuess",
     "SolarInputs",
+    "azimuth_options",
     "baseline_bill",
     "combination_specs",
     "contract_type_choices",
@@ -286,6 +289,9 @@ class SolarInputs:
     latitude: float | None = None
     longitude: float | None = None
     """시군구 중심점 대신 쓸 좌표. 산악·해안 지형용."""
+    wall_area_m2: float = 0.0
+    """벽면 어레이 면적 (15세션). 0 이면 지붕 한 벌이다."""
+    wall_azimuth_deg: float | None = None
     unit_cost_won_per_kwp: float | None = None
     total_investment_won: float | None = None
     steps: int = 20
@@ -300,14 +306,35 @@ class SolarInputs:
         region = find_region(self.region_key)
         return region.latitude, region.longitude
 
+    def resolved_gcr(self, presets: PvPresets | None = None) -> float:
+        table = presets if presets is not None else load_pv_presets()
+        preset = self.preset(table)
+        return self.gcr if self.gcr is not None else float(preset.gcr)  # type: ignore[attr-defined]
+
+    def resolved_tilt_deg(self, presets: PvPresets | None = None) -> float:
+        table = presets if presets is not None else load_pv_presets()
+        preset = self.preset(table)
+        return self.tilt_deg if self.tilt_deg is not None else float(preset.tilt_deg)  # type: ignore[attr-defined]
+
+    def roof_capacity_kwp(self, presets: PvPresets | None = None) -> float:
+        table = presets if presets is not None else load_pv_presets()
+        return capacity_from_area_kwp(
+            self.area_m2, gcr=self.resolved_gcr(table), area_per_kwp_m2=table.area_per_kwp_m2
+        )
+
+    def wall_capacity_kwp(self, presets: PvPresets | None = None) -> float:
+        """벽면 용량. **GCR 1.0 이다** — 벽은 앞열 그림자가 없어 면적을 그대로 채운다."""
+        table = presets if presets is not None else load_pv_presets()
+        return capacity_from_area_kwp(
+            self.wall_area_m2, gcr=1.0, area_per_kwp_m2=table.area_per_kwp_m2
+        )
+
     def resolved_capacity_kwp(self, presets: PvPresets | None = None) -> float:
         """면적 환산 용량. 직접 입력이 있으면 그쪽이 이긴다."""
         if self.capacity_kwp is not None:
             return self.capacity_kwp
         table = presets if presets is not None else load_pv_presets()
-        preset = self.preset(table)
-        gcr = self.gcr if self.gcr is not None else preset.gcr  # type: ignore[attr-defined]
-        return capacity_from_area_kwp(self.area_m2, gcr=gcr, area_per_kwp_m2=table.area_per_kwp_m2)
+        return self.roof_capacity_kwp(table) + self.wall_capacity_kwp(table)
 
     def cost(self) -> PvCostInput:
         """투자비 입력. **없으면 0원이 아니라 미산출**이고 사유가 붙는다 (7.5)."""
@@ -319,27 +346,139 @@ class SolarInputs:
 
 
 def solar_config(inputs: SolarInputs, *, presets: PvPresets | None = None) -> PvSystemConfig:
-    """PV 시스템 설정. 밀도 프리셋이 GCR 과 경사각을 **함께** 정한다 (3.3)."""
+    """PV 시스템 설정. 밀도 프리셋이 GCR 과 경사각을 **함께** 정한다 (3.3).
+
+    벽면 면적을 넣으면 **어레이가 둘**이 된다 (15세션). 방위를 따로 고를 수 있고,
+    단위 프로파일은 두 어레이를 합친 것을 총용량으로 나눈 값이라 섞인 방위가
+    그대로 반영된다.
+    """
     table = presets if presets is not None else load_pv_presets()
-    preset = inputs.preset(table)
     latitude, longitude = inputs.coordinates()
-    capacity = inputs.resolved_capacity_kwp(table)
-    array = ArrayConfig(
-        name="지붕",
-        capacity_kwp=max(capacity, 1.0),  # 단위 프로파일용. 실제 용량은 곡선이 훑는다.
-        tilt_deg=inputs.tilt_deg if inputs.tilt_deg is not None else preset.tilt_deg,  # type: ignore[attr-defined]
-        azimuth_deg=(
-            inputs.azimuth_deg if inputs.azimuth_deg is not None else table.default_azimuth_deg
-        ),
-        gcr=inputs.gcr if inputs.gcr is not None else preset.gcr,  # type: ignore[attr-defined]
-        system_loss_ratio=inputs.system_loss_ratio,
-    )
-    return PvSystemConfig(
+    roof_kwp = inputs.roof_capacity_kwp(table)
+    wall_kwp = inputs.wall_capacity_kwp(table)
+    arrays = [
+        ArrayConfig(
+            name="지붕",
+            capacity_kwp=max(roof_kwp, 1.0) if wall_kwp <= 0 else roof_kwp,
+            tilt_deg=inputs.resolved_tilt_deg(table),
+            azimuth_deg=(
+                inputs.azimuth_deg if inputs.azimuth_deg is not None else table.default_azimuth_deg
+            ),
+            gcr=inputs.resolved_gcr(table),
+            system_loss_ratio=inputs.system_loss_ratio,
+        )
+    ]
+    if wall_kwp > 0:
+        arrays.append(
+            ArrayConfig.wall(
+                "벽면",
+                wall_kwp,
+                azimuth_deg=(
+                    inputs.wall_azimuth_deg
+                    if inputs.wall_azimuth_deg is not None
+                    else table.default_azimuth_deg
+                ),
+                gcr=1.0,
+                system_loss_ratio=inputs.system_loss_ratio,
+            )
+        )
+    config = PvSystemConfig(
         latitude=latitude,
         longitude=longitude,
-        arrays=(array,),
+        arrays=tuple(arrays),
         altitude_m=inputs.altitude_m,
         timezone="Asia/Seoul",
+    )
+    # 단위 프로파일용으로 크기만 맞춘다. **어레이 비율은 그대로다** — 실제 용량은
+    # 곡선이 훑는다.
+    target = max(inputs.resolved_capacity_kwp(table), 1.0)
+    return config.scaled(target) if config.total_capacity_kwp > 0 else config
+
+
+@dataclass(frozen=True)
+class AzimuthOption:
+    """방위 하나의 상대 발전량 (15세션 1-1).
+
+    **비율을 하드코딩하지 않는다.** 경사각이 낮으면 방위 영향이 줄어드는데
+    밀도 '높음' 은 경사 15° 라 차이가 훨씬 작다 — 지역·경사각으로 그때그때
+    계산해야 라벨이 거짓말을 하지 않는다.
+    """
+
+    preset: AzimuthPreset
+    generation_kwh_per_kwp: float
+    ratio: float
+    """기준(남) 대비 비율. 남이면 1.0 이다."""
+
+    @property
+    def key(self) -> str:
+        return self.preset.key
+
+    @property
+    def label(self) -> str:
+        """``남 (기준)`` · ``남동 −4%``. 고르는 자리에서 대가가 보여야 한다."""
+        if abs(self.ratio - 1.0) < 5e-4:
+            return f"{self.preset.label} (기준)"
+        delta = (self.ratio - 1.0) * 100.0
+        sign = "+" if delta > 0 else "−"
+        return f"{self.preset.label} {sign}{abs(delta):.0f}%"
+
+
+def azimuth_options(
+    usage: UsageData,
+    inputs: SolarInputs,
+    *,
+    tilt_deg: float | None = None,
+    gcr: float | None = None,
+    weather: WeatherData | None = None,
+    presets: PvPresets | None = None,
+) -> tuple[AzimuthOption, ...]:
+    """여덟 방위를 각각 돌려 상대 발전량을 낸다 (15세션 1-1).
+
+    시뮬레이션 여덟 번이다 (한 번에 0.1초 남짓). 용량은 1 kWp 로 고정하므로
+    **면적·밀도를 바꿔도 비율은 그대로**이고, 캐시가 지역·경사·손실로 걸린다.
+
+    Args:
+        tilt_deg: 경사각. 벽면 비교에 90° 를 넘긴다. 기본은 밀도 프리셋 값.
+    """
+    table = presets if presets is not None else load_pv_presets()
+    data = weather if weather is not None else load_weather_for(usage, inputs)
+    latitude, longitude = inputs.coordinates()
+    tilt = inputs.resolved_tilt_deg(table) if tilt_deg is None else tilt_deg
+    density = inputs.resolved_gcr(table) if gcr is None else gcr
+
+    hours = usage.meta.interval_minutes / 60.0
+    totals: list[tuple[AzimuthPreset, float]] = []
+    for preset in table.azimuths:
+        config = PvSystemConfig(
+            latitude=latitude,
+            longitude=longitude,
+            arrays=(
+                ArrayConfig(
+                    name="비교",
+                    capacity_kwp=1.0,
+                    tilt_deg=tilt,
+                    azimuth_deg=preset.azimuth_deg,
+                    gcr=density,
+                    system_loss_ratio=inputs.system_loss_ratio,
+                ),
+            ),
+            altitude_m=inputs.altitude_m,
+            timezone="Asia/Seoul",
+        )
+        profile = unit_generation_kw(usage, data, config)
+        totals.append((preset, float(profile.sum()) * hours))
+
+    reference = next(
+        (value for preset, value in totals if preset.key == table.default_azimuth),
+        max((value for _, value in totals), default=0.0),
+    )
+    return tuple(
+        AzimuthOption(
+            preset=preset,
+            generation_kwh_per_kwp=value,
+            ratio=value / reference if reference > 0 else 0.0,
+        )
+        for preset, value in totals
     )
 
 

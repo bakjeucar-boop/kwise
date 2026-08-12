@@ -16,7 +16,30 @@ from collections.abc import Iterable
 
 import pandas as pd
 
-__all__ = ["COLUMN_LABELS", "column_label", "localize"]
+__all__ = [
+    "COLUMN_LABELS",
+    "OPTION_LABELS",
+    "column_label",
+    "localize",
+    "option_label",
+]
+
+# 선택요금 표기. 요금표는 ``I`` 로 담고 청구서는 ``Ⅰ`` 로 적는다.
+# **표기 규약이지 요금 데이터가 아니다.** 화면과 보고서 프레임이 함께 쓰므로
+# 여기 둔다 — 화면 쪽(``kwise.ui.labels``)에 두면 report 가 ui 를 import 하게 되어
+# 순환이 생긴다 (15세션).
+OPTION_LABELS: dict[str, str] = {
+    "I": "선택Ⅰ",
+    "II": "선택Ⅱ",
+    "III": "선택Ⅲ",
+    "single": "전체시간",
+}
+
+
+def option_label(option: str) -> str:
+    """``II`` → ``선택Ⅱ``. 모르는 값은 그대로 둔다 — 지어내지 않는다."""
+    return OPTION_LABELS.get(option, option)
+
 
 COLUMN_LABELS: dict[str, str] = {
     # 기간·계량

@@ -299,6 +299,14 @@ class DrProfile:
     daily_hours: pd.Series
     daily_hours_cap: float
 
+    daily_window_kw: pd.Series
+    """**전 일자**의 운영 시간대 평균 부하 (index = 날짜). 15세션 산점도가 쓴다.
+
+    표시용이다 — 산정에는 쓰지 않는다. 여기 두는 이유는 같은 창(운영 시간대)과
+    같은 날짜 귀속으로 잰 값이어야 그림과 숫자가 어긋나지 않기 때문이다."""
+    eligible_day_index: tuple[pd.Timestamp, ...]
+    """거래 가능일 목록. 산점도가 평일/토/일/공휴일을 가르는 데 쓴다."""
+
     registered_capacity_kw: float
     mean_reducible_kw: float
     period_reducible_kwh: float
@@ -386,6 +394,8 @@ def _empty_profile(
     windows: tuple[tuple[int, int], ...],
     weekend_days: int,
     weekend_baseline_kw: float | None,
+    daily_window_kw: pd.Series,
+    eligible_day_index: tuple[pd.Timestamp, ...],
     multiple: float,
     threshold: float | None,
     weekday_mean: float | None,
@@ -409,6 +419,8 @@ def _empty_profile(
         daily_reducible_kw=pd.Series(dtype=float),
         daily_hours=pd.Series(dtype=float),
         daily_hours_cap=dr_daily_hours_cap(),
+        daily_window_kw=daily_window_kw,
+        eligible_day_index=eligible_day_index,
         registered_capacity_kw=0.0,
         mean_reducible_kw=0.0,
         period_reducible_kwh=0.0,
@@ -466,6 +478,16 @@ def dr_profile(
     is_dr_day = day_of.isin(set(eligible_days))
     in_window = pd.Series(_operating_window(starts, windows).to_numpy(), index=observed.index)
 
+    # **전 일자**의 운영 시간대 평균. 산점도가 쓰는 표시용 값이다 (15세션 2-2).
+    window_slots = observed[in_window]
+    daily_window = (
+        window_slots.groupby(day_of[window_slots.index]).mean()
+        if len(window_slots)
+        else pd.Series(dtype=float)
+    )
+    daily_window.index.name = "day"
+    eligible_index = tuple(pd.DatetimeIndex(eligible_days))
+
     resource_types = judge_resource_types(contract_type, contract_kw)
     warnings: list[str] = []
     notes: list[str] = [
@@ -504,6 +526,8 @@ def dr_profile(
             windows=windows,
             weekend_days=weekend_days,
             weekend_baseline_kw=float(weekend_slots.mean()) if len(weekend_slots) else None,
+            daily_window_kw=daily_window,
+            eligible_day_index=eligible_index,
             multiple=multiple,
             threshold=None,
             weekday_mean=weekday_mean,
@@ -542,6 +566,8 @@ def dr_profile(
             windows=windows,
             weekend_days=weekend_days,
             weekend_baseline_kw=baseline_kw,
+            daily_window_kw=daily_window,
+            eligible_day_index=eligible_index,
             multiple=multiple,
             threshold=threshold,
             weekday_mean=weekday_mean,
@@ -626,6 +652,8 @@ def dr_profile(
         daily_reducible_kw=reducible,
         daily_hours=hours,
         daily_hours_cap=daily_cap,
+        daily_window_kw=daily_window,
+        eligible_day_index=eligible_index,
         registered_capacity_kw=registered,
         mean_reducible_kw=mean_reducible,
         period_reducible_kwh=period_kwh,

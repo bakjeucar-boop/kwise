@@ -58,6 +58,7 @@ __all__ = [
     "EssTargetPoint",
     "PeakExcess",
     "analyze_peak_excess",
+    "band_labels",
     "default_dod",
     "default_payback_target_years",
     "default_round_trip",
@@ -514,6 +515,43 @@ def light_band_mask(
         region_group=opts.region_group,
     )
     return pd.Series(slots["band"].to_numpy() == "light", index=index, name="charge_window")
+
+
+def band_labels(
+    usage: UsageData,
+    table: TariffTable,
+    *,
+    selection: TariffSelection | None = None,
+    options: BillingOptions | None = None,
+) -> pd.Series:
+    """계시별 시간대 이름 (``light``/``mid``/``peak``) — **표시용** (15세션 2-5).
+
+    ESS 하루 곡선의 배경 띠가 쓴다. 왜 그 시각에 담고 쓰는지는 시간대를 함께
+    보여야 읽힌다. :func:`light_band_mask` 와 **같은 분류를 쓴다** — 따로 계산하면
+    그림의 띠와 실제 충전 창이 어긋날 수 있다.
+    """
+    opts = options if options is not None else BillingOptions()
+    index = pd.DatetimeIndex(usage.kw.index)
+    calendar = build_calendar(
+        range(index[0].year - 1, index[-1].year + 2),
+        sunday_is_holiday=opts.sunday_is_holiday,
+        exclude_temporary=(
+            table.day_rules.exclude_temporary_holiday
+            if opts.exclude_temporary_holiday is None
+            else opts.exclude_temporary_holiday
+        ),
+        extra_holidays=opts.extra_holidays,
+        excluded_holidays=opts.excluded_holidays,
+    )
+    slots = classify_slots(
+        index,
+        usage.meta.interval_minutes,
+        table,
+        calendar,
+        contract_type=selection.contract_type if selection else None,
+        region_group=opts.region_group,
+    )
+    return pd.Series(slots["band"].to_numpy(), index=index, name="band")
 
 
 def dispatch_peak_shaving(

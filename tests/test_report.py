@@ -99,8 +99,9 @@ def summary_text(sample_sheets: dict[str, pd.DataFrame]) -> str:
 
 
 # '감도 상세' 는 감도 원자료가 있을 때만 붙는다. 태양광이 없으면 감도 시트에
-# 사유만 적고 상세는 만들지 않는다.
-OPTIONAL_SHEETS = ("감도 상세",)
+# 사유만 적고 상세는 만들지 않는다. '태양광 용량 곡선' 도 태양광을 켰을 때만
+# 붙는다 (15세션 1-3 — 20단계 상세를 화면에서 여기로 옮겼다).
+OPTIONAL_SHEETS = ("감도 상세", "태양광 용량 곡선")
 
 
 def expected_sheets(*, exclude: tuple[str, ...] = ()) -> list[str]:
@@ -110,13 +111,13 @@ def expected_sheets(*, exclude: tuple[str, ...] = ()) -> list[str]:
 def test_workbook_has_every_sheet_in_order(sample_sheets: dict[str, pd.DataFrame]) -> None:
     """요약 / 진단 / 월별 집계 / 15분 시계열 / 요금 계산 명세 / 수단별 결과 / 조합 비교 / 감도."""
     assert list(sample_sheets) == expected_sheets()
-    assert len(SHEET_ORDER) == 9
+    assert len(SHEET_ORDER) == 10
 
 
 def test_sheet_order_survives_the_round_trip(
     sample_sections: ReportSections, tmp_path: Path
 ) -> None:
-    """openpyxl 로 다시 열어도 아홉 장이 같은 순서다."""
+    """openpyxl 로 다시 열어도 같은 순서다."""
     path = export_report(sample_sections, output_dir=tmp_path)
     assert path.is_file()
     workbook = load_workbook(path, read_only=True)

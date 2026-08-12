@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from itertools import pairwise
 
 import pandas as pd
 
@@ -47,6 +48,7 @@ __all__ = [
     "DEFAULT_MODULE_DENSITY_KWP_PER_M2",
     "DEFAULT_STEPS",
     "DEFAULT_USABLE_RATIO",
+    "CapacityVerdict",
     "SolarCurve",
     "SolarPoint",
     "day_window_mask",
@@ -215,6 +217,101 @@ class SolarCurve:
         if not candidates:
             return None
         return min(candidates, key=lambda point: point.payback_years or math.inf)
+
+    def verdict(self) -> CapacityVerdict:
+        """용량 판정 (15세션 1-3). **새로 계산하지 않는다** — 이미 훑은 점에서 고른다."""
+        return capacity_verdict(self)
+
+
+@dataclass(frozen=True)
+class CapacityVerdict:
+    """용량 한 줄 판정 (15세션 1-3).
+
+    **표를 나열하지 않는다.** 면적이 정해지면 용량이 정해지므로, 잉여가 없고
+    기본요금 절감이 포화하지 않는 한 곡선은 단조롭게 좋아지기만 한다. 그런
+    경우 20단계 표는 아무것도 알려주지 않는다 — 한 줄이면 된다.
+
+    Attributes:
+        best: 고른 점. 회수기간이 있으면 그 최소점, 없으면 절감액 최대점이다.
+        at_limit: 고른 점이 **면적 상한**인가. 상한이면 곡선을 감춘다.
+        basis: 무엇으로 골랐는지 (``회수기간`` / ``절감액``).
+        reason: 상한보다 작을 때 그 이유 (``잉여 발생`` / ``기본요금 절감 포화``).
+    """
+
+    best: SolarPoint | None
+    limit: SolarPoint | None
+    at_limit: bool
+    basis: str
+    reason: str = ""
+    monotonic: bool = True
+    """상한까지 단조롭게 좋아지는가. 아니면 곡선을 펼쳐 최소점을 보인다."""
+
+    @property
+    def show_curve(self) -> bool:
+        """곡선을 펼칠지. **최적이 상한보다 작을 때만** 펼친다 (15세션 1-3)."""
+        return self.best is not None and not self.at_limit
+
+    def sentence(self) -> str:
+        """화면·보고서가 같이 쓰는 한 줄."""
+        if self.best is None or self.limit is None:
+            return "용량 곡선을 산출하지 못했습니다."
+        if self.at_limit:
+            return (
+                f"설치 가능 면적 전체({self.limit.capacity_kwp:,.0f} kWp)를 쓰는 것이 "
+                f"{self.basis} 기준 가장 유리합니다."
+            )
+        tail = f" 그 이상은 {self.reason}." if self.reason else ""
+        return f"{self.basis} 기준 최적은 {self.best.capacity_kwp:,.0f} kWp 입니다.{tail}"
+
+
+def _limiting_reason(curve: SolarCurve, best: SolarPoint, limit: SolarPoint) -> str:
+    """최적이 상한보다 작은 이유. **판별해서 적는다** — 둘 중 무엇인지 알 수 있다."""
+    beyond = [point for point in curve.points if point.capacity_kwp > best.capacity_kwp]
+    if not beyond:
+        return ""
+    gained_surplus = any(point.surplus_kwh > best.surplus_kwh * 1.05 + 1.0 for point in beyond) or (
+        best.surplus_kwh <= 0 < limit.surplus_kwh
+    )
+    if gained_surplus:
+        return "잉여가 발생해 절감 효율이 떨어집니다"
+    base_saturated = limit.base_saving_won <= best.base_saving_won * 1.001
+    if base_saturated:
+        return "기본요금 절감이 포화해 추가 용량이 전력량요금만 줄입니다"
+    return ""
+
+
+def capacity_verdict(curve: SolarCurve) -> CapacityVerdict:
+    """이미 산출된 20단계 결과에서 최적 용량을 **고른다** (15세션 1-3).
+
+    **산식을 새로 만들지 않는다.** 회수기간이 있으면 그 최소점을, 단가를 넣지
+    않아 회수기간이 없으면 절감액(역률 악화분을 뺀 값) 최대점을 고른다.
+    """
+    usable = [point for point in curve.points if point.capacity_kwp > 0]
+    if not usable:
+        return CapacityVerdict(best=None, limit=None, at_limit=False, basis="회수기간")
+    limit = max(usable, key=lambda point: point.capacity_kwp)
+
+    priced = [point for point in usable if point.payback_years is not None]
+    if priced:
+        basis = "회수기간"
+        best = min(priced, key=lambda point: point.payback_years or math.inf)
+        ordered = [point.payback_years or math.inf for point in usable]
+        monotonic = all(later <= earlier + 1e-9 for earlier, later in pairwise(ordered))
+    else:
+        basis = "절감액"
+        best = max(usable, key=lambda point: point.saving_after_power_factor_won)
+        ordered = [point.saving_after_power_factor_won for point in usable]
+        monotonic = all(later >= earlier - 1e-9 for earlier, later in pairwise(ordered))
+
+    at_limit = abs(best.capacity_kwp - limit.capacity_kwp) < 1e-9
+    return CapacityVerdict(
+        best=best,
+        limit=limit,
+        at_limit=at_limit,
+        basis=basis,
+        reason="" if at_limit else _limiting_reason(curve, best, limit),
+        monotonic=monotonic,
+    )
 
 
 def solar_curve(

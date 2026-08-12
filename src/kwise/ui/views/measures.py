@@ -19,6 +19,9 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
+import pandas as pd
 import streamlit as st
 
 from kwise.diagnose import Diagnosis, default_margin_ratio, margin_range
@@ -26,6 +29,8 @@ from kwise.diagnose.dr import dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData
 from kwise.measures import (
     ELIGIBILITY_NOTICE,
+    apply_generation,
+    band_labels,
     default_target_pct,
     evaluate_demand_response,
     high_rate_discharge_hours,
@@ -35,11 +40,13 @@ from kwise.measures import (
 from kwise.pv import capacity_preview, list_provinces, list_sigungu, load_pv_presets
 from kwise.quality import QualityReport
 from kwise.report.columns import localize
+from kwise.report.days import RepresentativeDay, find_day, representative_days
 from kwise.tariff import TariffTable
-from kwise.ui import charts
+from kwise.ui import callout, charts
 from kwise.ui import text as fmt
 from kwise.ui.anchors import detail_suffix
 from kwise.ui.cache import (
+    cached_azimuth_options,
     cached_contract_adjustment,
     cached_ess,
     cached_ess_targets,
@@ -54,7 +61,7 @@ from kwise.ui.cache import (
 )
 from kwise.ui.labels import option_label, selection_label
 from kwise.ui.nav import next_step_button
-from kwise.ui.notices import Severity, screen_notices
+from kwise.ui.notices import screen_notices
 from kwise.ui.pipeline import ContractForm, SolarInputs
 from kwise.ui.progress import progress_panel
 from kwise.ui.spec import MEASURES, MeasureSpec
@@ -79,15 +86,56 @@ def render(
         "수단을 함께 켰을 때의 최종 효과는 3단계 합산효과에서 다시 계산합니다."
     )
     baseline = diagnosis.structure.bill if diagnosis.structure is not None else None
+    day = _reference_day(usage)
 
     tier = ""
     for spec in MEASURES:
         if spec.tier != tier:
             tier = spec.tier
             st.subheader(tier)
-        _card(spec, usage, table, form, diagnosis, quality, baseline)
+        _card(spec, usage, table, form, diagnosis, quality, baseline, day)
 
     next_step_button("3단계 · 비교", key="go_compare")
+
+
+# --------------------------------------------------------------------- 대표일
+
+
+def _reference_day(usage: UsageData) -> RepresentativeDay | None:
+    """**세 곡선 차트가 같은 날을 본다** (15세션 2절).
+
+    역률·태양광·ESS 가 모두 하루 15분 곡선을 쓴다. 카드마다 다른 날을 그리면
+    세 그림을 나란히 놓고도 견줄 수 없으므로 위젯 하나로 묶는다.
+    """
+    days = representative_days(usage)
+    if not days:
+        return None
+    keys = [item.key for item in days] + ["custom"]
+    labels = {item.key: item.title for item in days} | {"custom": "사용자 지정일"}
+    left, right = st.columns([2, 1])
+    with left:
+        picked = st.selectbox(
+            "일일 곡선 대표일",
+            keys,
+            format_func=lambda key: labels[key],
+            key=input_key("common", "ref_day"),
+            help=(
+                "역률·태양광·ESS 의 하루 곡선이 모두 이 날을 씁니다. "
+                "기본은 연간 최대수요가 난 날입니다 — 피크가 어떻게 생겼는지가 "
+                "세 수단의 공통 관심사이기 때문입니다."
+            ),
+        )
+    custom: dt.date | None = None
+    if picked == "custom":
+        with right:
+            custom = st.date_input(
+                "날짜",
+                value=days[0].date,
+                min_value=usage.meta.start.date(),
+                max_value=usage.meta.end.date(),
+                key=input_key("common", "ref_day_custom"),
+            )
+    return find_day(usage, str(picked), custom=custom)
 
 
 # 수단 헤더에만 이모지를 둔다 (10.7). 카드가 일곱이라 접힌 목록에서 눈이 걸릴
@@ -111,6 +159,7 @@ def _card(
     diagnosis: Diagnosis,
     quality: QualityReport,
     baseline: object,
+    day: RepresentativeDay | None,
 ) -> None:
     """**모든 카드가 접힌 상태로 시작한다.**
 
@@ -134,7 +183,30 @@ def _card(
     with st.expander(f"{spec.title} — 입력과 결과", expanded=just_enabled):
         st.caption(spec.headline + " " + detail_suffix(spec.anchor))
         handler = _HANDLERS[spec.key]
-        handler(spec, usage, table, form, diagnosis, quality, baseline)
+        handler(spec, usage, table, form, diagnosis, quality, baseline, day)
+
+
+def _band_series(usage: UsageData, table: TariffTable, form: ContractForm) -> pd.Series | None:
+    """계시별 시간대 라벨. **왜 그 시각에 충·방전하는지**를 배경으로 깔 때 쓴다."""
+    try:
+        return band_labels(usage, table, selection=form.selection, options=form.billing_options())
+    except Exception:
+        return None
+
+
+def _caution(text: str) -> None:
+    """주의 — **배경 없이** 아이콘과 굵기로만 (15세션 4절)."""
+    callout.caution(text)
+
+
+def _hint(text: str) -> None:
+    """참고 — 무엇을 해야 하는지 알려 주는 안내. 배경 없이 작은 글씨."""
+    callout.note(text)
+
+
+def _blocked(text: str) -> None:
+    """차단 — 이대로면 결과를 쓸 수 없다. **색을 남기는 유일한 등급이다.**"""
+    callout.blocked(text)
 
 
 def _overview(spec: MeasureSpec) -> None:
@@ -158,6 +230,7 @@ def _tariff_switch(
     diagnosis: Diagnosis,
     quality: QualityReport,
     baseline: object,
+    day: RepresentativeDay | None,
 ) -> None:
     result = cached_tariff_switch(
         usage,
@@ -181,14 +254,10 @@ def _tariff_switch(
         )
     else:
         st.write("현재 요금제가 이미 가장 유리합니다. 바꿀 이유가 없습니다.")
-    st.dataframe(
-        {
-            "요금제": [option_label(quote.selection.option) for quote in result.ranking],
-            "총 요금": [fmt.won(quote.total_won) for quote in result.ranking],
-        },
-        hide_index=True,
-        width="stretch",
-    )
+    # **누적 막대로 본다** (15세션 2-1). 선택요금은 기본요금과 전력량요금을 맞바꾸는
+    # 제도라 합계만 보면 왜 유리한지가 보이지 않는다.
+    st.altair_chart(charts.tariff_option_chart(result), width="stretch")
+    st.caption("막대 위는 합계와 현행 대비 차액입니다. " + fmt.TRUNCATION_FOOTNOTE)
     _notes(result.warnings, result.notes)
 
 
@@ -203,10 +272,11 @@ def _contract(
     diagnosis: Diagnosis,
     quality: QualityReport,
     baseline: object,
+    day: RepresentativeDay | None,
 ) -> None:
     if form.contract_kw is None or baseline is None:
         _overview(spec)
-        st.warning("계약전력을 입력해야 조정 여지를 봅니다 (1단계 계약 정보).")
+        _caution("계약전력을 입력해야 조정 여지를 봅니다 (1단계 계약 정보).")
         return
     # **여유가 없으면 슬라이더를 감춘다** (13세션). 움직여도 0% 라 고장으로 보인다.
     peak = diagnosis.peak.billing_demand_kw
@@ -276,10 +346,11 @@ def _demand_response(
     diagnosis: Diagnosis,
     quality: QualityReport,
     baseline: object,
+    day: RepresentativeDay | None,
 ) -> None:
     if diagnosis.dr is None:
         _overview(spec)
-        st.warning("경제성DR 참여 여력을 산출하지 못했습니다.")
+        _caution("경제성DR 참여 여력을 산출하지 못했습니다.")
         return
     priced = st.checkbox("정산 단가를 안다 (사업자 제시값)", value=False)
     unit_price = (
@@ -315,6 +386,13 @@ def _demand_response(
             f"{diagnosis.dr.low_load_multiple:.2g}배인 "
             f"{fmt.kw(result.low_load_threshold_kw)} 이하인 평일을 셌습니다."
         )
+    # **기준선 근처로 내려온 평일이 감축 가능일이다** (15세션 2-2). 요일 갈래를
+    # 색으로 나누고 저부하 평일에 표식을 찍으면 그 사실이 그림 하나로 읽힌다.
+    st.altair_chart(charts.dr_daily_chart(diagnosis.dr), width="stretch")
+    st.caption(
+        "점 하나가 하루입니다. 붉은 가로선이 주말·공휴일 평균(기준선)과 저부하 문턱이고, "
+        "역삼각형이 감축 가능일입니다."
+    )
     # **어떤 날인지 보여 준다.** 창립기념일·워크숍처럼 사무실을 비우는 날일 가능성이
     # 높아, 목록을 보면 사용자가 스스로 맞는 날인지 판정할 수 있다 (14세션 4절).
     if result.low_load_days:
@@ -323,7 +401,7 @@ def _demand_response(
             st.caption("사무실을 비우는 날(창립기념일·워크숍 등)일 가능성이 높습니다.")
     else:
         st.write("저부하 평일이 없어 감축 가능량을 0 으로 두었습니다.")
-    st.warning(fmt.markdown_safe(result.participation_notice))
+    _caution(result.participation_notice)
     if result.is_priced:
         st.metric("정산금", fmt.won_short(result.settlement_won))
     st.caption(
@@ -347,6 +425,7 @@ def _power_factor(
     diagnosis: Diagnosis,
     quality: QualityReport,
     baseline: object,
+    day: RepresentativeDay | None,
 ) -> None:
     floor = power_factor_floor_pct()
     left, right = st.columns(2)
@@ -386,12 +465,29 @@ def _power_factor(
     columns[3].metric(
         "회수기간", fmt.payback(result.payback_years, investment_won=result.investment_won)
     )
+    # **각이 좁아지는 모습**이 개선의 전부다 (15세션 2-3).
+    triangle_col, day_col = st.columns(2)
+    with triangle_col:
+        st.altair_chart(charts.power_triangle_chart(result), width="stretch")
+        st.caption("각이 좁아질수록 역률이 좋아집니다. 콘덴서는 무효전력(세로)만 줄입니다.")
+    with day_col:
+        if day is not None:
+            st.altair_chart(
+                charts.power_factor_day_chart(
+                    usage, day, current_pct=result.current_pct, target_pct=result.target_pct
+                ),
+                width="stretch",
+            )
+            st.caption(
+                f"{day.title} · 주황 표식이 역률요금 판정 창(주간 08–22시)입니다. "
+                "야간은 진상 기준입니다."
+            )
     # **92% 미달 경고는 화면에 남긴다** — 결과 해석을 바꾼다 (10.2 예외).
     from kwise.tariff import lagging_standard_pct
 
     standard = lagging_standard_pct()
     if result.current_pct < standard:
-        st.warning(
+        _caution(
             f"현재 지상역률이 기준 {standard:,.0f}% 에 미달합니다 "
             f"({fmt.pct(result.current_pct)}). 매 1%p 마다 기본요금이 추가됩니다."
         )
@@ -409,6 +505,7 @@ def _solar(
     diagnosis: Diagnosis,
     quality: QualityReport,
     baseline: object,
+    day: RepresentativeDay | None,
 ) -> None:
     presets = load_pv_presets()
     saved = get_solar_inputs()
@@ -423,7 +520,13 @@ def _solar(
             step=50.0,
         )
     density_keys = [item.key for item in presets.densities]
-    density_labels = {item.key: item.label for item in presets.densities}
+    # **환산 용량은 라벨에, 상충 관계는 툴팁에** (15세션 1-2). 선택지와 설명이
+    # 화면상 떨어져 있으면 고르는 순간에 읽히지 않는다.
+    capacity_by_key = {preset.key: capacity for preset, capacity in capacity_preview(area, presets)}
+    density_labels = {
+        item.key: f"{item.label} — {fmt.kwp(capacity_by_key.get(item.key, 0.0))}"
+        for item in presets.densities
+    }
     default_density = (
         saved.density_key if saved and saved.density_key in density_keys else presets.default.key
     )
@@ -434,11 +537,8 @@ def _solar(
             index=density_keys.index(default_density),
             format_func=lambda key: density_labels[key],
             horizontal=True,
+            help="\n\n".join(f"**{item.label}** — {item.tradeoff}" for item in presets.densities),
         )
-    # **선택 즉시 환산 용량과 상충 관계를 함께 보여 준다** (3.3).
-    for preset, capacity in capacity_preview(area, presets):
-        marker = "**" if preset.key == density else ""
-        st.caption(f"{marker}{preset.label} — {fmt.kwp(capacity)}{marker} · {preset.tradeoff}")
 
     provinces = list_provinces()
     default_region = saved.region_key if saved else None
@@ -461,6 +561,12 @@ def _solar(
             help="기상 격자가 25–31 km 라 같은 격자면 결과가 같습니다.",
         )
 
+    # ---- 방위 (15세션 1-1). **각도가 아니라 8방위로 고른다.**
+    tilt = presets.density(density).tilt_deg
+    azimuth = _azimuth_picker(
+        usage, region_key, tilt_deg=tilt, gcr=presets.density(density).gcr, field="azimuth"
+    )
+
     unit_cost = st.number_input(
         "설치 단가 (원/kWp)",
         min_value=0.0,
@@ -479,12 +585,13 @@ def _solar(
                 value=0.0,
                 step=10.0,
             )
-            azimuth = st.number_input(
-                "방위각 (도)",
+            azimuth_override = st.number_input(
+                "방위각 직접 입력 (도) — 0 이면 위 8방위 선택",
                 min_value=0.0,
                 max_value=360.0,
-                value=presets.default_azimuth_deg,
+                value=0.0,
                 step=5.0,
+                help="8방위 격자(45도)에 없는 각도를 쓸 때만 넣습니다.",
             )
         with detail_right:
             loss = st.slider("시스템 손실", min_value=0.0, max_value=0.4, value=0.14, step=0.01)
@@ -494,19 +601,34 @@ def _solar(
                 value=0.0,
                 step=1_000_000.0,
             )
+        # **다중 어레이** (15세션 1-1). 벽면은 경사 90° 라 방위 영향이 훨씬 크다.
+        st.markdown("**벽면 어레이** — 지붕과 방위를 따로 고릅니다. 0 이면 지붕 한 벌입니다.")
+        wall_area = st.number_input(
+            "벽면 설치 가능 면적 (m²)",
+            min_value=0.0,
+            value=float(saved.wall_area_m2) if saved else 0.0,
+            step=50.0,
+        )
+        wall_azimuth = (
+            _azimuth_picker(usage, region_key, tilt_deg=90.0, gcr=1.0, field="wall_azimuth")
+            if wall_area > 0
+            else None
+        )
 
     inputs = SolarInputs(
         region_key=region_key,
         area_m2=area,
         density_key=density,
         capacity_kwp=capacity_override or None,
-        azimuth_deg=azimuth,
+        azimuth_deg=azimuth_override or azimuth,
         system_loss_ratio=loss,
+        wall_area_m2=wall_area,
+        wall_azimuth_deg=wall_azimuth,
         unit_cost_won_per_kwp=unit_cost or None,
         total_investment_won=total_cost or None,
     )
     if inputs.resolved_capacity_kwp(presets) <= 0:
-        st.warning("면적 또는 용량을 넣어야 계산합니다.")
+        _caution("면적 또는 용량을 넣어야 계산합니다.")
         return
 
     # **계산 버튼을 둔다** (13세션). 값 하나만 바꿔도 다시 도는 구간이라
@@ -516,11 +638,11 @@ def _solar(
         st.rerun()
     saved_run = get_solar_inputs()
     if saved_run is None:
-        st.info("면적·설치 밀도·지역·단가를 넣고 「태양광 계산」 을 누르십시오.")
+        _hint("면적·설치 밀도·지역·단가를 넣고 「태양광 계산」 을 누르십시오.")
         return
     stale = saved_run != inputs
     if stale:
-        st.warning("입력이 변경되었습니다 — 다시 계산하십시오. 아래는 이전 결과입니다.")
+        _caution("입력이 변경되었습니다 — 다시 계산하십시오. 아래는 이전 결과입니다.")
     inputs = saved_run
 
     # 4·5단계 — **파이프라인에서 가장 오래 걸리는 구간이다** (실측 43%).
@@ -533,7 +655,7 @@ def _solar(
                     usage, usage_token(usage), inputs, rules_stamp()
                 )
             except Exception as exc:
-                st.error(f"기상 자료를 얻지 못해 계산하지 않았습니다.\n\n{exc}")
+                _blocked(f"기상 자료를 얻지 못해 계산하지 않았습니다. {exc}")
                 return
         if source == "cache":
             runner.skip("weather", "캐시 적중")
@@ -567,8 +689,82 @@ def _solar(
     )
     # **투자비를 모르면 빈칸이나 0원이 아니라 사유다** (7.5).
     st.caption("투자비 — " + fmt.won(point.investment_won, reason=curve.cost.reason))
-    st.altair_chart(charts.solar_curve_chart(curve), width="stretch")
+
+    # **표를 나열하지 않고 한 줄로 판정한다** (15세션 1-3). 면적이 정해지면 용량이
+    # 정해지므로, 곡선이 단조롭게 좋아지기만 하면 20단계 표는 아무것도 알려주지 않는다.
+    verdict = curve.verdict()
+    st.markdown(f"**용량 판정** — {verdict.sentence()}")
+    if verdict.show_curve:
+        # 최적이 상한보다 작을 때만 곡선을 펼치고 최소점에 표식을 찍는다.
+        st.altair_chart(charts.solar_curve_chart(curve, verdict=verdict), width="stretch")
+    else:
+        with st.expander("용량 곡선 (접어 둠)", expanded=False):
+            st.altair_chart(charts.solar_curve_chart(curve, verdict=verdict), width="stretch")
+        st.caption("20단계 상세는 Excel 「태양광 용량 곡선」 시트에 있습니다.")
+
+    generation = unit_profile * point.capacity_kwp
+    st.altair_chart(charts.solar_annual_chart(usage, generation), width="stretch")
+    st.caption(
+        "계통에서 받는 양(연한 파랑)이 줄어드는 만큼이 절감입니다. "
+        "잉여(주황)가 크면 자가소비로 다 쓰지 못하는 구조입니다."
+    )
+    if day is not None:
+        st.altair_chart(charts.solar_day_chart(usage, generation, day), width="stretch")
+        st.caption(f"{day.title} · 원부하 피크가 얼마나 내려가는지를 봅니다.")
     _notes(curve.warnings, curve.notes)
+
+
+def _azimuth_picker(
+    usage: UsageData,
+    region_key: str,
+    *,
+    tilt_deg: float,
+    gcr: float,
+    field: str,
+) -> float:
+    """8방위 선택 (15세션 1-1). **상대 발전량을 라벨에 병기한다.**
+
+    비율은 하드코딩하지 않고 **선택된 지역·경사각으로 여덟 방위를 계산**해 낸다 —
+    경사가 낮으면 방위 영향이 줄어들기 때문이다 (밀도 '높음' 은 경사 15°).
+    기상을 얻지 못하면 비율 없이 방위만 보인다.
+    """
+    presets = load_pv_presets()
+    options: dict[str, str] = {}
+    try:
+        computed = cached_azimuth_options(
+            usage,
+            usage_token(usage),
+            region_key,
+            None,
+            None,
+            float(tilt_deg),
+            float(gcr),
+            0.14,
+            50.0,
+            rules_stamp(),
+        )
+        options = {item.key: item.label for item in computed}
+    except Exception:
+        options = {item.key: item.label for item in presets.azimuths}
+
+    keys = [item.key for item in presets.azimuths]
+    picked = st.radio(
+        "방위",
+        keys,
+        index=keys.index(presets.default_azimuth),
+        format_func=lambda key: options.get(key, key),
+        horizontal=True,
+        key=input_key("solar", field),
+        help=(
+            f"경사 {fmt.count(tilt_deg, '°')} 기준으로 여덟 방위를 각각 계산한 상대 "
+            "발전량입니다. 45도 간격이라 최대 오차는 22.5도이고, 그 차이는 발전량 "
+            f"1{fmt.RANGE}2% 로 예측 오차 안에 묻힙니다."
+        ),
+    )
+    preset = presets.azimuth(str(picked))
+    if preset.is_northward:
+        _caution(preset.caution)
+    return preset.azimuth_deg
 
 
 # --------------------------------------------------------------------- 7.6
@@ -582,6 +778,7 @@ def _ess(
     diagnosis: Diagnosis,
     quality: QualityReport,
     baseline: object,
+    day: RepresentativeDay | None,
 ) -> None:
     """**목표 슬라이더가 없다** (14세션 3-2).
 
@@ -591,7 +788,7 @@ def _ess(
     """
     peak = diagnosis.peak.billing_demand_kw
     if peak <= 0:
-        st.warning("요금적용전력을 산출하지 못해 ESS 목표를 훑을 수 없습니다.")
+        _caution("요금적용전력을 산출하지 못해 ESS 목표를 훑을 수 없습니다.")
         return
     # **기본요금단가는 현행 요금제 기준이다** (14세션 2절). 최적 요금제로 바꾼 뒤의
     # 단가를 쓰면 ESS 절감액이 선택요금 전환에 딸려 움직여 독립 평가가 깨진다.
@@ -611,16 +808,18 @@ def _ess(
     )
     best = curve.best
     if best is None:
-        st.warning("어떤 목표에서도 초과 구간이 없어 곡선을 그리지 못했습니다.")
+        _caution("어떤 목표에서도 초과 구간이 없어 곡선을 그리지 못했습니다.")
         return
     model = ess_cost_model(fixed_won, per_kwh_won)
 
+    st.markdown("**회수기간 곡선** — 기본요금 절감만 반영한 개략치 · 목표 선택용")
     st.altair_chart(charts.ess_target_chart(curve), width="stretch")
     st.caption(
         f"회수기간이 가장 짧은 목표는 **{fmt.kw(best.target_kw, decimals=0)}** 입니다 — "
         f"{fmt.markdown_safe(curve.u_shape_reason)} **물리적 최적이 아니라 조달 규격의 "
         "산물입니다.** 회색 점선은 필요 용량(kWh)이며, 목표를 조금만 낮춰도 급증하는 "
-        "것이 오른쪽 팔을 만듭니다."
+        "것이 오른쪽 팔을 만듭니다. "
+        "**카드 결과는 요금 재계산과 왕복효율·DoD 를 반영해 다릅니다.**"
     )
     st.dataframe(localize(charts.ess_target_table(curve)), hide_index=True, width="stretch")
     st.caption(
@@ -661,6 +860,23 @@ def _ess(
         fmt.payback(result.payback_years, investment_won=result.investment_won),
         fmt.certainty_badge(result.certainty),
     )
+    # **언제 담고 언제 쓰는지**를 하루 곡선으로 보인다 (15세션 2-5).
+    if day is not None:
+        st.altair_chart(
+            charts.ess_day_chart(
+                usage, result.dispatch, day, bands=_band_series(usage, table, form)
+            ),
+            width="stretch",
+        )
+        frame = charts.ess_day_frame(usage, result.dispatch, day.date)
+        slot_hours = usage.meta.interval_minutes / 60.0
+        charged = float(frame["충전(kW)"].sum()) * slot_hours if len(frame) else 0.0
+        discharged = float(frame["방전(kW)"].sum()) * slot_hours if len(frame) else 0.0
+        cut = float(frame["원부하(kW)"].max() - frame["순부하(kW)"].max()) if len(frame) else 0.0
+        st.caption(
+            f"{day.title} · 배경 띠가 계시별 시간대입니다 — 경부하에 담아 최대부하에 씁니다. "
+            f"그날 저감 {fmt.kw(cut)} · 충전 {fmt.kwh(charged)} · 방전 {fmt.kwh(discharged)}."
+        )
     # **판정 문장을 쓰지 않는다** (14세션 3-3). 사실만 적고 판단은 사용자가 한다.
     if result.payback_years is not None:
         st.write(
@@ -670,7 +886,7 @@ def _ess(
         )
     # **고출력 셀 사양 경고는 화면에 남긴다** (10.2 예외).
     if 0 < result.discharge_hours < high_rate_discharge_hours():
-        st.warning(
+        _caution(
             f"방전시간이 {fmt.hours(result.discharge_hours)} 로 짧습니다. 고출력 셀 "
             "사양이 되어 조달 사례보다 단가가 높아질 수 있습니다."
         )
@@ -749,7 +965,7 @@ def _ess_cost_inputs() -> tuple[float, float | None, float | None]:
             key=input_key("ess", "total_cost"),
         )
         if fixed != model.fixed_won or per_kwh != model.per_kwh_won:
-            st.warning("계수 조정됨 — 조달 사례 회귀값이 아닙니다.")
+            _caution("계수 조정됨 — 조달 사례 회귀값이 아닙니다.")
     return float(total), float(fixed), float(per_kwh)
 
 
@@ -764,6 +980,7 @@ def _surplus(
     diagnosis: Diagnosis,
     quality: QualityReport,
     baseline: object,
+    day: RepresentativeDay | None,
 ) -> None:
     """**다른 카드 때문에 비활성이 되지 않는다** (14세션 2-3).
 
@@ -799,7 +1016,7 @@ def _surplus(
     try:
         unit_profile, _source = cached_unit_pv(usage, usage_token(usage), inputs, rules_stamp())
     except Exception as exc:
-        st.error(f"기상 자료를 얻지 못했습니다.\n\n{exc}")
+        _blocked(f"기상 자료를 얻지 못했습니다. {exc}")
         return
     result = cached_surplus(
         usage, table, unit_profile, usage_token(usage), form, capacity, price or None, rules_stamp()
@@ -808,6 +1025,13 @@ def _surplus(
     columns[0].metric("잉여 전력량", fmt.kwh(result.total_kwh))
     columns[1].metric("발전량 대비", fmt.ratio_pct(result.share_of_generation))
     columns[2].metric("주말 비중", fmt.ratio_pct(result.weekend_share))
+    # **잉여가 주말에 몰리는지**가 보여야 한다 (15세션 2-6).
+    if result.total_kwh > 0:
+        surplus_kw = apply_generation(usage, unit_profile * capacity).surplus_kw
+        st.altair_chart(charts.surplus_daily_chart(usage, surplus_kw), width="stretch")
+        st.caption("막대 하나가 하루입니다. 주말·공휴일에 몰리면 자가소비가 어려운 구조입니다.")
+    else:
+        st.write("잉여가 0 이라 그릴 것이 없습니다 — 발전량을 모두 자가소비합니다.")
     st.dataframe(
         {
             "시나리오": [item.name for item in result.scenarios],
@@ -817,7 +1041,7 @@ def _surplus(
         hide_index=True,
         width="stretch",
     )
-    st.info(fmt.markdown_safe(ELIGIBILITY_NOTICE))
+    _hint(ELIGIBILITY_NOTICE)
     _notes((), result.notes)
 
 
@@ -833,9 +1057,11 @@ def _notes(warnings: tuple[str, ...], notes: tuple[str, ...]) -> None:
     items = screen_notices(warnings, notes)
     if not items:
         return
+    # **배경색 상자를 쓰지 않는다** (15세션 4절). 열 줄이 같은 노란색으로 쌓이면
+    # 무엇이 중요한지 오히려 알 수 없다. 차단만 색을 남기고 나머지는 아이콘으로.
     with st.expander(f"확인사항 {len(items)}건", expanded=False):
         for item in items:
-            st.warning(item.text) if item.severity is Severity.WARN else st.error(item.text)
+            callout.render_notice(item)
 
 
 _HANDLERS = {

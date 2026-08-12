@@ -124,6 +124,7 @@ __all__ = [
     "sensitivity_frame",
     "simple_sum_won",
     "solar_curve_frame",
+    "solar_curve_sheet",
     "standalone_frame",
     "standalone_rows",
     "strip_timezone",

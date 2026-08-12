@@ -145,6 +145,69 @@
       "value": 5.0,
       "verified_on": "2026-08-07"
     },
+    "pv.azimuths": {
+      "label": "PV 방위 선택지 (8방위)",
+      "note": "각도 숫자 대신 8방위로 받는다. 45도 간격이면 최대 오차 22.5도이고 발전량 차이가 1~2% 라 우리 예측 오차(R² 0.8) 안에 묻힌다. 상대 발전량은 하드코딩하지 않고 선택된 지역·경사각으로 그때그때 여덟 방위를 계산해 낸다 — 경사가 낮으면 방위 영향이 줄어든다.",
+      "source": "판단값",
+      "value": [
+        {
+          "key": "south",
+          "label": "남",
+          "azimuth_deg": 180.0,
+          "caution": ""
+        },
+        {
+          "key": "southeast",
+          "label": "남동",
+          "azimuth_deg": 135.0,
+          "caution": ""
+        },
+        {
+          "key": "southwest",
+          "label": "남서",
+          "azimuth_deg": 225.0,
+          "caution": ""
+        },
+        {
+          "key": "east",
+          "label": "동",
+          "azimuth_deg": 90.0,
+          "caution": ""
+        },
+        {
+          "key": "west",
+          "label": "서",
+          "azimuth_deg": 270.0,
+          "caution": ""
+        },
+        {
+          "key": "northeast",
+          "label": "북동",
+          "azimuth_deg": 45.0,
+          "caution": "북향은 발전량이 크게 낮아 일반적으로 설치하지 않습니다."
+        },
+        {
+          "key": "northwest",
+          "label": "북서",
+          "azimuth_deg": 315.0,
+          "caution": "북향은 발전량이 크게 낮아 일반적으로 설치하지 않습니다."
+        },
+        {
+          "key": "north",
+          "label": "북",
+          "azimuth_deg": 0.0,
+          "caution": "북향은 발전량이 크게 낮아 일반적으로 설치하지 않습니다."
+        }
+      ],
+      "verified_on": "2026-08-13"
+    },
+    "pv.default_azimuth": {
+      "label": "기본 방위",
+      "note": "pv.azimuths 의 key 중 하나. 남향이다.",
+      "source": "판단값",
+      "value": "south",
+      "verified_on": "2026-08-13"
+    },
     "pv.default_azimuth_deg": {
       "label": "기본 방위각 (도)",
       "note": "남향.",

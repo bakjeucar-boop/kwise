@@ -29,6 +29,7 @@ from kwise.pv.config import (
     PvSystemConfig,
 )
 from kwise.pv.layout import (
+    AzimuthPreset,
     DensityPreset,
     PvPresetError,
     PvPresets,
@@ -90,6 +91,7 @@ __all__ = [
     "AlignedGeneration",
     "ArrayConfig",
     "ArrayResult",
+    "AzimuthPreset",
     "DensityPreset",
     "Mounting",
     "PvPresetError",

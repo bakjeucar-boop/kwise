@@ -31,6 +31,7 @@ from kwise.measures import (
     DemandResponseResult,
     EssResult,
     PowerFactorResult,
+    SolarCurve,
     SolarPoint,
     SurplusResult,
     TariffSwitchResult,
@@ -467,6 +468,7 @@ class _MeasureResults:
     demand_response: DemandResponseResult | None = None
     power_factor: PowerFactorResult | None = None
     solar: SolarPoint | None = None
+    solar_curve: SolarCurve | None = None
     solar_certainty: Certainty | None = None
     solar_unpriced_reason: str = ""
     ess: EssResult | None = None
@@ -569,6 +571,7 @@ def _measure_results(
         )
 
     solar = None
+    solar_curve = None
     solar_certainty = None
     solar_reason = ""
     inputs = get_solar_inputs()
@@ -577,6 +580,7 @@ def _measure_results(
             usage, table, unit_profile, baseline, quality, token, form, inputs, stamp
         )
         solar = curve.points[-1]
+        solar_curve = curve
         solar_certainty = curve.certainty
         # 단가를 넣지 않았으면 **투자비 칸에 사유가 들어간다** (7.5).
         solar_reason = curve.cost.reason
@@ -622,6 +626,7 @@ def _measure_results(
         demand_response=demand_response,
         power_factor=power_factor,
         solar=solar,
+        solar_curve=solar_curve,
         solar_certainty=solar_certainty,
         solar_unpriced_reason=solar_reason,
         ess=ess,
@@ -712,6 +717,7 @@ def _download_block(
                 comparison=comparison,
                 sensitivity=sensitivity,
                 measure_rows=results.excel_frame(),
+                solar_curve=results.solar_curve,
                 include_timeseries=include_timeseries,
             )
             _build(

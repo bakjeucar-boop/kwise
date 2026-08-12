@@ -12,8 +12,14 @@
 **모드를 나누지 않는다** — 상세 설계 모드를 만들면 pvsim 과 경계가 흐려진다.
 
 설치 밀도 프리셋이 GCR 과 경사각을 **함께** 정한다. 고밀도 배치는 이격을 좁히는
-대신 경사를 낮춰 음영을 줄이는 것이 실무 관행이다. 프리셋 값은
-``data\\pv_presets.json`` 에 있다 — 하드코딩하지 않는다.
+대신 경사를 낮춰 음영을 줄이는 것이 실무 관행이다. 프리셋 값은 다른 기준 데이터와
+같은 자리 — ``data\\assumptions.json`` 의 ``pv.*`` 항목 — 에 있다. 하드코딩하지
+않는다. 별도 파일로 떼면 편집·원복·만료 감지(:mod:`kwise.rules`)가 닿지 않는다.
+
+**방위도 프리셋이다** (15세션). 각도 숫자 대신 8방위로 받는다 — 45도 간격이면
+최대 오차 22.5도이고 발전량 차이가 1~2% 라 예측 오차(R² 0.8) 안에 묻힌다.
+상대 발전량은 **하드코딩하지 않는다**. 경사각이 낮으면 방위 영향이 줄어들기
+때문에(밀도 '높음'은 경사 15°다) 선택된 지역·경사각으로 그때그때 계산한다.
 
 **내부 키(``high``/``normal``/``low``)와 표시 라벨(높음/보통/낮음)을 분리한다.**
 그리고 선택지마다 **상충 관계를 한 줄로 병기한다** — 밀도만 보아서는 "높으면 좋은
@@ -35,6 +41,7 @@ from kwise.pv.region import Region
 from kwise.rules import assumption
 
 __all__ = [
+    "AzimuthPreset",
     "DensityPreset",
     "PvPresetError",
     "PvPresets",
@@ -74,6 +81,32 @@ class DensityPreset:
 
 
 @dataclass(frozen=True)
+class AzimuthPreset:
+    """방위 하나 (15세션).
+
+    **각도가 아니라 방위로 고른다.** 45도 간격의 오차(최대 22.5도)는 발전량
+    1~2% 차이라 예측 오차 안에 묻히고, 사용자는 각도를 모른다.
+
+    Attributes:
+        caution: 북향 계열에 붙는 주의. **고를 수는 있게 두고 사실만 적는다.**
+    """
+
+    key: str
+    label: str
+    azimuth_deg: float
+    caution: str = ""
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.azimuth_deg < 360.0:
+            raise ValueError(f"방위각은 0 이상 360 미만이어야 합니다: {self.azimuth_deg}")
+
+    @property
+    def is_northward(self) -> bool:
+        """북향 계열인가. 주의 문구가 붙어 있으면 그렇다."""
+        return bool(self.caution)
+
+
+@dataclass(frozen=True)
 class PvPresets:
     """프리셋 한 벌. 드롭다운을 이걸로 만든다."""
 
@@ -82,6 +115,8 @@ class PvPresets:
     default_azimuth_deg: float
     default_density: str
     density_label: str = "설치 밀도"
+    azimuths: tuple[AzimuthPreset, ...] = field(default=())
+    default_azimuth: str = ""
 
     def density(self, key: str) -> DensityPreset:
         for item in self.densities:
@@ -92,9 +127,28 @@ class PvPresets:
             f"(가능: {', '.join(item.key for item in self.densities)})"
         )
 
+    def azimuth(self, key: str) -> AzimuthPreset:
+        for item in self.azimuths:
+            if item.key == key:
+                return item
+        raise PvPresetError(
+            f"없는 방위입니다: {key!r} (가능: {', '.join(item.key for item in self.azimuths)})"
+        )
+
+    def azimuth_of(self, degrees: float) -> AzimuthPreset | None:
+        """각도에 해당하는 방위. 45도 격자에 없는 각도면 ``None`` 이다."""
+        for item in self.azimuths:
+            if abs(item.azimuth_deg - degrees) < 1e-9:
+                return item
+        return None
+
     @property
     def default(self) -> DensityPreset:
         return self.density(self.default_density)
+
+    @property
+    def default_azimuth_preset(self) -> AzimuthPreset:
+        return self.azimuth(self.default_azimuth)
 
 
 def load_pv_presets() -> PvPresets:
@@ -120,14 +174,33 @@ def load_pv_presets() -> PvPresets:
     area_per_kwp = float(assumption("pv.area_per_kwp_m2"))
     if area_per_kwp <= 0:
         raise PvPresetError(f"kWp 당 면적은 양수여야 합니다: {area_per_kwp}")
+    azimuths = tuple(
+        AzimuthPreset(
+            key=str(item["key"]),
+            label=str(item.get("label", item["key"])),
+            azimuth_deg=float(item["azimuth_deg"]),
+            caution=str(item.get("caution", "")),
+        )
+        for item in assumption("pv.azimuths") or ()
+    )
+    if not azimuths:
+        raise PvPresetError("방위 선택지가 비어 있습니다 (assumptions.json: pv.azimuths).")
     presets = PvPresets(
         densities=densities,
         area_per_kwp_m2=area_per_kwp,
         default_azimuth_deg=float(assumption("pv.default_azimuth_deg")),
         default_density=str(assumption("pv.default_density")),
         density_label=str(assumption("pv.density_label")),
+        azimuths=azimuths,
+        default_azimuth=str(assumption("pv.default_azimuth")),
     )
-    _ = presets.default  # 기본 밀도가 목록에 있는지 여기서 확인한다
+    # 기본 밀도·기본 방위가 목록에 있는지 여기서 확인한다.
+    _ = presets.default, presets.default_azimuth_preset
+    if presets.azimuth_of(presets.default_azimuth_deg) is None:
+        raise PvPresetError(
+            f"기본 방위각 {presets.default_azimuth_deg:g}° 가 방위 목록에 없습니다. "
+            "pv.default_azimuth_deg 와 pv.azimuths 가 어긋납니다."
+        )
     return presets
 
 

@@ -13,23 +13,14 @@
 
 from __future__ import annotations
 
+from kwise.report.columns import OPTION_LABELS, option_label
 from kwise.tariff import TariffSelection, TariffTable
 
 __all__ = ["OPTION_LABELS", "contract_label", "option_label", "selection_label", "voltage_label"]
 
-# 선택요금 표기. 요금표는 ``I`` 로 담고 청구서는 ``Ⅰ`` 로 적는다.
-# 표기 규약이지 요금 데이터가 아니므로 여기 둔다.
-OPTION_LABELS: dict[str, str] = {
-    "I": "선택Ⅰ",
-    "II": "선택Ⅱ",
-    "III": "선택Ⅲ",
-    "single": "전체시간",
-}
-
-
-def option_label(option: str) -> str:
-    """``II`` → ``선택Ⅱ``. 모르는 값은 그대로 둔다 — 지어내지 않는다."""
-    return OPTION_LABELS.get(option, option)
+# ``OPTION_LABELS``·``option_label`` 은 :mod:`kwise.report.columns` 에 있다 —
+# 보고서 프레임도 같은 표기를 써야 하는데 report 가 ui 를 import 하면 순환이
+# 생긴다 (15세션). 여기서는 다시 내보내기만 한다.
 
 
 def contract_label(table: TariffTable, contract_type: str) -> str:
