@@ -448,8 +448,10 @@ def _pattern_block(diagnosis: Diagnosis) -> None:
     columns[2].metric("주말 부하 비율", fmt.ratio_pct(pattern.weekend_ratio))
     columns[3].metric("무인시간 부하 비중", fmt.ratio_pct(pattern.unattended_energy_share))
     st.caption(
-        f"야간 {pattern.night_hours[0]}~{pattern.night_hours[1]}시 · "
-        f"운영 {pattern.operating_hours[0]}~{pattern.operating_hours[1]}시 기준. "
+        # **물결표를 쓰지 않는다** — 한 줄에 둘이 들어가면 그 사이가 취소선이 된다
+        # (13세션). 통합 시험이 이 자리를 잡았다 (15세션).
+        f"야간 {pattern.night_hours[0]}{fmt.RANGE}{pattern.night_hours[1]}시 · "
+        f"운영 {pattern.operating_hours[0]}{fmt.RANGE}{pattern.operating_hours[1]}시 기준. "
         + detail_suffix("load-pattern")
     )
 

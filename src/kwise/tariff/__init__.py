@@ -35,6 +35,13 @@ from kwise.tariff.holiday import (
     HolidayCalendar,
     build_calendar,
 )
+from kwise.tariff.labels import (
+    OPTION_LABELS,
+    contract_label,
+    option_label,
+    selection_label,
+    voltage_label,
+)
 from kwise.tariff.power_factor import (
     PowerFactorCharge,
     adjustment_per_percent,
@@ -91,6 +98,7 @@ __all__ = [
     "DEFAULT_UNIFORM_TOLERANCE",
     "MISSING_LIMIT_RATIO",
     "NOT_INCLUDED_NOTICE",
+    "OPTION_LABELS",
     "TENTATIVE_BASE_FEE_BASIS_WARNING",
     "AnnualEstimate",
     "Band",
@@ -118,6 +126,7 @@ __all__ = [
     "build_calendar",
     "calculate_bill",
     "classify_slots",
+    "contract_label",
     "day_window",
     "deemed_lagging_pct",
     "deemed_leading_pct",
@@ -142,9 +151,12 @@ __all__ = [
     "list_voltages",
     "load_tariff",
     "monthly_demand_basis",
+    "option_label",
     "option_pair_diffs",
     "parse_tariff",
     "power_factor_charge",
+    "selection_label",
     "switchable_selections",
     "validate_tariff",
+    "voltage_label",
 ]

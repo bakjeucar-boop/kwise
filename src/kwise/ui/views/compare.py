@@ -67,6 +67,7 @@ from kwise.ui.cache import (
     cached_comparison,
     cached_contract_adjustment,
     cached_ess,
+    cached_ess_targets,
     cached_power_factor,
     cached_sensitivity,
     cached_solar,
@@ -129,7 +130,7 @@ def render(
             capacity = 0.0
 
     # 2단계에서 넣은 값을 그대로 읽는다 (위젯 키로 세션에 남는다).
-    ess_target = measure_float("ess", "target") if "ess" in enabled else None
+    ess_target = _ess_target(usage, table, form, diagnosis) if "ess" in enabled else None
     specs = combination_specs(
         form=form,
         best_selection=(diagnosis.summary.best_selection or form.selection),
@@ -457,6 +458,33 @@ def _contract_room(item: CombinationResult, contract_kw: float | None, margin: f
     return f"{fmt.kw(suggested, decimals=0)} (−{fmt.kw(room, decimals=0)})"
 
 
+def _ess_target(
+    usage: UsageData, table: TariffTable, form: ContractForm, diagnosis: Diagnosis
+) -> float | None:
+    """ESS 목표 요금적용전력. **2단계를 거치지 않아도 같은 값이 나와야 한다** (15세션).
+
+    2단계 카드가 세션에 남긴 값을 먼저 읽고, 없으면 곡선의 최소 지점을 **같은
+    함수로** 다시 찾는다. 옆단에서 3단계로 바로 뛰면 세션이 비어 ESS 행이 통째로
+    빠지던 자리다 — 통합 시험이 잡았다.
+    """
+    saved = measure_float("ess", "target")
+    if saved is not None:
+        return saved
+    peak = diagnosis.peak.billing_demand_kw
+    if peak <= 0:
+        return None
+    curve = cached_ess_targets(
+        usage,
+        usage_token(usage),
+        float(peak),
+        float(table.rates(form.selection).base_won_per_kw),
+        measure_float("ess", "fixed_cost"),
+        measure_float("ess", "per_kwh_cost"),
+        rules_stamp(),
+    )
+    return curve.best.target_kw if curve.best is not None else None
+
+
 def _options_key(form: ContractForm) -> str:
     return f"{form.contract_kw}|{form.lagging_pct}|{form.leading_power_factor_pct}"
 
@@ -606,7 +634,7 @@ def _measure_results(
         solar_reason = curve.cost.reason
 
     ess = None
-    ess_target = measure_float("ess", "target")
+    ess_target = _ess_target(usage, table, form, diagnosis)
     if "ess" in enabled and ess_target is not None:
         # **2단계와 같은 인자로 부른다** — 캐시에 걸려 같은 값이 나온다 (14세션 5-1).
         ess = cached_ess(

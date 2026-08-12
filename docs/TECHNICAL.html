@@ -139,8 +139,12 @@ li.task input { margin-right:.5rem; }
 <div class="table-wrap"><table><thead><tr><th>패키지</th><th>책임</th><th>부르지 않는 것</th></tr></thead><tbody><tr><td><code>io</code></td><td>파일 → <code>UsageData</code> (15분 kW·kWh·메타)</td><td>요금·설비</td></tr><tr><td><code>quality</code></td><td>결측·정전·편중·이상치</td><td>요금</td></tr><tr><td><code>tariff</code></td><td>요금 계산. <strong>순수 함수</strong></td><td>설비·화면</td></tr><tr><td><code>pv</code></td><td>기상 취득·시뮬레이션·정렬·첨예도</td><td>요금</td></tr><tr><td><code>diagnose</code></td><td>6장 진단. <strong>설비 정보를 받지 않는다</strong></td><td>개선 수단</td></tr><tr><td><code>measures</code></td><td>7장 수단 7종</td><td>화면</td></tr><tr><td><code>compare</code></td><td>8장 조합 재계산</td><td>화면</td></tr><tr><td><code>report</code></td><td>Excel·Word·차트 프레임·배치</td><td>화면</td></tr><tr><td><code>rules</code></td><td>기준 데이터 (전 계층이 함수로 조회)</td><td>—</td></tr><tr><td><code>progress</code></td><td>진행 보고 프로토콜</td><td><strong>streamlit</strong></td></tr><tr><td><code>ui</code></td><td>Streamlit 화면. <strong>계산을 담지 않는다</strong></td><td>—</td></tr></tbody></table></div>
 <p><strong><code>ui</code> 를 뺀 어느 모듈도 <code>streamlit</code> 을 import 하지 않는다.</strong> 시험이 이를 강제한다 (<code>test_progress.py</code>). 화면은 콜백만 넘긴다 (<a href="#tech-flow">4.1</a>).</p>
 <p><code>ui</code> 안에서도 갈라 둔다.</p>
-<div class="table-wrap"><table><thead><tr><th>순수 (시험이 닿는다)</th><th>Streamlit</th></tr></thead><tbody><tr><td><code>anchors</code> <code>text</code> <code>spec</code> <code>charts</code> <code>rules_view</code> <code>pipeline</code> <code>session</code></td><td><code>app</code> <code>state</code> <code>cache</code> <code>memo</code> <code>progress</code> <code>views\</code></td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>순수 (시험이 닿는다)</th><th>Streamlit</th></tr></thead><tbody><tr><td><code>anchors</code> <code>text</code> <code>spec</code> <code>charts</code> <code>labels</code> <code>rules_view</code> <code>pipeline</code> <code>session</code></td><td><code>app</code> <code>nav</code> <code>callout</code> <code>state</code> <code>cache</code> <code>memo</code> <code>progress</code> <code>views\</code></td></tr></tbody></table></div>
 <p>판단이 들어가는 것(화면 순서·정렬·표기·조합 구성)은 전부 순수 쪽에 있다.</p>
+<p><strong>차트는 프레임과 사양을 가른다</strong> (15세션에 여섯을 더했다).</p>
+<p>report.frames    표를 만든다 — 순수. 화면과 보고서가 <strong>같은 표</strong>를 본다 ui.charts        altair 사양 report.figures   matplotlib png</p>
+<p>각자 표를 만들면 같은 이름의 차트가 서로 다른 수를 그리게 되고, 그 어긋남은 눈으로 잡히지 않는다.</p>
+<p><strong>표시 이름은 요금 계층에 있다</strong> (<code>tariff.labels</code>). 계산 모듈이 내는 문구에도 종별 이름이 들어가는데(선택요금 전환 노트), 화면 쪽에만 두면 계산 모듈이 쓸 수 없어 <code>general_b/high_a/II</code> 가 그대로 화면에 나간다 — 15세션 통합 시험이 잡았다.</p>
 <h3 id="tech-layout">2.2 디렉터리와 설정 파일</h3>
 <div class="code"><pre><code>src/kwise/          패키지 (pip install -e .)
 tools/              CLI 스크립트. 변환 로직은 src 에 두고 여기는 진입점만
@@ -243,13 +247,20 @@ reference/          기존 pv_peak_cut 코드. **읽기 전용**</code></pre></d
 <p><strong>기본요금 절감을 계산하지 않는다.</strong> SMP 기준 산발 입찰이라 참여일이 연중 최대수요일과 겹칠 확률이 낮다. 편익은 정산금 하나다.</p>
 <p>0.1 MW-h 문턱(제12.4.2.1조 1항 2호)은 <strong>수요관리사업자가 묶은 자원 단위</strong> 기준이라 개별 고객 판정이 아니다. 참고 표시만 한다.</p>
 <h4 id="tech-solar">7.5 태양광</h4>
-<p><strong>기본 입력은 셋이다</strong> — 설치 가능 면적·설치 밀도·지역.</p>
+<p><strong>기본 입력은 넷이다</strong> — 설치 가능 면적·설치 밀도·지역·방위 (15세션에 방위를 더했다).</p>
 <p>발전량 예측 R² 가 0.8 이라 <strong>입력 정밀도가 기상 오차를 이길 수 없다.</strong> 게다가 용량 곡선이 20단계를 훑으므로 면적 환산이 ±20% 틀려도 곡선 위 다른 점을 볼 뿐이다. 상세 입력은 확장 패널로 접는다. <strong>모드를 나누지 않는다</strong> — 상세 설계 모드를 만들면 pvsim 과 경계가 흐려진다.</p>
 <div class="code"><pre><code>설치 용량(kWp) ≈ 설치 가능 면적 × GCR ÷ 5</code></pre></div>
 <p>모듈 효율 20% 기준 1 kWp 당 약 5 m² 다. <strong>밀도 하나가 GCR 과 경사각을 함께</strong> 정한다 — 고밀도 배치는 이격을 좁히는 대신 경사를 낮춰 음영을 줄이는 실무 관행이다.</p>
 <div class="table-wrap"><table><thead><tr><th>밀도</th><th>GCR</th><th>경사</th><th>1,000 m²</th><th>상충</th></tr></thead><tbody><tr><td>높음</td><td>0.55</td><td>15°</td><td>110 kWp</td><td>면적당 용량 최대, kWp당 발전량 최소</td></tr><tr><td>보통</td><td>0.40</td><td>25°</td><td>80 kWp</td><td>균형점 (기본값)</td></tr><tr><td>낮음</td><td>0.30</td><td>30°</td><td>60 kWp</td><td>kWp당 발전량 최대, 용량 최소</td></tr></tbody></table></div>
 <p><strong>용량 곡선은 시뮬레이션 1회 + 곱셈이다.</strong> pvwatts 직류와 인버터 모델이 정격에 선형이다(정격과 인버터 용량이 함께 커진다). 20단계라도 태양 위치 계산은 한 번이며 선형성을 시험이 고정한다. 되풀이한다면 20단계 × 감도 3 = 60회가 되어 그것이 최대 병목이 된다 — 실측으로 확인했다 (<a href="#tech-performance">6.4</a>).</p>
 <p><strong>일몰 후 발전량을 태양 고도로 잘라낸다.</strong> 시간별 → 15분 선형 보간이 일몰을 가로질러 값을 흘리기 때문이다.</p>
+<p><strong>방위는 8방위로 받는다</strong> (15세션). 45도 간격이면 최대 오차 22.5도이고 발전량 차이가 1–2% 라 예측 오차 안에 묻힌다. 선택지 라벨에 상대 발전량을 병기하는데 <strong>하드코딩하지 않는다</strong> — 고른 지역·경사각으로 여덟 방위를 각각 돌려 남향 대비 비율을 낸다. 경사가 낮으면 방위 영향이 줄기 때문이다.</p>
+<div class="table-wrap"><table><thead><tr><th>경사</th><th>남</th><th>남동</th><th>남서</th><th>동</th><th>서</th><th>북</th></tr></thead><tbody><tr><td>25° (밀도 보통)</td><td>기준</td><td>−8%</td><td>−1%</td><td>−20%</td><td>−10%</td><td>−31%</td></tr><tr><td>15° (밀도 높음)</td><td>기준</td><td>−5%</td><td>−1%</td><td>−13%</td><td>−7%</td><td>−19%</td></tr><tr><td>90° (벽면)</td><td>기준</td><td>−18%</td><td>−1%</td><td>−40%</td><td>−21%</td><td>−64%</td></tr></tbody></table></div>
+<p>시뮬레이션 여덟 번이라 0.85초다. 용량을 1 kWp 로 고정하므로 <strong>면적·밀도를 바꿔도 비율이 같고</strong>, 캐시가 지역·경사·손실로 걸린다.</p>
+<p><strong>벽면 어레이를 함께 올릴 수 있다.</strong> 지붕과 방위를 따로 고르고 경사 90°·GCR 1.0 으로 계산한다. 단위 프로파일은 두 어레이를 합쳐 총용량으로 나눈 값이라 섞인 방위가 그대로 반영된다 (<code>PvSystemConfig.scaled()</code> 이 비율을 유지한다).</p>
+<p><strong>용량은 한 줄로 판정한다</strong> (15세션 1-3). 20단계를 훑는 것은 그대로지만 표를 화면에 나열하지 않는다.</p>
+<p>회수기간이 있으면  그 최소점 없으면(단가 미입력) 절감액(역률 악화분을 뺀 값) 최대점</p>
+<p><strong>새 산식을 만들지 않는다</strong> — 이미 훑은 점에서 고르기만 한다 (<code>SolarCurve.verdict()</code>). 최적이 면적 상한이면 곡선을 접어 두고 한 줄만 낸다. 상한보다 작으면 이유(잉여 발생 / 기본요금 절감 포화)를 판별해 적고 곡선을 펼쳐 최소점에 표식을 찍는다. 20단계 상세는 Excel 「태양광 용량 곡선」 시트로 간다.</p>
 <p><strong>참고단가를 제공하지 않는다.</strong> ESS 는 에너지경제연구원 LCOS 연구를 인용할 수 있지만 태양광은 확보하지 못했다. 단가를 넣지 않으면 투자비는 <strong>0원이 아니라 미산출</strong>이고 사유가 붙는다. 0원으로 두면 회수기간이 0년으로 나와 &quot;즉시 회수&quot;로 읽힌다. 용량 곡선의 모든 점에 같은 kWp당 단가를 적용하므로 <strong>규모의 경제가 반영되지 않는다</strong> — 소규모 구간의 회수기간이 낙관적으로 나온다.</p>
 <h4 id="tech-ess">7.6 ESS</h4>
 <p>목표 요금적용전력에서 출력·용량·방전시간을 역산한다.</p>

@@ -29,6 +29,7 @@ from kwise.tariff import (
     TariffSelection,
     TariffTable,
     calculate_bill,
+    selection_label,
     switchable_selections,
 )
 
@@ -149,9 +150,12 @@ def evaluate_tariff_switch(
         "설비 도입과 무관하게 나오는 절감액입니다. 투자가 필요하지 않습니다.",
     ]
     if best_selection != current_selection:
+        # **코드 식별자를 문구에 넣지 않는다** (12세션 규약, 15세션에 되살아난 것을
+        # 통합 시험이 잡았다). 계산 모듈의 노트도 화면·산출물로 그대로 나간다.
         notes.append(
-            f"최적은 {best_selection} 입니다. 다른 수단의 기준선을 현행으로 둘지 "
-            "최적으로 둘지에 따라 그 수단의 절감액이 달라집니다."
+            f"가장 유리한 요금제는 {selection_label(table, best_selection)} 입니다. "
+            "다른 수단의 기준선을 현행으로 둘지 최적으로 둘지에 따라 그 수단의 "
+            "절감액이 달라집니다."
         )
     return TariffSwitchResult(
         current=quote_by_key[str(current_selection)],
