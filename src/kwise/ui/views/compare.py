@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -178,10 +179,16 @@ def render(
     # **③ 조합 비교.** 표가 먼저, 권장안이 나중이다 (13세션) — 어느 조합을 왜
     # 권하는지 말하려면 견줄 것이 먼저 보여야 한다.
     st.subheader("조합 비교")
-    st.dataframe(_comparison_frame(comparison), hide_index=True, width="stretch")
+    margin = float(st.session_state.get(input_key("contract", "margin"), default_margin_ratio()))
+    st.dataframe(
+        _comparison_frame(comparison, contract_kw=form.contract_kw, margin=margin),
+        hide_index=True,
+        width="stretch",
+    )
     st.caption(
         "절감액 내림차순입니다. **조합마다 요금을 다시 계산했습니다** — 수단별 "
-        "절감액의 합이 아닙니다. " + detail_suffix("certainty")
+        f"절감액의 합이 아닙니다. 계약전력 하향 여지는 여유율 "
+        f"{fmt.ratio_pct(margin, decimals=0)} 를 얹은 값입니다. " + detail_suffix("certainty")
     )
     for notice in screen_notices(comparison.warnings):
         st.warning(notice.text)
@@ -405,8 +412,14 @@ def _measure_labels(applied: tuple[AppliedMeasure, ...]) -> str:
     return ", ".join(labels) or "—"
 
 
-def _comparison_frame(comparison: ComparisonResult) -> pd.DataFrame:
-    """화면용 조합 표. 숫자는 문자열로 굳혀 세 자리 콤마를 보장한다."""
+def _comparison_frame(
+    comparison: ComparisonResult, *, contract_kw: float | None, margin: float
+) -> pd.DataFrame:
+    """화면용 조합 표. 숫자는 문자열로 굳혀 세 자리 콤마를 보장한다.
+
+    **계약전력 하향 여지를 조합마다 낸다** (14세션 5-2·5-3). 조합이 피크를 얼마나
+    낮추느냐에 따라 여지가 달라지는데, 그 사실은 조합을 나란히 놓아야 보인다.
+    """
     ordered = sorted(comparison.combinations, key=lambda item: -item.annual_saving_won)
     rows = [
         {
@@ -415,11 +428,26 @@ def _comparison_frame(comparison: ComparisonResult) -> pd.DataFrame:
             "12개월 환산 절감액": fmt.won(item.annual_saving_won),
             "투자비": fmt.won(item.investment_won, reason="—"),
             "회수기간": fmt.payback(item.payback_years, investment_won=item.investment_won),
+            "계약전력 하향 여지": _contract_room(item, contract_kw, margin),
             "확실성": str(item.certainty),
         }
         for item in ordered
     ]
     return pd.DataFrame(rows)
+
+
+def _contract_room(item: CombinationResult, contract_kw: float | None, margin: float) -> str:
+    """조합 부하 기준으로 계약전력을 어디까지 낮출 수 있는가.
+
+    권장 계약전력 = 조합 요금적용전력 × (1 + 여유율), 1 kW 단위로 올림
+    """
+    if contract_kw is None:
+        return "—"
+    suggested = min(contract_kw, math.ceil(item.billing_demand_kw * (1.0 + margin)))
+    room = contract_kw - suggested
+    if room <= 0:
+        return "여지 없음"
+    return f"{fmt.kw(suggested, decimals=0)} (−{fmt.kw(room, decimals=0)})"
 
 
 def _options_key(form: ContractForm) -> str:

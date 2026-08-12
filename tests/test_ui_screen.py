@@ -837,3 +837,12 @@ def test_절사_각주가_화면에_있다(stage3: AppTest) -> None:
     assert not stage3.exception, stage3.exception
     body = " ".join(str(item.value) for item in stage3.caption)
     assert text.TRUNCATION_FOOTNOTE in body
+
+
+def test_조합마다_계약전력_하향_여지가_나온다(stage3: AppTest) -> None:
+    """조합이 피크를 얼마나 낮추느냐에 따라 여지가 달라진다 (14세션 5-2·5-3)."""
+    assert not stage3.exception, stage3.exception
+    frame = stage3.dataframe[1].value  # 두 번째 표가 조합 비교다
+    assert "계약전력 하향 여지" in frame.columns, list(frame.columns)
+    values = [str(item) for item in frame["계약전력 하향 여지"]]
+    assert any("kW" in item for item in values), values
