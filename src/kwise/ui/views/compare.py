@@ -59,6 +59,7 @@ from kwise.report import (
 )
 from kwise.report.days import RepresentativeDay
 from kwise.tariff import BillingResult, TariffTable
+from kwise.ui import callout
 from kwise.ui import text as fmt
 from kwise.ui.anchors import detail_suffix
 from kwise.ui.artifacts import recall, remember
@@ -112,7 +113,7 @@ def render(
         st.caption("미검토는 '효과가 없다' 가 아니라 '보지 않았다' 입니다.")
 
     if diagnosis.structure is None:
-        st.warning("계약 정보를 확정해야 조합을 비교합니다 (1단계).")
+        callout.caution("계약 정보를 확정해야 조합을 비교합니다 (1단계).")
         return
     baseline = diagnosis.structure.bill
 
@@ -124,7 +125,7 @@ def render(
         try:
             unit_profile, _source = cached_unit_pv(usage, usage_token(usage), inputs, rules_stamp())
         except Exception as exc:
-            st.error(f"기상 자료를 얻지 못해 태양광을 조합에서 뺐습니다.\n\n{exc}")
+            callout.blocked(f"기상 자료를 얻지 못해 태양광을 조합에서 뺐습니다. {exc}")
             capacity = 0.0
 
     # 2단계에서 넣은 값을 그대로 읽는다 (위젯 키로 세션에 남는다).
@@ -156,7 +157,7 @@ def render(
     _standalone_block(rows)
 
     if len(specs) == 1:
-        st.info("2단계에서 요금에 영향을 주는 수단을 하나 이상 켜면 합산효과를 계산합니다.")
+        callout.note("2단계에서 요금에 영향을 주는 수단을 하나 이상 켜면 합산효과를 계산합니다.")
         _download_block(
             usage, baseline, diagnosis, None, no_pv_sensitivity_frame(), (), results, scope
         )
@@ -197,7 +198,7 @@ def render(
         f"{fmt.ratio_pct(margin, decimals=0)} 를 얹은 값입니다. " + detail_suffix("certainty")
     )
     for notice in screen_notices(comparison.warnings):
-        st.warning(notice.text)
+        callout.render_notice(notice)
 
     best = comparison.best
     columns = st.columns(4)
@@ -235,7 +236,7 @@ def _standalone_block(rows: tuple[StandaloneRow, ...]) -> None:
     """
     st.subheader("개선안별 요약")
     if not rows:
-        st.info("2단계에서 수단을 하나도 켜지 않았습니다.")
+        callout.note("2단계에서 수단을 하나도 켜지 않았습니다.")
         return
     st.dataframe(standalone_frame(rows), hide_index=True, width="stretch")
     st.caption(
@@ -413,7 +414,7 @@ def _measure_labels(applied: tuple[AppliedMeasure, ...]) -> str:
         try:
             measure(item.key)
         except KeyError:
-            st.warning(f"등록되지 않은 개선 수단이 조합에 들어 있습니다: {item.key}")
+            callout.caution(f"등록되지 않은 개선 수단이 조합에 들어 있습니다: {item.key}")
         labels.append(item.label)
     return ", ".join(labels) or "—"
 
@@ -690,7 +691,7 @@ def _sensitivity_block(
     st.subheader("감도", help=fmt.TIPS["sensitivity"])
     pv_specs = [spec for spec in specs if spec.has_pv]
     if not pv_specs or unit_profile is None:
-        st.info(
+        callout.note(
             "태양광이 없어 감도를 적용할 항목이 없습니다. 감도는 PV 출력의 첨예도에만 "
             "적용하며 요금제 전환·계약전력 조정·역률 개선은 확정 계산입니다."
         )
@@ -823,7 +824,7 @@ def _build(make: Callable[[], tuple[bytes, str]], *, slot: str, label: str, toke
     try:
         payload, filename = make()
     except Exception as exc:
-        st.error(f"{label} — 만들지 못했습니다.\n\n{exc}")
+        callout.blocked(f"{label} — 만들지 못했습니다. {exc}")
         return
     remember(slot, payload, filename, token=token)
 

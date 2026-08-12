@@ -26,7 +26,7 @@ from kwise.io import UsageData
 from kwise.quality import QualityReport
 from kwise.report import localize
 from kwise.tariff import TENTATIVE_BASE_FEE_BASIS_WARNING, TariffTable
-from kwise.ui import charts
+from kwise.ui import callout, charts
 from kwise.ui import text as fmt
 from kwise.ui.anchors import detail_suffix
 from kwise.ui.cache import (
@@ -38,7 +38,7 @@ from kwise.ui.cache import (
 )
 from kwise.ui.labels import option_label, selection_label
 from kwise.ui.nav import next_step_button
-from kwise.ui.notices import Severity, partition, screen_notices
+from kwise.ui.notices import partition, screen_notices
 from kwise.ui.pipeline import (
     ContractForm,
     contract_type_choices,
@@ -63,7 +63,9 @@ def render(table: TariffTable) -> None:
 
     uploaded = _upload_block()
     if uploaded is None:
-        st.info("사용량 파일(csv·xls·xlsx)을 올려 주십시오. 한전 사이버지점 내려받기 형식입니다.")
+        callout.note(
+            "사용량 파일(csv·xls·xlsx)을 올려 주십시오. 한전 사이버지점 내려받기 형식입니다."
+        )
         return
 
     usage = _load_with_columns(*uploaded)
@@ -124,11 +126,9 @@ def _notice_block(quality: QualityReport, diagnosis: Diagnosis) -> None:
     _missing, rest = partition(
         screen_notices(quality.warnings, diagnosis.warnings), MISSING_MARKERS
     )
+    # **배경색 상자를 쓰지 않는다** (15세션 4절). 차단만 색을 남긴다.
     for notice in rest:
-        if notice.severity is Severity.BLOCK:
-            st.error(notice.text)
-        else:
-            st.warning(notice.text)
+        callout.render_notice(notice)
 
 
 # --------------------------------------------------------------------- 업로드·열 인식
@@ -159,7 +159,7 @@ def _load_with_columns(data: bytes, filename: str) -> UsageData | None:
             energy_column=energy_override,
         )
     except Exception as exc:
-        st.error(f"파일을 읽지 못했습니다.\n\n{exc}")
+        callout.blocked(f"파일을 읽지 못했습니다. {exc}")
         if (date_override or energy_override) and st.button("열 지정 되돌리기"):
             for key in _COLUMN_KEYS:
                 st.session_state.pop(key, None)
@@ -310,7 +310,7 @@ def _contract_block(table: TariffTable, usage: UsageData) -> ContractForm | None
             st.rerun()
 
     if saved is None:
-        st.warning(
+        callout.caution(
             "계약 정보를 확정하기 전까지는 부하 패턴과 피크 특성만 나옵니다. "
             "금액은 계약 정보가 있어야 산출합니다."
         )
@@ -331,7 +331,7 @@ def _tentative_basis_block(table: TariffTable, form: ContractForm | None) -> Non
     contract_type = table.contract(form.contract_type)
     if not contract_type.base_fee_on_contract:
         return
-    st.warning(
+    callout.caution(
         f"**{contract_type.label}** — {TENTATIVE_BASE_FEE_BASIS_WARNING} "
         f"현재는 계약전력 {fmt.kw(form.contract_kw)} 기준으로 계산합니다. "
         + detail_suffix("measure-contract")
@@ -350,7 +350,7 @@ def _summary_block(table: TariffTable, diagnosis: Diagnosis) -> None:
     summary = diagnosis.summary
     if summary.no_investment_saving_won is not None:
         saved_won = fmt.won_short(summary.no_investment_saving_won)
-        st.success(f"투자 없이 **{saved_won}** 줄일 수 있습니다.")
+        st.markdown(f"### 투자 없이 **{saved_won}** 줄일 수 있습니다.")
 
     left, middle, right = st.columns(3)
     left.metric(

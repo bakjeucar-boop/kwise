@@ -33,6 +33,7 @@ from kwise.rules import (
     set_value,
 )
 from kwise.tariff import load_tariff
+from kwise.ui import callout
 from kwise.ui.anchors import detail_suffix
 from kwise.ui.cache import apply_rule_edit
 from kwise.ui.rules_view import (
@@ -184,11 +185,12 @@ def _editor(row: RuleRow) -> None:
 
 
 def _report(result: EditResult) -> None:
+    """편집 결과. **실패만 색을 남긴다** (15세션 4절) — 성공은 굵은 글씨로 족하다."""
     if result.ok:
-        st.success(result.message)
+        st.markdown(f"✓ **{markdown_safe(result.message)}**")
         st.rerun()
     else:
-        st.error(result.message)
+        callout.blocked(result.message)
         for issue in result.issues:
             st.write(f"- {markdown_safe(str(issue))}")
 
@@ -217,7 +219,7 @@ def _restore_block() -> None:
         # **미리보기 먼저.** confirmed=False 면 실행하지 않고 차이만 돌려준다.
         preview = restore_defaults(origin, confirmed=False)
         diffs = diff_from_defaults(origin)
-        st.warning(preview.message)
+        callout.caution(preview.message)
         if diffs:
             st.dataframe(diff_frame(diffs), hide_index=True, width="stretch")
         columns = st.columns(2)

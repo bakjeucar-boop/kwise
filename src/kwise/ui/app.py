@@ -6,9 +6,9 @@
 ``pages\\`` 자동 배치를 쓰지 않고 옆단에서 직접 고른다.
 
     1단계 · 진단      업로드 즉시, 설비 정보 없이
-    2단계 · 개선 수단  카드로 선택. 투자비 순
-    3단계 · 비교      조합·감도·검토 범위·내려받기
-    기준 데이터        근거를 값 옆에 두고 고친다
+    2단계 · 개선 수단  카드로 선택. 7장 번호 순
+    3단계 · 비교      개선안별 요약·합산효과·조합 비교·내려받기
+    기준 데이터        근거를 값 옆에 두고 고친다 — **단계가 아니라 설정이다**
 
 **계산은 여기 없다.** :mod:`kwise.ui.pipeline` 이 순수 함수를 어떻게 부를지 정하고
 :mod:`kwise.ui.cache` 가 캐싱한다.
@@ -23,6 +23,7 @@ from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
 from kwise.quality import QualityReport
 from kwise.tariff import TariffTable
+from kwise.ui import callout
 from kwise.ui.cache import (
     cached_diagnosis,
     cached_quality,
@@ -31,10 +32,10 @@ from kwise.ui.cache import (
     rules_stamp,
     usage_token,
 )
-from kwise.ui.nav import PAGE_KEY, PAGES
+from kwise.ui.nav import PAGES, render_sidebar
 from kwise.ui.pipeline import ContractForm
 from kwise.ui.session import purge_stale
-from kwise.ui.state import get_form, upload
+from kwise.ui.state import enabled_measures, get_form, upload
 from kwise.ui.views import compare, diagnose, measures, rules_admin
 
 __all__ = ["main"]
@@ -52,8 +53,10 @@ def main() -> None:
 
     st.sidebar.title("kWise")
     st.sidebar.caption(f"버전 {__version__} · 대한민국 전용")
-    # **단계 하단 이동 단추와 같은 세션 키를 쓴다** — 두 벌이면 표시가 어긋난다.
-    page = st.sidebar.radio("화면", PAGES, key=PAGE_KEY, label_visibility="collapsed")
+    # **옆단은 단계 진행 표시다** (15세션 3절). 라디오는 "고르는 것" 으로 보여
+    # 진단 → 수단 → 비교가 한 줄기라는 사실이 눈에 들어오지 않았다.
+    # 단계 하단 이동 단추와 **같은 세션 키**를 쓴다 — 두 벌이면 표시가 어긋난다.
+    page = render_sidebar(ready=_ready(), measures_on=bool(enabled_measures()))
     st.sidebar.divider()
     st.sidebar.caption("기본요금과 전력량요금만 계산합니다. 인증·신고용 산출물이 아닙니다.")
 
@@ -73,14 +76,22 @@ def main() -> None:
 
     context = _context(table)
     if context is None:
-        st.warning("1단계에서 파일을 올리고 계약 정보를 확정해 주십시오.")
+        # **차단 등급이다.** 이대로면 계산이 진행되지 않는다 (15세션 4절).
+        callout.blocked("1단계에서 파일을 올리고 계약 정보를 확정해 주십시오.")
         return
     usage, quality, form, diagnosis = context
 
+    # 본문 상단에도 현재 위치를 한 줄로 (15세션 3절).
+    st.caption(page)
     if page == PAGES[1]:
         measures.render(usage, table, form, diagnosis, quality)
     else:
         compare.render(usage, table, form, diagnosis, quality)
+
+
+def _ready() -> bool:
+    """2·3단계로 갈 수 있는가. **업로드와 계약 정보 둘 다** 있어야 한다."""
+    return upload() is not None and get_form() is not None
 
 
 def _context(
