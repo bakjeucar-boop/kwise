@@ -164,9 +164,13 @@ def evaluate_tariff_switch(
         # 둘 다 **참고**다 — 이 카드를 어떻게 읽는가에 대한 전제이지 산식이 아니다.
         info(
             "선택요금 전환은 실측 데이터와 요금표만으로 확정되는 계산입니다. "
-            "감도를 적용하지 않습니다 (요구사항서 9.2)."
+            "감도를 적용하지 않습니다 (요구사항서 9.2).",
+            fact="tariff_switch.no_sensitivity",
         ),
-        info("설비 도입과 무관하게 나오는 절감액입니다. 투자가 필요하지 않습니다."),
+        info(
+            "설비 도입과 무관하게 나오는 절감액입니다. 투자가 필요하지 않습니다.",
+            fact="tariff_switch.no_investment",
+        ),
     ]
     if best_selection != current_selection:
         # **코드 식별자를 문구에 넣지 않는다** (12세션 규약, 15세션에 되살아난 것을
@@ -176,7 +180,8 @@ def evaluate_tariff_switch(
             warn(
                 f"가장 유리한 요금제는 {selection_label(table, best_selection)} 입니다. "
                 "다른 수단의 기준선을 현행으로 둘지 최적으로 둘지에 따라 그 수단의 "
-                "절감액이 달라집니다."
+                "절감액이 달라집니다.",
+                fact="tariff_switch.best_selection",
             )
         )
     return TariffSwitchResult(

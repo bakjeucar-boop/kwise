@@ -187,41 +187,49 @@ def evaluate_demand_response(
 
     notices: list[Notice] = [
         # **주의** — 위약·리스크. 결과를 그대로 받아들이면 안 되는 것들이다.
-        warn(PARTICIPATION_WARNING.format(months=months)),
+        warn(PARTICIPATION_WARNING.format(months=months), fact="dr.participation"),
         warn(
             "**투자비는 0원이지만 리스크는 0이 아닙니다.** 감축계획량을 채우지 못하면 "
             "실적위약금 = (감축계획량 − 실제감축량) × Max(하루전에너지가격, 0) 이 "
-            "부과됩니다 (별표26)."
+            "부과됩니다 (별표26).",
+            fact="dr.penalty_risk",
         ),
         # **근거** — 숫자가 어디서 나왔는가. 산식·모수·판정 창이다.
         basis(
             f"감축량은 거래 가능일 {profile.eligible_days}일 가운데 **저부하 평일 "
             f"{profile.low_load_days_count}일**만 세었습니다. 토·일·공휴일은 입찰할 수 "
-            "없습니다 (제12.4.2.1조 제1항 1호)."
+            "없습니다 (제12.4.2.1조 제1항 1호).",
+            fact="dr.low_days_counted",
         ),
+        # 아래 둘은 **1단계 진단이 내는 것과 같은 사실**이다 (diagnose\dr.py).
+        # 이 함수 끝에서 진단 안내를 이어 붙이므로 ID 가 같아야 한 번만 나온다.
         basis(
             f"**등록 권장 용량 {capacity:,.0f} kW** 는 저부하일 감축 여력 분포의 하위값"
             f"입니다. 사업자와 계약할 때 등록하는 값이며, 평균 기준 여력 "
-            f"{profile.mean_reducible_kw:,.0f} kW 로 등록하면 절반의 날에 미달합니다."
+            f"{profile.mean_reducible_kw:,.0f} kW 로 등록하면 절반의 날에 미달합니다.",
+            fact="dr.registered_capacity",
         ),
         basis(
             f"**연간 감축 가능량 {annual_kwh:,.0f} kWh** = Σ(저부하일별 감축 여력 × 그날 "
             f"참여 가능 시간). 참여 가능 시간의 합은 "
             f"{profile.total_participation_hours:,.0f}시간이고 하루 상한은 "
-            f"{profile.daily_hours_cap:,.0f}시간입니다."
+            f"{profile.daily_hours_cap:,.0f}시간입니다.",
+            fact="dr.annual_reducible",
         ),
         basis(
             f"운영 시간대는 {profile.window_label} 입니다. 점심시간은 빠집니다. "
             f"하루 한도는 {dr_max_events_per_day()}회 × 최대 "
-            f"{dr_event_hours()[1]:,.0f}시간입니다."
+            f"{dr_event_hours()[1]:,.0f}시간입니다.",
+            fact="dr.window_rule",
         ),
         basis(
             "**기본요금 절감은 계산하지 않았습니다.** SMP 기준으로 산발적으로 입찰하므로 "
-            "참여일이 연중 최대수요일과 겹칠 확률이 낮습니다. 편익은 정산금 하나로 봅니다."
+            "참여일이 연중 최대수요일과 겹칠 확률이 낮습니다. 편익은 정산금 하나로 봅니다.",
+            fact="dr.no_base_fee_saving",
         ),
         # **참고** — 제도 설명. 화면에 없고 보고서 부록으로 간다.
-        info(DR_ADVISORY),
-        info(profile.notice),
+        info(DR_ADVISORY, fact="dr.advisory"),
+        info(profile.notice, fact="dr.participation_rule"),
     ]
     if unit_price_won_per_kwh is None:
         # **차단** — 금액이 나오지 않는다.
@@ -229,14 +237,16 @@ def evaluate_demand_response(
             block(
                 "정산 단가를 입력하지 않아 금액을 산출하지 않았습니다. 감축 가능량(kWh)만 "
                 "참고하십시오. 단가는 전력거래소 월별 순편익가격과 사업자 수수료에 "
-                "달려 있습니다."
+                "달려 있습니다.",
+                fact="dr.no_unit_price",
             )
         )
     if day_ahead_price_won_per_kwh is None:
         notices.append(
             block(
                 "하루전에너지가격을 입력하지 않아 위약금 리스크 금액을 "
-                "산출하지 않았습니다 (별표26)."
+                "산출하지 않았습니다 (별표26).",
+                fact="dr.no_day_ahead_price",
             )
         )
     if not profile.meets_reference_capacity:
@@ -244,14 +254,18 @@ def evaluate_demand_response(
             warn(
                 f"등록 가능 용량이 참고 문턱 100 kW 아래입니다 ({capacity:,.0f} kW). "
                 "자원 단위 기준이라 다른 고객과 묶여 참여할 수 있으므로 사업자와 "
-                "상담하십시오 (제12.4.2.1조 제1항 2호)."
+                "상담하십시오 (제12.4.2.1조 제1항 2호).",
+                fact="dr.below_reference",
             )
         )
     if not profile.low_load_days_count:
+        # **진단이 내는 것과 같은 사실이다.** 줄표 유무로 지문이 갈려 두 번
+        # 나왔다 (20세션 2절 결함 ②).
         notices.append(
             warn(
                 "저부하 평일이 없습니다. 감축이 실제 운영 축소를 뜻하므로 "
-                "생산·재실 영향과 함께 검토하십시오."
+                "생산·재실 영향과 함께 검토하십시오.",
+                fact="dr.no_low_days",
             )
         )
     notices.extend(profile.notices)

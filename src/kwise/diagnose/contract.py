@@ -146,12 +146,15 @@ def assess_contract(
     suggested = min(contract_kw, math.ceil(target / step_kw) * step_kw)
     reduction = max(0.0, contract_kw - suggested)
 
-    notices: list[Notice] = [warn(_MARGIN_NOTICE)]
+    notices: list[Notice] = [warn(_MARGIN_NOTICE, fact="contract.margin")]
     if over_slots:
+        # **개선 수단 쪽과 같은 사실이다** (measures\contract.py). 문구가 세 글자
+        # 다른 탓에 지문으로는 안 잡혀 화면에 두 번 나왔다 (20세션 2절).
         notices.append(
             warn(
                 f"계약전력 {contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 있습니다. "
-                "하향 대상이 아니라 상향·초과 위약 검토 대상입니다."
+                "하향 대상이 아니라 상향·초과 위약 검토 대상입니다.",
+                fact="contract.over_limit",
             )
         )
 
@@ -159,7 +162,7 @@ def assess_contract(
     if contract_floor_ratio is None:
         basis_text = "하한 규정 미확인 — 미산출"
         # **차단** — 금액을 만들지 않는다.
-        notices.append(block(_FLOOR_UNKNOWN))
+        notices.append(block(_FLOOR_UNKNOWN, fact="contract.floor_unknown"))
     else:
         # 재계산한다. 두 계약전력 각각에서 요금적용전력을 다시 구해 기본요금을 낸다.
         current_demand = max(billing_demand_kw, contract_kw * contract_floor_ratio)
@@ -169,7 +172,7 @@ def assess_contract(
             f"요금적용전력 하한 {contract_floor_ratio:.0%} 가정, "
             f"기본요금 {base_fee_months:.2f}개월분 기준"
         )
-        notices.append(basis(basis_text))
+        notices.append(basis(basis_text, fact="contract.saving_basis"))
 
     return ContractAdequacy(
         contract_kw=contract_kw,

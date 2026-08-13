@@ -182,5 +182,5 @@ def evaluate_surplus(
         weekend_kwh=float(energy[weekend_mask].sum()),
         holiday_kwh=float(energy[holiday_mask].sum()),
         scenarios=scenarios,
-        notices=(info(ELIGIBILITY_NOTICE),),
+        notices=(info(ELIGIBILITY_NOTICE, fact="surplus.eligibility"),),
     )

@@ -58,7 +58,6 @@ from kwise.ui.cache import (
     cached_surplus,
     cached_tariff_switch,
     cached_unit_pv,
-    ess_cost_model,
     rules_stamp,
     usage_token,
 )
@@ -948,7 +947,6 @@ def _ess(
     if best is None:
         _caution("어떤 목표에서도 초과 구간이 없어 곡선을 그리지 못했습니다.")
         return
-    model = ess_cost_model(fixed_won, per_kwh_won)
 
     st.markdown("**목표 선택 곡선** — 어느 목표가 유리한지만 본다")
     st.altair_chart(charts.ess_target_chart(curve), width="stretch")
@@ -1033,9 +1031,12 @@ def _ess(
             f"방전시간이 {fmt.hours(result.discharge_hours)} 로 짧습니다. 고출력 셀 "
             "사양이 되어 조달 사례보다 단가가 높아질 수 있습니다."
         )
-    # **투자비 내역·계수·성립 조건은 확인사항으로 내린다** (17세션 4-2·4-3).
+    # **투자비 내역·계수·성립 조건은 근거 툴팁으로 간다** (17세션 4-2 · 19세션 1절).
     # 본문에는 투자비 합계·절감액·회수기간만 남긴다 — 위 지표 넷이 그것이다.
-    _notices((*result.notices, _ess_basis_note(base_fee), *_ess_details(result, model)))
+    # 20세션에 화면이 다시 쓰던 넉 줄을 지웠다. 계산 쪽이 같은 사실을 이미
+    # 근거로 내고 있어(``ess.quote_breakdown`` · ``ess.cost_model_formula`` ·
+    # ``ess.feasibility``) 사실 ID 로 견주니 전부 중복이었다.
+    _notices((*result.notices, _ess_basis_note(base_fee)))
 
 
 def _ess_basis_note(base_fee_won_per_kw: float) -> Notice:
@@ -1048,45 +1049,9 @@ def _ess_basis_note(base_fee_won_per_kw: float) -> Notice:
     return basis(
         "목표 선택 곡선은 기본요금 절감만 본 개략치입니다 (현행 요금제 기본요금단가 "
         f"{fmt.count(base_fee_won_per_kw, ' 원/kW')} × 12개월). 위 결과는 그 목표에서 "
-        "요금을 다시 계산하고 왕복효율·DoD 를 반영한 값이라 회수기간이 더 깁니다."
+        "요금을 다시 계산하고 왕복효율·DoD 를 반영한 값이라 회수기간이 더 깁니다.",
+        fact="ess.curve_vs_card",
     )
-
-
-def _ess_details(result: object, model: object) -> tuple[Notice, ...]:
-    """ESS 투자비 내역·계수·성립 조건 (17세션 4-2).
-
-    **본문에서 확인사항으로 내렸다.** 넉 줄이 결과 아래에 붙어 있으면 정작
-    읽어야 할 투자비 합계·절감액·회수기간이 그 사이에 묻힌다. 지운 것이 아니라
-    자리를 옮긴 것이다 — 근거는 접힌 상자 안에 그대로 있다.
-
-    조달 사례 표도 화면에서 뺐다 (4-3). 계수를 낸 원자료이므로 데이터와 재적합
-    스크립트에는 남아 있고, 여기 계수 한 줄이 그것을 갈음한다.
-    """
-    lines: list[str] = []
-    quote = getattr(result, "quote", None)
-    if quote is not None:
-        lines.append(
-            f"투자비 내역 — 설비 {fmt.won(quote.equipment_won)} + 전기공사 "
-            f"{fmt.won(quote.electrical_won)} = {fmt.won(quote.total_won)}"
-        )
-        if quote.applied_kwh > quote.capacity_kwh:
-            lines.append(
-                f"산출 용량 {fmt.kwh(quote.capacity_kwh, decimals=1)} — 시장 최소 "
-                f"{fmt.kwh(getattr(model, 'market_minimum_kwh', 0.0))} 기준으로 산정했습니다."
-            )
-        lines.append(
-            f"전기공사는 옥외 기준 {fmt.won(quote.electrical_low_won)} – "
-            f"{fmt.won(quote.electrical_high_won)} 구간의 대표값입니다."
-        )
-        lines.append(str(getattr(model, "formula", "")))
-    feasibility = getattr(result, "feasibility", None)
-    if feasibility is not None:
-        lines.append(f"성립 조건 — {feasibility.message()}")
-    # **같은 사실을 두 번 적지 않는다.** ESS 는 경고·메모가 스물이 넘어, 옮겨 온
-    # 줄이 그 안의 문장과 겹치면 확인사항이 같은 말을 되풀이한다. 앞의 라벨
-    # (``성립 조건 — ``)을 떼고 알맹이로 견준다.
-    already = " \n".join(item.text for item in getattr(result, "notices", ()))
-    return tuple(basis(line) for line in lines if line and line.split(" — ")[-1] not in already)
 
 
 def _ess_cost_inputs() -> tuple[float, float | None, float | None]:

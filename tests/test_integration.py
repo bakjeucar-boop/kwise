@@ -802,16 +802,19 @@ def test_ESS_그래프가_2단이고_충방전에_색이_있다() -> None:
 
 
 def test_ESS_본문에_투자비_상세와_성립_조건이_없다() -> None:
-    """본문에는 투자비 합계·절감액·회수기간만 남긴다 (17세션 4-2)."""
+    """본문에는 투자비 합계·절감액·회수기간만 남긴다 (17세션 4-2 · 20세션).
+
+    화면이 다시 적던 넉 줄은 지웠다. 계산 쪽이 같은 사실을 근거로 이미 내고
+    있어 사실 ID 로 견주니 전부 중복이었다.
+    """
     source = (Path("src") / "kwise" / "ui" / "views" / "measures.py").read_text(encoding="utf-8")
-    body = source[source.index("def _ess(") : source.index("def _ess_details(")]
+    body = source[source.index("def _ess(") : source.index("def _ess_basis_note(")]
     # 주석은 화면에 나가지 않는다.
     body = " ".join(line for line in body.splitlines() if not line.lstrip().startswith("#"))
     for banned in ("설비 **", "성립 조건", "kW당 배터리비"):
         assert banned not in body, banned
-    assert (
-        "_notices((*result.notices, _ess_basis_note(base_fee), *_ess_details(result, model)))"
-    ) in source
+    assert "_notices((*result.notices, _ess_basis_note(base_fee)))" in source
+    assert "_ess_details" not in source, "화면이 계산 쪽 근거를 다시 적고 있습니다."
 
 
 def test_화면에_조달_사례_표가_없다() -> None:
@@ -830,6 +833,9 @@ def test_ESS_투자비_상세가_근거_툴팁에_있다() -> None:
     17세션에 본문에서 확인사항으로 내렸던 넉 줄이 이제 툴팁으로 간다. 스물이
     넘는 줄을 접힌 상자에 쌓으면 정작 위험한 두 건이 묻히기 때문이다. 지운
     것이 아니라 자리를 옮긴 것이므로 **툴팁에는 그대로 있어야 한다.**
+
+    20세션에 문구가 하나로 합쳐졌다 — 화면이 다시 적던 「투자비 내역」 대신
+    계산 쪽 「투자비 = 설비 … + 전기공사 …」 하나가 남는다. 같은 사실이다.
     """
     app = _app(**_on("ess"))
     assert not app.exception, app.exception
@@ -837,9 +843,9 @@ def test_ESS_투자비_상세가_근거_툴팁에_있다() -> None:
     body = "\n".join(str(item.value) for item in app.markdown)
 
     # 산식·계수·내역은 **근거**다 — 툴팁으로 접힌다.
-    assert "투자비 내역" in tips
+    assert "투자비 = 설비" in tips
     assert "설비비 = " in tips
-    assert "투자비 내역" not in body
+    assert "투자비 = 설비" not in body
 
     # **성립 조건은 다르다.** 이 자료에서는 성립하지 않아 주의로 올라오므로
     # 본문에 남는다 — 등급이 자리를 정한다는 것이 이 한 줄로 드러난다.

@@ -235,14 +235,16 @@ def _with_warnings(report: QualityReport) -> QualityReport:
         messages.append(
             warn(
                 f"기간이 {report.period_days:.0f}일로 12개월 미만입니다. "
-                "연간 환산 결과에 경고를 붙여야 합니다."
+                "연간 환산 결과에 경고를 붙여야 합니다.",
+                fact="quality.short_period",
             )
         )
     if report.missing_ratio > MISSING_RATIO_THRESHOLD:
         messages.append(
             warn(
                 f"결측률 {report.missing_ratio:.1%} — 임계 {MISSING_RATIO_THRESHOLD:.0%} 초과. "
-                "보간하지 않으며 결측 구간은 계산에서 제외합니다."
+                "보간하지 않으며 결측 구간은 계산에서 제외합니다.",
+                fact="quality.missing_total",
             )
         )
     if report.skew.flagged:
@@ -250,7 +252,8 @@ def _with_warnings(report: QualityReport) -> QualityReport:
             warn(
                 f"최대수요 과소평가 위험 — 평일 "
                 f"{report.skew.peak_hours[0]}~{report.skew.peak_hours[1]}시 결측률이 "
-                f"전체의 {report.skew.multiple:.2f}배입니다."
+                f"전체의 {report.skew.multiple:.2f}배입니다.",
+                fact="quality.peak_skew",
             )
         )
     gap = report.longest_gap
@@ -258,13 +261,16 @@ def _with_warnings(report: QualityReport) -> QualityReport:
         messages.append(
             warn(
                 f"최장 연속 결측 {gap.days:.2f}일 ({gap.slots:,}슬롯, {gap.start} ~ {gap.end}). "
-                "이 구간이 든 달은 최대수요 판정 자체가 무의미할 수 있습니다."
+                "이 구간이 든 달은 최대수요 판정 자체가 무의미할 수 있습니다.",
+                fact="quality.longest_gap",
             )
         )
     for month in report.flagged_months:
+        # **달마다 다른 사실이다.** 판별자를 빼면 첫 달만 남는다.
         messages.append(
             warn(
-                f"{month.month} 결측률 {month.ratio:.1%} — 최대수요를 '신뢰 제한' 으로 표시합니다."
+                f"{month.month} 결측률 {month.ratio:.1%} — 최대수요를 '신뢰 제한' 으로 표시합니다.",
+                fact=f"quality.month_missing_rate:{month.month}",
             )
         )
     # 아래는 전부 **근거**다 — 무엇을 어떻게 처리했는지 적는 관측 기록이며,
@@ -274,17 +280,19 @@ def _with_warnings(report: QualityReport) -> QualityReport:
             basis(
                 f"정전 추정 {outage.start} ~ {outage.end} "
                 f"({outage.duration_hours:.2f}시간, 흔적 {outage.decisive_evidence}종). "
-                "편중 판정에서 제외했습니다."
+                "편중 판정에서 제외했습니다.",
+                fact=f"quality.outage:{outage.start:%Y%m%dT%H%M}",
             )
         )
     outliers = report.outliers
     if outliers.zero_kw_slots:
-        messages.append(basis(f"0 kW 구간 {outliers.zero_kw_slots:,}건."))
+        messages.append(basis(f"0 kW 구간 {outliers.zero_kw_slots:,}건.", fact="quality.zero_kw"))
     if outliers.low_load_count:
         messages.append(
             basis(
                 f"{outliers.low_load_kw:,.0f} kW 미만 구간 {outliers.low_load_count:,}건 "
-                f"(첫 시각 {outliers.low_load_slots[0]})."
+                f"(첫 시각 {outliers.low_load_slots[0]}).",
+                fact="quality.low_load",
             )
         )
     if outliers.over_contract_slots:
@@ -292,14 +300,16 @@ def _with_warnings(report: QualityReport) -> QualityReport:
         messages.append(
             warn(
                 f"계약전력 {outliers.contract_kw:,.0f} kW 초과 {outliers.over_contract_slots:,}건, "
-                f"최대 {outliers.over_contract_max_kw:,.1f} kW."
+                f"최대 {outliers.over_contract_max_kw:,.1f} kW.",
+                fact="quality.over_contract",
             )
         )
     if outliers.spike_slots:
         messages.append(
             basis(
                 f"인접 슬롯 급변 {outliers.spike_slots:,}건 "
-                f"(임계 {outliers.spike_threshold_kw:,.0f} kW)."
+                f"(임계 {outliers.spike_threshold_kw:,.0f} kW).",
+                fact="quality.spike",
             )
         )
     consistency = report.consistency
@@ -308,11 +318,17 @@ def _with_warnings(report: QualityReport) -> QualityReport:
             basis(
                 f"부분 계량 {consistency.partial_metering_rows}건 "
                 f"({consistency.partial_metering_kwh:,.2f} kWh) — '결측' 이 아니라 "
-                "별도 분류입니다. kW 산정에서 빼고 kWh 합계에는 넣었습니다."
+                "별도 분류입니다. kW 산정에서 빼고 kWh 합계에는 넣었습니다.",
+                fact="quality.partial_metering",
             )
         )
     if consistency.duplicate_rows:
-        messages.append(basis(f"중복 시각 {consistency.duplicate_rows:,}건을 합산했습니다."))
+        messages.append(
+            basis(
+                f"중복 시각 {consistency.duplicate_rows:,}건을 합산했습니다.",
+                fact="quality.duplicate_rows",
+            )
+        )
 
     return QualityReport(
         source_name=report.source_name,

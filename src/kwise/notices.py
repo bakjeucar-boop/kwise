@@ -20,6 +20,17 @@
 **이 모듈은 Streamlit 도 pandas 도 import 하지 않는다.** 계산 모듈이 부르는
 자리이므로 UI 쪽으로 의존이 생기면 안 된다. 마크다운 escape 같은 표시 처리는
 :mod:`kwise.ui.notices` 가 맡는다.
+
+중복은 **문구가 아니라 사실로** 가린다 (20세션). 발신처가 ``fact="모듈.사실"``
+을 붙이고 :func:`dedupe` 가 그 ID 로 접는다. 19세션까지는 문구의 줄표 앞을
+지문으로 삼았는데, 같은 사실을 두 모듈이 조금 다르게 적으면 그대로 두 번
+나갔다 — 계약전력 초과·저부하 평일 없음·경부하 새 피크 셋이 그랬다.
+
+    ess.charge_new_peak    ← measures\\ess.py 와 compare\\combination.py 가 함께 쓴다
+
+같은 사실이 여럿일 때(월별·정전 구간처럼)는 ``모듈.사실:판별자`` 로 적는다.
+``:`` 앞이 사실이고 뒤가 그 사실의 어느 하나인지다 — :attr:`Notice.fact_base`
+가 앞부분을 돌려준다.
 """
 
 from __future__ import annotations
@@ -27,7 +38,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 __all__ = [
@@ -37,13 +48,17 @@ __all__ = [
     "basis",
     "block",
     "dedupe",
+    "dedupe_key",
+    "dedupe_keys",
     "info",
-    "partition",
+    "partition_facts",
+    "prefixed",
     "report_appendix",
     "report_body",
     "screen_body",
     "texts",
     "tooltip",
+    "unidentified",
     "warn",
 ]
 
@@ -81,40 +96,56 @@ class Severity(Enum):
 _ORDER = {Severity.BLOCK: 0, Severity.WARN: 1, Severity.BASIS: 2, Severity.INFO: 3}
 
 
+#: 사실 ID 의 꼴. ``모듈.사실`` 이고 ``:판별자`` 를 붙일 수 있다.
+_FACT = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+(?::\S+)?$")
+
+
 @dataclass(frozen=True)
 class Notice:
-    """안내 하나. **문구와 등급을 함께 낸다.**"""
+    """안내 하나. **문구와 등급과 사실 ID 를 함께 낸다.**
+
+    ``fact`` 가 중복 판정의 기준이다. 비어 있으면 문구 지문으로 폴백하는데,
+    그것이 19세션까지의 방식이고 같은 사실을 두 번 내보낸 원인이다.
+    """
 
     severity: Severity
     text: str
+    fact: str = ""
 
     def __post_init__(self) -> None:
         if not self.text.strip():
             raise ValueError("빈 안내 문구입니다.")
+        if self.fact and not _FACT.match(self.fact):
+            raise ValueError(f"사실 ID 형식이 아닙니다 (모듈.사실): {self.fact!r}")
 
     @property
     def on_screen(self) -> bool:
         return self.severity.on_screen
 
+    @property
+    def fact_base(self) -> str:
+        """판별자를 뗀 사실. ``quality.month_missing_rate:2023-11`` → 앞부분."""
+        return self.fact.split(":", 1)[0]
 
-def block(text: str) -> Notice:
+
+def block(text: str, *, fact: str = "") -> Notice:
     """차단 — 계산이 진행되지 않는다."""
-    return Notice(Severity.BLOCK, text)
+    return Notice(Severity.BLOCK, text, fact)
 
 
-def warn(text: str) -> Notice:
+def warn(text: str, *, fact: str = "") -> Notice:
     """주의 — 결과 해석이 크게 달라진다."""
-    return Notice(Severity.WARN, text)
+    return Notice(Severity.WARN, text, fact)
 
 
-def basis(text: str) -> Notice:
+def basis(text: str, *, fact: str = "") -> Notice:
     """근거 — 이 숫자가 어디서 나왔는가. 산식·출처·계수·판정 기준."""
-    return Notice(Severity.BASIS, text)
+    return Notice(Severity.BASIS, text, fact)
 
 
-def info(text: str) -> Notice:
+def info(text: str, *, fact: str = "") -> Notice:
     """참고 — 전제·한계·제도 설명."""
-    return Notice(Severity.INFO, text)
+    return Notice(Severity.INFO, text, fact)
 
 
 def as_notice(item: Notice | str) -> Notice:
@@ -131,13 +162,30 @@ def as_notice(item: Notice | str) -> Notice:
 
 
 def _fingerprint(message: str) -> str:
-    """같은 사실인지 가리는 지문. **줄표 앞까지**다.
+    """**폴백** 지문 — 줄표 앞까지다. 사실 ID 가 없을 때만 쓴다.
 
-    18세션이 약점을 적어 두었다 — 줄표가 없으면 문장 전체가 지문이 된다.
-    **사실 ID 로 바꾸는 것은 20세션 몫이다.** 여기서는 손대지 않는다.
+    약점 둘이 알려져 있다 (18세션). 줄표가 없으면 문장 전체가 지문이라 한
+    글자만 달라도 중복을 놓치고, 반대로 줄표 앞이 뭉툭하면 서로 다른 사실이
+    하나로 뭉개진다. **새 안내는 ``fact=`` 를 붙여 이 길로 오지 않게 한다.**
     """
     head = re.split(r"\s[—-]\s", message.strip(), maxsplit=1)[0]
     return re.sub(r"\s+", " ", head).strip().rstrip(".")
+
+
+def dedupe_key(notice: Notice, *, base: bool = False) -> str:
+    """중복 판정 열쇠. **사실 ID 가 먼저고, 없으면 지문이다.**
+
+    ``base=True`` 면 판별자를 뗀 사실로 견준다. 화면 **사이**의 중복이 그 경우다
+    — 2단계 카드가 이미 낸 사실을 3단계 조합이 되풀이하지 않는 자리에서, 조합
+    판별자가 붙었다고 다른 사실로 볼 이유가 없다 (``ui.views.compare``).
+    """
+    fact = notice.fact_base if base else notice.fact
+    return f"fact:{fact}" if fact else f"text:{_fingerprint(notice.text)}"
+
+
+def dedupe_keys(*groups: Iterable[Notice], base: bool = False) -> frozenset[str]:
+    """여러 묶음의 열쇠를 한 집합으로."""
+    return frozenset(dedupe_key(item, base=base) for group in groups for item in group)
 
 
 def dedupe(items: Iterable[Notice | str]) -> tuple[Notice, ...]:
@@ -149,12 +197,49 @@ def dedupe(items: Iterable[Notice | str]) -> tuple[Notice, ...]:
         text = notice.text.strip()
         if not text:
             continue
-        key = _fingerprint(text)
+        key = dedupe_key(notice)
         if key in seen:
             continue
         seen.add(key)
-        kept.append(Notice(notice.severity, text))
+        kept.append(Notice(notice.severity, text, notice.fact))
     return tuple(kept)
+
+
+def unidentified(*groups: Iterable[Notice | str]) -> tuple[Notice, ...]:
+    """**사실 ID 가 없는 안내.** 이관 누락을 드러내는 자리다.
+
+    비어 있어야 한다 — 하나라도 남으면 그 안내는 지문 폴백으로 중복을 가리고,
+    그 길이 19세션까지 같은 사실을 두 번 내보낸 원인이다.
+    """
+    return tuple(
+        notice
+        for group in groups
+        for notice in (as_notice(item) for item in group)
+        if not notice.fact
+    )
+
+
+def prefixed(items: Iterable[Notice], prefix: str, *, tag: str = "") -> tuple[Notice, ...]:
+    """**표시할 때만** 앞말을 붙인다 (조합명 따위).
+
+    :class:`Notice` 자체는 내용만 갖는다. 앞말을 문구에 심어 두면 지문이 앞말에
+    걸려 **그 앞말을 쓴 다른 안내가 통째로 빠진다** — 조합 화면이 그랬다.
+    한 조합이 낸 경고 둘이 지문 ``'+ ESS 목표 …'`` 하나로 접혔다 (20세션 4절).
+
+    ``tag`` 를 주면 사실 ID 에 판별자로 붙는다. 조합이 여럿일 때 같은 사실을
+    조합마다 따로 남기려는 것이다 — 판별자가 없으면 첫 조합 것만 살아남는다.
+    """
+    head = prefix.strip()
+    if not head:
+        return tuple(items)
+    return tuple(
+        replace(
+            item,
+            text=f"{head} — {item.text}",
+            fact=f"{item.fact}:{tag}" if item.fact and tag and ":" not in item.fact else item.fact,
+        )
+        for item in items
+    )
 
 
 def screen_body(*groups: Iterable[Notice | str]) -> tuple[Notice, ...]:
@@ -201,15 +286,17 @@ def texts(items: Iterable[Notice | str], *severities: Severity) -> tuple[str, ..
     )
 
 
-def partition(
-    items: Iterable[Notice], patterns: Iterable[str]
+def partition_facts(
+    items: Iterable[Notice], facts: Iterable[str]
 ) -> tuple[tuple[Notice, ...], tuple[Notice, ...]]:
-    """(패턴에 걸린 것, 나머지). **같은 사실을 두 곳에 내지 않으려고** 쓴다.
+    """(그 사실인 것, 나머지). **같은 사실을 두 곳에 내지 않으려고** 쓴다.
 
-    등급 판정과는 무관하다 — 전용 블록이 따로 있는 문구를 그 블록으로 내리는
-    자리 배치용이다.
+    등급 판정과는 무관하다 — 전용 블록이 따로 있는 사실을 그 블록으로 내리는
+    자리 배치용이다. 19세션까지는 부분 문자열로 걸렀는데, 문구가 한 글자만
+    바뀌어도 새고 엉뚱한 문장까지 걸어 갔다 — 「결측」 하나로 결측 문구 다섯을
+    통째로 가리던 자리가 그랬다 (18세션 2절).
     """
-    keys = tuple(patterns)
-    matched = tuple(item for item in items if any(key in item.text for key in keys))
-    rest = tuple(item for item in items if not any(key in item.text for key in keys))
+    wanted = set(facts)
+    matched = tuple(item for item in items if item.fact_base in wanted)
+    rest = tuple(item for item in items if item.fact_base not in wanted)
     return matched, rest

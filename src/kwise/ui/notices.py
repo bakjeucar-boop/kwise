@@ -16,13 +16,14 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
 
 from kwise.notices import (
     Notice,
     Severity,
     as_notice,
     dedupe,
-    partition,
+    partition_facts,
     report_appendix,
     report_body,
     screen_body,
@@ -38,7 +39,7 @@ __all__ = [
     "appendix_notices",
     "classify",
     "dedupe",
-    "partition",
+    "partition_facts",
     "report_notices",
     "screen_notices",
     "tooltip_text",
@@ -105,7 +106,7 @@ def _escaped(items: Iterable[Notice]) -> tuple[Notice, ...]:
     때문이다 (13세션). 산출물은 escape 하지 않는다 — Excel·Word 는 마크다운을
     해석하지 않는다.
     """
-    return tuple(Notice(item.severity, markdown_safe(item.text)) for item in items)
+    return tuple(replace(item, text=markdown_safe(item.text)) for item in items)
 
 
 def screen_notices(*groups: Iterable[Notice | str]) -> tuple[Notice, ...]:

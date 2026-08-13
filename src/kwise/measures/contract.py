@@ -137,18 +137,23 @@ def evaluate_contract_adjustment(
     reduction = max(0.0, contract_kw - suggested)
 
     # 둘 다 **주의**다. 하향은 되돌리기 어렵고 한 번의 초과가 12개월을 지배한다.
-    notices = [warn(MARGIN_NOTICE), warn(_PENALTY_NOTICE)]
+    notices = [
+        warn(MARGIN_NOTICE, fact="contract.margin"),
+        warn(_PENALTY_NOTICE, fact="contract.penalty"),
+    ]
     if over_slots:
+        # 1단계 진단이 내는 것과 **같은 사실**이다 (diagnose\contract.py).
         notices.append(
             warn(
                 f"계약전력 {contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 있습니다. "
-                "하향이 아니라 상향·초과 위약 검토 대상입니다."
+                "하향이 아니라 상향·초과 위약 검토 대상입니다.",
+                fact="contract.over_limit",
             )
         )
 
     if ratio is None:
         # **차단이다.** 하한 규정을 모르면 절감액 자체를 내지 않는다.
-        notices.append(block(_UNKNOWN_NOTICE))
+        notices.append(block(_UNKNOWN_NOTICE, fact="contract.floor_unknown"))
         return ContractAdjustment(
             status=ContractStatus.UNKNOWN,
             contract_kw=contract_kw,
@@ -181,12 +186,18 @@ def evaluate_contract_adjustment(
         f"월별 기본요금을 {bill.base_fee_months:.2f}개월분으로 재계산"
     )
     notices += [
-        basis(basis_text),
-        basis("전력량요금은 계약전력과 무관하므로 변하지 않습니다."),
+        basis(basis_text, fact="contract.saving_basis"),
+        basis(
+            "전력량요금은 계약전력과 무관하므로 변하지 않습니다.",
+            fact="contract.energy_unchanged",
+        ),
     ]
     if saving <= 0:
         notices.append(
-            basis("하한이 요금적용전력에 걸리지 않아 계약전력을 낮춰도 기본요금이 줄지 않습니다.")
+            basis(
+                "하한이 요금적용전력에 걸리지 않아 계약전력을 낮춰도 기본요금이 줄지 않습니다.",
+                fact="contract.floor_not_binding",
+            )
         )
     return ContractAdjustment(
         status=ContractStatus.CONFIRMED,

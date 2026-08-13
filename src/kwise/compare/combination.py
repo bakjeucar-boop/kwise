@@ -38,7 +38,7 @@ from kwise.measures import (
 from kwise.measures.contract import ContractAdjustment, evaluate_contract_adjustment
 from kwise.measures.ess import analyze_peak_excess
 from kwise.measures.pv_cost import PV_UNPRICED_REASON, PvCostInput
-from kwise.notices import Notice, basis, block, warn
+from kwise.notices import Notice, basis, block, prefixed, warn
 from kwise.progress import ProgressReporter, record
 from kwise.pv import sharpen
 from kwise.quality import QualityReport
@@ -285,15 +285,20 @@ def evaluate_combination(
                 f"ESS {power:,.0f} kW / {capacity:,.0f} kWh — 하루 최대 초과 에너지 "
                 f"{excess.max_daily_excess_kwh:,.1f} kWh 기준으로 잡았습니다. "
                 f"부록 B 의 총 초과 에너지({excess.total_excess_kwh:,.1f} kWh)는 기간 합계라 "
-                "용량 산정에 쓰지 않습니다."
+                "용량 산정에 쓰지 않습니다.",
+                fact="combination.ess_sizing",
             )
         )
+        # **조합명을 문구에 심지 않는다** (20세션 4절). 앞말이 지문이 되어 아래
+        # 경고 둘이 하나로 접혔다. 조합명은 :func:`compare_combinations` 가
+        # 표시할 때 붙인다.
         if dispatch.charge_created_new_peak:
             notices.append(
                 warn(
-                    f"'{spec.name}' — 경부하 충전이 목표를 넘는 새 피크를 만들었습니다. "
+                    f"경부하 충전이 목표를 넘는 새 피크를 만들었습니다. "
                     f"충전 시간대 최대 {dispatch.charge_window_peak_kw:,.1f} kW > 목표 "
-                    f"{spec.ess_target_kw:,.0f} kW. ess_charge_limit_kw 로 제한하십시오."
+                    f"{spec.ess_target_kw:,.0f} kW. ess_charge_limit_kw 로 제한하십시오.",
+                    fact="ess.charge_new_peak",
                 )
             )
         elif dispatch.charge_window_rise_kw > 0:
@@ -301,14 +306,17 @@ def evaluate_combination(
                 basis(
                     f"경부하 충전으로 충전 시간대 최대 부하가 "
                     f"{dispatch.charge_window_rise_kw:,.1f} kW 올랐습니다 "
-                    f"(목표 {spec.ess_target_kw:,.0f} kW 이내)."
+                    f"(목표 {spec.ess_target_kw:,.0f} kW 이내).",
+                    fact="combination.charge_window_rise",
                 )
             )
         if not dispatch.target_met:
             notices.append(
                 warn(
-                    f"'{spec.name}' — 목표 {spec.ess_target_kw:,.0f} kW 를 지키지 못했습니다. "
-                    f"달성 {dispatch.achieved_peak_kw:,.1f} kW, 미달 {dispatch.unmet_kwh:,.1f} kWh."
+                    f"목표 {spec.ess_target_kw:,.0f} kW 를 지키지 못했습니다. "
+                    f"달성 {dispatch.achieved_peak_kw:,.1f} kW, "
+                    f"미달 {dispatch.unmet_kwh:,.1f} kWh.",
+                    fact="ess.target_unmet",
                 )
             )
 
@@ -333,7 +341,7 @@ def evaluate_combination(
         pv_investment = spec.pv_cost.investment_won(spec.pv_capacity_kwp)
         if pv_investment is None:
             investment = None
-            notices.append(block(PV_UNPRICED_REASON))
+            notices.append(block(PV_UNPRICED_REASON, fact="solar.unpriced"))
         elif investment is not None:
             investment += pv_investment
     if spec.power_factor_investment_won and investment is not None:
@@ -359,7 +367,12 @@ def evaluate_combination(
                     ),
                 )
             ess_investment = model.quote(dispatch.capacity_kwh).total_won
-            notices.append(basis(model.formula + " — 조달 사례 회귀로 ESS 투자비를 산정했습니다."))
+            notices.append(
+                basis(
+                    model.formula + " — 조달 사례 회귀로 ESS 투자비를 산정했습니다.",
+                    fact="ess.cost_model_formula",
+                )
+            )
         if investment is not None and ess_investment is not None:
             investment += ess_investment
 
@@ -479,14 +492,22 @@ def compare_combinations(
             )
         )
 
+    # **조합명은 여기서 붙인다** (20세션 4절). 조합이 여럿이라 어느 조합의 말인지
+    # 밝혀야 하는데, 문구에 심어 두면 그 앞말이 지문이 되어 같은 조합의 다른 경고를
+    # 잡아먹는다. 판별자 ``c{번호}`` 는 조합마다 같은 사실을 따로 남기기 위한 것이다.
     # 합산 금지 규칙은 **근거**다 — 표의 숫자가 어떻게 만들어졌는지 그 자체다.
     notices = (
-        *(item for result in results for item in result.notices),
+        *(
+            item
+            for index, result in enumerate(results)
+            for item in prefixed(result.notices, result.name, tag=f"c{index}")
+        ),
         basis(
             "조합의 절감액은 수단별 절감액의 합이 아닙니다. 조합마다 부하를 다시 만들어 "
-            "요금을 처음부터 산출했습니다 (요구사항서 8장)."
+            "요금을 처음부터 산출했습니다 (요구사항서 8장).",
+            fact="combination.not_additive",
         ),
-        basis("확실성 등급은 가장 낮은 구성 요소를 따릅니다."),
+        basis("확실성 등급은 가장 낮은 구성 요소를 따릅니다.", fact="combination.certainty_rule"),
     )
     return ComparisonResult(
         baseline=results[0],

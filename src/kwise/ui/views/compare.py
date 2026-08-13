@@ -49,7 +49,7 @@ from kwise.measures import (
     evaluate_contract_adjustment,
     evaluate_demand_response,
 )
-from kwise.notices import tooltip
+from kwise.notices import dedupe_key, dedupe_keys, tooltip
 from kwise.quality import QualityReport
 from kwise.report import (
     SIMPLE_SUM_NOTE,
@@ -212,8 +212,10 @@ def render(
     _combined_block(usage, form, comparison, rows, results.contract, enabled)
     # **2단계 카드가 이미 낸 경고는 여기서 되풀이하지 않는다** (16세션 3절).
     # 세 화면이 한 번에 그려지므로 같은 문장이 두 번 뜬다 — 조합 자체의 경고만 남긴다.
-    seen = results.warnings()
-    fresh = tuple(item for item in comparison.notices if item.text not in seen)
+    # **문구가 아니라 사실로 견준다** (20세션). 조합 쪽 문구에는 조합명이 앞에
+    # 붙어 문자열 비교로는 같은 사실이 다르게 보였다.
+    seen = results.shown_facts()
+    fresh = tuple(item for item in comparison.notices if dedupe_key(item, base=True) not in seen)
     for notice in screen_notices(fresh):
         callout.render_notice(notice)
     # **근거는 툴팁 하나로** (19세션 1절). 조합 표의 숫자가 어떻게 만들어졌는지는
@@ -504,11 +506,12 @@ class _MeasureResults:
             solar=self.solar,
         )
 
-    def warnings(self) -> frozenset[str]:
-        """2단계 카드가 이미 낸 경고 (16세션 3절).
+    def shown_facts(self) -> frozenset[str]:
+        """2단계 카드가 이미 낸 **사실** (16세션 3절 · 20세션에 사실 ID 로).
 
-        탭 구조라 2·3단계가 함께 그려진다. 조합 경고에 같은 문장이 들어 있으면
-        화면에 두 번 뜨므로, 3단계는 이 집합을 빼고 낸다.
+        탭 구조라 2·3단계가 함께 그려진다. 조합 경고에 같은 사실이 들어 있으면
+        화면에 두 번 뜨므로, 3단계는 이 집합을 빼고 낸다. 조합 판별자는 떼고
+        견준다 — 어느 조합에서 났든 같은 사실이다.
         """
         sources = (
             self.switch,
@@ -519,11 +522,9 @@ class _MeasureResults:
             self.ess,
             self.surplus,
         )
-        return frozenset(
-            item.text
-            for source in sources
-            if source is not None
-            for item in getattr(source, "notices", ())
+        return dedupe_keys(
+            *(getattr(source, "notices", ()) for source in sources if source is not None),
+            base=True,
         )
 
     def standalone(self) -> tuple[StandaloneRow, ...]:

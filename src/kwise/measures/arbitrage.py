@@ -224,17 +224,25 @@ def arbitrage_value(
         payback = capex_energy_won_per_kwh / per_kwh_year
 
     notices = [
-        basis("계시별 단가는 요금표에서 가져왔습니다. 사용자 입력이 아닙니다."),
+        basis(
+            "계시별 단가는 요금표에서 가져왔습니다. 사용자 입력이 아닙니다.",
+            fact="arbitrage.tariff_rates",
+        ),
         basis(
             f"최대부하가 존재하는 날만 셌습니다 (계절별 {days}). 토요일은 최대부하가 "
-            "중간부하로 계량되고 일요일·공휴일은 전량 경부하라 자동으로 빠집니다."
+            "중간부하로 계량되고 일요일·공휴일은 전량 경부하라 자동으로 빠집니다.",
+            fact="arbitrage.peak_days",
         ),
-        basis(f"평일 {cycles_per_day:g} 사이클, 왕복효율 {round_trip:.0%} 가정입니다."),
+        basis(
+            f"평일 {cycles_per_day:g} 사이클, 왕복효율 {round_trip:.0%} 가정입니다.",
+            fact="arbitrage.cycle_assumption",
+        ),
         # **주의다.** 그대로 더하면 이중 계산이 되므로 금액을 읽는 방법 자체가 달라진다.
         warn(
             "**피크저감 절감액에 더하지 않았습니다.** 피크컷 디스패치가 이미 일부를 "
             "실현하고 있어 그대로 더하면 이중 계산이 됩니다. 이 값은 매 평일 한 사이클을 "
-            "온전히 돌렸을 때의 잠재값입니다."
+            "온전히 돌렸을 때의 잠재값입니다.",
+            fact="arbitrage.not_additive",
         ),
     ]
     if payback is not None:
@@ -249,7 +257,8 @@ def arbitrage_value(
             basis(
                 f"차익거래 단독 회수기간 {payback:,.1f}년 — 연 {per_kwh_year:,.0f}원/kWh 로 "
                 f"CAPEX 에너지 성분 {capex_energy_won_per_kwh:,.0f}원/kWh 를 회수합니다. "
-                f"{verdict}"
+                f"{verdict}",
+                fact="arbitrage.standalone_payback",
             )
         )
 

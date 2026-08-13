@@ -193,7 +193,8 @@ class BillingResult:
             notices.append(
                 warn(
                     f"기간이 {self.period_days:.0f}일로 12개월 미만입니다. "
-                    f"×{factor:.3f} 환산값은 계절 편중이 있어 신뢰도가 낮습니다."
+                    f"×{factor:.3f} 환산값은 계절 편중이 있어 신뢰도가 낮습니다.",
+                    fact="quality.short_period",
                 )
             )
         return AnnualEstimate(
@@ -243,7 +244,8 @@ def _base_fee_factors(
             basis(
                 "부분 월 처리: 두 조각을 합쳐 한 달로 계산했습니다 "
                 + " + ".join(f"{month} {covered_days[month]:.1f}일" for month in partials)
-                + " = 1개월."
+                + " = 1개월.",
+                fact="tariff.partial_month",
             )
         )
         return factors, notes
@@ -255,7 +257,8 @@ def _base_fee_factors(
             basis(
                 "부분 월 처리: 합칠 짝이 없어 일수 비례로 안분했습니다 "
                 + ", ".join(f"{month} {factors[month]:.3f}" for month in partials)
-                + "."
+                + ".",
+                fact="tariff.partial_month",
             )
         )
     else:
@@ -263,7 +266,8 @@ def _base_fee_factors(
             basis(
                 "부분 월 처리: 일수 비례로 안분했습니다 "
                 + ", ".join(f"{month} {factors[month]:.3f}" for month in partials)
-                + "."
+                + ".",
+                fact="tariff.partial_month",
             )
         )
     return factors, notes
@@ -462,14 +466,18 @@ def calculate_bill(
     if contract.base_fee_on_contract:
         # 갑 종별이다. 요금적용전력 하한·이월 규칙은 기본요금에 관여하지 않는다.
         # **기준 자체가 잠정임을 먼저 밝힌다** — 뒤의 경고들은 이 전제 위에 있다.
-        notices.append(warn(TENTATIVE_BASE_FEE_BASIS_WARNING))
+        notices.append(
+            warn(TENTATIVE_BASE_FEE_BASIS_WARNING, fact="tariff.tentative_base_fee_basis")
+        )
         observed_peak = float(usage.kw.max())
         if observed_peak > (opts.contract_kw or 0.0):
+            # 품질 점검이 내는 「계약전력 초과」 와 **같은 사실**이다.
             notices.append(
                 warn(
                     f"{contract.label} 의 관측 최대수요 {observed_peak:,.1f} kW 가 "
                     f"계약전력 {opts.contract_kw:,.0f} kW 를 넘습니다. "
-                    "초과사용부가금 대상이며, 계약전력 재산정이 필요할 수 있습니다."
+                    "초과사용부가금 대상이며, 계약전력 재산정이 필요할 수 있습니다.",
+                    fact="quality.over_contract",
                 )
             )
         threshold = contract.threshold_kw
@@ -477,14 +485,16 @@ def calculate_bill(
             notices.append(
                 warn(
                     f"{contract.label} 은 계약전력 {threshold:,.0f} kW 미만 종별인데 "
-                    f"계약전력이 {opts.contract_kw:,.0f} kW 입니다. 종별을 확인하십시오."
+                    f"계약전력이 {opts.contract_kw:,.0f} kW 입니다. 종별을 확인하십시오.",
+                    fact="tariff.contract_type_threshold",
                 )
             )
     elif contract.contract_floor_ratio is None:
         notices.append(
             basis(
                 f"{contract.label} 의 요금적용전력 하한 비율이 요금 데이터에 없어 "
-                "하한을 적용하지 않았습니다 (요구사항서 5.2 ③)."
+                "하한을 적용하지 않았습니다 (요구사항서 5.2 ③).",
+                fact="tariff.floor_ratio_missing",
             )
         )
     elif opts.contract_kw is None:
@@ -492,7 +502,8 @@ def calculate_bill(
             warn(
                 "계약전력을 주지 않아 요금적용전력 하한"
                 f"(계약전력의 {contract.contract_floor_ratio:.0%})을 적용하지 않았습니다. "
-                "저부하 사업장은 기본요금이 과소 산출됩니다 (요구사항서 5.2 ③)."
+                "저부하 사업장은 기본요금이 과소 산출됩니다 (요구사항서 5.2 ③).",
+                fact="tariff.floor_no_contract",
             )
         )
     else:
@@ -503,7 +514,8 @@ def calculate_bill(
                 basis(
                     f"요금적용전력 하한 {floor_kw:,.1f} kW "
                     f"(계약전력의 {contract.contract_floor_ratio:.0%})가 "
-                    f"{len(bound)}개 월에 걸렸습니다."
+                    f"{len(bound)}개 월에 걸렸습니다.",
+                    fact="tariff.floor_bound_months",
                 )
             )
         over = usage.kw.dropna()
@@ -513,7 +525,8 @@ def calculate_bill(
                 warn(
                     f"계약전력 {opts.contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 "
                     "있습니다. 경부하 초과는 요금적용전력에 영향을 주지 않지만 "
-                    "초과사용부가금 대상이므로 별도로 확인하십시오 (요구사항서 5.2)."
+                    "초과사용부가금 대상이므로 별도로 확인하십시오 (요구사항서 5.2).",
+                    fact="quality.over_contract",
                 )
             )
     if not opts.prior_peaks and not contract.base_fee_on_contract:
@@ -522,22 +535,27 @@ def calculate_bill(
         notices.append(
             basis(
                 "직전 12개월 최대수요 이력이 없어 첫 11개월의 요금적용전력이 과소 산출됩니다. "
-                "청구서를 확보하면 prior_peaks= 로 주입하십시오 (요구사항서 5.2)."
+                "청구서를 확보하면 prior_peaks= 로 주입하십시오 (요구사항서 5.2).",
+                fact="tariff.prior_peaks_missing",
             )
         )
     notices.extend(power_factor.notices)  # 역률 (제41·43조)
     for month in limited_months:
+        # **품질 점검이 내는 월별 결측률과 같은 사실**이다. 달이 판별자다.
         notices.append(
             warn(
                 f"{month} 결측률 {missing_ratio[month]:.1%} — 최대수요를 '신뢰 제한' 으로 "
-                "표시하고 전력량요금은 결측 보정 기준을 함께 봅니다 (요구사항서 5.4)."
+                "표시하고 전력량요금은 결측 보정 기준을 함께 봅니다 (요구사항서 5.4).",
+                fact=f"quality.month_missing_rate:{month}",
             )
         )
     period_days = usage.meta.period_days
     if period_days < 365:
         notices.append(
             warn(
-                f"기간이 {period_days:.0f}일로 12개월 미만입니다. 12개월 환산 시 경고를 붙이십시오."
+                f"기간이 {period_days:.0f}일로 12개월 미만입니다. "
+                "12개월 환산 시 경고를 붙이십시오.",
+                fact="quality.short_period",
             )
         )
     if not table.verified:
@@ -545,7 +563,8 @@ def calculate_bill(
         notices.append(
             basis(
                 f"요금표 {table.effective_date} 는 아직 청구서로 "
-                "검증되지 않았습니다 (verified=false)."
+                "검증되지 않았습니다 (verified=false).",
+                fact="tariff.unverified_table",
             )
         )
 
@@ -564,18 +583,20 @@ def calculate_bill(
     )
     # 요금적용전력 규칙·안분 계수는 **근거**다 — 기본요금이 왜 그 값인지 그 자체다.
     notices += [
-        basis(demand_note),
+        basis(demand_note, fact="tariff.billing_demand_rule"),
         *partial_notes,
         basis(
             "전력량요금은 관측 기준이 정본이고, 결측 보정 기준은 회수기간 산정 참고용입니다 "
-            "(요구사항서 5.4). 도입 전후 차분(Δ)을 절대 금액보다 우선 신뢰하십시오."
+            "(요구사항서 5.4). 도입 전후 차분(Δ)을 절대 금액보다 우선 신뢰하십시오.",
+            fact="tariff.missing_adjusted_basis",
         ),
         # **참고** — 미포함 요금요소와 계절 비대칭. 전제 설명이다.
-        info(NOT_INCLUDED_NOTICE),
+        info(NOT_INCLUDED_NOTICE, fact="tariff.not_included"),
         info(
             "봄·가을 피크 저감은 기본요금 절감 가치가 거의 없습니다. 태양광 발전이 "
             "가장 강한 계절이 봄·가을이므로, PV 의 기본요금 기여는 7~9월에 집중되고 "
-            "12~2월에는 발전이 약해 비대칭이 큽니다."
+            "12~2월에는 발전이 약해 비대칭이 큽니다.",
+            fact="tariff.season_asymmetry",
         ),
     ]
 

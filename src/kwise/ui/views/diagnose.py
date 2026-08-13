@@ -48,7 +48,7 @@ from kwise.ui.cache import (
 )
 from kwise.ui.context import AnalysisContext
 from kwise.ui.labels import option_label
-from kwise.ui.notices import partition, screen_notices, tooltip_text
+from kwise.ui.notices import partition_facts, screen_notices, tooltip_text
 from kwise.ui.pipeline import (
     ContractForm,
     contract_type_choices,
@@ -147,13 +147,34 @@ def _headline_block(usage: UsageData, diagnosis: Diagnosis) -> None:
     columns[3].metric("연간 사용량" if span >= 350 else "기간 사용량", fmt.mwh(meta.total_kwh))
 
 
-# 결측 관련 문구는 「데이터 품질」 블록이 한 묶음으로 낸다. 위쪽 경고에서 뺀다.
-MISSING_MARKERS = ("결측", "보간")
+#: 결측 관련 문구는 「데이터 품질」 블록이 한 묶음으로 낸다. 위쪽 경고에서 뺀다.
+#: **20세션에 사실 ID 로 바꿨다** — 18세션까지는 「결측」·「보간」 이라는 부분
+#: 문자열로 걸렀는데, 문구가 한 글자만 바뀌어도 새고 엉뚱한 문장까지 걸어 갔다.
+#: 앞의 셋이 :func:`missing_lines` 의 세 줄이고, 편중은 이 블록이 따로 한 줄
+#: 적는다.
+MISSING_FACTS = (
+    "quality.missing_total",
+    "quality.longest_gap",
+    "quality.month_missing_rate",
+    "quality.peak_skew",
+)
 
 #: 계약전력 변경 경고는 **2단계 7.2 카드**가 낸다 (16세션 3절). 바꾸자고
 #: 제안하는 자리가 그 경고의 제자리다 — 여기서 미리 읽으면 무엇을 조심하라는
 #: 말인지 알 수 없어 그냥 지나친다. 두 곳에 두면 같은 문장이 화면에 두 번 뜬다.
-CONTRACT_MARKERS = ("계약전력",)
+CONTRACT_FACTS = (
+    "contract.margin",
+    "contract.penalty",
+    "contract.over_limit",
+    "contract.floor_unknown",
+    "contract.saving_basis",
+    "contract.energy_unchanged",
+    "contract.floor_not_binding",
+    "quality.over_contract",
+    "tariff.floor_no_contract",
+    "tariff.contract_type_threshold",
+    "diagnose.no_contract_kw",
+)
 
 
 def _notice_block(quality: QualityReport, diagnosis: Diagnosis) -> None:
@@ -163,8 +184,8 @@ def _notice_block(quality: QualityReport, diagnosis: Diagnosis) -> None:
     화면에 내지 않는다 — 보고서 부록으로 간다.
     """
     merged = (*quality.notices, *diagnosis.notices)
-    _missing, rest = partition(screen_notices(merged), MISSING_MARKERS)
-    _contract, rest = partition(rest, CONTRACT_MARKERS)
+    _missing, rest = partition_facts(screen_notices(merged), MISSING_FACTS)
+    _contract, rest = partition_facts(rest, CONTRACT_FACTS)
     # **배경색 상자를 쓰지 않는다** (15세션 4절). 차단만 색을 남긴다.
     for notice in rest:
         callout.render_notice(notice)
@@ -519,9 +540,8 @@ def _quality_block(usage: UsageData, quality: QualityReport) -> None:
     # 두 조치가 겹쳐 **같은 사실이 다섯 번** 나왔다 — 세 줄 + 확인사항 두 건이
     # 최장 연속 결측과 월별 결측률을 되풀이한다. 세 줄만 남긴다.
     #
-    # ``partition(…, MISSING_MARKERS)`` 은 제대로 걸러 왔다. 걸러 낸 쪽을 이 블록이
-    # 다시 그린 것이 문제였다. **패턴을 늘려 막지 않는다** — 문구가 바뀌면 또
-    # 새는 방식이다. 20세션의 사실 ID 로 갈음한다.
+    # 부분 문자열로 걸러 왔던 자리는 **20세션에 사실 ID 로 갈음했다**
+    # (:data:`MISSING_FACTS`). 문구가 바뀌어도 새지 않는다.
     st.caption("결측은 보간하지 않습니다.", help=manual_tip("data-quality"))
 
 

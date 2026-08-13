@@ -498,7 +498,8 @@ class EssCostModel:
                 basis(
                     f"산출 용량 {capacity_kwh:,.1f} kWh — 시장 최소 "
                     f"{self.market_minimum_kwh:,.0f} kWh 기준으로 산정했습니다. 고정비가 "
-                    "지배적이라 더 작게 만들어도 투자비가 그만큼 줄지 않습니다."
+                    "지배적이라 더 작게 만들어도 투자비가 그만큼 줄지 않습니다.",
+                    fact="ess.market_minimum",
                 )
             )
         elif capacity_kwh > self.max_kwh:
@@ -507,7 +508,8 @@ class EssCostModel:
             notices.append(
                 warn(
                     f"용량 {capacity_kwh:,.1f} kWh 는 사례 범위 "
-                    f"{self.min_kwh:,.0f}–{self.max_kwh:,.0f} kWh 를 넘습니다. 참고값입니다."
+                    f"{self.min_kwh:,.0f}–{self.max_kwh:,.0f} kWh 를 넘습니다. 참고값입니다.",
+                    fact="ess.capacity_out_of_range",
                 )
             )
         band = self.electrical_band(applied)

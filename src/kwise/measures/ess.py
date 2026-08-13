@@ -884,7 +884,8 @@ def evaluate_ess(
             warn(
                 f"경부하 충전이 목표를 넘는 새 피크를 만들었습니다 — 충전 시간대 최대 "
                 f"{dispatch.charge_window_peak_kw:,.1f} kW > 목표 {target_kw:,.0f} kW. "
-                "charge_limit_kw 로 충전 전력을 제한하십시오."
+                "charge_limit_kw 로 충전 전력을 제한하십시오.",
+                fact="ess.charge_new_peak",
             )
         )
     if not dispatch.target_met:
@@ -892,7 +893,8 @@ def evaluate_ess(
             warn(
                 f"목표 {target_kw:,.0f} kW 를 지키지 못한 에너지가 {dispatch.unmet_kwh:,.1f} kWh "
                 f"있습니다. 실제 달성 피크는 {dispatch.achieved_peak_kw:,.1f} kW 입니다. "
-                "출력이나 용량을 키우십시오."
+                "출력이나 용량을 키우십시오.",
+                fact="ess.target_unmet",
             )
         )
     if 0 < discharge_hours < high_rate_discharge_hours():
@@ -900,7 +902,8 @@ def evaluate_ess(
             warn(
                 f"산출 사양이 {c_rate(discharge_hours):.1f}C 방전에 해당합니다 "
                 f"(방전시간 {discharge_hours:.2f}h). 정치형 LFP 는 통상 0.5~1C 연속이므로 "
-                "고출력 셀 사양이며, 조달 사례보다 비쌀 수 있습니다."
+                "고출력 셀 사양이며, 조달 사례보다 비쌀 수 있습니다.",
+                fact="ess.high_c_rate",
             )
         )
     if (
@@ -912,7 +915,8 @@ def evaluate_ess(
             warn(
                 f"손익분기 단가 {breakeven:,.0f} 원/kW 가 입력 단가 "
                 f"{cost.unit_cost_won_per_kw:,.0f} 원/kW 보다 낮습니다 "
-                f"({payback_target_years:.0f}년 회수 기준)."
+                f"({payback_target_years:.0f}년 회수 기준).",
+                fact="ess.breakeven_below_unit_cost",
             )
         )
     # **성립 조건** — 고정 문구 대신 계산에서 판정이 나온다 (13세션).
@@ -925,14 +929,17 @@ def evaluate_ess(
         quote=quote,
     )
     if not feasibility.feasible:
-        notices.append(warn(feasibility.message()))
+        # 아래 근거 목록의 성립 조건과 **같은 사실**이다. 성립하지 않을 때만
+        # 주의로 먼저 나오고, 지문 대신 ID 로 접히므로 먼저 나온 주의가 남는다.
+        notices.append(warn(feasibility.message(), fact="ess.feasibility"))
     realized_payback = payback_years(investment, annual_saving)
     if realized_payback is not None and realized_payback > payback_target_years:
         # **판정하지 않는다** (14세션 3-3). 두 수를 나란히 놓고 판단은 사용자에게 둔다.
         notices.append(
             warn(
                 f"회수기간 {realized_payback:,.1f}년 — 배터리 보증 수명 "
-                f"{payback_target_years:,.0f}년을 초과합니다."
+                f"{payback_target_years:,.0f}년을 초과합니다.",
+                fact="ess.payback_over_warranty",
             )
         )
 
@@ -943,45 +950,55 @@ def evaluate_ess(
             f"용량 산정 기준: {sizing_basis} "
             f"(하루 최대 {excess.max_daily_excess_kwh:,.1f} kWh, "
             f"연속 구간 최대 {excess.max_event_excess_kwh:,.1f} kWh, "
-            f"기간 합계 {excess.total_excess_kwh:,.1f} kWh)."
+            f"기간 합계 {excess.total_excess_kwh:,.1f} kWh).",
+            fact="ess.sizing_basis",
         ),
         basis(
             f"방전시간 {discharge_hours:.2f}h ({c_rate(discharge_hours):.1f}C) 는 "
             "하루 최대 초과 에너지 ÷ 최대 초과 출력으로 **산출한 값**입니다. "
-            "짧을수록 kW당 단가가 싸므로, 조달이 가능하다면 짧은 쪽이 맞습니다."
+            "짧을수록 kW당 단가가 싸므로, 조달이 가능하다면 짧은 쪽이 맞습니다.",
+            fact="ess.discharge_hours",
         ),
         basis(
             f"투자비는 출력 {power:,.1f} kW × kW당 단가로 냈습니다 (출처: {cost.source}). "
-            "방전시간은 단가에 이미 반영되어 있어 다시 곱하지 않았습니다."
+            "방전시간은 단가에 이미 반영되어 있어 다시 곱하지 않았습니다.",
+            fact="ess.investment_basis",
         ),
-        basis(cost_model.formula + " — 조달 사례 회귀입니다."),
+        basis(cost_model.formula + " — 조달 사례 회귀입니다.", fact="ess.cost_model_formula"),
         basis(
             f"투자비 = 설비 {money.won(quote.equipment_won, reason='—')} + 전기공사 "
             f"{money.won(quote.electrical_won, reason='—')} (옥외 기준 "
             f"{money.won(quote.electrical_low_won, reason='—')}~"
             f"{money.won(quote.electrical_high_won, reason='—')} 구간의 대표값) "
-            f"= {money.won(quote.total_won, reason='—')}."
+            f"= {money.won(quote.total_won, reason='—')}.",
+            fact="ess.quote_breakdown",
         ),
-        basis(feasibility.message()),
-        basis(f"왕복효율 {round_trip:.0%}, DoD {dod:.0%} 를 적용했습니다."),
+        basis(feasibility.message(), fact="ess.feasibility"),
+        basis(
+            f"왕복효율 {round_trip:.0%}, DoD {dod:.0%} 를 적용했습니다.",
+            fact="ess.efficiency_coefficients",
+        ),
         # **참고** — 전략·한계. 숫자를 만들지 않는다.
         info(
             "규칙기반 피크컷 단일 전략입니다. 목표 초과분을 방전하고 경부하에 충전합니다. "
-            "최적 운전과는 차이가 있습니다 (요구사항서 부록 D.9)."
+            "최적 운전과는 차이가 있습니다 (요구사항서 부록 D.9).",
+            fact="ess.strategy_limit",
         ),
         info(
             "**수익 구조** — 피크저감 수익은 출력(kW)에 비례해 용량을 늘려도 늘지 않고, "
             "차익거래 수익은 용량(kWh)에 비례하며, 투자비도 용량에 크게 비례합니다. "
-            "따라서 용량을 늘릴수록 회수기간이 나빠집니다."
+            "따라서 용량을 늘릴수록 회수기간이 나빠집니다.",
+            fact="ess.revenue_structure",
         ),
-        info("열화·수명은 반영하지 않았습니다."),
+        info("열화·수명은 반영하지 않았습니다.", fact="ess.degradation_excluded"),
     ]
     if outlook_payback is not None:
         notices.append(
             basis(
                 f"현재 단가 기준 {payback_years(investment, annual_saving):,.1f}년 / "
                 f"{ref.outlook.label} 단가 기준 {outlook_payback:,.1f}년입니다 "
-                "(피크저감 절감액만 반영)."
+                "(피크저감 절감액만 반영).",
+                fact="ess.outlook_payback",
             )
         )
     if payback_with_arbitrage is not None:
@@ -991,7 +1008,8 @@ def evaluate_ess(
                 f"{ref.outlook.label} 단가 "
                 f"{outlook_payback_with_arbitrage:,.1f}년입니다. **이쪽이 상한입니다** — "
                 f"피크컷 디스패치가 이미 가정 사이클의 {overlap:.0%} 를 돌리고 있어 그만큼은 "
-                "절감액에 이미 들어 있습니다."
+                "절감액에 이미 들어 있습니다.",
+                fact="ess.payback_with_arbitrage",
             )
         )
     notices.extend(quote.notices)
