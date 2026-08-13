@@ -30,6 +30,7 @@ from kwise.diagnose.summary import (
     pv_basis_label,
 )
 from kwise.io import UsageData
+from kwise.notices import Notice, block
 from kwise.quality import LoadPattern, QualityReport, check_quality, load_pattern, outage_slot_mask
 from kwise.tariff import (
     BillingOptions,
@@ -58,7 +59,7 @@ class Diagnosis:
     structure: ChargeStructure | None = None
     contract: ContractAdequacy | None = None
     option_totals: Mapping[str, float] = field(default_factory=dict)
-    warnings: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     @property
     def has_charges(self) -> bool:
@@ -143,7 +144,7 @@ def diagnose(
         outage_mask=outage_slot_mask(index, report.outages),
     )
 
-    warnings = list(report.warnings)
+    notices: list[Notice] = list(report.notices)
 
     if contract is None:
         summary = ImprovementSummary(
@@ -158,9 +159,12 @@ def diagnose(
             pv_midday_share=midday_share,
             pv_basis=pv_basis,
         )
-        warnings.append(
-            "계약 정보가 없어 요금 구조와 절감액을 산출하지 않았습니다. "
-            "계약종별·전압구분·선택요금·계약전력을 입력하면 나옵니다 (요구사항서 3.2)."
+        # **차단** — 계약 정보가 없으면 요금이 나오지 않는다.
+        notices.append(
+            block(
+                "계약 정보가 없어 요금 구조와 절감액을 산출하지 않았습니다. "
+                "계약종별·전압구분·선택요금·계약전력을 입력하면 나옵니다 (요구사항서 3.2)."
+            )
         )
         return Diagnosis(
             quality=report,
@@ -168,12 +172,12 @@ def diagnose(
             peak=peak,
             dr=dr,
             summary=summary.__class__(**{**summary.__dict__, "lines": build_lines(summary)}),
-            warnings=tuple(warnings),
+            notices=tuple(notices),
         )
 
     current_bill = calculate_bill(usage, table, contract.selection, options=opts, quality=report)
     structure = charge_structure(usage, table, current_bill, options=opts)
-    warnings.extend(current_bill.warnings)
+    notices.extend(current_bill.notices)
 
     # 조합을 순차로 돌며 합계만 남긴다. 월별 명세는 현행 조합만 들고 있는다.
     # **현행 계약종별·전압구분 안에서만 비교한다.** 종별은 용도로, 전압은 수전설비로
@@ -206,9 +210,9 @@ def diagnose(
                 else (type_rules.contract_floor_ratio if type_rules else None)
             ),
         )
-        warnings.extend(adequacy.warnings)
+        notices.extend(adequacy.notices)
     else:
-        warnings.append("계약전력을 입력하면 계약 적정성을 진단합니다 (요구사항서 6.4).")
+        notices.append(block("계약전력을 입력하면 계약 적정성을 진단합니다 (요구사항서 6.4)."))
 
     summary = ImprovementSummary(
         current_selection=contract.selection,
@@ -234,7 +238,7 @@ def diagnose(
         structure=structure,
         contract=adequacy,
         option_totals=totals,
-        warnings=tuple(warnings),
+        notices=tuple(notices),
     )
 
 

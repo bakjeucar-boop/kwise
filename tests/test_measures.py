@@ -41,6 +41,7 @@ from kwise.measures import (
     unit_generation_kw,
     with_load,
 )
+from kwise.notices import texts
 from kwise.pv import ArrayConfig, PvSystemConfig
 from kwise.quality import QualityReport
 from kwise.tariff import BillingResult, TariffSelection, TariffTable, calculate_bill
@@ -191,7 +192,7 @@ def test_unknown_floor_rule_reports_headroom_without_money(
     # 여지와 경고는 언제나 나온다
     assert result.reduction_kw == pytest.approx(1_177.0)
     assert result.is_over_contracted
-    assert any("하한 규정" in message for message in result.warnings)
+    assert any("하한 규정" in message for message in texts(result.notices))
 
 
 def test_confirmed_floor_rule_recalculates_the_base_fee(
@@ -218,7 +219,7 @@ def test_floor_below_the_demand_yields_no_saving(
         sample_usage, sample_bill, contract_kw=7_000.0, contract_floor_ratio=0.3
     )
     assert result.saving_won == pytest.approx(0.0)
-    assert any("걸리지 않아" in note for note in result.notes)
+    assert any("걸리지 않아" in note for note in texts(result.notices))
 
 
 def test_penalty_warning_is_always_returned(
@@ -228,8 +229,8 @@ def test_penalty_warning_is_always_returned(
         result = evaluate_contract_adjustment(
             sample_usage, sample_bill, contract_kw=7_000.0, contract_floor_ratio=ratio
         )
-        assert any("위약금" in message for message in result.warnings)
-        assert any("12개월간 적용" in message for message in result.warnings)
+        assert any("위약금" in message for message in texts(result.notices))
+        assert any("12개월간 적용" in message for message in texts(result.notices))
 
 
 def test_invalid_floor_ratio_raises(sample_usage: UsageData, sample_bill: BillingResult) -> None:
@@ -369,8 +370,8 @@ def test_power_factor_warning_appears_below_the_standard(
     assert point.power_factor_after_pct < 92.0
     assert point.power_factor_extra_won > 0  # 92% 미만이므로 추가요금이다
     assert point.saving_after_power_factor_won < point.total_saving_won
-    assert any("역률 개선 설비" in message for message in curve.warnings)
-    assert any("제41·43조" in message for message in curve.warnings)
+    assert any("역률 개선 설비" in message for message in texts(curve.notices))
+    assert any("제41·43조" in message for message in texts(curve.notices))
 
 
 def test_tariff_switch_saving_ignores_sensitivity_while_solar_does_not(
@@ -572,7 +573,7 @@ def test_undersized_battery_warns(
     )
     assert not result.dispatch.target_met
     assert result.dispatch.achieved_peak_kw > 5_000.0
-    assert any("지키지 못한" in message for message in result.warnings)
+    assert any("지키지 못한" in message for message in texts(result.notices))
 
 
 # --------------------------------------------------------------------- 7.5 잉여 활용
@@ -645,7 +646,7 @@ def test_eligibility_is_not_judged(surplus_case: SurplusCase, tariff: TariffTabl
     result = evaluate_surplus(
         usage, tariff, CURRENT, net.surplus_kw, generation_kwh=net.generated_kwh
     )
-    assert any("자격요건" in note for note in result.notes)
+    assert any("자격요건" in note for note in texts(result.notices))
     assert all(scenario.admin_burden for scenario in result.scenarios)
 
 
@@ -723,7 +724,7 @@ def test_total_investment_path(
         quality=sample_report,
     )
     assert {point.investment_won for point in curve.points} == {400_000_000.0}
-    assert any("같은 총액" in message for message in curve.warnings)
+    assert any("같은 총액" in message for message in texts(curve.notices))
 
 
 def test_missing_unit_cost_returns_a_reason_not_zero(
@@ -750,13 +751,13 @@ def test_missing_unit_cost_returns_a_reason_not_zero(
     assert curve.best_payback is None
     # 절감액은 유효하다 — 단가를 몰라도 요금 계산은 확정된다.
     assert curve.points[-1].total_saving_won > 0
-    assert any("참고값은 제공하지 않습니다" in note for note in curve.notes)
+    assert any("참고값은 제공하지 않습니다" in note for note in texts(curve.notices))
     assert PvCostInput.unpriced().reason == PV_UNPRICED_REASON
 
 
 def test_cost_basis_and_scale_economy_are_stated(sample_curve: SolarCurve) -> None:
     """kWp 가 DC 정격임을, 그리고 규모의 경제를 반영하지 않았음을 밝힌다."""
-    notes = "\n".join(sample_curve.notes)
+    notes = "\n".join(texts(sample_curve.notices))
     assert "모듈 직류(DC) 정격" in notes
     assert "인버터 용량(kW-ac)과 다릅니다" in notes
     assert "부대비용" in notes

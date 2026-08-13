@@ -23,6 +23,7 @@ import pandas as pd
 from kwise.diagnose import default_margin_ratio
 from kwise.io import UsageData
 from kwise.measures.base import Certainty, annualize
+from kwise.notices import Notice, basis, block, warn
 from kwise.tariff import BillingResult
 
 __all__ = [
@@ -82,8 +83,7 @@ class ContractAdjustment:
     saving_basis: str
     certainty: Certainty = Certainty.HIGH
     investment_won: float = 0.0
-    warnings: tuple[str, ...] = field(default=())
-    notes: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     @property
     def is_over_contracted(self) -> bool:
@@ -136,15 +136,19 @@ def evaluate_contract_adjustment(
     suggested = min(contract_kw, math.ceil(billing_demand * (1 + margin_ratio) / step_kw) * step_kw)
     reduction = max(0.0, contract_kw - suggested)
 
-    warnings = [MARGIN_NOTICE, _PENALTY_NOTICE]
+    # 둘 다 **주의**다. 하향은 되돌리기 어렵고 한 번의 초과가 12개월을 지배한다.
+    notices = [warn(MARGIN_NOTICE), warn(_PENALTY_NOTICE)]
     if over_slots:
-        warnings.append(
-            f"계약전력 {contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 있습니다. "
-            "하향이 아니라 상향·초과 위약 검토 대상입니다."
+        notices.append(
+            warn(
+                f"계약전력 {contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 있습니다. "
+                "하향이 아니라 상향·초과 위약 검토 대상입니다."
+            )
         )
 
     if ratio is None:
-        warnings.append(_UNKNOWN_NOTICE)
+        # **차단이다.** 하한 규정을 모르면 절감액 자체를 내지 않는다.
+        notices.append(block(_UNKNOWN_NOTICE))
         return ContractAdjustment(
             status=ContractStatus.UNKNOWN,
             contract_kw=contract_kw,
@@ -162,8 +166,7 @@ def evaluate_contract_adjustment(
             saving_won=None,
             annual_saving_won=None,
             saving_basis="하한 규정 미확인 — 금액 미산출",
-            warnings=tuple(warnings),
-            notes=(_UNKNOWN_NOTICE,),
+            notices=tuple(notices),
         )
 
     if not 0.0 <= ratio <= 1.0:
@@ -173,17 +176,17 @@ def evaluate_contract_adjustment(
     current_base = _base_fee_won(bill, contract_kw * ratio)
     adjusted_base = _base_fee_won(bill, suggested * ratio)
     saving = current_base - adjusted_base
-    basis = (
+    basis_text = (
         f"요금적용전력 하한 {ratio:.0%} 적용, "
         f"월별 기본요금을 {bill.base_fee_months:.2f}개월분으로 재계산"
     )
-    notes = [
-        basis,
-        "전력량요금은 계약전력과 무관하므로 변하지 않습니다.",
+    notices += [
+        basis(basis_text),
+        basis("전력량요금은 계약전력과 무관하므로 변하지 않습니다."),
     ]
     if saving <= 0:
-        notes.append(
-            "하한이 요금적용전력에 걸리지 않아 계약전력을 낮춰도 기본요금이 줄지 않습니다."
+        notices.append(
+            basis("하한이 요금적용전력에 걸리지 않아 계약전력을 낮춰도 기본요금이 줄지 않습니다.")
         )
     return ContractAdjustment(
         status=ContractStatus.CONFIRMED,
@@ -201,9 +204,8 @@ def evaluate_contract_adjustment(
         adjusted_base_won=adjusted_base,
         saving_won=saving,
         annual_saving_won=annualize(saving, bill.base_fee_months),
-        saving_basis=basis,
-        warnings=tuple(warnings),
-        notes=tuple(notes),
+        saving_basis=basis_text,
+        notices=tuple(notices),
     )
 
 

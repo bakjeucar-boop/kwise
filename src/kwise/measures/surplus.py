@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from kwise.io import UsageData
+from kwise.notices import Notice, info
 from kwise.tariff import (
     BillingOptions,
     TariffSelection,
@@ -70,7 +71,7 @@ class SurplusResult:
     weekend_kwh: float
     holiday_kwh: float
     scenarios: tuple[SurplusScenario, ...]
-    notes: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     @property
     def weekend_share(self) -> float | None:
@@ -181,5 +182,5 @@ def evaluate_surplus(
         weekend_kwh=float(energy[weekend_mask].sum()),
         holiday_kwh=float(energy[holiday_mask].sum()),
         scenarios=scenarios,
-        notes=(ELIGIBILITY_NOTICE,),
+        notices=(info(ELIGIBILITY_NOTICE),),
     )

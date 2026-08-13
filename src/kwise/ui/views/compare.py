@@ -49,6 +49,7 @@ from kwise.measures import (
     evaluate_contract_adjustment,
     evaluate_demand_response,
 )
+from kwise.notices import tooltip
 from kwise.quality import QualityReport
 from kwise.report import (
     SIMPLE_SUM_NOTE,
@@ -87,7 +88,7 @@ from kwise.ui.cache import (
 )
 from kwise.ui.context import AnalysisContext
 from kwise.ui.labels import option_label
-from kwise.ui.notices import screen_notices
+from kwise.ui.notices import screen_notices, tooltip_text
 from kwise.ui.pipeline import ContractForm, combination_specs
 from kwise.ui.progress import progress_panel
 from kwise.ui.session import build_report_bytes
@@ -212,8 +213,17 @@ def render(
     # **2단계 카드가 이미 낸 경고는 여기서 되풀이하지 않는다** (16세션 3절).
     # 세 화면이 한 번에 그려지므로 같은 문장이 두 번 뜬다 — 조합 자체의 경고만 남긴다.
     seen = results.warnings()
-    for notice in screen_notices(tuple(item for item in comparison.warnings if item not in seen)):
+    fresh = tuple(item for item in comparison.notices if item.text not in seen)
+    for notice in screen_notices(fresh):
         callout.render_notice(notice)
+    # **근거는 툴팁 하나로** (19세션 1절). 조합 표의 숫자가 어떻게 만들어졌는지는
+    # 매번 볼 것은 아니지만, 표를 믿을지 판단할 때 필요하다.
+    grounds = tooltip(fresh)
+    if grounds:
+        st.caption(
+            f"산출 근거 {len(grounds)}건",
+            help=tooltip_text(fresh, header="**이 숫자가 어디서 나왔나**"),
+        )
 
     sensitivity_frame, sensitivity_ranges = _sensitivity_block(
         usage, table, baseline, unit_profile, quality, form, specs
@@ -510,10 +520,10 @@ class _MeasureResults:
             self.surplus,
         )
         return frozenset(
-            item
+            item.text
             for source in sources
             if source is not None
-            for item in getattr(source, "warnings", ())
+            for item in getattr(source, "notices", ())
         )
 
     def standalone(self) -> tuple[StandaloneRow, ...]:
@@ -547,6 +557,7 @@ class _MeasureResults:
             solar=self.solar,
             solar_certainty=self.solar_certainty,
             solar_unpriced_reason=self.solar_unpriced_reason,
+            solar_notices=self.solar_curve.notices if self.solar_curve is not None else (),
             ess=self.ess,
             surplus=self.surplus,
             usage=self.usage,

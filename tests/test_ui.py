@@ -21,6 +21,7 @@ import pandas as pd
 import pytest
 
 from kwise.io import ColumnDetection, ColumnDetectionError, load_usage, override_columns
+from kwise.notices import texts
 from kwise.rules import ItemDiff, ItemView, RuleOrigin, describe_items, expiry_warnings
 from kwise.rules.expiry import ExpiryWarning
 from kwise.tariff import TariffSelection, TariffTable, load_tariff
@@ -791,7 +792,7 @@ def test_계약_정보를_넣으면_하한_미적용_경고가_사라진다(usag
 
     form = ContractForm("general_b", "high_a", "I", contract_kw=5_800.0)
     diagnosis = diagnose_usage(usage, table, form)  # type: ignore[arg-type]
-    missing = [m for m in diagnosis.warnings if "하한" in m and "적용하지 않았" in m]
+    missing = [m for m in texts(diagnosis.notices) if "하한" in m and "적용하지 않았" in m]
     assert missing == []
 
 
@@ -800,7 +801,7 @@ def test_계약전력을_비우면_하한_미적용_경고가_남는다(usage: o
 
     form = ContractForm("general_b", "high_a", "I", contract_kw=None)
     diagnosis = diagnose_usage(usage, table, form)  # type: ignore[arg-type]
-    assert any("하한" in message for message in diagnosis.warnings)
+    assert any("하한" in message for message in texts(diagnosis.notices))
 
 
 def test_기준선_요금이_현행_선택요금으로_계산된다(usage: object, table: TariffTable) -> None:

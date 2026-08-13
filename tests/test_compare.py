@@ -21,6 +21,7 @@ from kwise.compare import (
 )
 from kwise.io import UsageData
 from kwise.measures import Certainty, dispatch_peak_shaving, lowest_certainty
+from kwise.notices import texts
 from kwise.quality import QualityReport
 from kwise.tariff import BillingResult, TariffSelection, TariffTable
 
@@ -239,8 +240,8 @@ def test_comparison_warns_when_charging_creates_a_peak(
     result = compare_combinations(
         synthetic_usage, tariff, (CombinationSpec("기준선", CURRENT), spec)
     )
-    assert any("새 피크" in message for message in result.warnings)
-    assert any("ess_charge_limit_kw" in message for message in result.warnings)
+    assert any("새 피크" in message for message in texts(result.notices))
+    assert any("ess_charge_limit_kw" in message for message in texts(result.notices))
 
 
 def test_charge_limit_removes_the_warning(synthetic_usage: UsageData, tariff: TariffTable) -> None:
@@ -256,7 +257,7 @@ def test_charge_limit_removes_the_warning(synthetic_usage: UsageData, tariff: Ta
     result = compare_combinations(
         synthetic_usage, tariff, (CombinationSpec("기준선", CURRENT), spec)
     )
-    assert not any("새 피크" in message for message in result.warnings)
+    assert not any("새 피크" in message for message in texts(result.notices))
 
 
 # --------------------------------------------------------------------- 기본 세트·표
@@ -295,7 +296,7 @@ def test_comparison_frame_has_the_required_columns(
         assert column in frame.columns
     assert frame.index.name == "조합"
     assert len(frame) == 4
-    assert any("합이 아닙니다" in note for note in sample_comparison.notes)
+    assert any("합이 아닙니다" in note for note in texts(sample_comparison.notices))
 
 
 def test_empty_specs_raise(sample_usage: UsageData, tariff: TariffTable) -> None:

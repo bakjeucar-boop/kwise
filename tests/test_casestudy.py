@@ -15,6 +15,7 @@ import pandas as pd
 import pytest
 
 from kwise.io import load_usage, slot_start
+from kwise.notices import texts
 from kwise.pv import WeatherRequest, WeatherUnavailableError, load_weather
 from kwise.quality import check_quality
 from kwise.report.casestudy import (
@@ -225,10 +226,10 @@ def test_ten_percent_missing(tmp_path: Path, tariff: TariffTable) -> None:
     usage = load_usage(write_csv(tmp_path / "missing.csv", kept))
     assert usage.meta.missing_ratio == pytest.approx(0.10, abs=0.01)
     report = check_quality(usage)
-    assert report.warnings
+    assert texts(report.notices)
     result = calculate_bill(usage, tariff, GENERAL_B, quality=report)
     assert result.total_won > 0
-    assert result.notes or result.warnings
+    assert texts(result.notices) or texts(result.notices)
 
 
 def test_contract_excess_is_flagged(tmp_path: Path, tariff: TariffTable) -> None:

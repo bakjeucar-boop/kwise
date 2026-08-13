@@ -30,6 +30,7 @@ from kwise.measures.pv_cost import (
     SCALE_ECONOMY_NOTE,
     PvCostInput,
 )
+from kwise.notices import Notice, basis, block, info, warn
 from kwise.progress import ProgressReporter, record
 from kwise.pv import PvSystemConfig, WeatherData, align_simulation, sharpen, simulate
 from kwise.quality import QualityReport
@@ -203,8 +204,7 @@ class SolarCurve:
     cost: PvCostInput
     base_fee_months: float
     certainty: Certainty = Certainty.MEDIUM
-    warnings: tuple[str, ...] = field(default=())
-    notes: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     def frame(self) -> pd.DataFrame:
         """표로 그릴 수 있는 형태."""
@@ -423,7 +423,7 @@ def solar_curve(
     unit = sharpen(unit_kw_per_kwp.reindex(pd.DatetimeIndex(usage.kw.index)).fillna(0.0), sharpness)
 
     points: list[SolarPoint] = []
-    warnings: list[str] = []
+    notices: list[Notice] = []
     for step in range(steps + 1):  # 0 kWp 포함
         capacity = max_capacity_kwp * step / steps
         report.step(step, f"용량 곡선 {step}/{steps} — {capacity:,.0f} kWp")
@@ -469,50 +469,72 @@ def solar_curve(
 
     largest = points[-1]
     if largest.power_factor_after_pct < power_factor_floor_pct():
-        warnings.append(
-            f"PV {largest.capacity_kwp:,.0f} kWp 도입 시 예상 주간(08~22시) 지상역률이 "
-            f"{largest.power_factor_after_pct:.1f}% 로 기준 "
-            f"{power_factor_floor_pct():.0f}% 를 밑돕니다. 무효전력은 그대로인데 "
-            "유효전력만 상쇄되기 때문입니다. 역률요금이 "
-            f"{money.won(largest.power_factor_extra_won, reason='—')} 늘어 절감액이 "
-            f"{money.won(largest.total_saving_won, reason='—')} → "
-            f"{money.won(largest.saving_after_power_factor_won, reason='—')} 이 됩니다. "
-            "역률 개선 설비 용량 조정이 필요합니다 (기본공급약관 제41·43조, 요구사항서 5.7)."
+        notices.append(
+            warn(
+                f"PV {largest.capacity_kwp:,.0f} kWp 도입 시 예상 주간(08~22시) 지상역률이 "
+                f"{largest.power_factor_after_pct:.1f}% 로 기준 "
+                f"{power_factor_floor_pct():.0f}% 를 밑돕니다. 무효전력은 그대로인데 "
+                "유효전력만 상쇄되기 때문입니다. 역률요금이 "
+                f"{money.won(largest.power_factor_extra_won, reason='—')} 늘어 절감액이 "
+                f"{money.won(largest.total_saving_won, reason='—')} → "
+                f"{money.won(largest.saving_after_power_factor_won, reason='—')} 이 됩니다. "
+                "역률 개선 설비 용량 조정이 필요합니다 (기본공급약관 제41·43조, 요구사항서 5.7)."
+            )
         )
-    notes = [
-        "발전량 예측은 피크 발전량을 과소 산출하는 경향이 있어 결과가 보수적입니다 "
-        "(요구사항서 9.1).",
-        f"감도 첨예도 계수 s={sharpness:.2f} 를 PV 출력에 적용했습니다. "
-        "일별 총 발전량은 보존되고 피크만 달라집니다 (요구사항서 9.2).",
-        "용량마다 요금을 다시 계산했습니다. 절감액을 빼기로 어림하지 않았습니다.",
-        PV_COST_BASIS_NOTE,
-        f"역률 판정 창은 08~22시(구간 시작 기준)이며 기준은 지상 "
-        f"{lagging_standard_pct():.0f}% 입니다 (기본공급약관 제43조 ②). "
-        f"도입 전 추정 역률 {power_factor_pct:.1f}% 에서 시작합니다.",
-        "역률요금은 추정 역률 기반 참고 산출입니다. 무효전력 실측이 없습니다 "
-        "(약관 제42조는 30분 누적 계량을 요구하는데 우리 데이터는 15분이고 "
-        "무효전력이 없습니다).",
+    notices += [
+        # **근거** — 절감액·역률 판정이 어느 창·어느 계수에서 나왔는가.
+        basis(
+            f"감도 첨예도 계수 s={sharpness:.2f} 를 PV 출력에 적용했습니다. "
+            "일별 총 발전량은 보존되고 피크만 달라집니다 (요구사항서 9.2)."
+        ),
+        basis("용량마다 요금을 다시 계산했습니다. 절감액을 빼기로 어림하지 않았습니다."),
+        basis(
+            f"역률 판정 창은 08~22시(구간 시작 기준)이며 기준은 지상 "
+            f"{lagging_standard_pct():.0f}% 입니다 (기본공급약관 제43조 ②). "
+            f"도입 전 추정 역률 {power_factor_pct:.1f}% 에서 시작합니다."
+        ),
+        # **참고** — 모델의 한계. 전제이지 산식이 아니다.
+        info(
+            "발전량 예측은 피크 발전량을 과소 산출하는 경향이 있어 결과가 보수적입니다 "
+            "(요구사항서 9.1)."
+        ),
+        info(PV_COST_BASIS_NOTE),
+        info(
+            "역률요금은 추정 역률 기반 참고 산출입니다. 무효전력 실측이 없습니다 "
+            "(약관 제42조는 30분 누적 계량을 요구하는데 우리 데이터는 15분이고 "
+            "무효전력이 없습니다)."
+        ),
     ]
     if pricing.unit_cost_won_per_kwp is not None:
-        notes.append(SCALE_ECONOMY_NOTE)
-        notes.append(
-            f"투자비는 용량(kWp) × {pricing.unit_cost_won_per_kwp:,.0f} 원/kWp 로 냈습니다 "
-            f"(출처: {pricing.source})."
+        notices.append(info(SCALE_ECONOMY_NOTE))
+        notices.append(
+            basis(
+                f"투자비는 용량(kWp) × {pricing.unit_cost_won_per_kwp:,.0f} 원/kWp 로 냈습니다 "
+                f"(출처: {pricing.source})."
+            )
         )
     elif pricing.total_won is not None:
-        notes.append(
-            f"투자비를 총액 {money.won(pricing.total_won, reason='—')} 으로 고정했습니다 "
-            f"(출처: {pricing.source})."
+        notices.append(
+            basis(
+                f"투자비를 총액 {money.won(pricing.total_won, reason='—')} 으로 고정했습니다 "
+                f"(출처: {pricing.source})."
+            )
         )
-        warnings.append(
-            "총액을 직접 넣으면 **용량 곡선의 모든 점에 같은 총액**이 적용됩니다. "
-            "견적은 특정 용량에 대한 것이므로 그 용량 근처에서만 회수기간을 읽으십시오. "
-            "곡선 전체를 보려면 kWp당 단가를 넣으십시오."
+        notices.append(
+            warn(
+                "총액을 직접 넣으면 **용량 곡선의 모든 점에 같은 총액**이 적용됩니다. "
+                "견적은 특정 용량에 대한 것이므로 그 용량 근처에서만 회수기간을 읽으십시오. "
+                "곡선 전체를 보려면 kWp당 단가를 넣으십시오."
+            )
         )
     else:
-        notes.append(PV_REFERENCE_NOTE)
-        notes.append(
-            "설치 단가를 넣지 않아 투자비와 회수기간을 산출하지 않았습니다. 절감액만 유효합니다."
+        notices.append(info(PV_REFERENCE_NOTE))
+        # **차단** — 투자비와 회수기간이 나오지 않는다.
+        notices.append(
+            block(
+                "설치 단가를 넣지 않아 투자비와 회수기간을 산출하지 않았습니다. "
+                "절감액만 유효합니다."
+            )
         )
 
     return SolarCurve(
@@ -525,6 +547,5 @@ def solar_curve(
         max_capacity_kwp=max_capacity_kwp,
         cost=pricing,
         base_fee_months=base_bill.base_fee_months,
-        warnings=tuple(warnings),
-        notes=tuple(notes),
+        notices=tuple(notices),
     )

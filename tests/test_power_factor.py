@@ -27,6 +27,7 @@ from kwise.measures import (
     evaluate_tariff_switch,
 )
 from kwise.measures.solar import day_window_mask, power_factor_after_pct
+from kwise.notices import texts
 from kwise.quality import QualityReport
 from kwise.tariff import (
     BillingOptions,
@@ -136,8 +137,8 @@ def test_lagging_night_incurs_no_leading_penalty() -> None:
     assert charge.leading_deemed_pct == leading_lagging_deemed_pct() == 100.0
     assert charge.leading_ratio == pytest.approx(0.0)
     assert charge.leading_won == pytest.approx(0.0)
-    assert any("지상으로 보아 역률 100% 간주" in note for note in charge.notes)
-    assert any("고정형 역률 개선 설비" in message for message in charge.warnings)
+    assert any("지상으로 보아 역률 100% 간주" in note for note in texts(charge.notices))
+    assert any("고정형 역률 개선 설비" in message for message in texts(charge.notices))
 
 
 def test_deemed_leading_pct_follows_the_clause() -> None:
@@ -167,12 +168,12 @@ def test_first_month_rule_is_documented_not_computed() -> None:
     """제43조 ③(첫 달 예고)은 주석으로만 남긴다. Δ 가 흔들리기 때문이다."""
     charge = power_factor_charge(1_000_000.0, lagging_pct=85.0)
     assert charge.total_won == pytest.approx(14_000.0)  # 12개월분 그대로
-    assert any("첫 달은 약관상 예고" in note for note in charge.notes)
+    assert any("첫 달은 약관상 예고" in note for note in texts(charge.notices))
 
 
 def test_low_factor_warns_about_the_maintenance_duty() -> None:
     charge = power_factor_charge(1_000_000.0, lagging_pct=55.0)
-    assert any("제41조" in message or "60% 미만" in message for message in charge.warnings)
+    assert any("제41조" in message or "60% 미만" in message for message in texts(charge.notices))
 
 
 # --------------------------------------------------------------------- 요금 엔진 결합
@@ -228,7 +229,7 @@ def test_night_leading_clause_reaches_the_bill(
         quality=sample_report,
     )
     assert bill.total_power_factor_won == pytest.approx(sample_bill.total_base_won * 0.010)
-    assert any("야간 진상역률" in message for message in bill.warnings)
+    assert any("야간 진상역률" in message for message in texts(bill.notices))
 
 
 def test_monthly_rows_carry_the_power_factor_column(
@@ -294,7 +295,7 @@ def test_improvement_from_a_penalty_removes_it_and_adds_the_rebate(
     assert result.current_charge_won == pytest.approx(sample_bill.total_base_won * 0.014)
     assert result.target_charge_won == pytest.approx(sample_bill.total_base_won * -0.010)
     assert result.saving_won == pytest.approx(sample_bill.total_base_won * 0.024)
-    assert any("제41조" in message for message in result.warnings)
+    assert any("제41조" in message for message in texts(result.notices))
 
 
 def test_improvement_is_a_recalculation_not_a_ratio(
@@ -324,7 +325,7 @@ def test_target_above_the_cap_is_flagged_as_overinvestment(
         sample_usage, tariff, CURRENT, target_pct=100.0, baseline=sample_bill, quality=sample_report
     )
     assert result.saving_won == pytest.approx(sample_bill.total_base_won * 0.010)  # 97% 와 같다
-    assert any("과투자" in message for message in result.warnings)
+    assert any("과투자" in message for message in texts(result.notices))
 
 
 def test_leading_risk_is_always_warned(
@@ -337,8 +338,8 @@ def test_leading_risk_is_always_warned(
     result = evaluate_power_factor(
         sample_usage, tariff, CURRENT, baseline=sample_bill, quality=sample_report
     )
-    assert any("진상" in message and "95%" in message for message in result.warnings)
-    assert any("추정값" in message for message in result.warnings)
+    assert any("진상" in message and "95%" in message for message in texts(result.notices))
+    assert any("추정값" in message for message in texts(result.notices))
 
 
 def test_payback_uses_the_investment(
@@ -431,8 +432,8 @@ def test_solar_curve_prices_the_power_factor_damage(sample_curve: SolarCurve) ->
     assert largest.saving_after_power_factor_won == pytest.approx(
         largest.total_saving_won - largest.power_factor_extra_won
     )
-    assert any("역률 개선 설비" in message for message in sample_curve.warnings)
-    assert any("08~22시" in note for note in sample_curve.notes)
+    assert any("역률 개선 설비" in message for message in texts(sample_curve.notices))
+    assert any("08~22시" in note for note in texts(sample_curve.notices))
 
 
 def test_power_factor_damage_grows_with_capacity(sample_curve: SolarCurve) -> None:
@@ -454,7 +455,7 @@ def test_improvement_warns_about_apfr_and_fixed_banks(
     result = evaluate_power_factor(
         sample_usage, tariff, CURRENT, baseline=sample_bill, quality=sample_report
     )
-    joined = " ".join(result.warnings)
+    joined = " ".join(texts(result.notices))
     assert "고정형 역률 개선 설비" in joined
     assert "자동제어형 역률 개선 설비" in joined
     assert "역률 개선 설비 과투자의 신호" in joined

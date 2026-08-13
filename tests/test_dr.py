@@ -48,6 +48,7 @@ from kwise.measures import (
     shortfall_penalty_won,
 )
 from kwise.measures.demand_response import UNPRICED_REASON
+from kwise.notices import texts
 from kwise.rules import rule_value
 from kwise.rules.schema import RuleDataError
 from kwise.tariff import BillingResult, TariffTable, build_calendar, classify_slots
@@ -304,7 +305,7 @@ def test_저부하일이_없으면_영을_내고_이유를_적는다(
     assert profile.annual_reducible_kwh == 0.0
     assert profile.registered_capacity_kw == 0.0
     assert profile.potential is DrPotential.LOW
-    assert any("저부하 평일이 없습니다" in message for message in profile.warnings)
+    assert any("저부하 평일이 없습니다" in message for message in texts(profile.notices))
 
 
 def test_정전일은_저부하_평일이_아니다(sample_usage: UsageData, calendar: object) -> None:
@@ -340,7 +341,7 @@ def test_참고_문턱은_자원_단위_기준이다(sample_usage: UsageData, ca
     )
     assert not profile.meets_reference_capacity
     assert profile.potential is DrPotential.LOW
-    assert any("묶은 자원 단위" in message for message in profile.warnings)
+    assert any("묶은 자원 단위" in message for message in texts(profile.notices))
 
 
 def test_적합성_등급은_등록_용량으로_매긴다(sample_diagnosis: Diagnosis) -> None:
@@ -394,7 +395,7 @@ def test_단가가_없으면_사유를_낸다(sample_diagnosis: Diagnosis) -> No
     assert result.settlement_label == UNPRICED_REASON
     assert "순편익가격" in result.settlement_label
     assert result.annual_reducible_kwh > 0  # 감축량은 낸다
-    assert any("정산 단가를 입력하지 않아" in message for message in result.warnings)
+    assert any("정산 단가를 입력하지 않아" in message for message in texts(result.notices))
 
 
 def test_단가가_있으면_정산금을_낸다(sample_diagnosis: Diagnosis) -> None:
@@ -430,11 +431,11 @@ def test_위약금_리스크를_적는다(sample_diagnosis: Diagnosis) -> None:
     assert profile is not None
     result = evaluate_demand_response(profile, day_ahead_price_won_per_kwh=120.0)
     assert result.penalty_per_shortfall_kw_won == pytest.approx(120.0 * dr_event_hours()[1])
-    assert any("실적위약금" in message for message in result.warnings)
+    assert any("실적위약금" in message for message in texts(result.notices))
 
     without = evaluate_demand_response(profile)
     assert without.penalty_per_shortfall_kw_won is None
-    assert any("하루전에너지가격" in message for message in without.warnings)
+    assert any("하루전에너지가격" in message for message in texts(without.notices))
 
 
 def test_기본요금_절감을_주장하지_않는다(sample_diagnosis: Diagnosis) -> None:
@@ -443,13 +444,13 @@ def test_기본요금_절감을_주장하지_않는다(sample_diagnosis: Diagnos
     assert profile is not None
     result = evaluate_demand_response(profile, unit_price_won_per_kwh=150.0)
     assert not hasattr(result, "base_saving_won")
-    assert any("기본요금 절감은 계산하지 않았습니다" in note for note in result.notes)
+    assert any("기본요금 절감은 계산하지 않았습니다" in note for note in texts(result.notices))
 
 
 def test_수요관리사업자를_반드시_적는다(sample_diagnosis: Diagnosis) -> None:
     profile = sample_diagnosis.dr
     assert profile is not None
-    joined = " ".join(evaluate_demand_response(profile).notes)
+    joined = " ".join(texts(evaluate_demand_response(profile).notices))
     assert "수요관리사업자를 통해서만" in joined
     assert "위약금 조항은 사업자와 상담" in joined
 

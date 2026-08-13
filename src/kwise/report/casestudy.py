@@ -40,6 +40,7 @@ from kwise.measures import (
     solar_curve,
     unit_generation_kw,
 )
+from kwise.notices import texts
 from kwise.progress import ProgressReporter, StageRunner, record
 from kwise.pv import (
     ArrayConfig,
@@ -447,7 +448,7 @@ def run_one_case(
         measure_rows=tuple(measure_rows),
         elapsed_sec=elapsed,
         weather_source=weather_source,
-        warnings=tuple(quality.warnings),
+        warnings=texts(quality.notices),
     )
 
 

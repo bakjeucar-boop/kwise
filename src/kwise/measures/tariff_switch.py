@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 
 from kwise.io import UsageData
 from kwise.measures.base import Certainty, annualize
+from kwise.notices import Notice, info, warn
 from kwise.quality import QualityReport
 from kwise.tariff import (
     BillingOptions,
@@ -65,8 +66,7 @@ class TariffSwitchResult:
     best_bill: BillingResult
     certainty: Certainty = Certainty.HIGH
     investment_won: float = 0.0
-    warnings: tuple[str, ...] = field(default=())
-    notes: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     @property
     def switch_needed(self) -> bool:
@@ -160,18 +160,24 @@ def evaluate_tariff_switch(
     quote_by_key = {quote.key: quote for quote in quotes}
 
     saving = current_bill.total_won - best_bill.total_won
-    notes = [
-        "선택요금 전환은 실측 데이터와 요금표만으로 확정되는 계산입니다. "
-        "감도를 적용하지 않습니다 (요구사항서 9.2).",
-        "설비 도입과 무관하게 나오는 절감액입니다. 투자가 필요하지 않습니다.",
+    notices: list[Notice] = [
+        # 둘 다 **참고**다 — 이 카드를 어떻게 읽는가에 대한 전제이지 산식이 아니다.
+        info(
+            "선택요금 전환은 실측 데이터와 요금표만으로 확정되는 계산입니다. "
+            "감도를 적용하지 않습니다 (요구사항서 9.2)."
+        ),
+        info("설비 도입과 무관하게 나오는 절감액입니다. 투자가 필요하지 않습니다."),
     ]
     if best_selection != current_selection:
         # **코드 식별자를 문구에 넣지 않는다** (12세션 규약, 15세션에 되살아난 것을
         # 통합 시험이 잡았다). 계산 모듈의 노트도 화면·산출물로 그대로 나간다.
-        notes.append(
-            f"가장 유리한 요금제는 {selection_label(table, best_selection)} 입니다. "
-            "다른 수단의 기준선을 현행으로 둘지 최적으로 둘지에 따라 그 수단의 "
-            "절감액이 달라집니다."
+        # **주의** — 다른 카드의 기준선이 여기에 딸려 움직인다.
+        notices.append(
+            warn(
+                f"가장 유리한 요금제는 {selection_label(table, best_selection)} 입니다. "
+                "다른 수단의 기준선을 현행으로 둘지 최적으로 둘지에 따라 그 수단의 "
+                "절감액이 달라집니다."
+            )
         )
     return TariffSwitchResult(
         current=quote_by_key[str(current_selection)],
@@ -183,6 +189,5 @@ def evaluate_tariff_switch(
         period_label=current_bill.period_label,
         current_bill=current_bill,
         best_bill=best_bill,
-        warnings=current_bill.warnings,
-        notes=tuple(notes),
+        notices=(*current_bill.notices, *notices),
     )

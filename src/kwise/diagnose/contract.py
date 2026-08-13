@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from kwise.notices import Notice, basis, block, warn
 from kwise.rules import assumption, rule_value
 from kwise.tariff import TariffSelection
 
@@ -106,7 +107,7 @@ class ContractAdequacy:
     reduction_kw: float
     saving_won: float | None
     saving_basis: str
-    warnings: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     @property
     def is_over_contracted(self) -> bool:
@@ -145,26 +146,30 @@ def assess_contract(
     suggested = min(contract_kw, math.ceil(target / step_kw) * step_kw)
     reduction = max(0.0, contract_kw - suggested)
 
-    warnings: list[str] = [_MARGIN_NOTICE]
+    notices: list[Notice] = [warn(_MARGIN_NOTICE)]
     if over_slots:
-        warnings.append(
-            f"계약전력 {contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 있습니다. "
-            "하향 대상이 아니라 상향·초과 위약 검토 대상입니다."
+        notices.append(
+            warn(
+                f"계약전력 {contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 있습니다. "
+                "하향 대상이 아니라 상향·초과 위약 검토 대상입니다."
+            )
         )
 
     saving: float | None = None
     if contract_floor_ratio is None:
-        basis = "하한 규정 미확인 — 미산출"
-        warnings.append(_FLOOR_UNKNOWN)
+        basis_text = "하한 규정 미확인 — 미산출"
+        # **차단** — 금액을 만들지 않는다.
+        notices.append(block(_FLOOR_UNKNOWN))
     else:
         # 재계산한다. 두 계약전력 각각에서 요금적용전력을 다시 구해 기본요금을 낸다.
         current_demand = max(billing_demand_kw, contract_kw * contract_floor_ratio)
         target_demand = max(billing_demand_kw, suggested * contract_floor_ratio)
         saving = (current_demand - target_demand) * base_rate_won_per_kw * base_fee_months
-        basis = (
+        basis_text = (
             f"요금적용전력 하한 {contract_floor_ratio:.0%} 가정, "
             f"기본요금 {base_fee_months:.2f}개월분 기준"
         )
+        notices.append(basis(basis_text))
 
     return ContractAdequacy(
         contract_kw=contract_kw,
@@ -177,6 +182,6 @@ def assess_contract(
         suggested_contract_kw=suggested,
         reduction_kw=reduction,
         saving_won=saving,
-        saving_basis=basis,
-        warnings=tuple(warnings),
+        saving_basis=basis_text,
+        notices=tuple(notices),
     )

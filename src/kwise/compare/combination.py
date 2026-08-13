@@ -38,6 +38,7 @@ from kwise.measures import (
 from kwise.measures.contract import ContractAdjustment, evaluate_contract_adjustment
 from kwise.measures.ess import analyze_peak_excess
 from kwise.measures.pv_cost import PV_UNPRICED_REASON, PvCostInput
+from kwise.notices import Notice, basis, block, warn
 from kwise.progress import ProgressReporter, record
 from kwise.pv import sharpen
 from kwise.quality import QualityReport
@@ -156,8 +157,7 @@ class CombinationResult:
     contract_saving_won: float | None = None
     contract_adjustment: ContractAdjustment | None = None
     """조합 부하 기준의 계약전력 조정. **추가 하향 여지가 여기서 나온다** (14세션 5-2)."""
-    warnings: tuple[str, ...] = field(default=())
-    notes: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     @property
     def name(self) -> str:
@@ -176,8 +176,7 @@ class ComparisonResult:
     combinations: tuple[CombinationResult, ...]
     base_fee_months: float
     period_label: str
-    warnings: tuple[str, ...] = field(default=())
-    notes: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     def frame(self) -> pd.DataFrame:
         """조합 | 절감액 | 투자비 | 회수기간 | 확실성."""
@@ -234,8 +233,7 @@ def evaluate_combination(
         # 역률은 **요금 옵션**이다. 부하를 바꾸지 않고 기본요금 조정액만 바꾼다.
         opts = replace(opts, power_factor_pct=spec.power_factor_pct)
     interval = usage.meta.interval_minutes
-    warnings: list[str] = []
-    notes: list[str] = []
+    notices: list[Notice] = []
 
     generated_kwh = 0.0
     surplus_kwh = 0.0
@@ -282,28 +280,36 @@ def evaluate_combination(
             respect_target_when_charging=spec.ess_respect_target_when_charging,
         )
         working = with_load(working, dispatch.net_kw, source_suffix=" + ESS")
-        notes.append(
-            f"ESS {power:,.0f} kW / {capacity:,.0f} kWh — 하루 최대 초과 에너지 "
-            f"{excess.max_daily_excess_kwh:,.1f} kWh 기준으로 잡았습니다. "
-            f"부록 B 의 총 초과 에너지({excess.total_excess_kwh:,.1f} kWh)는 기간 합계라 "
-            "용량 산정에 쓰지 않습니다."
+        notices.append(
+            basis(
+                f"ESS {power:,.0f} kW / {capacity:,.0f} kWh — 하루 최대 초과 에너지 "
+                f"{excess.max_daily_excess_kwh:,.1f} kWh 기준으로 잡았습니다. "
+                f"부록 B 의 총 초과 에너지({excess.total_excess_kwh:,.1f} kWh)는 기간 합계라 "
+                "용량 산정에 쓰지 않습니다."
+            )
         )
         if dispatch.charge_created_new_peak:
-            warnings.append(
-                f"'{spec.name}' — 경부하 충전이 목표를 넘는 새 피크를 만들었습니다. "
-                f"충전 시간대 최대 {dispatch.charge_window_peak_kw:,.1f} kW > 목표 "
-                f"{spec.ess_target_kw:,.0f} kW. ess_charge_limit_kw 로 제한하십시오."
+            notices.append(
+                warn(
+                    f"'{spec.name}' — 경부하 충전이 목표를 넘는 새 피크를 만들었습니다. "
+                    f"충전 시간대 최대 {dispatch.charge_window_peak_kw:,.1f} kW > 목표 "
+                    f"{spec.ess_target_kw:,.0f} kW. ess_charge_limit_kw 로 제한하십시오."
+                )
             )
         elif dispatch.charge_window_rise_kw > 0:
-            notes.append(
-                f"경부하 충전으로 충전 시간대 최대 부하가 "
-                f"{dispatch.charge_window_rise_kw:,.1f} kW 올랐습니다 "
-                f"(목표 {spec.ess_target_kw:,.0f} kW 이내)."
+            notices.append(
+                basis(
+                    f"경부하 충전으로 충전 시간대 최대 부하가 "
+                    f"{dispatch.charge_window_rise_kw:,.1f} kW 올랐습니다 "
+                    f"(목표 {spec.ess_target_kw:,.0f} kW 이내)."
+                )
             )
         if not dispatch.target_met:
-            warnings.append(
-                f"'{spec.name}' — 목표 {spec.ess_target_kw:,.0f} kW 를 지키지 못했습니다. "
-                f"달성 {dispatch.achieved_peak_kw:,.1f} kW, 미달 {dispatch.unmet_kwh:,.1f} kWh."
+            notices.append(
+                warn(
+                    f"'{spec.name}' — 목표 {spec.ess_target_kw:,.0f} kW 를 지키지 못했습니다. "
+                    f"달성 {dispatch.achieved_peak_kw:,.1f} kW, 미달 {dispatch.unmet_kwh:,.1f} kWh."
+                )
             )
 
     bill = calculate_bill(working, table, spec.selection, options=opts, quality=quality)
@@ -318,8 +324,7 @@ def evaluate_combination(
             contract_floor_ratio=spec.contract_floor_ratio,
         )
         contract_saving = adjustment.saving_won
-        warnings.extend(adjustment.warnings)
-        notes.extend(adjustment.notes)
+        notices.extend(adjustment.notices)
 
     # 투자비를 **모르면 0 이 아니라 None 이다.** 0 으로 두면 회수기간이 0년으로
     # 나와 "즉시 회수" 로 읽힌다.
@@ -328,7 +333,7 @@ def evaluate_combination(
         pv_investment = spec.pv_cost.investment_won(spec.pv_capacity_kwp)
         if pv_investment is None:
             investment = None
-            notes.append(PV_UNPRICED_REASON)
+            notices.append(block(PV_UNPRICED_REASON))
         elif investment is not None:
             investment += pv_investment
     if spec.power_factor_investment_won and investment is not None:
@@ -354,7 +359,7 @@ def evaluate_combination(
                     ),
                 )
             ess_investment = model.quote(dispatch.capacity_kwh).total_won
-            notes.append(model.formula + " — 조달 사례 회귀로 ESS 투자비를 산정했습니다.")
+            notices.append(basis(model.formula + " — 조달 사례 회귀로 ESS 투자비를 산정했습니다."))
         if investment is not None and ess_investment is not None:
             investment += ess_investment
 
@@ -375,8 +380,7 @@ def evaluate_combination(
         dispatch=dispatch,
         contract_saving_won=contract_saving,
         contract_adjustment=adjustment,
-        warnings=tuple(warnings),
-        notes=tuple(notes),
+        notices=tuple(notices),
     )
 
 
@@ -475,17 +479,19 @@ def compare_combinations(
             )
         )
 
-    warnings = tuple(message for item in results for message in item.warnings)
-    notes = (
-        "조합의 절감액은 수단별 절감액의 합이 아닙니다. 조합마다 부하를 다시 만들어 "
-        "요금을 처음부터 산출했습니다 (요구사항서 8장).",
-        "확실성 등급은 가장 낮은 구성 요소를 따릅니다.",
+    # 합산 금지 규칙은 **근거**다 — 표의 숫자가 어떻게 만들어졌는지 그 자체다.
+    notices = (
+        *(item for result in results for item in result.notices),
+        basis(
+            "조합의 절감액은 수단별 절감액의 합이 아닙니다. 조합마다 부하를 다시 만들어 "
+            "요금을 처음부터 산출했습니다 (요구사항서 8장)."
+        ),
+        basis("확실성 등급은 가장 낮은 구성 요소를 따릅니다."),
     )
     return ComparisonResult(
         baseline=results[0],
         combinations=tuple(results),
         base_fee_months=base.base_fee_months,
         period_label=base.period_label,
-        warnings=warnings,
-        notes=notes,
+        notices=notices,
     )

@@ -52,6 +52,7 @@ from enum import StrEnum
 import pandas as pd
 
 from kwise.io import slot_start
+from kwise.notices import Notice, basis, block, info, warn
 from kwise.rules import assumption, rule_value
 from kwise.tariff import HolidayCalendar
 
@@ -315,8 +316,7 @@ class DrProfile:
     resource_types: tuple[DrResourceType, ...]
     potential: DrPotential
     bid_restriction_months: float
-    warnings: tuple[str, ...] = field(default=())
-    notes: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     @property
     def eligible_day_ratio(self) -> float:
@@ -400,8 +400,7 @@ def _empty_profile(
     threshold: float | None,
     weekday_mean: float | None,
     resource_types: tuple[DrResourceType, ...],
-    warnings: list[str],
-    notes: list[str],
+    notices: list[Notice],
 ) -> DrProfile:
     """저부하 평일이 없을 때. **0 을 내되 이유를 적는다.**"""
     return DrProfile(
@@ -428,8 +427,7 @@ def _empty_profile(
         resource_types=resource_types,
         potential=DrPotential.LOW,
         bid_restriction_months=dr_bid_restriction_months(),
-        warnings=tuple(warnings),
-        notes=tuple(notes),
+        notices=tuple(notices),
     )
 
 
@@ -489,23 +487,32 @@ def dr_profile(
     eligible_index = tuple(pd.DatetimeIndex(eligible_days))
 
     resource_types = judge_resource_types(contract_type, contract_kw)
-    warnings: list[str] = []
-    notes: list[str] = [
-        "경제성DR 은 '관공서의 공휴일에 관한 규정'의 공휴일과 토요일을 제외한 "
-        f"평일에만 입찰할 수 있습니다 (전력시장운영규칙 제12.4.2.1조 제1항 1호). "
-        f"기간 {len(all_days)}일 중 거래 가능일은 {len(eligible_days)}일입니다.",
-        "요금 계량의 평일 판정과 다릅니다. 요금은 토요일을 중간부하로 낮출 뿐 "
-        "공휴일로 보지 않지만, DR 은 토·일·공휴일이 모두 제외입니다.",
-        "**연간 참여 일수 제한은 없습니다** (14세션에 바로잡았습니다). 남는 제약은 "
-        f"하루 {dr_max_events_per_day()}회 × 최대 {dr_event_hours()[1]:,.0f}시간"
-        f"(하루 {daily_cap:,.0f}시간)과 운영 시간대"
-        f"({_window_label(windows)}) 뿐이므로, 실질 제약은 「감축할 여력이 있는 날이 "
-        "며칠이냐」 하나입니다.",
+    notices: list[Notice] = [
+        # 거래 가능일 판정은 **근거**다 — 감축 가능량의 분모를 만든다.
+        basis(
+            "경제성DR 은 '관공서의 공휴일에 관한 규정'의 공휴일과 토요일을 제외한 "
+            f"평일에만 입찰할 수 있습니다 (전력시장운영규칙 제12.4.2.1조 제1항 1호). "
+            f"기간 {len(all_days)}일 중 거래 가능일은 {len(eligible_days)}일입니다."
+        ),
+        # 제도 설명 둘은 **참고**다. 숫자를 만들지 않는다.
+        info(
+            "요금 계량의 평일 판정과 다릅니다. 요금은 토요일을 중간부하로 낮출 뿐 "
+            "공휴일로 보지 않지만, DR 은 토·일·공휴일이 모두 제외입니다."
+        ),
+        info(
+            "**연간 참여 일수 제한은 없습니다** (14세션에 바로잡았습니다). 남는 제약은 "
+            f"하루 {dr_max_events_per_day()}회 × 최대 {dr_event_hours()[1]:,.0f}시간"
+            f"(하루 {daily_cap:,.0f}시간)과 운영 시간대"
+            f"({_window_label(windows)}) 뿐이므로, 실질 제약은 「감축할 여력이 있는 날이 "
+            "며칠이냐」 하나입니다."
+        ),
     ]
     if contract_kw is None:
-        warnings.append(
-            "계약전력이 없어 국민DR·중소형DR 해당 여부를 확정하지 못했습니다 "
-            "(제12.1.1조). 표준DR 은 계약종별 제한이 없습니다."
+        notices.append(
+            warn(
+                "계약전력이 없어 국민DR·중소형DR 해당 여부를 확정하지 못했습니다 "
+                "(제12.1.1조). 표준DR 은 계약종별 제한이 없습니다."
+            )
         )
 
     # ① 기준선 — **주말·공휴일**의 운영 시간대 평균. 건물이 사실상 비어 있는 수준이다.
@@ -516,9 +523,12 @@ def dr_profile(
     weekday_mean = float(weekday_slots.mean()) if len(weekday_slots) else None
 
     if not len(weekend_slots) or not len(weekday_slots):
-        warnings.append(
-            "주말·공휴일 또는 평일의 운영 시간대 관측치가 없어 저부하 평일을 "
-            "찾지 못했습니다. 감축 가능량을 산출하지 않습니다."
+        # **차단** — 감축 가능량이 나오지 않는다.
+        notices.append(
+            block(
+                "주말·공휴일 또는 평일의 운영 시간대 관측치가 없어 저부하 평일을 "
+                "찾지 못했습니다. 감축 가능량을 산출하지 않습니다."
+            )
         )
         return _empty_profile(
             eligible_days=len(eligible_days),
@@ -532,16 +542,17 @@ def dr_profile(
             threshold=None,
             weekday_mean=weekday_mean,
             resource_types=resource_types,
-            warnings=warnings,
-            notes=notes,
+            notices=notices,
         )
 
     baseline_kw = float(weekend_slots.mean())
     threshold = baseline_kw * multiple
-    notes.append(
-        f"기준선 {baseline_kw:,.0f} kW 는 주말·공휴일 {weekend_days}일의 운영 시간대 "
-        f"평균 부하입니다. 건물이 사실상 비어 있을 때의 수준이며, 저부하 평일 문턱은 "
-        f"그 {multiple:.2g}배인 {threshold:,.0f} kW 입니다."
+    notices.append(
+        basis(
+            f"기준선 {baseline_kw:,.0f} kW 는 주말·공휴일 {weekend_days}일의 운영 시간대 "
+            f"평균 부하입니다. 건물이 사실상 비어 있을 때의 수준이며, 저부하 평일 문턱은 "
+            f"그 {multiple:.2g}배인 {threshold:,.0f} kW 입니다."
+        )
     )
 
     # ② 저부하 평일 — 대상일 중 운영 시간대 평균이 문턱 이하인 날. 정전일은 뺀다.
@@ -555,10 +566,12 @@ def dr_profile(
     normal_mean = float(day_mean[normal_days].mean()) if normal_days else weekday_mean
 
     if not low_days or normal_mean is None:
-        warnings.append(
-            f"저부하 평일이 없습니다 — 대상일 {len(day_mean)}일 가운데 운영 시간대 "
-            f"평균이 문턱 {threshold:,.0f} kW 이하인 날이 없습니다. 감축은 실제 운영 "
-            "축소를 뜻하므로 생산·재실 영향과 함께 검토하십시오."
+        notices.append(
+            warn(
+                f"저부하 평일이 없습니다 — 대상일 {len(day_mean)}일 가운데 운영 시간대 "
+                f"평균이 문턱 {threshold:,.0f} kW 이하인 날이 없습니다. 감축은 실제 운영 "
+                "축소를 뜻하므로 생산·재실 영향과 함께 검토하십시오."
+            )
         )
         return _empty_profile(
             eligible_days=len(eligible_days),
@@ -572,8 +585,7 @@ def dr_profile(
             threshold=threshold,
             weekday_mean=weekday_mean,
             resource_types=resource_types,
-            warnings=warnings,
-            notes=notes,
+            notices=notices,
         )
 
     # ③④ 저부하일별 감축 여력과 참여 가능 시간.
@@ -604,30 +616,39 @@ def dr_profile(
     registered = float(positive.quantile(registration)) if len(positive) else 0.0
     mean_reducible = float(reducible.mean())
 
-    notes.append(
-        f"저부하 평일 {len(low_days)}일을 찾았습니다. 감축 여력은 평일 정상 평균 "
-        f"{normal_mean:,.0f} kW 에서 그날 실제 부하를 뺀 값이고, 참여 시간은 저부하가 "
-        f"지속되는 시간을 하루 한도 {daily_cap:,.0f}시간으로 자른 값입니다."
+    # 셋 다 **근거**다 — 등록 용량·감축량이 어느 산식에서 나왔는지 적는다.
+    notices.append(
+        basis(
+            f"저부하 평일 {len(low_days)}일을 찾았습니다. 감축 여력은 평일 정상 평균 "
+            f"{normal_mean:,.0f} kW 에서 그날 실제 부하를 뺀 값이고, 참여 시간은 저부하가 "
+            f"지속되는 시간을 하루 한도 {daily_cap:,.0f}시간으로 자른 값입니다."
+        )
     )
-    notes.append(
-        f"**감축 가능량 {annual_kwh:,.0f} kWh/년** = Σ(저부하일별 감축 여력 × 그날 "
-        f"참여 가능 시간). 관측 기간 {len(all_days)}일의 합 {period_kwh:,.0f} kWh 를 "
-        "365일로 환산했습니다."
+    notices.append(
+        basis(
+            f"**감축 가능량 {annual_kwh:,.0f} kWh/년** = Σ(저부하일별 감축 여력 × 그날 "
+            f"참여 가능 시간). 관측 기간 {len(all_days)}일의 합 {period_kwh:,.0f} kWh 를 "
+            "365일로 환산했습니다."
+        )
     )
-    notes.append(
-        f"**등록 권장 용량 {registered:,.0f} kW** 는 저부하일 여력 분포의 하위 "
-        f"{registration:.0%} 입니다. 사업자와 계약할 때 등록하는 값이며, 평균 "
-        f"{mean_reducible:,.0f} kW 로 등록하면 절반의 날에 미달합니다 — 미달은 "
-        f"{dr_bid_restriction_months():,.0f}개월 입찰 제한입니다."
+    notices.append(
+        basis(
+            f"**등록 권장 용량 {registered:,.0f} kW** 는 저부하일 여력 분포의 하위 "
+            f"{registration:.0%} 입니다. 사업자와 계약할 때 등록하는 값이며, 평균 "
+            f"{mean_reducible:,.0f} kW 로 등록하면 절반의 날에 미달합니다 — 미달은 "
+            f"{dr_bid_restriction_months():,.0f}개월 입찰 제한입니다."
+        )
     )
 
     if registered < reference_kw:
-        warnings.append(
-            f"등록 권장 용량 {registered:,.0f} kW 가 참고 문턱 "
-            f"{reference_kw:,.0f} kW (0.1 MW-h) 아래입니다. "
-            "이 문턱은 수요관리사업자가 **묶은 자원 단위** 기준이라 개별 고객에게 "
-            "그대로 적용되지 않습니다 (제12.4.2.1조 제1항 2호). 다른 고객과 묶여 "
-            "참여할 수 있으므로 사업자와 상담하십시오."
+        notices.append(
+            warn(
+                f"등록 권장 용량 {registered:,.0f} kW 가 참고 문턱 "
+                f"{reference_kw:,.0f} kW (0.1 MW-h) 아래입니다. "
+                "이 문턱은 수요관리사업자가 **묶은 자원 단위** 기준이라 개별 고객에게 "
+                "그대로 적용되지 않습니다 (제12.4.2.1조 제1항 2호). 다른 고객과 묶여 "
+                "참여할 수 있으므로 사업자와 상담하십시오."
+            )
         )
 
     if registered >= high_capacity_kw:
@@ -661,8 +682,7 @@ def dr_profile(
         resource_types=resource_types,
         potential=potential,
         bid_restriction_months=dr_bid_restriction_months(),
-        warnings=tuple(warnings),
-        notes=tuple(notes),
+        notices=tuple(notices),
     )
 
 

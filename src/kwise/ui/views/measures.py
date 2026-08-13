@@ -37,6 +37,7 @@ from kwise.measures import (
     load_ess_cost_model,
     power_factor_floor_pct,
 )
+from kwise.notices import Notice, basis, tooltip
 from kwise.pv import PvPresets, capacity_preview, load_pv_presets
 from kwise.quality import QualityReport
 from kwise.report import CONTRACT_CHANGE_WARNING
@@ -63,7 +64,7 @@ from kwise.ui.cache import (
 )
 from kwise.ui.context import AnalysisContext
 from kwise.ui.labels import option_label, selection_label
-from kwise.ui.notices import screen_notices
+from kwise.ui.notices import screen_notices, tooltip_text
 from kwise.ui.pipeline import ContractForm, SolarInputs
 from kwise.ui.progress import progress_panel
 from kwise.ui.spec import MEASURES, MeasureSpec
@@ -288,7 +289,7 @@ def _tariff_switch(
         "맞바꾸는 제도**입니다 — 기본요금이 오르는 대신 전력량요금이 내려갑니다. "
         "세로축은 0 부터 시작하지 않습니다."
     )
-    _notes(result.warnings, result.notes)
+    _notices(result.notices)
 
 
 # --------------------------------------------------------------------- 7.2
@@ -367,10 +368,7 @@ def _contract(
     # 계약전력을 바꿀 생각을 하기 전에 읽혀 지나쳤다 — 바꾸자고 제안하는 자리가
     # 이 경고의 제자리다. **문구는 산출물과 같은 원문 그대로다.**
     _caution(CONTRACT_CHANGE_WARNING)
-    _notes(
-        tuple(item for item in result.warnings if item != CONTRACT_CHANGE_WARNING),
-        result.notes,
-    )
+    _notices(tuple(item for item in result.notices if item.text != CONTRACT_CHANGE_WARNING))
 
 
 def _adequacy(diagnosis: Diagnosis) -> None:
@@ -468,10 +466,7 @@ def _demand_response(
         "자원 유형 — " + (", ".join(str(item) for item in result.resource_types) or "판정 불가")
     )
     # 참여 안내는 바로 위에 냈다. 확인사항에서 한 번 더 내지 않는다 (10.7).
-    _notes(
-        tuple(item for item in result.warnings if not item.startswith("낙찰 후 감축을")),
-        result.notes,
-    )
+    _notices(tuple(item for item in result.notices if not item.text.startswith("낙찰 후 감축을")))
 
 
 # --------------------------------------------------------------------- 7.4
@@ -552,7 +547,7 @@ def _power_factor(
             f"현재 지상역률이 기준 {standard:,.0f}% 에 미달합니다 "
             f"({fmt.pct(result.current_pct)}). 매 1%p 마다 기본요금이 추가됩니다."
         )
-    _notes(result.warnings, result.notes)
+    _notices(result.notices)
 
 
 # --------------------------------------------------------------------- 7.5
@@ -803,7 +798,7 @@ def _solar(
         )
         st.altair_chart(charts.solar_day_chart(usage, generation, day, zoom=True), width="stretch")
         st.caption(f"피크 앞뒤 {charts.PEAK_ZOOM_HOURS}시간만 확대한 그림입니다.")
-    _notes(curve.warnings, curve.notes)
+    _notices(curve.notices)
 
 
 def _capacity_view(frame: pd.DataFrame) -> pd.DataFrame:
@@ -1040,24 +1035,24 @@ def _ess(
         )
     # **투자비 내역·계수·성립 조건은 확인사항으로 내린다** (17세션 4-2·4-3).
     # 본문에는 투자비 합계·절감액·회수기간만 남긴다 — 위 지표 넷이 그것이다.
-    _notes(result.warnings, result.notes, (_ess_basis_note(base_fee), *_ess_details(result, model)))
+    _notices((*result.notices, _ess_basis_note(base_fee), *_ess_details(result, model)))
 
 
-def _ess_basis_note(base_fee_won_per_kw: float) -> str:
+def _ess_basis_note(base_fee_won_per_kw: float) -> Notice:
     """두 기준의 차이 **한 줄** (18세션 1절).
 
     곡선은 기본요금 절감만 본 개략치로 목표를 고르고, 결론 숫자는 요금을 다시
     계산한 이 카드가 낸다. 차이를 지우지는 않되 **결론 옆에 두지 않는다** —
     한 줄이면 되는 사실이라 확인사항으로 내린다.
     """
-    return (
+    return basis(
         "목표 선택 곡선은 기본요금 절감만 본 개략치입니다 (현행 요금제 기본요금단가 "
         f"{fmt.count(base_fee_won_per_kw, ' 원/kW')} × 12개월). 위 결과는 그 목표에서 "
         "요금을 다시 계산하고 왕복효율·DoD 를 반영한 값이라 회수기간이 더 깁니다."
     )
 
 
-def _ess_details(result: object, model: object) -> tuple[str, ...]:
+def _ess_details(result: object, model: object) -> tuple[Notice, ...]:
     """ESS 투자비 내역·계수·성립 조건 (17세션 4-2).
 
     **본문에서 확인사항으로 내렸다.** 넉 줄이 결과 아래에 붙어 있으면 정작
@@ -1090,8 +1085,8 @@ def _ess_details(result: object, model: object) -> tuple[str, ...]:
     # **같은 사실을 두 번 적지 않는다.** ESS 는 경고·메모가 스물이 넘어, 옮겨 온
     # 줄이 그 안의 문장과 겹치면 확인사항이 같은 말을 되풀이한다. 앞의 라벨
     # (``성립 조건 — ``)을 떼고 알맹이로 견준다.
-    already = " \n".join((*getattr(result, "warnings", ()), *getattr(result, "notes", ())))
-    return tuple(line for line in lines if line and line.split(" — ")[-1] not in already)
+    already = " \n".join(item.text for item in getattr(result, "notices", ()))
+    return tuple(basis(line) for line in lines if line and line.split(" — ")[-1] not in already)
 
 
 def _ess_cost_inputs() -> tuple[float, float | None, float | None]:
@@ -1210,36 +1205,35 @@ def _surplus(
         width="stretch",
     )
     _hint(ELIGIBILITY_NOTICE)
-    _notes((), result.notes)
+    _notices(result.notices)
 
 
 # --------------------------------------------------------------------- 공통
 
 
-def _notes(
-    warnings: tuple[str, ...], notes: tuple[str, ...], details: tuple[str, ...] = ()
-) -> None:
-    """**확인사항 하나로 합친다** (10.7).
+def _notices(notices: tuple[Notice, ...]) -> None:
+    """등급대로 자리를 나눈다 (19세션 1절).
 
-    노란 상자 넷과 계산 메모가 따로 뜨던 구성은 무엇이 중요한지 가린다.
-    주의 등급만 모아 접힌 상자 하나에 넣고, 참고 등급은 산출물로 보낸다.
+        차단·주의  카드 본문. 아이콘을 달고 그대로 보인다
+        근거      **툴팁 하나로 접는다** — 매번 볼 것은 아니지만 결과를
+                  신뢰할지 판단할 때 필요하다
+        참고      화면에 없다. 보고서 부록으로 간다
 
-    Args:
-        details: 등급을 매기지 않는 **산출 내역** (17세션 4-2). 경고가 아니라
-            근거이므로 ⚠ 를 붙이지 않고 사실만 적는다. 본문에 두면 정작 읽어야
-            할 지표를 밀어낸다.
+    17세션에 ESS 확인사항이 스물둘이었다. 세어 보니 그 대부분이 참고가 아니라
+    **근거**였다 — 산식·출처·계수. 접힌 상자 하나에 스물둘을 쌓으면 정작
+    위험한 두 건이 묻히므로, 근거는 툴팁으로 내리고 본문에는 차단·주의만 남긴다.
+
+    **배경색 상자를 쓰지 않는다** (15세션 4절). 차단만 색을 남기고 나머지는
+    아이콘으로 구분한다.
     """
-    items = screen_notices(warnings, notes)
-    if not items and not details:
-        return
-    count = len(items) + len(details)
-    # **배경색 상자를 쓰지 않는다** (15세션 4절). 열 줄이 같은 노란색으로 쌓이면
-    # 무엇이 중요한지 오히려 알 수 없다. 차단만 색을 남기고 나머지는 아이콘으로.
-    with st.expander(f"확인사항 {count}건", expanded=False):
-        for line in details:
-            st.write(f"- {fmt.markdown_safe(line)}")
-        for item in items:
-            callout.render_notice(item)
+    for item in screen_notices(notices):
+        callout.render_notice(item)
+    grounds = tooltip(notices)
+    if grounds:
+        st.caption(
+            f"산출 근거 {len(grounds)}건",
+            help=tooltip_text(notices, header="**이 숫자가 어디서 나왔나**"),
+        )
 
 
 _HANDLERS = {

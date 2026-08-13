@@ -21,6 +21,7 @@ import pandas as pd
 import pytest
 
 from kwise.io import UsageData
+from kwise.notices import texts
 from kwise.quality import QualityReport
 from kwise.tariff import (
     BANDS,
@@ -317,7 +318,7 @@ def test_type_a_base_fee_uses_the_contract_power(
     assert bill.total_base_won == pytest.approx(250.0 * rate * bill.base_fee_months)
     # 요금적용전력은 참고용으로 함께 싣는다. 기본요금에는 쓰지 않는다.
     assert bill.billing_demand_kw > 250.0
-    assert any("계약전력" in note and "갑 종별" in note for note in bill.notes)
+    assert any("계약전력" in note and "갑 종별" in note for note in texts(bill.notices))
 
 
 def test_type_a_refuses_to_guess_the_contract_power(

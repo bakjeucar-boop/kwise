@@ -15,6 +15,7 @@ import pandas as pd
 import pytest
 
 from kwise.io import UsageData, load_usage
+from kwise.notices import texts
 from kwise.quality import QualityReport
 from kwise.tariff import (
     NOT_INCLUDED_NOTICE,
@@ -236,7 +237,7 @@ def test_prior_peaks_outside_the_window_are_ignored() -> None:
 
 def test_missing_prior_history_is_warned(sample_bill: BillingResult) -> None:
     assert not sample_bill.prior_peaks_supplied
-    assert any("직전 12개월" in message for message in sample_bill.warnings)
+    assert any("직전 12개월" in message for message in texts(sample_bill.notices))
 
 
 def test_sample_billing_demand_follows_the_12_month_rule(sample_bill: BillingResult) -> None:
@@ -282,7 +283,7 @@ def test_sample_november_is_marked_limited(sample_bill: BillingResult) -> None:
     assert row["missing_ratio"] == pytest.approx(0.323, abs=0.005)
     assert row["demand_confidence"] == "신뢰 제한"
     assert sample_bill.limited_months == (pd.Period("2023-11", freq="M"),)
-    assert any("신뢰 제한" in message for message in sample_bill.warnings)
+    assert any("신뢰 제한" in message for message in texts(sample_bill.notices))
 
 
 def test_sample_november_adjusted_energy_charge(sample_bill: BillingResult) -> None:
@@ -353,7 +354,7 @@ def test_sample_partial_months_are_the_two_aprils(sample_bill: BillingResult) ->
     assert partial.loc[pd.Period("2024-04", freq="M"), "covered_days"] == pytest.approx(26.0)
     # 두 조각을 합쳐 한 달 — 6/32 + 26/32 = 1
     assert partial["base_fee_factor"].sum() == pytest.approx(1.0)
-    assert any("두 조각을 합쳐" in note for note in sample_bill.notes)
+    assert any("두 조각을 합쳐" in note for note in texts(sample_bill.notices))
 
 
 def test_prorate_policy_is_available_and_labelled(
@@ -368,7 +369,7 @@ def test_prorate_policy_is_available_and_labelled(
     # 6/30 + 26/30 = 1.0667
     assert result.base_fee_months == pytest.approx(11 + 6 / 30 + 26 / 30)
     assert result.partial_month_policy == "prorate"
-    assert any("일수 비례" in note for note in result.notes)
+    assert any("일수 비례" in note for note in texts(result.notices))
     assert result.total_base_won > 0
 
 
@@ -379,14 +380,14 @@ def test_single_partial_month_falls_back_to_prorating(tmp_path: Path, tariff: Ta
     rows_path.write_text("\n".join(text[: 1 + 96 * 10]) + "\n", encoding="utf-8-sig")
     result = bill(load_usage(rows_path), tariff)
     assert result.base_fee_months == pytest.approx(10 / 31)
-    assert any("합칠 짝이 없어" in note for note in result.notes)
+    assert any("합칠 짝이 없어" in note for note in texts(result.notices))
 
 
 def test_annualize_scales_to_twelve_months(sample_bill: BillingResult) -> None:
     annual = sample_bill.annualize()
     assert annual.factor == pytest.approx(1.0)  # 이미 12개월분이다
     assert annual.total_won == pytest.approx(sample_bill.total_won)
-    assert annual.warnings == ()
+    assert texts(annual.notices) == ()
 
 
 def test_annualize_warns_for_short_periods(tmp_path: Path, tariff: TariffTable) -> None:
@@ -394,7 +395,7 @@ def test_annualize_warns_for_short_periods(tmp_path: Path, tariff: TariffTable) 
     annual = result.annualize()
     assert annual.factor == pytest.approx(12.0)
     assert annual.total_won == pytest.approx(result.total_won * 12)
-    assert any("12개월 미만" in message for message in annual.warnings)
+    assert any("12개월 미만" in message for message in texts(annual.notices))
 
 
 def test_period_label_is_used_instead_of_annual(sample_bill: BillingResult) -> None:
@@ -435,14 +436,14 @@ def test_traceability_is_reported(sample_bill: BillingResult) -> None:
 
 def test_excluded_charge_elements_are_stated(sample_bill: BillingResult) -> None:
     """기본요금·전력량요금만 계산했다는 사실을 반드시 적는다 (5.1)."""
-    assert NOT_INCLUDED_NOTICE in sample_bill.notes
-    assert any("부가가치세" in note for note in sample_bill.notes)
-    assert any("경부하 제외" in note for note in sample_bill.notes)
-    assert any("이월되지 않습니다" in note for note in sample_bill.notes)
+    assert NOT_INCLUDED_NOTICE in texts(sample_bill.notices)
+    assert any("부가가치세" in note for note in texts(sample_bill.notices))
+    assert any("경부하 제외" in note for note in texts(sample_bill.notices))
+    assert any("이월되지 않습니다" in note for note in texts(sample_bill.notices))
 
 
 def test_unverified_tariff_is_warned(sample_bill: BillingResult) -> None:
-    assert any("검증되지 않았습니다" in message for message in sample_bill.warnings)
+    assert any("검증되지 않았습니다" in message for message in texts(sample_bill.notices))
 
 
 def test_every_selection_can_be_priced(sample_usage: UsageData, tariff: TariffTable) -> None:
@@ -558,7 +559,7 @@ def test_contract_floor_lifts_the_demand(
     )
     assert (high.monthly["billing_demand_kw"] - 9_000.0).abs().max() < 1e-6
     assert high.billing_demand_kw == pytest.approx(9_000.0)
-    assert any("하한" in message for message in high.warnings)
+    assert any("하한" in message for message in texts(high.notices))
 
     low = calculate_bill(
         sample_usage,
@@ -588,7 +589,7 @@ def test_over_contract_slots_are_flagged_for_the_surcharge(
         options=BillingOptions(contract_kw=5_000.0),
         quality=sample_report,
     )
-    assert any("초과사용부가금" in message for message in result.warnings)
+    assert any("초과사용부가금" in message for message in texts(result.notices))
 
 
 # --------------------------------------------------------------------- 수기 케이스 6
@@ -684,7 +685,7 @@ def test_갑_종별에_기본요금_기준_잠정_경고가_붙는다(
         TariffSelection("general_a_2", "high_a", "I"),
         options=BillingOptions(contract_kw=5_800.0),
     )
-    assert TENTATIVE_BASE_FEE_BASIS_WARNING in bill.warnings
+    assert TENTATIVE_BASE_FEE_BASIS_WARNING in texts(bill.notices)
     assert "제38조" in TENTATIVE_BASE_FEE_BASIS_WARNING
 
 
@@ -696,4 +697,4 @@ def test_을_종별에는_잠정_경고가_붙지_않는다(tariff: TariffTable,
         TariffSelection("general_b", "high_a", "I"),
         options=BillingOptions(contract_kw=5_800.0),
     )
-    assert TENTATIVE_BASE_FEE_BASIS_WARNING not in bill.warnings
+    assert TENTATIVE_BASE_FEE_BASIS_WARNING not in texts(bill.notices)

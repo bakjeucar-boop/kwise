@@ -47,6 +47,7 @@ from kwise.measures import (
     TariffSwitchResult,
     measure_kind,
 )
+from kwise.notices import Notice, report_appendix, report_body, texts
 from kwise.report import figures
 from kwise.report.days import RepresentativeDay
 from kwise.report.notices import (
@@ -113,6 +114,8 @@ class MeasureEntry:
     payback: str
     certainty: str
     cautions: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
+    """이 수단이 낸 안내 **원본**. 부록이 참고 등급만 골라 쓴다 (19세션 1절)."""
     figure: bytes | None = None
     """수단 차트 png (15세션). **화면과 같은 프레임을 본다** — 각자 만들면 어긋난다."""
     figure_caption: str = ""
@@ -120,6 +123,16 @@ class MeasureEntry:
     @property
     def title(self) -> str:
         return self.kind.title
+
+
+def body_lines(notices: tuple[Notice, ...]) -> tuple[str, ...]:
+    """보고서 **본문**에 실을 줄 — 차단·주의·근거 (19세션 1절).
+
+    **근거가 본문으로 온다.** 화면에서는 툴팁으로 접혀 있던 산식·출처·계수가
+    여기서는 펼쳐져야 한다 — 보고서는 나중에 혼자 읽는 문서이고, 그때 물을 것이
+    "이 숫자가 어디서 나왔나" 이기 때문이다. 참고는 5장 부록으로 간다.
+    """
+    return texts(report_body(notices))
 
 
 def _safe_figure(make: Callable[[], bytes]) -> bytes | None:
@@ -170,6 +183,7 @@ def measure_entries(
     power_factor: PowerFactorResult | None = None,
     solar: SolarPoint | None = None,
     solar_certainty: Certainty | None = None,
+    solar_notices: tuple[Notice, ...] = (),
     solar_unpriced_reason: str = "",
     ess: EssResult | None = None,
     surplus: SurplusResult | None = None,
@@ -207,8 +221,9 @@ def measure_entries(
             certainty=str(switch.certainty),
             cautions=(
                 "설비 도입과 무관한 확정 계산입니다. 감도를 적용하지 않습니다.",
-                *switch.warnings,
+                *body_lines(switch.notices),
             ),
+            notices=switch.notices,
             figure=_safe_figure(lambda: figures.tariff_option_png(switch)),
             figure_caption="요금제별 기본요금·전력량요금 구성",
         )
@@ -231,7 +246,8 @@ def measure_entries(
             investment=_won(0.0),
             payback=_payback_text(0.0, 0.0),
             certainty=str(contract.certainty),
-            cautions=(CONTRACT_CHANGE_WARNING, *contract.warnings),
+            cautions=(CONTRACT_CHANGE_WARNING, *body_lines(contract.notices)),
+            notices=contract.notices,
         )
 
     if demand_response is not None:
@@ -254,8 +270,9 @@ def measure_entries(
             cautions=(
                 "정산 단가는 전력거래소 월별 순편익가격과 사업자 수수료로 정해집니다. "
                 "**수요관리사업자 상담이 필요합니다.**",
-                *demand_response.warnings,
+                *body_lines(demand_response.notices),
             ),
+            notices=demand_response.notices,
             figure=(
                 _safe_figure(lambda: figures.dr_daily_png(dr_profile))
                 if dr_profile is not None
@@ -276,7 +293,8 @@ def measure_entries(
             investment=_won(power_factor.investment_won),
             payback=_payback_text(power_factor.payback_years, power_factor.investment_won),
             certainty=str(power_factor.certainty),
-            cautions=power_factor.warnings,
+            cautions=body_lines(power_factor.notices),
+            notices=power_factor.notices,
             figure=_safe_figure(lambda: figures.power_triangle_png(power_factor)),
             figure_caption="전력삼각형 — 각이 좁아질수록 역률이 좋아진다",
         )
@@ -306,6 +324,7 @@ def measure_entries(
             if solar_certainty is not None
             else str(Certainty.MEDIUM),
             cautions=tuple(cautions),
+            notices=solar_notices,
             figure=(
                 _safe_figure(lambda: figures.solar_day_png(usage, solar_generation_kw, day))
                 if usage is not None and day is not None and solar_generation_kw is not None
@@ -328,8 +347,9 @@ def measure_entries(
             certainty=str(ess.certainty),
             cautions=(
                 "규칙기반 단일 디스패치이며 OPEX·열화·교체비를 넣지 않은 단순 회수기간입니다.",
-                *ess.warnings,
+                *body_lines(ess.notices),
             ),
+            notices=ess.notices,
             figure=(
                 _safe_figure(lambda: figures.ess_day_png(usage, ess.dispatch, day, bands=ess_bands))
                 if usage is not None and day is not None
@@ -363,8 +383,9 @@ def measure_entries(
             figure_caption="연간 일별 잉여량 — 주말에 몰리면 자가소비가 어렵다",
             cautions=(
                 "상계거래·외부 구매의 **자격요건은 판정하지 않았습니다.** 금액만 참고하십시오.",
-                *surplus.notes,
+                *body_lines(surplus.notices),
             ),
+            notices=surplus.notices,
         )
 
     return tuple(entries[kind.key] for kind in MEASURE_CATALOG if kind.key in entries)
@@ -398,6 +419,20 @@ class DocumentSections:
     @property
     def building(self) -> str:
         return self.building_name or self.usage.meta.source_name
+
+    def appendix(self) -> tuple[str, ...]:
+        """보고서 부록에 실을 **참고 등급** 전부 (19세션 1절).
+
+        화면에서 뺀 문구가 어디에도 남지 않으면 그냥 사라진 것이다. 요금·진단·
+        조합·수단이 낸 참고를 한자리에 모아 중복을 지우고 싣는다.
+        """
+        groups: list[tuple[Notice, ...]] = [self.bill.notices]
+        if self.diagnosis is not None:
+            groups.append(self.diagnosis.notices)
+        if self.comparison is not None:
+            groups.append(self.comparison.notices)
+        groups.extend(entry.notices for entry in self.measures)
+        return tuple(item.text for item in report_appendix(*groups))
 
     def scope(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """(검토함, 미검토). 넘겨받지 않았으면 수단 목록에서 만든다."""
@@ -807,6 +842,17 @@ def _chapter_scope(document: DocumentType, sections: DocumentSections, number: i
     document.add_heading(f"{number}.4 추적성", level=2)
     _add_bullets(document, sections.bill.traceability())
     _add_bullets(document, DATA_SOURCES)
+
+    # **참고 등급이 도착하는 자리다** (19세션 1절). 화면에서 뺀 전제·제도 설명이
+    # 사라지지 않게 여기 모은다 — 화면에 없는 문구는 반드시 산출물에 있어야 한다.
+    appendix = sections.appendix()
+    if appendix:
+        document.add_heading(f"{number}.5 참고 — 전제와 제도 설명", level=2)
+        document.add_paragraph(
+            "아래는 결과를 읽는 데 필요한 전제와 제도 설명입니다. 화면에서는 "
+            "본문을 가리지 않도록 빼고 여기에 실었습니다."
+        )
+        _add_bullets(document, appendix)
 
 
 # ===================================================================== 조립

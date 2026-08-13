@@ -21,6 +21,7 @@ from kwise.diagnose import (
     peak_profile,
 )
 from kwise.io import UsageData
+from kwise.notices import texts
 from kwise.quality import QualityReport
 from kwise.tariff import (
     TariffSelection,
@@ -178,7 +179,7 @@ def test_diagnose_works_without_contract_info(
     assert result.peak.billing_demand_kw == pytest.approx(5_293.44)
     assert result.summary.pv_potential is PvPotential.HIGH
     assert result.summary.tariff_switch_saving_won is None
-    assert any("계약 정보가 없어" in message for message in result.warnings)
+    assert any("계약 정보가 없어" in message for message in texts(result.notices))
     assert len(result.summary.lines) == 3
 
 
@@ -189,7 +190,7 @@ def test_diagnose_without_contract_kw_still_prices(
     assert result.has_charges
     assert result.contract is None  # 계약전력을 모르면 적정성은 낼 수 없다
     assert result.summary.tariff_switch_saving_won is not None
-    assert any("계약전력을 입력하면" in message for message in result.warnings)
+    assert any("계약전력을 입력하면" in message for message in texts(result.notices))
 
 
 def test_load_pattern_is_reused_not_reimplemented(
@@ -294,9 +295,9 @@ def test_contract_warnings_include_the_penalty_notice(sample_diagnosis: Diagnosi
     """하향은 되돌리기 어렵고 초과 시 위약금이 있다. 여유 확보 권고를 함께 낸다."""
     adequacy = sample_diagnosis.contract
     assert adequacy is not None
-    assert any("여유를 확보" in message for message in adequacy.warnings)
-    assert any("12개월간 적용" in message for message in adequacy.warnings)
-    assert any("여유를 확보" in message for message in sample_diagnosis.warnings)
+    assert any("여유를 확보" in message for message in texts(adequacy.notices))
+    assert any("12개월간 적용" in message for message in texts(adequacy.notices))
+    assert any("여유를 확보" in message for message in texts(sample_diagnosis.notices))
 
 
 def test_over_contract_slots_are_flagged(sample_usage: UsageData) -> None:
@@ -308,7 +309,7 @@ def test_over_contract_slots_are_flagged(sample_usage: UsageData) -> None:
         base_fee_months=12.0,
     )
     assert adequacy.over_contract_slots > 0
-    assert any("넘은 구간" in message for message in adequacy.warnings)
+    assert any("넘은 구간" in message for message in texts(adequacy.notices))
 
 
 def test_invalid_contract_info_raises() -> None:
@@ -372,8 +373,8 @@ def test_contract_saving_is_zero_when_the_floor_does_not_bind(
 
 
 def test_quality_warnings_are_carried_into_the_diagnosis(sample_diagnosis: Diagnosis) -> None:
-    assert any("신뢰 제한" in message for message in sample_diagnosis.warnings)
-    assert any("직전 12개월" in message for message in sample_diagnosis.warnings)
+    assert any("신뢰 제한" in message for message in texts(sample_diagnosis.notices))
+    assert any("직전 12개월" in message for message in texts(sample_diagnosis.notices))
 
 
 # --------------------------------------------------------------------- 5.2 ① 경부하 제외

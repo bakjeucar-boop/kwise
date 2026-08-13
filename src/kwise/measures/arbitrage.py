@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from kwise.io import UsageData
+from kwise.notices import Notice, basis, warn
 from kwise.quality import QualityReport
 from kwise.rules import assumption
 from kwise.tariff import (
@@ -102,7 +103,7 @@ class ArbitrageValue:
     capex_energy_won_per_kwh: float | None = None
     standalone_payback_years: float | None = None
     battery_life_years: tuple[float, float] = (10.0, 15.0)
-    notes: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     @property
     def outlives_battery(self) -> bool:
@@ -222,14 +223,19 @@ def arbitrage_value(
     if capex_energy_won_per_kwh is not None and per_kwh_year > 0:
         payback = capex_energy_won_per_kwh / per_kwh_year
 
-    notes = [
-        "계시별 단가는 요금표에서 가져왔습니다. 사용자 입력이 아닙니다.",
-        f"최대부하가 존재하는 날만 셌습니다 (계절별 {days}). 토요일은 최대부하가 "
-        "중간부하로 계량되고 일요일·공휴일은 전량 경부하라 자동으로 빠집니다.",
-        f"평일 {cycles_per_day:g} 사이클, 왕복효율 {round_trip:.0%} 가정입니다.",
-        "**피크저감 절감액에 더하지 않았습니다.** 피크컷 디스패치가 이미 일부를 "
-        "실현하고 있어 그대로 더하면 이중 계산이 됩니다. 이 값은 매 평일 한 사이클을 "
-        "온전히 돌렸을 때의 잠재값입니다.",
+    notices = [
+        basis("계시별 단가는 요금표에서 가져왔습니다. 사용자 입력이 아닙니다."),
+        basis(
+            f"최대부하가 존재하는 날만 셌습니다 (계절별 {days}). 토요일은 최대부하가 "
+            "중간부하로 계량되고 일요일·공휴일은 전량 경부하라 자동으로 빠집니다."
+        ),
+        basis(f"평일 {cycles_per_day:g} 사이클, 왕복효율 {round_trip:.0%} 가정입니다."),
+        # **주의다.** 그대로 더하면 이중 계산이 되므로 금액을 읽는 방법 자체가 달라진다.
+        warn(
+            "**피크저감 절감액에 더하지 않았습니다.** 피크컷 디스패치가 이미 일부를 "
+            "실현하고 있어 그대로 더하면 이중 계산이 됩니다. 이 값은 매 평일 한 사이클을 "
+            "온전히 돌렸을 때의 잠재값입니다."
+        ),
     ]
     if payback is not None:
         life_low, life_high = 10.0, 15.0
@@ -239,10 +245,12 @@ def arbitrage_value(
             if payback > life_high
             else "배터리 수명 안에 들어옵니다."
         )
-        notes.append(
-            f"차익거래 단독 회수기간 {payback:,.1f}년 — 연 {per_kwh_year:,.0f}원/kWh 로 "
-            f"CAPEX 에너지 성분 {capex_energy_won_per_kwh:,.0f}원/kWh 를 회수합니다. "
-            f"{verdict}"
+        notices.append(
+            basis(
+                f"차익거래 단독 회수기간 {payback:,.1f}년 — 연 {per_kwh_year:,.0f}원/kWh 로 "
+                f"CAPEX 에너지 성분 {capex_energy_won_per_kwh:,.0f}원/kWh 를 회수합니다. "
+                f"{verdict}"
+            )
         )
 
     return ArbitrageValue(
@@ -256,7 +264,7 @@ def arbitrage_value(
         period_days=sum(days.values()),
         capex_energy_won_per_kwh=capex_energy_won_per_kwh,
         standalone_payback_years=payback,
-        notes=tuple(notes),
+        notices=tuple(notices),
     )
 
 

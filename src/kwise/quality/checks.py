@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from kwise.io import UsageData
+from kwise.notices import Notice, basis, warn
 from kwise.quality.missing import (
     DEFAULT_PEAK_HOURS,
     MONTHLY_MISSING_THRESHOLD,
@@ -100,7 +101,7 @@ class QualityReport:
     outliers: OutlierSummary
     consistency: IntervalConsistency
 
-    warnings: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     @property
     def flagged_months(self) -> tuple[MonthlyMissing, ...]:
@@ -227,67 +228,91 @@ def check_quality(
 
 def _with_warnings(report: QualityReport) -> QualityReport:
     """경고 문구를 붙인 사본을 만든다."""
-    messages: list[str] = []
+    messages: list[Notice] = []
 
     if not report.has_full_year:
+        # **주의** — 연간 환산 결과의 신뢰도가 달라진다.
         messages.append(
-            f"기간이 {report.period_days:.0f}일로 12개월 미만입니다. "
-            "연간 환산 결과에 경고를 붙여야 합니다."
+            warn(
+                f"기간이 {report.period_days:.0f}일로 12개월 미만입니다. "
+                "연간 환산 결과에 경고를 붙여야 합니다."
+            )
         )
     if report.missing_ratio > MISSING_RATIO_THRESHOLD:
         messages.append(
-            f"결측률 {report.missing_ratio:.1%} — 임계 {MISSING_RATIO_THRESHOLD:.0%} 초과. "
-            "보간하지 않으며 결측 구간은 계산에서 제외합니다."
+            warn(
+                f"결측률 {report.missing_ratio:.1%} — 임계 {MISSING_RATIO_THRESHOLD:.0%} 초과. "
+                "보간하지 않으며 결측 구간은 계산에서 제외합니다."
+            )
         )
     if report.skew.flagged:
         messages.append(
-            f"최대수요 과소평가 위험 — 평일 "
-            f"{report.skew.peak_hours[0]}~{report.skew.peak_hours[1]}시 결측률이 "
-            f"전체의 {report.skew.multiple:.2f}배입니다."
+            warn(
+                f"최대수요 과소평가 위험 — 평일 "
+                f"{report.skew.peak_hours[0]}~{report.skew.peak_hours[1]}시 결측률이 "
+                f"전체의 {report.skew.multiple:.2f}배입니다."
+            )
         )
     gap = report.longest_gap
     if gap is not None and gap.is_long:
         messages.append(
-            f"최장 연속 결측 {gap.days:.2f}일 ({gap.slots:,}슬롯, {gap.start} ~ {gap.end}). "
-            "이 구간이 든 달은 최대수요 판정 자체가 무의미할 수 있습니다."
+            warn(
+                f"최장 연속 결측 {gap.days:.2f}일 ({gap.slots:,}슬롯, {gap.start} ~ {gap.end}). "
+                "이 구간이 든 달은 최대수요 판정 자체가 무의미할 수 있습니다."
+            )
         )
     for month in report.flagged_months:
         messages.append(
-            f"{month.month} 결측률 {month.ratio:.1%} — 최대수요를 '신뢰 제한' 으로 표시합니다."
+            warn(
+                f"{month.month} 결측률 {month.ratio:.1%} — 최대수요를 '신뢰 제한' 으로 표시합니다."
+            )
         )
+    # 아래는 전부 **근거**다 — 무엇을 어떻게 처리했는지 적는 관측 기록이며,
+    # 결과 해석을 바꾸지는 않는다 (18세션 인벤토리의 6·7번).
     for outage in report.outages:
         messages.append(
-            f"정전 추정 {outage.start} ~ {outage.end} "
-            f"({outage.duration_hours:.2f}시간, 흔적 {outage.decisive_evidence}종). "
-            "편중 판정에서 제외했습니다."
+            basis(
+                f"정전 추정 {outage.start} ~ {outage.end} "
+                f"({outage.duration_hours:.2f}시간, 흔적 {outage.decisive_evidence}종). "
+                "편중 판정에서 제외했습니다."
+            )
         )
     outliers = report.outliers
     if outliers.zero_kw_slots:
-        messages.append(f"0 kW 구간 {outliers.zero_kw_slots:,}건.")
+        messages.append(basis(f"0 kW 구간 {outliers.zero_kw_slots:,}건."))
     if outliers.low_load_count:
         messages.append(
-            f"{outliers.low_load_kw:,.0f} kW 미만 구간 {outliers.low_load_count:,}건 "
-            f"(첫 시각 {outliers.low_load_slots[0]})."
+            basis(
+                f"{outliers.low_load_kw:,.0f} kW 미만 구간 {outliers.low_load_count:,}건 "
+                f"(첫 시각 {outliers.low_load_slots[0]})."
+            )
         )
     if outliers.over_contract_slots:
+        # **주의** — 초과사용부가금 대상이다.
         messages.append(
-            f"계약전력 {outliers.contract_kw:,.0f} kW 초과 {outliers.over_contract_slots:,}건, "
-            f"최대 {outliers.over_contract_max_kw:,.1f} kW."
+            warn(
+                f"계약전력 {outliers.contract_kw:,.0f} kW 초과 {outliers.over_contract_slots:,}건, "
+                f"최대 {outliers.over_contract_max_kw:,.1f} kW."
+            )
         )
     if outliers.spike_slots:
         messages.append(
-            f"인접 슬롯 급변 {outliers.spike_slots:,}건 "
-            f"(임계 {outliers.spike_threshold_kw:,.0f} kW)."
+            basis(
+                f"인접 슬롯 급변 {outliers.spike_slots:,}건 "
+                f"(임계 {outliers.spike_threshold_kw:,.0f} kW)."
+            )
         )
     consistency = report.consistency
     if consistency.partial_metering_rows:
         messages.append(
-            f"부분 계량 {consistency.partial_metering_rows}건 "
-            f"({consistency.partial_metering_kwh:,.2f} kWh) — '결측' 이 아니라 별도 분류입니다. "
-            "kW 산정에서 빼고 kWh 합계에는 넣었습니다."
+            basis(
+                f"부분 계량 {consistency.partial_metering_rows}건 "
+                f"({consistency.partial_metering_kwh:,.2f} kWh) — '결측' 이 아니라 "
+                "별도 분류입니다. kW 산정에서 빼고 kWh 합계에는 넣었습니다."
+            )
         )
     if consistency.duplicate_rows:
-        messages.append(f"중복 시각 {consistency.duplicate_rows:,}건을 합산했습니다.")
+        messages.append(basis(f"중복 시각 {consistency.duplicate_rows:,}건을 합산했습니다."))
 
     return QualityReport(
         source_name=report.source_name,
@@ -307,5 +332,5 @@ def _with_warnings(report: QualityReport) -> QualityReport:
         skew_including_outages=report.skew_including_outages,
         outliers=report.outliers,
         consistency=report.consistency,
-        warnings=tuple(messages),
+        notices=tuple(messages),
     )

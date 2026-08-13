@@ -38,6 +38,7 @@ from kwise.measures import (
     SolarPoint,
     TariffSwitchResult,
 )
+from kwise.notices import dedupe
 from kwise.report.columns import localize
 from kwise.report.notices import (
     CONTRACT_CHANGE_WARNING,
@@ -243,18 +244,16 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
         rows.append(("감도", "방식", SENSITIVITY_NOTE))
         rows.append(("감도", "이름 주의", SCENARIO_NAME_CAVEAT))
 
-    for note in bill.notes:
-        rows.append(("계산 방침", "", note))
-    for warning in bill.warnings:
-        rows.append(("경고", "요금", warning))
+    # **등급을 열에 적는다** (19세션 1절). 화면에서 뺀 근거·참고가 여기 남는다 —
+    # 어느 등급이라 화면에 없었는지까지 보여야 사용자가 찾을 수 있다.
+    groups = [("요금", bill.notices)]
     if diagnosis is not None:
-        for warning in diagnosis.warnings:
-            rows.append(("경고", "품질·진단", warning))
+        groups.append(("품질·진단", diagnosis.notices))
     if sections.comparison is not None:
-        for warning in sections.comparison.warnings:
-            rows.append(("경고", "조합", warning))
-        for note in sections.comparison.notes:
-            rows.append(("계산 방침", "조합", note))
+        groups.append(("조합", sections.comparison.notices))
+    for label, notices in groups:
+        for item in dedupe(notices):
+            rows.append((f"안내 · {item.severity}", label, item.text))
     return rows
 
 

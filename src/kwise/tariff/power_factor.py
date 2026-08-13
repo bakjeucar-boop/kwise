@@ -41,6 +41,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from kwise.notices import Notice, basis, info, warn
 from kwise.rules import rule_value
 
 __all__ = [
@@ -204,8 +205,7 @@ class PowerFactorCharge:
     leading_ratio: float
     lagging_won: float
     leading_won: float
-    warnings: tuple[str, ...] = field(default=())
-    notes: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     @property
     def total_ratio(self) -> float:
@@ -243,66 +243,86 @@ def power_factor_charge(
     # 조문이 다르므로, 기준이 개정돼도 모르는 고객의 역률은 따라가지 않는다.
     lagging_pct = deemed_lagging_pct() if lagging_pct is None else lagging_pct
     lagging_ratio = lagging_adjustment_ratio(lagging_pct)
-    warnings: list[str] = []
-    notes: list[str] = [
-        "역률요금은 기본요금에 대한 추가·감액입니다 (기본공급약관 제43조). "
-        "주간(08~22시) 지상 92%, 야간(22~08시) 진상 95% 가 기준이며 "
-        "매 1%당 0.2% 입니다.",
-        "추가요금이 발생하는 첫 달은 약관상 예고이고 청구는 두 번째 달부터입니다 "
-        "(제43조 ③). 기간에 따라 결과가 흔들리지 않도록 이 규칙은 계산에 넣지 "
-        "않았습니다 — 실제 첫 달 청구서와 어긋날 수 있습니다.",
+    notices: list[Notice] = [
+        # 제도 설명은 **참고**, 계산에서 뺀 규칙은 **근거**다.
+        info(
+            "역률요금은 기본요금에 대한 추가·감액입니다 (기본공급약관 제43조). "
+            "주간(08~22시) 지상 92%, 야간(22~08시) 진상 95% 가 기준이며 "
+            "매 1%당 0.2% 입니다."
+        ),
+        basis(
+            "추가요금이 발생하는 첫 달은 약관상 예고이고 청구는 두 번째 달부터입니다 "
+            "(제43조 ③). 기간에 따라 결과가 흔들리지 않도록 이 규칙은 계산에 넣지 "
+            "않았습니다 — 실제 첫 달 청구서와 어긋날 수 있습니다."
+        ),
     ]
 
     if lagging_pct <= standard:
-        notes.append(
-            f"주간 지상역률 {lagging_pct:.1f}% — 기준 92% 대비 "
-            f"{max(0.0, standard - lagging_pct):.1f}%p 미달, "
-            f"기본요금의 {lagging_ratio:+.1%} 추가."
+        notices.append(
+            basis(
+                f"주간 지상역률 {lagging_pct:.1f}% — 기준 92% 대비 "
+                f"{max(0.0, standard - lagging_pct):.1f}%p 미달, "
+                f"기본요금의 {lagging_ratio:+.1%} 추가."
+            )
         )
     else:
-        notes.append(
-            f"주간 지상역률 {lagging_pct:.1f}% — 기준 92% 초과, "
-            f"기본요금의 {lagging_ratio:+.1%} 감액 (97% 초과분은 인정되지 않습니다)."
+        notices.append(
+            basis(
+                f"주간 지상역률 {lagging_pct:.1f}% — 기준 92% 초과, "
+                f"기본요금의 {lagging_ratio:+.1%} 감액 (97% 초과분은 인정되지 않습니다)."
+            )
         )
     if lagging_pct < floor:
-        warnings.append(
-            f"주간 지상역률 {lagging_pct:.1f}% 가 {floor:.0f}% 미만입니다. "
-            "약관상 추가요금은 60% 까지만 계산되므로 실제 부담이 더 클 수 있고, "
-            "역률 유지 의무(제41조) 위반으로 별도 조치 대상이 될 수 있습니다."
+        notices.append(
+            warn(
+                f"주간 지상역률 {lagging_pct:.1f}% 가 {floor:.0f}% 미만입니다. "
+                "약관상 추가요금은 60% 까지만 계산되므로 실제 부담이 더 클 수 있고, "
+                "역률 유지 의무(제41조) 위반으로 별도 조치 대상이 될 수 있습니다."
+            )
         )
     if lagging_pct < standard:
-        warnings.append(
-            f"주간 지상역률이 기준 92% 에 미달합니다 ({lagging_pct:.1f}%). "
-            f"기본요금의 {lagging_ratio:.1%} 가 추가됩니다. 역률 개선 설비 용량 조정을 "
-            "검토하십시오 (기본공급약관 제41·43조)."
+        notices.append(
+            warn(
+                f"주간 지상역률이 기준 92% 에 미달합니다 ({lagging_pct:.1f}%). "
+                f"기본요금의 {lagging_ratio:.1%} 가 추가됩니다. 역률 개선 설비 용량 조정을 "
+                "검토하십시오 (기본공급약관 제41·43조)."
+            )
         )
 
     # 제43조 ② 2호 나목 — 지상인 야간은 100% 로 간주되어 추가가 0 이다.
     deemed = deemed_leading_pct(leading_pct)
     leading_ratio = leading_adjustment_ratio(deemed)
     if leading_pct is None:
-        notes.append(
-            "야간(22~08시)은 **지상으로 보아 역률 100% 간주**, 진상 추가요금 0원입니다 "
-            "(기본공급약관 제43조 ② 2호 나목). 야간 경부하에서 지상인 것이 보통이며, "
-            "진상은 고정형 역률 개선 설비가 부하 대비 과다할 때 생깁니다."
+        notices.append(
+            basis(
+                "야간(22~08시)은 **지상으로 보아 역률 100% 간주**, 진상 추가요금 0원입니다 "
+                "(기본공급약관 제43조 ② 2호 나목). 야간 경부하에서 지상인 것이 보통이며, "
+                "진상은 고정형 역률 개선 설비가 부하 대비 과다할 때 생깁니다."
+            )
         )
-        warnings.append(
-            "야간 진상 여부를 확인하지 않았습니다. 고정형 역률 개선 설비를 크게 두었거나 "
-            "역률 개선으로 키울 예정이라면 야간 경부하에서 진상으로 넘어갈 수 "
-            "있습니다. 기준 95% 미달 시 매 1%당 기본요금의 0.2% 가 추가되며, "
-            "하한은 60% 입니다 (제43조 ② 2호)."
+        # **참고** — 확인하지 않았다는 사실이지 이 자료의 결과를 바꾸지 않는다
+        # (지상이면 추가가 0 이다). 18세션 인벤토리에서도 참고로 잡혔다.
+        notices.append(
+            info(
+                "야간 진상 여부를 확인하지 않았습니다. 고정형 역률 개선 설비를 크게 두었거나 "
+                "역률 개선으로 키울 예정이라면 야간 경부하에서 진상으로 넘어갈 수 "
+                "있습니다. 기준 95% 미달 시 매 1%당 기본요금의 0.2% 가 추가되며, "
+                "하한은 60% 입니다 (제43조 ② 2호)."
+            )
         )
     elif leading_ratio > 0:
-        warnings.append(
-            f"야간 진상역률 {leading_pct:.1f}% 가 기준 95% 에 미달합니다"
-            + (f" (하한 {leading_floor_pct():.0f}% 적용)" if deemed != leading_pct else "")
-            + f". 기본요금의 {leading_ratio:.1%} 가 추가됩니다. "
-            "**역률 개선 설비 과보상입니다** — 부하가 줄어든 야간에 진상 무효전력이 남는 "
-            "것이므로 고정형 역률 개선 설비 용량을 줄이거나 자동제어형 역률 개선 설비로 "
-            "시간대별 투입 단수를 조절하십시오."
+        notices.append(
+            warn(
+                f"야간 진상역률 {leading_pct:.1f}% 가 기준 95% 에 미달합니다"
+                + (f" (하한 {leading_floor_pct():.0f}% 적용)" if deemed != leading_pct else "")
+                + f". 기본요금의 {leading_ratio:.1%} 가 추가됩니다. "
+                "**역률 개선 설비 과보상입니다** — 부하가 줄어든 야간에 진상 무효전력이 남는 "
+                "것이므로 고정형 역률 개선 설비 용량을 줄이거나 자동제어형 역률 개선 설비로 "
+                "시간대별 투입 단수를 조절하십시오."
+            )
         )
     else:
-        notes.append(f"야간 진상역률 {leading_pct:.1f}% — 기준 95% 이상이라 추가 없음.")
+        notices.append(basis(f"야간 진상역률 {leading_pct:.1f}% — 기준 95% 이상이라 추가 없음."))
 
     return PowerFactorCharge(
         base_won=base_won,
@@ -313,6 +333,5 @@ def power_factor_charge(
         leading_ratio=leading_ratio,
         lagging_won=base_won * lagging_ratio,
         leading_won=base_won * leading_ratio,
-        warnings=tuple(warnings),
-        notes=tuple(notes),
+        notices=tuple(notices),
     )

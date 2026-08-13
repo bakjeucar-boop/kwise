@@ -375,7 +375,7 @@ def run_case(
         payback_years=best.payback_years,
         certainty=str(best.certainty),
         excel=str(excel),
-        warnings=len(comparison.warnings) + len(diagnosis.warnings),
+        warnings=len(comparison.notices) + len(diagnosis.notices),
         note=note,
     )
 

@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from kwise.notices import texts
 from kwise.report import SHEET_ORDER
 from kwise.ui.nav import RULES_PAGE, TABS
 from kwise.ui.pipeline import ContractForm
@@ -483,7 +484,7 @@ def test_저부하_평일이_없으면_사유만_적는다(sample_diagnosis: obj
     result = evaluate_demand_response(empty)
     assert result.annual_reducible_kwh == 0.0
     assert not result.has_low_load_days
-    assert any("저부하 평일이 없습니다" in item for item in result.warnings)
+    assert any("저부하 평일이 없습니다" in item for item in texts(result.notices))
 
 
 # ===================================================================== 5-4 회귀
@@ -809,8 +810,7 @@ def test_ESS_본문에_투자비_상세와_성립_조건이_없다() -> None:
     for banned in ("설비 **", "성립 조건", "kW당 배터리비"):
         assert banned not in body, banned
     assert (
-        "_notes(result.warnings, result.notes, "
-        "(_ess_basis_note(base_fee), *_ess_details(result, model)))"
+        "_notices((*result.notices, _ess_basis_note(base_fee), *_ess_details(result, model)))"
     ) in source
 
 
@@ -824,18 +824,26 @@ def test_화면에_조달_사례_표가_없다() -> None:
     assert "설치 형태" not in columns, columns
 
 
-def test_ESS_확인사항에_투자비_상세가_있다() -> None:
+def test_ESS_투자비_상세가_근거_툴팁에_있다() -> None:
+    """**확인사항 상자에서 근거 툴팁으로 옮겼다** (19세션 1절).
+
+    17세션에 본문에서 확인사항으로 내렸던 넉 줄이 이제 툴팁으로 간다. 스물이
+    넘는 줄을 접힌 상자에 쌓으면 정작 위험한 두 건이 묻히기 때문이다. 지운
+    것이 아니라 자리를 옮긴 것이므로 **툴팁에는 그대로 있어야 한다.**
+    """
     app = _app(**_on("ess"))
     assert not app.exception, app.exception
-    inside = "\n".join(
-        str(item.value)
-        for exp in app.expander
-        if "확인사항" in str(exp.label)
-        for item in list(exp.markdown) + list(exp.caption)
-    )
-    assert "투자비 내역" in inside
-    assert "회수에 필요한 저감량" in inside
-    assert "설비비 = " in inside
+    tips = "\n".join(str(item.help or "") for item in app.caption)
+    body = "\n".join(str(item.value) for item in app.markdown)
+
+    # 산식·계수·내역은 **근거**다 — 툴팁으로 접힌다.
+    assert "투자비 내역" in tips
+    assert "설비비 = " in tips
+    assert "투자비 내역" not in body
+
+    # **성립 조건은 다르다.** 이 자료에서는 성립하지 않아 주의로 올라오므로
+    # 본문에 남는다 — 등급이 자리를 정한다는 것이 이 한 줄로 드러난다.
+    assert "회수에 필요한 저감량" in body
 
 
 @functools.cache

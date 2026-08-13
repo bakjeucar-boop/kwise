@@ -22,6 +22,7 @@ from typing import Any, Literal
 import pandas as pd
 
 from kwise.io import UsageData
+from kwise.notices import Notice, basis, info, warn
 from kwise.quality import QualityReport, monthly_missing
 from kwise.tariff.demand import (
     apply_contract_floor,
@@ -117,7 +118,7 @@ class AnnualEstimate:
     total_won: float
     energy_won_adjusted: float
     total_won_adjusted: float
-    warnings: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
 
 @dataclass(frozen=True, eq=False)
@@ -156,8 +157,7 @@ class BillingResult:
 
     limited_months: tuple[pd.Period, ...]
     prior_peaks_supplied: bool
-    warnings: tuple[str, ...] = field(default=())
-    notes: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     @property
     def period_label(self) -> str:
@@ -188,11 +188,13 @@ class BillingResult:
         if self.base_fee_months <= 0:
             raise ValueError("기본요금 개월수가 0 이라 환산할 수 없습니다.")
         factor = demand_window_months() / self.base_fee_months
-        warnings: list[str] = []
+        notices: list[Notice] = []
         if self.period_days < 365:
-            warnings.append(
-                f"기간이 {self.period_days:.0f}일로 12개월 미만입니다. "
-                f"×{factor:.3f} 환산값은 계절 편중이 있어 신뢰도가 낮습니다."
+            notices.append(
+                warn(
+                    f"기간이 {self.period_days:.0f}일로 12개월 미만입니다. "
+                    f"×{factor:.3f} 환산값은 계절 편중이 있어 신뢰도가 낮습니다."
+                )
             )
         return AnnualEstimate(
             factor=factor,
@@ -201,7 +203,7 @@ class BillingResult:
             total_won=self.total_won * factor,
             energy_won_adjusted=self.total_energy_won_adjusted * factor,
             total_won_adjusted=self.total_won_adjusted * factor,
-            warnings=tuple(warnings),
+            notices=tuple(notices),
         )
 
 
@@ -219,7 +221,7 @@ def _as_period(value: PeriodLike) -> pd.Period:
 
 def _base_fee_factors(
     covered_days: Mapping[pd.Period, float], policy: PartialMonthPolicy
-) -> tuple[dict[pd.Period, float], list[str]]:
+) -> tuple[dict[pd.Period, float], list[Notice]]:
     """부분 월의 기본요금 배분 계수. 13개월분을 부과하지 않기 위한 것이다."""
     factors: dict[pd.Period, float] = {}
     partials: list[pd.Period] = []
@@ -229,7 +231,7 @@ def _base_fee_factors(
             partials.append(month)
         factors[month] = 1.0
 
-    notes: list[str] = []
+    notes: list[Notice] = []
     if not partials:
         return factors, notes
 
@@ -238,9 +240,11 @@ def _base_fee_factors(
         for month in partials:
             factors[month] = covered_days[month] / total if total else 0.0
         notes.append(
-            "부분 월 처리: 두 조각을 합쳐 한 달로 계산했습니다 "
-            + " + ".join(f"{month} {covered_days[month]:.1f}일" for month in partials)
-            + " = 1개월."
+            basis(
+                "부분 월 처리: 두 조각을 합쳐 한 달로 계산했습니다 "
+                + " + ".join(f"{month} {covered_days[month]:.1f}일" for month in partials)
+                + " = 1개월."
+            )
         )
         return factors, notes
 
@@ -248,15 +252,19 @@ def _base_fee_factors(
         factors[month] = covered_days[month] / float(month.days_in_month)
     if policy == "merge":
         notes.append(
-            "부분 월 처리: 합칠 짝이 없어 일수 비례로 안분했습니다 "
-            + ", ".join(f"{month} {factors[month]:.3f}" for month in partials)
-            + "."
+            basis(
+                "부분 월 처리: 합칠 짝이 없어 일수 비례로 안분했습니다 "
+                + ", ".join(f"{month} {factors[month]:.3f}" for month in partials)
+                + "."
+            )
         )
     else:
         notes.append(
-            "부분 월 처리: 일수 비례로 안분했습니다 "
-            + ", ".join(f"{month} {factors[month]:.3f}" for month in partials)
-            + "."
+            basis(
+                "부분 월 처리: 일수 비례로 안분했습니다 "
+                + ", ".join(f"{month} {factors[month]:.3f}" for month in partials)
+                + "."
+            )
         )
     return factors, notes
 
@@ -351,10 +359,10 @@ def calculate_bill(
 
     # 요금적용전력 대상 최대수요 — 경부하 제외 (요구사항서 5.2 ①).
     eligible = demand_eligible_mask(slots["band"], demand_bands=contract.demand_bands)
-    basis = monthly_demand_basis(usage.kw, month_labels, eligible)
+    demand_basis = monthly_demand_basis(usage.kw, month_labels, eligible)
     # 대상월 규칙 (5.2 ②) → 계약전력 하한 (5.2 ③)
     before_floor = billing_demands(
-        basis, prior_peaks=opts.prior_peaks, demand_months=contract.demand_months
+        demand_basis, prior_peaks=opts.prior_peaks, demand_months=contract.demand_months
     )
     demands = apply_contract_floor(
         before_floor,
@@ -424,7 +432,7 @@ def calculate_bill(
                 "is_partial": factors[month] < 1.0,
                 "max_demand_kw": peak_kw,
                 "max_demand_at": peak_at,
-                "demand_basis_kw": basis[month],
+                "demand_basis_kw": demand_basis[month],
                 "demand_before_floor_kw": before_floor[month],
                 "billing_demand_kw": demands[month],
                 "base_demand_kw": base_demand[month],  # 기본요금에 실제로 곱한 kW
@@ -450,71 +458,95 @@ def calculate_bill(
         month for month in months if missing_ratio.get(month, 0.0) > opts.missing_limit_ratio
     )
 
-    warnings: list[str] = []
+    notices: list[Notice] = []
     if contract.base_fee_on_contract:
         # 갑 종별이다. 요금적용전력 하한·이월 규칙은 기본요금에 관여하지 않는다.
         # **기준 자체가 잠정임을 먼저 밝힌다** — 뒤의 경고들은 이 전제 위에 있다.
-        warnings.append(TENTATIVE_BASE_FEE_BASIS_WARNING)
+        notices.append(warn(TENTATIVE_BASE_FEE_BASIS_WARNING))
         observed_peak = float(usage.kw.max())
         if observed_peak > (opts.contract_kw or 0.0):
-            warnings.append(
-                f"{contract.label} 의 관측 최대수요 {observed_peak:,.1f} kW 가 "
-                f"계약전력 {opts.contract_kw:,.0f} kW 를 넘습니다. "
-                "초과사용부가금 대상이며, 계약전력 재산정이 필요할 수 있습니다."
+            notices.append(
+                warn(
+                    f"{contract.label} 의 관측 최대수요 {observed_peak:,.1f} kW 가 "
+                    f"계약전력 {opts.contract_kw:,.0f} kW 를 넘습니다. "
+                    "초과사용부가금 대상이며, 계약전력 재산정이 필요할 수 있습니다."
+                )
             )
         threshold = contract.threshold_kw
         if threshold is not None and (opts.contract_kw or 0.0) >= threshold:
-            warnings.append(
-                f"{contract.label} 은 계약전력 {threshold:,.0f} kW 미만 종별인데 "
-                f"계약전력이 {opts.contract_kw:,.0f} kW 입니다. 종별을 확인하십시오."
+            notices.append(
+                warn(
+                    f"{contract.label} 은 계약전력 {threshold:,.0f} kW 미만 종별인데 "
+                    f"계약전력이 {opts.contract_kw:,.0f} kW 입니다. 종별을 확인하십시오."
+                )
             )
     elif contract.contract_floor_ratio is None:
-        warnings.append(
-            f"{contract.label} 의 요금적용전력 하한 비율이 요금 데이터에 없어 "
-            "하한을 적용하지 않았습니다 (요구사항서 5.2 ③)."
+        notices.append(
+            basis(
+                f"{contract.label} 의 요금적용전력 하한 비율이 요금 데이터에 없어 "
+                "하한을 적용하지 않았습니다 (요구사항서 5.2 ③)."
+            )
         )
     elif opts.contract_kw is None:
-        warnings.append(
-            "계약전력을 주지 않아 요금적용전력 하한"
-            f"(계약전력의 {contract.contract_floor_ratio:.0%})을 적용하지 않았습니다. "
-            "저부하 사업장은 기본요금이 과소 산출됩니다 (요구사항서 5.2 ③)."
+        notices.append(
+            warn(
+                "계약전력을 주지 않아 요금적용전력 하한"
+                f"(계약전력의 {contract.contract_floor_ratio:.0%})을 적용하지 않았습니다. "
+                "저부하 사업장은 기본요금이 과소 산출됩니다 (요구사항서 5.2 ③)."
+            )
         )
     else:
         floor_kw = opts.contract_kw * contract.contract_floor_ratio
         bound = [month for month in months if before_floor[month] < floor_kw]
         if bound:
-            warnings.append(
-                f"요금적용전력 하한 {floor_kw:,.1f} kW "
-                f"(계약전력의 {contract.contract_floor_ratio:.0%})가 "
-                f"{len(bound)}개 월에 걸렸습니다."
+            notices.append(
+                basis(
+                    f"요금적용전력 하한 {floor_kw:,.1f} kW "
+                    f"(계약전력의 {contract.contract_floor_ratio:.0%})가 "
+                    f"{len(bound)}개 월에 걸렸습니다."
+                )
             )
         over = usage.kw.dropna()
         over_slots = int((over > opts.contract_kw).sum())
         if over_slots:
-            warnings.append(
-                f"계약전력 {opts.contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 "
-                "있습니다. 경부하 초과는 요금적용전력에 영향을 주지 않지만 "
-                "초과사용부가금 대상이므로 별도로 확인하십시오 (요구사항서 5.2)."
+            notices.append(
+                warn(
+                    f"계약전력 {opts.contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 "
+                    "있습니다. 경부하 초과는 요금적용전력에 영향을 주지 않지만 "
+                    "초과사용부가금 대상이므로 별도로 확인하십시오 (요구사항서 5.2)."
+                )
             )
     if not opts.prior_peaks and not contract.base_fee_on_contract:
-        warnings.append(
-            "직전 12개월 최대수요 이력이 없어 첫 11개월의 요금적용전력이 과소 산출됩니다. "
-            "청구서를 확보하면 prior_peaks= 로 주입하십시오 (요구사항서 5.2)."
+        # **근거다.** 요금적용전력이 왜 그 값인지 설명하며, 코드 식별자를 품고
+        # 있어 화면 본문에 나가면 12세션 규약을 깬다 — 툴팁과 보고서로 간다.
+        notices.append(
+            basis(
+                "직전 12개월 최대수요 이력이 없어 첫 11개월의 요금적용전력이 과소 산출됩니다. "
+                "청구서를 확보하면 prior_peaks= 로 주입하십시오 (요구사항서 5.2)."
+            )
         )
-    warnings.extend(power_factor.warnings)  # 역률 (제41·43조)
+    notices.extend(power_factor.notices)  # 역률 (제41·43조)
     for month in limited_months:
-        warnings.append(
-            f"{month} 결측률 {missing_ratio[month]:.1%} — 최대수요를 '신뢰 제한' 으로 "
-            "표시하고 전력량요금은 결측 보정 기준을 함께 봅니다 (요구사항서 5.4)."
+        notices.append(
+            warn(
+                f"{month} 결측률 {missing_ratio[month]:.1%} — 최대수요를 '신뢰 제한' 으로 "
+                "표시하고 전력량요금은 결측 보정 기준을 함께 봅니다 (요구사항서 5.4)."
+            )
         )
     period_days = usage.meta.period_days
     if period_days < 365:
-        warnings.append(
-            f"기간이 {period_days:.0f}일로 12개월 미만입니다. 12개월 환산 시 경고를 붙이십시오."
+        notices.append(
+            warn(
+                f"기간이 {period_days:.0f}일로 12개월 미만입니다. 12개월 환산 시 경고를 붙이십시오."
+            )
         )
     if not table.verified:
-        warnings.append(
-            f"요금표 {table.effective_date} 는 아직 청구서로 검증되지 않았습니다 (verified=false)."
+        # 요금표의 **출처·검증 상태**다. 근거이지 경고가 아니다.
+        notices.append(
+            basis(
+                f"요금표 {table.effective_date} 는 아직 청구서로 "
+                "검증되지 않았습니다 (verified=false)."
+            )
         )
 
     demand_note = (
@@ -530,18 +562,21 @@ def calculate_bill(
             "검침 당월입니다. 3~6월·10~11월 피크는 이월되지 않습니다 (요구사항서 5.2)."
         )
     )
-    notes = [
-        NOT_INCLUDED_NOTICE,
-        demand_note,
-        (
+    # 요금적용전력 규칙·안분 계수는 **근거**다 — 기본요금이 왜 그 값인지 그 자체다.
+    notices += [
+        basis(demand_note),
+        *partial_notes,
+        basis(
+            "전력량요금은 관측 기준이 정본이고, 결측 보정 기준은 회수기간 산정 참고용입니다 "
+            "(요구사항서 5.4). 도입 전후 차분(Δ)을 절대 금액보다 우선 신뢰하십시오."
+        ),
+        # **참고** — 미포함 요금요소와 계절 비대칭. 전제 설명이다.
+        info(NOT_INCLUDED_NOTICE),
+        info(
             "봄·가을 피크 저감은 기본요금 절감 가치가 거의 없습니다. 태양광 발전이 "
             "가장 강한 계절이 봄·가을이므로, PV 의 기본요금 기여는 7~9월에 집중되고 "
             "12~2월에는 발전이 약해 비대칭이 큽니다."
         ),
-        *partial_notes,
-        *power_factor.notes,
-        "전력량요금은 관측 기준이 정본이고, 결측 보정 기준은 회수기간 산정 참고용입니다 "
-        "(요구사항서 5.4). 도입 전후 차분(Δ)을 절대 금액보다 우선 신뢰하십시오.",
     ]
 
     total_base = float(monthly["base_won"].sum())
@@ -575,6 +610,5 @@ def calculate_bill(
         power_factor=power_factor,
         limited_months=limited_months,
         prior_peaks_supplied=bool(opts.prior_peaks),
-        warnings=tuple(warnings),
-        notes=tuple(notes),
+        notices=tuple(notices),
     )

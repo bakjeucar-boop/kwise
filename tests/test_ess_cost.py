@@ -35,6 +35,7 @@ from kwise.measures import (
     required_discharge_hours,
 )
 from kwise.measures.ess_cost import load_ess_cost_model, reference_data_path
+from kwise.notices import texts
 from kwise.quality import QualityReport
 from kwise.report.frames import ess_target_table
 from kwise.tariff import BillingResult, TariffTable
@@ -205,8 +206,8 @@ def test_c_rate_warning_below_half_an_hour(sample_ess: EssResult) -> None:
     """0.5h 미만이면 고출력 셀 사양임을 경고한다."""
     assert sample_ess.discharge_hours < high_rate_discharge_hours()
     assert sample_ess.c_rate == pytest.approx(1.0 / sample_ess.discharge_hours)
-    assert any("고출력 셀" in message for message in sample_ess.warnings)
-    assert any("C 방전" in message for message in sample_ess.warnings)
+    assert any("고출력 셀" in message for message in texts(sample_ess.notices))
+    assert any("C 방전" in message for message in texts(sample_ess.notices))
 
 
 def test_no_warning_when_the_spec_is_ordinary() -> None:
@@ -263,7 +264,7 @@ def test_arbitrage_standalone_payback_outlives_the_battery(
     assert value.won_per_kwh_year == pytest.approx(19_476.0, rel=0.02)
     assert value.standalone_payback_years == pytest.approx(19.0, rel=0.05)
     assert value.outlives_battery  # 배터리 수명 10~15년을 넘는다
-    assert any("단독으로는 성립하지 않습니다" in note for note in value.notes)
+    assert any("단독으로는 성립하지 않습니다" in note for note in texts(value.notices))
 
 
 def test_arbitrage_is_not_added_to_the_saving(sample_ess: EssResult) -> None:
@@ -272,7 +273,7 @@ def test_arbitrage_is_not_added_to_the_saving(sample_ess: EssResult) -> None:
     assert sample_ess.total_saving_won == pytest.approx(
         sample_ess.base_saving_won + sample_ess.energy_saving_won
     )
-    assert any("이중 계산" in note for note in sample_ess.notes)
+    assert any("이중 계산" in note for note in texts(sample_ess.notices))
 
 
 def test_arbitrage_scales_with_capacity(
@@ -367,7 +368,7 @@ def test_outlook_payback_is_shorter_than_today(sample_ess: EssResult) -> None:
     assert sample_ess.payback_years is not None
     assert sample_ess.outlook_payback_years < sample_ess.payback_years
     assert "2030" in sample_ess.outlook_label
-    assert any("단가 기준" in note for note in sample_ess.notes)
+    assert any("단가 기준" in note for note in texts(sample_ess.notices))
 
 
 def test_arbitrage_inclusive_payback_is_shorter(sample_ess: EssResult) -> None:
@@ -375,7 +376,7 @@ def test_arbitrage_inclusive_payback_is_shorter(sample_ess: EssResult) -> None:
     assert sample_ess.payback_with_arbitrage_years is not None
     assert sample_ess.payback_years is not None
     assert sample_ess.payback_with_arbitrage_years < sample_ess.payback_years
-    assert any("상한입니다" in note for note in sample_ess.notes)
+    assert any("상한입니다" in note for note in texts(sample_ess.notices))
 
 
 # ================================================= 조달 사례 모델 (13세션)
@@ -416,11 +417,11 @@ def test_quote_clamps_below_the_case_range() -> None:
     quote = model.quote(40.0)
     assert quote.applied_kwh == model.market_minimum_kwh
     assert not quote.in_range
-    assert any("시장 최소" in note for note in quote.notes)
+    assert any("시장 최소" in note for note in texts(quote.notices))
 
     beyond = model.quote(600.0)
     assert not beyond.in_range
-    assert any("참고값" in note for note in beyond.notes)
+    assert any("참고값" in note for note in texts(beyond.notices))
 
 
 def test_feasibility_uses_the_contract_base_fee(tariff: TariffTable, sample_ess: EssResult) -> None:
@@ -484,7 +485,7 @@ def test_model_prices_when_no_input_is_given(
     assert result.quote is not None
     assert result.investment_won == pytest.approx(result.quote.total_won)
     assert "조달 사례 모델" in result.cost.source
-    assert any("배터리 보증 수명" in message for message in result.warnings)
+    assert any("배터리 보증 수명" in message for message in texts(result.notices))
 
 
 # ============================================================ 14세션 · 목표 재설계

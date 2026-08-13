@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import datetime as dt
+import logging
 import re
 from pathlib import Path
 
@@ -26,11 +27,19 @@ from streamlit.testing.v1 import AppTest
 from kwise.compare import CombinationSpec
 from kwise.io import load_usage
 from kwise.measures import AppliedMeasure, measure_kind
+from kwise.notices import Notice, basis, block, dedupe, info, warn
 from kwise.report.excel import SHEET_ORDER
 from kwise.tariff import TariffSelection, TariffTable, load_tariff
 from kwise.ui import text
 from kwise.ui.labels import contract_label, option_label, selection_label, voltage_label
-from kwise.ui.notices import Severity, classify, dedupe, report_notices, screen_notices
+from kwise.ui.notices import (
+    Severity,
+    appendix_notices,
+    classify,
+    report_notices,
+    screen_notices,
+    tooltip_text,
+)
 from kwise.ui.pipeline import ContractForm
 from kwise.ui.views.diagnose import missing_lines
 
@@ -173,24 +182,71 @@ def test_링크_기계장치를_걷어냈다() -> None:
 # ======================================================== ③ 세 등급
 
 
-def test_참고는_화면에_나가지_않는다() -> None:
-    messages = (
-        "2023-11 결측률 32.3% — 신뢰 제한",
-        "기후환경요금과 연료비조정요금은 미포함입니다.",
-        "요금표 2026-06-01 는 아직 청구서로 검증되지 않았습니다 (verified=false)",
+def test_등급마다_가는_자리가_다르다() -> None:
+    """**넷을 넷으로 나눈다** (19세션 1절).
+
+    차단·주의  화면 본문
+    근거      화면 툴팁 · 보고서 본문
+    참고      화면에 없음 · 보고서 부록
+    """
+    items = (
+        block("계약 정보가 없어 요금을 산출하지 않았습니다."),
+        warn("2023-11 결측률 32.3% — 신뢰 제한"),
+        basis("투자비는 용량(kWp) × 1,200,000 원/kWp 로 냈습니다 (출처: 사용자 입력)."),
+        info("기후환경요금과 연료비조정요금은 미포함입니다."),
     )
-    on_screen = screen_notices(messages)
-    assert len(on_screen) == 1
-    assert all(item.severity is not Severity.INFO for item in on_screen)
-    assert len(report_notices(messages)) == 3, "보고서에는 셋 다 실려야 합니다."
+
+    on_screen = screen_notices(items)
+    assert [item.severity for item in on_screen] == [Severity.BLOCK, Severity.WARN]
+
+    grounds = tooltip_text(items)
+    assert "투자비는 용량(kWp)" in grounds
+    assert "기후환경요금" not in grounds, "참고는 툴팁에도 없다"
+    assert "신뢰 제한" not in grounds, "주의는 본문이 자리다"
+
+    # **화면에서 사라진 문구는 반드시 산출물에 있다.**
+    body = tuple(item.text for item in report_notices(items))
+    appendix = tuple(item.text for item in appendix_notices(items))
+    assert len(body) == 3 and len(appendix) == 1
+    assert set(body) | set(appendix) == {item.text for item in items}
+
+
+def test_등급은_발신처가_붙인다() -> None:
+    """계산 모듈이 :class:`Notice` 를 직접 만든다 (19세션 2절).
+
+    문자열 리스트가 남아 있으면 폴백이 주의로 밀어 넣는다 — 18세션까지 82%가
+    그렇게 떨어졌다. 실제 결과 객체가 등급을 들고 오는지 본다.
+    """
+    from kwise.quality import check_quality
+
+    quality = check_quality(load_usage(SAMPLE))
+    assert quality.notices, "품질 검사가 안내를 내지 않았습니다."
+    assert all(isinstance(item, Notice) for item in quality.notices)
+    grades = {item.severity for item in quality.notices}
+    assert Severity.BASIS in grades, "근거 등급이 하나도 없습니다."
+    assert not hasattr(quality, "warnings"), "문자열 리스트가 남아 있습니다."
 
 
 def test_같은_사실을_두_번_내지_않는다() -> None:
     same = (
-        "2023-11 결측률 32.3% — 품질 점검",
-        "2023-11 결측률 32.3% — 요금 계산에서 제외",
+        warn("2023-11 결측률 32.3% — 품질 점검"),
+        warn("2023-11 결측률 32.3% — 요금 계산에서 제외"),
     )
     assert len(dedupe(same)) == 1
+
+
+def test_문자열이_들어오면_폴백이_경고를_남긴다(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """**이관 누락을 조용히 덮지 않는다** (19세션 2절).
+
+    등급 없는 문자열은 주의로 두되 로그를 남긴다. 20세션에 폴백을 지울 때
+    무엇이 남아 있는지 이 로그로 찾는다.
+    """
+    with caplog.at_level(logging.WARNING, logger="kwise.notices"):
+        items = screen_notices(("등급 없이 들어온 문구입니다",))
+    assert [item.severity for item in items] == [Severity.WARN]
+    assert any("등급 없는 문자열" in record.message for record in caplog.records)
 
 
 def test_등급을_모르면_주의로_둔다() -> None:

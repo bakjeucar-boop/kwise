@@ -31,6 +31,7 @@ from dataclasses import dataclass, field, replace
 
 from kwise.io import UsageData
 from kwise.measures.base import Certainty, annualize, payback_years
+from kwise.notices import Notice, basis, info, warn
 from kwise.quality import QualityReport
 from kwise.tariff import (
     BillingOptions,
@@ -83,8 +84,7 @@ class PowerFactorResult:
     current_bill: BillingResult
     target_bill: BillingResult
     certainty: Certainty = Certainty.HIGH
-    warnings: tuple[str, ...] = field(default=())
-    notes: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     @property
     def improvement_pct(self) -> float:
@@ -145,45 +145,60 @@ def evaluate_power_factor(
     annual = annualize(saving, current_bill.base_fee_months)
 
     effective_target = min(target_pct, cap)
-    notes = [
-        "역률 개선은 요금표와 약관만으로 확정되는 계산입니다. 감도를 적용하지 "
-        "않습니다 (요구사항서 9.2).",
-        f"주간(08~22시) 지상역률 {current_pct:.1f}% → {target_pct:.1f}% 기준입니다. "
-        f"기준 {standard:.0f}%, 매 1%당 기본요금의 0.2% "
-        "(기본공급약관 제43조 ②).",
-        "요금을 두 역률에서 각각 다시 계산했습니다. 기본요금 비율만 곱해 어림하지 않았습니다.",
-    ]
-    warnings: list[str] = []
+    notices: list[Notice] = []
     if target_pct > cap:
-        warnings.append(
-            f"목표 역률 {target_pct:.1f}% 가 감액 상한 {cap:.0f}% 를 "
-            f"넘습니다. {effective_target:.0f}% 를 넘는 만큼은 요금이 더 줄지 않으므로 "
-            "역률 개선 설비 과투자입니다."
+        notices.append(
+            warn(
+                f"목표 역률 {target_pct:.1f}% 가 감액 상한 {cap:.0f}% 를 "
+                f"넘습니다. {effective_target:.0f}% 를 넘는 만큼은 요금이 더 줄지 않으므로 "
+                "역률 개선 설비 과투자입니다."
+            )
         )
-    warnings.append(
-        "**고정형 역률 개선 설비를 키우면 야간 경부하에서 진상으로 넘어갑니다.** 주간 부하에 "
-        f"맞춘 용량이 야간에는 과다해지기 때문입니다. 야간(22~08시) 진상역률 기준은 "
-        f"{leading_standard_pct():.0f}% 이며 미달 시 매 1%당 기본요금의 0.2% 가 "
-        f"추가됩니다 (하한 {leading_floor_pct():.0f}%, 제43조 ② 2호). "
-        "지상으로 유지되는 한 야간 역률은 100% 로 간주되어 추가가 0 이므로 "
-        "(같은 조 나목), 이 추가요금은 곧 **역률 개선 설비 과투자의 신호**입니다."
-    )
-    warnings.append(
-        "**자동제어형 역률 개선 설비를 쓰면 부하에 따라 투입 단수가 조절되어 야간 "
-        "진상을 피할 수 있습니다.** 고정형 역률 개선 설비 한 벌로 주간 97% 를 맞추면 "
-        "야간에 되돌려 주게 됩니다. 설치비는 설비 구성에 따라 달라 본 도구가 "
-        "산출하지 않습니다 — investment_won 으로 넣으면 회수기간이 재계산됩니다."
-    )
-    warnings.append(
-        "무효전력 실측이 없어 현재 역률은 추정값입니다 (약관 제42조는 30분 누적 "
-        "계량을 요구합니다). 청구서의 역률 항목을 확인하면 current_pct 로 넣어 "
-        "바로 재계산됩니다."
-    )
     if current_pct < standard:
-        warnings.append(
-            f"현재 역률 {current_pct:.1f}% 는 약관 제41조의 유지 의무(지상 92% 이상)에 "
-            "미달합니다. 절감이 아니라 이미 나가고 있는 추가요금을 없애는 것입니다."
+        notices.append(
+            warn(
+                f"현재 역률 {current_pct:.1f}% 는 약관 제41조의 유지 의무(지상 92% 이상)에 "
+                "미달합니다. 절감이 아니라 이미 나가고 있는 추가요금을 없애는 것입니다."
+            )
         )
+    # **주의** — 추정값이라는 사실은 금액을 그대로 믿으면 안 된다는 뜻이다.
+    notices.append(
+        warn(
+            "무효전력 실측이 없어 현재 역률은 추정값입니다 (약관 제42조는 30분 누적 "
+            "계량을 요구합니다). 청구서의 역률 항목을 확인하면 current_pct 로 넣어 "
+            "바로 재계산됩니다."
+        )
+    )
+    notices += [
+        # **근거** — 어느 기준·어느 창에서 나온 값인가.
+        basis(
+            f"주간(08~22시) 지상역률 {current_pct:.1f}% → {target_pct:.1f}% 기준입니다. "
+            f"기준 {standard:.0f}%, 매 1%당 기본요금의 0.2% "
+            "(기본공급약관 제43조 ②)."
+        ),
+        basis(
+            "요금을 두 역률에서 각각 다시 계산했습니다. 기본요금 비율만 곱해 어림하지 않았습니다."
+        ),
+        # **참고** — 설비 선택과 제도 설명. 숫자를 만들지 않는다.
+        info(
+            "역률 개선은 요금표와 약관만으로 확정되는 계산입니다. 감도를 적용하지 "
+            "않습니다 (요구사항서 9.2)."
+        ),
+        info(
+            "**고정형 역률 개선 설비를 키우면 야간 경부하에서 진상으로 넘어갑니다.** 주간 부하에 "
+            f"맞춘 용량이 야간에는 과다해지기 때문입니다. 야간(22~08시) 진상역률 기준은 "
+            f"{leading_standard_pct():.0f}% 이며 미달 시 매 1%당 기본요금의 0.2% 가 "
+            f"추가됩니다 (하한 {leading_floor_pct():.0f}%, 제43조 ② 2호). "
+            "지상으로 유지되는 한 야간 역률은 100% 로 간주되어 추가가 0 이므로 "
+            "(같은 조 나목), 이 추가요금은 곧 **역률 개선 설비 과투자의 신호**입니다."
+        ),
+        info(
+            "**자동제어형 역률 개선 설비를 쓰면 부하에 따라 투입 단수가 조절되어 야간 "
+            "진상을 피할 수 있습니다.** 고정형 역률 개선 설비 한 벌로 주간 97% 를 맞추면 "
+            "야간에 되돌려 주게 됩니다. 설치비는 설비 구성에 따라 달라 본 도구가 "
+            "산출하지 않습니다 — investment_won 으로 넣으면 회수기간이 재계산됩니다."
+        ),
+    ]
     return PowerFactorResult(
         current_pct=current_pct,
         target_pct=target_pct,
@@ -197,6 +212,5 @@ def evaluate_power_factor(
         period_label=current_bill.period_label,
         current_bill=current_bill,
         target_bill=target_bill,
-        warnings=tuple(warnings),
-        notes=tuple(notes),
+        notices=tuple(notices),
     )

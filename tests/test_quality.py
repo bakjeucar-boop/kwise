@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from kwise.io import UsageData, load_usage
+from kwise.notices import texts
 from kwise.quality import (
     QualityReport,
     check_quality,
@@ -58,7 +59,7 @@ def test_sample_longest_gap_is_flagged(sample_report: QualityReport) -> None:
     assert gap is not None
     assert gap.slots == 930
     assert gap.is_long  # 1일 초과
-    assert any("최장 연속 결측" in message for message in sample_report.warnings)
+    assert any("최장 연속 결측" in message for message in texts(sample_report.notices))
 
 
 def test_sample_november_missing_rate(sample_report: QualityReport) -> None:
@@ -75,7 +76,7 @@ def test_sample_only_november_exceeds_monthly_threshold(sample_report: QualityRe
     assert [month.month for month in sample_report.flagged_months] == [
         pd.Period("2023-11", freq="M")
     ]
-    assert any("신뢰 제한" in message for message in sample_report.warnings)
+    assert any("신뢰 제한" in message for message in texts(sample_report.notices))
 
 
 def test_monthly_attribution_uses_slot_start() -> None:
@@ -224,7 +225,7 @@ def test_synthetic_skew_verdict_flips_when_outage_excluded(tmp_path: Path) -> No
     assert (kept.overall_missing, kept.overall_expected) == (12, 2856)
     assert kept.multiple == pytest.approx(0.99, abs=0.01)
     assert not kept.flagged
-    assert not any("과소평가 위험" in message for message in report.warnings)
+    assert not any("과소평가 위험" in message for message in texts(report.notices))
 
 
 def test_skew_flag_reaches_warnings(tmp_path: Path) -> None:
@@ -240,7 +241,7 @@ def test_skew_flag_reaches_warnings(tmp_path: Path) -> None:
     assert report.outages == ()  # 흔적이 없으니 정전이 아니다
     assert report.skew.flagged
     assert report.skew.multiple > 1.5
-    assert any("최대수요 과소평가 위험" in message for message in report.warnings)
+    assert any("최대수요 과소평가 위험" in message for message in texts(report.notices))
 
 
 # --------------------------------------------------------------------- 이상치·일관성
@@ -261,7 +262,7 @@ def test_over_contract_is_counted(sample_usage: UsageData) -> None:
     report = check_quality(sample_usage, contract_kw=5_000)
     assert report.outliers.over_contract_slots > 0
     assert report.outliers.over_contract_max_kw == pytest.approx(5_293.44)
-    assert any("계약전력" in message for message in report.warnings)
+    assert any("계약전력" in message for message in texts(report.notices))
 
 
 def test_sample_consistency_reports_partial_metering(sample_report: QualityReport) -> None:
@@ -270,7 +271,7 @@ def test_sample_consistency_reports_partial_metering(sample_report: QualityRepor
     assert consistency.partial_metering_kwh == pytest.approx(43.20)
     assert consistency.duplicate_rows == 0
     assert not consistency.uniform
-    assert any("부분 계량" in message for message in sample_report.warnings)
+    assert any("부분 계량" in message for message in texts(sample_report.notices))
 
 
 def test_missing_ratio_warning_threshold(tmp_path: Path) -> None:
@@ -280,13 +281,13 @@ def test_missing_ratio_warning_threshold(tmp_path: Path) -> None:
         del values[label]
     report = check_quality(load_usage(write_csv(tmp_path / "gappy.csv", to_rows(values))))
     assert report.missing_ratio > 0.03
-    assert any("결측률" in message for message in report.warnings)
+    assert any("결측률" in message for message in texts(report.notices))
 
 
 def test_short_period_warning(tmp_path: Path) -> None:
     report = check_quality(load_usage(one_day(tmp_path / "day.csv")))
     assert not report.has_full_year
-    assert any("12개월 미만" in message for message in report.warnings)
+    assert any("12개월 미만" in message for message in texts(report.notices))
 
 
 def test_clean_data_has_no_warnings(tmp_path: Path) -> None:
@@ -297,7 +298,7 @@ def test_clean_data_has_no_warnings(tmp_path: Path) -> None:
     assert report.gaps == ()
     assert report.longest_gap is None
     assert report.outages == ()
-    assert [message for message in report.warnings if "12개월 미만" not in message] == []
+    assert [message for message in texts(report.notices) if "12개월 미만" not in message] == []
 
 
 # --------------------------------------------------------------------- 결측 처리 (4.2)

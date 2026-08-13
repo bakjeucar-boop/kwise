@@ -40,6 +40,7 @@ from typing import Any
 import pandas as pd
 
 from kwise import money
+from kwise.notices import Notice, basis, warn
 
 __all__ = [
     "MODEL_FILENAME",
@@ -320,7 +321,7 @@ class EssQuote:
     electrical_low_won: float
     electrical_high_won: float
     in_range: bool
-    notes: tuple[str, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
 
     @property
     def total_won(self) -> float:
@@ -486,22 +487,28 @@ class EssCostModel:
         """용량 하나의 견적. **적용 구간을 벗어나면 그 사실을 적는다.**"""
         if capacity_kwh < 0:
             raise ValueError(f"용량은 음수일 수 없습니다: {capacity_kwh}")
-        notes: list[str] = []
+        notices: list[Notice] = []
         applied = capacity_kwh
         in_range = True
         if capacity_kwh < self.min_kwh:
             applied = self.min_kwh
             in_range = False
-            notes.append(
-                f"산출 용량 {capacity_kwh:,.1f} kWh — 시장 최소 "
-                f"{self.market_minimum_kwh:,.0f} kWh 기준으로 산정했습니다. 고정비가 "
-                "지배적이라 더 작게 만들어도 투자비가 그만큼 줄지 않습니다."
+            # **근거** — 투자비가 왜 그 값인지 설명한다.
+            notices.append(
+                basis(
+                    f"산출 용량 {capacity_kwh:,.1f} kWh — 시장 최소 "
+                    f"{self.market_minimum_kwh:,.0f} kWh 기준으로 산정했습니다. 고정비가 "
+                    "지배적이라 더 작게 만들어도 투자비가 그만큼 줄지 않습니다."
+                )
             )
         elif capacity_kwh > self.max_kwh:
             in_range = False
-            notes.append(
-                f"용량 {capacity_kwh:,.1f} kWh 는 사례 범위 "
-                f"{self.min_kwh:,.0f}–{self.max_kwh:,.0f} kWh 를 넘습니다. 참고값입니다."
+            # **주의** — 회귀 범위 밖이라 투자비 신뢰도가 떨어진다.
+            notices.append(
+                warn(
+                    f"용량 {capacity_kwh:,.1f} kWh 는 사례 범위 "
+                    f"{self.min_kwh:,.0f}–{self.max_kwh:,.0f} kWh 를 넘습니다. 참고값입니다."
+                )
             )
         band = self.electrical_band(applied)
         scale = (self.indoor_ratio or 1.0) if indoor else 1.0
@@ -513,7 +520,7 @@ class EssCostModel:
             electrical_low_won=band.low_won * scale,
             electrical_high_won=band.high_won * scale,
             in_range=in_range,
-            notes=tuple(notes),
+            notices=tuple(notices),
         )
 
     # ------------------------------------------------------------- 성립 조건

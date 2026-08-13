@@ -31,6 +31,7 @@ import streamlit as st
 
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
+from kwise.notices import tooltip
 from kwise.quality import QualityReport
 from kwise.report import localize
 from kwise.tariff import TENTATIVE_BASE_FEE_BASIS_WARNING, TariffTable
@@ -47,7 +48,7 @@ from kwise.ui.cache import (
 )
 from kwise.ui.context import AnalysisContext
 from kwise.ui.labels import option_label
-from kwise.ui.notices import partition, screen_notices
+from kwise.ui.notices import partition, screen_notices, tooltip_text
 from kwise.ui.pipeline import (
     ContractForm,
     contract_type_choices,
@@ -156,14 +157,23 @@ CONTRACT_MARKERS = ("계약전력",)
 
 
 def _notice_block(quality: QualityReport, diagnosis: Diagnosis) -> None:
-    """**차단과 주의만.** 참고 등급은 Excel 요약과 보고서 5장으로 간다 (10.7)."""
-    _missing, rest = partition(
-        screen_notices(quality.warnings, diagnosis.warnings), MISSING_MARKERS
-    )
+    """등급대로 자리를 나눈다 (19세션 1절).
+
+    본문에는 **차단과 주의만** 남긴다. 근거는 아래 툴팁 하나로 접고, 참고는
+    화면에 내지 않는다 — 보고서 부록으로 간다.
+    """
+    merged = (*quality.notices, *diagnosis.notices)
+    _missing, rest = partition(screen_notices(merged), MISSING_MARKERS)
     _contract, rest = partition(rest, CONTRACT_MARKERS)
     # **배경색 상자를 쓰지 않는다** (15세션 4절). 차단만 색을 남긴다.
     for notice in rest:
         callout.render_notice(notice)
+    grounds = tooltip(merged)
+    if grounds:
+        st.caption(
+            f"산출 근거 {len(grounds)}건",
+            help=tooltip_text(merged, header="**이 숫자가 어디서 나왔나**"),
+        )
 
 
 # --------------------------------------------------------------------- 업로드·열 인식
