@@ -208,17 +208,22 @@ def ess_target_frame(curve: EssTargetCurve) -> pd.DataFrame:
 
 
 def ess_target_table(curve: EssTargetCurve) -> pd.DataFrame:
-    """곡선 아래에 두는 대표 지점 표. **최소 지점이 가운데 온다.**"""
+    """곡선 아래에 두는 대표 지점 표. **최소 지점이 가운데 온다.**
+
+    **사양만 싣는다** (18세션 1절). 투자비·절감액·회수기간을 함께 실었더니 최소
+    지점의 값이 카드의 결론과 어긋났다 — 곡선은 기본요금 절감만 본 개략치이고
+    카드는 요금을 다시 계산한 값이라, 같은 목표에서 24.6년과 30.8년이 한 화면에
+    나왔다. 계산은 각각 옳아도 사용자에게는 그냥 불일치다. 돈에 관한 숫자는
+    카드 하나만 내고, 표에는 **카드와 값이 같은** 출력·정격 용량·방전시간을 둔다.
+    """
+    picked = curve.highlights()
     return pd.DataFrame(
         {
-            "목표(kW)": [item.target_kw for item in curve.highlights()],
-            "저감량(kW)": [item.reduction_kw for item in curve.highlights()],
-            "필요 출력(kW)": [item.power_kw for item in curve.highlights()],
-            "필요 용량(kWh)": [item.required_capacity_kwh for item in curve.highlights()],
-            "방전시간(h)": [item.discharge_hours for item in curve.highlights()],
-            "투자비(원)": [item.investment_won for item in curve.highlights()],
-            "연간 절감액(원)": [item.annual_saving_won for item in curve.highlights()],
-            "회수기간(년)": [item.payback_years for item in curve.highlights()],
+            "목표(kW)": [item.target_kw for item in picked],
+            "저감량(kW)": [item.reduction_kw for item in picked],
+            "필요 출력(kW)": [item.power_kw for item in picked],
+            "정격 용량(kWh)": [item.nameplate_capacity_kwh for item in picked],
+            "방전시간(h)": [item.discharge_hours for item in picked],
         }
     )
 

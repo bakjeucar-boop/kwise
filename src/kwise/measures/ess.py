@@ -71,6 +71,7 @@ __all__ = [
     "excess_slots_by_day",
     "high_rate_discharge_hours",
     "light_band_mask",
+    "nameplate_capacity_kwh",
     "required_discharge_hours",
     "size_for_target",
 ]
@@ -159,6 +160,23 @@ def analyze_peak_excess(kw: pd.Series, target_kw: float, interval_minutes: int) 
     )
 
 
+def nameplate_capacity_kwh(delivered_kwh: float, *, round_trip: float, dod: float) -> float:
+    """계통에 내보낼 에너지를 배터리 **정격 용량**으로 환산한다 (18세션 1절).
+
+        정격 용량 = 내보낼 에너지 ÷ √왕복효율 ÷ DoD
+
+    **화면에 내는 용량은 언제나 이 값이다.** 환산 전 값(하루 최대 초과 에너지)은
+    목표를 고르는 곡선 안에서만 쓴다 — 두 값을 같은 화면에 두면 사용자에게는
+    그냥 불일치로 보인다. 한 곳에 두어 :func:`size_for_target` 과
+    :func:`ess_target_curve` 가 같은 식을 쓰게 한다.
+    """
+    if not 0 < dod <= 1:
+        raise ValueError(f"DoD 는 0 초과 1 이하여야 합니다: {dod}")
+    if round_trip <= 0:
+        raise ValueError(f"왕복효율은 양수여야 합니다: {round_trip}")
+    return delivered_kwh / math.sqrt(round_trip) / dod
+
+
 def size_for_target(
     excess: PeakExcess,
     *,
@@ -186,11 +204,8 @@ def size_for_target(
     }
     if basis not in energy:
         raise ValueError(f"알 수 없는 용량 산정 기준입니다: {basis!r}")
-    if not 0 < dod <= 1:
-        raise ValueError(f"DoD 는 0 초과 1 이하여야 합니다: {dod}")
-    discharge_efficiency = math.sqrt(round_trip)
     # 방전 손실을 감안해 계통에 내보낼 에너지를 배터리 저장량으로 환산한다.
-    nameplate = energy[basis] / discharge_efficiency / dod
+    nameplate = nameplate_capacity_kwh(energy[basis], round_trip=round_trip, dod=dod)
     return excess.max_excess_kw, nameplate
 
 
@@ -227,6 +242,10 @@ class EssTargetPoint:
         reduction_kw: 저감량 = 현행 요금적용전력 − 목표. **절감액의 근거다.**
         power_kw: 필요 출력 = 목표 초과분의 최대값.
         required_capacity_kwh: 필요 용량 = 하루치 초과 에너지 합의 연중 최대값.
+            **내보낼 에너지다.** 곡선 내부(투자비·회수기간) 에서만 쓰고 화면에
+            내지 않는다 — 화면 용량은 ``nameplate_capacity_kwh`` 다 (18세션 1절).
+        nameplate_capacity_kwh: 정격 용량 = 필요 용량 ÷ √왕복효율 ÷ DoD.
+            :func:`evaluate_ess` 가 내는 카드 용량과 **같은 값이다.**
         billed_capacity_kwh: 과금 용량 = ``max(필요 용량, 시장 최소 규모)``.
         at_market_minimum: 최소 규모에 걸렸는가. 걸린 구간이 U자의 왼쪽 팔이다.
     """
@@ -235,6 +254,7 @@ class EssTargetPoint:
     reduction_kw: float
     power_kw: float
     required_capacity_kwh: float
+    nameplate_capacity_kwh: float
     billed_capacity_kwh: float
     discharge_hours: float
     equipment_won: float
@@ -246,11 +266,15 @@ class EssTargetPoint:
 
     @property
     def spec_label(self) -> str:
-        """``5,170 kW · 저감 123 kW · 143 kW / 101 kWh · 24.6년`` — 표식에 붙인다."""
-        payback = "—" if self.payback_years is None else f"{self.payback_years:,.1f}년"
+        """``5,170 kW · 저감 123 kW · 123 kW / 120 kWh`` — 표식에 붙인다.
+
+        **회수기간을 적지 않는다** (18세션 1절). 곡선의 회수기간은 기본요금만 본
+        개략치라 카드의 결론과 다르다. 표식은 이미 그 축 위에 찍혀 있으므로
+        숫자를 한 번 더 적으면 카드와 어긋난 값이 화면에 남는다.
+        """
         return (
             f"{self.target_kw:,.0f} kW · 저감 {self.reduction_kw:,.0f} kW · "
-            f"{self.power_kw:,.0f} kW / {self.required_capacity_kwh:,.0f} kWh · {payback}"
+            f"{self.power_kw:,.0f} kW / {self.nameplate_capacity_kwh:,.0f} kWh"
         )
 
 
@@ -273,6 +297,8 @@ class EssTargetCurve:
     base_fee_won_per_kw: float
     market_minimum_kwh: float
     step_kw: float
+    round_trip: float
+    dod: float
 
     @property
     def u_shape_reason(self) -> str:
@@ -286,6 +312,9 @@ class EssTargetCurve:
                 "저감량(kW)": [item.reduction_kw for item in self.points],
                 "필요 출력(kW)": [item.power_kw for item in self.points],
                 "필요 용량(kWh)": [item.required_capacity_kwh for item in self.points],
+                # 화면에 내는 용량은 **정격**이다. 위 「필요 용량」 은 내보낼
+                # 에너지라 카드와 다르다 — 곡선 내부 계산에만 쓴다 (18세션 1절).
+                "정격 용량(kWh)": [item.nameplate_capacity_kwh for item in self.points],
                 "과금 용량(kWh)": [item.billed_capacity_kwh for item in self.points],
                 "방전시간(h)": [item.discharge_hours for item in self.points],
                 "투자비(원)": [item.investment_won for item in self.points],
@@ -341,6 +370,8 @@ def ess_target_curve(
     step_kw: float | None = None,
     search_ratio: float | None = None,
     indoor: bool = False,
+    round_trip: float | None = None,
+    dod: float | None = None,
 ) -> EssTargetCurve:
     """목표를 훑어 회수기간 최소 지점을 찾는다 (14세션 3-1).
 
@@ -348,6 +379,7 @@ def ess_target_curve(
 
         필요 출력 = 초과분 최대값 (kW)
         필요 용량 = 하루치 초과 에너지 합의 연중 최대값 (kWh)
+        정격 용량 = 필요 용량 ÷ √왕복효율 ÷ DoD          ← 화면에 내는 용량
         과금 용량 = max(필요 용량, 시장 최소 규모)
         투자비   = 고정비 + 용량단가 × 과금 용량 + 전기공사
         절감액   = 저감량(kW) × 기본요금단가 × 12
@@ -356,17 +388,25 @@ def ess_target_curve(
     **기본요금단가는 현행 요금제 기준이다** (14세션 2절). 최적 요금제로 바꾼 뒤의
     단가를 쓰면 ESS 절감액이 선택요금 전환에 딸려 움직여 독립 평가가 깨진다.
 
+    **투자비·절감액·회수기간은 목표를 고르는 데만 쓴다** (18세션 1절). 절감액이
+    기본요금만 본 개략치라 :func:`evaluate_ess` 의 결론과 다르다. 화면에 내는
+    사양은 출력·정격 용량·방전시간 셋이며, 이 셋은 카드와 값이 같다.
+
     Args:
         baseline_demand_kw: 현행 요금적용전력. 저감량의 기준이다.
         step_kw: 탐색 격자. **10 kW 이하로 둔다** — 50 kW 간격이면 최소 지점을
             50 kW 옆에서 놓친다 (샘플에서 26.7년 vs 24.6년).
         search_ratio: 탐색 하한 비율. 기본은 현행 요금적용전력의 0.7배까지.
+        round_trip, dod: 정격 용량 환산 계수. **투자비 산정에는 쓰지 않는다** —
+            쓰면 최소 지점이 옮겨 가 카드 값이 통째로 달라진다.
     """
     if baseline_demand_kw <= 0:
         raise ValueError(f"현행 요금적용전력은 양수여야 합니다: {baseline_demand_kw}")
     cost_model = model if model is not None else load_ess_cost_model()
     step = default_target_step_kw() if step_kw is None else step_kw
     ratio = default_target_search_ratio() if search_ratio is None else search_ratio
+    round_trip = default_round_trip() if round_trip is None else round_trip
+    dod = default_dod() if dod is None else dod
     if step <= 0:
         raise ValueError(f"탐색 격자는 양수여야 합니다: {step}")
     if not 0 < ratio < 1:
@@ -407,6 +447,9 @@ def ess_target_curve(
                 reduction_kw=reduction,
                 power_kw=power,
                 required_capacity_kwh=capacity,
+                nameplate_capacity_kwh=nameplate_capacity_kwh(
+                    capacity, round_trip=round_trip, dod=dod
+                ),
                 billed_capacity_kwh=billed,
                 discharge_hours=capacity / power if power > 0 else 0.0,
                 equipment_won=equipment,
@@ -428,6 +471,8 @@ def ess_target_curve(
         base_fee_won_per_kw=base_fee_won_per_kw,
         market_minimum_kwh=cost_model.market_minimum_kwh,
         step_kw=step,
+        round_trip=round_trip,
+        dod=dod,
     )
 
 

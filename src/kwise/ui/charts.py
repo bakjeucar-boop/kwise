@@ -263,6 +263,10 @@ def ess_target_chart(curve: EssTargetCurve) -> alt.LayerChart:
 
     필요 용량을 **보조 축**으로 함께 그린다. 오른쪽 팔이 왜 나빠지는지는 회수기간
     곡선만으로는 보이지 않는다 — 용량이 급증하는 것이 원인이다.
+
+    **용량은 정격 기준이다** (18세션 1절). 카드가 내는 용량과 같은 값이라야
+    한 화면에서 두 숫자를 견줄 수 있다. 회수기간 축은 기본요금 절감만 본
+    개략치이므로 **목표를 고르는 지표**로만 읽는다 — 결론은 카드가 낸다.
     """
     frame = ess_target_frame(curve)
     base = alt.Chart(frame).encode(
@@ -274,17 +278,20 @@ def ess_target_chart(curve: EssTargetCurve) -> alt.LayerChart:
         alt.Tooltip("목표 요금적용전력(kW):Q", format=",.0f"),
         alt.Tooltip("저감량(kW):Q", format=",.0f"),
         alt.Tooltip("필요 출력(kW):Q", format=",.0f"),
-        alt.Tooltip("필요 용량(kWh):Q", format=",.0f"),
+        alt.Tooltip("정격 용량(kWh):Q", format=",.0f"),
         alt.Tooltip("방전시간(h):Q", format=",.2f"),
-        alt.Tooltip("투자비(원):Q", format=",.0f"),
-        alt.Tooltip("회수기간(년):Q", format=",.1f"),
+        alt.Tooltip("회수기간(년):Q", format=",.1f", title="개략 회수기간(년)"),
     ]
     payback = base.mark_line(color="#08519c").encode(
-        y=alt.Y("회수기간(년):Q", title="회수기간 (년)", scale=alt.Scale(zero=False)),
+        y=alt.Y(
+            "회수기간(년):Q",
+            title="개략 회수기간 (년) — 목표 선택용",
+            scale=alt.Scale(zero=False),
+        ),
         tooltip=tooltip,
     )
     capacity = base.mark_line(color="#bdbdbd", strokeDash=[4, 3]).encode(
-        y=alt.Y("필요 용량(kWh):Q", title="필요 용량 (kWh)", scale=alt.Scale(zero=False)),
+        y=alt.Y("정격 용량(kWh):Q", title="정격 용량 (kWh)", scale=alt.Scale(zero=False)),
         tooltip=tooltip,
     )
     layers: list[alt.Chart] = [capacity, payback]

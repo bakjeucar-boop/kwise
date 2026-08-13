@@ -114,7 +114,7 @@ def render(table: TariffTable, building: BuildingInfo | None = None) -> Analysis
 
     _headline_block(usage, diagnosis)
     _notice_block(quality, diagnosis)
-    _quality_block(usage, quality, diagnosis)  # ④
+    _quality_block(usage, quality)  # ④
     _pattern_block(diagnosis)  # ⑤
     _peak_block(diagnosis)  # ⑥
     _structure_block(usage, diagnosis, building)  # ⑦
@@ -486,7 +486,7 @@ def missing_lines(quality: QualityReport) -> tuple[str, ...]:
     return tuple(lines[:MISSING_LINE_LIMIT])
 
 
-def _quality_block(usage: UsageData, quality: QualityReport, diagnosis: Diagnosis) -> None:
+def _quality_block(usage: UsageData, quality: QualityReport) -> None:
     """경고는 위쪽 :func:`_notice_block` 이 이미 냈다. 여기는 사실만 적는다."""
     st.subheader("데이터 품질")
     meta = usage.meta
@@ -504,14 +504,14 @@ def _quality_block(usage: UsageData, quality: QualityReport, diagnosis: Diagnosi
                 f"피크 시간대 편중 배수 {fmt.count(quality.skew.multiple, decimals=2)} → "
                 "그 달의 최대수요가 실제보다 낮게 잡혔을 수 있음"
             )
-    # 세부는 확인사항으로 내린다. 위쪽 경고 목록에서는 뺐다 (13세션).
-    details, _rest = partition(
-        screen_notices(quality.warnings, diagnosis.warnings), MISSING_MARKERS
-    )
-    if details:
-        with st.expander(f"확인사항 {len(details)}건", expanded=False):
-            for item in details:
-                st.write(f"- {item.text}")
+    # **확인사항을 달지 않는다** (18세션 2절). 13세션에 위쪽 경고에서 여기 확인사항
+    # 으로 내렸고, 16세션에 :func:`missing_lines` 가 같은 사실을 세 줄로 정리했다.
+    # 두 조치가 겹쳐 **같은 사실이 다섯 번** 나왔다 — 세 줄 + 확인사항 두 건이
+    # 최장 연속 결측과 월별 결측률을 되풀이한다. 세 줄만 남긴다.
+    #
+    # ``partition(…, MISSING_MARKERS)`` 은 제대로 걸러 왔다. 걸러 낸 쪽을 이 블록이
+    # 다시 그린 것이 문제였다. **패턴을 늘려 막지 않는다** — 문구가 바뀌면 또
+    # 새는 방식이다. 20세션의 사실 ID 로 갈음한다.
     st.caption("결측은 보간하지 않습니다.", help=manual_tip("data-quality"))
 
 

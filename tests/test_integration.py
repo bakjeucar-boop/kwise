@@ -808,7 +808,10 @@ def test_ESS_본문에_투자비_상세와_성립_조건이_없다() -> None:
     body = " ".join(line for line in body.splitlines() if not line.lstrip().startswith("#"))
     for banned in ("설비 **", "성립 조건", "kW당 배터리비"):
         assert banned not in body, banned
-    assert "_notes(result.warnings, result.notes, _ess_details(result, model))" in source
+    assert (
+        "_notes(result.warnings, result.notes, "
+        "(_ess_basis_note(base_fee), *_ess_details(result, model)))"
+    ) in source
 
 
 def test_화면에_조달_사례_표가_없다() -> None:

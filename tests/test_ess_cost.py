@@ -626,17 +626,62 @@ def test_대표_지점_표가_최소_지점을_품는다(target_curve: EssTarget
     targets = [item.target_kw for item in highlights]
     assert targets == sorted(targets, reverse=True)
     table = ess_target_table(target_curve)
+    # **돈에 관한 열이 없다** (18세션 1절). 투자비·절감액·회수기간은 곡선의
+    # 개략치라 카드의 결론과 어긋난다. 표에는 카드와 값이 같은 사양만 둔다.
     assert list(table.columns) == [
         "목표(kW)",
         "저감량(kW)",
         "필요 출력(kW)",
-        "필요 용량(kWh)",
+        "정격 용량(kWh)",
         "방전시간(h)",
-        "투자비(원)",
-        "연간 절감액(원)",
-        "회수기간(년)",
     ]
     assert len(table) == len(highlights)
+
+
+def test_표의_최적_행이_카드_요약과_같다(
+    target_curve: EssTargetCurve,
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    sample_bill: BillingResult,
+    tariff: TariffTable,
+) -> None:
+    """**같은 값이 두 개로 나오지 않는다** (18세션 1절).
+
+    곡선 표는 「필요 용량 100.94 kWh · 회수기간 24.56년」 을, 카드는 「120 kWh ·
+    30.8년」 을 냈다. 곡선은 내보낼 에너지 기준이고 카드는 정격(왕복효율·DoD 반영)
+    기준이라 계산은 각각 옳았지만, 사용자에게는 그냥 불일치다.
+
+    **카드가 최종 사양이다.** 표는 카드와 값이 같은 사양 셋만 싣고, 돈에 관한
+    숫자는 카드 하나만 낸다.
+    """
+    best = target_curve.best
+    assert best is not None
+    card = evaluate_ess(
+        sample_usage,
+        tariff,
+        SAMPLE_SELECTION,
+        target_kw=best.target_kw,
+        cost=EssCostInput.unpriced(),
+        baseline=sample_bill,
+        quality=sample_report,
+    )
+    table = ess_target_table(target_curve)
+    row = table[table["목표(kW)"] == best.target_kw]
+    assert len(row) == 1, "최적 목표가 표에 한 줄로 있어야 한다"
+
+    # 사양 셋은 **정확히** 같다. 반올림 오차도 허용하지 않는다 — 화면에서 두
+    # 숫자가 나란히 놓이므로 한 자리라도 다르면 다시 불일치로 읽힌다.
+    assert float(row["필요 출력(kW)"].iloc[0]) == card.power_kw
+    assert float(row["정격 용량(kWh)"].iloc[0]) == card.capacity_kwh
+    assert float(row["방전시간(h)"].iloc[0]) == card.discharge_hours
+
+    # 돈에 관한 열은 표에 없다. 회수기간은 카드 하나만 낸다.
+    assert "회수기간(년)" not in table.columns
+    assert "투자비(원)" not in table.columns
+    assert "연간 절감액(원)" not in table.columns
+    # 곡선 내부에는 그대로 남아 목표를 고른다 — 지운 것이 아니라 화면에서 뺐다.
+    assert best.payback_years is not None
+    assert best.required_capacity_kwh != card.capacity_kwh
 
 
 def test_절감액은_현행_요금제_단가로_낸다(sample_usage: UsageData, tariff: TariffTable) -> None:

@@ -955,20 +955,21 @@ def _ess(
         return
     model = ess_cost_model(fixed_won, per_kwh_won)
 
-    st.markdown("**회수기간 곡선** — 기본요금 절감만 반영한 개략치 · 목표 선택용")
+    st.markdown("**목표 선택 곡선** — 어느 목표가 유리한지만 본다")
     st.altair_chart(charts.ess_target_chart(curve), width="stretch")
     st.caption(
-        f"회수기간이 가장 짧은 목표는 **{fmt.kw(best.target_kw, decimals=0)}** 입니다 — "
+        f"가장 유리한 목표는 **{fmt.kw(best.target_kw, decimals=0)}** 입니다 — "
         f"{fmt.markdown_safe(curve.u_shape_reason)} **물리적 최적이 아니라 조달 규격의 "
-        "산물입니다.** 회색 점선은 필요 용량(kWh)이며, 목표를 조금만 낮춰도 급증하는 "
-        "것이 오른쪽 팔을 만듭니다. "
-        "**카드 결과는 요금 재계산과 왕복효율·DoD 를 반영해 다릅니다.**"
+        "산물입니다.** 회색 점선은 정격 용량(kWh)이며, 목표를 조금만 낮춰도 급증하는 "
+        "것이 오른쪽 팔을 만듭니다."
     )
+    # **표에 돈에 관한 숫자를 두지 않는다** (18세션 1절). 표는 사양만 싣고,
+    # 절감액·투자비·회수기간은 아래 카드 하나가 낸다. 두 기준이 각각 옳아도
+    # 같은 목표에서 다른 회수기간이 두 개 보이면 사용자에게는 그냥 불일치다.
     st.dataframe(localize(charts.ess_target_table(curve)), hide_index=True, width="stretch")
     st.caption(
-        "위 곡선과 표는 **기본요금 절감만 본 개략치**입니다 (현행 요금제 기본요금단가 "
-        f"{fmt.count(base_fee, ' 원/kW')} × 12개월). 아래 결과는 고른 목표에서 요금을 "
-        "다시 계산하고 왕복효율·DoD 를 반영한 값입니다."
+        "표의 출력·정격 용량·방전시간은 **아래 결과와 같은 값**입니다. "
+        "절감액·투자비·회수기간은 요금을 다시 계산해야 나오므로 아래에서만 냅니다."
     )
 
     # 목표는 곡선이 정한다. 세션에는 남겨 3단계가 같은 값을 읽게 한다.
@@ -1039,7 +1040,21 @@ def _ess(
         )
     # **투자비 내역·계수·성립 조건은 확인사항으로 내린다** (17세션 4-2·4-3).
     # 본문에는 투자비 합계·절감액·회수기간만 남긴다 — 위 지표 넷이 그것이다.
-    _notes(result.warnings, result.notes, _ess_details(result, model))
+    _notes(result.warnings, result.notes, (_ess_basis_note(base_fee), *_ess_details(result, model)))
+
+
+def _ess_basis_note(base_fee_won_per_kw: float) -> str:
+    """두 기준의 차이 **한 줄** (18세션 1절).
+
+    곡선은 기본요금 절감만 본 개략치로 목표를 고르고, 결론 숫자는 요금을 다시
+    계산한 이 카드가 낸다. 차이를 지우지는 않되 **결론 옆에 두지 않는다** —
+    한 줄이면 되는 사실이라 확인사항으로 내린다.
+    """
+    return (
+        "목표 선택 곡선은 기본요금 절감만 본 개략치입니다 (현행 요금제 기본요금단가 "
+        f"{fmt.count(base_fee_won_per_kw, ' 원/kW')} × 12개월). 위 결과는 그 목표에서 "
+        "요금을 다시 계산하고 왕복효율·DoD 를 반영한 값이라 회수기간이 더 깁니다."
+    )
 
 
 def _ess_details(result: object, model: object) -> tuple[str, ...]:

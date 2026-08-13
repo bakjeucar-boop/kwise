@@ -579,6 +579,51 @@ def test_결측_안내가_한_블록이다(app: AppTest) -> None:
     assert not [item for item in shown if "결측" in item], shown
 
 
+def _screen_lines(screen: AppTest) -> list[str]:
+    """화면에 실제로 그려진 문구 전부. **접힌 상자 안까지 본다.**
+
+    확인사항은 ``st.expander`` 안이라 최상위 목록만 훑으면 잡히지 않는다 —
+    18세션 2절의 중복이 그 사각지대에서 살아남았다.
+    """
+    groups = (screen.markdown, screen.caption, screen.warning, screen.info, screen.error)
+    lines = [str(item.value).strip() for group in groups for item in group]
+    for box in screen.expander:
+        lines += [str(item.value).strip() for item in list(box.markdown) + list(box.caption)]
+    return lines
+
+
+def test_결측_안내가_화면에_세_줄뿐이다(app: AppTest) -> None:
+    """**같은 사실이 다섯 번 나왔다** (18세션 2절).
+
+    세 줄(:func:`missing_lines`)에 더해 「데이터 품질」 확인사항 두 건이 최장 연속
+    결측과 월별 결측률을 되풀이했다. 13세션이 위쪽 경고에서 확인사항으로 내리고,
+    16세션이 같은 사실을 세 줄로 정리한 두 조치가 겹친 자리다.
+
+    ``partition(…, MISSING_MARKERS)`` 은 제대로 걸러 왔다 — 걸러 낸 쪽을 품질
+    블록이 **다시 그린 것**이 원인이었다. 패턴을 늘려 막는 방식이 아니므로,
+    문구가 바뀌어도 이 시험은 계속 유효하다.
+    """
+    assert not app.exception, app.exception
+    from kwise.quality import check_quality
+
+    quality = check_quality(load_usage(SAMPLE))
+    lines = missing_lines(quality)
+    assert len(lines) == 3
+
+    rendered = _screen_lines(app)
+    for line in lines:
+        assert rendered.count(line) == 1, f"{line} 이(가) {rendered.count(line)}번 나왔다"
+
+    # 세 줄 말고 결측을 말하는 안내가 없다. 짧은 꼬리말(`결측은 보간하지
+    # 않습니다.`)과 지표 라벨은 안내 문구가 아니므로 길이로 거른다.
+    others = [
+        item
+        for item in rendered
+        if item not in lines and len(item) >= 20 and ("결측" in item or "보간" in item)
+    ]
+    assert others == [], others
+
+
 def test_같은_값이면_피크_지표를_한_줄로_접는다(app: AppTest) -> None:
     """샘플은 연간 최대가 중간부하 시간대라 관측 최대와 요금적용전력이 같다."""
     labels = [item.label for item in app.metric]
@@ -716,13 +761,17 @@ def test_ESS_곡선과_표가_나온다(ess_screen: AppTest) -> None:
     assert not ess_screen.exception, ess_screen.exception
     assert len(ess_screen.get("vega_lite_chart")) >= 1, "회수기간 곡선이 없습니다."
     body = " ".join(str(item.value) for item in ess_screen.caption)
-    assert "회수기간이 가장 짧은 목표는" in body
+    assert "가장 유리한 목표는" in body
     assert "물리적 최적이 아니라 조달 규격의 산물입니다" in body
     assert "왼쪽은 최소 규모" in body and "오른쪽은 용량이 급증" in body
 
 
 def test_ESS_최소점_표식이_검산값과_맞는다() -> None:
-    """곡선의 표식은 최소 지점의 사양을 그대로 적는다 (14세션 3-2)."""
+    """곡선의 표식은 최소 지점의 사양을 그대로 적는다 (14세션 3-2 · 18세션 1절).
+
+    **용량은 정격이고 회수기간은 적지 않는다.** 표식의 회수기간은 기본요금만 본
+    개략치라 카드의 결론(30.8년)과 어긋난 숫자가 화면에 남았다.
+    """
     from kwise.measures import ess_target_curve
     from kwise.tariff import TariffSelection
 
@@ -738,7 +787,8 @@ def test_ESS_최소점_표식이_검산값과_맞는다() -> None:
     assert curve.best is not None
     label = curve.best.spec_label
     assert label.startswith("5,170 kW · 저감 123 kW")
-    assert "24.6년" in label
+    assert "120 kWh" in label, label  # 정격 용량 — 카드와 같은 값
+    assert "년" not in label, label  # 회수기간은 카드만 낸다
 
 
 def test_ESS_계수를_둘로_받는다(ess_screen: AppTest) -> None:
