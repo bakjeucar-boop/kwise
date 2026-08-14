@@ -110,4 +110,12 @@ def main() -> None:
     _trace("8 끝")
 
 
-main()
+# **import 로 화면을 그리지 않는다.** Streamlit 은 조작할 때마다 진입점 파일을
+# 처음부터 다시 실행하는데, 파이썬은 이미 불러온 모듈을 다시 실행하지 않는다.
+# 최상위에서 그리면 두 번째 실행부터 아무것도 그려지지 않아 화면이 빈다
+# (2026-08-14 배포지에서 겪었다 — 로컬은 이 파일을 직접 돌려서 안 났다).
+#
+#     streamlit run src\kwise\ui\app.py   이 아래가 매 실행에 돈다
+#     streamlit run streamlit_app.py      그쪽이 main() 을 매 실행에 부른다
+if __name__ == "__main__":
+    main()
