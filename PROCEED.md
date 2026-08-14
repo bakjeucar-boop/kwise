@@ -22,10 +22,56 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 | 요금표 | 8종별 (일반용 갑Ⅰ·갑Ⅱ·을 / 산업용 갑Ⅰ·갑Ⅱ·을 / 교육용 갑·을), schema 0.2 |
 | 산출물 | Excel 13시트 · Word 5장 + **부록 A·B·C** · 기술서/매뉴얼 html |
 | 미해결 | 8건 (청구서 4 · 참고단가 1 · 약관 확인 1 · ESS 실내형 사례 1 · 실측 1). **블로커 없음** |
+| 작업 PC | **두 대를 GitHub 로 번갈아 쓴다.** 시작 전 `git pull`, 종료 시 `git push` |
 | 블로커 | — |
 
 **화면 실행** — `.venv\Scripts\streamlit.exe run src\kwise\ui\app.py`
 **문서 생성** — `.venv\Scripts\python.exe tools\build_docs.py`
+
+---
+
+## 두 PC 를 번갈아 쓴다 (2026-08-14부터)
+
+**GitHub 를 사이에 둔다.** 원격은 `https://github.com/bakjeucar-boop/kwise` (공개).
+
+    작업 시작   git pull      ← 먼저 한다. 안 하면 다른 PC 작업 위에 덮어쓴다
+    작업 종료   git push      ← 안 올리면 그 PC 에만 남는다
+
+**세션 기록도 저장소에 있다.** `PROCEED.md` 가 커밋되므로 다른 PC 에서 그대로
+이어받는다. 다만 **올려야 이어받는다** — 커밋만 하고 push 를 빠뜨리면 다음
+세션이 다른 PC 에서 열렸을 때 없는 일이 된다.
+
+### 저장소에 없는 것 — 따로 옮긴다
+
+| 무엇 | 크기 | 왜 없나 · 필요한가 |
+|---|---|---|
+| `input\` CSV 7개 | 6.1 MB | **공개 저장소라 뺐다** (배포 때 이력에서도 제거). 케이스 스터디·회귀 시험에 **필요하다** |
+| `data\weather\` | 42.5 MB | **커밋되어 있다.** `git pull` 로 따라온다 — 따로 옮길 필요 없다 |
+| `data\source\*.pdf` 2개 | 9.9 MB | 약관 원문. **코드가 읽지 않는다** (`.txt` 추출본은 커밋됨). 원문 대조할 때만 |
+| `.venv\` | — | **옮기지 않는다.** 새 PC 에서 만든다 |
+| `cache\` · `__pycache__` | — | 다시 생긴다 |
+| `output\` 의 산출물 | — | 다시 만든다. `casestudy_*.xlsx` 만 커밋된다 |
+
+**꼭 옮길 것은 `input\` 하나다.** USB·클라우드 드라이브 등으로 옮긴 뒤
+새 PC 의 `input\` 에 그대로 둔다. 없으면 케이스 스터디(66/66)와 회귀 시험이
+돌지 않는다 — 오류가 아니라 건너뛴다.
+
+### 새 PC 에서 처음 할 일
+
+    git clone https://github.com/bakjeucar-boop/kwise.git
+    cd kwise
+    py -m venv .venv
+    .venv\Scripts\python.exe -m pip install -e .
+    (input\ 을 옮겨 넣는다)
+    .venv\Scripts\python.exe -m pytest
+
+### 백업 번들
+
+`C:\Users\SAMSUNG\Documents\kwise-backup\` 에 둔다. 원격이 살아 있으면 필요
+없지만, 이력을 고치는 작업(`filter-branch` 등) 전에는 반드시 하나 뜬다.
+
+    git bundle create ..\kwise-backup\kwise_20260814_1611.bundle --all
+    git bundle verify <그 파일>
 
 ---
 
