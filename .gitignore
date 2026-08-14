@@ -26,3 +26,7 @@ data/weather/fetch_failures.json
 data/backup/
 # 손상 파일 사본
 data/*.damaged
+# 실측 사용량·케이스 CSV 는 공개 저장소에 올리지 않는다 (2026-08-14).
+# 식별 정보는 없으나 실제 건물의 가동 시간대가 드러난다. 로컬에만 둔다.
+# 이력에서도 걷어냈다 — 되살리려면 kwise-backup-20260814.bundle 을 쓴다.
+input/
