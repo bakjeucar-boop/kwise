@@ -20,8 +20,6 @@
 
 from __future__ import annotations
 
-import sys
-
 import streamlit as st
 
 from kwise import __version__
@@ -42,43 +40,29 @@ _NOT_READY = (
 )
 
 
-def _trace(step: str) -> None:
-    """**임시 진단** — 배포지에서 화면이 비는 자리를 찾는다 (2026-08-14).
-
-    로그의 마지막 ``[kwise]`` 줄이 멈춘 지점이다. 원인을 잡으면 지운다.
-    stderr 로 바로 흘려보낸다 — Streamlit Cloud 가 그대로 보여 준다.
-    """
-    print(f"[kwise] {step}", file=sys.stderr, flush=True)
-
-
 def main() -> None:
-    _trace("1 진입")
     st.set_page_config(page_title="kWise — 전력 비용 진단", page_icon="⚡", layout="wide")
 
     # 지난 실행이 남긴 임시 폴더를 한 번만 쓸어낸다 (10.2).
     if _PURGED not in st.session_state:
         purge_stale()
         st.session_state[_PURGED] = True
-    _trace("2 purge_stale")
 
     # **기준 데이터 화면을 다녀와도 켠 수단과 넣은 값이 남아야 한다** (16세션 0-1).
     # 그 화면은 분석 화면을 통째로 갈아 끼우므로 위젯 상태가 버려진다.
     carry_inputs()
-    _trace("3 carry_inputs")
 
     st.sidebar.title("kWise")
     st.sidebar.caption(f"버전 {__version__} · 대한민국 전용")
     # **옆단은 건물 이야기다** (16세션 2절). 계약 정보는 건물이 아니라 계약이라
     # 1단계 탭으로 내렸다.
     info = building_view.render_sidebar()
-    _trace("4 옆단")
     st.sidebar.divider()
     page = render_settings_entry()
     st.sidebar.divider()
     st.sidebar.caption("기본요금과 전력량요금만 계산합니다. 인증·신고용 산출물이 아닙니다.")
 
     rules_admin.render_alerts()
-    _trace("5 알림")
 
     if page == RULES_PAGE:
         rules_admin.render()
@@ -87,12 +71,10 @@ def main() -> None:
     # 요금표 검증 상태는 **참고 등급**이다. 옆단에 띄우지 않고 기준 데이터
     # 화면과 산출물에만 둔다 (10.7).
     table = cached_tariff(rules_stamp())
-    _trace("6 요금표")
 
     diagnose_tab, measures_tab, combine_tab = st.tabs(TABS)
     with diagnose_tab:
         context = diagnose.render(table, info)
-    _trace("7 1단계")
     with measures_tab:
         # **진행할 수 없어도 탭을 막지 않는다** (16세션 1절). 눌러 보고 무엇이
         # 없는지 읽는 편이, 눌리지 않는 이유를 짐작하는 편보다 낫다.
@@ -107,7 +89,6 @@ def main() -> None:
             callout.note(_NOT_READY)
         else:
             compare.render(context, table, info)
-    _trace("8 끝")
 
 
 # **import 로 화면을 그리지 않는다.** Streamlit 은 조작할 때마다 진입점 파일을
