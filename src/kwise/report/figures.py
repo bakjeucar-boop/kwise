@@ -14,6 +14,9 @@ Word 에 넣을 png 를 만든다. 표는 여기서 그리지 않는다 — **�
 from __future__ import annotations
 
 import io
+import logging
+from functools import lru_cache
+from pathlib import Path
 
 import matplotlib
 
@@ -22,6 +25,7 @@ matplotlib.use("Agg")  # GUI 없는 환경에서 돈다. import 순서를 지킨
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib import font_manager
 from matplotlib.figure import Figure
 
 from kwise.compare import ComparisonResult
@@ -49,14 +53,16 @@ from kwise.report.frames import (
 )
 
 __all__ = [
+    "FALLBACK_FONT",
     "FIGURE_DPI",
-    "KOREAN_FONT",
+    "KOREAN_FONT_CANDIDATES",
     "add_legend",
     "apply_style",
     "combination_png",
     "dr_daily_png",
     "ess_day_png",
     "hourly_profile_png",
+    "korean_font",
     "monthly_peak_png",
     "power_triangle_png",
     "render_png",
@@ -67,8 +73,37 @@ __all__ = [
     "top_hour_png",
 ]
 
-# Windows 내장 한글 폰트. 없으면 matplotlib 이 대체 폰트를 쓰며 경고를 낸다.
-KOREAN_FONT = "Malgun Gothic"
+# ===================================================================== 24세션 · 한글 폰트
+#
+# **png 는 서버에서 굽는다.** 서버에 그 폰트가 없으면 한글이 네모(두부)로 나온다 —
+# 윈도우 개발 PC 에서는 맑은 고딕이 있어 드러나지 않다가, 리눅스 배포지에서만
+# 깨진다. 한 이름을 박아 두는 대신 **설치된 것 중에서 고른다.**
+#
+#     윈도우   맑은 고딕
+#     macOS    애플 SD 산돌고딕 / 애플고딕
+#     리눅스   나눔고딕 · 본고딕(Noto)  ← ``packages.txt`` 의 ``fonts-nanum``
+#
+# Word 문서(:mod:`kwise.report.document`)는 사정이 다르다 — 글꼴 **이름만** 적고
+# 그리는 것은 읽는 사람의 Word 라, 없으면 그쪽이 알아서 대체한다.
+
+_log = logging.getLogger(__name__)
+
+#: 찾을 순서. **앞에 있는 것이 이긴다.**
+KOREAN_FONT_CANDIDATES: tuple[str, ...] = (
+    "Malgun Gothic",  # 윈도우 내장
+    "Apple SD Gothic Neo",  # macOS
+    "AppleGothic",
+    "NanumGothic",  # 리눅스 — fonts-nanum
+    "NanumBarunGothic",
+    "Noto Sans CJK KR",  # 리눅스 — fonts-noto-cjk
+    "Noto Sans KR",
+    "Source Han Sans KR",
+    "Gulim",
+    "Batang",
+)
+
+#: 하나도 없을 때 쓸 이름. 한글은 깨지지만 **그림은 나온다** — 멈추지 않는다.
+FALLBACK_FONT = "sans-serif"
 FIGURE_DPI = 150
 _SIZE = (9.0, 3.6)
 _COLORS = ("#08519c", "#9ecae1", "#f16913", "#6baed6")
@@ -94,9 +129,52 @@ def add_legend(axes: object, **overrides: object) -> None:
     axes.legend(**{**LEGEND_STYLE, **overrides})  # type: ignore[attr-defined]
 
 
+#: 폰트 **파일 이름**에서 한글 글꼴을 알아보는 실마리. 캐시가 낡았을 때만 쓴다.
+_FONT_FILE_HINTS = ("nanum", "noto", "malgun", "gothic", "gulim", "batang")
+
+
+def _register_system_fonts() -> None:
+    """설치된 한글 폰트 **파일**을 matplotlib 에 등록한다.
+
+    ``findSystemFonts`` · ``addfont`` 는 공개 API 다 — 폰트 목록을 통째로 다시
+    만드는 비공개 함수에 기대지 않는다.
+    """
+    known = {item.fname for item in font_manager.fontManager.ttflist}
+    for path in font_manager.findSystemFonts():
+        if path in known:
+            continue
+        if any(hint in Path(path).name.lower() for hint in _FONT_FILE_HINTS):
+            try:
+                font_manager.fontManager.addfont(path)
+            except (OSError, RuntimeError):  # pragma: no cover - 깨진 폰트 파일
+                continue
+
+
+@lru_cache(maxsize=1)
+def korean_font() -> str:
+    """**설치된** 한글 폰트 하나. 없으면 :data:`FALLBACK_FONT`.
+
+    matplotlib 은 import 할 때 폰트 목록을 **캐시에서** 읽는다. 배포지에서 방금
+    설치한 폰트(``packages.txt`` 의 ``fonts-nanum``)가 그 캐시에 없을 수 있어,
+    **한 번 못 찾으면 파일을 직접 찾아 등록하고** 그래도 없을 때만 물러선다.
+    """
+    for rescan in (False, True):
+        if rescan:
+            _register_system_fonts()
+        installed = {item.name for item in font_manager.fontManager.ttflist}
+        for name in KOREAN_FONT_CANDIDATES:
+            if name in installed:
+                return name
+    _log.warning(
+        "한글 폰트를 찾지 못해 그림의 한글이 깨집니다. 후보: %s",
+        ", ".join(KOREAN_FONT_CANDIDATES),
+    )
+    return FALLBACK_FONT
+
+
 def apply_style() -> None:
     """한글 폰트와 눈금 스타일. **그릴 때마다 건다** (rcParams 는 전역이다)."""
-    plt.rcParams["font.family"] = KOREAN_FONT
+    plt.rcParams["font.family"] = korean_font()
     # 한글 폰트에는 유니코드 마이너스가 없다. 음수 축이 깨진다.
     plt.rcParams["axes.unicode_minus"] = False
     plt.rcParams["axes.grid"] = True

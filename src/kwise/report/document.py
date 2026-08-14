@@ -81,6 +81,13 @@ __all__ = [
 ]
 
 DOCUMENT_TITLE = "전력 비용 진단 보고서"
+
+#: Word 본문 글꼴 **이름**.
+#:
+#: 차트 png(:mod:`kwise.report.figures`)와 달리 **여기서 글자를 그리지 않는다** —
+#: 이름만 문서에 적고 그리는 것은 읽는 사람의 Word 다. 그 PC 에 없으면 Word 가
+#: 알아서 대체하므로, 서버에 이 폰트가 깔려 있을 필요가 없다. 받는 사람이 대개
+#: 한국 사무실이라 맑은 고딕으로 둔다.
 KOREAN_FONT = "Malgun Gothic"
 TABLE_STYLE = "Table Grid"
 DEFAULT_OUTPUT_DIR = Path("output")

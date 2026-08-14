@@ -205,12 +205,52 @@ def test_수단별_차트가_보고서에도_실린다(full_document: DocumentTy
 def test_차트가_png_이고_한글_폰트를_쓴다() -> None:
     import matplotlib.pyplot as plt
 
-    from kwise.report.figures import KOREAN_FONT, apply_style
+    from kwise.report.figures import apply_style, korean_font
 
     apply_style()
-    assert plt.rcParams["font.family"] == [KOREAN_FONT]
+    assert plt.rcParams["font.family"] == [korean_font()]
     # 한글 폰트에는 유니코드 마이너스가 없다. 음수 축이 깨진다.
     assert plt.rcParams["axes.unicode_minus"] is False
+
+
+def test_설치된_한글_폰트를_고른다() -> None:
+    """**png 는 서버에서 굽는다** (24세션).
+
+    한 이름을 박아 두면 그 폰트가 없는 배포지(리눅스)에서만 한글이 네모로
+    나온다 — 윈도우 개발 PC 에서는 드러나지 않는다. 설치된 것 중에서 고른다.
+    """
+    import matplotlib
+    from matplotlib import font_manager
+
+    from kwise.report import figures
+
+    installed = {item.name for item in font_manager.fontManager.ttflist}
+    assert figures.korean_font() in installed, "설치되지 않은 폰트를 골랐습니다."
+    # 윈도우·macOS·리눅스 폰트가 모두 후보에 있어야 한 OS 에서만 되는 일이 없다.
+    assert "Malgun Gothic" in figures.KOREAN_FONT_CANDIDATES  # 윈도우
+    assert "AppleGothic" in figures.KOREAN_FONT_CANDIDATES  # macOS
+    assert {"NanumGothic", "Noto Sans CJK KR"} <= set(figures.KOREAN_FONT_CANDIDATES)  # 리눅스
+    assert matplotlib.get_backend()  # import 만으로 백엔드가 잡힌다
+
+
+def test_한글_폰트가_없어도_멈추지_않는다(caplog: pytest.LogCaptureFixture) -> None:
+    """**그림은 나와야 한다.** 한글이 깨지더라도 산출물 생성이 멈추면 더 나쁘다."""
+    import logging
+
+    from kwise.report import figures
+
+    original = figures.KOREAN_FONT_CANDIDATES
+    figures.korean_font.cache_clear()
+    figures.KOREAN_FONT_CANDIDATES = ("있을 리 없는 폰트",)
+    try:
+        with caplog.at_level(logging.WARNING, logger="kwise.report.figures"):
+            picked = figures.korean_font()
+    finally:
+        figures.KOREAN_FONT_CANDIDATES = original
+        figures.korean_font.cache_clear()
+
+    assert picked == figures.FALLBACK_FONT
+    assert any("한글 폰트를 찾지 못해" in record.message for record in caplog.records)
 
 
 def test_그림이_png_바이트다(sample_diagnosis: Diagnosis) -> None:
