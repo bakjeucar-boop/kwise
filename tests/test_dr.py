@@ -36,8 +36,8 @@ from kwise.diagnose.dr import (
     dr_bid_restriction_months,
     dr_daily_hours_cap,
     dr_event_hours,
+    dr_market_windows,
     dr_max_events_per_day,
-    dr_operating_windows,
     low_load_multiple,
     registration_percentile,
 )
@@ -194,11 +194,13 @@ def test_기준선은_주말_공휴일_운영시간대_평균이다(sample_diagn
     baseline = profile.weekend_baseline_kw
     assert baseline is not None
     assert profile.weekend_days == 114
-    assert baseline == pytest.approx(2_095, abs=5)
+    # **21세션에 판정 창이 좁아졌다** — 시장 시간대(09~12·13~20시) ∩ 건물 운영
+    # 시간대(09~18시). 건물이 닫힌 18~20시 부하가 기준선에서 빠졌다.
+    assert baseline == pytest.approx(2_171, abs=5)
     # ② 문턱은 기준선 × 배수. 배수는 assumptions.json 에 있다.
     assert profile.low_load_multiple == low_load_multiple() == 1.2
     assert profile.low_load_threshold_kw == pytest.approx(baseline * profile.low_load_multiple)
-    assert profile.low_load_threshold_kw == pytest.approx(2_514, abs=5)
+    assert profile.low_load_threshold_kw == pytest.approx(2_605, abs=5)
 
 
 def test_저부하_평일을_데이터에서_찾는다(sample_diagnosis: Diagnosis) -> None:
@@ -244,7 +246,7 @@ def test_감축_가능량은_저부하일별_곱의_합이다(sample_diagnosis: 
     assert profile.period_reducible_kwh == pytest.approx(expected)
     # 관측 기간을 365일로 환산한다. 기간이 1년이 아닐 수 있다.
     assert profile.annual_reducible_kwh == pytest.approx(expected * 365.0 / profile.total_days)
-    assert profile.annual_reducible_kwh == pytest.approx(31_133, rel=1e-3)
+    assert profile.annual_reducible_kwh == pytest.approx(34_350, rel=1e-3)
 
 
 def test_등록_권장_용량은_저부하일_분포의_하위값이다(sample_diagnosis: Diagnosis) -> None:
@@ -262,11 +264,13 @@ def test_감축_여력은_운영_시간대로만_잰다(sample_diagnosis: Diagno
     """③ 점심과 야간은 빠진다. 참여할 수 없는 시간의 부하를 여력으로 세지 않는다."""
     profile = sample_diagnosis.dr
     assert profile is not None
-    assert profile.windows == ((9, 12), (13, 20))
-    assert dr_operating_windows() == profile.windows
+    # **시장 시간대와 건물 운영 시간대는 다른 값이다** (21세션 4절). 제도는
+    # 09~12·13~20시를 열어 두고, 이 건물은 09~18시에 돈다. 여력은 겹치는 곳에서만 난다.
+    assert dr_market_windows() == ((9, 12), (13, 20))
+    assert profile.windows == ((9, 12), (13, 18))
     hours = {hour for start, end in profile.windows for hour in range(start, end)}
     assert 12 not in hours  # 점심
-    assert 20 not in hours  # 운영 종료
+    assert 19 not in hours  # 건물이 닫힌 뒤
     assert 8 not in hours
 
 
@@ -507,3 +511,38 @@ def test_수단_시트가_사유로_채워진다(sample_diagnosis: Diagnosis) ->
     assert str(row["확실성"]) == str(Certainty.MEDIUM)
     assert "수요관리사업자를 통해서만" in row["비고"]
     assert "저부하 평일" in row["비고"]
+
+
+def test_시장_시간대와_건물_운영_시간대를_가른다(sample_usage: UsageData, calendar: object) -> None:
+    """**둘은 다른 값이다** (21세션 4절).
+
+    시장 시간대는 제도가 정한 입찰 가능 시간(평일 09~12·13~20시)이고, 건물
+    운영 시간대는 사람이 그 시간에 일하느냐다. 8시에 여는 곳은 8시부터 줄일
+    것이 있지만, 시장이 9시에 열리므로 입찰은 9시부터다.
+    """
+    from kwise.diagnose.dr import overlap_windows
+
+    market = dr_market_windows()
+    assert market == ((9, 12), (13, 20)), "시장 시간대는 제도 규정이다."
+    assert overlap_windows(market, (8, 19)) == ((9, 12), (13, 19))
+    assert overlap_windows(market, (9, 18)) == ((9, 12), (13, 18))
+    # 겹치는 구간이 없으면 시장 시간대로 되돌린다 — 창이 비면 진단이 멈춘다.
+    assert overlap_windows(market, (0, 6)) == market
+
+    early = dr_profile(
+        sample_usage.kw,
+        15,
+        calendar,  # type: ignore[arg-type]
+        contract_type="general_b",
+        operating_hours=(8, 20),
+    )
+    late = dr_profile(
+        sample_usage.kw,
+        15,
+        calendar,  # type: ignore[arg-type]
+        contract_type="general_b",
+        operating_hours=(9, 18),
+    )
+    assert early.windows == ((9, 12), (13, 20))
+    assert late.windows == ((9, 12), (13, 18))
+    assert early.weekend_baseline_kw != late.weekend_baseline_kw

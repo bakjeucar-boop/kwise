@@ -108,11 +108,12 @@ _HEIGHT = 260
 # 움직이거나 5,000 kW 부하에 수백 kW 발전을 얹으면, 0 부터 시작하는 축에서는
 # 두 값이 같은 자리에 겹친다. 규약 셋을 여기 모아 둔다.
 #
-#     ① 금액·전력 축은 **0 부터 시작하지 않는다.** 축 제목에 그 사실을 적는다
+#     ① 금액·전력 축은 **0 부터 시작하지 않는다** (문구는 적지 않는다 — 21세션 5절)
 #     ② 절대값과 변화량은 **차트를 나눈다.** 한 축에 억과 백만을 같이 두지 않는다
 #     ③ 두 선이 붙어 보이면 **그 사이를 색으로 채운다**
 
-#: 값의 범위에 맞춰 축을 자른다. 축 제목에 "0 부터 시작하지 않습니다" 를 적는다.
+#: 값의 범위에 맞춰 축을 자른다. **축 제목에 그 사실을 적지 않는다** (21세션 5절)
+#: — 눈금이 0 이 아닌 것은 축을 보면 안다.
 _CUT_SCALE = alt.Scale(zero=False, nice=True)
 
 #: 범례를 **우측 하단**에 둔다 (17세션 2절). 우측 상단이면 값이 커질 때
@@ -376,7 +377,7 @@ def tariff_option_chart(switch: TariffSwitchResult) -> alt.Chart:
         .encode(
             x=alt.X("요금제:N", title=None, sort=order),
             xOffset=alt.XOffset("구분:N", sort=list(TARIFF_PARTS)),
-            y=alt.Y("원:Q", title="요금 (원) — 0 부터 시작하지 않습니다", scale=_CUT_SCALE),
+            y=alt.Y("원:Q", title="요금 (원)", scale=_CUT_SCALE),
             color=alt.Color(
                 "구분:N",
                 title=None,
@@ -673,7 +674,7 @@ def solar_day_chart(
         .mark_area(opacity=0.75)
         .encode(
             x=alt.X("시각:T", title=title),
-            y=alt.Y("순부하(kW):Q", title="출력 (kW) — 0 부터 시작하지 않습니다", scale=_CUT_SCALE),
+            y=alt.Y("순부하(kW):Q", title="출력 (kW)", scale=_CUT_SCALE),
             y2=alt.Y2("원부하(kW)"),
             color=alt.Color(
                 "구분:N",
@@ -697,7 +698,7 @@ def solar_day_chart(
         .mark_line(strokeWidth=1.8)
         .encode(
             x="시각:T",
-            y=alt.Y("kW:Q", title="출력 (kW) — 0 부터 시작하지 않습니다", scale=_CUT_SCALE),
+            y=alt.Y("kW:Q", title="출력 (kW)", scale=_CUT_SCALE),
             color=alt.Color(
                 "구분:N",
                 title=None,
@@ -783,7 +784,7 @@ def ess_day_chart(
         .mark_area(opacity=0.7, color="#31a354")
         .encode(
             x=alt.X("시각:T", title=None),
-            y=alt.Y("순부하(kW):Q", title="부하 (kW) — 0 부터 시작하지 않습니다", scale=_CUT_SCALE),
+            y=alt.Y("순부하(kW):Q", title="부하 (kW)", scale=_CUT_SCALE),
             y2=alt.Y2("원부하(kW)"),
         )
     )
@@ -792,7 +793,7 @@ def ess_day_chart(
         .mark_line(strokeWidth=1.8)
         .encode(
             x=alt.X("시각:T", title=None),
-            y=alt.Y("kW:Q", title="부하 (kW) — 0 부터 시작하지 않습니다", scale=_CUT_SCALE),
+            y=alt.Y("kW:Q", title="부하 (kW)", scale=_CUT_SCALE),
             color=alt.Color(
                 "구분:N",
                 title=None,

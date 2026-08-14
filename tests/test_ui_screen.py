@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import ast
 import datetime as dt
-import logging
 import re
 from pathlib import Path
 
@@ -35,7 +34,6 @@ from kwise.ui.labels import contract_label, option_label, selection_label, volta
 from kwise.ui.notices import (
     Severity,
     appendix_notices,
-    classify,
     report_notices,
     screen_notices,
     tooltip_text,
@@ -190,10 +188,13 @@ def test_등급마다_가는_자리가_다르다() -> None:
     참고      화면에 없음 · 보고서 부록
     """
     items = (
-        block("계약 정보가 없어 요금을 산출하지 않았습니다."),
-        warn("2023-11 결측률 32.3% — 신뢰 제한"),
-        basis("투자비는 용량(kWp) × 1,200,000 원/kWp 로 냈습니다 (출처: 사용자 입력)."),
-        info("기후환경요금과 연료비조정요금은 미포함입니다."),
+        block("계약 정보가 없어 요금을 산출하지 않았습니다.", fact="diagnose.no_contract"),
+        warn("2023-11 결측률 32.3% — 신뢰 제한", fact="quality.month_missing_rate:2023-11"),
+        basis(
+            "투자비는 용량(kWp) × 1,200,000 원/kWp 로 냈습니다 (출처: 사용자 입력).",
+            fact="solar.investment_unit_cost",
+        ),
+        info("기후환경요금과 연료비조정요금은 미포함입니다.", fact="tariff.not_included"),
     )
 
     on_screen = screen_notices(items)
@@ -229,29 +230,40 @@ def test_등급은_발신처가_붙인다() -> None:
 
 def test_같은_사실을_두_번_내지_않는다() -> None:
     same = (
-        warn("2023-11 결측률 32.3% — 품질 점검"),
-        warn("2023-11 결측률 32.3% — 요금 계산에서 제외"),
+        warn("2023-11 결측률 32.3% — 품질 점검", fact="quality.month_missing_rate:2023-11"),
+        warn(
+            "2023-11 결측률 32.3% — 요금 계산에서 제외",
+            fact="quality.month_missing_rate:2023-11",
+        ),
     )
     assert len(dedupe(same)) == 1
 
 
-def test_문자열이_들어오면_폴백이_경고를_남긴다(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """**이관 누락을 조용히 덮지 않는다** (19세션 2절).
+def test_등급_추정_폴백이_남아_있지_않다() -> None:
+    """**추정 장치를 지웠다** (21세션 0절).
 
-    등급 없는 문자열은 주의로 두되 로그를 남긴다. 20세션에 폴백을 지울 때
-    무엇이 남아 있는지 이 로그로 찾는다.
+    18세션까지는 문구를 부분 일치로 훑어 등급을 매겼고 82%가 기본값으로
+    떨어졌다. 19·20세션에 등급과 사실 ID 를 발신처로 옮겼으므로 추정할 일이
+    없다. 되살아나면 같은 병이 다시 시작된다.
     """
-    with caplog.at_level(logging.WARNING, logger="kwise.notices"):
-        items = screen_notices(("등급 없이 들어온 문구입니다",))
-    assert [item.severity for item in items] == [Severity.WARN]
-    assert any("등급 없는 문자열" in record.message for record in caplog.records)
+    from kwise import notices as core
+    from kwise.ui import notices as view
+
+    for module in (core, view):
+        source = Path(module.__file__ or "").read_text(encoding="utf-8")
+        for banned in ("WARN_PATTERNS:", "INFO_PATTERNS:", "def classify(", "def as_notice("):
+            assert banned not in source, f"{module.__name__} 에 {banned} 가 남아 있습니다."
+        assert "def _fingerprint(" not in source, "지문 폴백이 남아 있습니다."
+    assert not hasattr(view, "classify")
+    assert not hasattr(core, "as_notice")
 
 
-def test_등급을_모르면_주의로_둔다() -> None:
-    """새 경고가 조용히 사라지는 쪽보다 한 번 더 보이는 쪽이 낫다."""
-    assert classify("처음 보는 문구입니다") is Severity.WARN
+def test_사실_ID_없이는_안내를_만들_수_없다() -> None:
+    """``fact`` 가 **필수**다 (21세션 0절). 런타임 경고보다 mypy 가 강하다."""
+    with pytest.raises(TypeError):
+        warn("사실 ID 없는 안내")  # type: ignore[call-arg]
+    with pytest.raises(ValueError, match="사실 ID"):
+        Notice(Severity.WARN, "빈 사실 ID", "")
 
 
 # ======================================================== ④ 개발자 언어
@@ -317,6 +329,77 @@ def test_켠_카드는_다시_그려도_펼쳐져_있다() -> None:
         assert screen.number_input(key="measure_power_factor_target") is not None
 
 
+def _tooltips() -> list[tuple[str, str]]:
+    """화면 툴팁(``help=``)을 전부 뽑는다. **소스를 훑는다** — 띄우지 않고도 본다."""
+    found: list[tuple[str, str]] = []
+
+    def literal(node: ast.expr) -> str | None:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.JoinedStr):
+            parts = [item.value if isinstance(item, ast.Constant) else "{}" for item in node.values]
+            return "".join(str(part) for part in parts)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            left, right = literal(node.left), literal(node.right)
+            if left is not None and right is not None:
+                return left + right
+        return None
+
+    for path in sorted((Path("src") / "kwise" / "ui").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for keyword in node.keywords:
+                if keyword.arg != "help":
+                    continue
+                text = literal(keyword.value)
+                if text and HANGUL.search(text):
+                    found.append((f"{path.name}:{node.lineno}", text))
+    return found
+
+
+def test_툴팁에_오타와_구두점_오류가_없다() -> None:
+    """**툴팁을 전수로 훑는다** (21세션 2절).
+
+    19세션에 근거가 툴팁으로 내려가면서 수가 크게 늘었다. 한 번에 하나씩
+    눈으로 보던 방식으로는 오타와 구두점 오류가 남는다.
+    """
+    from kwise.ui.anchors import ANCHORS
+
+    # 화면 문구와 매뉴얼 요지를 **한 잣대로** 본다. 둘 다 물음표 안에 뜬다.
+    tooltips = _tooltips() + [(f"anchor:{item.key}", item.covers) for item in ANCHORS]
+    assert len(tooltips) >= 40, "툴팁을 못 찾았습니다. 추출기가 깨졌습니다."
+    for where, tip in tooltips:
+        body = tip.strip()
+        assert "평잉" not in body, f"{where} 오타"
+        assert "  " not in body, f"{where} 이중 공백: {body[:40]}"
+        assert not body.endswith((",", "·", "및", "로", "과")), f"{where} 끊긴 문장: {body[-20:]}"
+        assert body.endswith((".", ")", "]", "%")), f"{where} 종결 부호가 없습니다: {body[-20:]}"
+
+
+def test_지표_툴팁이_산식과_의미_두_줄이다() -> None:
+    """**산식 한 줄 + 의미 한 줄** (21세션 2절).
+
+    산식만 적으면 "그래서 어떻다는 것인가" 가 없어 읽고도 할 일이 없다.
+    주말 부하 비율이 그랬다 — 나눗셈 한 줄이 전부였다.
+    """
+    from kwise.ui.views.diagnose import _pattern_formulas
+
+    tips = _pattern_formulas(object())
+    assert set(tips) == {
+        "load_factor",
+        "base_load_ratio",
+        "weekend_ratio",
+        "unattended_energy_share",
+    }
+    for key, tip in tips.items():
+        formula, _, meaning = tip.partition("\n\n")
+        assert "÷" in formula, f"{key} 에 산식이 없습니다: {formula}"
+        assert meaning.strip(), f"{key} 에 의미 줄이 없습니다."
+        assert meaning.strip().endswith("다."), f"{key} 의미 줄이 문장이 아닙니다: {meaning}"
+
+
 def test_확인사항이_한_묶음이다() -> None:
     source = (VIEWS / "measures.py").read_text(encoding="utf-8")
     assert "확인사항" in source
@@ -333,6 +416,54 @@ def test_감도_차트와_원자료가_화면에_없다() -> None:
 
 def test_감도_상세는_excel_에_남는다() -> None:
     assert "감도 상세" in SHEET_ORDER and "감도" in SHEET_ORDER
+
+
+def test_월별_명세의_값이_한글이다() -> None:
+    """**열 이름만 옮기면 값 칸에 코드가 남는다** (21세션 3-1).
+
+    `계절` 칸에 ``spring_fall`` 이 그대로 있었다. 12세션 규약(화면에 코드
+    식별자를 내지 않는다)을 값이 깨고 있던 자리다.
+    """
+    import pandas as pd
+
+    from kwise.report import localize
+    from kwise.report.columns import VALUE_LABELS
+
+    frame = pd.DataFrame(
+        {"season": ["spring_fall", "summer", "winter"], "total_won": [1.0, 2.0, 3.0]}
+    )
+    shown = localize(frame)
+    assert list(shown["계절"]) == ["봄·가을", "여름", "겨울"]
+    assert set(VALUE_LABELS["season"]) == {"spring_fall", "summer", "winter"}
+    # 번역표가 없는 열은 건드리지 않는다.
+    assert list(shown["합계(원)"]) == [1.0, 2.0, 3.0]
+
+
+def test_월별_명세는_결론_열만_낸다() -> None:
+    """중간값 넷은 Excel 로 보낸다. **지운 것이 아니다** (21세션 3-2)."""
+    from kwise.report.columns import column_label
+    from kwise.ui.views.diagnose import SCREEN_MONTHLY_COLUMNS
+
+    for hidden in (
+        "demand_basis_kw",
+        "demand_before_floor_kw",
+        "base_demand_kw",
+        "base_fee_factor",
+    ):
+        assert hidden not in SCREEN_MONTHLY_COLUMNS, hidden
+    assert "billing_demand_kw" in SCREEN_MONTHLY_COLUMNS, "기본요금의 근거는 남긴다."
+
+    source = (Path("src") / "kwise" / "report" / "excel.py").read_text(encoding="utf-8")
+    detail = source[source.index('sheets["요금 계산 명세"]') :]
+    for hidden in ("demand_basis_kw", "demand_before_floor_kw", "base_demand_kw"):
+        assert f'"{hidden}"' in detail, f"{column_label(hidden)} 가 Excel 에서도 사라졌습니다."
+
+
+def test_부분_월에_뜻을_붙인다() -> None:
+    """체크만 있고 뜻이 없으면 무엇을 보라는 것인지 알 수 없다 (21세션 3-3)."""
+    source = (VIEWS / "diagnose.py").read_text(encoding="utf-8")
+    assert "검침 기간이 한 달에 못 미치는 달입니다." in source
+    assert "CheckboxColumn" in source
 
 
 def test_감도를_기준값_괄호_범위로_적는다() -> None:
@@ -467,10 +598,31 @@ def test_진단에_계약전력_적정성과_개선_여지가_없다(app: AppTes
 
 
 def test_화면에_참고_등급이_없다(app: AppTest) -> None:
-    """미포함 요금요소·검증 여부 같은 참고 문구는 산출물에만 있다."""
-    shown = [item.value for item in app.warning] + [item.value for item in app.error]
-    for message in shown:
-        assert classify(message) is not Severity.INFO, message
+    """미포함 요금요소·제도 설명 같은 참고 문구는 산출물에만 있다.
+
+    21세션에 등급 추정 폴백을 지웠으므로 **문구를 훑어 등급을 되묻지 않는다.**
+    참고 등급으로 나가는 문구 상수를 발신처에서 가져와 화면에 없음을 본다.
+    """
+    from kwise.measures.demand_response import DR_ADVISORY
+    from kwise.measures.pv_cost import PV_COST_BASIS_NOTE, PV_REFERENCE_NOTE, SCALE_ECONOMY_NOTE
+    from kwise.measures.surplus import ELIGIBILITY_NOTICE
+    from kwise.tariff import NOT_INCLUDED_NOTICE
+
+    shown = "\n".join(
+        [item.value for item in app.warning]
+        + [item.value for item in app.error]
+        + [item.value for item in app.info]
+        + [item.value for item in app.markdown]
+    )
+    for notice in (
+        NOT_INCLUDED_NOTICE,
+        DR_ADVISORY,
+        ELIGIBILITY_NOTICE,
+        PV_COST_BASIS_NOTE,
+        SCALE_ECONOMY_NOTE,
+        PV_REFERENCE_NOTE,
+    ):
+        assert notice[:30] not in shown, notice[:30]
 
 
 def test_화면_어디에도_코드_식별자가_없다(app: AppTest) -> None:
@@ -596,7 +748,9 @@ def test_화면_문자열에_맨_물결표가_없다(name: str) -> None:
 
 
 def test_계산_모듈_문구를_escape_한다() -> None:
-    notices = screen_notices(["야간 22~8시 · 운영 9~18시 를 지키지 못했습니다"])
+    notices = screen_notices(
+        [warn("야간 22~8시 · 운영 9~18시 를 지키지 못했습니다", fact="ess.target_unmet")]
+    )
     assert notices
     assert not TILDE.search(notices[0].text)
 
@@ -1150,3 +1304,20 @@ def test_탭을_오가도_입력이_남는다() -> None:
     assert screen.session_state["measure_on_power_factor"] is True
     assert screen.session_state["measure_power_factor_target"] == 95.0
     assert screen.number_input(key="measure_power_factor_target").value == 95.0
+
+
+def test_축이_0에서_시작하지_않는다는_문구가_없다() -> None:
+    """**눈금이 0 이 아닌 것은 보면 안다** (21세션 5절).
+
+    17세션에 축을 자르기로 하면서 축 제목에 그 사실을 적었다. 화면·보고서
+    어디에도 남기지 않는다 — 자른 축은 눈금이 말한다.
+    """
+    roots = (Path("src") / "kwise" / "ui", Path("src") / "kwise" / "report")
+    offenders: list[str] = []
+    for root in roots:
+        for path in sorted(root.rglob("*.py")):
+            # 문서 문자열과 주석은 화면에 나가지 않는다. :func:`_strings` 가 걸러 준다.
+            for value in _strings(path):
+                if "0 부터 시작하지 않" in value or "0부터 시작하지 않" in value:
+                    offenders.append(f"{path.name}: {value[:40]}")
+    assert offenders == [], "축 안내 문구가 남아 있습니다: " + ", ".join(offenders)

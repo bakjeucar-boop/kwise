@@ -161,7 +161,7 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "contract.margin_range": _ratio_range,
     "dr.bid_restriction_months": _positive,
     "dr.max_events_per_day": _positive,
-    "dr.operating_hours": _hour_windows,
+    "dr.market_hours": _hour_windows,
     "dr.event_hours": _hour_window,
     "progress.total_seconds": _positive,
     "progress.slow_stage_seconds": _positive,

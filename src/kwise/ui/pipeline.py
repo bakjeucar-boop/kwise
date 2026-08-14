@@ -18,7 +18,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 
@@ -46,7 +45,7 @@ from kwise.pv import (
     load_pv_presets,
     load_weather,
 )
-from kwise.quality import QualityReport, check_quality
+from kwise.quality import DEFAULT_OPERATING_HOURS, QualityReport, check_quality
 from kwise.tariff import (
     BillingOptions,
     BillingResult,
@@ -62,7 +61,6 @@ from kwise.tariff import (
 __all__ = [
     "AzimuthOption",
     "ContractForm",
-    "ContractGuess",
     "SolarInputs",
     "azimuth_options",
     "baseline_bill",
@@ -70,12 +68,10 @@ __all__ = [
     "contract_type_choices",
     "default_lagging_pct",
     "diagnose_usage",
-    "guess_contract",
     "option_choices",
     "solar_config",
     "solar_result",
     "unit_pv_profile",
-    "utilization_hours",
     "voltage_choices",
 ]
 
@@ -154,75 +150,6 @@ def option_choices(table: TariffTable, contract_type: str, voltage: str) -> tupl
 # --------------------------------------------------------------------- 추정 보조
 
 
-@dataclass(frozen=True)
-class ContractGuess:
-    """업로드 직후 제시하는 추정치 (요구사항서 3.2 — 추정 보조).
-
-    **추정일 뿐이므로 사용자가 확정한다.** 계약종별은 데이터로 정할 수 없다.
-    """
-
-    contract_kw: float
-    max_demand_kw: float
-    utilization_hours: float
-    tier_hint: str
-    threshold_kw: float | None
-    notes: tuple[str, ...]
-
-
-def utilization_hours(usage: UsageData) -> float:
-    """연간 이용시간 = 사용량 ÷ 최대수요. 선택요금 후보를 가늠하는 값이다."""
-    peak = usage.meta.max_demand_kw
-    if peak <= 0:
-        return 0.0
-    return usage.meta.total_kwh / peak
-
-
-def _threshold_for(contract_type: str) -> float | None:
-    """갑/을 임계 계약전력. 종별 앞머리로 찾는다 — 값은 ``rules_kr.json`` 에 있다."""
-    from kwise.rules import RuleDataError, rule_value
-
-    family = contract_type.split("_", 1)[0]
-    try:
-        return float(rule_value(f"contract_type.threshold_kw.{family}"))
-    except RuleDataError:
-        return None
-
-
-def guess_contract(
-    usage: UsageData, contract_type: str, *, margin_ratio: float = 0.1
-) -> ContractGuess:
-    """계약전력·갑을 구분·이용시간을 가늠한다.
-
-    계약전력은 **청구서 기재값이 정본**이다. 여기 값은 관측 최대에 여유를 얹은
-    가늠이며, 확정 전에는 계약 적정성 진단이 이 값에 끌려간다는 사실을 함께 낸다.
-    """
-    peak = usage.meta.max_demand_kw
-    suggested = math.ceil(peak * (1.0 + margin_ratio)) if peak > 0 else 0.0
-    hours = utilization_hours(usage)
-    threshold = _threshold_for(contract_type)
-
-    if threshold is None:
-        tier = "판정 불가"
-    elif suggested >= threshold:
-        tier = f"을 (임계 {threshold:,.0f} kW 이상)"
-    else:
-        tier = f"갑 (임계 {threshold:,.0f} kW 미만)"
-
-    notes = (
-        f"관측 최대 {peak:,.1f} kW 에 여유 {margin_ratio:.0%} 를 얹은 가늠입니다. "
-        "**청구서의 계약전력을 넣으십시오** — 계약 적정성 진단이 이 값을 전제로 합니다.",
-        f"연간 이용시간 {hours:,.0f} 시간. 길수록 기본요금이 낮은 선택요금이 유리합니다.",
-    )
-    return ContractGuess(
-        contract_kw=float(suggested),
-        max_demand_kw=peak,
-        utilization_hours=hours,
-        tier_hint=tier,
-        threshold_kw=threshold,
-        notes=notes,
-    )
-
-
 # --------------------------------------------------------------------- 1단계
 
 
@@ -236,19 +163,22 @@ def diagnose_usage(
     form: ContractForm | None,
     *,
     quality: QualityReport | None = None,
+    operating_hours: tuple[int, int] = DEFAULT_OPERATING_HOURS,
 ) -> Diagnosis:
     """1단계 진단. ``form`` 이 ``None`` 이면 **계약 정보 없이** 부하·피크만 낸다.
 
     "사용자가 파일만 올려도 결과가 나온다" 를 여기서 지킨다 (요구사항서 6장).
+    ``operating_hours`` 는 옆단 건물 정보에서 온다 (21세션 4절).
     """
     if form is None:
-        return diagnose(usage, table, None, quality=quality)
+        return diagnose(usage, table, None, quality=quality, operating_hours=operating_hours)
     return diagnose(
         usage,
         table,
         form.contract_info(),
         quality=quality,
         options=form.billing_options(),
+        operating_hours=operating_hours,
     )
 
 

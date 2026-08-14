@@ -10,7 +10,7 @@
 
 계약 정보를 업로드 위에 둔 것은 **묻는 것이 넷뿐이고 파일과 무관하기 때문**이다.
 파일을 먼저 올리게 하면 계약 정보를 넣기 전에 금액 없는 결과부터 읽게 된다.
-관측치로 내는 추정값은 파일이 올라온 뒤에 캡션으로 붙는다.
+**넷 다 청구서 기재값이다** — 관측치로 가늠해 미리 채우지 않는다 (21세션 1절).
 
 **계약전력 적정성과 개선 여지 요약은 여기 없다** (16세션 3절). 적정성은
 2단계 7.2 카드가 같은 값을 더 자세히 내고, 개선 여지는 7.1·7.2 와 겹쳤다 —
@@ -32,7 +32,7 @@ import streamlit as st
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
 from kwise.notices import tooltip
-from kwise.quality import QualityReport
+from kwise.quality import DEFAULT_OPERATING_HOURS, QualityReport
 from kwise.report import localize
 from kwise.tariff import TENTATIVE_BASE_FEE_BASIS_WARNING, TariffTable
 from kwise.ui import callout, charts
@@ -53,7 +53,6 @@ from kwise.ui.pipeline import (
     ContractForm,
     contract_type_choices,
     default_lagging_pct,
-    guess_contract,
     option_choices,
     voltage_choices,
 )
@@ -80,12 +79,12 @@ def render(table: TariffTable, building: BuildingInfo | None = None) -> Analysis
     )
 
     # **화면에 그리기 전에 세션에서 먼저 읽는다.** 계약 정보가 업로드 위에 오지만
-    # 관측치 추정값은 파일이 있어야 나오므로, 순서와 의존이 어긋나지 않게 한다.
+    # 아래 블록들이 파일을 쓰므로, 순서와 의존이 어긋나지 않게 한다.
     stored = upload()
     usage, load_error = _load(stored)
 
     # ---- ① 계약 정보
-    form = _contract_block(table, usage, building)
+    form = _contract_block(table, building)
     _tentative_basis_block(table, form)
 
     # ---- ② 업로드
@@ -104,6 +103,9 @@ def render(table: TariffTable, building: BuildingInfo | None = None) -> Analysis
     _power_factor_block(form)
 
     quality = cached_quality(usage, usage_token(usage), form.contract_kw if form else None)
+    # **운영 시간대는 옆단에서 온다** (21세션 4절). 무인시간 판정과 DR 저부하일
+    # 판정이 이 값을 쓴다 — 캐시 열쇠에도 들어가야 값이 바뀌면 다시 계산한다.
+    hours = building.operating_hours if building else DEFAULT_OPERATING_HOURS
     diagnosis = cached_diagnosis(
         usage,
         table,
@@ -111,6 +113,7 @@ def render(table: TariffTable, building: BuildingInfo | None = None) -> Analysis
         usage_token(usage),
         form,
         rules_stamp(),
+        hours,
     )
 
     _headline_block(usage, diagnosis)
@@ -203,8 +206,8 @@ def _notice_block(quality: QualityReport, diagnosis: Diagnosis) -> None:
 def _upload_block() -> None:
     """업로드 위젯. **새 파일이 들어오면 즉시 다시 그린다.**
 
-    계약 정보가 이 블록 위에 있고 관측치 추정값을 캡션으로 내므로, 파일을
-    받은 그 실행에서 멈추면 추정값이 한 박자 늦는다.
+    파일이 바뀌면 아래 블록이 전부 다시 계산되므로, 받은 그 실행에서 멈추면
+    화면이 한 박자 늦는다.
     """
     uploaded = st.file_uploader(
         "사용량 데이터", type=["csv", "xls", "xlsx"], help="업로드 파일은 서버에 저장하지 않습니다."
@@ -292,10 +295,8 @@ def _column_block(usage: UsageData) -> None:
 # --------------------------------------------------------------------- 계약 정보
 
 
-def _contract_block(
-    table: TariffTable, usage: UsageData | None, building: BuildingInfo | None
-) -> ContractForm | None:
-    """계약 정보 넷. **추정치를 제시하고 사용자가 확정한다** (3.2).
+def _contract_block(table: TariffTable, building: BuildingInfo | None) -> ContractForm | None:
+    """계약 정보 넷. **청구서 기재값을 받는다** (3.2 · 21세션 1절).
 
     **용도를 골랐으면 계약종별 후보를 좁힌다** (16세션 2절). 좁히기이지 판정이
     아니므로 좁힐 수 없으면 전 종별을 보인다 — 고를 것이 사라지면 입력을 못 한다.
@@ -317,11 +318,10 @@ def _contract_block(
                 index=type_keys.index(default_type) if default_type in type_keys else 0,
                 format_func=lambda key: type_labels[key],
                 help=(
-                    "데이터로는 추정할 수 없습니다. 청구서를 보고 고르십시오. "
-                    "옆단에서 용도를 고르면 후보가 좁아집니다."
+                    "청구서 기재값입니다. 옆단에서 용도를 고르면 후보가 좁아집니다.\n\n"
+                    + manual_tip("contract-info")
                 ),
             )
-            guess = guess_contract(usage, contract_type) if usage is not None else None
 
             voltages = voltage_choices(table, contract_type)
             voltage_keys = [key for key, _label in voltages]
@@ -334,17 +334,18 @@ def _contract_block(
                 voltage_keys,
                 index=voltage_keys.index(default_voltage),
                 format_func=lambda key: voltage_labels[key],
+                help="청구서 기재값입니다.",
             )
         with right:
-            if saved and saved.contract_kw:
-                default_kw = float(saved.contract_kw)
-            else:
-                default_kw = guess.contract_kw if guess is not None else 0.0
+            # **추정치를 미리 채우지 않는다** (21세션 1절). 계약 정보는 청구서
+            # 기재값을 전제로 받는 값이라, 관측 최대에 여유를 얹은 가늠을 넣어
+            # 두면 그것이 확정값처럼 읽히고 계약 적정성 진단이 그 값에 끌려간다.
             contract_kw = st.number_input(
                 "계약전력 (kW)",
                 min_value=0.0,
-                value=default_kw,
+                value=float(saved.contract_kw) if saved and saved.contract_kw else None,
                 step=1.0,
+                placeholder="청구서 기재값",
                 help="청구서 기재값입니다. 계약 적정성 진단(2단계 7.2)이 이 값을 전제로 합니다.",
             )
             options = option_choices(table, contract_type, voltage)
@@ -356,18 +357,6 @@ def _contract_block(
                 format_func=option_label,
                 help="현행 선택요금입니다. 다른 선택요금은 2단계에서 모두 다시 계산합니다.",
             )
-
-        if guess is not None:
-            st.caption(
-                f"추정 — 갑/을 {guess.tier_hint} · 관측 최대 {fmt.kw(guess.max_demand_kw)} · "
-                f"연간 이용시간 {fmt.count(guess.utilization_hours, '시간')}.",
-                help=manual_tip("contract-info"),
-            )
-        st.caption(
-            "계약전력은 **청구서 기재값**을 넣으십시오. 위 값은 관측 최대에 여유를 얹은 "
-            "가늠입니다.",
-            help=manual_tip("contract-info"),
-        )
 
         lagging, leading = _saved_power_factor()
         form = ContractForm(
@@ -549,10 +538,12 @@ def _quality_block(usage: UsageData, quality: QualityReport) -> None:
 
 
 def _pattern_formulas(pattern: object) -> dict[str, str]:
-    """지표 넷의 **산출식을 툴팁으로** (16세션 3절).
+    """지표 넷의 툴팁 — **산식 한 줄 + 의미 한 줄** (16세션 3절 · 21세션 2절).
 
     "부하율 42%" 만 보이면 무엇을 무엇으로 나눈 값인지 알 수 없어, 높은 것이
-    좋은지 나쁜지조차 판단할 수 없다. 시간대 경계는 자료마다 다르므로
+    좋은지 나쁜지조차 판단할 수 없다. 산식만 적어도 마찬가지다 — **그래서
+    어떻다는 것인지**가 없으면 읽고도 할 일이 없다. 두 줄을 규약으로 둔다.
+    시간대 경계는 자료마다 다르므로
     :class:`~kwise.quality.pattern.LoadPattern` 이 쓴 값을 그대로 적는다.
     """
     night = getattr(pattern, "night_hours", (22, 8))
@@ -560,15 +551,21 @@ def _pattern_formulas(pattern: object) -> dict[str, str]:
     night_text = f"{night[0]}시{fmt.RANGE}{night[1]}시"
     operating_text = f"평일 {operating[0]}시{fmt.RANGE}{operating[1]}시"
     return {
-        "load_factor": "평균 수요 ÷ 최대 수요. 낮을수록 짧은 피크 하나에 기본요금이 매인다.",
-        "base_load_ratio": (
-            f"야간({night_text}) 평균 수요 ÷ 주간 평균 수요. "
-            "높으면 밤에도 도는 설비가 있다는 뜻이다."
+        "load_factor": (
+            "평균 수요 ÷ 최대 수요.\n\n"
+            "낮을수록 짧은 피크 하나에 기본요금이 매여 피크 저감 여지가 큽니다."
         ),
-        "weekend_ratio": "주말 평균 수요 ÷ 평일 평균 수요.",
+        "base_load_ratio": (
+            f"야간({night_text}) 평균 수요 ÷ 주간 평균 수요.\n\n"
+            "높을수록 밤에도 도는 설비가 있어 ESS 충전 여력이 좁습니다."
+        ),
+        "weekend_ratio": (
+            "주말 평균 수요 ÷ 평일 평균 수요.\n\n낮을수록 주말 가동이 적어 감축 여지가 큽니다."
+        ),
         "unattended_energy_share": (
             f"무인시간 사용량 ÷ 전체 사용량. 무인시간은 운영시간({operating_text}) 밖과 "
-            "주말 전부다."
+            "주말 전부입니다.\n\n"
+            "높을수록 사람이 없는 동안 쓰는 전기가 많아 운전 개선 여지가 큽니다."
         ),
     }
 
@@ -656,8 +653,48 @@ def _structure_block(usage: UsageData, diagnosis: Diagnosis, building: BuildingI
         help=manual_tip("not-included"),
     )
     with st.expander("월별 명세", expanded=False):
-        # **열 이름을 한글로 낸다.** 번역표는 `kwise.report.columns` 한 곳에 있다.
-        st.dataframe(localize(structure.monthly, index_name="월"), width="stretch")
+        # **열 이름과 값을 한글로 낸다.** 번역표는 `kwise.report.columns` 한 곳에 있다.
+        _monthly_table(structure.monthly)
+
+
+#: 월별 명세에서 **화면에 낼 열** (21세션 3-2).
+#:
+#: 요금적용전력을 내는 데 쓰는 중간값이 넷이다 — 요금적용 대상 최대, 하한 적용
+#: 전 수요, 기본요금 기준전력, 기본요금 일할 계수. 서로 값이 거의 같아 표에
+#: 나란히 놓이면 무엇이 결론인지 알 수 없다. **결론 하나(요금적용전력)만 두고
+#: 나머지는 Excel 「요금 계산 명세」 로 보낸다** — 지우는 것이 아니다.
+SCREEN_MONTHLY_COLUMNS: tuple[str, ...] = (
+    "season",  # 계절 — 여름·겨울 단가가 다르다
+    "covered_days",  # 계량 일수 — 부분 월의 근거
+    "is_partial",
+    "missing_ratio",  # 결측률과 신뢰도 — 그 달 숫자를 믿을지 판단한다
+    "demand_confidence",
+    "max_demand_kw",  # 관측 최대수요 — 사용자가 아는 값
+    "billing_demand_kw",  # 요금적용전력 — 기본요금이 왜 그 값인지
+    "total_kwh",
+    "base_won",
+    "energy_won",
+    "total_won",
+)
+
+
+def _monthly_table(monthly: pd.DataFrame) -> None:
+    """월별 명세 — **사용자가 확인할 열만.**
+
+    ``is_partial`` 은 체크만 보여서는 뜻을 알 수 없어 열 도움말을 붙인다
+    (21세션 3-3).
+    """
+    columns = [name for name in SCREEN_MONTHLY_COLUMNS if name in monthly.columns]
+    st.dataframe(
+        localize(monthly[columns], index_name="월"),
+        width="stretch",
+        column_config={
+            "부분 월": st.column_config.CheckboxColumn(
+                "부분 월", help="검침 기간이 한 달에 못 미치는 달입니다."
+            ),
+        },
+    )
+    st.caption("계산에 쓴 중간값(하한 적용 전 수요·기본요금 기준전력 등)은 Excel 에 있습니다.")
 
 
 def _intensity_line(usage: UsageData, building: BuildingInfo | None) -> None:

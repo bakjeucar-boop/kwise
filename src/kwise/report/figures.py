@@ -255,7 +255,7 @@ def tariff_option_png(switch: TariffSwitchResult) -> bytes:
     if finite:
         span = max(finite) - min(finite)
         upper.set_ylim(max(0.0, min(finite) - span * 0.15), max(finite) + span * 0.2)
-    upper.set_ylabel("억원 (0 부터 시작하지 않음)")
+    upper.set_ylabel("억원")
     upper.legend(fontsize=8, loc="lower right")
 
     colors = [
@@ -382,7 +382,7 @@ def solar_day_png(usage: UsageData, generation_kw: pd.Series, day: Representativ
             color="crimson",
             arrowprops={"arrowstyle": "->", "color": "crimson"},
         )
-    axes.set_ylabel("출력 (kW) — 0 부터 시작하지 않음")
+    axes.set_ylabel("출력 (kW)")
     axes.set_xlabel(f"{day.title} · 15분")
     axes.tick_params(axis="x", rotation=45, labelsize=8)
     axes.legend(fontsize=8, loc="lower right")
@@ -464,7 +464,7 @@ def ess_day_png(
         high = float(frame["원부하(kW)"].max())
         margin = max((high - low) * 0.15, 1.0)
         upper.set_ylim(low - margin, high + margin)
-    upper.set_ylabel("부하 (kW) — 0 부터 시작하지 않음")
+    upper.set_ylabel("부하 (kW)")
     upper.legend(fontsize=8, loc="lower right", ncol=2)
 
     lower.bar(frame["시각"], frame["충전(kW)"], width=0.008, label="충전", color="#3182bd")

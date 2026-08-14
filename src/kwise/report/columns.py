@@ -21,9 +21,11 @@ from kwise.tariff.labels import OPTION_LABELS, option_label
 __all__ = [
     "COLUMN_LABELS",
     "OPTION_LABELS",
+    "VALUE_LABELS",
     "column_label",
     "localize",
     "option_label",
+    "value_label",
 ]
 
 # 선택요금 표기는 :mod:`kwise.tariff.labels` 에 있다 — **계산 모듈도 써야 한다**
@@ -61,14 +63,42 @@ COLUMN_LABELS: dict[str, str] = {
 }
 
 
+#: **값도 한글로 낸다** (21세션 3-1). 열 이름만 옮기면 `계절` 칸에 `spring_fall`
+#: 이 남는다 — 코드 식별자를 화면에 내지 않는다는 12세션 규약을 값이 깬 자리다.
+#: 열 이름을 바꾸기 **전**의 이름으로 찾는다.
+VALUE_LABELS: dict[str, dict[str, str]] = {
+    "season": {"spring_fall": "봄·가을", "summer": "여름", "winter": "겨울"},
+    "band": {"light": "경부하", "mid": "중간부하", "peak": "최대부하"},
+    "day_type": {"weekday": "평일", "saturday": "토요일", "holiday": "휴일"},
+}
+
+
 def column_label(name: str) -> str:
     """모르는 이름은 **그대로 돌려준다.** 조용히 '기타' 로 뭉치지 않는다."""
     return COLUMN_LABELS.get(name, name)
 
 
+def value_label(column: str, value: object) -> object:
+    """열이 값 번역표를 가지면 값을 옮긴다. 없으면 **그대로 둔다.**"""
+    table = VALUE_LABELS.get(column)
+    if table is None:
+        return value
+    return table.get(str(value), value)
+
+
 def localize(frame: pd.DataFrame, *, index_name: str | None = None) -> pd.DataFrame:
-    """열 이름을 한글로 바꾼 사본. 원본은 그대로 둔다."""
-    renamed = frame.rename(columns={name: column_label(str(name)) for name in frame.columns})
+    """열 이름과 **값**을 한글로 바꾼 사본. 원본은 그대로 둔다."""
+    localized = frame.copy()
+    for name in localized.columns:
+        table = VALUE_LABELS.get(str(name))
+        if table is None:
+            continue
+        localized[name] = localized[name].map(
+            lambda value, table=table: table.get(str(value), value)
+        )
+    renamed = localized.rename(
+        columns={name: column_label(str(name)) for name in localized.columns}
+    )
     if index_name is not None:
         renamed = renamed.rename_axis(index_name)
     elif frame.index.name:

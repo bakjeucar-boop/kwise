@@ -54,7 +54,7 @@ from kwise.measures import (
     load_ess_cost_model,
 )
 from kwise.progress import ProgressReporter
-from kwise.quality import QualityReport
+from kwise.quality import DEFAULT_OPERATING_HOURS, QualityReport
 from kwise.rules import EditResult, RuleOrigin, assumptions, reload_rules, rules
 from kwise.tariff import BillingOptions, BillingResult, TariffTable, load_tariff
 from kwise.ui import pipeline
@@ -220,8 +220,11 @@ def cached_diagnosis(
     token: str,
     form: ContractForm | None,
     stamp: str,
+    operating_hours: tuple[int, int] = DEFAULT_OPERATING_HOURS,
 ) -> Diagnosis:
-    return pipeline.diagnose_usage(_usage, _table, form, quality=_quality)
+    return pipeline.diagnose_usage(
+        _usage, _table, form, quality=_quality, operating_hours=operating_hours
+    )
 
 
 @st.cache_data(show_spinner="현행 요금을 계산하는 중…")

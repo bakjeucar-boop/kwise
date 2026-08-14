@@ -284,7 +284,7 @@ li.task input { margin-right:.5rem; }
 <p><strong>무엇을 입력하나.</strong> 정산 단가를 알면 넣는다(선택). 사업자가 제시하는 값이라 기본값을 두지 않는다.</p>
 <p><strong>연간 참여 일수 제한은 없다</strong> (14세션에 바로잡았다). 남는 제약은 셋이다.</p>
 <div class="table-wrap"><table><thead><tr><th>제약</th><th>값</th></tr></thead><tbody><tr><td>하루 한도</td><td>최대 2회, 1회당 1~4시간 — <strong>하루 8시간</strong></td></tr><tr><td>참여 요일·시간</td><td>평일만 (토·일·공휴일 제외), 09:00~12:00 · 13:00~20:00</td></tr><tr><td>미이행 제재</td><td><strong>6개월 입찰 제한</strong></td></tr></tbody></table></div>
-<p><strong>따라서 실질 제약은 「감축할 여력이 있는 날이 며칠이냐」 하나다.</strong> 그 날을 데이터에서 찾는다 — 주말·공휴일의 운영 시간대 평균을 기준선으로 삼고, 평일 중 그 기준선의 1.2배 이하인 날을 저부하 평일로 센다.</p>
+<p><strong>따라서 실질 제약은 「감축할 여력이 있는 날이 며칠이냐」 하나다.</strong> 그 날을 데이터에서 찾는다 — 주말·공휴일의 판정 시간대 평균을 기준선으로 삼고, 평일 중 그 기준선의 1.2배 이하인 날을 저부하 평일로 센다. 판정 시간대는 제도가 정한 입찰 시간대(09~12·13~20시)와 <strong>옆단의 건물 운영 시간대</strong>(기본 09~18시)가 겹치는 구간이다. 8시에 여는 사업장이면 옆단에서 바꾼다.</p>
 <p><strong>결과 읽는 법.</strong></p>
 <div class="table-wrap"><table><thead><tr><th>항목</th><th>뜻</th></tr></thead><tbody><tr><td>거래 가능일</td><td>토·일·공휴일을 뺀 평일</td></tr><tr><td>저부하 평일</td><td>감축할 여력이 실제로 있는 날. <strong>목록으로 볼 수 있다</strong></td></tr><tr><td>등록 권장 용량</td><td>저부하일 감축 여력 분포의 <strong>하위값</strong></td></tr><tr><td>연간 감축 가능량</td><td>Σ(저부하일별 감축 여력 × 그날 참여 가능 시간)</td></tr><tr><td>자원 유형</td><td>표준DR·중소형DR·국민DR</td></tr></tbody></table></div>
 <p><strong>주의사항.</strong></p>

@@ -658,7 +658,8 @@ def test_요금제_그래프가_그룹_막대이고_차액_차트가_따로_있�
     grouped = tariff_option_chart(switch).to_dict()
     assert "xOffset" in grouped["encoding"], list(grouped["encoding"])
     assert grouped["encoding"]["y"]["scale"]["zero"] is False
-    assert "0 부터 시작하지 않습니다" in grouped["encoding"]["y"]["title"]
+    # **축 제목에 그 사실을 적지 않는다** (21세션 5절). 눈금을 보면 안다.
+    assert grouped["encoding"]["y"]["title"] == "요금 (원)"
 
     delta = tariff_delta_chart(switch).to_dict()
     fields = {layer["encoding"]["x"].get("field") for layer in delta["layer"]}

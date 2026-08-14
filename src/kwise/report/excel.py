@@ -624,9 +624,15 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
     )
     if sections.include_timeseries:
         sheets["15분 시계열"] = _timeseries_frame(sections.usage)
+    # **화면에서 뺀 중간값이 여기 있다** (21세션 3-2). 월별 명세 화면은 결론
+    # 하나(요금적용전력)만 내고, 그 값이 어떻게 나왔는지는 이 시트가 맡는다.
     sheets["요금 계산 명세"] = localize(
         monthly[
             [
+                "days_in_month",
+                "max_demand_at",
+                "demand_basis_kw",
+                "demand_before_floor_kw",
                 "billing_demand_kw",
                 "base_demand_kw",
                 "base_fee_factor",

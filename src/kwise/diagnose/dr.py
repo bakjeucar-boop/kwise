@@ -67,8 +67,8 @@ __all__ = [
     "dr_day_mask",
     "dr_eligible_days",
     "dr_event_hours",
+    "dr_market_windows",
     "dr_max_events_per_day",
-    "dr_operating_windows",
     "dr_profile",
     "dr_reference_capacity_kw",
     "judge_resource_types",
@@ -110,14 +110,37 @@ def small_medium_dr_industrial_max_kw() -> float:
     return float(rule_value("dr.small_medium_industrial_max_kw"))
 
 
-def dr_operating_windows() -> tuple[tuple[int, int], ...]:
-    """경제성DR 운영 시간대. **평일 09~12시·13~20시** (점심 제외).
+def dr_market_windows() -> tuple[tuple[int, int], ...]:
+    """경제성DR **시장** 운영 시간대. 평일 09~12시·13~20시 (점심 제외).
 
     감축 여력은 이 구간의 부하로만 잰다. 하루 전체 평균으로 재면 참여할 수 없는
     시간대의 부하까지 여력으로 세어 과대 산출된다 (13세션).
+
+    **건물 운영 시간대와 다른 값이다** (21세션 4절). 이쪽은 제도 규정이라 건물
+    사정과 무관하고, 건물 쪽은 사람이 그 시간에 일하느냐다. 감축 여력은 둘이
+    겹치는 시간대로 잰다 — 시장이 열려 있어도 건물이 비어 있으면 줄일 것이 없고,
+    건물이 돌아도 시장이 닫혀 있으면 입찰할 수 없다.
     """
-    windows = rule_value("dr.operating_hours")
+    windows = rule_value("dr.market_hours")
     return tuple((int(start), int(end)) for start, end in windows)
+
+
+def overlap_windows(
+    market: tuple[tuple[int, int], ...], operating: tuple[int, int]
+) -> tuple[tuple[int, int], ...]:
+    """시장 시간대 ∩ 건물 운영 시간대. **겹치는 구간이 없으면 시장 시간대다.**
+
+    겹침이 없다는 것은 건물이 시장 시간 밖에만 도는 경우인데, 그때 창을 비우면
+    기준선조차 낼 수 없어 진단이 통째로 멈춘다. 그런 자료는 저부하 평일이 없다는
+    결론으로 가는 편이 낫다.
+    """
+    start, end = operating
+    clipped = tuple(
+        (max(low, start), min(high, end))
+        for low, high in market
+        if max(low, start) < min(high, end)
+    )
+    return clipped or market
 
 
 def dr_max_events_per_day() -> int:
@@ -440,6 +463,7 @@ def dr_profile(
     contract_kw: float | None = None,
     outage_mask: pd.Series | None = None,
     windows: tuple[tuple[int, int], ...] | None = None,
+    operating_hours: tuple[int, int] | None = None,
     low_load_ratio: float | None = None,
     registration_quantile: float | None = None,
     high_capacity_kw: float | None = None,
@@ -449,7 +473,9 @@ def dr_profile(
     Args:
         outage_mask: 정전 슬롯 마스크. 저부하 평일에서 정전일을 뺀다 — 정전은
             감축 여력이 아니다.
-        windows: 감축 여력을 재는 운영 시간대. 기본은 규칙 값(09~12·13~20시).
+        windows: 감축 여력을 재는 **시장** 시간대. 기본은 규칙 값(09~12·13~20시).
+        operating_hours: **건물** 운영 시간대. 주면 시장 시간대와 겹치는 구간만
+            본다 — 사람이 없는 시간의 부하는 감축 여력이 아니다 (21세션 4절).
         low_load_ratio: 저부하 평일 판정 배수 (기본은 assumptions.json 의 1.2).
         registration_quantile: 등록 권장 용량 분위수. **보수적으로 하위값을 쓴다.**
     """
@@ -458,7 +484,8 @@ def dr_profile(
         raise ValueError("관측된 수요가 없어 DR 참여 여력을 산출할 수 없습니다.")
 
     # 기본값은 파일에서 온다 (요구사항서 12장). 코드에 두지 않는다.
-    windows = dr_operating_windows() if windows is None else windows
+    market = dr_market_windows() if windows is None else windows
+    windows = market if operating_hours is None else overlap_windows(market, operating_hours)
     multiple = low_load_multiple() if low_load_ratio is None else low_load_ratio
     registration = (
         registration_percentile() if registration_quantile is None else registration_quantile

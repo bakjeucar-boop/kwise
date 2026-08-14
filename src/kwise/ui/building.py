@@ -8,8 +8,14 @@
     건물명      선택. 없으면 산출물 제목이 「건물명 미입력」 이다
     용도        계약종별 후보를 좁힌다 — **판정이 아니라 좁히기다**
     지역        태양광 기상 격자. 태양광 카드에서 여기로 올렸다
+    운영 시간대  무인시간 판정과 DR 저부하일 판정에 쓴다. 기본 09~18시
     연면적      선택. 있으면 연간 원단위(kWh/m²·년)를 진단에 한 줄 얹는다
     준공연도    선택. 지금은 기록만 한다
+
+**운영 시간대는 경제성DR 의 시장 운영 시간대와 다른 값이다** (21세션 4절).
+이쪽은 사람이 그 시간에 일하느냐이고, 저쪽은 제도가 정한 입찰 가능 시간대다
+(``dr.market_hours``, 평일 09~12·13~20시). 이름을 갈라 두지 않으면 8시 출근
+사업장의 사정이 제도 값을 흔들게 된다.
 
 **용도로 계약종별을 확정하지 않는다.** 대응은 흔한 경우를 적은 판단값이고
 (``assumptions.json`` 의 ``building.uses``), 최종 판단은 청구서 기재값이다.
@@ -23,6 +29,7 @@ from dataclasses import dataclass
 import streamlit as st
 
 from kwise.pv import list_provinces, list_sigungu
+from kwise.quality import DEFAULT_OPERATING_HOURS
 from kwise.rules import assumption
 
 __all__ = [
@@ -65,6 +72,8 @@ class BuildingInfo:
     use_key: str = ""
     floor_area_m2: float | None = None
     built_year: int | None = None
+    operating_hours: tuple[int, int] = DEFAULT_OPERATING_HOURS
+    """**건물** 운영 시간대. DR 시장 시간대(제도 규정)와 다른 값이다."""
 
     @property
     def title(self) -> str:
@@ -114,6 +123,13 @@ def intensity_kwh_per_m2(total_kwh: float, building: BuildingInfo | None) -> flo
     if building is None or not building.floor_area_m2:
         return None
     return total_kwh / building.floor_area_m2
+
+
+def _hours(start: int, end: int) -> tuple[int, int]:
+    """**시작이 끝보다 늦으면 기본값으로 되돌린다.** 뒤집힌 창은 뜻이 없다."""
+    if start >= end:
+        return DEFAULT_OPERATING_HOURS
+    return (int(start), int(end))
 
 
 def get_building() -> BuildingInfo | None:
@@ -177,6 +193,20 @@ def render_sidebar() -> BuildingInfo:
         help="태양광 기상 격자를 고릅니다. 격자가 25–31 km 라 같은 격자면 결과가 같습니다.",
     )
 
+    # **9시 출근을 전제하지 않는다** (21세션 4절). 8시에 여는 곳에서는 무인시간
+    # 부하가 한 시간만큼 부풀고, DR 저부하일 판정도 그만큼 어긋난다.
+    start_hour, end_hour = st.sidebar.select_slider(
+        "운영 시간대",
+        options=list(range(0, 25)),
+        value=(saved.operating_hours if saved else DEFAULT_OPERATING_HOURS),
+        format_func=lambda hour: f"{hour}시",
+        key="building_hours",
+        help=(
+            "평일 이 시간대 밖이 무인시간입니다. 경제성DR 의 저부하일 판정에도 씁니다.\n\n"
+            "제도가 정한 DR 입찰 시간대(평일 09~12시·13~20시)와는 다른 값입니다."
+        ),
+    )
+
     area = st.sidebar.number_input(
         "연면적 (m², 선택)",
         min_value=0.0,
@@ -202,6 +232,7 @@ def render_sidebar() -> BuildingInfo:
         use_key=use_key,
         floor_area_m2=area or None,
         built_year=int(year) or None,
+        operating_hours=_hours(start_hour, end_hour),
     )
     st.session_state[BUILDING_KEY] = info
     return info

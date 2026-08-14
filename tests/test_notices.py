@@ -153,7 +153,12 @@ def test_근거와_참고는_화면_본문에_없다(sample_diagnosis: Diagnosis
 
 def test_차단이_먼저_온다() -> None:
     """읽는 순서를 등급이 정한다."""
-    items = (info("참고"), basis("근거"), warn("주의"), block("차단"))
+    items = (
+        info("참고", fact="tariff.not_included"),
+        basis("근거", fact="ess.feasibility"),
+        warn("주의", fact="quality.short_period"),
+        block("차단", fact="diagnose.no_contract"),
+    )
     assert [item.severity for item in screen_body(items)] == [Severity.BLOCK, Severity.WARN]
     assert [item.severity for item in report_body(items)] == [
         Severity.BLOCK,
@@ -410,14 +415,11 @@ def test_접두어를_붙여도_다른_사실이_사라지지_않는다() -> Non
         warn("경부하 충전이 목표를 넘는 새 피크를 만들었습니다.", fact="ess.charge_new_peak"),
         warn("목표 450 kW 를 지키지 못했습니다.", fact="ess.target_unmet"),
     )
-    assert len(dedupe(prefixed(items, "+ ESS 목표 450 kW", tag="c1"))) == 2
-
-    # 19세션 방식 — 앞말을 문구에 심으면 지문이 앞말이라 하나로 접힌다.
-    legacy = (
-        warn("'+ ESS 목표 450 kW' — 경부하 충전이 목표를 넘는 새 피크를 만들었습니다."),
-        warn("'+ ESS 목표 450 kW' — 목표 450 kW 를 지키지 못했습니다."),
-    )
-    assert len(dedupe(legacy)) == 1
+    shown = dedupe(prefixed(items, "+ ESS 목표 450 kW", tag="c1"))
+    assert len(shown) == 2
+    # 앞말은 문구에만 붙는다. 사실 ID 는 앞말을 타지 않는다.
+    assert all(item.text.startswith("+ ESS 목표 450 kW — ") for item in shown)
+    assert {item.fact_base for item in shown} == {"ess.charge_new_peak", "ess.target_unmet"}
 
 
 def test_조합_접두어가_지문에_섞이지_않는다(sample_comparison: ComparisonResult) -> None:
@@ -477,27 +479,39 @@ def test_사실_ID_형식을_지킨다() -> None:
             warn("문구", fact=bad)
 
 
-# ==================================================== 폴백 — 이관 누락을 드러낸다
+# ==================================================== ⑥ 폴백이 없다 (21세션)
 
 
-def test_문자열은_주의로_두되_로그를_남긴다(caplog: pytest.LogCaptureFixture) -> None:
-    """조용히 등급을 매기면 이관 누락이 드러나지 않는다 (20세션에 지운다)."""
-    import logging
+def test_문자열은_안내가_될_수_없다() -> None:
+    """**문자열 폴백을 지웠다** (21세션 0절).
 
-    with caplog.at_level(logging.WARNING, logger="kwise.notices"):
-        items = dedupe(("등급 없이 들어온 문구입니다",))
-    assert [item.severity for item in items] == [Severity.WARN]
-    assert any("등급 없는 문자열" in record.message for record in caplog.records)
+    20세션까지는 문자열이 들어오면 주의로 두고 로그를 남겼다. 이관이 끝났으므로
+    길 자체를 없앤다 — 조용히 등급이 매겨지는 자리가 하나 줄었다.
+    """
+    from kwise import notices as module
+
+    assert not hasattr(module, "as_notice")
+    assert not hasattr(module, "_fingerprint")
+    with pytest.raises(AttributeError):
+        dedupe(("등급 없이 들어온 문구입니다",))  # type: ignore[arg-type]
+
+
+def test_사실_ID_는_필수다() -> None:
+    """기본값을 없애 **mypy 가 이관 누락을 잡는다.** 런타임 경고보다 강하다."""
+    with pytest.raises(TypeError):
+        warn("사실 ID 없는 안내")  # type: ignore[call-arg]
+    with pytest.raises(ValueError, match="사실 ID"):
+        Notice(Severity.WARN, "빈 사실 ID", "")
 
 
 def test_빈_문구는_만들_수_없다() -> None:
     with pytest.raises(ValueError, match="빈 안내"):
-        warn("   ")
+        warn("   ", fact="quality.missing_total")
 
 
 def test_Notice_는_얼어_있다() -> None:
     """등급을 나중에 바꿔치기하지 못하게 한다."""
-    item = basis("근거 한 줄")
+    item = basis("근거 한 줄", fact="ess.feasibility")
     with pytest.raises(dataclasses.FrozenInstanceError):
         item.severity = Severity.WARN  # type: ignore[misc]
 

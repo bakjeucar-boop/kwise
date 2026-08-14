@@ -176,7 +176,9 @@ def _editor(row: RuleRow) -> None:
     ):
         _report(apply_rule_edit(confirm(row.key)))
     if row.changed and buttons[2].button(
-        "되돌리기", key=f"revert_{row.key}", help=f"출고값 {row.view.default_value!r} 로"
+        "되돌리기",
+        key=f"revert_{row.key}",
+        help=f"출고값 {row.view.default_value!r} 로 되돌립니다.",
     ):
         _report(apply_rule_edit(restore_item(row.key)))
     if row.changed:

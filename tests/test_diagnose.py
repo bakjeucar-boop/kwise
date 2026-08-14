@@ -163,6 +163,7 @@ def test_diagnose_takes_no_pv_input() -> None:
         "options",
         "top_n",
         "margin_ratio",
+        "operating_hours",
         "contract_floor_ratio",
     }
 

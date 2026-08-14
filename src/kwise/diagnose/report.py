@@ -31,7 +31,14 @@ from kwise.diagnose.summary import (
 )
 from kwise.io import UsageData
 from kwise.notices import Notice, block
-from kwise.quality import LoadPattern, QualityReport, check_quality, load_pattern, outage_slot_mask
+from kwise.quality import (
+    DEFAULT_OPERATING_HOURS,
+    LoadPattern,
+    QualityReport,
+    check_quality,
+    load_pattern,
+    outage_slot_mask,
+)
 from kwise.tariff import (
     BillingOptions,
     TariffSelection,
@@ -77,6 +84,7 @@ def diagnose(
     top_n: int = DEFAULT_TOP_N,
     margin_ratio: float | None = None,
     contract_floor_ratio: float | None = None,
+    operating_hours: tuple[int, int] = DEFAULT_OPERATING_HOURS,
 ) -> Diagnosis:
     """업로드와 계약 정보만으로 진단한다.
 
@@ -85,12 +93,15 @@ def diagnose(
         margin_ratio: 권장 계약전력에 얹을 여유율. None 이면 판단값을 읽는다.
         contract_floor_ratio: 요금적용전력의 계약전력 대비 하한 비율.
             None 이면 요금표의 종별 속성(일반용(을) 30%)을 쓴다 (요구사항서 5.2 ③).
+        operating_hours: **건물** 운영 시간대 ``(시작, 끝)``. 무인시간 판정과
+            DR 저부하일 판정에 쓴다. 경제성DR 의 **시장 운영 시간대**는 제도
+            규정이라 이 값과 무관하다 (:func:`~kwise.diagnose.dr.dr_market_windows`).
     """
     report = quality if quality is not None else check_quality(usage)
     interval = usage.meta.interval_minutes
     opts = options if options is not None else BillingOptions()
 
-    pattern = load_pattern(usage.kw, interval)  # 2세션 함수를 호출만 한다
+    pattern = load_pattern(usage.kw, interval, operating_hours=operating_hours)
 
     # 요금적용전력은 중간·최대부하 시간대만 대상이다 (요구사항서 5.2 ①).
     contract_type = contract.selection.contract_type if contract else None
@@ -142,6 +153,7 @@ def diagnose(
         contract_type=contract_type,
         contract_kw=contract.contract_kw if contract else None,
         outage_mask=outage_slot_mask(index, report.outages),
+        operating_hours=operating_hours,
     )
 
     notices: list[Notice] = list(report.notices)

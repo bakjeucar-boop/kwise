@@ -33,7 +33,6 @@ from kwise.ui.pipeline import (
     combination_specs,
     contract_type_choices,
     default_lagging_pct,
-    guess_contract,
     option_choices,
     voltage_choices,
 )
@@ -237,20 +236,6 @@ def test_드롭다운을_요금_데이터에서_만든다(table: TariffTable) ->
     voltages = dict(voltage_choices(table, "general_b"))
     assert "high_a" in voltages
     assert option_choices(table, "general_b", "high_a") == ("I", "II", "III")
-
-
-def test_추정_보조가_갑을_임계를_기준_데이터에서_읽는다(usage: object) -> None:
-    from kwise.rules import rule_value
-
-    guess = guess_contract(usage, "general_b")  # type: ignore[arg-type]
-    assert guess.threshold_kw == float(rule_value("contract_type.threshold_kw.general"))
-    assert guess.contract_kw > guess.max_demand_kw  # 여유를 얹는다
-    assert "청구서" in " ".join(guess.notes)
-
-
-def test_교육용_임계는_1000_kw_다(usage: object) -> None:
-    guess = guess_contract(usage, "education_b")  # type: ignore[arg-type]
-    assert guess.threshold_kw == 1_000.0
 
 
 # ===================================================================== 조합 구성
@@ -869,3 +854,32 @@ def test_감도_없음_프레임에_사유가_있다() -> None:
     frame = no_pv_sensitivity_frame()
     assert not frame.empty
     assert isinstance(frame, pd.DataFrame)
+
+
+def test_옆단이_운영_시간대를_받는다() -> None:
+    """**9시 출근을 전제하지 않는다** (21세션 4절)."""
+    from kwise.quality import DEFAULT_OPERATING_HOURS
+    from kwise.ui.building import BuildingInfo, _hours
+
+    info = BuildingInfo(region_key="서울특별시/종로구")
+    assert info.operating_hours == DEFAULT_OPERATING_HOURS == (9, 18)
+    assert _hours(8, 19) == (8, 19)
+    # 뒤집힌 창은 뜻이 없다. 기본값으로 되돌린다.
+    assert _hours(18, 9) == DEFAULT_OPERATING_HOURS
+    assert _hours(9, 9) == DEFAULT_OPERATING_HOURS
+
+    source = (Path("src") / "kwise" / "ui" / "building.py").read_text(encoding="utf-8")
+    assert "운영 시간대" in source and "building_hours" in source
+
+
+def test_운영_시간대가_무인시간_진단에_닿는다(usage: object) -> None:
+    """옆단 값이 진단까지 흘러야 입력이 뜻을 갖는다."""
+    from kwise.tariff import load_tariff
+    from kwise.ui.pipeline import diagnose_usage
+
+    table = load_tariff()
+    nine = diagnose_usage(usage, table, None, operating_hours=(9, 18))  # type: ignore[arg-type]
+    eight = diagnose_usage(usage, table, None, operating_hours=(8, 19))  # type: ignore[arg-type]
+    assert nine.pattern.operating_hours == (9, 18)
+    assert eight.pattern.operating_hours == (8, 19)
+    assert nine.pattern.unattended_energy_share != eight.pattern.unattended_energy_share

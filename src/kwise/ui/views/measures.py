@@ -285,8 +285,7 @@ def _tariff_switch(
     st.altair_chart(charts.tariff_option_chart(result), width="stretch")
     st.caption(
         "요금제마다 기본요금·전력량요금·합계를 나란히 세웠습니다. **선택요금은 그 둘을 "
-        "맞바꾸는 제도**입니다 — 기본요금이 오르는 대신 전력량요금이 내려갑니다. "
-        "세로축은 0 부터 시작하지 않습니다."
+        "맞바꾸는 제도**입니다 — 기본요금이 오르는 대신 전력량요금이 내려갑니다."
     )
     _notices(result.notices)
 
@@ -386,7 +385,9 @@ def _adequacy(diagnosis: Diagnosis) -> None:
     columns[1].metric(
         "이용률",
         fmt.ratio_pct(adequacy.utilization),
-        help="요금적용전력 ÷ 계약전력. 낮으면 계약을 과하게 잡아 둔 것이다.",
+        help=(
+            "요금적용전력 ÷ 계약전력.\n\n낮을수록 계약을 과하게 잡아 둔 것이라 하향 여지가 큽니다."
+        ),
     )
     columns[2].metric("하향 여지", fmt.kw(adequacy.reduction_kw))
 
@@ -790,11 +791,7 @@ def _solar(
     )
     if day is not None:
         st.altair_chart(charts.solar_day_chart(usage, generation, day), width="stretch")
-        st.caption(
-            f"{day.title} · 두 선 사이 초록이 저감분입니다. **세로축은 0 부터 시작하지 "
-            "않습니다** — 5,000 kW 대 부하에 수백 kW 를 얹으면 0 부터 그린 축에서는 "
-            "두 선이 붙어 보입니다."
-        )
+        st.caption(f"{day.title} · 두 선 사이 초록이 저감분입니다.")
         st.altair_chart(charts.solar_day_chart(usage, generation, day, zoom=True), width="stretch")
         st.caption(f"피크 앞뒤 {charts.PEAK_ZOOM_HOURS}시간만 확대한 그림입니다.")
     _notices(curve.notices)
@@ -1013,7 +1010,7 @@ def _ess(
         discharged = float(frame["방전(kW)"].sum()) * slot_hours if len(frame) else 0.0
         cut = float(frame["원부하(kW)"].max() - frame["순부하(kW)"].max()) if len(frame) else 0.0
         st.caption(
-            f"{day.title} · 위 칸이 부하(축은 0 부터 시작하지 않습니다), 아래 칸이 "
+            f"{day.title} · 위 칸이 부하, 아래 칸이 "
             "충전(+)·방전(−)입니다. 배경 띠가 계시별 시간대예요 — 경부하에 담아 "
             f"최대부하에 씁니다. **그날 저감 {fmt.kw(cut)} · 충전 {fmt.kwh(charged)} · "
             f"방전 {fmt.kwh(discharged)}.**"
