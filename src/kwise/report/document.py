@@ -47,18 +47,19 @@ from kwise.measures import (
     TariffSwitchResult,
     measure_kind,
 )
-from kwise.notices import Notice, report_appendix, report_body, texts
+from kwise.notices import Notice, Severity, report_appendix, report_body, texts
 from kwise.report import figures
+from kwise.report.appendix import APPENDIX_TITLES, AppendixData, known_limits, reference_rows
 from kwise.report.days import RepresentativeDay
 from kwise.report.notices import (
     CONTRACT_CHANGE_WARNING,
     DATA_SOURCES,
-    KNOWN_LIMITS,
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
     format_won,
 )
-from kwise.tariff import BillingResult
+from kwise.report.worksheet import COLUMNS, Worksheet
+from kwise.tariff import BillingResult, TariffTable
 
 __all__ = [
     "CHAPTER_COMPARISON",
@@ -411,6 +412,12 @@ class DocumentSections:
     prepared_on: dt.date | None = None
     reviewed_labels: tuple[str, ...] = ()
     skipped_labels: tuple[str, ...] = ()
+    worksheets: tuple[Worksheet, ...] = ()
+    """계산 근거 표 (22세션 2절). 화면 카드가 접어 둔 것과 **같은 표**다."""
+    tariff_table: TariffTable | None = None
+    """부록 B 의 요금표 줄. 없으면 그 줄만 빠진다."""
+    ess_cases: pd.DataFrame | None = None
+    """ESS 조달 사례. 17세션에 화면에서 뺀 표가 부록 A 로 간다."""
 
     @property
     def prepared(self) -> dt.date:
@@ -433,6 +440,30 @@ class DocumentSections:
             groups.append(self.comparison.notices)
         groups.extend(entry.notices for entry in self.measures)
         return tuple(item.text for item in report_appendix(*groups))
+
+    def appendix_data(self) -> AppendixData:
+        """부록 A·B·C 재료를 **한 번에** 만든다 (22세션 3절).
+
+        Word 와 Excel 이 같은 것을 실어야 하므로 만드는 자리를 하나로 둔다.
+        """
+        groups: list[tuple[Notice, ...]] = [self.bill.notices]
+        if self.diagnosis is not None:
+            groups.append(self.diagnosis.notices)
+        if self.comparison is not None:
+            groups.append(self.comparison.notices)
+        groups.extend(entry.notices for entry in self.measures)
+        grounds = tuple(
+            (entry.kind.key, texts(report_body(entry.notices), Severity.BASIS))
+            for entry in self.measures
+            if texts(report_body(entry.notices), Severity.BASIS)
+        )
+        return AppendixData(
+            worksheets=self.worksheets,
+            grounds=grounds,
+            cases=self.ess_cases,
+            limits=known_limits(*groups),
+            assumptions_rows=reference_rows(self.tariff_table),
+        )
 
     def scope(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """(검토함, 미검토). 넘겨받지 않았으면 수단 목록에서 만든다."""
@@ -836,26 +867,81 @@ def _chapter_scope(document: DocumentType, sections: DocumentSections, number: i
     document.add_heading(f"{number}.2 계약전력 변경 시 주의", level=2)
     document.add_paragraph(CONTRACT_CHANGE_WARNING)
 
-    document.add_heading(f"{number}.3 알려진 한계", level=2)
-    _add_bullets(document, KNOWN_LIMITS)
-
-    document.add_heading(f"{number}.4 추적성", level=2)
+    document.add_heading(f"{number}.3 추적성", level=2)
     _add_bullets(document, sections.bill.traceability())
     _add_bullets(document, DATA_SOURCES)
 
-    # **참고 등급이 도착하는 자리다** (19세션 1절). 화면에서 뺀 전제·제도 설명이
-    # 사라지지 않게 여기 모은다 — 화면에 없는 문구는 반드시 산출물에 있어야 한다.
-    appendix = sections.appendix()
-    if appendix:
-        document.add_heading(f"{number}.5 참고 — 전제와 제도 설명", level=2)
-        document.add_paragraph(
-            "아래는 결과를 읽는 데 필요한 전제와 제도 설명입니다. 화면에서는 "
-            "본문을 가리지 않도록 빼고 여기에 실었습니다."
-        )
-        _add_bullets(document, appendix)
+    # **참고 등급은 부록 C 로 옮겼다** (22세션 3절). 19세션에 여기 5.5절을 두었는데
+    # 부록 C(알려진 한계)와 성격이 같아 같은 말이 두 곳에 실릴 자리였다.
 
 
 # ===================================================================== 조립
+
+
+def _appendix_a(document: DocumentType, sections: DocumentSections) -> None:
+    """부록 A — **계산 근거 표와 근거 등급 문구, 그리고 조달 사례.**
+
+    화면은 접힘 안에 두고 보고서는 펼친다. 나중에 혼자 읽는 문서이고, 그때
+    묻는 것이 바로 「이 숫자가 어떻게 나왔나」다 (19세션 1절).
+    """
+    data = sections.appendix_data()
+    if not data.worksheets and not data.grounds:
+        return
+    document.add_page_break()
+    document.add_heading(APPENDIX_TITLES["A"], level=1)
+    document.add_paragraph(
+        "화면에서 접어 둔 계산 근거입니다. 산식과 대입한 값을 나란히 실었습니다."
+    )
+    grounds = dict(data.grounds)
+    for sheet in data.worksheets:
+        document.add_heading(sheet.title, level=2)
+        _add_table(document, [list(COLUMNS), *[list(row) for row in sheet.frame().to_numpy()]])
+        lines = grounds.get(sheet.key, ())
+        if lines:
+            _add_bullets(document, lines)
+    if data.cases is not None and not data.cases.empty:
+        document.add_heading("ESS 조달 사례", level=2)
+        document.add_paragraph(
+            "투자비 회귀의 원자료입니다. 화면에서는 뺐고(17세션) 여기에 싣습니다."
+        )
+        _add_table(
+            document,
+            [
+                [str(name) for name in data.cases.columns],
+                *[[str(value) for value in row] for row in data.cases.to_numpy()],
+            ],
+        )
+
+
+def _appendix_b(document: DocumentType, sections: DocumentSections) -> None:
+    """부록 B — **기준 데이터에서 만든다.** 손으로 옮겨 적지 않는다."""
+    rows = sections.appendix_data().assumptions_rows
+    if not rows:
+        return
+    document.add_page_break()
+    document.add_heading(APPENDIX_TITLES["B"], level=1)
+    document.add_paragraph(
+        "이 산출에 쓴 기준 값입니다. 법령 유래와 우리 판단값을 구분해 실었으며, "
+        "값은 기준 데이터 파일에서 그대로 가져옵니다."
+    )
+    _add_table(
+        document,
+        [["구분", "항목", "값", "근거", "확인일"], *[list(row) for row in rows]],
+    )
+
+
+def _appendix_c(document: DocumentType, sections: DocumentSections) -> None:
+    """부록 C — 알려진 한계와 전제. **19세션 5.5절이 여기로 왔다.**"""
+    lines = sections.appendix_data().limits
+    if not lines:
+        return
+    document.add_page_break()
+    document.add_heading(APPENDIX_TITLES["C"], level=1)
+    document.add_paragraph(
+        "결과를 읽는 데 필요한 한계와 전제입니다. 화면에서는 본문을 가리지 않도록 "
+        "빼고 여기에 모았습니다."
+    )
+    _add_bullets(document, lines)
 
 
 def build_document(sections: DocumentSections) -> DocumentType:
@@ -881,6 +967,11 @@ def build_document(sections: DocumentSections) -> DocumentType:
         _chapter_comparison(document, sections, number)
     number += 1
     _chapter_scope(document, sections, number)
+
+    # **부록 셋** (22세션 3절). 본문에서 뺀 것이 여기 모인다.
+    _appendix_a(document, sections)
+    _appendix_b(document, sections)
+    _appendix_c(document, sections)
     return document
 
 

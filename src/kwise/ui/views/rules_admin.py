@@ -80,6 +80,8 @@ def render() -> None:
     )
 
     warnings = expiry_warnings(include_weather=False)
+    if warnings:
+        st.caption(f"확인이 필요한 항목 {len(warnings)}건", help=manual_tip("rules-expiry"))
     rows = build_rows(describe_items(), warnings)
     counts = count_rows(rows)
     st.markdown(f"### {header_text(counts)}")

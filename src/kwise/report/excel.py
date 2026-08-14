@@ -38,7 +38,8 @@ from kwise.measures import (
     SolarPoint,
     TariffSwitchResult,
 )
-from kwise.notices import dedupe
+from kwise.notices import Notice, dedupe
+from kwise.report.appendix import basis_data_frame, known_limits, worksheet_frame
 from kwise.report.columns import localize
 from kwise.report.notices import (
     CONTRACT_CHANGE_WARNING,
@@ -49,7 +50,8 @@ from kwise.report.notices import (
     UNPRICED_REASONS,
     format_won,
 )
-from kwise.tariff import BillingResult
+from kwise.report.worksheet import Worksheet
+from kwise.tariff import BillingResult, TariffTable
 
 __all__ = [
     "DEFAULT_OUTPUT_DIR",
@@ -98,6 +100,10 @@ SHEET_ORDER: tuple[str, ...] = (
     "조합 비교",
     "감도",
     "감도 상세",
+    # **부록 셋** (22세션 3절). Word 와 같은 것을 싣는다 — 만드는 자리도 하나다.
+    "부록 A 산출 근거",
+    "부록 B 기준 데이터",
+    "부록 C 한계와 전제",
 )
 _CLOSE_EXCEL = "Excel 에서 파일을 닫아 주세요."
 
@@ -164,6 +170,12 @@ class ReportSections:
     solar_curve: SolarCurve | None = None
     """태양광 용량 곡선. **20단계 상세는 화면이 아니라 여기로 보낸다** (15세션 1-3)."""
     include_timeseries: bool = True
+    worksheets: tuple[Worksheet, ...] = ()
+    """계산 근거 표 (22세션 2절). 화면 카드가 접어 둔 것과 **같은 표**다."""
+    tariff_table: TariffTable | None = None
+    ess_cases: pd.DataFrame | None = None
+    measure_notices: tuple[tuple[Notice, ...], ...] = ()
+    """수단이 낸 안내 원본. 부록 C 가 참고 등급을 골라 쓴다."""
 
 
 def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
@@ -656,6 +668,16 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
         sheets["태양광 용량 곡선"] = solar_curve_sheet(sections.solar_curve)
     if sections.comparison is not None:
         sheets["조합 비교"] = sections.comparison.frame()
+    # **부록 셋** — Word 와 같은 재료를 쓴다 (22세션 3절).
+    if sections.worksheets:
+        sheets["부록 A 산출 근거"] = worksheet_frame(sections.worksheets)
+    sheets["부록 B 기준 데이터"] = basis_data_frame(sections.tariff_table)
+    groups: list[tuple[Notice, ...]] = [sections.bill.notices, *sections.measure_notices]
+    if sections.diagnosis is not None:
+        groups.append(sections.diagnosis.notices)
+    if sections.comparison is not None:
+        groups.append(sections.comparison.notices)
+    sheets["부록 C 한계와 전제"] = pd.DataFrame({"항목": list(known_limits(*groups))})
     if sections.sensitivity is not None:
         # **범위로 보여 준다.** 3열 나열은 근거표(감도 상세)로 내린다 (9.2).
         if "첨예도 s" in sections.sensitivity.columns:

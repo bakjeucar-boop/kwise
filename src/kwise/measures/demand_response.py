@@ -45,18 +45,12 @@ from kwise.notices import Notice, basis, block, info, warn
 
 __all__ = [
     "DR_ADVISORY",
-    "PARTICIPATION_WARNING",
     "UNPRICED_REASON",
     "DemandResponseResult",
     "evaluate_demand_response",
     "shortfall_penalty_won",
 ]
 
-PARTICIPATION_WARNING = (
-    "낙찰 후 감축을 이행하지 못하면 {months:,.0f}개월 입찰 제한을 받을 수 있습니다. "
-    "감축 가능량은 저부하 평일만 세어 보수적으로 산정했으나, 실제 참여 가능 여부는 "
-    "수요관리사업자와 상담해 확인하십시오."
-)
 
 UNPRICED_REASON = (
     "미산출 — 정산 단가 미입력. 전력거래소가 매월 공지하는 순편익가격(입찰 "
@@ -145,6 +139,18 @@ class DemandResponseResult:
         return f"{self.settlement_won:,.0f}"
 
 
+def _object_particle(word: str) -> str:
+    """목적격 조사 ``을``/``를``. **받침이 있으면 을이다.**
+
+    문구를 조립하면 조사가 어긋난다 — 「위약금 리스크을」 이 그랬다. 한글 음절은
+    ``(코드 - 0xAC00) % 28`` 이 0 이 아니면 종성이 있다.
+    """
+    last = word.strip()[-1:] if word.strip() else ""
+    if not last or not ("가" <= last <= "힣"):
+        return "를"
+    return "을" if (ord(last) - 0xAC00) % 28 else "를"
+
+
 def evaluate_demand_response(
     profile: DrProfile,
     *,
@@ -187,7 +193,6 @@ def evaluate_demand_response(
 
     notices: list[Notice] = [
         # **주의** — 위약·리스크. 결과를 그대로 받아들이면 안 되는 것들이다.
-        warn(PARTICIPATION_WARNING.format(months=months), fact="dr.participation"),
         warn(
             "**투자비는 0원이지만 리스크는 0이 아닙니다.** 감축계획량을 채우지 못하면 "
             "실적위약금 = (감축계획량 − 실제감축량) × Max(하루전에너지가격, 0) 이 "
@@ -229,24 +234,32 @@ def evaluate_demand_response(
         ),
         # **참고** — 제도 설명. 화면에 없고 보고서 부록으로 간다.
         info(DR_ADVISORY, fact="dr.advisory"),
-        info(profile.notice, fact="dr.participation_rule"),
+        # **참여 조건은 근거다** (22세션 1절). 하루 몇 회·어느 시간대·미이행 제재는
+        # 감축 가능량이 왜 그 값인지 설명하는 제도 조건이지 경고가 아니다. 카드가
+        # 이것을 주의로 직접 그리면서 확인사항 넷 가운데 하나를 차지하고 있었다.
+        basis(profile.notice, fact="dr.participation"),
     ]
-    if unit_price_won_per_kwh is None:
-        # **차단** — 금액이 나오지 않는다.
-        notices.append(
-            block(
-                "정산 단가를 입력하지 않아 금액을 산출하지 않았습니다. 감축 가능량(kWh)만 "
-                "참고하십시오. 단가는 전력거래소 월별 순편익가격과 사업자 수수료에 "
-                "달려 있습니다.",
-                fact="dr.no_unit_price",
-            )
+    # **차단은 한 줄이다** (22세션 1절). 단가 둘이 다 없으면 같은 말을 두 번 하는
+    # 셈이라 확인사항 예산을 둘이나 먹었다. 어느 쪽이 비었는지는 문구가 밝힌다.
+    missing = tuple(
+        (name, outcome)
+        for name, outcome, value in (
+            ("정산 단가", "금액", unit_price_won_per_kwh),
+            ("하루전에너지가격", "위약금 리스크", day_ahead_price_won_per_kwh),
         )
-    if day_ahead_price_won_per_kwh is None:
+        if value is None
+    )
+    if missing:
+        inputs = " · ".join(name for name, _ in missing)
+        outcomes = "과 ".join(outcome for _, outcome in missing)
         notices.append(
             block(
-                "하루전에너지가격을 입력하지 않아 위약금 리스크 금액을 "
-                "산출하지 않았습니다 (별표26).",
-                fact="dr.no_day_ahead_price",
+                f"{inputs}{_object_particle(inputs)} 입력하지 않아 "
+                f"{outcomes}{_object_particle(outcomes)} 산출하지 않았습니다. "
+                "감축 가능량(kWh)만 참고하십시오 — 정산 단가는 전력거래소 월별 "
+                "순편익가격과 사업자 수수료에, 위약금은 하루전에너지가격에 달려 "
+                "있습니다 (별표26).",
+                fact="dr.no_price",
             )
         )
     if not profile.meets_reference_capacity:

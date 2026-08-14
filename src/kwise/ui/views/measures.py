@@ -43,6 +43,14 @@ from kwise.quality import QualityReport
 from kwise.report import CONTRACT_CHANGE_WARNING
 from kwise.report.columns import localize
 from kwise.report.days import RepresentativeDay, find_day, representative_days
+from kwise.report.worksheet import (
+    Worksheet,
+    demand_response_worksheet,
+    ess_worksheet,
+    power_factor_worksheet,
+    solar_worksheet,
+    tariff_switch_worksheet,
+)
 from kwise.tariff import TariffTable
 from kwise.ui import callout, charts
 from kwise.ui import text as fmt
@@ -288,6 +296,7 @@ def _tariff_switch(
         "맞바꾸는 제도**입니다 — 기본요금이 오르는 대신 전력량요금이 내려갑니다."
     )
     _notices(result.notices)
+    _worksheet(tariff_switch_worksheet(result))
 
 
 # --------------------------------------------------------------------- 7.2
@@ -459,14 +468,17 @@ def _demand_response(
             st.caption("사무실을 비우는 날(창립기념일·워크숍 등)일 가능성이 높습니다.")
     else:
         st.write("저부하 평일이 없어 감축 가능량을 0 으로 두었습니다.")
-    _caution(result.participation_notice)
     if result.is_priced:
         st.metric("정산금", fmt.won_short(result.settlement_won))
     st.caption(
         "자원 유형 — " + (", ".join(str(item) for item in result.resource_types) or "판정 불가")
     )
-    # 참여 안내는 바로 위에 냈다. 확인사항에서 한 번 더 내지 않는다 (10.7).
-    _notices(tuple(item for item in result.notices if not item.text.startswith("낙찰 후 감축을")))
+    # **참여 안내는 근거다** (22세션 1절). 카드가 직접 그리던 것을 등급 체계로
+    # 되돌렸다 — 하루 몇 회·몇 시간이라는 제도 설명이지 경고가 아니고, 확인사항
+    # 넷 가운데 하나를 차지하고 있었다. 문자열 조각(``startswith``)으로 거르던
+    # 자리도 함께 지웠다 (20세션에 폐기한 방식의 잔재였다).
+    _notices(result.notices)
+    _worksheet(demand_response_worksheet(result))
 
 
 # --------------------------------------------------------------------- 7.4
@@ -548,6 +560,7 @@ def _power_factor(
             f"({fmt.pct(result.current_pct)}). 매 1%p 마다 기본요금이 추가됩니다."
         )
     _notices(result.notices)
+    _worksheet(power_factor_worksheet(result))
 
 
 # --------------------------------------------------------------------- 7.5
@@ -602,7 +615,12 @@ def _solar(
             index=density_keys.index(default_density),
             format_func=lambda key: density_labels[key],
             horizontal=True,
-            help="\n\n".join(f"**{item.label}** — {item.tradeoff}" for item in presets.densities),
+            help="\n\n".join(
+                (
+                    *(f"**{item.label}** — {item.tradeoff}" for item in presets.densities),
+                    manual_tip("pv-density"),
+                )
+            ),
         )
 
     st.caption(f"지역 — {region_key.replace('/', ' ')} (옆단 「건물 정보」 에서 고칩니다)")
@@ -623,7 +641,10 @@ def _solar(
         min_value=0.0,
         value=float(saved.unit_cost_won_per_kwp or 0.0) if saved else 0.0,
         step=10_000.0,
-        help="견적 단가입니다. 넣지 않으면 투자비와 회수기간을 산출하지 않습니다.",
+        help=(
+            "견적 단가입니다. 넣지 않으면 투자비와 회수기간을 산출하지 않습니다.\n\n"
+            + manual_tip("pv-cost")
+        ),
     )
 
     # ---- 확장 패널 (접어 둔다)
@@ -795,6 +816,7 @@ def _solar(
         st.altair_chart(charts.solar_day_chart(usage, generation, day, zoom=True), width="stretch")
         st.caption(f"피크 앞뒤 {charts.PEAK_ZOOM_HOURS}시간만 확대한 그림입니다.")
     _notices(curve.notices)
+    _worksheet(solar_worksheet(curve, point))
 
 
 def _capacity_view(frame: pd.DataFrame) -> pd.DataFrame:
@@ -1034,6 +1056,7 @@ def _ess(
     # 근거로 내고 있어(``ess.quote_breakdown`` · ``ess.cost_model_formula`` ·
     # ``ess.feasibility``) 사실 ID 로 견주니 전부 중복이었다.
     _notices((*result.notices, _ess_basis_note(base_fee)))
+    _worksheet(ess_worksheet(result))
 
 
 def _ess_basis_note(base_fee_won_per_kw: float) -> Notice:
@@ -1072,6 +1095,7 @@ def _ess_cost_inputs() -> tuple[float, float | None, float | None]:
                 value=float(model.fixed_won),
                 step=1_000_000.0,
                 key=input_key("ess", "fixed_cost"),
+                help=manual_tip("ess-cost-reference"),
             )
         with right:
             per_kwh = st.number_input(
@@ -1196,6 +1220,22 @@ def _notices(notices: tuple[Notice, ...]) -> None:
             f"산출 근거 {len(grounds)}건",
             help=tooltip_text(notices, header="**이 숫자가 어디서 나왔나**"),
         )
+
+
+def _worksheet(sheet: Worksheet) -> None:
+    """계산 근거를 **접어 둔다** (22세션 2절).
+
+    산식과 대입값을 나란히 둔 표 하나다. 툴팁의 근거 문구가 「무엇을 근거로」
+    라면 이것은 「그래서 어떻게 그 숫자가 되었나」다 — 접힘 안이므로 본문
+    예산에 들어가지 않는다.
+
+    **표를 여기서 만들지 않는다.** :mod:`kwise.report.worksheet` 가 만든 것을
+    그리기만 한다 — 보고서 부록 A 와 Excel 이 같은 표를 쓴다.
+    """
+    if not sheet:
+        return
+    with st.expander("계산 근거", expanded=False):
+        st.dataframe(sheet.frame(), hide_index=True, width="stretch")
 
 
 _HANDLERS = {

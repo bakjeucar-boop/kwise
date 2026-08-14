@@ -31,6 +31,7 @@ from kwise.measures import (
     light_band_mask,
     unit_generation_kw,
 )
+from kwise.notices import texts
 from kwise.pv import (
     ArrayConfig,
     PvSystemConfig,
@@ -233,7 +234,7 @@ def run_case(
         else:
             # 사전 취득분으로 물러섰으면 요약에 남긴다. 조용히 바꾸지 않는다 (7.5).
             if weather.fallback:
-                note = " ".join(weather.notes)
+                note = " ".join(texts(weather.notices))
             pv_config = PvSystemConfig(
                 latitude=case.latitude,
                 longitude=case.longitude,

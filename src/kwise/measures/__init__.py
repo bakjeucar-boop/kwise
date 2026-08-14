@@ -44,7 +44,6 @@ from kwise.measures.contract import (
 )
 from kwise.measures.demand_response import (
     DR_ADVISORY,
-    PARTICIPATION_WARNING,
     DemandResponseResult,
     evaluate_demand_response,
     shortfall_penalty_won,
@@ -131,7 +130,6 @@ __all__ = [
     "ELIGIBILITY_NOTICE",
     "MARGIN_NOTICE",
     "MEASURE_CATALOG",
-    "PARTICIPATION_WARNING",
     "PV_COST_BASIS_NOTE",
     "PV_REFERENCE_NOTE",
     "PV_UNPRICED_REASON",

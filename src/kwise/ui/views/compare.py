@@ -48,8 +48,9 @@ from kwise.measures import (
     default_target_pct,
     evaluate_contract_adjustment,
     evaluate_demand_response,
+    load_ess_cost_model,
 )
-from kwise.notices import dedupe_key, dedupe_keys, tooltip
+from kwise.notices import Notice, dedupe_key, dedupe_keys, tooltip
 from kwise.quality import QualityReport
 from kwise.report import (
     SIMPLE_SUM_NOTE,
@@ -66,6 +67,16 @@ from kwise.report import (
     standalone_rows,
 )
 from kwise.report.days import RepresentativeDay
+from kwise.report.worksheet import (
+    Worksheet,
+    combination_worksheet,
+    contract_worksheet,
+    demand_response_worksheet,
+    ess_worksheet,
+    power_factor_worksheet,
+    solar_worksheet,
+    tariff_switch_worksheet,
+)
 from kwise.tariff import BillingResult, TariffTable
 from kwise.ui import callout
 from kwise.ui import text as fmt
@@ -125,7 +136,10 @@ def render(
         st.markdown("**검토 범위**")
         st.write("검토함 — " + (", ".join(scope.reviewed_labels) or "없음"))
         st.write("미검토 — " + (", ".join(scope.skipped_labels) or "없음"))
-        st.caption("미검토는 '효과가 없다' 가 아니라 '보지 않았다' 입니다.")
+        st.caption(
+            "미검토는 '효과가 없다' 가 아니라 '보지 않았다' 입니다.",
+            help=manual_tip("known-limits"),
+        )
 
     if diagnosis.structure is None:
         callout.caution("계약 정보를 확정해야 조합을 비교합니다 (1단계).")
@@ -188,6 +202,7 @@ def render(
             results,
             scope,
             building,
+            table,
         )
         return
 
@@ -240,6 +255,7 @@ def render(
         results,
         scope,
         building,
+        table,
     )
 
     # 미포함 요금요소·알려진 한계는 **참고 등급**이다. 화면에서 빼고 Excel 요약
@@ -294,7 +310,15 @@ def _standalone_block(rows: tuple[StandaloneRow, ...]) -> None:
     if not rows:
         callout.note("2단계에서 수단을 하나도 켜지 않았습니다.")
         return
-    st.dataframe(standalone_frame(rows), hide_index=True, width="stretch")
+    st.dataframe(
+        standalone_frame(rows),
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "확실성": st.column_config.TextColumn("확실성", help=manual_tip("certainty")),
+            "회수기간": st.column_config.TextColumn("회수기간", help=manual_tip("payback")),
+        },
+    )
     st.caption(
         "각 줄은 **그 수단만 도입했을 때**의 값입니다 (현재 요금제·현재 사용량 기준). "
         + SIMPLE_SUM_NOTE
@@ -351,13 +375,19 @@ def _combined_block(
     if dropped:
         st.caption("조합에서 뺀 개선안 — " + ", ".join(row.title for row in dropped) + ".")
 
+    # **이유는 계산 근거로 내린다** (22세션 2절). 「왜 단순 합과 다른가」 는
+    # 산출 근거이지 결론이 아니다. 본문에 세 줄을 쌓으면 정작 위의 지표 셋이
+    # 묻힌다 — 예산(본문 3줄)을 넘긴 자리이기도 했다.
     reasons = _interaction_reasons(comparison, combined, picked)
-    if reasons:
-        st.markdown("**차이가 생기는 이유**")
-        for reason in reasons:
-            st.markdown(f"- {fmt.markdown_safe(reason)}")
-
-    _contract_headroom(usage, form, combined, contract)
+    extra_won = _contract_headroom(usage, form, combined, contract)
+    sheet = combination_worksheet(
+        simple_won=simple,
+        combined_won=actual,
+        reasons=tuple(reasons),
+        contract_extra_won=extra_won,
+    )
+    with st.expander("계산 근거", expanded=False):
+        st.dataframe(sheet.frame(), hide_index=True, width="stretch")
 
 
 def _interaction_reasons(
@@ -402,14 +432,14 @@ def _contract_headroom(
     form: ContractForm,
     combined: CombinationResult,
     standalone: ContractAdjustment | None,
-) -> None:
+) -> float | None:
     """**계약전력 추가 하향 여지** — 조합 기준으로 여기서 낸다 (14세션 5-2).
 
     2단계 7.2 카드는 **현재 부하** 기준이라 다른 수단을 켜도 값이 바뀌지 않는다.
     조합 부하에서 얼마나 더 낮출 수 있는지는 이 자리에서만 계산한다.
     """
     if form.contract_kw is None:
-        return
+        return None
     margin = float(st.session_state.get(input_key("contract", "margin"), default_margin_ratio()))
     adjustment = evaluate_contract_adjustment(
         usage,
@@ -420,12 +450,14 @@ def _contract_headroom(
     already = (standalone.annual_saving_won or 0.0) if standalone is not None else 0.0
     extra = (adjustment.annual_saving_won or 0.0) - already
 
-    st.markdown("**계약전력 추가 하향 여지**")
+    # **소제목을 두지 않는다** (22세션 1절). 한 줄이면 되는 사실에 머리글을 얹으면
+    # 본문이 두 줄이 된다.
     if adjustment.reduction_kw <= 0:
-        st.write("이 조합에서도 계약전력을 더 낮출 여지가 없습니다.")
-        return
+        st.write("계약전력 추가 하향 여지 — 이 조합에서도 더 낮출 여지가 없습니다.")
+        return None
     text = (
-        f"이 조합이면 계약전력을 **{fmt.kw(adjustment.suggested_contract_kw, decimals=0)}** 로 "
+        f"**계약전력 추가 하향 여지** — 이 조합이면 "
+        f"**{fmt.kw(adjustment.suggested_contract_kw, decimals=0)}** 로 "
         f"낮출 수 있습니다 (현행 {fmt.kw(form.contract_kw, decimals=0)}, 여유율 "
         f"{fmt.ratio_pct(margin, decimals=0)} 반영)."
     )
@@ -444,6 +476,7 @@ def _contract_headroom(
             "줄지 않습니다 — 하한 규정에 걸리지 않습니다."
         )
     st.write(text)
+    return extra if extra > 0 else None
 
 
 def _ess_target(
@@ -548,6 +581,31 @@ class _MeasureResults:
     solar_generation_kw: pd.Series | None = None
     ess_bands: pd.Series | None = None
     surplus_kw: pd.Series | None = None
+
+    def worksheets(self) -> tuple[Worksheet, ...]:
+        """켠 수단의 계산 근거 표 (22세션 2·3절).
+
+        **카드가 접어 둔 것과 같은 표다.** 만드는 함수가 하나이므로 화면·Excel·
+        Word 가 갈라질 수 없다.
+        """
+        sheets: list[Worksheet] = []
+        if self.switch is not None:
+            sheets.append(tariff_switch_worksheet(self.switch))
+        if self.contract is not None:
+            sheets.append(contract_worksheet(self.contract))
+        if self.demand_response is not None:
+            sheets.append(demand_response_worksheet(self.demand_response))
+        if self.power_factor is not None:
+            sheets.append(power_factor_worksheet(self.power_factor))
+        if self.solar_curve is not None:
+            sheets.append(solar_worksheet(self.solar_curve, self.solar))
+        if self.ess is not None:
+            sheets.append(ess_worksheet(self.ess))
+        return tuple(sheet for sheet in sheets if sheet)
+
+    def notice_groups(self) -> tuple[tuple[Notice, ...], ...]:
+        """수단이 낸 안내 원본. 부록 C 가 참고 등급을 골라 쓴다."""
+        return tuple(entry.notices for entry in self.entries())
 
     def entries(self) -> tuple[MeasureEntry, ...]:
         return measure_entries(
@@ -780,8 +838,12 @@ def _download_block(
     results: _MeasureResults,
     scope: ReviewScope,
     building: BuildingInfo | None,
+    table: TariffTable,
 ) -> None:
-    """산출물 둘 — 분석자용 Excel 과 의사결정자용 Word (10.3·10.5)."""
+    """산출물 둘 — 분석자용 Excel 과 의사결정자용 Word (10.3·10.5).
+
+    ``table`` 은 **부록 B** 가 요금표 시행일을 적는 데 쓴다 (22세션 3절).
+    """
     st.subheader("내려받기")
     count = 0 if comparison is None else len(comparison.combinations)
     token = f"{usage_token(usage)}|{rules_stamp()}|{count}"
@@ -789,7 +851,7 @@ def _download_block(
 
     with excel_tab:
         st.caption(
-            "아홉 시트 통합문서입니다. 파일명에 날짜·시각이 붙습니다.",
+            "부록 셋을 포함한 통합문서입니다. 파일명에 날짜·시각이 붙습니다.",
             help=manual_tip("excel-report"),
         )
         include_timeseries = st.checkbox("15분 시계열 시트 포함", value=True)
@@ -804,6 +866,10 @@ def _download_block(
                 measure_rows=results.excel_frame(),
                 solar_curve=results.solar_curve,
                 include_timeseries=include_timeseries,
+                worksheets=results.worksheets(),
+                tariff_table=table,
+                ess_cases=load_ess_cost_model().case_table(),
+                measure_notices=results.notice_groups(),
             )
             _build(
                 lambda: build_report_bytes(sections, session_id=session_id()),
@@ -837,6 +903,9 @@ def _download_block(
                 comparison=comparison,
                 sensitivity=sensitivity_ranges,
                 measures=results.entries(),
+                worksheets=results.worksheets(),
+                tariff_table=table,
+                ess_cases=load_ess_cost_model().case_table(),
                 building_name=name,
                 reviewed_labels=scope.reviewed_labels,
                 skipped_labels=scope.skipped_labels,

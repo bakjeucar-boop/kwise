@@ -36,6 +36,8 @@ from urllib.parse import urlencode
 
 import pandas as pd
 
+from kwise.notices import Notice, basis
+
 __all__ = [
     "ARCHIVE_FALLBACK_NOTE",
     "ARCHIVE_URL",
@@ -177,7 +179,9 @@ class WeatherData:
     source: str = "cache"
     path: Path | None = None
     fallback: bool = False
-    notes: tuple[str, ...] = ()
+    notices: tuple[Notice, ...] = ()
+    """폴백 사실 (22세션 4절). **문자열이 아니라 :class:`Notice` 다** — 배치
+    케이스 요약까지 따라가는 안내라 등급과 사실 ID 를 달고 다녀야 한다."""
 
     @property
     def instants(self) -> pd.DatetimeIndex:
@@ -376,7 +380,7 @@ def load_weather(
             source="archive",
             path=None,
             fallback=True,
-            notes=(note,),
+            notices=(basis(note, fact="weather.archive_fallback"),),
         )
 
     stored: Path | None = None

@@ -31,8 +31,15 @@ def blocked(text: str) -> None:
 
 
 def caution(text: str) -> None:
-    """주의 — 결과 해석이 달라지는 것. 배경 없이 아이콘과 굵기로만 가른다."""
-    st.markdown(f"{CAUTION_ICON} **{markdown_safe(text)}**")
+    """주의 — 결과 해석이 달라지는 것. 배경 없이 아이콘과 굵기로만 가른다.
+
+    **문구가 이미 굵게를 품고 있으면 겹치지 않는다** (22세션). 바깥에서 한 번 더
+    감싸면 별표가 넷이 이어져(``****``) 마크다운이 굵게를 열지 못하고 별표가
+    그대로 화면에 나온다 — 「\\*\\*\\*\\*투자비는 0원이지만」 이 그랬다.
+    발신처가 강조한 자리를 살리는 편이 낫다.
+    """
+    body = markdown_safe(text)
+    st.markdown(f"{CAUTION_ICON} {body if '**' in body else f'**{body}**'}")
 
 
 def note(text: str) -> None:

@@ -399,7 +399,13 @@ def test_단가가_없으면_사유를_낸다(sample_diagnosis: Diagnosis) -> No
     assert result.settlement_label == UNPRICED_REASON
     assert "순편익가격" in result.settlement_label
     assert result.annual_reducible_kwh > 0  # 감축량은 낸다
-    assert any("정산 단가를 입력하지 않아" in message for message in texts(result.notices))
+    # **차단은 한 줄이다** (22세션 1절). 단가 둘이 다 없으면 한 문장으로 묶는다.
+    blocked = [item for item in result.notices if item.fact == "dr.no_price"]
+    assert len(blocked) == 1, [item.text for item in blocked]
+    assert "정산 단가 · 하루전에너지가격을 입력하지 않아" in blocked[0].text
+    assert "금액과 위약금 리스크를 산출하지 않았습니다" in blocked[0].text
+    # 조사가 어긋나지 않는다 — 「리스크을」 이 아니라 「리스크를」 이다.
+    assert "리스크을" not in blocked[0].text
 
 
 def test_단가가_있으면_정산금을_낸다(sample_diagnosis: Diagnosis) -> None:

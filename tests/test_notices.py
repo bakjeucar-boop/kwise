@@ -235,7 +235,11 @@ def test_보고서_부록이_참고를_싣는다(
     sample_diagnosis: Diagnosis,
     sample_comparison: ComparisonResult,
 ) -> None:
-    """Word 5.5 절이 **참고 등급이 도착하는 자리**다 (19세션 1절)."""
+    """참고 등급이 도착하는 자리는 **부록 C** 다 (19세션 1절 · 22세션 3절).
+
+    19세션에는 5.5절이었는데 부록 C(알려진 한계)와 성격이 같아 같은 말이 두 곳에
+    실릴 자리였다. 한 곳으로 모았다.
+    """
     from kwise.report.document import DocumentSections, build_document
 
     sections = DocumentSections(
@@ -258,7 +262,8 @@ def test_보고서_부록이_참고를_싣는다(
 
     document = build_document(sections)
     text = "\n".join(paragraph.text for paragraph in document.paragraphs)
-    assert "참고 — 전제와 제도 설명" in text
+    assert "부록 C 알려진 한계와 전제" in text
+    assert "참고 — 전제와 제도 설명" not in text, "5.5절이 남아 있으면 같은 말이 두 곳에 실린다."
     for line in appendix:
         assert line in text, line
 
@@ -540,3 +545,111 @@ def test_등급_분포를_기록한다(
     counts = {grade: sum(1 for item in everything if item.severity is grade) for grade in Severity}
     assert counts[Severity.WARN] / total < 0.67, counts
     assert counts[Severity.BASIS] / total >= 0.25, counts
+
+
+# ==================================================== ⑦ 문구 조각 잣대 (22세션)
+
+
+def test_안내를_문구_조각으로_거르지_않는다() -> None:
+    """**사실 ID 가 있는데 문구를 훑을 이유가 없다** (20세션 · 22세션 4절).
+
+    문구를 다듬으면 조용히 어긋나는 방식이라 20세션에 걷어냈는데, DR 카드에
+    ``item.text.startswith("낙찰 후 감축을")`` 이 남아 있었다. 같은 잔재가
+    다시 생기지 않게 소스를 훑는다.
+    """
+    import re
+
+    banned = re.compile(
+        r"""(
+            \.text\.(startswith|endswith)\(     # 안내 문구의 앞뒤를 훑는다
+            | (in|not\ in)\ item\.text          # 문구에 조각이 있는지 본다
+            | (in|not\ in)\ notice\.text
+        )""",
+        re.VERBOSE,
+    )
+    offenders: list[str] = []
+    for path in sorted((Path("src") / "kwise").rglob("*.py")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if line.lstrip().startswith("#"):
+                continue  # 주석은 코드가 아니다
+            if banned.search(line):
+                offenders.append(f"{path.name}:{number} {line.strip()[:60]}")
+    assert offenders == [], "문구 조각으로 안내를 거르는 자리: " + " / ".join(offenders)
+
+
+def test_굵게가_겹치지_않는다() -> None:
+    """``**`` 를 두 번 감싸면 별표 넷이 그대로 나온다 (22세션 4절)."""
+    from kwise.ui.callout import CAUTION_ICON, caution
+
+    rendered: list[str] = []
+
+    class _Stub:
+        @staticmethod
+        def markdown(text: str) -> None:
+            rendered.append(text)
+
+    import kwise.ui.callout as module
+
+    original = module.st
+    module.st = _Stub()  # type: ignore[assignment]
+    try:
+        caution("**투자비는 0원이지만 리스크는 0이 아닙니다.** 감축계획량을 채우지 못하면…")
+        caution("평범한 경고입니다.")
+    finally:
+        module.st = original
+
+    assert "****" not in rendered[0], rendered[0]
+    assert rendered[0].startswith(f"{CAUTION_ICON} **투자비는")
+    # 굵게가 없는 문구는 그대로 감싼다.
+    assert rendered[1] == f"{CAUTION_ICON} **평범한 경고입니다.**"
+
+
+# ==================================================== ⑧ 이관하지 않은 넷 (22세션 4절)
+
+
+#: (모듈, 클래스, 문자열 안내 필드).
+#:
+#: ``WeatherData`` 는 **22세션에 이관했다** — 사전 취득분 폴백 문구가 배치 케이스
+#: 요약에 실려 나가고 있었다. 「닿지 않는다」 던 19세션의 판단이 넷 중 하나에서
+#: 틀렸다. 나머지 셋은 실제로 닿지 않아 그대로 둔다.
+UNMIGRATED = (
+    ("kwise.io", "UsageMeta", "warnings"),
+    ("kwise.io", "ColumnDetection", "warnings"),
+    ("kwise.pv", "PvSimulation", "warnings"),
+)
+
+
+def test_이관하지_않은_넷은_화면과_산출물에_닿지_않는다() -> None:
+    """**닿지 않으므로 그대로 둔다** (22세션 4절).
+
+    넷은 아직 ``warnings: tuple[str, ...]`` 을 들고 있다. 19세션이 「안내
+    파이프라인에 들어오지 않는다」 고 적어 두었는데, 22세션에 실제로 확인했다 —
+    화면·Excel·Word 어디에서도 이 필드를 읽지 않는다. 같은 사실(결측·그리드
+    이탈·열 판정·기상 출처)은 이미 다른 길로 나가고 있다.
+
+    **읽기 시작하면 이 시험이 깨진다.** 그때는 :class:`Notice` 로 옮긴다.
+    """
+    import importlib
+
+    for module_name, class_name, field_name in UNMIGRATED:
+        module = importlib.import_module(module_name)
+        holder = getattr(module, class_name)
+        fields = {item.name for item in dataclasses.fields(holder)}
+        assert field_name in fields, f"{class_name}.{field_name} 이 없습니다 — 목록을 고치십시오."
+
+    # 화면·산출물 어디에서도 이 필드를 읽지 않는다.
+    readers: list[str] = []
+    for folder in ("ui", "report"):
+        for path in sorted((Path("src") / "kwise" / folder).rglob("*.py")):
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+                if line.lstrip().startswith("#"):
+                    continue
+                for attribute in (
+                    "meta.warnings",
+                    "columns.warnings",
+                    "detection.warnings",
+                    "simulation.warnings",
+                ):
+                    if attribute in line:
+                        readers.append(f"{path.name}:{number}")
+    assert readers == [], "이관하지 않은 문자열 안내를 읽는 자리: " + ", ".join(readers)

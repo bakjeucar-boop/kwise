@@ -226,6 +226,20 @@ class SolarCurve:
         return capacity_verdict(self)
 
 
+#: 최적이 상한보다 작은 이유 — ID → (짧은 라벨, 문장 조각).
+#:
+#: **ID 로 판정하고 문구는 여기서 찾는다** (22세션). 문구 조각을 ``in`` 으로
+#: 훑어 라벨을 되찾던 자리라, 문장을 다듬으면 라벨이 조용히 빈칸이 됐다 —
+#: 20세션에 안내에서 걷어낸 방식이 여기 남아 있었다.
+LIMITERS: dict[str, tuple[str, str]] = {
+    "surplus": ("잉여 발생", "잉여가 발생해 절감 효율이 떨어집니다"),
+    "base_saturated": (
+        "기본요금 절감 포화",
+        "기본요금 절감이 포화해 추가 용량이 전력량요금만 줄입니다",
+    ),
+}
+
+
 @dataclass(frozen=True)
 class CapacityVerdict:
     """용량 한 줄 판정 (15세션 1-3).
@@ -238,14 +252,17 @@ class CapacityVerdict:
         best: 고른 점. 회수기간이 있으면 그 최소점, 없으면 절감액 최대점이다.
         at_limit: 고른 점이 **면적 상한**인가. 상한이면 곡선을 감춘다.
         basis: 무엇으로 골랐는지 (``회수기간`` / ``절감액``).
-        reason: 상한보다 작을 때 그 이유 (``잉여 발생`` / ``기본요금 절감 포화``).
+        limiter_key: 상한보다 작을 때 그 이유의 **ID** (``surplus`` /
+            ``base_saturated``). 문구가 아니라 ID 다 — 22세션까지 문구 조각을
+            ``in`` 으로 훑어 라벨을 되찾고 있었고, 문구를 다듬으면 조용히
+            어긋나는 방식이었다.
     """
 
     best: SolarPoint | None
     limit: SolarPoint | None
     at_limit: bool
     basis: str
-    reason: str = ""
+    limiter_key: str = ""
     monotonic: bool = True
     """상한까지 단조롭게 좋아지는가. 아니면 곡선을 펼쳐 최소점을 보인다."""
 
@@ -263,7 +280,7 @@ class CapacityVerdict:
                 f"설치 가능 면적 전체({self.limit.capacity_kwp:,.0f} kWp)를 쓰는 것이 "
                 f"{self.basis} 기준 가장 유리합니다."
             )
-        tail = f" 그 이상은 {self.reason}." if self.reason else ""
+        tail = f" 그 이상은 {LIMITERS[self.limiter_key][1]}." if self.limiter_key else ""
         return f"{self.basis} 기준 최적은 {self.best.capacity_kwp:,.0f} kWp 입니다.{tail}"
 
     @property
@@ -277,11 +294,7 @@ class CapacityVerdict:
             return ""
         if self.at_limit:
             return "설치 가능 면적 상한"
-        if "잉여" in self.reason:
-            return "잉여 발생"
-        if "기본요금" in self.reason:
-            return "기본요금 절감 포화"
-        return ""
+        return LIMITERS[self.limiter_key][0] if self.limiter_key else ""
 
     def basis_sentence(self) -> str:
         """**어떻게 골랐는지** 한 줄 (17세션 3-2).
@@ -303,7 +316,7 @@ class CapacityVerdict:
 
 
 def _limiting_reason(curve: SolarCurve, best: SolarPoint, limit: SolarPoint) -> str:
-    """최적이 상한보다 작은 이유. **판별해서 적는다** — 둘 중 무엇인지 알 수 있다."""
+    """최적이 상한보다 작은 이유의 **ID**. 둘 중 무엇인지 판별해서 적는다."""
     beyond = [point for point in curve.points if point.capacity_kwp > best.capacity_kwp]
     if not beyond:
         return ""
@@ -311,10 +324,10 @@ def _limiting_reason(curve: SolarCurve, best: SolarPoint, limit: SolarPoint) -> 
         best.surplus_kwh <= 0 < limit.surplus_kwh
     )
     if gained_surplus:
-        return "잉여가 발생해 절감 효율이 떨어집니다"
+        return "surplus"
     base_saturated = limit.base_saving_won <= best.base_saving_won * 1.001
     if base_saturated:
-        return "기본요금 절감이 포화해 추가 용량이 전력량요금만 줄입니다"
+        return "base_saturated"
     return ""
 
 
@@ -367,7 +380,7 @@ def capacity_verdict(curve: SolarCurve) -> CapacityVerdict:
         limit=limit,
         at_limit=at_limit,
         basis=basis,
-        reason="" if at_limit else _limiting_reason(curve, best, limit),
+        limiter_key="" if at_limit else _limiting_reason(curve, best, limit),
         monotonic=monotonic,
     )
 

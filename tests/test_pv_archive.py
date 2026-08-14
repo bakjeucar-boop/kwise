@@ -212,7 +212,9 @@ def test_fallback_is_reported_in_the_result(stored_root: Path, tmp_path: Path) -
         archive_dir=stored_root,
     )
     assert weather.fallback is True
-    assert weather.notes and "사전 취득분" in weather.notes[0]
+    # **폴백 사실은 Notice 다** (22세션 4절). 배치 요약까지 따라가는 안내다.
+    assert weather.notices and "사전 취득분" in weather.notices[0].text
+    assert weather.notices[0].fact == "weather.archive_fallback"
 
     simulation = simulate(weather, roof_config())
     assert any("사전 취득분" in message for message in simulation.warnings)

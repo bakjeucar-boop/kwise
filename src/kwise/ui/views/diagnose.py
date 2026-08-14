@@ -511,7 +511,9 @@ def _quality_block(usage: UsageData, quality: QualityReport) -> None:
     st.subheader("데이터 품질")
     meta = usage.meta
     columns = st.columns(3)
-    columns[0].metric("검침 간격", f"{meta.interval_minutes}분")
+    columns[0].metric(
+        "검침 간격", f"{meta.interval_minutes}분", help=manual_tip("label-convention")
+    )
     columns[1].metric("결측", f"{fmt.ratio_pct(quality.missing_ratio)}")
     columns[2].metric("정전 추정", fmt.count(len(quality.outages), "건"))
 
@@ -644,7 +646,11 @@ def _structure_block(usage: UsageData, diagnosis: Diagnosis, building: BuildingI
     columns = st.columns(3)
     columns[0].metric("기본요금", fmt.won_short(structure.base_won))
     columns[1].metric("전력량요금", fmt.won_short(structure.energy_won))
-    columns[2].metric("기본요금 비중", fmt.ratio_pct(structure.base_share))
+    columns[2].metric(
+        "기본요금 비중",
+        fmt.ratio_pct(structure.base_share),
+        help=manual_tip("charge-structure"),
+    )
     st.altair_chart(charts.band_chart(structure), width="stretch")
     _intensity_line(usage, building)
     st.caption(

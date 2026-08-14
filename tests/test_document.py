@@ -124,12 +124,16 @@ def diagnosis_only(
 
 
 def test_다섯_장이_모두_나온다(full_document: DocumentType) -> None:
+    """본장 다섯에 **부록 셋**이 이어 붙는다 (22세션 3절)."""
     assert _headings(full_document) == [
         f"1장 {CHAPTER_SUMMARY}",
         f"2장 {CHAPTER_DIAGNOSIS}",
         f"3장 {CHAPTER_MEASURES}",
         f"4장 {CHAPTER_COMPARISON}",
         f"5장 {CHAPTER_SCOPE}",
+        "부록 A 산출 근거 상세",
+        "부록 B 적용 기준 데이터",
+        "부록 C 알려진 한계와 전제",
     ]
 
 
@@ -148,6 +152,8 @@ def test_수단이_없으면_세_장으로_줄고_번호를_당긴다(diagnosis_
         f"1장 {CHAPTER_SUMMARY}",
         f"2장 {CHAPTER_DIAGNOSIS}",
         f"3장 {CHAPTER_SCOPE}",
+        "부록 B 적용 기준 데이터",
+        "부록 C 알려진 한계와 전제",
     ]
 
 
@@ -510,3 +516,78 @@ def test_화면과_보고서가_같은_수단_목록을_본다() -> None:
         "7.6",
         "7.7",
     ]
+
+
+# ==================================================== 계산 근거와 부록 (22세션)
+
+
+def test_계산_근거가_화면_Excel_Word_에서_같다(
+    sample_usage: UsageData, sample_bill: BillingResult, sample_switch: TariffSwitchResult
+) -> None:
+    """**만드는 자리가 하나다** (22세션 2절).
+
+    화면 카드·Excel 부록 A·Word 부록 A 가 같은 :class:`Worksheet` 를 쓴다.
+    각자 표를 만들면 숫자가 갈라지고, 갈라진 것은 나란히 놓고서야 드러난다.
+    """
+    from kwise.report.appendix import worksheet_frame
+    from kwise.report.document import DocumentSections, build_document
+    from kwise.report.excel import ReportSections, build_sheets
+    from kwise.report.worksheet import COLUMNS, tariff_switch_worksheet
+
+    sheet = tariff_switch_worksheet(sample_switch)
+    assert sheet, "선택요금 계산 근거가 비었습니다."
+    screen = sheet.frame()
+    assert list(screen.columns) == list(COLUMNS)
+    # 산식과 대입값이 같은 줄에 있다.
+    base = screen[screen["구분"] == "기본요금"].iloc[0]
+    assert "kW ×" in base["산식"] and "원/kW" in base["산식"]
+    assert base["값"].endswith("원")
+
+    excel = build_sheets(ReportSections(usage=sample_usage, bill=sample_bill, worksheets=(sheet,)))[
+        "부록 A 산출 근거"
+    ]
+    assert set(screen["값"]) <= set(excel["값"])
+    assert list(excel.columns) == ["수단", *COLUMNS]
+    assert worksheet_frame((sheet,)).equals(excel)
+
+    document = build_document(
+        DocumentSections(usage=sample_usage, bill=sample_bill, worksheets=(sheet,))
+    )
+    cells = {cell.text for table in document.tables for row in table.rows for cell in row.cells}
+    for value in screen["값"]:
+        if value:
+            assert value in cells, value
+
+
+def test_부록_B_는_기준_데이터에서_생성된다() -> None:
+    """**손으로 옮겨 적지 않는다** (요구사항서 12장 · 22세션 3절)."""
+    from kwise.report.appendix import reference_rows
+    from kwise.rules import assumptions, rules
+
+    rows = reference_rows()
+    labels = {row[1] for row in rows}
+    kinds = {row[0] for row in rows}
+    assert kinds == {"법령 유래", "판단값"}
+    assert len(rows) == len(rules().item_keys()) + len(assumptions().item_keys())
+    for key in ("dr.market_hours", "power_factor.lagging_standard_pct"):
+        assert rules()[key].label in labels, key
+    # 근거 조문과 확인일이 함께 실린다 — 값만 있으면 출처를 되짚을 수 없다.
+    statutory = [row for row in rows if row[0] == "법령 유래"]
+    assert all(row[3] and row[3] != "—" for row in statutory)
+
+
+def test_부록_C_가_한계와_참고를_한_곳에_모은다(
+    sample_bill: BillingResult, sample_diagnosis: Diagnosis
+) -> None:
+    """**같은 말이 두 곳에 있으면 안 된다** (22세션 3절)."""
+    from kwise.notices import Severity, texts
+    from kwise.report.appendix import known_limits
+    from kwise.report.notices import KNOWN_LIMITS
+
+    lines = known_limits(sample_bill.notices, sample_diagnosis.notices)
+    assert set(KNOWN_LIMITS) <= set(lines), "부록 D 목록이 빠졌습니다."
+    for line in texts(sample_bill.notices, Severity.INFO):
+        assert any(line[:30] in item for item in lines), line
+    # 앞 30자가 같은 줄이 두 번 실리지 않는다.
+    heads = [line[:30] for line in lines]
+    assert len(heads) == len(set(heads))

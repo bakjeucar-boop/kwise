@@ -1100,19 +1100,27 @@ def test_단순_합과_합산효과와_차이를_모두_보인다(stage3: AppTes
 
 
 def test_차이가_생기는_이유를_적는다(stage3: AppTest) -> None:
-    """**실제로 발생한 상호작용만** 적는다 (14세션 5-2)."""
+    """**실제로 발생한 상호작용만** 적는다 (14세션 5-2 · 22세션 2절).
+
+    22세션에 본문에서 **계산 근거 접힘**으로 옮겼다 — 「왜 단순 합과 다른가」 는
+    산출 근거이지 결론이 아니고, 본문 여섯 줄이 예산을 넘겼다. 지운 것이 아니다.
+    """
     assert not stage3.exception, stage3.exception
-    body = " ".join(str(item.value) for item in stage3.markdown)
-    assert "차이가 생기는 이유" in body
-    assert "기본요금 기반이 달라집니다" in body
+    tables = " ".join(
+        " ".join(str(value) for value in frame.value.astype(str).to_numpy().ravel())
+        for frame in stage3.dataframe
+    )
+    assert "기본요금 기반이 달라집니다" in tables
+    assert "이유 1" in tables
 
 
 def test_계약전력_추가_하향_여지가_나온다(stage3: AppTest) -> None:
     """2단계 7.2 는 현재 부하 기준이고, 조합 기준 추가 여지는 여기서만 낸다 (5-2)."""
     assert not stage3.exception, stage3.exception
     body = " ".join(str(item.value) for item in stage3.markdown)
+    # **소제목을 없애고 한 줄로 합쳤다** (22세션 1절).
     assert "계약전력 추가 하향 여지" in body
-    assert "이 조합이면 계약전력을" in body
+    assert "이 조합이면" in body
 
 
 def _after(metrics: list[tuple[str, str]], anchor: str, offset: int) -> str:
@@ -1321,3 +1329,76 @@ def test_축이_0에서_시작하지_않는다는_문구가_없다() -> None:
                 if "0 부터 시작하지 않" in value or "0부터 시작하지 않" in value:
                     offenders.append(f"{path.name}: {value[:40]}")
     assert offenders == [], "축 안내 문구가 남아 있습니다: " + ", ".join(offenders)
+
+
+# ======================================================== 화면 예산 (22세션 1절)
+
+
+@pytest.fixture(scope="module")
+def budget_sections() -> list[object]:
+    """**앱을 한 번만 띄운다.** 수단 일곱을 다 켠 실행이라 무겁다 (ESS 곡선)."""
+    import sys
+
+    sys.path.insert(0, str(Path("tools").resolve()))
+    from screen_budget import measure  # type: ignore[import-not-found]
+
+    return measure()
+
+
+def test_예산_한도가_기준_데이터에서_온다() -> None:
+    """**코드에 한도를 두지 않는다** (요구사항서 12장). 판단값이다."""
+    import sys
+
+    sys.path.insert(0, str(Path("tools").resolve()))
+    from screen_budget import screen_budget  # type: ignore[import-not-found]
+
+    from kwise.rules import assumption
+
+    budget = screen_budget()
+    assert budget.body_lines == int(assumption("ui.body_line_budget")) == 3
+    assert budget.notices == int(assumption("ui.notice_budget")) == 3
+
+
+def test_카드와_절이_예산을_지킨다(budget_sections: list[object]) -> None:
+    r"""본문 3줄 · 확인사항 3항목 (22세션 1절).
+
+    **넘으면 옮긴다 — 한도를 고치지 않는다.** 한도를 넘었을 때 세는 규칙이나
+    값을 고치면 장치가 무력해지고, 다음에 또 넘으면 또 고치게 된다.
+
+    도구(``tools\screen_budget.py``)와 **같은 함수**를 쓴다. 잣대가 갈리면
+    도구가 통과시킨 것이 여기서 깨진다.
+    """
+    from screen_budget import over_budget  # type: ignore[import-not-found]
+
+    assert len(budget_sections) >= 15, "화면을 못 읽었습니다. 측정기가 깨졌습니다."
+    assert over_budget(budget_sections) == []
+
+
+def test_앵커가_모두_화면에서_쓰인다() -> None:
+    """**놀고 있는 앵커를 두지 않는다** (22세션 5절).
+
+    16세션에 링크를 걷어내면서 앵커 목록만 남았고, 22세션에 세어 보니 32개 중
+    아홉이 화면 어디에서도 불리지 않았다 — 매뉴얼에는 자리가 있는데 화면에서
+    갈 길이 없던 것이다. 아홉을 제자리(지표·입력·표 열)에 붙였다.
+
+    **매뉴얼 문서와 앵커 id 는 유지한다.** 나중에 링크를 되살릴 수 있어야 한다.
+    """
+    import re
+
+    from kwise.ui.anchors import ANCHORS
+
+    used: set[str] = set()
+    for path in sorted((Path("src") / "kwise" / "ui").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and getattr(node.func, "id", "") == "manual_tip"):
+                continue
+            if node.args and isinstance(node.args[0], ast.Constant):
+                used.add(str(node.args[0].value))
+    # 수단 카드는 `manual_tip(spec.anchor)` 로 부른다 — 키가 spec 에 있다.
+    spec = (Path("src") / "kwise" / "ui" / "spec.py").read_text(encoding="utf-8")
+    used |= set(re.findall(r'"(measure-[a-z-]+)"', spec))
+
+    keys = {item.key for item in ANCHORS}
+    assert keys - used == set(), f"화면에서 부르지 않는 앵커: {sorted(keys - used)}"
+    assert used - keys == set(), f"목록에 없는 앵커를 부릅니다: {sorted(used - keys)}"

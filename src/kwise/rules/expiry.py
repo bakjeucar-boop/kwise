@@ -39,6 +39,9 @@ SOURCE_LINKS: dict[str, str] = {
     "전력시장운영규칙": "한국전력거래소 — https://www.kpx.or.kr/menu.es?mid=a10301020000",
     "ESS 참고단가": "에너지경제연구원 발간물 — https://www.keei.re.kr",
     "기상": "Open-Meteo — https://open-meteo.com/ (tools\\fetch_weather.py 로 갱신)",
+    # **바깥에 원문이 없는 값도 있다** (22세션). 화면 예산은 우리가 정한 규약이라
+    # 확인처가 기술서다 — 외부 링크를 붙이면 그 문서가 근거인 척하게 된다.
+    "화면 규약": "기술서 4.7 계산 근거와 화면 예산 — docs\\TECHNICAL.md (#tech-worksheet)",
 }
 
 
@@ -83,6 +86,8 @@ def _scope_of(item: RuleItem) -> tuple[str, str, str]:
         return "요금 단가", "expiry.tariff_months", "요금 단가"
     if item.key.startswith("dr."):
         return "전력시장운영규칙", "expiry.statute_months", "전력시장운영규칙"
+    if item.key.startswith("ui."):
+        return "화면 규약", "expiry.reference_months", "화면 규약"
     if not item.is_statutory:
         return "판단값", "expiry.reference_months", "ESS 참고단가"
     return "약관·규칙", "expiry.statute_months", "기본공급약관"
