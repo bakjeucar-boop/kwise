@@ -1,17 +1,21 @@
-# pyproject.toml 의 [project.dependencies] 에서 생성했다.
-# 손으로 고치지 말고 pyproject 를 고친 뒤 다시 만든다.
-numpy>=2.0
-pandas>=2.2
-scipy>=1.13
-pvlib>=0.11
-holidays>=0.40
-streamlit>=1.35
-altair>=5.3
-openpyxl>=3.1
-python-docx>=1.1
-matplotlib>=3.8
-pyarrow>=15.0
-requests>=2.31
-typer>=0.12
-rich>=13.0
-PyYAML>=6.0
+# pyproject.toml 의 [project.dependencies] 목록에, 로컬에서 시험 1,130건이
+# 통과한 판을 그대로 못박았다 (2026-08-14).
+#
+# **>= 로만 두면 배포지가 매번 최신을 깐다.** 로컬과 다른 조합이 깔리면
+# 여기서만 나는 문제가 생기고, 로컬에서 재현이 안 된다.
+# 올릴 때는 로컬에서 먼저 올리고 시험을 돌린 뒤 이 파일을 다시 만든다.
+numpy==2.5.1
+pandas==3.0.5
+scipy==1.18.0
+pvlib==0.15.2
+holidays==0.102
+streamlit==1.61.1
+altair==6.2.2
+openpyxl==3.1.5
+python-docx==1.2.0
+matplotlib==3.11.1
+pyarrow==24.0.0
+requests==2.34.2
+typer==0.27.1
+rich==15.0.0
+PyYAML==6.0.3
