@@ -603,7 +603,7 @@ def _pattern_block(diagnosis: Diagnosis) -> None:
 
 def _peak_block(diagnosis: Diagnosis) -> None:
     """**차트가 먼저다.** 상위 구간 분포가 태양광 판단의 근거다 (6.2)."""
-    st.subheader("피크 특성")
+    st.subheader("피크 특성", help=manual_tip("peak-profile"))
     peak = diagnosis.peak
     # **같은 값이면 한 줄로 접는다** (13세션). 연간 최대가 중간·최대부하 시간대에
     # 있으면 관측 최대와 요금적용 대상 최대가 같은 값이다 — 두 칸을 나란히 두면
@@ -627,11 +627,16 @@ def _peak_block(diagnosis: Diagnosis) -> None:
             help=manual_tip("billing-demand"),
         )
     st.altair_chart(charts.monthly_peak_chart(peak, split=split), width="stretch")
-    st.altair_chart(charts.top_hour_chart(peak, split=split), width="stretch")
+    st.caption("월별 최대수요", help=fmt.chart_tip("chart.monthly_peak"))
+    # **시간대별 프로파일을 상위 구간 분포보다 먼저 둔다** (23세션 4절). 하루가
+    # 어떻게 생겼는지를 본 뒤에 「그 중 가장 높은 100구간은 언제였나」 를 읽어야
+    # 순서가 맞다 — 상위 구간부터 보면 무엇에 견주는 분포인지 알 수 없다.
     st.altair_chart(charts.hourly_profile_chart(peak), width="stretch")
+    st.caption("시간대별 평균 부하", help=fmt.chart_tip("chart.hourly_profile"))
+    st.altair_chart(charts.top_hour_chart(peak, split=split), width="stretch")
     st.caption(
-        "상위 구간의 시각 분포가 **태양광 기여 가능성을 즉시 보여 주는 지표**입니다.",
-        help=manual_tip("peak-profile"),
+        f"상위 {peak.top_n}구간 발생 시각 — **태양광 기여 가능성을 즉시 보여 주는 지표**입니다.",
+        help=fmt.chart_tip("chart.top_hour"),
     )
 
 
@@ -652,6 +657,7 @@ def _structure_block(usage: UsageData, diagnosis: Diagnosis, building: BuildingI
         help=manual_tip("charge-structure"),
     )
     st.altair_chart(charts.band_chart(structure), width="stretch")
+    st.caption("계시별 사용량 구성", help=fmt.chart_tip("chart.band"))
     _intensity_line(usage, building)
     st.caption(
         "기본요금과 전력량요금만 계산합니다. 그 밖의 요금요소는 미포함이며 실제 절감액은 "

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import datetime as dt
+import inspect
 import re
 from pathlib import Path
 
@@ -1402,3 +1403,236 @@ def test_앵커가_모두_화면에서_쓰인다() -> None:
     keys = {item.key for item in ANCHORS}
     assert keys - used == set(), f"화면에서 부르지 않는 앵커: {sorted(keys - used)}"
     assert used - keys == set(), f"목록에 없는 앵커를 부릅니다: {sorted(used - keys)}"
+
+
+# ======================================================== 그래프 규약 (23세션)
+
+
+def _chart_specs() -> dict[str, object]:
+    """화면 차트를 **실제로 만들어** 돌려준다. 사양을 훑어 규약을 본다."""
+    import pandas as pd
+
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.measures import (
+        EssCostInput,
+        ess_target_curve,
+        evaluate_ess,
+        evaluate_power_factor,
+        evaluate_tariff_switch,
+        light_band_mask,
+    )
+    from kwise.quality import check_quality
+    from kwise.report.days import representative_days
+    from kwise.ui import charts
+
+    usage = load_usage(SAMPLE)
+    table = load_tariff()
+    quality = check_quality(usage)
+    selection = TariffSelection("general_b", "high_a", "I")
+    diagnosis = diagnose(
+        usage, table, ContractInfo(selection, contract_kw=5_500.0), quality=quality
+    )
+    bill = diagnosis.structure.bill if diagnosis.structure is not None else None
+    assert bill is not None
+    switch = evaluate_tariff_switch(usage, table, selection, quality=quality)
+    power_factor = evaluate_power_factor(usage, table, selection, baseline=bill, quality=quality)
+    ess = evaluate_ess(
+        usage,
+        table,
+        selection,
+        target_kw=5_200.0,
+        cost=EssCostInput.of_unit_cost(615_231.0),
+        charge_mask=light_band_mask(usage, table, selection=selection),
+        baseline=bill,
+        quality=quality,
+    )
+    curve = ess_target_curve(
+        usage.kw,
+        usage.meta.interval_minutes,
+        baseline_demand_kw=bill.billing_demand_kw,
+        base_fee_won_per_kw=bill.base_rate_won_per_kw,
+    )
+    day = representative_days(usage)[0]
+    generation = pd.Series(1.0, index=usage.kw.index)
+    assert diagnosis.dr is not None and diagnosis.structure is not None
+    return {
+        "chart.monthly_peak": charts.monthly_peak_chart(diagnosis.peak),
+        "chart.top_hour": charts.top_hour_chart(diagnosis.peak),
+        "chart.hourly_profile": charts.hourly_profile_chart(diagnosis.peak),
+        "chart.band": charts.band_chart(diagnosis.structure),
+        "chart.tariff_option": charts.tariff_option_chart(switch),
+        "chart.tariff_delta": charts.tariff_delta_chart(switch),
+        "chart.dr_daily": charts.dr_daily_chart(diagnosis.dr),
+        "chart.power_triangle": charts.power_triangle_chart(power_factor),
+        "chart.power_factor_day": charts.power_factor_day_chart(
+            usage, day, current_pct=92.0, target_pct=97.0
+        ),
+        "chart.solar_annual": charts.solar_annual_chart(usage, generation),
+        "chart.solar_day": charts.solar_day_chart(usage, generation, day, zoom=True),
+        "chart.ess_target": charts.ess_target_chart(curve),
+        "chart.ess_day": charts.ess_day_chart(usage, ess.dispatch, day),
+        "chart.surplus_daily": charts.surplus_daily_chart(
+            usage, pd.Series(0.5, index=usage.kw.index)
+        ),
+    }
+
+
+@pytest.fixture(scope="module")
+def chart_specs() -> dict[str, object]:
+    """차트 한 벌. **모듈에서 한 번만 만든다** — 요금 계산이 여러 번 돈다."""
+    return _chart_specs()
+
+
+def test_전_차트가_같은_범례_규약을_쓴다(chart_specs: dict[str, object]) -> None:
+    """**바깥 오른쪽 · 배경 없음** (23세션 1절).
+
+    17세션이 준 ``fillColor="white"`` 가 다크 모드에서 흰 상자에 회색 글씨를
+    만들었다. 배경을 칠하지 않으면 테마가 그대로 비쳐 두 모드에서 다 읽힌다.
+    """
+    import json
+
+    offenders: list[str] = []
+    for name, chart in chart_specs.items():
+        spec = json.dumps(chart.to_dict(), ensure_ascii=False, default=str)  # type: ignore[attr-defined]
+        if '"fillColor": "white"' in spec:
+            offenders.append(f"{name}: 범례에 흰 배경")
+        if '"orient": "bottom-right"' in spec:
+            offenders.append(f"{name}: 범례가 그림 안쪽")
+        if '"legend"' in spec and '"orient": "right"' not in spec:
+            offenders.append(f"{name}: 범례가 바깥 오른쪽이 아님")
+    assert offenders == [], " / ".join(offenders)
+
+
+def test_범례_설정이_한_벌이다() -> None:
+    """차트마다 따로 주면 또 갈라진다 — 상수 하나를 모두가 쓴다."""
+    from kwise.ui.charts import LEGEND
+
+    source = (Path("src") / "kwise" / "ui" / "charts.py").read_text(encoding="utf-8")
+    assert "_LEGEND_BOTTOM" not in source, "옛 범례 상수가 남아 있습니다."
+    assert source.count("alt.Legend(") == 1, "범례 정의는 하나여야 합니다."
+    assert LEGEND.to_dict()["orient"] == "right"
+    assert LEGEND.to_dict().get("fillColor") is None
+
+
+def test_보고서_png_도_같은_범례_규약이다() -> None:
+    """**화면만 고치면 어긋난다** — 나란히 놓고서야 드러난다 (13세션)."""
+    from kwise.report.figures import LEGEND_STYLE
+
+    assert LEGEND_STYLE["frameon"] is False, "png 범례에 배경 상자가 있습니다."
+    assert LEGEND_STYLE["bbox_to_anchor"] == (1.01, 1.0), "png 범례가 그림 바깥이 아닙니다."
+    source = (Path("src") / "kwise" / "report" / "figures.py").read_text(encoding="utf-8")
+    assert ".legend(fontsize=" not in source, "add_legend 를 거치지 않는 범례가 있습니다."
+
+
+def test_선과_면_차트는_0에서_시작하지_않는다(chart_specs: dict[str, object]) -> None:
+    """**막대는 자르지 않는다** (23세션 2절).
+
+    선·면은 두 값의 간격이 뜻이라 축을 자르면 그 간격이 드러난다. 막대는 길이가
+    곧 값이라 자르면 길이가 거짓말을 하고, 개수를 세는 막대는 0 이 기준점이다.
+    """
+    cut = {
+        "chart.hourly_profile",
+        "chart.power_factor_day",
+        "chart.dr_daily",
+        "chart.solar_day",
+        "chart.ess_day",
+    }
+    for name in cut:
+        spec = chart_specs[name].to_dict()  # type: ignore[attr-defined]
+        rendered = str(spec)
+        assert '"zero": False' in rendered or "'zero': False" in rendered, (
+            f"{name} 이 0 부터입니다."
+        )
+
+
+def test_모든_그래프에_설명_툴팁이_있다(chart_specs: dict[str, object]) -> None:
+    """물음표를 눌러 **무엇을 읽어야 하는지** 알 수 있어야 한다 (23세션 3절)."""
+    from kwise.ui.text import CHART_TIPS, chart_tip
+
+    for name in chart_specs:
+        assert name in CHART_TIPS, f"{name} 툴팁이 없습니다."
+    for key, tip in CHART_TIPS.items():
+        assert key.startswith("chart."), key
+        # **지표 툴팁과 형식이 다르다** — 산식이 아니라 「무엇을 그렸나 + 무엇을 읽나」다.
+        first, _, meaning = tip.partition("\n\n")
+        assert first.strip().endswith(("다.", "요.", "니다.")), key
+        assert meaning.strip(), f"{key} 에 읽는 법이 없습니다."
+    with pytest.raises(KeyError, match="등록되지 않은"):
+        chart_tip("chart.없는것")
+
+
+def test_화면이_그래프마다_툴팁을_단다() -> None:
+    """차트를 그린 자리 옆에 ``chart_tip`` 이 있어야 한다."""
+    keys: set[str] = set()
+    charts_drawn = 0
+    for path in sorted(VIEWS.rglob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        charts_drawn += source.count("st.altair_chart(")
+        keys |= set(re.findall(r'chart_tip\("([a-z_.]+)"\)', source))
+    assert charts_drawn >= 12, "차트를 못 찾았습니다."
+    # 화면에 그리는 차트 수만큼 툴팁 열쇠가 있어야 한다 (같은 차트를 두 번 그리지 않는다).
+    assert len(keys) >= 12, sorted(keys)
+
+
+def test_피크_특성은_프로파일을_먼저_보인다() -> None:
+    """**하루 모양을 본 뒤에 상위 구간을 읽는다** (23세션 4절).
+
+    상위 100구간 분포부터 보면 무엇에 견주는 분포인지 알 수 없다.
+    """
+    source = (VIEWS / "diagnose.py").read_text(encoding="utf-8")
+    body = source[source.index("def _peak_block(") : source.index("def _structure_block(")]
+    profile_at = body.index("hourly_profile_chart")
+    top_at = body.index("top_hour_chart")
+    assert profile_at < top_at, "시간대별 프로파일이 상위 구간보다 뒤에 있습니다."
+
+
+def test_태양광_일별은_발전량만_그린다() -> None:
+    """**한 그림은 한 가지만 말한다** (23세션 5절).
+
+    사용량(일 60 MWh 대)과 함께 그리니 발전량(3 MWh 대)이 바닥에 눌렸고,
+    호버도 날짜와 수전량을 내놓아 정작 발전량을 읽을 수 없었다.
+    """
+    import pandas as pd
+
+    from kwise.ui.charts import solar_annual_chart
+
+    usage = load_usage(SAMPLE)
+    spec = solar_annual_chart(usage, pd.Series(1.0, index=usage.kw.index)).to_dict()
+    assert spec["encoding"]["y"]["field"] == "발전량(kWh)"
+    fields = [item["field"] for item in spec["encoding"]["tooltip"]]
+    assert fields == ["날짜", "발전량(kWh)"], fields
+    assert "계통 수전(kWh)" not in str(spec), "수전량이 남아 있습니다."
+
+
+def test_피크_그래프는_확대본_하나뿐이다() -> None:
+    """하루 스물넷을 다 그리면 저감 구간이 손톱만 해진다 (23세션 5-3·6-1)."""
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    solar_calls = re.findall(r"charts\.solar_day_chart\((.*?)\)\n", source, re.S)
+    assert len(solar_calls) == 1, f"태양광 대표일 차트가 {len(solar_calls)}개입니다."
+    assert "zoom=True" in solar_calls[0]
+    # ESS 는 기본이 확대다 — 부르는 쪽에서 켜지 않아도 된다.
+    from kwise.ui.charts import ess_day_chart
+
+    assert inspect.signature(ess_day_chart).parameters["zoom"].default is True
+
+
+def test_ESS_충방전이_문구로_나온다() -> None:
+    """**그림이 둘일 필요가 없다** (23세션 6-2). 위 칸과 종속이다."""
+    from kwise.ui.charts import ess_day_chart
+
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    assert "dispatch_schedule" in source, "충·방전 시각 문구가 없습니다."
+    assert "충전" in source and "방전" in source
+    # 차트는 한 칸이다 — vconcat(2단)이 아니다.
+    assert "VConcatChart" not in inspect.signature(ess_day_chart).return_annotation
+
+
+def test_감도_상세가_접힘_안에_있다() -> None:
+    """본문에는 대표 범위 한 줄만 남긴다 (23세션 7절)."""
+    source = (VIEWS / "compare.py").read_text(encoding="utf-8")
+    body = source[source.index("def _sensitivity_block(") : source.index("def _download_block(")]
+    assert 'st.expander("지표별 감도 범위"' in body
+    expander_at = body.index('st.expander("지표별 감도 범위"')
+    # 지표를 줄줄이 적는 반복문이 접힘 **안**에 있어야 한다.
+    loop_at = body.index("for item in shown:")
+    assert expander_at < loop_at, "감도 목록이 본문에 남아 있습니다."

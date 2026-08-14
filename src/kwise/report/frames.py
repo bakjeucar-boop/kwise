@@ -462,6 +462,23 @@ def solar_day_frame(
     return load
 
 
+#: 피크 확대 차트가 보일 앞뒤 시간 (17세션 3-5 · 23세션 6절).
+#:
+#: **화면(altair)과 보고서(png)가 같은 값을 쓴다.** 프레임 계층에 두는 이유는
+#: 한쪽만 고치면 두 그림의 가로 범위가 갈라지기 때문이다.
+PEAK_ZOOM_HOURS = 3
+
+
+def peak_window(frame: pd.DataFrame, *, column: str = "원부하(kW)") -> pd.DataFrame:
+    """피크 앞뒤 :data:`PEAK_ZOOM_HOURS` 시간만 남긴다. 비어 있으면 그대로."""
+    if frame.empty:
+        return frame
+    peak_at = pd.Timestamp(frame.loc[frame[column].idxmax(), "시각"])
+    window = pd.Timedelta(hours=PEAK_ZOOM_HOURS)
+    times = pd.DatetimeIndex(frame["시각"])
+    return frame[(times >= peak_at - window) & (times <= peak_at + window)]
+
+
 def solar_annual_frame(usage: UsageData, generation_kw: pd.Series) -> pd.DataFrame:
     """연간 일별 사용량·자가소비·잉여 (15세션 2-4 ①).
 
@@ -485,11 +502,36 @@ def solar_annual_frame(usage: UsageData, generation_kw: pd.Series) -> pd.DataFra
             "계통 수전(kWh)": grid.to_numpy(dtype=float) * hours,
             "자가소비(kWh)": self_used.to_numpy(dtype=float) * hours,
             "잉여(kWh)": surplus.to_numpy(dtype=float) * hours,
+            # **발전량은 자가소비 + 잉여다** (23세션 5절). 일별 발전량 그래프가
+            # 이 열 하나만 그린다 — 수전량과 겹쳐 그리니 발전이 묻혔다.
+            "발전량(kWh)": gen.to_numpy(dtype=float) * hours,
         }
     )
     daily = frame.groupby("day").sum().reset_index()
     daily["날짜"] = [pd.Timestamp(value).date() for value in daily["day"]]
-    return daily[["날짜", "사용량(kWh)", "계통 수전(kWh)", "자가소비(kWh)", "잉여(kWh)"]]
+    return daily[
+        ["날짜", "사용량(kWh)", "계통 수전(kWh)", "자가소비(kWh)", "잉여(kWh)", "발전량(kWh)"]
+    ]
+
+
+def dispatch_schedule(frame: pd.DataFrame) -> tuple[str, str]:
+    """대표일의 (충전 문구, 방전 문구) — **그림 대신 글로 낸다** (23세션 6절).
+
+    17세션의 아래 칸(충전＋·방전−)은 위 칸과 종속이라 그림이 둘일 필요가 없었다.
+    시각 범위와 양은 글이 더 정확하다 — 막대에서 시각을 눈으로 읽어 내야 했다.
+
+    끊긴 구간이 여럿이면 **처음과 끝**으로 묶어 적는다. 15분 단위 구간을 다
+    나열하면 그림보다 못한 목록이 된다.
+    """
+
+    def span(column: str) -> str:
+        active = frame[frame[column] > 0]
+        if active.empty:
+            return ""
+        times = pd.DatetimeIndex(active["시각"])
+        return f"{times.min():%H:%M}–{times.max():%H:%M}"
+
+    return span("충전(kW)"), span("방전(kW)")
 
 
 def ess_day_frame(

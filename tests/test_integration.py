@@ -674,18 +674,24 @@ def test_화면에_상세_미산출이_없다() -> None:
     assert "왼쪽(초록)이 절감" in body
 
 
-def test_역률_범례가_우측_하단이다() -> None:
-    """지상역률 값을 바꾸면 우측 상단 범례가 글자를 가렸다 (17세션 2절)."""
+def test_역률_범례가_그림_바깥_오른쪽이다() -> None:
+    """**바깥 오른쪽 · 배경 없음** (17세션 2절 → 23세션 1절).
+
+    17세션에는 우측 **하단 안쪽**이었다. 값이 커질 때 글자를 가리지는 않았지만
+    흰 배경 상자를 깔아 두어 다크 모드에서 흰 바탕에 회색 글씨가 됐다.
+    """
     from kwise.ui.charts import power_triangle_chart
 
     _usage, _switch, power_factor, _day, _base = _material()
     spec = power_triangle_chart(power_factor).to_dict()
-    orients = {
-        layer["encoding"]["color"]["legend"]["orient"]
+    legends = [
+        layer["encoding"]["color"]["legend"]
         for layer in spec["layer"]
         if "legend" in layer["encoding"].get("color", {})
-    }
-    assert orients == {"bottom-right"}
+    ]
+    assert legends, "범례가 없습니다."
+    assert {item["orient"] for item in legends} == {"right"}
+    assert all(item.get("fillColor") is None for item in legends), "범례에 배경이 있습니다."
 
 
 def test_전력삼각형에_각도와_역률을_직접_적는다() -> None:
@@ -737,21 +743,21 @@ def test_태양광_용량_표가_다섯_줄이다() -> None:
     assert "면적 상한" in " ".join(str(value) for value in frame["표식"])
 
 
-def test_태양광_연간_차트가_사용량_감소를_주인공으로_그린다() -> None:
-    """발전량만 색으로 채우던 그림을 뒤집었다 (17세션 3-4)."""
+def test_태양광_연간_차트가_발전량만_그린다() -> None:
+    """**한 그림은 한 가지만 말한다** (17세션 3-4 → 23세션 5절).
+
+    17세션에는 「사용량이 줄어드는 모습」이 주인공이었다. 뜻은 옳았지만 사용량이
+    일 60 MWh 대인데 발전량은 3 MWh 대라 **저감분 띠가 선 굵기만큼도 서지
+    않았다.** 사용량이 얼마나 줄었는지는 카드의 절감액과 대표일 곡선이 낸다.
+    """
     from kwise.ui.charts import solar_annual_chart, solar_saving_ratio
 
     usage, _switch, _pf, _day, _base = _material()
     generation = _fake_generation(usage)
     spec = solar_annual_chart(usage, generation).to_dict()
-    filled = [
-        layer
-        for layer in spec["layer"]
-        if layer.get("mark", {}).get("type") == "area" and "y2" in layer["encoding"]
-    ]
-    assert filled, "원래 사용량과 순사용량 사이를 채우지 않았습니다."
-    assert filled[0]["encoding"]["y"]["field"] == "계통 수전(kWh)"
-    assert filled[0]["encoding"]["y2"]["field"] == "사용량(kWh)"
+    assert spec["encoding"]["y"]["field"] == "발전량(kWh)"
+    assert [item["field"] for item in spec["encoding"]["tooltip"]] == ["날짜", "발전량(kWh)"]
+    # 절감 비율은 여전히 화면 문구가 쓴다 — 그림에서 뺐을 뿐이다.
     ratio = solar_saving_ratio(usage, generation)
     assert ratio is not None and 0.0 < ratio < 1.0
 
@@ -783,23 +789,31 @@ def test_일일_곡선의_축이_0부터가_아니고_저감분을_채운다() -
     assert f"피크 앞뒤 {PEAK_ZOOM_HOURS}시간" in str(zoomed)
 
 
-def test_ESS_그래프가_2단이고_충방전에_색이_있다() -> None:
-    """겹쳐 그렸더니 온통 하얬다 (17세션 4-1)."""
+def test_ESS_그래프가_한_칸이고_충방전은_문구다() -> None:
+    """**그림이 둘일 필요가 없다** (17세션 4-1 → 23세션 6절).
+
+    아래 칸(충전＋·방전−)은 위 칸의 결과라 종속이다. 시각과 양은 글이 더
+    정확하다 — 막대에서 시각을 눈으로 읽어 내야 했다.
+    """
+    from kwise.report.frames import dispatch_schedule, ess_day_frame
     from kwise.ui.charts import ess_day_chart
 
     usage, _switch, _pf, day, dispatch = _dispatch()
     spec = ess_day_chart(usage, dispatch, day).to_dict()
-    assert "vconcat" in spec, list(spec)
-    assert len(spec["vconcat"]) == 2
-    upper, lower = spec["vconcat"]
+    assert "vconcat" not in spec, "2단 그림이 남아 있습니다."
     assert any(
         layer["encoding"]["y"].get("scale", {}).get("zero") is False
-        for layer in upper["layer"]
+        for layer in spec["layer"]
         if "y" in layer["encoding"]
     )
-    assert lower["mark"]["type"] == "bar"
-    assert lower["encoding"]["color"]["scale"]["range"] == ["#3182bd", "#e6550d"]
-    assert "충전(+)" in lower["encoding"]["y"]["title"]
+    # 배경 띠가 흰색에 가깝지 않다 — 그것이 「흰 바탕에 오른편만 옅은 주황」의 원인이었다.
+    from kwise.ui.charts import _BAND_COLORS
+
+    palette = _BAND_COLORS.to_dict()["range"]
+    assert "#eff3ff" not in palette and "#fee6ce" not in palette, palette
+    # 충·방전 시각은 문구가 낸다.
+    charge, discharge = dispatch_schedule(ess_day_frame(usage, dispatch, day.date))
+    assert charge or discharge, "충·방전 구간을 못 읽었습니다."
 
 
 def test_ESS_본문에_투자비_상세와_성립_조건이_없다() -> None:

@@ -285,16 +285,14 @@ def _tariff_switch(
     # **① 차액이 먼저다** (17세션 1-3). 35억 위에서 5천만원이 움직이는 것을 절대
     # 금액 축에 그리면 막대 셋이 같은 높이로 보인다 — 변화만 떼어 먼저 보인다.
     st.altair_chart(charts.tariff_delta_chart(result), width="stretch")
+    st.caption("현행 대비 차액", help=fmt.chart_tip("chart.tariff_delta"))
     st.caption(
         "현행을 0 으로 두고 좌우로 뻗은 막대입니다. 왼쪽(초록)이 절감입니다. "
         + fmt.TRUNCATION_FOOTNOTE
     )
     # **② 그룹 막대** (17세션 1-2). 쌓으면 기본요금끼리·전력량요금끼리 견줄 수 없다.
     st.altair_chart(charts.tariff_option_chart(result), width="stretch")
-    st.caption(
-        "요금제마다 기본요금·전력량요금·합계를 나란히 세웠습니다. **선택요금은 그 둘을 "
-        "맞바꾸는 제도**입니다 — 기본요금이 오르는 대신 전력량요금이 내려갑니다."
-    )
+    st.caption("요금제별 기본·전력량·합계", help=fmt.chart_tip("chart.tariff_option"))
     _notices(result.notices)
     _worksheet(tariff_switch_worksheet(result))
 
@@ -456,10 +454,7 @@ def _demand_response(
     # **기준선 근처로 내려온 평일이 감축 가능일이다** (15세션 2-2). 요일 갈래를
     # 색으로 나누고 저부하 평일에 표식을 찍으면 그 사실이 그림 하나로 읽힌다.
     st.altair_chart(charts.dr_daily_chart(diagnosis.dr), width="stretch")
-    st.caption(
-        "점 하나가 하루입니다. 붉은 가로선이 주말·공휴일 평균(기준선)과 저부하 문턱이고, "
-        "역삼각형이 감축 가능일입니다."
-    )
+    st.caption("일별 판정 시간대 평균 부하", help=fmt.chart_tip("chart.dr_daily"))
     # **어떤 날인지 보여 준다.** 창립기념일·워크숍처럼 사무실을 비우는 날일 가능성이
     # 높아, 목록을 보면 사용자가 스스로 맞는 날인지 판정할 수 있다 (14세션 4절).
     if result.low_load_days:
@@ -537,7 +532,7 @@ def _power_factor(
     triangle_col, day_col = st.columns(2)
     with triangle_col:
         st.altair_chart(charts.power_triangle_chart(result), width="stretch")
-        st.caption("각이 좁아질수록 역률이 좋아집니다. 역률 개선 설비는 무효전력(세로)만 줄입니다.")
+        st.caption("전력삼각형 — 개선 전후", help=fmt.chart_tip("chart.power_triangle"))
     with day_col:
         if day is not None:
             st.altair_chart(
@@ -547,8 +542,8 @@ def _power_factor(
                 width="stretch",
             )
             st.caption(
-                f"{day.title} · 주황 표식이 역률요금 판정 창(주간 08–22시)입니다. "
-                "야간은 진상 기준입니다."
+                f"{day.title} · 15분 부하와 판정 창",
+                help=fmt.chart_tip("chart.power_factor_day"),
             )
     # **92% 미달 경고는 화면에 남긴다** — 결과 해석을 바꾼다 (10.2 예외).
     from kwise.tariff import lagging_standard_pct
@@ -800,21 +795,26 @@ def _solar(
     )
     with st.expander("용량 곡선 (접어 둠)", expanded=False):
         st.altair_chart(charts.solar_curve_chart(curve, verdict=verdict), width="stretch")
+        st.caption("용량별 절감액", help=fmt.chart_tip("chart.solar_curve"))
 
     generation = unit_profile * point.capacity_kwp
+    # **일별 발전량 하나만 그린다** (23세션 5절). 사용량과 함께 그리니 60 MWh 대
+    # 사용량에 3 MWh 대 발전량이 눌려 보이지 않았다.
     st.altair_chart(charts.solar_annual_chart(usage, generation), width="stretch")
     ratio = charts.solar_saving_ratio(usage, generation)
     st.caption(
-        "**주인공은 계통에서 받는 양이 줄어드는 모습**입니다. 위 선이 원래 사용량, "
-        "그 아래 초록이 자가소비로 줄어든 몫, 연파랑이 그래도 계통에서 받는 양입니다. "
-        + (f"연간 사용량의 **{fmt.ratio_pct(ratio)}** 를 줄입니다. " if ratio else "")
-        + "주황 점선(잉여)이 크면 자가소비로 다 쓰지 못하는 구조입니다."
+        "날짜별 발전량"
+        + (f" · 연간 사용량의 **{fmt.ratio_pct(ratio)}** 를 줄입니다" if ratio else ""),
+        help=fmt.chart_tip("chart.solar_annual"),
     )
     if day is not None:
-        st.altair_chart(charts.solar_day_chart(usage, generation, day), width="stretch")
-        st.caption(f"{day.title} · 두 선 사이 초록이 저감분입니다.")
+        # **하루 전체 곡선을 지웠다** (23세션 5-3). 스물넷을 다 그리면 저감 구간이
+        # 손톱만 해져 확대본과 나란히 둘 이유가 없다.
         st.altair_chart(charts.solar_day_chart(usage, generation, day, zoom=True), width="stretch")
-        st.caption(f"피크 앞뒤 {charts.PEAK_ZOOM_HOURS}시간만 확대한 그림입니다.")
+        st.caption(
+            f"{day.title} · 피크 앞뒤 {charts.PEAK_ZOOM_HOURS}시간",
+            help=fmt.chart_tip("chart.solar_day"),
+        )
     _notices(curve.notices)
     _worksheet(solar_worksheet(curve, point))
 
@@ -969,6 +969,7 @@ def _ess(
 
     st.markdown("**목표 선택 곡선** — 어느 목표가 유리한지만 본다")
     st.altair_chart(charts.ess_target_chart(curve), width="stretch")
+    st.caption("목표별 개략 회수기간", help=fmt.chart_tip("chart.ess_target"))
     st.caption(
         f"가장 유리한 목표는 **{fmt.kw(best.target_kw, decimals=0)}** 입니다 — "
         f"{fmt.markdown_safe(curve.u_shape_reason)} **물리적 최적이 아니라 조달 규격의 "
@@ -1026,16 +1027,23 @@ def _ess(
             ),
             width="stretch",
         )
+        st.caption(
+            f"{day.title} · 피크 앞뒤 {charts.PEAK_ZOOM_HOURS}시간",
+            help=fmt.chart_tip("chart.ess_day"),
+        )
+        # **충·방전은 그림이 아니라 글로 낸다** (23세션 6-2). 아래 칸 막대는 위
+        # 칸과 종속이라 그림이 둘일 필요가 없었고, 시각을 막대에서 눈으로 읽어
+        # 내야 했다. 언제 담아 언제 쓰는지는 글이 더 정확하다.
         frame = charts.ess_day_frame(usage, result.dispatch, day.date)
         slot_hours = usage.meta.interval_minutes / 60.0
         charged = float(frame["충전(kW)"].sum()) * slot_hours if len(frame) else 0.0
         discharged = float(frame["방전(kW)"].sum()) * slot_hours if len(frame) else 0.0
         cut = float(frame["원부하(kW)"].max() - frame["순부하(kW)"].max()) if len(frame) else 0.0
-        st.caption(
-            f"{day.title} · 위 칸이 부하, 아래 칸이 "
-            "충전(+)·방전(−)입니다. 배경 띠가 계시별 시간대예요 — 경부하에 담아 "
-            f"최대부하에 씁니다. **그날 저감 {fmt.kw(cut)} · 충전 {fmt.kwh(charged)} · "
-            f"방전 {fmt.kwh(discharged)}.**"
+        charge_span, discharge_span = charts.dispatch_schedule(frame)
+        st.write(
+            f"**{day.title} 운전** — 경부하 {charge_span or fmt.DASH} 충전 "
+            f"{fmt.kwh(charged)} · 최대부하 {discharge_span or fmt.DASH} 방전 "
+            f"{fmt.kwh(discharged)} · 그날 저감 {fmt.kw(cut)}."
         )
     # **판정 문장을 쓰지 않는다** (14세션 3-3). 사실만 적고 판단은 사용자가 한다.
     if result.payback_years is not None:
@@ -1178,7 +1186,7 @@ def _surplus(
     if result.total_kwh > 0:
         surplus_kw = apply_generation(usage, unit_profile * capacity).surplus_kw
         st.altair_chart(charts.surplus_daily_chart(usage, surplus_kw), width="stretch")
-        st.caption("막대 하나가 하루입니다. 주말·공휴일에 몰리면 자가소비가 어려운 구조입니다.")
+        st.caption("날짜별 잉여", help=fmt.chart_tip("chart.surplus_daily"))
     else:
         st.write("잉여가 0 이라 그릴 것이 없습니다 — 발전량을 모두 자가소비합니다.")
     st.dataframe(

@@ -808,23 +808,29 @@ def _sensitivity_block(
             form.billing_options(),
             report,
         )
-    # **기준값 옆에 범위만 붙인다** (9.2·12세션).
+    # **본문에는 대표 범위 한 줄, 나머지는 접힘으로** (23세션 7절).
     #
-    # 감도 차트와 3행 원자료 표를 화면에서 뺐다. 계산 표의 숫자와 감도 숫자가
-    # 나란히 놓이면 어느 것이 결과인지 알 수 없고, 그래프는 뜻이 읽히지 않는다.
-    # 근거가 필요한 사람은 Excel 「감도 상세」 시트를 본다.
-    for item in ranges:
-        if item.base is None:
-            continue
+    # 확실성을 판단하는 근거이지만 지표마다 범위를 늘어놓으면 숫자가 여럿이라
+    # 어느 것이 결과인지 흐려진다. 감도 차트와 3행 원자료 표는 12세션에 이미
+    # 화면에서 뺐고 Excel 「감도 상세」 시트가 그 자리다.
+    shown = [item for item in ranges if item.base is not None]
+    headline = next((item for item in shown if item.unit == "원"), None)
+    if headline is not None:
         st.write(
-            f"- **{item.metric}** {fmt.money_range(item.base, item.low, item.high)}"
-            if item.unit == "원"
-            else f"- **{item.metric}** {fmt.markdown_safe(item.text())}"
+            f"**{headline.metric}** {fmt.money_range(headline.base, headline.low, headline.high)}"
         )
     st.caption(
         "태양광 발전 프로파일의 불확실성을 반영한 범위입니다.",
         help=manual_tip("sensitivity"),
     )
+    if shown:
+        with st.expander("지표별 감도 범위", expanded=False):
+            for item in shown:
+                st.write(
+                    f"- **{item.metric}** {fmt.money_range(item.base, item.low, item.high)}"
+                    if item.unit == "원"
+                    else f"- **{item.metric}** {fmt.markdown_safe(item.text())}"
+                )
     return frame, ranges
 
 
