@@ -41,6 +41,16 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 이어받는다. 다만 **올려야 이어받는다** — 커밋만 하고 push 를 빠뜨리면 다음
 세션이 다른 PC 에서 열렸을 때 없는 일이 된다.
 
+### 작업 PC 경로
+
+| PC | 프로젝트 경로 | 비고 |
+|---|---|---|
+| 2번 PC (`user`) | `C:\Users\user\Documents\claude\kwise` | 2026-08-15 환경 구축 완료 · 1,130건 통과 |
+
+경로가 PC 마다 다르므로 **경로를 코드·문서에 하드코딩하지 않는다.** 캐시는
+`PROJECT_CACHE`, 나머지는 `pathlib.Path` 로 프로젝트 뿌리에서 상대 계산한다.
+`docs\ENVIRONMENT.md` 의 `C:\work\kwise` 는 예시일 뿐 강제가 아니다.
+
 ### 저장소에 없는 것 — 따로 옮긴다
 
 | 무엇 | 크기 | 왜 없나 · 필요한가 |
@@ -58,12 +68,28 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 ### 새 PC 에서 처음 할 일
 
+2026-08-15 에 2번 PC 에서 실제로 밟아 검증한 순서다.
+
     git clone https://github.com/bakjeucar-boop/kwise.git
     cd kwise
-    py -m venv .venv
+    py -3.12 -m venv .venv                        ← 3.13 이상은 쓰지 않는다
+    .venv\Scripts\python.exe -m pip install --upgrade pip
     .venv\Scripts\python.exe -m pip install -e .
-    (input\ 을 옮겨 넣는다)
+    .venv\Scripts\python.exe -m pip install pytest ruff mypy
+    (input\ 을 옮겨 넣는다 — 저장소에 없다)
+    [Environment]::SetEnvironmentVariable("PYTHONUTF8", "1", "User")
+    [Environment]::SetEnvironmentVariable("PROJECT_CACHE", "$env:LOCALAPPDATA\kwise\cache", "User")
     .venv\Scripts\python.exe -m pytest
+
+환경변수는 **새 창부터** 반영된다. 등록한 창에서 이어서 작업하려면 `$env:` 로
+같은 값을 임시 설정한다.
+
+**첫 실행은 케이스 스터디 1건이 실패한다 — 정상이다.**
+`test_case_study_runs_sequentially_and_hits_the_weather_cache` 가
+`weather_calls == 0` 을 기대하는데, 새 PC 는 `PROJECT_CACHE` 가 비어 있어
+첫 케이스에서 기상을 한 번 받아 온다 (`weather_calls == 1`). 그 실행이 캐시를
+채우므로 **두 번째 실행부터 1,130건 전부 통과**한다. 코드 결함이 아니라
+찬 캐시 탓이다 — 새 PC 를 붙일 때마다 한 번씩 겪는다.
 
 ### 백업 번들
 
@@ -118,7 +144,61 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 ---
 
-## 오늘 (2026-08-14) 한 일 — 배포 (23세션 뒤)
+## 오늘 (2026-08-15) 한 일 — 2번 PC 환경 구축
+
+**계산·화면 코드는 한 줄도 손대지 않았다.** 2번 PC 를 작업 가능 상태로 만들고
+`PROCEED.md` 의 두 PC 절만 고쳤다.
+
+| 항목 | 결과 |
+|---|---|
+| 경로 | `C:\Users\user\Documents\claude\kwise` |
+| HEAD | `0ead692` — 원격과 일치 |
+| 파이썬 | 3.12.10 (`py -3.12`) |
+| 가상환경 | 프로젝트 내 `.venv` — **전역 pip 에 아무것도 넣지 않았다** |
+| pytest | **1,130 passed** (8분 39초) |
+| ruff | pass |
+| mypy | **tests\ 에서 33건** — 아래 「미해결」 참조 |
+| `input\` | CSV 7개 모두 있음 (뿌리 1 + `input\cases\` 6) |
+| `data\weather\` | 406파일 42.5 MB — `git pull` 로 따라왔다 |
+
+**완료**
+
+- `py -3.12 -m venv .venv` → `pip install -e .` → `pip install pytest ruff mypy`
+- 사용자 환경변수 `PYTHONUTF8=1`, `PROJECT_CACHE=%LOCALAPPDATA%\kwise\cache` 등록
+- 캐시 폴더 `C:\Users\user\AppData\Local\kwise\cache` 생성
+- 시험 전량 통과 확인 (두 번째 실행에서 1,130/1,130)
+
+**만든 파일**
+
+- 없음. `.venv\` 와 캐시는 `.gitignore` 대상이다. `PROCEED.md` 만 고쳤다
+
+**미해결**
+
+- **mypy 33건 — 전부 `tests\` 다. `src\` 는 깨끗하다.** `test_integration.py` 24건,
+  `test_ui_screen.py` 6건, `test_notices.py` 3건 (`arg-type` 22 · `attr-defined` 6 ·
+  `unused-ignore` 4 · `return-value` 1). 이전 세션 기록은 mypy pass 였으므로
+  **새로 깔린 mypy 2.3.1 이 엄격해진 탓으로 본다** — `pyproject.toml` 은 `>=1.11`
+  이라 상한이 없다. 계산 코드의 결함이 아니어서 이번에 손대지 않았다.
+  다음 세션에서 상한을 박든(`mypy>=1.11,<2`) 시험 쪽 형을 고치든 정한다
+- 화면이 계속 도는지는 **사람이 눌러 확인해야 한다.** 띄우지 않고 명령만 안내했다
+
+**다음 세션이 알아야 할 것**
+
+- 이 PC 의 경로는 1번 PC 와 다르다. `docs\ENVIRONMENT.md` 의 `C:\work\kwise` 는
+  예시다 — 경로를 하드코딩하지 않는다
+- **새 PC 첫 pytest 는 케이스 스터디 1건이 반드시 실패한다.** 찬 캐시 탓이며
+  두 번째 실행부터 통과한다. 위 「새 PC 에서 처음 할 일」에 적어 두었다
+- 설치된 주요 판: pandas 3.0.5 · numpy 2.5.2 · streamlit 1.61.1 · pvlib 0.15.2 ·
+  pytest 9.1.1 · ruff 0.16.3 · mypy 2.3.1. 상한이 없어 PC 마다 달라질 수 있다
+
+**테스트**
+- pytest: 1,130 passed
+- ruff: pass
+- mypy: **fail (tests\ 33건, src\ 0건)** — 위 「미해결」 참조
+
+---
+
+## 지난 세션 (2026-08-14) — 배포 (23세션 뒤)
 
 **Streamlit Cloud 에 처음 올렸다.** 계산도 화면도 손대지 않았다 — 시험
 1,130건과 케이스 스터디가 그대로다. 나온 결함 넷 중 **코드 결함은 하나**였고
