@@ -44,7 +44,6 @@ from kwise.measures import (
     SurplusResult,
     TariffSwitchResult,
     apply_generation,
-    band_labels,
     default_target_pct,
     evaluate_contract_adjustment,
     evaluate_demand_response,
@@ -352,12 +351,14 @@ def _combined_block(
     ratio = gap / simple if simple else None
 
     st.subheader("합산효과")
+    # **셋 다 12개월 환산이다** (26세션 2-3). 값에 기간 단위를 붙인다 — 라벨만
+    # 보고는 한 달인지 한 해인지 알 수 없다.
     columns = st.columns(3)
-    columns[0].metric("단순 합", fmt.won_short(simple))
-    columns[1].metric("합산효과", fmt.won_short(actual))
+    columns[0].metric("단순 합", fmt.won_year(simple))
+    columns[1].metric("합산효과", fmt.won_year(actual))
     columns[2].metric(
         "차이",
-        fmt.won_short(gap),
+        fmt.won_year(gap),
         fmt.ratio_pct(ratio) if ratio is not None else fmt.DASH,
     )
     # 「부하를 처음부터 다시 만들어…」 는 근거(``combination.not_additive``)가 같은
@@ -578,7 +579,6 @@ class _MeasureResults:
     day: RepresentativeDay | None = None
     dr_profile: DrProfile | None = None
     solar_generation_kw: pd.Series | None = None
-    ess_bands: pd.Series | None = None
     surplus_kw: pd.Series | None = None
 
     def worksheets(self) -> tuple[Worksheet, ...]:
@@ -622,7 +622,6 @@ class _MeasureResults:
             day=self.day,
             dr_profile=self.dr_profile,
             solar_generation_kw=self.solar_generation_kw,
-            ess_bands=self.ess_bands,
             surplus_kw=self.surplus_kw,
         )
 
@@ -740,14 +739,6 @@ def _measure_results(
     generation = None
     if solar is not None and unit_profile is not None:
         generation = unit_profile * solar.capacity_kwp
-    bands = None
-    if ess is not None:
-        try:
-            bands = band_labels(
-                usage, table, selection=form.selection, options=form.billing_options()
-            )
-        except Exception:
-            bands = None
     surplus_kw = None
     if surplus is not None and unit_profile is not None and inputs is not None:
         surplus_kw = apply_generation(
@@ -769,7 +760,6 @@ def _measure_results(
         day=day,
         dr_profile=diagnosis.dr,
         solar_generation_kw=generation,
-        ess_bands=bands,
         surplus_kw=surplus_kw,
     )
 
@@ -823,13 +813,32 @@ def _sensitivity_block(
     if shown:
         with st.expander("지표별 감도 범위", expanded=False):
             for item in shown:
-                st.write(
-                    f"- **{item.metric}** {fmt.money_range(item.base, item.low, item.high)}"
-                    if item.unit == "원"
-                    # **지표 이름을 두 번 적지 않는다** (24세션 3절).
-                    else f"- **{item.metric}** {fmt.markdown_safe(item.range_text())}"
-                )
+                # **지표 이름을 두 번 적지 않는다** (24세션 3절).
+                st.write(f"- **{_metric_label(item)}** {_range_text(item)}")
     return frame, ranges
+
+
+def _metric_label(item: SensitivityRange) -> str:
+    """지표 이름. **값을 MWh 로 내면 이름도 MWh 다** (26세션 3-3).
+
+    원자료 열 이름은 kWh 로 두고 (Excel 「감도 상세」가 그것을 그대로 싣는다)
+    화면에 적을 때만 바꾼다.
+    """
+    return item.metric.replace("(kWh)", "(MWh)") if item.unit == "kWh" else item.metric
+
+
+def _range_text(item: SensitivityRange) -> str:
+    """감도 범위 한 줄. **단위마다 읽기 좋은 자릿수로 낸다.**
+
+    금액은 억·만원으로 줄이고 (:func:`~kwise.ui.text.money_range`), 발전량은
+    **MWh** 로 낸다 (26세션 3-3) — 백만 자리 kWh 는 눈으로 읽히지 않는다.
+    원자료(Excel 「감도 상세」)는 kWh 그대로 둔다.
+    """
+    if item.unit == "원":
+        return fmt.money_range(item.base, item.low, item.high)
+    if item.unit == "kWh":
+        return fmt.range_text(fmt.mwh(item.base), fmt.mwh(item.low), fmt.mwh(item.high))
+    return fmt.markdown_safe(item.range_text())
 
 
 def _download_block(

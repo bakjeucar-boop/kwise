@@ -505,8 +505,8 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
             f"{pattern.weekend_ratio:.1%}" if pattern.weekend_ratio else "—",
         ),
         (
-            "무인시간 부하 비율",
-            f"{pattern.unattended_ratio:.1%}" if pattern.unattended_ratio else "—",
+            "운영시간 외 부하 비율",
+            f"{pattern.off_hours_ratio:.1%}" if pattern.off_hours_ratio else "—",
         ),
         ("요금적용전력", f"{peak.billing_demand_kw:,.1f} kW"),
         (f"상위 {peak.top_n}구간 주말 건수 (전 슬롯)", f"{peak.weekend_slots}"),

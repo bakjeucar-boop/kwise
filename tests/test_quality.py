@@ -348,7 +348,7 @@ def test_sample_load_pattern(sample_usage: UsageData) -> None:
     assert pattern.weekend_ratio is not None
     assert pattern.base_load_ratio < 1.0
     assert pattern.weekend_ratio < 1.0
-    assert pattern.unattended_ratio is not None
+    assert pattern.off_hours_ratio is not None
 
 
 def test_load_pattern_ratios_are_computed_from_slot_start(tmp_path: Path) -> None:

@@ -47,12 +47,14 @@ __all__ = [
     "mwh",
     "payback",
     "pct",
+    "per_year",
     "period",
     "range_text",
     "ratio_pct",
     "tip",
     "won",
     "won_short",
+    "won_year",
 ]
 
 # 긴 설명은 **툴팁으로 보낸다** (15세션 1-2). 선택지·지표 옆에 길게 붙여 놓으면
@@ -89,6 +91,14 @@ TIPS: dict[str, str] = {
             "**입력이 아니라 산출값입니다.** 목표를 정하면 데이터가 정합니다.",
             "짧을수록 kW당 단가가 싸지만, 0.5시간 미만은 2C 이상이라 정치형 LFP 의 "
             "통상 사양(0.5–1C 연속)을 넘는 고출력 셀입니다.",
+        )
+    ),
+    "surplus_free": "\n\n".join(
+        (
+            "**잉여 없는 최대 용량** — 어느 15분 구간에서도 발전이 부하를 넘지 않는 "
+            "가장 큰 용량입니다.",
+            "여기까지는 전량 자가소비라 상계거래 계약도 역송 계량기도 필요 없습니다. "
+            "더 지으면 남는 몫을 어떻게 할지(7.7 잉여 활용)를 함께 정해야 합니다.",
         )
     ),
     "contract_margin": "\n\n".join(
@@ -170,13 +180,15 @@ CHART_TIPS: dict[str, str] = {
         "어긋나면 전력량요금만 줄어듭니다."
     ),
     "chart.ess_target": (
-        "목표 요금적용전력을 낮출수록 회수기간이 어떻게 달라지는지 그린 곡선입니다. "
+        "배터리를 얼마나 크게 지을 때 회수기간이 어떻게 달라지는지 그린 곡선이고, "
         "붉은 표식이 최소 지점입니다.\n\n"
-        "왼쪽으로 갈수록 필요 용량(회색 점선)이 급히 커져 회수기간이 다시 나빠집니다."
+        "**목표를 낮추면 저감량은 늘지만 필요 용량이 훨씬 빠르게 늘어 회수기간이 "
+        "나빠집니다.** 최소 지점이 그 균형점입니다 — 더 큰 배터리가 더 나은 것이 "
+        "아닙니다."
     ),
     "chart.ess_day": (
         "대표일의 피크 앞뒤 시간대입니다. 두 선 사이 초록이 ESS 로 깎은 몫이고, "
-        "붉은 점선이 목표 요금적용전력, 배경 띠가 계시별 시간대입니다.\n\n"
+        "붉은 점선이 목표 요금적용전력입니다.\n\n"
         "**순부하 선이 목표선 아래로 눌려 있어야** 그 목표가 지켜진 것입니다."
     ),
     "chart.surplus_daily": (
@@ -237,6 +249,34 @@ def won_short(value: float | None, *, reason: str | None = None) -> str:
     억 단위 소수는 만원 자리를 감춘다.
     """
     return money.won_short(value, reason=format_won(None) if reason is None else reason)
+
+
+#: 기간 단위 꼬리표. **12개월 환산값에만 붙인다** (26세션 2-3).
+PER_YEAR = "/년"
+
+
+def per_year(text: str) -> str:
+    """``1,940.8 MWh`` → ``1,940.8 MWh/년``. **12개월 환산값에 단위를 붙인다.**
+
+    지표 카드에 ``896만원`` 만 있으면 한 달인지 한 해인지 알 수 없다. 라벨에
+    「연간」 을 붙이는 대신 값에 단위를 붙인다 — 라벨 자리는 좁고, 옮겨 적을 때
+    단위가 값을 따라가야 한다.
+
+    **값이 없어 사유가 들어온 자리에는 쓰지 않는다** — 금액은 :func:`won_year`
+    가 그 갈림을 대신 판단한다.
+    """
+    return f"{text.strip()}{PER_YEAR}" if text.strip() not in ("", DASH) else text
+
+
+def won_year(value: float | None, *, reason: str | None = None) -> str:
+    """12개월 환산 금액. ``896만원/년``.
+
+    **값이 없으면 사유이고 꼬리표를 붙이지 않는다** — ``미산출 — 단가 미입력/년``
+    은 말이 되지 않는다 (7.5 의 빈칸·0원 금지 규약과 같은 자리다).
+    """
+    if value is None:
+        return won_short(value, reason=reason)
+    return per_year(won_short(value))
 
 
 def money_range(base: float | None, low: float | None, high: float | None) -> str:

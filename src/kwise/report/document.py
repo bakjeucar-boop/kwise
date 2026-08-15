@@ -199,7 +199,6 @@ def measure_entries(
     day: RepresentativeDay | None = None,
     dr_profile: DrProfile | None = None,
     solar_generation_kw: pd.Series | None = None,
-    ess_bands: pd.Series | None = None,
     surplus_kw: pd.Series | None = None,
 ) -> tuple[MeasureEntry, ...]:
     """검토한 수단을 **7장 순서 그대로** 항목으로 만든다.
@@ -359,7 +358,7 @@ def measure_entries(
             ),
             notices=ess.notices,
             figure=(
-                _safe_figure(lambda: figures.ess_day_png(usage, ess.dispatch, day, bands=ess_bands))
+                _safe_figure(lambda: figures.ess_day_png(usage, ess.dispatch, day))
                 if usage is not None and day is not None
                 else None
             ),
@@ -677,8 +676,8 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
                 "주말 평균 ÷ 평일 평균",
             ],
             [
-                "무인시간 부하 비중",
-                f"{(pattern.unattended_energy_share or 0) * 100:,.1f}%",
+                "운영시간 외 부하 비중",
+                f"{(pattern.off_hours_energy_share or 0) * 100:,.1f}%",
                 f"운영 {pattern.operating_hours[0]}~{pattern.operating_hours[1]}시 밖",
             ],
         ],

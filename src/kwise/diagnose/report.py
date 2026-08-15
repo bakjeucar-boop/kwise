@@ -93,7 +93,7 @@ def diagnose(
         margin_ratio: 권장 계약전력에 얹을 여유율. None 이면 판단값을 읽는다.
         contract_floor_ratio: 요금적용전력의 계약전력 대비 하한 비율.
             None 이면 요금표의 종별 속성(일반용(을) 30%)을 쓴다 (요구사항서 5.2 ③).
-        operating_hours: **건물** 운영 시간대 ``(시작, 끝)``. 무인시간 판정과
+        operating_hours: **건물** 운영 시간대 ``(시작, 끝)``. 운영시간 외 부하 진단과
             DR 저부하일 판정에 쓴다. 경제성DR 의 **시장 운영 시간대**는 제도
             규정이라 이 값과 무관하다 (:func:`~kwise.diagnose.dr.dr_market_windows`).
     """

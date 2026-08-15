@@ -46,6 +46,7 @@ __all__ = [
     "PvPresetError",
     "PvPresets",
     "PvQuickInput",
+    "area_from_capacity_m2",
     "capacity_from_area_kwp",
     "capacity_preview",
     "load_pv_presets",
@@ -236,6 +237,24 @@ def capacity_from_area_kwp(
     if area_m2 < 0:
         raise ValueError(f"설치 가능 면적은 음수일 수 없습니다: {area_m2}")
     return area_m2 * gcr / area_per_kwp_m2
+
+
+def area_from_capacity_m2(
+    capacity_kwp: float,
+    *,
+    gcr: float,
+    area_per_kwp_m2: float,
+) -> float:
+    """용량 → 면적. :func:`capacity_from_area_kwp` 의 역이다 (26세션 3-2).
+
+    「잉여가 생기지 않는 최대 용량」 을 낼 때 **그 용량이 몇 평인지**를 함께 적는다.
+    kWp 는 설비 규격이라 지붕을 보고 판단할 수 없다.
+    """
+    if capacity_kwp < 0:
+        raise ValueError(f"용량은 음수일 수 없습니다: {capacity_kwp}")
+    if gcr <= 0:
+        raise ValueError(f"GCR 은 양수여야 합니다: {gcr}")
+    return capacity_kwp * area_per_kwp_m2 / gcr
 
 
 @dataclass(frozen=True)

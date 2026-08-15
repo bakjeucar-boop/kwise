@@ -733,7 +733,7 @@ def test_태양광_용량_표가_다섯_줄이다() -> None:
     assert len(frame) == CAPACITY_ROWS == 5
     assert set(frame.columns) >= {
         "용량(kWp)",
-        "연간 발전량",
+        "발전량",  # 26세션 3-3 — MWh/년 로 낸다
         "자가소비율",
         "기본요금 절감",
         "전력량요금 절감",
@@ -796,6 +796,7 @@ def test_ESS_그래프가_한_칸이고_충방전은_문구다() -> None:
     정확하다 — 막대에서 시각을 눈으로 읽어 내야 했다.
     """
     from kwise.report.frames import dispatch_schedule, ess_day_frame
+    from kwise.ui import charts as charts_module
     from kwise.ui.charts import ess_day_chart
 
     usage, _switch, _pf, day, dispatch = _dispatch()
@@ -806,11 +807,10 @@ def test_ESS_그래프가_한_칸이고_충방전은_문구다() -> None:
         for layer in spec["layer"]
         if "y" in layer["encoding"]
     )
-    # 배경 띠가 흰색에 가깝지 않다 — 그것이 「흰 바탕에 오른편만 옅은 주황」의 원인이었다.
-    from kwise.ui.charts import _BAND_COLORS
-
-    palette = _BAND_COLORS.to_dict()["range"]
-    assert "#eff3ff" not in palette and "#fee6ce" not in palette, palette
+    # **배경 띠를 걷어냈다** (26세션 2-1·2-2). 확대한 창이 한 시간대 안에 들어가
+    # 그림 전체가 주황 한 색이 되고, 범례에는 셋이 남아 그림에 없는 것을 가리켰다.
+    assert "시간대" not in str(spec), "계시별 시간대 배경 띠가 남아 있습니다."
+    assert not hasattr(charts_module, "_BAND_COLORS"), "배경 띠 색이 남아 있습니다."
     # 충·방전 시각은 문구가 낸다.
     charge, discharge = dispatch_schedule(ess_day_frame(usage, dispatch, day.date))
     assert charge or discharge, "충·방전 구간을 못 읽었습니다."

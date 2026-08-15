@@ -369,7 +369,7 @@ def evaluate_combination(
             ess_investment = model.quote(dispatch.capacity_kwh).total_won
             notices.append(
                 basis(
-                    model.formula + " — 조달 사례 회귀로 ESS 투자비를 산정했습니다.",
+                    model.formula + " — 도입 사례 회귀로 ESS 투자비를 산정했습니다.",
                     fact="ess.cost_model_formula",
                 )
             )

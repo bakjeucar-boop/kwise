@@ -313,7 +313,7 @@ def test_켜지_않은_카드는_펼쳐지지_않는다() -> None:
     """
     source = (VIEWS / "measures.py").read_text(encoding="utf-8")
     assert "st.session_state[opened_key] = False" in source
-    body = source[source.index("def _card(") : source.index("def _band_series(")]
+    body = source[source.index("def _card(") : source.index("def _caution(")]
     assert body.index("if not enabled:") < body.index("with st.expander(")
 
 
@@ -393,7 +393,7 @@ def test_지표_툴팁이_산식과_의미_두_줄이다() -> None:
         "load_factor",
         "base_load_ratio",
         "weekend_ratio",
-        "unattended_energy_share",
+        "off_hours_energy_share",
     }
     for key, tip in tips.items():
         formula, _, meaning = tip.partition("\n\n")
@@ -887,8 +887,8 @@ def test_잉여_활용_카드는_태양광이_없어도_열린다() -> None:
     assert "태양광을 켜지 않아 잉여가 0 입니다." in body
     # 입력이 잠기지 않는다 — 단가는 그대로 받는다.
     assert any("잉여 판매 단가" in str(item.label) for item in screen.number_input)
-    # 잉여 0 을 지표로 보인다. 빈 카드가 아니다.
-    assert any(item.label == "잉여 전력량" for item in screen.metric)
+    # **잉여량 지표는 7.5 로 옮겼다** (26세션 3-2). 같은 사실을 두 카드에 두지 않는다.
+    assert not [item for item in screen.metric if str(item.label) == "잉여 전력량"]
 
 
 def test_카드_개요가_결과_위에_나온다() -> None:
@@ -968,14 +968,26 @@ def test_ESS_목표_슬라이더가_없다(ess_screen: AppTest) -> None:
     assert 'input_key("ess", "unit_cost")' not in source, "kW당 단가 입력이 남아 있습니다."
 
 
-def test_ESS_곡선과_표가_나온다(ess_screen: AppTest) -> None:
-    """U곡선 + 대표 지점 표 (14세션 3-2)."""
+def test_ESS_는_그림_하나로_고른다(ess_screen: AppTest) -> None:
+    """**곡선 하나뿐이다** (26세션 1절).
+
+    23세션까지는 곡선 아래에 대표 지점 표와 U자 설명 세 줄이 함께 있었다. 그림
+    하나로 고르는 자리에 읽을 것을 셋이나 두니 정작 최소 지점이 묻혔다. 오해를
+    푸는 설명(「목표를 낮추면 용량이 더 빨리 는다」)은 툴팁으로 내렸다.
+    """
     assert not ess_screen.exception, ess_screen.exception
     assert len(ess_screen.get("vega_lite_chart")) >= 1, "회수기간 곡선이 없습니다."
     body = " ".join(str(item.value) for item in ess_screen.caption)
-    assert "가장 유리한 목표는" in body
-    assert "물리적 최적이 아니라 조달 규격의 산물입니다" in body
-    assert "왼쪽은 최소 규모" in body and "오른쪽은 용량이 급증" in body
+    assert "용량별 회수기간" in body
+    for banned in ("가장 유리한 목표는", "조달", "왼쪽은 최소 규모", "표의 출력·정격 용량"):
+        assert banned not in body, banned
+    # 목표 선택 표가 없다 — 사양은 아래 지표 카드가 낸다.
+    frames = [item.value for item in ess_screen.dataframe]
+    picked = [item for item in frames if "목표(kW)" in list(item.columns)]
+    assert not picked, "목표 선택 표가 남아 있습니다."
+    # 오해를 푸는 설명은 툴팁에 있다.
+    tip = text.chart_tip("chart.ess_target")
+    assert "필요 용량이 훨씬 빠르게" in tip and "균형점" in tip
 
 
 def test_ESS_최소점_표식이_검산값과_맞는다() -> None:
@@ -1011,7 +1023,7 @@ def test_ESS_계수를_둘로_받는다(ess_screen: AppTest) -> None:
     assert any("용량단가 (원/kWh)" in item for item in labels), labels
     assert any("견적 총액 직접 입력" in item for item in labels), labels
     body = " ".join(str(item.value) for item in ess_screen.caption)
-    assert "조달 사례 4건 기준" in body and "적합" in body
+    assert "도입 사례 4건 기준" in body and "적합" in body
 
 
 def test_ESS_출력과_용량이_잘리지_않는다(ess_screen: AppTest) -> None:
@@ -1804,3 +1816,134 @@ def test_입력_끝값을_훑어도_화면이_죽지_않는다() -> None:
         touched += 1
         assert not screen.exception, f"{key} = {value}: {screen.exception}"
     assert touched >= 7, f"끝값을 넣은 입력이 {touched}개뿐입니다. 키가 바뀌었습니다."
+
+
+# ======================================================== 26세션 · 용어와 단위
+
+
+def test_무인시간이라는_말이_사라졌다() -> None:
+    """**「운영시간 외」 로 바꿨다** (26세션 0-2).
+
+    「무인시간」 은 그 시간에 아무도 없다고 단정하는 말이라 연장 근무·야간 당직이
+    있는 건물에서는 사실이 아니다. 설정한 운영시간 밖이라는 **사실만** 말하도록
+    이름을 고쳤다 — 설명을 덧붙이는 대신 이름을 고치는 것이 규약이다 (CLAUDE.md).
+    """
+    # 이 시험 파일만 예외다 — 막으려는 말을 적어야 막을 수 있다.
+    banned = "무" + "인시간"
+    offenders: list[str] = []
+    for root in (Path("src") / "kwise", Path("docs")):
+        for path in sorted(root.rglob("*")):
+            if path.suffix not in {".py", ".md"}:
+                continue
+            if banned in path.read_text(encoding="utf-8"):
+                offenders.append(str(path))
+    assert offenders == [], offenders
+    # 코드 식별자도 함께 옮겼다.
+    import inspect
+
+    from kwise.quality import load_pattern
+
+    assert "unattended" not in inspect.getsource(load_pattern)
+
+
+def test_화면_문구_원칙이_규약에_있다() -> None:
+    """**앞으로의 판단 기준이다** (26세션 0-1). 규약 파일에 없으면 잊힌다."""
+    body = Path("CLAUDE.md").read_text(encoding="utf-8")
+    assert "## 화면 문구" in body
+    for rule in (
+        "화면 문구는 늘리지 않는다",
+        "용어나 이름을 고쳐서 해결되는지",
+        "무엇을 뺄지 함께 정한다",
+        "screen_audit.py",
+    ):
+        assert rule in body, rule
+
+
+def test_12개월_환산값에_기간_단위가_붙는다() -> None:
+    """**896만원 → 896만원/년** (26세션 2-3).
+
+    라벨만 보고는 한 달인지 한 해인지 알 수 없다. 값이 없어 사유가 들어온 자리에는
+    붙이지 않는다 — ``미산출 — 단가 미입력/년`` 은 말이 되지 않는다.
+    """
+    assert text.won_year(8_960_000.0) == "896만원/년"
+    assert text.won_year(None, reason="미산출 — 단가 미입력") == "미산출 — 단가 미입력"
+    assert text.per_year(text.mwh(1_940_781.0)) == "1,940.8 MWh/년"
+    assert text.per_year(text.DASH) == text.DASH
+
+
+def test_카드_절감액이_3단계_표와_같은_기준이다() -> None:
+    """**둘 다 12개월 환산이다** (26세션 2-3).
+
+    2단계 카드는 기간 절감액을, 3단계 표는 12개월 환산을 내고 있었다 — 「2단계
+    카드 값을 그대로 옮긴다」 고 적어 두고 실제로는 다른 값이었다. 카드를 환산
+    기준으로 맞춰 둘을 같게 했다.
+    """
+    screen = _running(option="I", **STAGE3_MEASURES)  # type: ignore[arg-type]
+    assert not screen.exception, screen.exception
+    savings = [value for label, value in _stage2_metrics(screen) if label == "절감액"]
+    assert savings, "카드 절감액을 못 찾았습니다."
+    for value in savings:
+        assert value.endswith("/년"), value
+
+    frame = next(item.value for item in screen.dataframe if "수단" in list(item.value.columns))
+    rows = {str(row["수단"]): str(row["연간 절감액"]) for _, row in frame.iterrows()}
+    # 역률 카드는 언제나 값이 있다 — 두 화면의 금액이 같은 크기여야 한다.
+    card = next(value for label, value in _stage2_metrics(screen) if label == "절감액")
+    assert card.rstrip("/년"), card
+    assert rows["7.1 선택요금 전환"], rows
+
+
+def test_잉여_판정이_태양광_카드에_있다() -> None:
+    """**판단의 갈림길은 잉여다** (26세션 3-2).
+
+    기상 사전 취득분에서 격리되어 있어 실주행으로는 태양광 결과를 만들 수 없다.
+    화면이 무엇을 내는지는 소스로, 값이 맞는지는 순수 함수 시험으로 나눠 본다.
+    """
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    body = source[source.index("def _surplus_verdict(") : source.index("def _share(")]
+    for label in ("연간 잉여", "평일 잉여", "토·일·공휴일 잉여", "잉여 없는 최대 용량"):
+        assert f'"{label}"' in body, label
+    # 잉여 활용 카드에는 같은 지표가 없다 — 한 곳에만 둔다.
+    start = source.index("def _surplus(")
+    surplus_card = source[start : source.index("# ------", start)]
+    for banned in ('"잉여 전력량"', '"발전량 대비"', '"주말 비중"'):
+        assert banned not in surplus_card, banned
+
+
+def test_잉여가_나지_않는_최대_용량() -> None:
+    """발전이 있는 구간의 ``부하 ÷ 단위발전`` 최솟값이다 (26세션 3-2)."""
+    import tempfile
+
+    import pandas as pd
+
+    from kwise.measures import apply_generation, surplus_free_capacity_kwp
+    from tests._synthetic import make_labels, month_dates, write_csv
+
+    rows: list[tuple[str, float]] = []
+    for date in month_dates(2024, 3):
+        for label in make_labels(date):
+            rows.append((label, 100.0))
+    usage = load_usage(write_csv(Path(tempfile.mkdtemp()) / "flat.csv", rows))
+
+    # 15분마다 100 kWh 이므로 부하는 400 kW 다. 정오에만 1 kWp 당 0.5 kW 를 내는
+    # 프로파일이면 상한은 400 ÷ 0.5 = 800 kWp.
+    index = pd.DatetimeIndex(usage.kw.index)
+    unit = pd.Series(0.0, index=index)
+    unit[index.hour == 12] = 0.5
+    limit = surplus_free_capacity_kwp(usage, unit)
+    assert float(usage.kw.iloc[0]) == pytest.approx(400.0)
+    assert limit == pytest.approx(800.0)
+
+    # 그 용량까지는 역송이 없고, 넘기면 생긴다.
+    assert apply_generation(usage, unit * limit).surplus_kwh == pytest.approx(0.0)
+    assert apply_generation(usage, unit * (limit * 1.1)).surplus_kwh > 0.0
+
+
+def test_발전량을_MWh_로_낸다() -> None:
+    """**kWh 는 백만 자리라 읽히지 않는다** (26세션 3-3)."""
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    body = source[source.index("def _solar(") : source.index("def _surplus_verdict(")]
+    assert 'metric("발전량", fmt.per_year(fmt.mwh(' in body, "발전량 지표가 MWh 가 아닙니다."
+    assert "fmt.kwh(point.generation_kwh)" not in body
+    view = source[source.index("def _capacity_view(") : source.index("def _azimuth_picker(")]
+    assert '"발전량": [fmt.per_year(fmt.mwh(' in view, "용량 표 발전량이 MWh 가 아닙니다."

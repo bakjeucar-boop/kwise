@@ -37,7 +37,8 @@ from kwise.measures import (
 from kwise.measures.ess_cost import load_ess_cost_model, reference_data_path
 from kwise.notices import texts
 from kwise.quality import QualityReport
-from kwise.report.frames import ess_target_table
+from kwise.report import frames
+from kwise.report.frames import CAPACITY_WINDOW, ess_target_frame
 from kwise.tariff import BillingResult, TariffTable
 
 from .conftest import SAMPLE_SELECTION
@@ -471,7 +472,7 @@ def test_model_prices_when_no_input_is_given(
     tariff: TariffTable,
     sample_bill: BillingResult,
 ) -> None:
-    """단가·총액이 없으면 **조달 사례 모델**이 투자비를 낸다 (13세션)."""
+    """단가·총액이 없으면 **도입 사례 모델**이 투자비를 낸다 (13세션)."""
     result = evaluate_ess(
         sample_usage,
         tariff,
@@ -484,7 +485,7 @@ def test_model_prices_when_no_input_is_given(
     )
     assert result.quote is not None
     assert result.investment_won == pytest.approx(result.quote.total_won)
-    assert "조달 사례 모델" in result.cost.source
+    assert "도입 사례 모델" in result.cost.source  # 26세션 2-4 — 화면에서 「조달」 을 뺐다
     assert any("배터리 보증 수명" in message for message in texts(result.notices))
 
 
@@ -619,24 +620,40 @@ def test_곡선이_U자다(target_curve: EssTargetCurve) -> None:
     assert target_curve.market_minimum_kwh == 100.0
 
 
-def test_대표_지점_표가_최소_지점을_품는다(target_curve: EssTargetCurve) -> None:
-    """곡선 아래 표는 최소 지점을 가운데 두고 다섯~여섯 줄이다 (14세션 3-2)."""
+def test_대표_지점이_최소_지점을_품는다(target_curve: EssTargetCurve) -> None:
+    """최소 지점을 가운데 둔 대표 지점 다섯~여섯 (14세션 3-2).
+
+    **화면 표는 26세션에 없앴다** (1-3). 그림 하나로 고르는 자리에 표까지 두면
+    읽을 것이 둘이 되고, 최적 지점의 사양은 아래 지표 카드가 이미 낸다.
+    :meth:`~kwise.measures.EssTargetCurve.highlights` 자체는 남긴다 — 곡선이
+    최소 지점 둘레를 어떻게 잡는지를 재는 자리다.
+    """
     highlights = target_curve.highlights()
     assert 5 <= len(highlights) <= 6
     assert target_curve.best in highlights
     targets = [item.target_kw for item in highlights]
     assert targets == sorted(targets, reverse=True)
-    table = ess_target_table(target_curve)
-    # **돈에 관한 열이 없다** (18세션 1절). 투자비·절감액·회수기간은 곡선의
-    # 개략치라 카드의 결론과 어긋난다. 표에는 카드와 값이 같은 사양만 둔다.
-    assert list(table.columns) == [
-        "목표(kW)",
-        "저감량(kW)",
-        "필요 출력(kW)",
-        "정격 용량(kWh)",
-        "방전시간(h)",
-    ]
-    assert len(table) == len(highlights)
+    assert not hasattr(frames, "ess_target_table"), "목표 선택 표가 되살아났습니다."
+
+
+def test_회수기간_곡선이_최적_둘레로_좁혀진다(target_curve: EssTargetCurve) -> None:
+    """**x 범위를 좁힌다** (26세션 1-2).
+
+    40~20,000 kWh 를 다 그리면 최적 둘레의 변화가 뭉개져 "목표를 더 낮추는 게
+    낫지 않나" 라는 오해가 생긴다. 최적 용량의 0.5~3배만 남긴다.
+    """
+    best = target_curve.best
+    assert best is not None
+    frame = ess_target_frame(target_curve)
+    low, high = CAPACITY_WINDOW
+    center = best.nameplate_capacity_kwh
+    capacity = frame["정격 용량(kWh)"]
+    assert float(capacity.min()) >= center * low
+    assert float(capacity.max()) <= center * high
+    # 최적 지점은 언제나 창 안에 있다 — 표식을 찍을 자리다.
+    assert bool((capacity == center).any())
+    # 회수기간이 빈 지점은 그리지 않는다.
+    assert frame["회수기간(년)"].notna().all()
 
 
 def test_표의_최적_행이_카드_요약과_같다(
@@ -666,20 +683,12 @@ def test_표의_최적_행이_카드_요약과_같다(
         baseline=sample_bill,
         quality=sample_report,
     )
-    table = ess_target_table(target_curve)
-    row = table[table["목표(kW)"] == best.target_kw]
-    assert len(row) == 1, "최적 목표가 표에 한 줄로 있어야 한다"
+    # 사양 셋은 **정확히** 같다. 반올림 오차도 허용하지 않는다 — 곡선의 표식과
+    # 카드가 한 화면에 있으므로 한 자리라도 다르면 불일치로 읽힌다.
+    assert best.power_kw == card.power_kw
+    assert best.nameplate_capacity_kwh == card.capacity_kwh
+    assert best.discharge_hours == card.discharge_hours
 
-    # 사양 셋은 **정확히** 같다. 반올림 오차도 허용하지 않는다 — 화면에서 두
-    # 숫자가 나란히 놓이므로 한 자리라도 다르면 다시 불일치로 읽힌다.
-    assert float(row["필요 출력(kW)"].iloc[0]) == card.power_kw
-    assert float(row["정격 용량(kWh)"].iloc[0]) == card.capacity_kwh
-    assert float(row["방전시간(h)"].iloc[0]) == card.discharge_hours
-
-    # 돈에 관한 열은 표에 없다. 회수기간은 카드 하나만 낸다.
-    assert "회수기간(년)" not in table.columns
-    assert "투자비(원)" not in table.columns
-    assert "연간 절감액(원)" not in table.columns
     # 곡선 내부에는 그대로 남아 목표를 고른다 — 지운 것이 아니라 화면에서 뺐다.
     assert best.payback_years is not None
     assert best.required_capacity_kwh != card.capacity_kwh

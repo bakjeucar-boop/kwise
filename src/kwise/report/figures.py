@@ -512,7 +512,6 @@ def ess_day_png(
     dispatch: DispatchResult,
     day: RepresentativeDay,
     *,
-    bands: pd.Series | None = None,
     zoom: bool = True,
 ) -> bytes:
     """대표일의 ESS — **피크 앞뒤만 확대한 한 칸** (3장 · 7.6 · 23세션 6절).
@@ -521,7 +520,7 @@ def ess_day_png(
     위 칸과 종속이라 그림이 둘일 필요가 없다.
     """
     apply_style()
-    frame = ess_day_frame(usage, dispatch, day.date, bands=bands)
+    frame = ess_day_frame(usage, dispatch, day.date)
     title = f"{day.title} · 15분"
     if len(frame) and zoom:
         frame = peak_window(frame)

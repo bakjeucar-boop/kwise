@@ -8,7 +8,7 @@ import 하지 않는다. 4세션의 diagnose 모듈이 이 함수를 호출한�
 | 부하율 | 평균 ÷ 최대 |
 | 기저부하 비율 | 야간 평균 ÷ 주간 평균 |
 | 주말 부하 비율 | 주말 평균 ÷ 평일 평균 |
-| 무인시간 부하 | 운영시간 외 사용량 |
+| 운영시간 외 부하 | 운영시간 밖 사용량의 비중 |
 
 기저부하가 과다하면 상시 가동 설비 점검 여지를 시사한다.
 
@@ -57,9 +57,9 @@ class LoadPattern:
 
     operating_hours: tuple[int, int]
     operating_mean_kw: float | None
-    unattended_mean_kw: float | None
-    unattended_ratio: float | None
-    unattended_energy_share: float | None
+    off_hours_mean_kw: float | None
+    off_hours_ratio: float | None
+    off_hours_energy_share: float | None
 
 
 def _mean(series: pd.Series) -> float | None:
@@ -85,7 +85,7 @@ def load_pattern(
         kw: 15분(또는 1시간) 평균 수요. 결측은 NaN 인 채로 넘긴다.
         interval_minutes: 검침 간격. 라벨을 구간 시작으로 되돌리는 데 쓴다.
         night_hours: 야간 구간 ``(시작, 끝)``. 자정을 넘는 구간을 허용한다.
-        operating_hours: 운영시간 ``(시작, 끝)``. 평일 이 시간대 밖이 무인시간이다.
+        operating_hours: 운영시간 ``(시작, 끝)``. 평일 이 시간대 밖이 운영시간 외다.
 
     Returns:
         :class:`LoadPattern`. 관측치가 없으면 ValueError.
@@ -115,11 +115,11 @@ def load_pattern(
     weekday_mean = _mean(observed[~is_weekend])
     weekend_mean = _mean(observed[is_weekend])
     operating_mean = _mean(observed[is_operating])
-    unattended_mean = _mean(observed[~is_operating])
+    off_hours_mean = _mean(observed[~is_operating])
 
     slot_hours = interval_minutes / 60.0
     total_energy = float(observed.sum()) * slot_hours
-    unattended_energy = float(observed[~is_operating].sum()) * slot_hours
+    off_hours_energy = float(observed[~is_operating].sum()) * slot_hours
 
     return LoadPattern(
         observed_slots=len(observed),
@@ -136,7 +136,7 @@ def load_pattern(
         weekend_ratio=_ratio(weekend_mean, weekday_mean),
         operating_hours=operating_hours,
         operating_mean_kw=operating_mean,
-        unattended_mean_kw=unattended_mean,
-        unattended_ratio=_ratio(unattended_mean, operating_mean),
-        unattended_energy_share=_ratio(unattended_energy, total_energy),
+        off_hours_mean_kw=off_hours_mean,
+        off_hours_ratio=_ratio(off_hours_mean, operating_mean),
+        off_hours_energy_share=_ratio(off_hours_energy, total_energy),
     )

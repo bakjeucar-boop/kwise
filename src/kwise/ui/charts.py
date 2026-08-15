@@ -40,7 +40,6 @@ from kwise.report.frames import (
     dr_daily_frame,
     ess_day_frame,
     ess_target_frame,
-    ess_target_table,
     hourly_profile_frame,
     monthly_peak_frame,
     peak_window,
@@ -74,7 +73,6 @@ __all__ = [
     "ess_day_frame",
     "ess_target_chart",
     "ess_target_frame",
-    "ess_target_table",
     "hourly_profile_chart",
     "hourly_profile_frame",
     "monthly_peak_chart",
@@ -282,66 +280,51 @@ def solar_curve_chart(
     return alt.layer(*layers).properties(height=300)
 
 
-def ess_target_chart(curve: EssTargetCurve) -> alt.LayerChart:
-    """ESS 회수기간 U곡선 (14세션 3-2).
+def ess_target_chart(curve: EssTargetCurve) -> alt.LayerChart | alt.FacetChart:
+    """ESS 회수기간 곡선 — **축 하나·선 하나** (26세션 1절).
 
-    **최소 지점에 표식을 찍고 그 지점의 사양을 함께 적는다.** 슬라이더 대신 이
-    곡선이 목표를 고르게 한다 — 사용자가 찍는 자리는 대개 틀린 자리다.
+    23세션까지는 한 그림에 축이 셋이었다 (좌 회수기간·우 정격 용량, 그리고 눈금이
+    두 벌). 범례가 없어 무엇이 무엇인지 알 수 없었고, x 가 3,700~20,000 kW 라
+    최적 둘레가 뭉개졌다. **정보를 덜어내는 것이 이 그림의 목적이다.**
 
-    필요 용량을 **보조 축**으로 함께 그린다. 오른쪽 팔이 왜 나빠지는지는 회수기간
-    곡선만으로는 보이지 않는다 — 용량이 급증하는 것이 원인이다.
+        x   ESS 정격 용량 (kWh) — 사용자가 실제로 사야 할 것
+        y   회수기간 (년)
+        표식 최소 지점 하나
 
-    **용량은 정격 기준이다** (18세션 1절). 카드가 내는 용량과 같은 값이라야
-    한 화면에서 두 숫자를 견줄 수 있다. 회수기간 축은 기본요금 절감만 본
-    개략치이므로 **목표를 고르는 지표**로만 읽는다 — 결론은 카드가 낸다.
+    보조 축도 범례도 두지 않는다. 범위는 :data:`~kwise.report.frames.CAPACITY_WINDOW`
+    가 최적 둘레로 좁힌다. 회수기간은 기본요금 절감만 본 개략치이므로 **고르는
+    지표**로만 읽는다 — 결론 금액은 카드가 낸다 (18세션 1절).
     """
     frame = ess_target_frame(curve)
-    base = alt.Chart(frame).encode(
-        x=alt.X(
-            "목표 요금적용전력(kW):Q", title="목표 요금적용전력 (kW)", scale=alt.Scale(zero=False)
+    line = (
+        alt.Chart(frame)
+        .mark_line(color="#08519c", strokeWidth=2)
+        .encode(
+            x=alt.X("정격 용량(kWh):Q", title="ESS 정격 용량 (kWh)", scale=alt.Scale(zero=False)),
+            y=alt.Y("회수기간(년):Q", title="회수기간 (년)", scale=alt.Scale(zero=False)),
+            tooltip=[
+                alt.Tooltip("정격 용량(kWh):Q", format=",.0f"),
+                alt.Tooltip("목표 요금적용전력(kW):Q", format=",.0f"),
+                alt.Tooltip("저감량(kW):Q", format=",.0f"),
+                alt.Tooltip("회수기간(년):Q", format=",.1f"),
+            ],
         )
     )
-    tooltip = [
-        alt.Tooltip("목표 요금적용전력(kW):Q", format=",.0f"),
-        alt.Tooltip("저감량(kW):Q", format=",.0f"),
-        alt.Tooltip("필요 출력(kW):Q", format=",.0f"),
-        alt.Tooltip("정격 용량(kWh):Q", format=",.0f"),
-        alt.Tooltip("방전시간(h):Q", format=",.2f"),
-        alt.Tooltip("회수기간(년):Q", format=",.1f", title="개략 회수기간(년)"),
-    ]
-    payback = base.mark_line(color="#08519c").encode(
-        y=alt.Y(
-            "회수기간(년):Q",
-            title="개략 회수기간 (년) — 목표 선택용",
-            scale=alt.Scale(zero=False),
-        ),
-        tooltip=tooltip,
-    )
-    capacity = base.mark_line(color="#bdbdbd", strokeDash=[4, 3]).encode(
-        y=alt.Y("정격 용량(kWh):Q", title="정격 용량 (kWh)", scale=alt.Scale(zero=False)),
-        tooltip=tooltip,
-    )
-    layers: list[alt.Chart] = [capacity, payback]
+    layers: list[alt.Chart] = [line]
     if curve.best is not None:
         best = pd.DataFrame(
             {
-                "목표 요금적용전력(kW)": [curve.best.target_kw],
+                "정격 용량(kWh)": [curve.best.nameplate_capacity_kwh],
                 "회수기간(년)": [curve.best.payback_years],
                 "사양": [curve.best.spec_label],
             }
         )
-        mark = alt.Chart(best)
         layers.append(
-            mark.mark_point(size=140, filled=True, color="crimson").encode(
-                x="목표 요금적용전력(kW):Q", y="회수기간(년):Q", tooltip=["사양"]
-            )
+            alt.Chart(best)
+            .mark_point(size=140, filled=True, color="crimson")
+            .encode(x="정격 용량(kWh):Q", y="회수기간(년):Q", tooltip=["사양"])
         )
-        layers.append(
-            mark.mark_text(dy=-14, color="crimson", fontWeight="bold").encode(
-                x="목표 요금적용전력(kW):Q", y="회수기간(년):Q", text="사양:N"
-            )
-        )
-    return alt.layer(*layers).resolve_scale(y="independent").properties(height=320)
+    return alt.layer(*layers).properties(height=300)
 
 
 def combination_chart(comparison: ComparisonResult) -> alt.Chart:
@@ -379,16 +362,9 @@ _DAY_TYPE_COLORS = alt.Scale(
     domain=["평일", "토요일", "일요일", "공휴일"],
     range=["#08519c", "#6baed6", "#fd8d3c", "#d94801"],
 )
-#: 계시별 시간대 배경 띠 (23세션 6절).
-#:
-#: 17세션 색(``#eff3ff`` · ``#fee6ce`` · ``#fdd0a2``)은 셋 다 흰색에 가까워
-#: 투명도 0.18 을 얹으면 **최대부하만 옅은 주황으로 남고 나머지는 흰 바탕**이
-#: 됐다. 세 시간대가 서로 구별되도록 채도를 올리고, 배경이라는 사실은 투명도로
-#: 지킨다.
-_BAND_COLORS = alt.Scale(
-    domain=["경부하", "중간부하", "최대부하"],
-    range=["#6baed6", "#fdae6b", "#e6550d"],
-)
+# 계시별 시간대 **배경 띠 색은 없앴다** (26세션 2-1). ESS 하루 그림이 유일한
+# 쓰임이었는데, 확대한 창이 한 시간대 안에 들어가 그림 전체가 주황 한 색이 되고
+# 범례에는 셋이 남아 그림에 없는 것을 가리켰다.
 
 
 def tariff_option_chart(switch: TariffSwitchResult) -> alt.Chart:
@@ -745,22 +721,25 @@ def ess_day_chart(
     dispatch: DispatchResult,
     day: RepresentativeDay,
     *,
-    bands: pd.Series | None = None,
     zoom: bool = True,
 ) -> alt.LayerChart | alt.FacetChart:
     """대표일의 ESS — **피크 앞뒤만 확대한 한 칸** (23세션 6절).
 
     17세션에는 2단이었다. 아래 칸(충전＋·방전−)을 떼어 **문구로 내린다** — 위
-    칸과 종속이라 언제 담고 언제 쓰는지는 시간대 띠와 순부하 곡선에 이미 있고,
+    칸과 종속이라 언제 담고 언제 쓰는지는 순부하 곡선과 운전 문구에 이미 있고,
     그림이 둘이면 어느 쪽을 봐야 할지 알 수 없다.
 
     하루 스물넷을 다 그리면 저감 구간이 손톱만 해진다. 태양광과 같이 **피크
     앞뒤 :data:`PEAK_ZOOM_HOURS` 시간만** 확대한다.
 
         원부하 · 순부하 · 목표선 — 축을 0 부터 시작하지 않는다
-        배경 띠 — 계시별 시간대. 왜 그 시각에 담고 쓰는지가 여기서 읽힌다
+
+    **계시별 시간대 배경 띠를 걷어냈다** (26세션 2-1·2-2). 확대한 창이 대개 한
+    시간대 안에 들어가 그림 전체가 주황 한 색으로 칠해졌고, 범례에는 셋(경부하·
+    중간부하·최대부하)이 남아 그림에 없는 것을 가리켰다. 언제 담아 언제 쓰는지는
+    아래 운전 문구가 시각으로 정확히 적는다.
     """
-    frame = ess_day_frame(usage, dispatch, day.date, bands=bands)
+    frame = ess_day_frame(usage, dispatch, day.date)
     title = f"{day.title} · 15분"
     if len(frame) and zoom:
         frame = peak_window(frame)
@@ -770,18 +749,6 @@ def ess_day_chart(
         return alt.layer(blank, blank).properties(height=300)
 
     layers: list[alt.Chart] = []
-    if "시간대" in frame.columns:
-        layers.append(
-            alt.Chart(frame)
-            .mark_rect(opacity=0.30)
-            .encode(
-                x=alt.X("시각:T", title=title),
-                color=alt.Color(
-                    "시간대:N", title="계시별 시간대", scale=_BAND_COLORS, legend=LEGEND
-                ),
-                tooltip=["시간대"],
-            )
-        )
     layers.append(
         alt.Chart(frame.assign(구분="저감분"))
         .mark_area(opacity=0.7, color="#31a354")
@@ -814,7 +781,7 @@ def ess_day_chart(
         .mark_rule(strokeDash=[6, 4], color="crimson", strokeWidth=1.6)
         .encode(y="목표(kW):Q", tooltip=[alt.Tooltip("목표(kW):Q", format=",.0f")])
     )
-    return alt.layer(*layers).resolve_scale(color="independent").properties(height=300)
+    return alt.layer(*layers).properties(height=300)
 
 
 def surplus_daily_chart(usage: UsageData, surplus_kw: pd.Series) -> alt.Chart:

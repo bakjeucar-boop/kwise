@@ -881,7 +881,7 @@ def test_옆단이_운영_시간대를_받는다() -> None:
     assert "운영 시간대" in source and "building_hours" in source
 
 
-def test_운영_시간대가_무인시간_진단에_닿는다(usage: object) -> None:
+def test_운영_시간대가_운영시간_외_부하_진단에_닿는다(usage: object) -> None:
     """옆단 값이 진단까지 흘러야 입력이 뜻을 갖는다."""
     from kwise.tariff import load_tariff
     from kwise.ui.pipeline import diagnose_usage
@@ -891,4 +891,4 @@ def test_운영_시간대가_무인시간_진단에_닿는다(usage: object) -> 
     eight = diagnose_usage(usage, table, None, operating_hours=(8, 19))  # type: ignore[arg-type]
     assert nine.pattern.operating_hours == (9, 18)
     assert eight.pattern.operating_hours == (8, 19)
-    assert nine.pattern.unattended_energy_share != eight.pattern.unattended_energy_share
+    assert nine.pattern.off_hours_energy_share != eight.pattern.off_hours_energy_share

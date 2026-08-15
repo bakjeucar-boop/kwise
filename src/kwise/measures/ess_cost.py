@@ -445,7 +445,7 @@ class EssCostModel:
     @property
     def coefficient_source(self) -> str:
         """계수 출처와 최종 적합일. 화면이 그대로 싣는다 (14세션 3-4)."""
-        return f"조달 사례 {self.sample_size}건 기준, {self.fitted_on} 적합"
+        return f"도입 사례 {self.sample_size}건 기준, {self.fitted_on} 적합"
 
     @property
     def max_rounding_error(self) -> float:

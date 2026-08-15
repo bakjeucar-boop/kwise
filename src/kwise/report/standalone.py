@@ -180,7 +180,8 @@ def standalone_rows(
         rows.append(
             StandaloneRow(
                 kind=measure_kind("surplus"),
-                reduction=f"{surplus.total_kwh:,.0f} kWh 잉여",
+                # 발전·잉여 에너지는 MWh 로 적는다 (26세션 3-3). kWh 는 자릿수가 크다.
+                reduction=f"{surplus.total_kwh / 1000.0:,.1f} MWh 잉여",
                 annual_saving_won=offset.revenue_won,
                 investment_won=0.0,
                 payback_years=0.0 if offset.is_priced else None,

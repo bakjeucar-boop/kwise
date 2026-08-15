@@ -103,7 +103,7 @@ def render(table: TariffTable, building: BuildingInfo | None = None) -> Analysis
     _power_factor_block(form)
 
     quality = cached_quality(usage, usage_token(usage), form.contract_kw if form else None)
-    # **운영 시간대는 옆단에서 온다** (21세션 4절). 무인시간 판정과 DR 저부하일
+    # **운영 시간대는 옆단에서 온다** (21세션 4절). 운영시간 외 부하 판정과 DR 저부하일
     # 판정이 이 값을 쓴다 — 캐시 열쇠에도 들어가야 값이 바뀌면 다시 계산한다.
     hours = building.operating_hours if building else DEFAULT_OPERATING_HOURS
     diagnosis = cached_diagnosis(
@@ -566,10 +566,9 @@ def _pattern_formulas(pattern: object) -> dict[str, str]:
         "weekend_ratio": (
             "주말 평균 수요 ÷ 평일 평균 수요.\n\n낮을수록 주말 가동이 적어 감축 여지가 큽니다."
         ),
-        "unattended_energy_share": (
-            f"무인시간 사용량 ÷ 전체 사용량. 무인시간은 운영시간({operating_text}) 밖과 "
-            "주말 전부입니다.\n\n"
-            "높을수록 사람이 없는 동안 쓰는 전기가 많아 운전 개선 여지가 큽니다."
+        "off_hours_energy_share": (
+            f"운영시간({operating_text}) 밖 사용량 ÷ 전체 사용량. 주말은 전부 밖입니다.\n\n"
+            "높을수록 문 닫은 동안 쓰는 전기가 많아 운전 개선 여지가 큽니다."
         ),
     }
     # **툴팁도 escape 한다** (24세션 2절). ``help=`` 는 마크다운을 해석한다.
@@ -589,9 +588,9 @@ def _pattern_block(diagnosis: Diagnosis) -> None:
         "주말 부하 비율", fmt.ratio_pct(pattern.weekend_ratio), help=tips["weekend_ratio"]
     )
     columns[3].metric(
-        "무인시간 부하 비중",
-        fmt.ratio_pct(pattern.unattended_energy_share),
-        help=tips["unattended_energy_share"],
+        "운영시간 외 부하 비중",
+        fmt.ratio_pct(pattern.off_hours_energy_share),
+        help=tips["off_hours_energy_share"],
     )
     st.caption(
         # **물결표를 쓰지 않는다** — 한 줄에 둘이 들어가면 그 사이가 취소선이 된다

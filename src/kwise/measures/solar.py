@@ -60,6 +60,7 @@ __all__ = [
     "power_factor_floor_pct",
     "roof_capacity_limit_kwp",
     "solar_curve",
+    "surplus_free_capacity_kwp",
     "unit_generation_kw",
 ]
 
@@ -90,6 +91,31 @@ def roof_capacity_limit_kwp(
     if roof_area_m2 < 0:
         raise ValueError(f"옥상 면적은 음수일 수 없습니다: {roof_area_m2}")
     return roof_area_m2 * usable_ratio * gcr * module_density_kwp_per_m2
+
+
+def surplus_free_capacity_kwp(usage: UsageData, unit_generation_kw: pd.Series) -> float:
+    """**잉여가 한 슬롯도 나지 않는 최대 용량** (kWp · 26세션 3-2).
+
+    잉여는 ``발전 − 부하`` 의 양수분이고 (:func:`kwise.measures.apply_generation`),
+    발전은 용량에 비례한다. 그러므로 어느 슬롯에서도 역송이 없으려면
+
+        용량 × 단위발전(t) ≤ 부하(t)   (관측된 모든 t)
+
+    이고, 상한은 **발전이 있는 슬롯의 ``부하 ÷ 단위발전`` 최솟값**이다. 훑지 않고
+    닫힌 식으로 구한다 — 용량마다 요금을 다시 계산할 이유가 없는 값이다.
+
+    잉여를 낼지 말지가 태양광 규모 결정의 갈림길이라 (상계거래 계약·역송 계량기가
+    따라온다) 이 한 값이 판단을 가른다. 부하가 0 인 슬롯에 발전이 있으면 0 이다.
+    """
+    index = pd.DatetimeIndex(usage.kw.index)
+    generation = unit_generation_kw.reindex(index).astype(float)
+    load = usage.kw.astype(float)
+    lit = generation > 0
+    observed = load.notna() & lit
+    if not bool(observed.any()):
+        return 0.0
+    headroom = (load[observed] / generation[observed]).min()
+    return max(float(headroom), 0.0)
 
 
 def unit_generation_kw(

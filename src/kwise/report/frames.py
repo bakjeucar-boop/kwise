@@ -35,6 +35,7 @@ from kwise.tariff import day_window, option_sort_key
 __all__ = [
     "BAND_LABELS",
     "CAPACITY_ROWS",
+    "CAPACITY_WINDOW",
     "DAY_TYPE_LABELS",
     "TARIFF_PARTS",
     "band_frame",
@@ -42,7 +43,6 @@ __all__ = [
     "dr_daily_frame",
     "ess_day_frame",
     "ess_target_frame",
-    "ess_target_table",
     "hourly_profile_frame",
     "monthly_peak_frame",
     "power_factor_day_frame",
@@ -197,35 +197,47 @@ def solar_capacity_table(
     )
 
 
-def ess_target_frame(curve: EssTargetCurve) -> pd.DataFrame:
-    """ESS 회수기간 U곡선 (14세션 3-2).
+#: 회수기간 곡선에서 **최적의 몇 배까지 보일지** (26세션 1-2).
+#:
+#: 40~20,000 kWh 를 다 그리면 최적 둘레의 변화가 뭉개진다 — 사용자가 "3,700 kW
+#: 로 낮추는 게 낫지 않나" 라고 물은 것이 그 구간을 못 읽어서였다. 최적 용량을
+#: 가운데 두고 **작은 쪽 절반부터 큰 쪽 세 배까지** 남긴다. 왼쪽은 시장 최소
+#: 규모에 눌려 금방 평평해지고, 오른쪽은 세 배쯤에서 회수기간이 두 배가 되어
+#: 더 그려도 같은 말을 되풀이한다.
+CAPACITY_WINDOW: tuple[float, float] = (0.5, 3.0)
 
-    **필요 용량을 함께 낸다.** 회수기간만 그리면 "목표를 조금만 낮춰도 용량이
-    급증한다" 가 보이지 않는다 — 그것이 곡선의 오른쪽 팔을 만드는 힘이다.
+
+def ess_target_frame(curve: EssTargetCurve) -> pd.DataFrame:
+    """ESS 회수기간 곡선 — **정격 용량 축** (26세션 1-1).
+
+    x 를 목표 요금적용전력에서 **정격 용량(kWh)** 으로 바꿨다. 사용자가 정하는
+    것은 목표가 아니라 사야 할 배터리이고, 목표를 낮출수록 용량이 급증한다는
+    사실이 축 자체로 읽혀야 하기 때문이다. 용량은 목표에 대해 단조 감소라
+    U자 모양은 그대로다.
+
+    보조 축을 두지 않는다 — 회수기간 한 줄만 남긴다.
     """
     frame = curve.frame()
-    return frame[frame["회수기간(년)"].notna()].reset_index(drop=True)
+    priced = frame[frame["회수기간(년)"].notna()].reset_index(drop=True)
+    return _capacity_window(priced, curve)
 
 
-def ess_target_table(curve: EssTargetCurve) -> pd.DataFrame:
-    """곡선 아래에 두는 대표 지점 표. **최소 지점이 가운데 온다.**
+def _capacity_window(frame: pd.DataFrame, curve: EssTargetCurve) -> pd.DataFrame:
+    """최적 용량 둘레만 남긴다. 최적이 없으면 그대로 돌려준다."""
+    if frame.empty or curve.best is None:
+        return frame
+    center = curve.best.nameplate_capacity_kwh
+    if center <= 0:
+        return frame
+    low, high = CAPACITY_WINDOW
+    capacity = frame["정격 용량(kWh)"]
+    window = frame[(capacity >= center * low) & (capacity <= center * high)]
+    return window.reset_index(drop=True) if len(window) >= 2 else frame
 
-    **사양만 싣는다** (18세션 1절). 투자비·절감액·회수기간을 함께 실었더니 최소
-    지점의 값이 카드의 결론과 어긋났다 — 곡선은 기본요금 절감만 본 개략치이고
-    카드는 요금을 다시 계산한 값이라, 같은 목표에서 24.6년과 30.8년이 한 화면에
-    나왔다. 계산은 각각 옳아도 사용자에게는 그냥 불일치다. 돈에 관한 숫자는
-    카드 하나만 내고, 표에는 **카드와 값이 같은** 출력·정격 용량·방전시간을 둔다.
-    """
-    picked = curve.highlights()
-    return pd.DataFrame(
-        {
-            "목표(kW)": [item.target_kw for item in picked],
-            "저감량(kW)": [item.reduction_kw for item in picked],
-            "필요 출력(kW)": [item.power_kw for item in picked],
-            "정격 용량(kWh)": [item.nameplate_capacity_kwh for item in picked],
-            "방전시간(h)": [item.discharge_hours for item in picked],
-        }
-    )
+
+# **목표 선택 표를 없앴다** (26세션 1-3). 곡선 아래에 대표 지점 대여섯 줄을
+# 두었는데, 그림 하나로 고르는 자리에 표까지 두니 읽을 것이 둘이 되었다.
+# 최적 지점의 사양은 아래 지표 카드가 낸다 — 같은 값을 두 번 적지 않는다.
 
 
 def combination_frame(comparison: ComparisonResult) -> pd.DataFrame:
@@ -540,17 +552,14 @@ def dispatch_schedule(frame: pd.DataFrame) -> tuple[str, str]:
     return span("충전(kW)"), span("방전(kW)")
 
 
-def ess_day_frame(
-    usage: UsageData,
-    dispatch: DispatchResult,
-    day: dt.date,
-    *,
-    bands: pd.Series | None = None,
-) -> pd.DataFrame:
+def ess_day_frame(usage: UsageData, dispatch: DispatchResult, day: dt.date) -> pd.DataFrame:
     """대표일의 ESS 충·방전 구조 (15세션 2-5).
 
     충전은 ``+``, 방전은 ``−`` 로 부호를 갈라 **언제 담고 언제 쓰는지**를 보인다.
-    계시별 시간대를 함께 넣어 왜 그 시각인지가 배경으로 읽히게 한다.
+
+    **계시별 시간대 열을 걷어냈다** (26세션 2-1). 화면이 그것을 배경 띠로 깔았는데
+    확대한 창이 한 시간대 안에 들어가 그림이 한 색으로 칠해졌고, 보고서 png 는
+    애초에 쓰지 않았다 — 두 그림이 같아야 한다는 규약을 배경을 빼는 쪽으로 맞췄다.
     """
     interval = usage.meta.interval_minutes
     load = day_profile(usage.kw, day, interval, name="원부하(kW)")
@@ -562,9 +571,6 @@ def ess_day_frame(
     load["충전(kW)"] = delta.clip(lower=0.0)
     load["방전(kW)"] = (-delta).clip(lower=0.0)
     load["목표(kW)"] = dispatch.target_kw
-    if bands is not None:
-        picked = day_profile(bands.astype(object), day, interval, name="band")
-        load["시간대"] = [BAND_LABELS.get(str(value), str(value)) for value in picked["band"]]
     return load
 
 

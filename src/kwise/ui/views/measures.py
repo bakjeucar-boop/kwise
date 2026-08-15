@@ -29,19 +29,20 @@ from kwise.diagnose.dr import dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData
 from kwise.measures import (
     ELIGIBILITY_NOTICE,
+    SolarPoint,
+    annualize,
     apply_generation,
-    band_labels,
     default_target_pct,
     evaluate_demand_response,
     high_rate_discharge_hours,
     load_ess_cost_model,
     power_factor_floor_pct,
+    surplus_free_capacity_kwp,
 )
 from kwise.notices import Notice, basis, tooltip
-from kwise.pv import PvPresets, capacity_preview, load_pv_presets
+from kwise.pv import PvPresets, area_from_capacity_m2, capacity_preview, load_pv_presets
 from kwise.quality import QualityReport
 from kwise.report import CONTRACT_CHANGE_WARNING
-from kwise.report.columns import localize
 from kwise.report.days import RepresentativeDay, find_day, representative_days
 from kwise.report.worksheet import (
     Worksheet,
@@ -75,7 +76,13 @@ from kwise.ui.notices import screen_notices, tooltip_text
 from kwise.ui.pipeline import ContractForm, SolarInputs
 from kwise.ui.progress import progress_panel
 from kwise.ui.spec import MEASURES, MeasureSpec
-from kwise.ui.state import get_solar_inputs, input_key, set_solar_inputs, toggle_key
+from kwise.ui.state import (
+    get_solar_inputs,
+    input_key,
+    measure_float,
+    set_solar_inputs,
+    toggle_key,
+)
 
 __all__ = ["render"]
 
@@ -210,14 +217,6 @@ def _card(
         handler(spec, usage, table, form, diagnosis, quality, baseline, day, building)
 
 
-def _band_series(usage: UsageData, table: TariffTable, form: ContractForm) -> pd.Series | None:
-    """계시별 시간대 라벨. **왜 그 시각에 충·방전하는지**를 배경으로 깔 때 쓴다."""
-    try:
-        return band_labels(usage, table, selection=form.selection, options=form.billing_options())
-    except Exception:
-        return None
-
-
 def _caution(text: str) -> None:
     """주의 — **배경 없이** 아이콘과 굵기로만 (15세션 4절)."""
     callout.caution(text)
@@ -272,7 +271,7 @@ def _tariff_switch(
     columns[1].metric("가장 유리한 요금제", option_label(result.best.selection.option))
     columns[2].metric(
         "절감액",
-        fmt.won_short(result.saving_won),
+        fmt.won_year(result.annual_saving_won),
         fmt.certainty_badge(result.certainty),
         help=fmt.tip("certainty"),
     )
@@ -361,7 +360,7 @@ def _contract(
     columns[0].metric("현행 계약전력", fmt.kw(result.contract_kw))
     columns[1].metric("권장", fmt.kw(result.suggested_contract_kw))
     columns[2].metric("하향 여지", fmt.kw(result.reduction_kw))
-    columns[3].metric("절감액", fmt.won_short(result.saving_won, reason=result.saving_basis))
+    columns[3].metric("절감액", fmt.won_year(result.annual_saving_won, reason=result.saving_basis))
     # **이 숫자는 현재 부하 기준이다** (14세션 2-4). 다른 수단을 켰다고 바뀌지
     # 않으며, 조합 기준의 추가 하향 여지는 3단계에서 따로 낸다.
     st.caption(
@@ -523,7 +522,7 @@ def _power_factor(
     columns = st.columns(4)
     columns[0].metric("현재 역률", fmt.pct(result.current_pct))
     columns[1].metric("도입 후", fmt.pct(result.target_pct))
-    columns[2].metric("절감액", fmt.won_short(result.saving_won))
+    columns[2].metric("절감액", fmt.won_year(result.annual_saving_won))
     columns[3].metric(
         "회수기간", fmt.payback(result.payback_years, investment_won=result.investment_won)
     )
@@ -766,10 +765,12 @@ def _solar(
     if stale:
         st.caption("**묵은 결과** — 지금 화면의 입력이 아니라 마지막 계산의 입력 기준입니다.")
     _overview(spec)
+    months = curve.base_fee_months
     columns = st.columns(4)
     columns[0].metric("용량", fmt.kwp(point.capacity_kwp))
-    columns[1].metric("발전량", fmt.kwh(point.generation_kwh))
-    columns[2].metric("절감액", fmt.won_short(point.total_saving_won))
+    # **발전량은 MWh 다** (26세션 3-3). kWh 는 백만 자리라 눈으로 읽히지 않는다.
+    columns[1].metric("발전량", fmt.per_year(fmt.mwh(annualize(point.generation_kwh, months))))
+    columns[2].metric("절감액", fmt.won_year(point.annual_saving_won))
     columns[3].metric(
         "회수기간",
         fmt.payback(point.payback_years, investment_won=point.investment_won),
@@ -785,8 +786,14 @@ def _solar(
     st.markdown(f"**용량 판정** — {verdict.sentence()}")
     st.caption(fmt.markdown_safe(verdict.basis_sentence()))
 
-    # **대표 지점을 표로** (17세션 3-3). 스무 줄은 아무도 읽지 않고, 곡선만으로는
-    # 용량을 키울 때 무엇이 어떻게 변하는지 수로 확인할 수 없다.
+    # **판단의 갈림길은 잉여다** (26세션 3절). 회수기간 최소만으로는 정할 수 없다 —
+    # 잉여를 내면 상계거래 계약과 역송 계량기가 따라오므로, 「잉여 없이 어디까지」 와
+    # 「지금 용량이면 얼마나 남는가」 를 나란히 둔다.
+    _surplus_verdict(usage, table, form, unit_profile, point, months, presets)
+
+    # **대표 지점을 표로** (17세션 3-3). 곡선 그래프는 26세션에 걷어냈다 —
+    # 절감액 세 계열이 단조롭게 늘기만 해 읽을 것이 없었고, 판단은 위의 잉여
+    # 숫자로 한다. 20단계 상세는 Excel 로 간다.
     st.markdown("**용량별 비교**")
     st.dataframe(
         _capacity_view(charts.solar_capacity_table(curve, verdict=verdict)),
@@ -795,12 +802,8 @@ def _solar(
     )
     st.caption(
         f"의미 있는 지점 {charts.CAPACITY_ROWS}개만 골랐습니다 — 면적 상한과 최적은 항상 "
-        "들어갑니다. 금액과 발전량은 12개월 환산입니다. "
-        "20단계 상세는 Excel 「태양광 용량 곡선」 시트에 있습니다."
+        "들어갑니다. 20단계 상세는 Excel 「태양광 용량 곡선」 시트에 있습니다."
     )
-    with st.expander("용량 곡선", expanded=False):
-        st.altair_chart(charts.solar_curve_chart(curve, verdict=verdict), width="stretch")
-        st.caption("용량별 절감액", help=fmt.chart_tip("chart.solar_curve"))
 
     generation = unit_profile * point.capacity_kwp
     # **일별 발전량 하나만 그린다** (23세션 5절). 사용량과 함께 그리니 60 MWh 대
@@ -824,6 +827,79 @@ def _solar(
     _worksheet(solar_worksheet(curve, point))
 
 
+def _surplus_verdict(
+    usage: UsageData,
+    table: TariffTable,
+    form: ContractForm,
+    unit_profile: pd.Series,
+    point: SolarPoint,
+    months: float,
+    presets: PvPresets,
+) -> None:
+    """**잉여를 낼 것인가** — 태양광 규모를 가르는 물음 (26세션 3-2).
+
+    셋을 나란히 낸다.
+
+        지금 용량의 연간 잉여      MWh/년 · 발전량 대비 비중
+        언제 남는가               평일 / 토·일·공휴일
+        잉여 없이 지을 수 있는 최대  용량과 그때의 면적
+
+    **잉여량은 7.7 잉여 활용 카드와 겹치지 않는다** (26세션 3-2). 여기서는
+    「얼마나 남는가」 를, 그쪽에서는 「남는 것으로 무엇을 하나」 를 낸다 — 7.7 의
+    잉여량·비중 지표 셋은 이 자리로 옮겨 왔다. 계산은 같은 캐시를 탄다.
+    """
+    surplus = cached_surplus(
+        usage,
+        table,
+        unit_profile,
+        usage_token(usage),
+        form,
+        point.capacity_kwp,
+        measure_float("surplus", "price"),
+        rules_stamp(),
+    )
+    density = presets.density(
+        (get_solar_inputs() or SolarInputs(region_key="")).density_key or presets.default.key
+    )
+    free_kwp = surplus_free_capacity_kwp(usage, unit_profile)
+    free_area = area_from_capacity_m2(
+        free_kwp, gcr=density.gcr, area_per_kwp_m2=presets.area_per_kwp_m2
+    )
+    holiday_kwh = surplus.weekend_kwh + surplus.holiday_kwh
+
+    columns = st.columns(4)
+    columns[0].metric(
+        "연간 잉여",
+        fmt.per_year(fmt.mwh(annualize(surplus.total_kwh, months))),
+        f"발전량의 {fmt.ratio_pct(surplus.share_of_generation)}",
+        delta_color="off",
+    )
+    columns[1].metric(
+        "평일 잉여",
+        fmt.per_year(fmt.mwh(annualize(surplus.weekday_kwh, months))),
+        _share(surplus.weekday_kwh, surplus.total_kwh),
+        delta_color="off",
+    )
+    columns[2].metric(
+        "토·일·공휴일 잉여",
+        fmt.per_year(fmt.mwh(annualize(holiday_kwh, months))),
+        _share(holiday_kwh, surplus.total_kwh),
+        delta_color="off",
+    )
+    columns[3].metric(
+        "잉여 없는 최대 용량",
+        fmt.kwp(free_kwp),
+        f"면적 {fmt.count(free_area, ' m²', decimals=0)}",
+        delta_color="off",
+        help=fmt.tip("surplus_free"),
+    )
+
+
+def _share(part: float, total: float) -> str:
+    """구성비. 총량이 0 이면 비율이 없다 — 0% 로 적으면 「없다」 가 「0이다」 가 된다."""
+    return fmt.ratio_pct(part / total) if total > 0 else fmt.DASH
+
+
 def _capacity_view(frame: pd.DataFrame) -> pd.DataFrame:
     """용량 표를 **사람이 읽는 문자열로** 굳힌다 (17세션 3-3)."""
     if frame.empty:
@@ -831,10 +907,11 @@ def _capacity_view(frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "용량(kWp)": [fmt.kwp(value) for value in frame["용량(kWp)"]],
-            "연간 발전량": [fmt.kwh(value) for value in frame["연간 발전량(kWh)"]],
+            # 발전량은 MWh 로 낸다 (26세션 3-3). 12개월 환산값이라 /년 을 붙인다.
+            "발전량": [fmt.per_year(fmt.mwh(value)) for value in frame["연간 발전량(kWh)"]],
             "자가소비율": [fmt.ratio_pct(value) for value in frame["자가소비율"]],
-            "기본요금 절감": [fmt.won_short(value) for value in frame["기본요금 절감(원)"]],
-            "전력량요금 절감": [fmt.won_short(value) for value in frame["전력량요금 절감(원)"]],
+            "기본요금 절감": [fmt.won_year(value) for value in frame["기본요금 절감(원)"]],
+            "전력량요금 절감": [fmt.won_year(value) for value in frame["전력량요금 절감(원)"]],
             "투자비": [
                 fmt.won_short(value, reason="미산출 — 단가 미입력") for value in frame["투자비(원)"]
             ],
@@ -972,23 +1049,11 @@ def _ess(
         _caution("어떤 목표에서도 초과 구간이 없어 곡선을 그리지 못했습니다.")
         return
 
-    st.markdown("**목표 선택 곡선** — 어느 목표가 유리한지만 본다")
+    # **그림 하나로 고른다** (26세션 1절). 곡선 아래 대표 지점 표를 없앴고
+    # (같은 사양을 아래 지표 카드가 낸다), 오해를 푸는 설명은 툴팁으로 내렸다 —
+    # 본문에 줄을 늘리지 않는다.
     st.altair_chart(charts.ess_target_chart(curve), width="stretch")
-    st.caption("목표별 개략 회수기간", help=fmt.chart_tip("chart.ess_target"))
-    st.caption(
-        f"가장 유리한 목표는 **{fmt.kw(best.target_kw, decimals=0)}** 입니다 — "
-        f"{fmt.markdown_safe(curve.u_shape_reason)} **물리적 최적이 아니라 조달 규격의 "
-        "산물입니다.** 회색 점선은 정격 용량(kWh)이며, 목표를 조금만 낮춰도 급증하는 "
-        "것이 오른쪽 팔을 만듭니다."
-    )
-    # **표에 돈에 관한 숫자를 두지 않는다** (18세션 1절). 표는 사양만 싣고,
-    # 절감액·투자비·회수기간은 아래 카드 하나가 낸다. 두 기준이 각각 옳아도
-    # 같은 목표에서 다른 회수기간이 두 개 보이면 사용자에게는 그냥 불일치다.
-    st.dataframe(localize(charts.ess_target_table(curve)), hide_index=True, width="stretch")
-    st.caption(
-        "표의 출력·정격 용량·방전시간은 **아래 결과와 같은 값**입니다. "
-        "절감액·투자비·회수기간은 요금을 다시 계산해야 나오므로 아래에서만 냅니다."
-    )
+    st.caption("용량별 회수기간", help=fmt.chart_tip("chart.ess_target"))
 
     # 목표는 곡선이 정한다. 세션에는 남겨 3단계가 같은 값을 읽게 한다.
     target = best.target_kw
@@ -1016,7 +1081,7 @@ def _ess(
         f"방전 {fmt.hours(result.discharge_hours, decimals=1)}",
         help=fmt.tip("discharge_hours"),
     )
-    columns[1].metric("절감액", fmt.won_short(result.total_saving_won))
+    columns[1].metric("절감액", fmt.won_year(result.annual_saving_won))
     columns[2].metric("투자비", fmt.won_short(result.investment_won))
     columns[3].metric(
         "회수기간",
@@ -1026,12 +1091,7 @@ def _ess(
     )
     # **언제 담고 언제 쓰는지**를 2단 그림으로 보인다 (15세션 2-5 · 17세션 4-1).
     if day is not None:
-        st.altair_chart(
-            charts.ess_day_chart(
-                usage, result.dispatch, day, bands=_band_series(usage, table, form)
-            ),
-            width="stretch",
-        )
+        st.altair_chart(charts.ess_day_chart(usage, result.dispatch, day), width="stretch")
         st.caption(
             f"{day.title} · 피크 앞뒤 {charts.PEAK_ZOOM_HOURS}시간",
             help=fmt.chart_tip("chart.ess_day"),
@@ -1060,7 +1120,7 @@ def _ess(
     if 0 < result.discharge_hours < high_rate_discharge_hours():
         _caution(
             f"방전시간이 {fmt.hours(result.discharge_hours)} 로 짧습니다. 고출력 셀 "
-            "사양이 되어 조달 사례보다 단가가 높아질 수 있습니다."
+            "사양이 되어 도입 사례보다 단가가 높아질 수 있습니다."
         )
     # **투자비 내역·계수·성립 조건은 근거 툴팁으로 간다** (17세션 4-2 · 19세션 1절).
     # 본문에는 투자비 합계·절감액·회수기간만 남긴다 — 위 지표 넷이 그것이다.
@@ -1125,7 +1185,7 @@ def _ess_cost_inputs() -> tuple[float, float | None, float | None]:
             key=input_key("ess", "total_cost"),
         )
         if fixed != model.fixed_won or per_kwh != model.per_kwh_won:
-            _caution("계수 조정됨 — 조달 사례 회귀값이 아닙니다.")
+            _caution("계수 조정됨 — 자동 산출값이 아닙니다.")
     return float(total), float(fixed), float(per_kwh)
 
 
@@ -1163,10 +1223,6 @@ def _surplus(
     presets = load_pv_presets()
     capacity = inputs.resolved_capacity_kwp(presets) if inputs is not None else 0.0
     if inputs is None or capacity <= 0:
-        columns = st.columns(3)
-        columns[0].metric("잉여 전력량", fmt.kwh(0.0))
-        columns[1].metric("발전량 대비", fmt.DASH)
-        columns[2].metric("주말 비중", fmt.DASH)
         st.write("태양광을 켜지 않아 잉여가 0 입니다.")
         st.caption(
             "7.5 태양광을 켜고 계산하면 잉여량과 활용 시나리오가 여기에 나옵니다. "
@@ -1182,10 +1238,10 @@ def _surplus(
     result = cached_surplus(
         usage, table, unit_profile, usage_token(usage), form, capacity, price or None, rules_stamp()
     )
-    columns = st.columns(3)
-    columns[0].metric("잉여 전력량", fmt.kwh(result.total_kwh))
-    columns[1].metric("발전량 대비", fmt.ratio_pct(result.share_of_generation))
-    columns[2].metric("주말 비중", fmt.ratio_pct(result.weekend_share))
+    # **잉여량 지표 셋을 7.5 로 옮겼다** (26세션 3-2). 「얼마나 남는가」 는 용량을
+    # 정하는 물음이라 태양광 카드의 일이고, 이 카드는 **남는 것으로 무엇을 하나**를
+    # 낸다 — 같은 사실을 두 카드에 두지 않는다.
+    #
     # **잉여가 주말에 몰리는지**가 보여야 한다 (15세션 2-6).
     if result.total_kwh > 0:
         surplus_kw = apply_generation(usage, unit_profile * capacity).surplus_kw

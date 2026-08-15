@@ -840,7 +840,7 @@ def evaluate_ess(
         cost = EssCostInput.of_total(
             quote.total_won,
             source=(
-                f"조달 사례 모델 — 설비 {money.won(quote.equipment_won, reason='—')} "
+                f"도입 사례 모델 — 설비 {money.won(quote.equipment_won, reason='—')} "
                 f"+ 전기공사 {money.won(quote.electrical_won, reason='—')}"
             ),
         )
@@ -902,7 +902,7 @@ def evaluate_ess(
             warn(
                 f"산출 사양이 {c_rate(discharge_hours):.1f}C 방전에 해당합니다 "
                 f"(방전시간 {discharge_hours:.2f}h). 정치형 LFP 는 통상 0.5~1C 연속이므로 "
-                "고출력 셀 사양이며, 조달 사례보다 비쌀 수 있습니다.",
+                "고출력 셀 사양이며, 도입 사례보다 비쌀 수 있습니다.",
                 fact="ess.high_c_rate",
             )
         )
@@ -956,7 +956,7 @@ def evaluate_ess(
         # 산식은 지표 툴팁이 낸다 (24세션 3-3 · L). 여기는 값과 그 뜻만 적는다.
         basis(
             f"방전시간 {discharge_hours:.2f}h ({c_rate(discharge_hours):.1f}C) 는 입력이 "
-            "아니라 **산출값**입니다. 짧을수록 kW당 단가가 싸므로, 조달이 가능하다면 "
+            "아니라 **산출값**입니다. 짧을수록 kW당 단가가 싸므로, 구할 수 있다면 "
             "짧은 쪽이 맞습니다.",
             fact="ess.discharge_hours",
         ),
@@ -965,7 +965,7 @@ def evaluate_ess(
             "방전시간은 단가에 이미 반영되어 있어 다시 곱하지 않았습니다.",
             fact="ess.investment_basis",
         ),
-        basis(cost_model.formula + " — 조달 사례 회귀입니다.", fact="ess.cost_model_formula"),
+        basis(cost_model.formula + " — 도입 사례 회귀입니다.", fact="ess.cost_model_formula"),
         basis(
             f"투자비 = 설비 {money.won(quote.equipment_won, reason='—')} + 전기공사 "
             f"{money.won(quote.electrical_won, reason='—')} (옥외 기준 "

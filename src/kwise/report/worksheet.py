@@ -342,7 +342,7 @@ def ess_worksheet(result: EssResult) -> Worksheet:
             [
                 WorkRow(
                     "설비비",
-                    quote.formula if hasattr(quote, "formula") else "조달 사례 회귀",
+                    quote.formula if hasattr(quote, "formula") else "도입 사례 회귀",
                     _won(quote.equipment_won),
                 ),
                 WorkRow("전기공사", "옥외 기준 구간의 대표값", _won(quote.electrical_won)),
