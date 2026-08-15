@@ -225,7 +225,7 @@ Windows 전용 사항은 `ENVIRONMENT.md` 에 있다. 요약하면 셋이다 —
 
 | 진입점 | 명령 |
 |---|---|
-| 화면 | `.venv\Scripts\streamlit.exe run src\kwise\ui\app.py` |
+| 화면 | `.venv\Scripts\streamlit.exe run streamlit_app.py` |
 | 배치 | `.venv\Scripts\python.exe -m kwise.cli run --cases cases.yaml` |
 | 케이스 스터디 | `.venv\Scripts\python.exe tools\run_casestudy.py --progress` |
 | 성능 실측 | `.venv\Scripts\python.exe tools\run_benchmark.py` |

@@ -9,11 +9,12 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 | 항목 | 값 |
 |---|---|
 | 환경 | Windows 11 (안드로이드 proot 환경에서 이관) |
-| 최근 세션 | 2026-08-14 — **Streamlit Cloud 배포** (23세션 뒤) |
-| 다음 작업 | **24세션 — 화면 캡처** (그래프까지 끝나 이제 찍을 때다) |
+| 최근 세션 | 2026-08-15 — **시험 안정화 + 배포 교훈 못박기** |
+| 다음 작업 | **화면을 직접 써 보며 개선사항 찾기** (진행 중). 캡처·매뉴얼은 화면 확정 뒤 |
 | 배포 | **동작 중** — github.com/bakjeucar-boop/kwise → Streamlit Cloud. 건물명부터 보고서 내려받기까지 확인 |
-| 테스트 상태 | pytest **1,130 passed** / ruff pass / **`mypy src`** pass (strict, 103 files) |
+| 테스트 상태 | pytest **1,147 passed** / ruff pass / **`mypy src`** pass (strict, 103 files) |
 | mypy 범위 | **`mypy src` 로 판단한다.** 맨 `mypy` 는 `tests\` 38건을 문다 (미해결, 막지 않음) |
+| 배포 시험 | `tests\test_deployment.py` **16건** — 진입점 재실행·글꼴·판 고정·`__init__`·문서 어긋남. 계산을 돌리지 않아 **3초** |
 | 문서 | 기술서 7장 + 부록 3 · 매뉴얼 8장 + 부록. **md 원본 → html 생성** |
 | 기준 데이터 | `rules_kr.json` 31항목 + `assumptions.json` **33항목**. **코드 기본값 없음** |
 | 케이스 스터디 | **타당성 66/66 통과** · 35.7초 (23세션 재확인 — 요금 계산 값 불변) |
@@ -26,7 +27,7 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 | 작업 PC | **두 대를 GitHub 로 번갈아 쓴다.** 시작 전 `git pull`, 종료 시 `git push` |
 | 블로커 | — |
 
-**화면 실행** — `.venv\Scripts\streamlit.exe run src\kwise\ui\app.py`
+**화면 실행** — `.venv\Scripts\streamlit.exe run streamlit_app.py` (**뿌리 진입점 하나로 통일**)
 **문서 생성** — `.venv\Scripts\python.exe tools\build_docs.py`
 
 ---
@@ -46,7 +47,7 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 | PC | 프로젝트 경로 | 비고 |
 |---|---|---|
-| 2번 PC (`user`) | `C:\Users\user\Documents\claude\kwise` | 2026-08-15 환경 구축 완료 · 1,130건 통과 |
+| 2번 PC (`user`) | `C:\Users\user\Documents\claude\kwise` | 2026-08-15 환경 구축 완료 · 1,147건 통과 |
 
 경로가 PC 마다 다르므로 **경로를 코드·문서에 하드코딩하지 않는다.** 캐시는
 `PROJECT_CACHE`, 나머지는 `pathlib.Path` 로 프로젝트 뿌리에서 상대 계산한다.
@@ -88,12 +89,19 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 깔아야 `pyproject.toml` 의 상한(`mypy>=1.11,<2`)과 `types-PyYAML` 이 따라온다.
 낱개로 깔면 mypy 2.x 가 들어와 PC 마다 결과가 갈린다 — 상한을 박은 이유가 없어진다.
 
-**첫 실행은 케이스 스터디 1건이 실패한다 — 정상이다.**
+**찬 캐시에서도 첫 실행부터 전부 통과한다** (2026-08-15 에 고쳤다).
+
+전에는 케이스 스터디 1건이 새 PC 에서만 실패했다 —
 `test_case_study_runs_sequentially_and_hits_the_weather_cache` 가
-`weather_calls == 0` 을 기대하는데, 새 PC 는 `PROJECT_CACHE` 가 비어 있어
-첫 케이스에서 기상을 한 번 받아 온다 (`weather_calls == 1`). 그 실행이 캐시를
-채우므로 **두 번째 실행부터 1,130건 전부 통과**한다. 코드 결함이 아니라
-찬 캐시 탓이다 — 새 PC 를 붙일 때마다 한 번씩 겪는다.
+`weather_calls == 0` 을 상수로 박고 있어서, 캐시가 빈 PC 에서 1 이 나왔다.
+**절차로 때우지 않고 시험을 고쳤다.** 이제 실행 전 캐시 상태에서 기대값을
+끌어오므로 찬 캐시(1)에서도 더운 캐시(0)에서도 같은 성질을 잰다.
+
+다만 **찬 캐시의 첫 실행은 기상을 한 번 받아 오므로 네트워크가 필요하다.**
+시험 중에는 사전 취득분(`data\weather\`)이 일부러 격리되어 있다
+(`conftest.isolated_weather_archive` — 격리하지 않으면 "API 실패 시 멈추는가"
+같은 시험이 조용히 폴백에 성공해 버린다). 캐시가 한 번 차면 그 뒤로는
+네트워크 없이 돈다.
 
 ### 백업 번들
 
@@ -148,7 +156,146 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 ---
 
-## 오늘 (2026-08-15) 한 일 — 2번 PC 환경 구축
+## 오늘 (2026-08-15) 한 일 — 시험 안정화와 배포 교훈 못박기
+
+**화면은 손대지 않았다.** 지금 화면을 직접 써 보며 개선사항을 찾는 중이라,
+화면이 확정된 뒤에 할 일(매뉴얼 캡처·체크리스트·문구·미해결 재분류·`tests\`
+형 정리)은 미뤘다. 이번에 한 것은 **시험이 환경에 기대지 않게 만드는 일**과
+**배포에서 겪은 결함을 시험으로 못박는 일**이다.
+
+| 항목 | 결과 |
+|---|---|
+| pytest | **1,147 passed** (기존 1,130 + 17 — 배포 시험 16 · 케이스 스터디 1) |
+| ruff | pass |
+| mypy | `mypy src` pass (103) · `mypy tools` pass (12) · `tests\` 38건은 그대로 (미해결) |
+| 만든 파일 | `tests\test_deployment.py` |
+
+### 1. 찬 캐시에서 실패하던 시험을 고쳤다
+
+`test_case_study_runs_sequentially_and_hits_the_weather_cache` 가
+`weather_calls == 0` 을 상수로 박고 있었다. 캐시가 빈 새 PC 에서는 첫 건을
+받아 와 1 이 나오므로 **새 PC 에서만 실패하는 시험**이었다.
+
+**고른 길 — 기대값을 실행 전 캐시 상태에서 끌어온다.** 캐시를 미리 채우는
+길도 있었으나 택하지 않았다. 채우려면 사전 취득분(`data\weather\`)을 캐시에
+써 넣어야 하는데, `load_weather` 는 **일부러 그렇게 하지 않는다** —
+`weather.py` 주석대로 "폴백이 다음 실행에서 캐시로 둔갑해 조용히 바뀐 상태가
+굳는" 것을 막기 위해서다. 시험 편의로 그 설계를 깨면 안 된다. 합성 기상을
+넣는 길도 케이스 스터디 66/66 의 값을 바꾸므로 못 쓴다.
+
+새로 둔 것은 `WeatherCacheState` 픽스처다. 스터디보다 **먼저** 돌아 케이스들이
+쓸 캐시 경로를 세어 둔다.
+
+    requests  케이스들이 요구하는 서로 다른 기상 요청의 수
+    cold      그중 실행 전에 캐시에 없던 것 = 취득이 일어날 횟수
+
+    assert study.weather_calls == weather_cache_state.cold
+
+**찬 캐시면 1, 더운 캐시면 0 — 둘 다 통과한다.** 두 상태에서 실제로 돌려
+확인했다. 캐시가 고장 나 여섯 케이스가 저마다 취득하면 6 이 되어 걸린다.
+
+성질을 하나 더 떼어 세웠다 — `test_all_cases_share_one_weather_request` 는
+`requests == 1` 을 본다. **캐시 적중의 근거**가 여섯 케이스의 좌표·기간이
+같다는 것인데, 이건 캐시 상태와 무관한 성질이라 따로 재는 편이 옳다.
+
+### 2. 배포에서 겪은 결함을 시험으로 못박았다 (`tests\test_deployment.py`)
+
+23세션까지 1,128건이 통과했는데도 배포에서 결함이 나온 이유는 시험이 약해서가
+아니라 **시험이 보지 않던 자리**여서다. 모두 소스와 설정을 읽는 시험이라 빠르다.
+
+| 결함 | 시험 | 무엇을 잡나 |
+|---|---|---|
+| ① 두 번째 실행부터 빈 화면 | `test_entry_point_draws_on_every_run` | `streamlit_app.py` 를 두 번 실행해 `main()` 이 두 번 불리는지 |
+| ① 일반형 | `test_ui_modules_draw_nothing_at_import_time` | `ui\` 전체에서 **모듈 최상위 `st.*()` 호출**을 AST 로 잡는다 |
+| ① 근거 | `test_entry_point_import_is_cached_between_runs` | 두 번 실행해도 모듈은 같은 객체 — 왜 `main()` 을 명시적으로 불러야 하는지 |
+| ② 서버에 폰트 없음 | `test_os_specific_font_names_stay_in_their_allowed_places` | OS 전용 글꼴 이름이 **새 자리**에 들어오는 것 |
+| ② | `test_matplotlib_font_is_resolved_not_hardcoded` | `rcParams["font.family"]` 에 이름을 직접 넣는 것 |
+| ③ 판이 갈림 | `test_requirements_are_pinned_exactly` 외 2건 | `==` 고정 · pyproject 와 목록 일치 · 고정판이 하한을 만족하는지 |
+| ④ 패키지 인식 | `test_every_package_folder_has_an_init` | `src\kwise` 아래 `__init__.py` 누락 |
+
+**시험이 실제로 실패하는지 확인했다.** `streamlit_app.py` 의 `main()` 호출을
+지우고 돌려 ①이 걸리는 것을 보고 되돌렸다. 걸리지 않는 시험은 없느니만 못하다.
+
+글꼴 시험에서 **거짓 경보를 한 번 겪고 고쳤다.** 이름을 그냥 문자열로 찾으니
+`ui\callout.py`·`ui\charts.py` 가 걸렸는데, 거기 있던 "바탕" 은 글꼴이 아니라
+**배경이라는 뜻의 예사말**이었다. 한국어로 쓴 코드에서는 이런 게 계속 나온다 —
+따옴표 안에 홀로 있을 때만 글꼴로 치도록 좁혔다.
+
+허용 목록은 세 곳이고 **각각 이유를 달았다.** `figures.py` 는 여러 OS 후보를
+늘어놓고 고르는 규약 자체이고, `docsite.py` 는 CSS font stack 이며,
+`document.py` 는 Word 글꼴 **이름만** 적는 자리다 (그리는 것은 읽는 사람의
+Word 라 서버에 깔려 있을 필요가 없다 — `figures.py` 주석에 근거가 있다).
+목록이 사실과 어긋난 채 남지 않도록 **더는 쓰지 않는 파일이 목록에 남아도
+실패**하게 했다.
+
+### 3. 문서와 설정이 갈리는 것을 잡는 시험을 넣었다
+
+지난 세션에 mypy 검사 범위가 갈려 있던 것이 드러났다 — 기록은 "pass" 인데
+실제로는 `tests\` 를 한 번도 보지 않았다. **같은 종류를 훑어 넷을 세웠다.**
+
+- `test_docs_point_at_one_entry_point` — 문서의 `streamlit run` 대상이 모두
+  뿌리 진입점인지 (아래 4절)
+- `test_dev_tools_are_installed_through_the_dev_extra` — 개발 도구를 낱개로
+  까는 **명령 줄**이 남아 있는지. "낱개로 깔지 마십시오" 같은 금지 문장은
+  잡지 않는다
+- `test_documented_python_version_matches_the_project` — 문서의 파이썬 판과
+  `requires-python`
+- `test_environment_doc_repeats_the_actual_mypy_scope` — **`pyproject` 의 mypy
+  `files` 가 `ENVIRONMENT.md` 에 그대로 적혀 있어야 한다.** 설정을 고치면
+  시험이 깨져 문서를 함께 고치게 된다. 범위를 언제 맞출지는 형 정리와 함께
+  정할 일이고, 여기서 요구하는 것은 **어긋남을 숨기지 않는 것**뿐이다
+- `test_documented_tool_paths_exist` — 문서가 시키는 `tools\*.py` 가 실제로 있는지
+
+**시험 자체가 헛돌 뻔한 것을 잡았다.** 개발 도구 시험의 명령 줄 판별식이 처음에
+`pip install ...` 만 보고 `.venv\Scripts\python.exe -m pip install ...` 를 놓쳤다 —
+**이 프로젝트 문서가 실제로 쓰는 형태**라, 그대로 뒀으면 통과는 하는데 아무것도
+못 잡는 시험이 됐다. 판별식을 열 가지 표본(명령 4 · 산문 6)에 돌려 확인하고 고쳤다.
+판 비교도 마찬가지로 확인했다 — 문자열로 견주면 `0.15.2 >= 0.16` 이 참이 되고
+`0.102 >= 0.40` 이 거짓이 된다. 숫자 튜플로 견준다.
+
+**훑다가 하나 찾았다.** `src\kwise\ui\__init__.py` 에 "``app`` 은 import 하는
+것만으로 화면을 그리므로 여기서 끌어오지 않는다" 가 남아 있었다. 배포 결함 ①을
+고치면서 사실이 아니게 된 문장이다 — 지금은 그리는 일이 `main()` 안에 있다.
+안 끌어오는 진짜 이유(Streamlit 을 딸려 들이지 않으려고)로 고쳐 적었다.
+
+### 4. 앱 실행 경로를 뿌리 진입점 하나로 통일했다
+
+`src\kwise\ui\app.py` 를 직접 돌리면 **그 파일이 진입점이 되어** 매 실행에
+통째로 다시 돈다. 그래서 배포에서 잡은 "두 번째 실행부터 빈 화면" 이 로컬에서
+재현되지 않았다. 클라우드와 같은 경로로 띄워야 같은 것을 확인하는 셈이 된다.
+
+    .venv\Scripts\streamlit.exe run streamlit_app.py     ← 이것 하나만 쓴다
+
+고친 곳 — `README.txt` · `PROCEED.md` · `docs\ENVIRONMENT.md` ·
+`docs\TECHNICAL.md` · `docs\MANUAL.md` · `src\kwise\ui\app.py` ·
+`src\kwise\ui\__init__.py`. `docs\*.html` 은 생성물이라
+`tools\build_docs.py` 로 다시 만들었다.
+
+`app.py` 의 `if __name__ == "__main__"` 은 **급할 때의 뒷문**으로 남기되,
+문서는 전부 뿌리 진입점을 가리킨다고 주석에 적었다.
+
+### 미해결 (이번 세션이 새로 만든 것은 없다)
+
+- `tests\` mypy 38건 — 지난 세션 그대로. **형 정리는 화면 확정 뒤로 미뤘다**
+- `pyproject.files` 와 `ENVIRONMENT.md` 6.1 의 어긋남 — 위 시험이 **숨지는
+  못하게** 잡아 두었다. 없애는 것은 형 정리와 함께
+- `README.txt` 에 **같은 내용이 두 번 들어가 있다** (「실행하는 법」 이후가
+  통째로 반복된다). 이번 범위가 아니라 손대지 않았다. 화면 확정 뒤 문서 손볼
+  때 함께 정리한다
+- 화면이 계속 도는지는 **사람이 눌러 확인해야 한다**
+
+### 다음 세션이 알아야 할 것
+
+- **화면은 `streamlit_app.py` 로만 띄운다.** `app.py` 직접 실행은 배포지와
+  경로가 달라 결함을 가린다
+- 새 시험은 계산을 돌리지 않는다 — 16건이 몇 초에 끝난다. 배포 전에 이것만
+  돌려도 네 갈래는 걸러진다
+- 글꼴·문서 시험은 **허용 목록과 문서 문구에 기댄다.** 목록을 늘릴 때는 반드시
+  이유를 함께 적는다. 이유 없는 예외가 쌓이면 시험이 있으나 마나 해진다
+
+---
+
+## 지난 세션 (2026-08-15) — 2번 PC 환경 구축
 
 **계산·화면 코드는 한 줄도 손대지 않았다.** 2번 PC 를 작업 가능 상태로 만들고
 `PROCEED.md` 의 두 PC 절만 고쳤다.

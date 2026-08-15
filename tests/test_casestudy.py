@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -16,9 +17,16 @@ import pytest
 
 from kwise.io import load_usage, slot_start
 from kwise.notices import texts
-from kwise.pv import WeatherRequest, WeatherUnavailableError, load_weather
+from kwise.pv import (
+    WeatherRequest,
+    WeatherUnavailableError,
+    load_weather,
+    weather_cache_path,
+)
+from kwise.pv.region import find_region
 from kwise.quality import check_quality
 from kwise.report.casestudy import (
+    CASE_REGION_KEY,
     DEFAULT_CAPACITIES_KWP,
     CaseStudy,
     build_case_definitions,
@@ -39,8 +47,46 @@ def case_dir() -> Path:
     return CASE_DIR
 
 
+@dataclass(frozen=True)
+class WeatherCacheState:
+    """스터디를 돌리기 **전** 기상 캐시가 어떤 상태였는지.
+
+    :func:`run_case_study` 가 세는 ``weather_calls`` 의 기대값은 환경이 정한다.
+    찬 캐시에서는 첫 건을 받아 와 1, 이미 차 있으면 0 이다. 상수로 박으면
+    **새 PC 에서만 실패하는 시험**이 된다 (2026-08-15 에 실제로 겪었다).
+    """
+
+    requests: int
+    """케이스들이 요구하는 **서로 다른** 기상 요청의 수."""
+    cold: int
+    """그중 실행 전에 캐시에 없던 것의 수 = 취득이 일어날 횟수."""
+
+
 @pytest.fixture(scope="module")
-def study(case_dir: Path, tariff: TariffTable) -> CaseStudy:
+def weather_cache_state(case_dir: Path) -> WeatherCacheState:
+    """케이스들이 쓸 기상 캐시 경로를 **스터디보다 먼저** 들여다본다.
+
+    ``study`` 픽스처가 이것에 의존하므로 순서가 보장된다 — 스터디가 캐시를
+    채우기 전의 상태를 봐야 기대값이 맞는다.
+    """
+    region = find_region(CASE_REGION_KEY)
+    paths = set()
+    for definition in build_case_definitions(case_dir):
+        usage = load_usage(definition.usage_path)
+        request = WeatherRequest.for_index(
+            pd.DatetimeIndex(usage.kw.index), region.latitude, region.longitude
+        )
+        paths.add(weather_cache_path(request))
+    return WeatherCacheState(
+        requests=len(paths),
+        cold=sum(1 for path in paths if not path.is_file()),
+    )
+
+
+@pytest.fixture(scope="module")
+def study(
+    case_dir: Path, tariff: TariffTable, weather_cache_state: WeatherCacheState
+) -> CaseStudy:
     """케이스 6종 × PV 4단계 × 감도 3종. **순차로 돈다.**"""
     return run_case_study(build_case_definitions(case_dir), tariff)
 
@@ -156,9 +202,29 @@ def test_generation_is_preserved_across_scenarios(study: CaseStudy) -> None:
     assert float(spread.max()) < 0.01
 
 
-def test_case_study_runs_sequentially_and_hits_the_weather_cache(study: CaseStudy) -> None:
-    """모든 케이스가 같은 좌표·기간이라 기상은 첫 건만 취득한다."""
-    assert study.weather_calls == 0  # 사전 취득분·캐시가 이미 채워져 있다
+def test_all_cases_share_one_weather_request(weather_cache_state: WeatherCacheState) -> None:
+    """**캐시 적중의 근거**는 여섯 케이스가 같은 좌표·기간을 쓴다는 것이다.
+
+    캐시가 차 있든 비었든 이 성질은 변하지 않는다. 캐시 적중 횟수보다 이쪽이
+    본질이라 따로 세운다 — 케이스 기간이 갈라지면 여기서 먼저 걸린다.
+    """
+    assert weather_cache_state.requests == 1
+
+
+def test_case_study_runs_sequentially_and_hits_the_weather_cache(
+    study: CaseStudy, weather_cache_state: WeatherCacheState
+) -> None:
+    """기상은 **캐시에 없던 것만** 취득한다. 나머지 다섯은 캐시를 탄다.
+
+    기대값을 0 으로 박아 두었더니 캐시가 빈 새 PC 에서 1 이 나와 실패했다
+    (2026-08-15). 코드가 아니라 시험이 환경에 기대고 있었다. 이제 실행 전
+    캐시 상태에서 기대값을 끌어오므로 **찬 캐시에서도 더운 캐시에서도 같은
+    성질을 잰다** — 취득은 요청 하나당 많아야 한 번이다.
+
+    캐시가 고장 나면 여섯 케이스가 저마다 취득해 6 이 되고, 여기서 걸린다.
+    """
+    assert study.weather_calls == weather_cache_state.cold
+    assert study.weather_calls <= weather_cache_state.requests
     assert len(study.results) == 6
     assert study.elapsed_sec > 0
 

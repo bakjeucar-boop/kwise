@@ -42,7 +42,7 @@
 ### 2.1 실행 {#manual-run}
 
 ```
-.venv\Scripts\streamlit.exe run src\kwise\ui\app.py
+.venv\Scripts\streamlit.exe run streamlit_app.py
 ```
 
 브라우저가 열린다. **세 화면이 탭이다** (16세션).

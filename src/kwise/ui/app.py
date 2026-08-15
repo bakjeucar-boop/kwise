@@ -1,6 +1,6 @@
 """kWise 화면 (요구사항서 10.1·10.2).
 
-    .venv\\Scripts\\streamlit.exe run src\\kwise\\ui\\app.py
+    .venv\\Scripts\\streamlit.exe run streamlit_app.py
 
 **세 화면을 탭으로 한 번에 그린다** (16세션 1절).
 
@@ -96,7 +96,11 @@ def main() -> None:
 # 최상위에서 그리면 두 번째 실행부터 아무것도 그려지지 않아 화면이 빈다
 # (2026-08-14 배포지에서 겪었다 — 로컬은 이 파일을 직접 돌려서 안 났다).
 #
-#     streamlit run src\kwise\ui\app.py   이 아래가 매 실행에 돈다
-#     streamlit run streamlit_app.py      그쪽이 main() 을 매 실행에 부른다
+#     streamlit run streamlit_app.py      그쪽이 main() 을 매 실행에 부른다 — **이것만 쓴다**
+#     streamlit run src\kwise\ui\app.py   이 아래가 매 실행에 돈다. 배포지와 경로가
+#                                         달라 위 결함이 로컬에서 안 보인다
+#
+# 아래 진입점은 **급할 때의 뒷문**으로만 남긴다. 문서는 모두 뿌리 진입점을 가리킨다
+# (2026-08-15 에 통일했다).
 if __name__ == "__main__":
     main()

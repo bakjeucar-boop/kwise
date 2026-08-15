@@ -23,8 +23,9 @@ kWise 는 대한민국 전용 도구입니다. 요금 체계(한전 기본공급
 실행하는 법
 -----------
 화면 (Streamlit)
-     .venv\Scripts\streamlit.exe run src\kwise\ui\app.py
+     .venv\Scripts\streamlit.exe run streamlit_app.py
      브라우저가 열립니다. 옆단에서 화면을 고릅니다.
+     뿌리의 streamlit_app.py 로만 띄우십시오 - 배포지와 같은 경로입니다.
 
        1단계 · 진단       파일만 올려도 결과가 나옵니다. 계약 정보 넷만 묻습니다
        2단계 · 개선 수단   카드로 켜고 끕니다. 투자비 순으로 놓았습니다

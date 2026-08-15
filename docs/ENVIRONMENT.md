@@ -199,10 +199,15 @@ mypy src
 ### 6.2 Streamlit
 
 ```powershell
-streamlit run src\kwise\ui\app.py
+streamlit run streamlit_app.py
 ```
 
 브라우저가 자동으로 열린다. 안드로이드 환경과 달리 헤드리스 제약이 없다.
+
+**뿌리 진입점 하나로만 띄운다.** `src\kwise\ui\app.py` 를 직접 돌리면 그 파일이
+진입점이 되어 매 실행에 통째로 다시 돌아간다 — 배포지에서 잡은 "두 번째 실행부터
+빈 화면" 결함이 로컬에서 보이지 않는다. Streamlit Cloud 와 **같은 경로**로 띄워야
+같은 것을 확인하는 셈이 된다 (2026-08-15).
 
 ### 6.3 CLI 배치
 
