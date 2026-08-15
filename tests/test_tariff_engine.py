@@ -443,7 +443,7 @@ def test_excluded_charge_elements_are_stated(sample_bill: BillingResult) -> None
 
 
 def test_unverified_tariff_is_warned(sample_bill: BillingResult) -> None:
-    """**``verified=false`` 라고 적지 않는다** (24세션 4-1). 사람 말로 쓴다."""
+    """**``verified=false`` 라고 적지 않는다** (25세션 4-1). 사람 말로 쓴다."""
     messages = texts(sample_bill.notices)
     assert any("실제 청구서와 대조하지 않았습니다" in message for message in messages)
     assert not any("verified" in message for message in messages)

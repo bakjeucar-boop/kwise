@@ -69,7 +69,7 @@ COLUMN_LABELS: dict[str, str] = {
 #: 이 남는다 — 코드 식별자를 화면에 내지 않는다는 12세션 규약을 값이 깬 자리다.
 #: 열 이름을 바꾸기 **전**의 이름으로 찾는다.
 VALUE_LABELS: dict[str, dict[str, str]] = {
-    # 계절 표기는 :mod:`kwise.tariff.labels` 에 있다 — 계산 모듈도 쓴다 (24세션 4-1).
+    # 계절 표기는 :mod:`kwise.tariff.labels` 에 있다 — 계산 모듈도 쓴다 (25세션 4-1).
     "season": SEASON_LABELS,
     "band": {"light": "경부하", "mid": "중간부하", "peak": "최대부하"},
     "day_type": {"weekday": "평일", "saturday": "토요일", "holiday": "휴일"},

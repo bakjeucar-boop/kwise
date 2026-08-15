@@ -102,7 +102,7 @@ class SensitivityRange:
         return (self.high - self.low) / scale if scale > 0 else 0.0
 
     def range_text(self) -> str:
-        """지표 이름을 뺀 값과 범위. **이름은 부르는 쪽이 붙인다** (24세션 3절).
+        """지표 이름을 뺀 값과 범위. **이름은 부르는 쪽이 붙인다** (25세션 3절).
 
         화면 목록이 ``- **요금적용전력(kW)** {text()}`` 로 적었더니 이름이 한 줄에
         두 번 나왔다. 이름을 이미 굵게 낸 자리에는 이쪽을 쓴다.

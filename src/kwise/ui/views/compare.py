@@ -362,7 +362,7 @@ def _combined_block(
         fmt.ratio_pct(ratio) if ratio is not None else fmt.DASH,
     )
     # 「부하를 처음부터 다시 만들어…」 는 근거(``combination.not_additive``)가 같은
-    # 말을 한다 (24세션 3-3 · M).
+    # 말을 한다 (25세션 3-3 · M).
     st.caption(f"**{combined.name}** 를 함께 도입했을 때의 12개월 환산 절감액입니다.")
     excluded = [row for row in rows if not row.combinable]
     if excluded:
@@ -773,7 +773,7 @@ def _sensitivity_block(
     form: ContractForm,
     specs: tuple[CombinationSpec, ...],
 ) -> tuple[pd.DataFrame, tuple[SensitivityRange, ...]]:
-    # 매뉴얼 요지를 소제목 툴팁에 합쳤다 (24세션 3-3 · G) — 아래 캡션이 같은 말을
+    # 매뉴얼 요지를 소제목 툴팁에 합쳤다 (25세션 3-3 · G) — 아래 캡션이 같은 말을
     # 하고 있어 지웠으므로, 그 캡션이 달고 있던 앵커가 여기로 온다.
     st.subheader("감도", help=f"{fmt.tip('sensitivity')}\n\n{manual_tip('sensitivity')}")
     pv_specs = [spec for spec in specs if spec.has_pv]
@@ -813,7 +813,7 @@ def _sensitivity_block(
     if shown:
         with st.expander("지표별 감도 범위", expanded=False):
             for item in shown:
-                # **지표 이름을 두 번 적지 않는다** (24세션 3절).
+                # **지표 이름을 두 번 적지 않는다** (25세션 3절).
                 st.write(f"- **{_metric_label(item)}** {_range_text(item)}")
     return frame, ranges
 

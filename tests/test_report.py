@@ -570,7 +570,7 @@ def test_empty_case_list_is_rejected(tmp_path: Path) -> None:
 
 
 def test_peak_window_on_a_day_without_observations() -> None:
-    """**관측이 하나도 없는 날** (24세션 1절).
+    """**관측이 하나도 없는 날** (25세션 1절).
 
     ``idxmax`` 는 전부 NaN 이면 ``ValueError`` 를 던진다. 결측이 온종일인 날을
     대표일로 고르면 그것이 화면까지 올라와 앱이 죽었다. 잘라 낼 피크가 없으면

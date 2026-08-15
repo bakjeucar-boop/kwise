@@ -59,7 +59,7 @@ def screen_notices(*groups: Iterable[Notice]) -> tuple[Notice, ...]:
 def tooltip_text(*groups: Iterable[Notice], header: str = "") -> str:
     """화면 **툴팁** 한 덩이 — 근거만. 없으면 빈 문자열이다.
 
-    **툴팁도 escape 한다** (24세션 2절). ``help=`` 는 마크다운을 해석하므로
+    **툴팁도 escape 한다** (25세션 2절). ``help=`` 는 마크다운을 해석하므로
     ``08~22시`` 가 한 줄에 둘 있으면 그 사이가 취소선이 된다 — 본문과 같은 이유다.
     21세션까지는 "해석하므로 escape 하지 않는다" 고 적혀 있었는데, 해석하는 것이
     바로 escape 해야 할 이유였다. :func:`markdown_safe` 는 물결표만 막으므로

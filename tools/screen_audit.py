@@ -1,4 +1,4 @@
-r"""화면 문구 실주행 감사 — **화면에 나가는 모든 문자열을 모은다** (24세션 3절).
+r"""화면 문구 실주행 감사 — **화면에 나가는 모든 문자열을 모은다** (25세션 3절).
 
 소스 훑기로는 「어느 자리에 무엇이 나오는가」 를 알 수 없고, 결과 객체만 세는
 ``tools\notice_audit.py`` 로는 **화면이 직접 쓰는 글**(캡션·툴팁·표·차트)이 잡히지
@@ -227,7 +227,7 @@ def _walk(node: object, where: str) -> Iterator[Line]:
     path = f"{where} › {label}" if label and where else (label or where)
     if label:
         # **접힘·탭의 라벨도 화면 글이다.** 자리 이름으로만 쓰고 지나가면 「상세
-        # (접어 둠)」 같은 군더더기가 규칙 검사에서 빠진다 (24세션 4-4).
+        # (접어 둠)」 같은 군더더기가 규칙 검사에서 빠진다 (25세션 4-4).
         yield Line(where, type(node).__name__, "라벨", label)
     children = getattr(node, "children", None)
     kids = list(children.values()) if isinstance(children, dict) else list(children or [])
@@ -273,7 +273,7 @@ def collect(app: AppTest | None = None, **options: object) -> tuple[Line, ...]:
 # ===================================================================== 소스 훑기
 #
 # **화면만으로는 닿지 않는 자리가 있다.** 보고서 본문·부록과 Excel 시트의 비고는
-# 화면에 나오지 않지만 사용자가 읽는 글이다 (24세션 4-2·4-3). 그쪽까지 한 잣대로
+# 화면에 나오지 않지만 사용자가 읽는 글이다 (25세션 4-2·4-3). 그쪽까지 한 잣대로
 # 보려고 소스의 문자열을 함께 훑는다.
 #
 # 빼는 것 둘.
@@ -336,10 +336,10 @@ CODE_WORDS = re.compile(
     r")(?![\w]*\.[a-z]{2,4}\b)"
 )
 
-#: 내부 문서 번호. 사용자에게 뜻이 없다 (24세션 4-2).
+#: 내부 문서 번호. 사용자에게 뜻이 없다 (25세션 4-2).
 REQUIREMENT_REF = re.compile(r"요구사항서")
 
-#: 규정 이름 없는 조문 (24세션 4-3).
+#: 규정 이름 없는 조문 (25세션 4-3).
 BARE_ARTICLE = re.compile(r"제\s*\d+[\d·~]*\s*조")
 BARE_SCHEDULE = re.compile(r"별표\s*\d+")
 #: 조문 앞에 있어야 할 규정 이름.

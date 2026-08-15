@@ -296,7 +296,7 @@ def _source_tip(row: RuleRow) -> str:
     if row.view.note:
         parts.append(row.view.note)
     # 기준 데이터에서 온 글이다. **툴팁도 마크다운을 해석하므로** escape 한다
-    # (24세션 2절) — 시행 기간을 ``2023~2025`` 로 적은 항목이 취소선이 되었다.
+    # (25세션 2절) — 시행 기간을 ``2023~2025`` 로 적은 항목이 취소선이 되었다.
     return markdown_safe(" · ".join(parts))
 
 

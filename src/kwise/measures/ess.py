@@ -953,7 +953,7 @@ def evaluate_ess(
             f"기간 합계 {excess.total_excess_kwh:,.1f} kWh).",
             fact="ess.sizing_basis",
         ),
-        # 산식은 지표 툴팁이 낸다 (24세션 3-3 · L). 여기는 값과 그 뜻만 적는다.
+        # 산식은 지표 툴팁이 낸다 (25세션 3-3 · L). 여기는 값과 그 뜻만 적는다.
         basis(
             f"방전시간 {discharge_hours:.2f}h ({c_rate(discharge_hours):.1f}C) 는 입력이 "
             "아니라 **산출값**입니다. 짧을수록 kW당 단가가 싸므로, 구할 수 있다면 "

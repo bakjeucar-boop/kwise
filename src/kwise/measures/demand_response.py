@@ -220,7 +220,7 @@ def evaluate_demand_response(
             f"{profile.daily_hours_cap:,.0f}시간입니다.",
             fact="dr.annual_reducible",
         ),
-        # **시간대와 한도는 카드 본문이 이미 낸다** (24세션 3-3 · D). 여기서는
+        # **시간대와 한도는 카드 본문이 이미 낸다** (25세션 3-3 · D). 여기서는
         # 본문에 없는 사실 하나만 적는다 — 왜 창이 둘로 갈라져 있는가.
         basis("점심시간(12–13시)은 운영 시간대에서 빠집니다.", fact="dr.window_rule"),
         basis(

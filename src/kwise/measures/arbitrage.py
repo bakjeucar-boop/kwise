@@ -123,7 +123,7 @@ class ArbitrageValue:
     def frame(self) -> pd.DataFrame:
         """계절별 내역. 어느 계절이 얼마를 벌어 주는지 보여 준다.
 
-        **계절 이름을 한글로 낸다** (24세션 4-1). 이 표는 Excel 로 그대로 나가므로
+        **계절 이름을 한글로 낸다** (25세션 4-1). 이 표는 Excel 로 그대로 나가므로
         ``spring_fall`` 이 칸에 남으면 코드 식별자를 산출물에 싣는 셈이다.
         """
         return pd.DataFrame(
@@ -241,7 +241,7 @@ def arbitrage_value(
             fact="arbitrage.tariff_rates",
         ),
         basis(
-            # **사전을 그대로 찍지 않는다** (24세션 4-1). ``{'spring_fall': 103}``
+            # **사전을 그대로 찍지 않는다** (25세션 4-1). ``{'spring_fall': 103}``
             # 이 화면에 나갔다 — 계절 이름은 표기 규약(:mod:`kwise.tariff.labels`)이다.
             f"최대부하가 존재하는 날만 셌습니다 (계절별 {_season_days(days)}). 토요일은 "
             "최대부하가 중간부하로 계량되고 일요일·공휴일은 전량 경부하라 자동으로 빠집니다.",

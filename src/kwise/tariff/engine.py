@@ -531,7 +531,7 @@ def calculate_bill(
             )
     if not opts.prior_peaks and not contract.base_fee_on_contract:
         # **근거다.** 요금적용전력이 왜 그 값인지 설명한다 — 툴팁과 보고서로 간다.
-        # 24세션에 코드 식별자(``prior_peaks=``)와 요구사항서 번호를 걷어냈다.
+        # 25세션에 코드 식별자(``prior_peaks=``)와 요구사항서 번호를 걷어냈다.
         # 사용자가 할 수 있는 일이 아닌 것을 시키지 않는다.
         notices.append(
             basis(

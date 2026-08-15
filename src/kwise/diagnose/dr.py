@@ -580,7 +580,7 @@ def dr_profile(
     baseline_kw = float(weekend_slots.mean())
     threshold = baseline_kw * multiple
     notices.append(
-        # **기준선과 문턱 값은 카드 본문이 이미 낸다** (24세션 3-3 · E). 반올림
+        # **기준선과 문턱 값은 카드 본문이 이미 낸다** (25세션 3-3 · E). 반올림
         # 자리가 달라 같은 수가 두 값으로 보이기까지 했다 (2,604.6 과 2,605).
         # 여기 남는 것은 본문에 없는 사실 — 그 평균을 며칠에서 쟀는가다.
         basis(

@@ -125,7 +125,7 @@ _SCREEN: dict[str, tuple[str, str]] = {
     ),
     "contract": (
         "measure-contract",
-        # 뒷문장(하향의 위험)은 카드 본문의 경고와 같은 말이라 뺐다 (24세션 3-3 · C).
+        # 뒷문장(하향의 위험)은 카드 본문의 경고와 같은 말이라 뺐다 (25세션 3-3 · C).
         "여유율과 하향 여지를 봅니다.",
     ),
     "demand_response": (

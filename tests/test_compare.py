@@ -241,7 +241,7 @@ def test_comparison_warns_when_charging_creates_a_peak(
         synthetic_usage, tariff, (CombinationSpec("기준선", CURRENT), spec)
     )
     assert any("새 피크" in message for message in texts(result.notices))
-    # **코드 식별자를 쓰지 않는다** (24세션 4-1). 무엇을 해야 하는지만 적는다.
+    # **코드 식별자를 쓰지 않는다** (25세션 4-1). 무엇을 해야 하는지만 적는다.
     assert any("충전 전력을 목표 아래로" in message for message in texts(result.notices))
 
 

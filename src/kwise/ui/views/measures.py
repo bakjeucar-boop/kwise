@@ -285,7 +285,7 @@ def _tariff_switch(
     # 금액 축에 그리면 막대 셋이 같은 높이로 보인다 — 변화만 떼어 먼저 보인다.
     st.altair_chart(charts.tariff_delta_chart(result), width="stretch")
     st.caption("현행 대비 차액", help=fmt.chart_tip("chart.tariff_delta"))
-    # **절사 각주는 3단계 「개선안별 요약」 한 곳에만 둔다** (24세션 4-5). 항목 합과
+    # **절사 각주는 3단계 「개선안별 요약」 한 곳에만 둔다** (25세션 4-5). 항목 합과
     # 합계가 어긋나 보이는 자리가 거기이고, 카드마다 되풀이하면 읽히지 않는다.
     st.caption("현행을 0 으로 두고 좌우로 뻗은 막대입니다. 왼쪽(초록)이 절감입니다.")
     # **② 그룹 막대** (17세션 1-2). 쌓으면 기본요금끼리·전력량요금끼리 견줄 수 없다.
@@ -609,7 +609,7 @@ def _solar(
             format_func=lambda key: density_labels[key],
             horizontal=True,
             # 밀도 설명은 **기준 데이터에서 온다.** 툴팁도 마크다운을 해석하므로
-            # 파일에서 온 글은 escape 해서 넣는다 (24세션 2절).
+            # 파일에서 온 글은 escape 해서 넣는다 (25세션 2절).
             help="\n\n".join(
                 (
                     *(
@@ -646,7 +646,7 @@ def _solar(
     )
 
     # ---- 확장 패널 (접어 둔다)
-    # 접혀 있다는 사실은 **보면 안다** (24세션 4-4). 라벨에 적지 않는다.
+    # 접혀 있다는 사실은 **보면 안다** (25세션 4-4). 라벨에 적지 않는다.
     with st.expander("상세", expanded=False):
         detail_left, detail_right = st.columns(2)
         with detail_left:
@@ -1110,7 +1110,7 @@ def _ess(
             f"{fmt.kwh(charged)} · 최대부하 {discharge_span or fmt.DASH} 방전 "
             f"{fmt.kwh(discharged)} · 그날 저감 {fmt.kw(cut)}."
         )
-    # **회수기간과 보증 수명을 견주는 문장은 여기 없다** (24세션 3-3 · A).
+    # **회수기간과 보증 수명을 견주는 문장은 여기 없다** (25세션 3-3 · A).
     # 계산 쪽이 같은 사실을 이미 낸다 — 넘으면 ``ess.payback_over_warranty`` 가
     # 주의로 뜬다. 등급이 달라(근거/주의) 중복 판정을 빠져나가던 자리였고,
     # 한 화면에 같은 수 둘이 나란히 있으면 어느 쪽이 결론인지 흐려진다.

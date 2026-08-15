@@ -364,7 +364,7 @@ def test_payback_uses_the_investment(
 def test_lowering_the_factor_costs_money_instead_of_raising(
     sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
 ) -> None:
-    """**내려가는 목표를 거절하지 않는다** (24세션 1절).
+    """**내려가는 목표를 거절하지 않는다** (25세션 1절).
 
     21세션까지는 ``ValueError`` 를 던졌고 화면이 그것을 그대로 띄워 앱이 죽었다.
     계산은 성립하므로 **늘어나는 요금을 보인다** — 절감액이 음수다.

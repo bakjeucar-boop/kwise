@@ -484,7 +484,7 @@ PEAK_ZOOM_HOURS = 3
 def peak_window(frame: pd.DataFrame, *, column: str = "원부하(kW)") -> pd.DataFrame:
     """피크 앞뒤 :data:`PEAK_ZOOM_HOURS` 시간만 남긴다. 비어 있으면 그대로.
 
-    **관측이 하나도 없는 날도 있다** (24세션 1절). 결측이 온종일인 날을 「일일 곡선
+    **관측이 하나도 없는 날도 있다** (25세션 1절). 결측이 온종일인 날을 「일일 곡선
     대표일」 로 고르면 여기서 ``ValueError: Encountered all NA values`` 가 나 화면이
     통째로 죽었다. 잘라 낼 피크가 없으므로 **빈 프레임**을 돌려준다 — 부르는 쪽
     셋이 모두 빈 프레임을 「그릴 것이 없다」 로 처리한다.

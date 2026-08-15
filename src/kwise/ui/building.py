@@ -201,7 +201,7 @@ def render_sidebar() -> BuildingInfo:
         value=(saved.operating_hours if saved else DEFAULT_OPERATING_HOURS),
         format_func=lambda hour: f"{hour}시",
         key="building_hours",
-        # **물결표를 쓰지 않는다** (13세션 · 24세션 2절). 툴팁도 마크다운을
+        # **물결표를 쓰지 않는다** (13세션 · 25세션 2절). 툴팁도 마크다운을
         # 해석하므로 한 줄에 둘이 들어가면 그 사이가 취소선이 된다.
         help=(
             "평일 이 시간대 밖의 부하를 따로 셉니다. 경제성DR 의 저부하일 판정에도 씁니다.\n\n"
