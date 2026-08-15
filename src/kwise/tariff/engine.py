@@ -82,7 +82,7 @@ NOT_INCLUDED_NOTICE = (
 # PoC 범위(일반용(을))에서는 이 경로를 타지 않아 샘플에 영향이 없다. 그래서
 # 갑 종별을 실제로 쓸 때 조용히 틀리기 쉽다 — 결과에 반드시 함께 싣는다.
 TENTATIVE_BASE_FEE_BASIS_WARNING = (
-    "갑 종별의 기본요금 기준은 약관 제38조 확인 전까지 잠정입니다. "
+    "갑 종별의 기본요금 기준은 한전 기본공급약관 제38조 확인 전까지 잠정입니다. "
     "최대수요전력계가 설치된 고객이면 결과가 달라질 수 있습니다."
 )
 
@@ -178,7 +178,7 @@ class BillingResult:
             + (
                 f"야간(22~08시) 진상 {self.power_factor.leading_pct:.1f}%"
                 if self.power_factor.leading_pct is not None
-                else "야간(22~08시) 지상 간주 100% (약관 제43조 ② 2호 나목)"
+                else "야간(22~08시) 지상 간주 100% (한전 기본공급약관 제43조 ② 2호 나목)"
             ),
             f"산출 기간: {self.period_label}",
         )
@@ -493,7 +493,7 @@ def calculate_bill(
         notices.append(
             basis(
                 f"{contract.label} 의 요금적용전력 하한 비율이 요금 데이터에 없어 "
-                "하한을 적용하지 않았습니다 (요구사항서 5.2 ③).",
+                "하한을 적용하지 않았습니다.",
                 fact="tariff.floor_ratio_missing",
             )
         )
@@ -502,7 +502,7 @@ def calculate_bill(
             warn(
                 "계약전력을 주지 않아 요금적용전력 하한"
                 f"(계약전력의 {contract.contract_floor_ratio:.0%})을 적용하지 않았습니다. "
-                "저부하 사업장은 기본요금이 과소 산출됩니다 (요구사항서 5.2 ③).",
+                "저부하 사업장은 기본요금이 과소 산출됩니다.",
                 fact="tariff.floor_no_contract",
             )
         )
@@ -525,17 +525,19 @@ def calculate_bill(
                 warn(
                     f"계약전력 {opts.contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 "
                     "있습니다. 경부하 초과는 요금적용전력에 영향을 주지 않지만 "
-                    "초과사용부가금 대상이므로 별도로 확인하십시오 (요구사항서 5.2).",
+                    "초과사용부가금 대상이므로 별도로 확인하십시오.",
                     fact="quality.over_contract",
                 )
             )
     if not opts.prior_peaks and not contract.base_fee_on_contract:
-        # **근거다.** 요금적용전력이 왜 그 값인지 설명하며, 코드 식별자를 품고
-        # 있어 화면 본문에 나가면 12세션 규약을 깬다 — 툴팁과 보고서로 간다.
+        # **근거다.** 요금적용전력이 왜 그 값인지 설명한다 — 툴팁과 보고서로 간다.
+        # 24세션에 코드 식별자(``prior_peaks=``)와 요구사항서 번호를 걷어냈다.
+        # 사용자가 할 수 있는 일이 아닌 것을 시키지 않는다.
         notices.append(
             basis(
                 "직전 12개월 최대수요 이력이 없어 첫 11개월의 요금적용전력이 과소 산출됩니다. "
-                "청구서를 확보하면 prior_peaks= 로 주입하십시오 (요구사항서 5.2).",
+                "올린 자료의 첫 달부터 이력을 쌓아 계산하기 때문입니다 "
+                "(한전 기본공급약관 제68조).",
                 fact="tariff.prior_peaks_missing",
             )
         )
@@ -545,7 +547,7 @@ def calculate_bill(
         notices.append(
             warn(
                 f"{month} 결측률 {missing_ratio[month]:.1%} — 최대수요를 '신뢰 제한' 으로 "
-                "표시하고 전력량요금은 결측 보정 기준을 함께 봅니다 (요구사항서 5.4).",
+                "표시하고 전력량요금은 결측 보정 기준을 함께 봅니다.",
                 fact=f"quality.month_missing_rate:{month}",
             )
         )
@@ -562,8 +564,8 @@ def calculate_bill(
         # 요금표의 **출처·검증 상태**다. 근거이지 경고가 아니다.
         notices.append(
             basis(
-                f"요금표 {table.effective_date} 는 아직 청구서로 "
-                "검증되지 않았습니다 (verified=false).",
+                f"요금표 {table.effective_date} 는 공표 자료 그대로이며 아직 실제 "
+                "청구서와 대조하지 않았습니다.",
                 fact="tariff.unverified_table",
             )
         )
@@ -578,7 +580,8 @@ def calculate_bill(
         else (
             "요금적용전력은 중간·최대부하 시간대의 최대수요만 대상으로 하며 "
             f"(경부하 제외), 대상월은 {'·'.join(str(m) for m in contract.demand_months)}월과 "
-            "검침 당월입니다. 3~6월·10~11월 피크는 이월되지 않습니다 (요구사항서 5.2)."
+            "검침 당월입니다. 3~6월·10~11월 피크는 이월되지 않습니다 "
+            "(한전 기본공급약관 제68조)."
         )
     )
     # 요금적용전력 규칙·안분 계수는 **근거**다 — 기본요금이 왜 그 값인지 그 자체다.
@@ -586,8 +589,8 @@ def calculate_bill(
         basis(demand_note, fact="tariff.billing_demand_rule"),
         *partial_notes,
         basis(
-            "전력량요금은 관측 기준이 정본이고, 결측 보정 기준은 회수기간 산정 참고용입니다 "
-            "(요구사항서 5.4). 도입 전후 차분(Δ)을 절대 금액보다 우선 신뢰하십시오.",
+            "전력량요금은 관측 기준이 정본이고, 결측 보정 기준은 회수기간 산정 "
+            "참고용입니다. 도입 전후 차분(Δ)을 절대 금액보다 우선 신뢰하십시오.",
             fact="tariff.missing_adjusted_basis",
         ),
         # **참고** — 미포함 요금요소와 계절 비대칭. 전제 설명이다.

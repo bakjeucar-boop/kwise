@@ -360,10 +360,9 @@ def _combined_block(
         fmt.won_short(gap),
         fmt.ratio_pct(ratio) if ratio is not None else fmt.DASH,
     )
-    st.caption(
-        f"**{combined.name}** 를 함께 도입했을 때의 12개월 환산 절감액입니다. "
-        "부하를 처음부터 다시 만들어 요금을 한 번 계산했습니다. " + fmt.TRUNCATION_FOOTNOTE
-    )
+    # 「부하를 처음부터 다시 만들어…」 는 근거(``combination.not_additive``)가 같은
+    # 말을 한다 (24세션 3-3 · M).
+    st.caption(f"**{combined.name}** 를 함께 도입했을 때의 12개월 환산 절감액입니다.")
     excluded = [row for row in rows if not row.combinable]
     if excluded:
         st.caption(
@@ -784,7 +783,9 @@ def _sensitivity_block(
     form: ContractForm,
     specs: tuple[CombinationSpec, ...],
 ) -> tuple[pd.DataFrame, tuple[SensitivityRange, ...]]:
-    st.subheader("감도", help=fmt.TIPS["sensitivity"])
+    # 매뉴얼 요지를 소제목 툴팁에 합쳤다 (24세션 3-3 · G) — 아래 캡션이 같은 말을
+    # 하고 있어 지웠으므로, 그 캡션이 달고 있던 앵커가 여기로 온다.
+    st.subheader("감도", help=f"{fmt.tip('sensitivity')}\n\n{manual_tip('sensitivity')}")
     pv_specs = [spec for spec in specs if spec.has_pv]
     if not pv_specs or unit_profile is None:
         callout.note(
@@ -819,17 +820,14 @@ def _sensitivity_block(
         st.write(
             f"**{headline.metric}** {fmt.money_range(headline.base, headline.low, headline.high)}"
         )
-    st.caption(
-        "태양광 발전 프로파일의 불확실성을 반영한 범위입니다.",
-        help=manual_tip("sensitivity"),
-    )
     if shown:
         with st.expander("지표별 감도 범위", expanded=False):
             for item in shown:
                 st.write(
                     f"- **{item.metric}** {fmt.money_range(item.base, item.low, item.high)}"
                     if item.unit == "원"
-                    else f"- **{item.metric}** {fmt.markdown_safe(item.text())}"
+                    # **지표 이름을 두 번 적지 않는다** (24세션 3절).
+                    else f"- **{item.metric}** {fmt.markdown_safe(item.range_text())}"
                 )
     return frame, ranges
 

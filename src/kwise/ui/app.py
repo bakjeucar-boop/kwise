@@ -60,7 +60,8 @@ def main() -> None:
     st.sidebar.divider()
     page = render_settings_entry()
     st.sidebar.divider()
-    st.sidebar.caption("기본요금과 전력량요금만 계산합니다. 인증·신고용 산출물이 아닙니다.")
+    # 앞절(계산 범위)은 1단계 「현재 요금 구조」 가 이미 밝힌다 (24세션 3-3 · I).
+    st.sidebar.caption("인증·신고용 산출물이 아닙니다.")
 
     rules_admin.render_alerts()
 

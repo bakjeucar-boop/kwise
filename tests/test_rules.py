@@ -265,7 +265,7 @@ def test_restore_defaults_previews_before_running(sandbox: Path) -> None:
 
     preview = restore_defaults(RuleOrigin.STATUTORY)
     assert not preview.ok  # 확인 전에는 실행하지 않는다
-    assert "확인 후" in preview.message
+    assert "확인한 뒤" in preview.message
     keys = {change.key for change in preview.changes}
     assert keys == {"power_factor.lagging_standard_pct", "demand.window_months"}
     assert rule_value("demand.window_months") == 6  # 아직 그대로다

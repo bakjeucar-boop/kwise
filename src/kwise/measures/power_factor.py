@@ -23,6 +23,12 @@
 데이터는 15분이고 무효전력이 없다. 추정 역률의 기본값 92%는 제42조가 무효전력계
 미설치 고객에게 적용하는 간주값이라 근거가 있고, 그 값에서 조정액이 정확히 0이
 되어 모르는 채로 금액을 만들어내지 않는다. 실측 역률을 넣으면 바로 재계산된다.
+
+**내려가는 목표도 계산한다** (24세션 1절). 21세션까지는 목표가 현재보다 낮으면
+``ValueError`` 를 던졌고, 화면이 그것을 그대로 띄워 앱이 죽었다. 계산은 성립한다 —
+두 역률에서 요금을 각각 다시 낼 뿐이고 92% 아래로 내려가면 추가가 붙는다. 위 8행이
+말하듯 **역률이 떨어지는 쪽이 이 도구의 실제 관심사**이므로 방향을 막을 이유도 없다.
+거절 대신 늘어나는 요금(음수 절감액)과 주의를 낸다.
 """
 
 from __future__ import annotations
@@ -88,7 +94,7 @@ class PowerFactorResult:
 
     @property
     def improvement_pct(self) -> float:
-        """올리는 역률 폭 (%p)."""
+        """역률 폭 (%p). **음수면 내려가는 쪽이다** (24세션 1절)."""
         return self.target_pct - self.current_pct
 
     @property
@@ -115,7 +121,8 @@ def evaluate_power_factor(
         current_pct: 현재 주간(08~22시) 지상역률. 기본값 92% 는 약관 제42조의
             무효전력계 미설치 간주값이며, 이 값에서는 추가·감액이 0 이다.
         target_pct: 목표 역률. 기본값 97% 는 감액 상한이다 — 더 올려도 요금은
-            내려가지 않으므로 과보상만 남는다.
+            내려가지 않으므로 과보상만 남는다. **현재보다 낮은 값도 받는다** —
+            거절하지 않고 늘어나는 요금을 낸다 (24세션 1절).
         investment_won: 역률 개선 설비 증설·조정 투자비. 사용자 입력이며 기본값이 없다시피
             0 이다 — 0 이면 회수기간을 '즉시' 로 본다.
     """
@@ -124,11 +131,6 @@ def evaluate_power_factor(
     cap = lagging_rebate_cap_pct()
     current_pct = standard if current_pct is None else current_pct
     target_pct = default_target_pct() if target_pct is None else target_pct
-    if target_pct < current_pct:
-        raise ValueError(
-            f"목표 역률({target_pct}%)이 현재({current_pct}%)보다 낮습니다. "
-            "역률 개선 수단은 올리는 방향만 다룹니다."
-        )
     opts = options if options is not None else BillingOptions()
     current_options = replace(opts, power_factor_pct=current_pct)
     target_options = replace(opts, power_factor_pct=target_pct)
@@ -146,6 +148,20 @@ def evaluate_power_factor(
 
     effective_target = min(target_pct, cap)
     notices: list[Notice] = []
+    if target_pct < current_pct:
+        # **내려가는 목표도 계산한다** (24세션 1절). 21세션까지는 여기서
+        # ``ValueError`` 를 던졌고, 화면이 그것을 그대로 띄워 앱이 죽었다.
+        # 계산은 성립한다 — 두 역률에서 요금을 각각 다시 낼 뿐이고, 92% 아래로
+        # 내려가면 기본요금에 추가가 붙는다. 태양광이 역률을 떨어뜨리는 것이
+        # 이 도구의 실제 관심사이므로(:func:`kwise.measures.solar.power_factor_after_pct`)
+        # 내려가는 방향을 막을 이유도 없다. **얼마나 더 내는지를 보인다.**
+        notices.append(
+            warn(
+                f"도입 후 역률 {target_pct:.1f}% 가 현재 {current_pct:.1f}% 보다 낮습니다. "
+                "개선이 아니라 악화이며, 아래 절감액이 음수면 그만큼 요금이 늘어납니다.",
+                fact="power_factor.target_below_current",
+            )
+        )
     if target_pct > cap:
         notices.append(
             warn(
@@ -158,17 +174,18 @@ def evaluate_power_factor(
     if current_pct < standard:
         notices.append(
             warn(
-                f"현재 역률 {current_pct:.1f}% 는 약관 제41조의 유지 의무(지상 92% 이상)에 "
-                "미달합니다. 절감이 아니라 이미 나가고 있는 추가요금을 없애는 것입니다.",
+                f"현재 역률 {current_pct:.1f}% 는 한전 기본공급약관 제41조의 유지 의무"
+                "(지상 92% 이상)에 미달합니다. 절감이 아니라 이미 나가고 있는 추가요금을 "
+                "없애는 것입니다.",
                 fact="power_factor.duty_unmet",
             )
         )
     # **주의** — 추정값이라는 사실은 금액을 그대로 믿으면 안 된다는 뜻이다.
     notices.append(
         warn(
-            "무효전력 실측이 없어 현재 역률은 추정값입니다 (약관 제42조는 30분 누적 "
-            "계량을 요구합니다). 청구서의 역률 항목을 확인하면 current_pct 로 넣어 "
-            "바로 재계산됩니다.",
+            "무효전력 실측이 없어 현재 역률은 추정값입니다 (한전 기본공급약관 제42조는 "
+            "30분 누적 계량을 요구합니다). 청구서의 역률 항목을 1단계 「역률 (선택)」 "
+            "에 넣으면 그 값으로 다시 계산합니다.",
             fact="power_factor.estimated_only",
         )
     )
@@ -177,7 +194,7 @@ def evaluate_power_factor(
         basis(
             f"주간(08~22시) 지상역률 {current_pct:.1f}% → {target_pct:.1f}% 기준입니다. "
             f"기준 {standard:.0f}%, 매 1%당 기본요금의 0.2% "
-            "(기본공급약관 제43조 ②).",
+            "(한전 기본공급약관 제43조 ②).",
             fact="power_factor.standard_window",
         ),
         basis(
@@ -186,15 +203,14 @@ def evaluate_power_factor(
         ),
         # **참고** — 설비 선택과 제도 설명. 숫자를 만들지 않는다.
         info(
-            "역률 개선은 요금표와 약관만으로 확정되는 계산입니다. 감도를 적용하지 "
-            "않습니다 (요구사항서 9.2).",
+            "역률 개선은 요금표와 약관만으로 확정되는 계산입니다. 감도를 적용하지 않습니다.",
             fact="power_factor.no_sensitivity",
         ),
         info(
             "**고정형 역률 개선 설비를 키우면 야간 경부하에서 진상으로 넘어갑니다.** 주간 부하에 "
             f"맞춘 용량이 야간에는 과다해지기 때문입니다. 야간(22~08시) 진상역률 기준은 "
             f"{leading_standard_pct():.0f}% 이며 미달 시 매 1%당 기본요금의 0.2% 가 "
-            f"추가됩니다 (하한 {leading_floor_pct():.0f}%, 제43조 ② 2호). "
+            f"추가됩니다 (하한 {leading_floor_pct():.0f}%, 한전 기본공급약관 제43조 ② 2호). "
             "지상으로 유지되는 한 야간 역률은 100% 로 간주되어 추가가 0 이므로 "
             "(같은 조 나목), 이 추가요금은 곧 **역률 개선 설비 과투자의 신호**입니다.",
             fact="power_factor.leading_overshoot",
@@ -203,7 +219,7 @@ def evaluate_power_factor(
             "**자동제어형 역률 개선 설비를 쓰면 부하에 따라 투입 단수가 조절되어 야간 "
             "진상을 피할 수 있습니다.** 고정형 역률 개선 설비 한 벌로 주간 97% 를 맞추면 "
             "야간에 되돌려 주게 됩니다. 설치비는 설비 구성에 따라 달라 본 도구가 "
-            "산출하지 않습니다 — investment_won 으로 넣으면 회수기간이 재계산됩니다.",
+            "산출하지 않습니다 — 견적을 「역률 개선 투자비」 에 넣으면 회수기간이 나옵니다.",
             fact="power_factor.auto_control",
         ),
     ]

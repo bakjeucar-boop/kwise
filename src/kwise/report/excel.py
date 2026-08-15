@@ -73,8 +73,7 @@ __all__ = [
 
 NO_PV_SENSITIVITY_NOTE = (
     "태양광이 없어 감도를 적용할 항목이 없습니다. 감도는 PV 출력의 첨예도에만 적용하며, "
-    "요금제 전환·계약전력 조정·역률 개선은 확정 계산이라 감도를 쓰지 않습니다 "
-    "(요구사항서 9.2)."
+    "요금제 전환·계약전력 조정·역률 개선은 확정 계산이라 감도를 쓰지 않습니다."
 )
 
 # 「수단별 결과」 시트의 열. 켠 수단이 없어도 이 구조는 유지한다.
@@ -336,7 +335,8 @@ def measure_summary_frame(
                     f"{demand_response.participation_hours:,.0f}시간, 하루 상한 "
                     f"{demand_response.daily_hours_cap:,.0f}시간). "
                     f"{demand_response.participation_notice} "
-                    "투자비는 0원이지만 감축 미달 시 실적위약금이 있습니다(별표26). " + DR_ADVISORY
+                    "투자비는 0원이지만 감축 미달 시 실적위약금이 있습니다 "
+                    "(전력시장운영규칙 별표26). " + DR_ADVISORY
                 ),
             }
         )
@@ -359,7 +359,7 @@ def measure_summary_frame(
                 "확실성": str(power_factor.certainty),
                 "비고": (
                     f"주간(08~22시) 지상역률 기준 92%, 매 1%당 기본요금의 0.2% "
-                    f"(기본공급약관 제43조). 현재 역률요금 "
+                    f"(한전 기본공급약관 제43조). 현재 역률요금 "
                     f"{format_won(power_factor.current_charge_won)} 원 → "
                     f"{format_won(power_factor.target_charge_won)} 원. "
                     "야간 진상 95% 조항에 걸리지 않도록 시간대별 투입을 제어하십시오."

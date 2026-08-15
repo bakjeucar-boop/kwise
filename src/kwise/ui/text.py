@@ -50,6 +50,7 @@ __all__ = [
     "period",
     "range_text",
     "ratio_pct",
+    "tip",
     "won",
     "won_short",
 ]
@@ -58,6 +59,9 @@ __all__ = [
 # 고르는 순간에 읽히지 않고 화면만 길어진다. 한 곳에 모아 두어 같은 말이 두
 # 화면에서 다르게 적히는 것을 막는다. 문단은 빈 줄로 나눈다 — Streamlit 의
 # ``help=`` 는 마크다운을 해석한다.
+#
+# **그래서 툴팁도 escape 한다** (24세션 2절). 여기 있는 글을 ``help=`` 에 곧장
+# 넣지 말고 :func:`tip` 으로 꺼낸다 — 굵게는 살리고 물결표만 막는다.
 TIPS: dict[str, str] = {
     "certainty": "\n\n".join(
         (
@@ -65,7 +69,9 @@ TIPS: dict[str, str] = {
             "**높음** 요금표와 약관만으로 확정됩니다 (요금제 전환·계약전력·역률).",
             "**중간** 발전량 예측이 끼어 있습니다 (태양광).",
             "**중간~낮음** 운전 전략과 열화에 좌우됩니다 (ESS·잉여 활용).",
-            "조합의 등급은 **가장 낮은 구성 요소**를 따릅니다.",
+            # 「조합의 등급은 가장 낮은 구성 요소를 따릅니다」 를 뺐다 (24세션 3-3 · F).
+            # 3단계 근거(``combination.certainty_rule``)가 같은 말을 하고, 이 툴팁이
+            # 붙는 자리는 **단독 평가** 카드라 조합 규칙을 적을 곳이 아니다.
         )
     ),
     "sensitivity": "\n\n".join(
@@ -89,8 +95,8 @@ TIPS: dict[str, str] = {
         (
             "**확보할 여유율** — 향후 부하 증가와 예측 오차에 대비한 완충입니다.",
             "높이면 안전하지만 절감액이 줄고, 낮추면 절감액이 늘지만 초과 위험이 커집니다.",
-            "**한 번의 초과가 12개월간 적용됩니다.** 기본요금은 직전 12개월 중 "
-            "최대수요로 결정되기 때문입니다.",
+            # 「한 번의 초과가 12개월간 적용됩니다」 를 뺐다 (24세션 3-3 · B).
+            # 같은 카드 본문의 계약전력 변경 경고가 그 말을 이미 한다.
         )
     ),
 }
@@ -189,10 +195,22 @@ CHART_TIPS: dict[str, str] = {
 }
 
 
+def tip(key: str) -> str:
+    """지표·입력 툴팁. **escape 해서 낸다** (24세션 2절).
+
+    ``help=`` 는 마크다운을 해석하므로 ``08~22시`` 가 한 줄에 둘 있으면 그 사이가
+    취소선이 된다. 굵게는 살아야 하므로 물결표만 막는다.
+    """
+    try:
+        return markdown_safe(TIPS[key])
+    except KeyError as exc:  # pragma: no cover - 개발 중 오타를 잡는 자리다
+        raise KeyError(f"등록되지 않은 툴팁입니다: {key!r}") from exc
+
+
 def chart_tip(key: str) -> str:
     """그래프 툴팁. **없는 열쇠는 곧바로 드러낸다** — 조용히 빈 물음표를 두지 않는다."""
     try:
-        return CHART_TIPS[key]
+        return markdown_safe(CHART_TIPS[key])
     except KeyError as exc:  # pragma: no cover - 개발 중 오타를 잡는 자리다
         raise KeyError(f"등록되지 않은 그래프 툴팁입니다: {key!r}") from exc
 
@@ -321,5 +339,10 @@ def payback(years: float | None, *, investment_won: float | None = None) -> str:
 
 
 def certainty_badge(certainty: Certainty | str) -> str:
-    """확실성 등급. **등급만 낸다** — 근거는 매뉴얼로 보낸다 (10.2)."""
-    return f"확실성 {certainty}"
+    """확실성 등급. **등급만 낸다** — 근거는 매뉴얼로 보낸다 (10.2).
+
+    등급 이름의 물결표(``중간~낮음``)를 화면 범위 기호로 바꿔 낸다 (24세션 2절).
+    지표 delta 자리는 escape 한 역슬래시가 그대로 보이므로 :func:`markdown_safe`
+    를 쓸 수 없고, 등급 이름 자체는 Excel·Word·문서가 함께 쓰므로 고치지 않는다.
+    """
+    return f"확실성 {str(certainty).replace('~', RANGE)}"

@@ -20,6 +20,7 @@ import datetime as dt
 import inspect
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -1636,3 +1637,170 @@ def test_감도_상세가_접힘_안에_있다() -> None:
     # 지표를 줄줄이 적는 반복문이 접힘 **안**에 있어야 한다.
     loop_at = body.index("for item in shown:")
     assert expander_at < loop_at, "감도 목록이 본문에 남아 있습니다."
+
+
+# ======================================================== 24세션 · 실주행 감사
+#
+# **소스 훑기로는 툴팁까지 못 본다** (24세션 2절). ``help=`` 로 가는 글은 대부분
+# 함수가 만들어 내므로 문자열 상수를 훑어서는 잡히지 않는다 — 물결표 escape 가
+# 툴팁에만 빠져 있던 것이 그래서 세 세션을 살아남았다. 도구
+# (``tools\screen_audit.py``)와 **같은 함수**로 화면을 실제로 띄워 본다.
+
+
+def _audit() -> Any:
+    """``tools\\screen_audit.py`` 를 불러온다. **도구와 같은 함수를 쓴다.**"""
+    import sys
+
+    sys.path.insert(0, str(Path("tools").resolve()))
+    import screen_audit  # type: ignore[import-not-found]
+
+    return screen_audit
+
+
+@pytest.fixture(scope="module")
+def screen_lines() -> tuple[object, ...]:
+    """수단 일곱을 켠 화면 한 벌의 문구 전부. **앱을 한 번만 띄운다.**
+
+    태양광 입력은 넣지 않는다 — 시험은 기상 사전 취득분에서 격리되어 있어
+    (``conftest.isolated_weather_archive``) 발전량을 계산할 수 없다. 태양광 카드의
+    문구는 소스 훑기(:func:`test_보고서와_excel_문구도_같은_잣대다`)가 함께 본다.
+    """
+    return _audit().collect(solar=False)
+
+
+def test_화면_문구를_실주행으로_모은다(screen_lines: tuple[object, ...]) -> None:
+    """수집기가 깨지면 아래 시험이 **조용히 통과한다.** 먼저 잡는다."""
+    slots = {getattr(item, "slot", "") for item in screen_lines}
+    assert len(screen_lines) >= 300, "화면 문구를 못 모았습니다. 수집기가 깨졌습니다."
+    assert {"본문", "툴팁", "라벨", "지표", "표"} <= slots, slots
+
+
+def test_툴팁까지_escape_한다(screen_lines: tuple[object, ...]) -> None:
+    """**렌더 직전 문자열에 맨 물결표가 없다** (24세션 2절).
+
+    ``st.caption`` 만 escape 하고 그 옆 ``help=`` 를 빠뜨리면 물음표 안에서
+    ``3~6월·10~11월`` 이 취소선으로 그려진다. 마크다운을 해석하는 자리를 모두 본다.
+    """
+    offenders = _audit().offenders(screen_lines)
+    assert not offenders.get("맨 물결표"), [
+        f"[{item.slot}] {item.where} :: {item.text[:80]}" for item in offenders["맨 물결표"]
+    ]
+
+
+@pytest.mark.parametrize(
+    "rule", ["코드 식별자", "요구사항서 참조", "규정 이름 없는 조문", "규정 이름 없는 별표"]
+)
+def test_화면에_개발자_언어가_없다(rule: str, screen_lines: tuple[object, ...]) -> None:
+    """코드 식별자·내부 문서 번호·규정 이름 없는 조문 (24세션 4절)."""
+    offenders = _audit().offenders(screen_lines)
+    assert not offenders.get(rule), [
+        f"[{item.slot}] {item.where} :: {item.text[:80]}" for item in offenders[rule]
+    ]
+
+
+@pytest.mark.parametrize(
+    "rule", ["코드 식별자", "요구사항서 참조", "규정 이름 없는 조문", "규정 이름 없는 별표"]
+)
+def test_보고서와_excel_문구도_같은_잣대다(rule: str) -> None:
+    """**화면만으로는 닿지 않는다** (24세션 4-3). 보고서 본문·부록과 Excel 비고는
+    화면에 없지만 사용자가 읽는 글이다. 소스의 «사용자에게 가는» 문자열을 훑는다.
+    """
+    audit = _audit()
+    lines = audit.source_lines()
+    assert len(lines) >= 1_000, "소스 문구를 못 모았습니다. 추출기가 깨졌습니다."
+    offenders = audit.offenders(lines)
+    assert not offenders.get(rule), [
+        f"{item.where} :: {item.text[:80]}" for item in offenders[rule]
+    ]
+
+
+# ======================================================== 24세션 · 입력 끝값
+
+
+def test_역률_목표를_현재보다_낮춰도_화면이_살아_있다() -> None:
+    """**예외를 화면에 던지지 않는다** (24세션 1절).
+
+    「도입 후 지상역률」 을 현재값 아래로 내리면 ``ValueError`` 가 화면에 그대로
+    떴다. 이제는 늘어나는 요금을 낸다.
+
+    **현재 역률을 넣은 사람이 겪는다.** 목표 입력의 하한은 기준 92% 라 기본값
+    (간주 92%)에서는 내려갈 자리가 없다. 청구서를 보고 97% 를 넣으면 그 아래
+    전 구간이 「현재보다 낮은 목표」 가 된다 — 사용자가 겪은 것이 96.9% 였다.
+
+    **위젯을 실제로 조작한다.** 세션에 값을 미리 넣는 방식은 통하지 않는다 —
+    이 입력은 ``value=`` 를 함께 주므로 첫 그리기에서 그 기본값이 이긴다.
+    """
+    screen = _running(
+        measure_on_power_factor=True,
+        contract_form=ContractForm(
+            contract_type="general_b",
+            voltage="high_a",
+            option="II",
+            contract_kw=6_000.0,
+            power_factor_pct=97.0,
+        ),
+    )
+    target = screen.number_input(key="measure_power_factor_target")
+    lowered = target.set_value(92.0).run(timeout=600)
+    assert not lowered.exception, lowered.exception
+    assert lowered.number_input(key="measure_power_factor_target").value == 92.0
+
+    body = " ".join(_screen_lines(lowered))
+    assert "개선이 아니라 악화" in body, "요금이 늘어난다는 사실을 적어야 합니다."
+
+
+def test_관측이_없는_날을_대표일로_골라도_화면이_살아_있다() -> None:
+    """**결측이 온종일인 날도 고를 수 있다** (24세션 1절).
+
+    「일일 곡선 대표일」 의 날짜 입력은 분석 기간 전체를 허용하는데, 그 안에는
+    관측이 하나도 없는 날이 있다 (샘플은 2023-11-04 부터 아흐레). 그 날을 고르면
+    ``peak_window`` 가 ``ValueError: Encountered all NA values`` 를 던져 화면이
+    통째로 죽었다.
+    """
+    screen = _running(
+        measure_on_power_factor=True,
+        measure_on_ess=True,
+        measure_common_ref_day="custom",
+        measure_common_ref_day_custom=dt.date(2023, 11, 4),
+    )
+    assert not screen.exception, screen.exception
+
+
+#: 수치 입력의 **끝값**. 위젯이 허용하는 값이면 계산이 받아 주어야 한다.
+EDGE_VALUES: tuple[tuple[str, float], ...] = (
+    ("measure_power_factor_target", 92.0),  # 하한 — 기준 역률
+    ("measure_power_factor_target", 100.0),  # 상한 — 감액 상한을 넘는다
+    ("measure_power_factor_investment", 0.0),
+    ("measure_contract_margin", 0.0),  # 여유율 하한
+    ("measure_contract_margin", 0.3),  # 여유율 상한
+    ("measure_ess_fixed_cost", 0.0),
+    ("measure_ess_per_kwh_cost", 0.0),  # 두 계수가 함께 0 이 된다
+    ("measure_ess_total_cost", 1_000_000_000.0),
+    ("measure_surplus_price", 0.0),
+)
+
+
+def test_입력_끝값을_훑어도_화면이_죽지_않는다() -> None:
+    """**사용자 입력으로 예외가 나는 자리를 훑는다** (24세션 1절).
+
+    역률 목표가 그랬듯, 위젯이 내주는 값을 계산이 거절하면 그 예외가 화면에
+    그대로 뜬다. 받을 수 없는 값이면 **안내를 내지, 화면을 죽이지 않는다.**
+
+    한 화면에서 값을 **차례로 쌓는다** — 끝값이 겹쳤을 때가 가장 험한 조합이고,
+    카드를 다시 그리는 비용도 한 번으로 끝난다.
+    """
+    # 태양광만 뺀다 — 시험은 기상 사전 취득분에서 격리되어 있다.
+    keys = ("tariff_switch", "contract", "demand_response", "power_factor", "ess", "surplus")
+    screen = _running(**{f"measure_on_{key}": True for key in keys})
+    assert not screen.exception, screen.exception
+
+    touched = 0
+    for key, value in EDGE_VALUES:
+        try:
+            widget = screen.number_input(key=key)
+        except KeyError:  # 그 화면에 없는 입력은 건너뛴다
+            continue
+        screen = widget.set_value(value).run(timeout=900)
+        touched += 1
+        assert not screen.exception, f"{key} = {value}: {screen.exception}"
+    assert touched >= 7, f"끝값을 넣은 입력이 {touched}개뿐입니다. 키가 바뀌었습니다."

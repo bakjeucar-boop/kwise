@@ -175,7 +175,7 @@ def diagnose(
         notices.append(
             block(
                 "계약 정보가 없어 요금 구조와 절감액을 산출하지 않았습니다. "
-                "계약종별·전압구분·선택요금·계약전력을 입력하면 나옵니다 (요구사항서 3.2).",
+                "계약종별·전압구분·선택요금·계약전력을 입력하면 나옵니다.",
                 fact="diagnose.no_contract",
             )
         )
@@ -227,7 +227,7 @@ def diagnose(
     else:
         notices.append(
             block(
-                "계약전력을 입력하면 계약 적정성을 진단합니다 (요구사항서 6.4).",
+                "계약전력을 입력하면 계약 적정성을 진단합니다.",
                 fact="diagnose.no_contract_kw",
             )
         )

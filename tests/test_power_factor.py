@@ -361,13 +361,36 @@ def test_payback_uses_the_investment(
     assert result.payback_years < 2.5  # 투자비가 작아 회수가 빠르다
 
 
-def test_lowering_the_factor_is_rejected(
+def test_lowering_the_factor_costs_money_instead_of_raising(
     sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
 ) -> None:
-    with pytest.raises(ValueError, match="올리는 방향만"):
-        evaluate_power_factor(
-            sample_usage, tariff, CURRENT, current_pct=95.0, target_pct=92.0, quality=sample_report
-        )
+    """**내려가는 목표를 거절하지 않는다** (24세션 1절).
+
+    21세션까지는 ``ValueError`` 를 던졌고 화면이 그것을 그대로 띄워 앱이 죽었다.
+    계산은 성립하므로 **늘어나는 요금을 보인다** — 절감액이 음수다.
+    """
+    result = evaluate_power_factor(
+        sample_usage, tariff, CURRENT, current_pct=95.0, target_pct=92.0, quality=sample_report
+    )
+    assert result.saving_won < 0, "역률을 낮추면 요금이 늘어야 합니다."
+    assert result.improvement_pct < 0
+    assert result.payback_years is None  # 절감이 없으므로 회수기간도 없다
+    facts = {item.fact for item in result.notices}
+    assert "power_factor.target_below_current" in facts
+
+
+def test_lowering_below_the_standard_adds_a_surcharge(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """92% 아래로 내려가면 기본요금에 **추가**가 붙는다 — 그만큼 요금이 더 는다."""
+    mild = evaluate_power_factor(
+        sample_usage, tariff, CURRENT, current_pct=95.0, target_pct=92.0, quality=sample_report
+    )
+    steep = evaluate_power_factor(
+        sample_usage, tariff, CURRENT, current_pct=95.0, target_pct=85.0, quality=sample_report
+    )
+    assert steep.saving_won < mild.saving_won
+    assert steep.target_charge_won > mild.target_charge_won
 
 
 def test_power_factor_saving_is_independent_of_sensitivity(

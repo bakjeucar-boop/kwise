@@ -44,11 +44,11 @@ __all__ = [
 ]
 
 SENSITIVITY_NOTE = (
-    "감도는 태양광 출력의 **첨예도**만 조정합니다 (요구사항서 9.2). "
+    "감도는 태양광 출력의 **첨예도**만 조정합니다. "
     "adjusted(t) = 일평균발전 + (기준(t) − 일평균발전) × s 이므로 일별 총 발전량이 "
     "보존되고, 전력량요금 절감액은 세 시나리오에서 거의 같습니다. 벌어지는 것은 "
     "피크에 걸린 기본요금 절감액입니다. 발전량 예측의 불확실성이 총량이 아니라 "
-    "정오 첨예도에 있기 때문입니다 (9.1). 요금제 전환·계약전력 조정·역률 개선은 "
+    "정오 첨예도에 있기 때문입니다. 요금제 전환·계약전력 조정·역률 개선은 "
     "실측 데이터와 요금표만으로 확정되는 계산이라 감도를 적용하지 않습니다. "
     "확률 표기(P90 등)는 쓰지 않습니다."
 )
@@ -101,18 +101,28 @@ class SensitivityRange:
         scale = max(abs(self.low), abs(self.high))
         return (self.high - self.low) / scale if scale > 0 else 0.0
 
+    def range_text(self) -> str:
+        """지표 이름을 뺀 값과 범위. **이름은 부르는 쪽이 붙인다** (24세션 3절).
+
+        화면 목록이 ``- **요금적용전력(kW)** {text()}`` 로 적었더니 이름이 한 줄에
+        두 번 나왔다. 이름을 이미 굵게 낸 자리에는 이쪽을 쓴다.
+        """
+        if self.base is None:
+            return "미산출"
+        digits = self.decimals
+        body = f"{self.base:,.{digits}f}{self.unit}"
+        if self.low is None or self.high is None:
+            return body
+        return (
+            f"{body} "
+            f"(프로파일 감도 범위 {self.low:,.{digits}f} ~ {self.high:,.{digits}f}{self.unit})"
+        )
+
     def text(self) -> str:
         """``기본요금 절감액 31,518,402원 (프로파일 감도 범위 28,968,918 ~ 32,657,891원)``."""
         if self.base is None:
             return f"{self.metric}: 미산출"
-        digits = self.decimals
-        body = f"{self.base:,.{digits}f}{self.unit}"
-        if self.low is None or self.high is None:
-            return f"{self.metric} {body}"
-        return (
-            f"{self.metric} {body} "
-            f"(프로파일 감도 범위 {self.low:,.{digits}f} ~ {self.high:,.{digits}f}{self.unit})"
-        )
+        return f"{self.metric} {self.range_text()}"
 
 
 def sensitivity_comparison(

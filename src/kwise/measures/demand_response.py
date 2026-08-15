@@ -38,7 +38,6 @@ from kwise.diagnose.dr import (
     DrResourceType,
     dr_bid_restriction_months,
     dr_event_hours,
-    dr_max_events_per_day,
 )
 from kwise.measures.base import Certainty
 from kwise.notices import Notice, basis, block, info, warn
@@ -196,7 +195,7 @@ def evaluate_demand_response(
         warn(
             "**투자비는 0원이지만 리스크는 0이 아닙니다.** 감축계획량을 채우지 못하면 "
             "실적위약금 = (감축계획량 − 실제감축량) × Max(하루전에너지가격, 0) 이 "
-            "부과됩니다 (별표26).",
+            "부과됩니다 (전력시장운영규칙 별표26).",
             fact="dr.penalty_risk",
         ),
         # **근거** — 숫자가 어디서 나왔는가. 산식·모수·판정 창이다.
@@ -221,12 +220,9 @@ def evaluate_demand_response(
             f"{profile.daily_hours_cap:,.0f}시간입니다.",
             fact="dr.annual_reducible",
         ),
-        basis(
-            f"운영 시간대는 {profile.window_label} 입니다. 점심시간은 빠집니다. "
-            f"하루 한도는 {dr_max_events_per_day()}회 × 최대 "
-            f"{dr_event_hours()[1]:,.0f}시간입니다.",
-            fact="dr.window_rule",
-        ),
+        # **시간대와 한도는 카드 본문이 이미 낸다** (24세션 3-3 · D). 여기서는
+        # 본문에 없는 사실 하나만 적는다 — 왜 창이 둘로 갈라져 있는가.
+        basis("점심시간(12–13시)은 운영 시간대에서 빠집니다.", fact="dr.window_rule"),
         basis(
             "**기본요금 절감은 계산하지 않았습니다.** SMP 기준으로 산발적으로 입찰하므로 "
             "참여일이 연중 최대수요일과 겹칠 확률이 낮습니다. 편익은 정산금 하나로 봅니다.",
@@ -258,7 +254,7 @@ def evaluate_demand_response(
                 f"{outcomes}{_object_particle(outcomes)} 산출하지 않았습니다. "
                 "감축 가능량(kWh)만 참고하십시오 — 정산 단가는 전력거래소 월별 "
                 "순편익가격과 사업자 수수료에, 위약금은 하루전에너지가격에 달려 "
-                "있습니다 (별표26).",
+                "있습니다 (전력시장운영규칙 별표26).",
                 fact="dr.no_price",
             )
         )

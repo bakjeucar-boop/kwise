@@ -355,7 +355,9 @@ def _contract_block(table: TariffTable, building: BuildingInfo | None) -> Contra
                 options,
                 index=options.index(default_option),
                 format_func=option_label,
-                help="현행 선택요금입니다. 다른 선택요금은 2단계에서 모두 다시 계산합니다.",
+                # 뒷문장(「다른 선택요금은 2단계에서 다시 계산합니다」)은 7.1 카드
+                # 개요와 같은 말이라 뺐다 (24세션 3-3 · J).
+                help="청구서에 적힌 현행 선택요금입니다.",
             )
 
         lagging, leading = _saved_power_factor()
@@ -552,7 +554,7 @@ def _pattern_formulas(pattern: object) -> dict[str, str]:
     operating = getattr(pattern, "operating_hours", (9, 18))
     night_text = f"{night[0]}시{fmt.RANGE}{night[1]}시"
     operating_text = f"평일 {operating[0]}시{fmt.RANGE}{operating[1]}시"
-    return {
+    formulas = {
         "load_factor": (
             "평균 수요 ÷ 최대 수요.\n\n"
             "낮을수록 짧은 피크 하나에 기본요금이 매여 피크 저감 여지가 큽니다."
@@ -570,6 +572,8 @@ def _pattern_formulas(pattern: object) -> dict[str, str]:
             "높을수록 사람이 없는 동안 쓰는 전기가 많아 운전 개선 여지가 큽니다."
         ),
     }
+    # **툴팁도 escape 한다** (24세션 2절). ``help=`` 는 마크다운을 해석한다.
+    return {key: fmt.markdown_safe(value) for key, value in formulas.items()}
 
 
 def _pattern_block(diagnosis: Diagnosis) -> None:

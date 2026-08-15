@@ -21,9 +21,11 @@ from kwise.tariff.schema import TariffSelection, TariffTable
 __all__ = [
     "OPTION_LABELS",
     "OPTION_ORDER",
+    "SEASON_LABELS",
     "contract_label",
     "option_label",
     "option_sort_key",
+    "season_label",
     "selection_label",
     "voltage_label",
 ]
@@ -42,6 +44,18 @@ OPTION_LABELS: dict[str, str] = {
 #: 자료마다 Ⅱ·Ⅲ·Ⅰ 처럼 뒤섞여, 읽는 사람이 "왜 이 순서인가" 를 먼저 묻는다.
 #: 어느 쪽이 유리한지는 표식과 차액 차트가 말한다.
 OPTION_ORDER: tuple[str, ...] = ("I", "II", "III", "single")
+
+
+#: 계절 표기. **계산 모듈의 문구에도 들어간다** (24세션 4-1) — 차익거래 근거가
+#: 계절별 일수를 사전 그대로 찍어 ``{'spring_fall': 103, …}`` 이 화면에 나갔다.
+#: 표기 규약이므로 선택요금과 같은 자리에 둔다. :mod:`kwise.report.columns` 의
+#: 값 번역표도 여기를 본다 — 두 벌이면 한쪽만 고쳐진다.
+SEASON_LABELS: dict[str, str] = {"spring_fall": "봄·가을", "summer": "여름", "winter": "겨울"}
+
+
+def season_label(season: str) -> str:
+    """``spring_fall`` → ``봄·가을``. 모르는 값은 그대로 둔다 — 지어내지 않는다."""
+    return SEASON_LABELS.get(season, season)
 
 
 def option_label(option: str) -> str:

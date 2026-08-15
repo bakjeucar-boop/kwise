@@ -567,3 +567,21 @@ def test_empty_case_list_is_rejected(tmp_path: Path) -> None:
     path.write_text("cases: []\n", encoding="utf-8")
     with pytest.raises(ValueError, match="케이스 정의가 비어 있습니다"):
         load_batch_config(path)
+
+
+def test_peak_window_on_a_day_without_observations() -> None:
+    """**관측이 하나도 없는 날** (24세션 1절).
+
+    ``idxmax`` 는 전부 NaN 이면 ``ValueError`` 를 던진다. 결측이 온종일인 날을
+    대표일로 고르면 그것이 화면까지 올라와 앱이 죽었다. 잘라 낼 피크가 없으면
+    **빈 프레임**이고, 부르는 쪽 셋이 그것을 「그릴 것이 없다」 로 처리한다.
+    """
+    from kwise.report.frames import peak_window
+
+    times = pd.date_range("2023-11-04", periods=4, freq="15min")
+    frame = pd.DataFrame({"시각": times, "원부하(kW)": [float("nan")] * 4})
+    assert peak_window(frame).empty
+
+    # 관측이 하나라도 있으면 그 자리를 중심으로 자른다.
+    frame.loc[2, "원부하(kW)"] = 10.0
+    assert len(peak_window(frame)) == 4

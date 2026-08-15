@@ -297,7 +297,7 @@ def evaluate_combination(
                 warn(
                     f"경부하 충전이 목표를 넘는 새 피크를 만들었습니다. "
                     f"충전 시간대 최대 {dispatch.charge_window_peak_kw:,.1f} kW > 목표 "
-                    f"{spec.ess_target_kw:,.0f} kW. ess_charge_limit_kw 로 제한하십시오.",
+                    f"{spec.ess_target_kw:,.0f} kW. 충전 전력을 목표 아래로 제한해야 합니다.",
                     fact="ess.charge_new_peak",
                 )
             )
@@ -504,7 +504,7 @@ def compare_combinations(
         ),
         basis(
             "조합의 절감액은 수단별 절감액의 합이 아닙니다. 조합마다 부하를 다시 만들어 "
-            "요금을 처음부터 산출했습니다 (요구사항서 8장).",
+            "요금을 처음부터 산출했습니다.",
             fact="combination.not_additive",
         ),
         basis("확실성 등급은 가장 낮은 구성 요소를 따릅니다.", fact="combination.certainty_rule"),

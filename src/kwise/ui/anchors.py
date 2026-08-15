@@ -28,6 +28,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from kwise.ui.text import markdown_safe
+
 __all__ = [
     "ANCHORS",
     "ANCHOR_DOC_FILENAME",
@@ -336,8 +338,9 @@ def manual_tip(key: str) -> str:
     """화면 요소의 ``help=`` 에 넣을 글 (16세션 4절).
 
     **없는 키를 쓰면 바로 실패한다** — 빈 툴팁을 화면에 내지 않는다.
+    **escape 해서 낸다** (24세션 2절) — ``help=`` 도 마크다운을 해석한다.
     """
-    return anchor(key).tip
+    return markdown_safe(anchor(key).tip)
 
 
 _DOC_HEADER = f"""# 매뉴얼 앵커 목록

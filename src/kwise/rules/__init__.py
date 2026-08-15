@@ -459,7 +459,7 @@ def restore_defaults(
         return EditResult(
             ok=False,
             message=(
-                f"출고 복원 대상 {len(diffs)}건입니다. 확인 후 confirmed=True 로 다시 부르십시오."
+                f"출고 복원 대상 {len(diffs)}건입니다. 아래 목록을 확인한 뒤 진행하십시오."
                 if diffs
                 else "출고값과 다른 항목이 없습니다. 복원할 것이 없습니다."
             ),

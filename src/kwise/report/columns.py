@@ -16,15 +16,17 @@ from collections.abc import Iterable
 
 import pandas as pd
 
-from kwise.tariff.labels import OPTION_LABELS, option_label
+from kwise.tariff.labels import OPTION_LABELS, SEASON_LABELS, option_label, season_label
 
 __all__ = [
     "COLUMN_LABELS",
     "OPTION_LABELS",
+    "SEASON_LABELS",
     "VALUE_LABELS",
     "column_label",
     "localize",
     "option_label",
+    "season_label",
     "value_label",
 ]
 
@@ -67,7 +69,8 @@ COLUMN_LABELS: dict[str, str] = {
 #: 이 남는다 — 코드 식별자를 화면에 내지 않는다는 12세션 규약을 값이 깬 자리다.
 #: 열 이름을 바꾸기 **전**의 이름으로 찾는다.
 VALUE_LABELS: dict[str, dict[str, str]] = {
-    "season": {"spring_fall": "봄·가을", "summer": "여름", "winter": "겨울"},
+    # 계절 표기는 :mod:`kwise.tariff.labels` 에 있다 — 계산 모듈도 쓴다 (24세션 4-1).
+    "season": SEASON_LABELS,
     "band": {"light": "경부하", "mid": "중간부하", "peak": "최대부하"},
     "day_type": {"weekday": "평일", "saturday": "토요일", "holiday": "휴일"},
 }

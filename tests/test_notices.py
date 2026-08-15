@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 from pathlib import Path
 
 import pytest
@@ -42,6 +43,7 @@ from kwise.notices import (
 from kwise.quality import QualityReport
 from kwise.tariff import BillingResult, TariffSelection, TariffTable
 from kwise.ui.notices import screen_notices, tooltip_text
+from kwise.ui.text import markdown_safe
 
 # 이관을 마친 결과 객체들. **여기 있는 것은 문자열 리스트를 들고 있으면 안 된다.**
 MIGRATED = (
@@ -180,8 +182,10 @@ def test_근거는_툴팁으로_간다(sample_ess: EssResult) -> None:
 
     rendered = tooltip_text(sample_ess.notices, header="**이 숫자가 어디서 나왔나**")
     assert rendered.startswith("**이 숫자가 어디서 나왔나**")
+    # **툴팁도 escape 한다** (24세션 2절) — ``help=`` 가 마크다운을 해석한다.
     for line in grounds:
-        assert line in rendered
+        assert markdown_safe(line) in rendered
+    assert not re.search(r"(?<!\\)~", rendered), "툴팁에 맨 물결표가 남았습니다."
 
 
 def test_근거는_보고서_본문으로_간다(sample_ess: EssResult) -> None:

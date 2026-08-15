@@ -491,15 +491,16 @@ def solar_curve(
                 f"{money.won(largest.power_factor_extra_won, reason='—')} 늘어 절감액이 "
                 f"{money.won(largest.total_saving_won, reason='—')} → "
                 f"{money.won(largest.saving_after_power_factor_won, reason='—')} 이 됩니다. "
-                "역률 개선 설비 용량 조정이 필요합니다 (기본공급약관 제41·43조, 요구사항서 5.7).",
+                "역률 개선 설비 용량 조정이 필요합니다 "
+                "(한전 기본공급약관 제41·43조).",
                 fact="solar.power_factor_drop",
             )
         )
     notices += [
         # **근거** — 절감액·역률 판정이 어느 창·어느 계수에서 나왔는가.
         basis(
-            f"감도 첨예도 계수 s={sharpness:.2f} 를 PV 출력에 적용했습니다. "
-            "일별 총 발전량은 보존되고 피크만 달라집니다 (요구사항서 9.2).",
+            f"감도 첨예도 계수 {sharpness:.2f} 를 PV 출력에 적용했습니다. "
+            "일별 총 발전량은 보존되고 피크만 달라집니다.",
             fact="solar.sharpness",
         ),
         basis(
@@ -508,20 +509,19 @@ def solar_curve(
         ),
         basis(
             f"역률 판정 창은 08~22시(구간 시작 기준)이며 기준은 지상 "
-            f"{lagging_standard_pct():.0f}% 입니다 (기본공급약관 제43조 ②). "
+            f"{lagging_standard_pct():.0f}% 입니다 (한전 기본공급약관 제43조 ②). "
             f"도입 전 추정 역률 {power_factor_pct:.1f}% 에서 시작합니다.",
             fact="solar.power_factor_window",
         ),
         # **참고** — 모델의 한계. 전제이지 산식이 아니다.
         info(
-            "발전량 예측은 피크 발전량을 과소 산출하는 경향이 있어 결과가 보수적입니다 "
-            "(요구사항서 9.1).",
+            "발전량 예측은 피크 발전량을 과소 산출하는 경향이 있어 결과가 보수적입니다.",
             fact="solar.conservative_model",
         ),
         info(PV_COST_BASIS_NOTE, fact="solar.cost_basis"),
         info(
             "역률요금은 추정 역률 기반 참고 산출입니다. 무효전력 실측이 없습니다 "
-            "(약관 제42조는 30분 누적 계량을 요구하는데 우리 데이터는 15분이고 "
+            "(한전 기본공급약관 제42조는 30분 누적 계량을 요구하는데 우리 데이터는 15분이고 "
             "무효전력이 없습니다).",
             fact="solar.power_factor_estimated",
         ),

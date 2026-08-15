@@ -59,14 +59,17 @@ def screen_notices(*groups: Iterable[Notice]) -> tuple[Notice, ...]:
 def tooltip_text(*groups: Iterable[Notice], header: str = "") -> str:
     """화면 **툴팁** 한 덩이 — 근거만. 없으면 빈 문자열이다.
 
-    Streamlit 의 ``help=`` 는 마크다운을 해석하므로 escape 하지 않는다 — 툴팁
-    안에서는 굵게가 그대로 살아야 읽힌다.
+    **툴팁도 escape 한다** (24세션 2절). ``help=`` 는 마크다운을 해석하므로
+    ``08~22시`` 가 한 줄에 둘 있으면 그 사이가 취소선이 된다 — 본문과 같은 이유다.
+    21세션까지는 "해석하므로 escape 하지 않는다" 고 적혀 있었는데, 해석하는 것이
+    바로 escape 해야 할 이유였다. :func:`markdown_safe` 는 물결표만 막으므로
+    굵게는 그대로 산다.
     """
     lines = tooltip(*groups)
     if not lines:
         return ""
-    body = "\n".join(f"- {line}" for line in lines)
-    return f"{header}\n\n{body}" if header else body
+    body = "\n".join(f"- {markdown_safe(line)}" for line in lines)
+    return f"{markdown_safe(header)}\n\n{body}" if header else body
 
 
 def report_notices(*groups: Iterable[Notice]) -> tuple[Notice, ...]:

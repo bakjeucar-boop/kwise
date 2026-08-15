@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from kwise.notices import Notice, basis, block, warn
+from kwise.notices import Notice, block, warn
 from kwise.rules import assumption, rule_value
 from kwise.tariff import TariffSelection
 
@@ -62,8 +62,8 @@ _MARGIN_NOTICE = (
 )
 _FLOOR_UNKNOWN = (
     "요금적용전력의 계약전력 대비 하한 규정을 확인하지 못해 절감액을 산출하지 "
-    "않았습니다. 하향 여지(kW)만 참고하십시오. 한전 기본공급약관 확인 후 "
-    "contract_floor_ratio 로 넘기면 재계산합니다."
+    "않았습니다. 하향 여지(kW)만 참고하십시오. 한전 기본공급약관에서 하한 비율을 "
+    "확인해 기준 데이터에 넣으면 금액까지 나옵니다."
 )
 
 
@@ -172,7 +172,10 @@ def assess_contract(
             f"요금적용전력 하한 {contract_floor_ratio:.0%} 가정, "
             f"기본요금 {base_fee_months:.2f}개월분 기준"
         )
-        notices.append(basis(basis_text, fact="contract.saving_basis"))
+        # **안내로 내지 않는다** (24세션 3-3 · K). 2단계 7.2 카드가 같은 사실을
+        # 더 자세히 낸다 (``contract.saving_basis`` — 하한과 개월수가 같은 값이다).
+        # 적정성은 16세션에 7.2 로 옮겼으므로 근거도 그쪽 하나면 된다. 다만
+        # 금액 옆에 붙는 사유 문자열로는 그대로 쓴다.
 
     return ContractAdequacy(
         contract_kw=contract_kw,

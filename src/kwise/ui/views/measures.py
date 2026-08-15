@@ -274,7 +274,7 @@ def _tariff_switch(
         "절감액",
         fmt.won_short(result.saving_won),
         fmt.certainty_badge(result.certainty),
-        help=fmt.TIPS["certainty"],
+        help=fmt.tip("certainty"),
     )
     if result.switch_needed:
         st.write(
@@ -286,10 +286,9 @@ def _tariff_switch(
     # 금액 축에 그리면 막대 셋이 같은 높이로 보인다 — 변화만 떼어 먼저 보인다.
     st.altair_chart(charts.tariff_delta_chart(result), width="stretch")
     st.caption("현행 대비 차액", help=fmt.chart_tip("chart.tariff_delta"))
-    st.caption(
-        "현행을 0 으로 두고 좌우로 뻗은 막대입니다. 왼쪽(초록)이 절감입니다. "
-        + fmt.TRUNCATION_FOOTNOTE
-    )
+    # **절사 각주는 3단계 「개선안별 요약」 한 곳에만 둔다** (24세션 4-5). 항목 합과
+    # 합계가 어긋나 보이는 자리가 거기이고, 카드마다 되풀이하면 읽히지 않는다.
+    st.caption("현행을 0 으로 두고 좌우로 뻗은 막대입니다. 왼쪽(초록)이 절감입니다.")
     # **② 그룹 막대** (17세션 1-2). 쌓으면 기본요금끼리·전력량요금끼리 견줄 수 없다.
     st.altair_chart(charts.tariff_option_chart(result), width="stretch")
     st.caption("요금제별 기본·전력량·합계", help=fmt.chart_tip("chart.tariff_option"))
@@ -342,7 +341,7 @@ def _contract(
             step=0.01,
             format="%.2f",
             key=input_key("contract", "margin"),
-            help=fmt.TIPS["contract_margin"],
+            help=fmt.tip("contract_margin"),
         )
         st.caption(
             f"권장 {fmt.ratio_pct(low, decimals=0)}–{fmt.ratio_pct(high, decimals=0)}.",
@@ -610,9 +609,14 @@ def _solar(
             index=density_keys.index(default_density),
             format_func=lambda key: density_labels[key],
             horizontal=True,
+            # 밀도 설명은 **기준 데이터에서 온다.** 툴팁도 마크다운을 해석하므로
+            # 파일에서 온 글은 escape 해서 넣는다 (24세션 2절).
             help="\n\n".join(
                 (
-                    *(f"**{item.label}** — {item.tradeoff}" for item in presets.densities),
+                    *(
+                        fmt.markdown_safe(f"**{item.label}** — {item.tradeoff}")
+                        for item in presets.densities
+                    ),
                     manual_tip("pv-density"),
                 )
             ),
@@ -643,7 +647,8 @@ def _solar(
     )
 
     # ---- 확장 패널 (접어 둔다)
-    with st.expander("상세 (접어 둠)", expanded=False):
+    # 접혀 있다는 사실은 **보면 안다** (24세션 4-4). 라벨에 적지 않는다.
+    with st.expander("상세", expanded=False):
         detail_left, detail_right = st.columns(2)
         with detail_left:
             capacity_override = st.number_input(
@@ -769,7 +774,7 @@ def _solar(
         "회수기간",
         fmt.payback(point.payback_years, investment_won=point.investment_won),
         fmt.certainty_badge(curve.certainty),
-        help=fmt.TIPS["certainty"],
+        help=fmt.tip("certainty"),
     )
     # **투자비를 모르면 빈칸이나 0원이 아니라 사유다** (7.5).
     st.caption("투자비 — " + fmt.won(point.investment_won, reason=curve.cost.reason))
@@ -793,7 +798,7 @@ def _solar(
         "들어갑니다. 금액과 발전량은 12개월 환산입니다. "
         "20단계 상세는 Excel 「태양광 용량 곡선」 시트에 있습니다."
     )
-    with st.expander("용량 곡선 (접어 둠)", expanded=False):
+    with st.expander("용량 곡선", expanded=False):
         st.altair_chart(charts.solar_curve_chart(curve, verdict=verdict), width="stretch")
         st.caption("용량별 절감액", help=fmt.chart_tip("chart.solar_curve"))
 
@@ -1009,7 +1014,7 @@ def _ess(
         "출력 / 용량",
         f"{fmt.kw(result.power_kw, decimals=0)} / {fmt.kwh(result.capacity_kwh)}",
         f"방전 {fmt.hours(result.discharge_hours, decimals=1)}",
-        help=fmt.TIPS["discharge_hours"],
+        help=fmt.tip("discharge_hours"),
     )
     columns[1].metric("절감액", fmt.won_short(result.total_saving_won))
     columns[2].metric("투자비", fmt.won_short(result.investment_won))
@@ -1017,7 +1022,7 @@ def _ess(
         "회수기간",
         fmt.payback(result.payback_years, investment_won=result.investment_won),
         fmt.certainty_badge(result.certainty),
-        help=fmt.TIPS["certainty"],
+        help=fmt.tip("certainty"),
     )
     # **언제 담고 언제 쓰는지**를 2단 그림으로 보인다 (15세션 2-5 · 17세션 4-1).
     if day is not None:
@@ -1045,13 +1050,12 @@ def _ess(
             f"{fmt.kwh(charged)} · 최대부하 {discharge_span or fmt.DASH} 방전 "
             f"{fmt.kwh(discharged)} · 그날 저감 {fmt.kw(cut)}."
         )
-    # **판정 문장을 쓰지 않는다** (14세션 3-3). 사실만 적고 판단은 사용자가 한다.
-    if result.payback_years is not None:
-        st.write(
-            f"최적 목표 {fmt.kw(target, decimals=0)} 기준 회수기간 "
-            f"{fmt.payback(result.payback_years)} — 배터리 보증 수명 "
-            f"{fmt.count(result.payback_target_years, '년')} 과 견주십시오."
-        )
+    # **회수기간과 보증 수명을 견주는 문장은 여기 없다** (24세션 3-3 · A).
+    # 계산 쪽이 같은 사실을 이미 낸다 — 넘으면 ``ess.payback_over_warranty`` 가
+    # 주의로 뜬다. 등급이 달라(근거/주의) 중복 판정을 빠져나가던 자리였고,
+    # 한 화면에 같은 수 둘이 나란히 있으면 어느 쪽이 결론인지 흐려진다.
+    # 회수기간 자체는 위 지표 카드가 낸다.
+    #
     # **고출력 셀 사양 경고는 화면에 남긴다** (10.2 예외).
     if 0 < result.discharge_hours < high_rate_discharge_hours():
         _caution(
@@ -1090,7 +1094,7 @@ def _ess_cost_inputs() -> tuple[float, float | None, float | None]:
     확장 패널에서 **고정비와 용량단가 둘만** 조정한다.
     """
     model = load_ess_cost_model()
-    with st.expander("단가 조정 (접어 둠)", expanded=False):
+    with st.expander("단가 조정", expanded=False):
         st.caption(
             f"기본값은 자동 산출입니다 — {model.coefficient_source}. "
             "단가가 변하면 아래 두 값만 갱신하면 됩니다."

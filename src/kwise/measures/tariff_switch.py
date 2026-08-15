@@ -164,7 +164,7 @@ def evaluate_tariff_switch(
         # 둘 다 **참고**다 — 이 카드를 어떻게 읽는가에 대한 전제이지 산식이 아니다.
         info(
             "선택요금 전환은 실측 데이터와 요금표만으로 확정되는 계산입니다. "
-            "감도를 적용하지 않습니다 (요구사항서 9.2).",
+            "감도를 적용하지 않습니다.",
             fact="tariff_switch.no_sensitivity",
         ),
         info(

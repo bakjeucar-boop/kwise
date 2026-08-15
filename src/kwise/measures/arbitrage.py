@@ -43,6 +43,7 @@ from kwise.tariff import (
     build_calendar,
     classify_slots,
 )
+from kwise.tariff.labels import season_label
 
 __all__ = [
     "ArbitrageValue",
@@ -52,6 +53,13 @@ __all__ = [
     "default_cycles_per_day",
     "peak_days_by_season",
 ]
+
+
+def _season_days(days: dict[str, int]) -> str:
+    """``봄·가을 103일 · 여름 64일 · 겨울 83일``. 계절 순서는 이름순으로 고정한다."""
+    return " · ".join(
+        f"{season_label(season)} {count:,}일" for season, count in sorted(days.items())
+    )
 
 
 def default_cycles_per_day() -> float:
@@ -113,11 +121,15 @@ class ArbitrageValue:
         return self.standalone_payback_years > self.battery_life_years[1]
 
     def frame(self) -> pd.DataFrame:
-        """계절별 내역. 어느 계절이 얼마를 벌어 주는지 보여 준다."""
+        """계절별 내역. 어느 계절이 얼마를 벌어 주는지 보여 준다.
+
+        **계절 이름을 한글로 낸다** (24세션 4-1). 이 표는 Excel 로 그대로 나가므로
+        ``spring_fall`` 이 칸에 남으면 코드 식별자를 산출물에 싣는 셈이다.
+        """
         return pd.DataFrame(
             [
                 {
-                    "계절": item.season,
+                    "계절": season_label(item.season),
                     "최대부하 단가(원/kWh)": item.peak_won_per_kwh,
                     "경부하 단가(원/kWh)": item.light_won_per_kwh,
                     "차익(원/kWh)": item.spread_won_per_kwh,
@@ -229,8 +241,10 @@ def arbitrage_value(
             fact="arbitrage.tariff_rates",
         ),
         basis(
-            f"최대부하가 존재하는 날만 셌습니다 (계절별 {days}). 토요일은 최대부하가 "
-            "중간부하로 계량되고 일요일·공휴일은 전량 경부하라 자동으로 빠집니다.",
+            # **사전을 그대로 찍지 않는다** (24세션 4-1). ``{'spring_fall': 103}``
+            # 이 화면에 나갔다 — 계절 이름은 표기 규약(:mod:`kwise.tariff.labels`)이다.
+            f"최대부하가 존재하는 날만 셌습니다 (계절별 {_season_days(days)}). 토요일은 "
+            "최대부하가 중간부하로 계량되고 일요일·공휴일은 전량 경부하라 자동으로 빠집니다.",
             fact="arbitrage.peak_days",
         ),
         basis(

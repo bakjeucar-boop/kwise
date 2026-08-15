@@ -580,10 +580,12 @@ def dr_profile(
     baseline_kw = float(weekend_slots.mean())
     threshold = baseline_kw * multiple
     notices.append(
+        # **기준선과 문턱 값은 카드 본문이 이미 낸다** (24세션 3-3 · E). 반올림
+        # 자리가 달라 같은 수가 두 값으로 보이기까지 했다 (2,604.6 과 2,605).
+        # 여기 남는 것은 본문에 없는 사실 — 그 평균을 며칠에서 쟀는가다.
         basis(
-            f"기준선 {baseline_kw:,.0f} kW 는 주말·공휴일 {weekend_days}일의 운영 시간대 "
-            f"평균 부하입니다. 건물이 사실상 비어 있을 때의 수준이며, 저부하 평일 문턱은 "
-            f"그 {multiple:.2g}배인 {threshold:,.0f} kW 입니다.",
+            f"기준선은 주말·공휴일 {weekend_days}일의 운영 시간대 평균이며, 건물이 사실상 "
+            "비어 있을 때의 수준입니다.",
             fact="dr.baseline",
         )
     )

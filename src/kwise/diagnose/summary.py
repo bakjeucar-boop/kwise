@@ -85,7 +85,7 @@ def pv_basis_label(peak: PeakProfile) -> str:
     return (
         f"요금적용전력 대상 슬롯(중간·최대부하) {peak.demand_eligible_slots:,}개 중 "
         f"상위 {counted}구간 기준. 경부하 구간은 요금적용전력 대상이 아니므로 "
-        "판정에서 제외했습니다 (요구사항서 5.2 ①). 부록 B 의 시각 분포는 전 슬롯 "
+        "판정에서 제외했습니다 (한전 기본공급약관 제68조). 부록 B 의 시각 분포는 전 슬롯 "
         f"{peak.observed_slots:,}개 기준의 원값이며 따로 싣습니다."
     )
 

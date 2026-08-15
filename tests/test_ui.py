@@ -390,10 +390,16 @@ def test_투자비를_모르면_회수기간이_빈칸이_아니다() -> None:
 
 
 def test_확실성은_등급만_낸다() -> None:
-    """근거는 매뉴얼로 보낸다 (10.2)."""
+    """근거는 매뉴얼로 보낸다 (10.2).
+
+    **범위 기호로 바꿔 낸다** (24세션 2절). 등급 이름의 물결표를 그대로 두면
+    화면에서 취소선 위험이 있고, escape 하면 지표 delta 자리에 역슬래시가 보인다.
+    등급 이름 자체(``중간~낮음``)는 Excel·Word·문서가 함께 쓰므로 고치지 않는다.
+    """
     from kwise.measures import Certainty
 
-    assert text.certainty_badge(Certainty.MEDIUM_LOW) == "확실성 중간~낮음"
+    assert str(Certainty.MEDIUM_LOW) == "중간~낮음"
+    assert text.certainty_badge(Certainty.MEDIUM_LOW) == f"확실성 중간{text.RANGE}낮음"
 
 
 def test_비율_표기() -> None:

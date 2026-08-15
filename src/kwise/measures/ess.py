@@ -884,7 +884,7 @@ def evaluate_ess(
             warn(
                 f"경부하 충전이 목표를 넘는 새 피크를 만들었습니다 — 충전 시간대 최대 "
                 f"{dispatch.charge_window_peak_kw:,.1f} kW > 목표 {target_kw:,.0f} kW. "
-                "charge_limit_kw 로 충전 전력을 제한하십시오.",
+                "충전 전력을 목표 아래로 제한해야 합니다.",
                 fact="ess.charge_new_peak",
             )
         )
@@ -953,10 +953,11 @@ def evaluate_ess(
             f"기간 합계 {excess.total_excess_kwh:,.1f} kWh).",
             fact="ess.sizing_basis",
         ),
+        # 산식은 지표 툴팁이 낸다 (24세션 3-3 · L). 여기는 값과 그 뜻만 적는다.
         basis(
-            f"방전시간 {discharge_hours:.2f}h ({c_rate(discharge_hours):.1f}C) 는 "
-            "하루 최대 초과 에너지 ÷ 최대 초과 출력으로 **산출한 값**입니다. "
-            "짧을수록 kW당 단가가 싸므로, 조달이 가능하다면 짧은 쪽이 맞습니다.",
+            f"방전시간 {discharge_hours:.2f}h ({c_rate(discharge_hours):.1f}C) 는 입력이 "
+            "아니라 **산출값**입니다. 짧을수록 kW당 단가가 싸므로, 조달이 가능하다면 "
+            "짧은 쪽이 맞습니다.",
             fact="ess.discharge_hours",
         ),
         basis(
@@ -981,7 +982,7 @@ def evaluate_ess(
         # **참고** — 전략·한계. 숫자를 만들지 않는다.
         info(
             "규칙기반 피크컷 단일 전략입니다. 목표 초과분을 방전하고 경부하에 충전합니다. "
-            "최적 운전과는 차이가 있습니다 (요구사항서 부록 D.9).",
+            "최적 운전과는 차이가 있습니다.",
             fact="ess.strategy_limit",
         ),
         info(

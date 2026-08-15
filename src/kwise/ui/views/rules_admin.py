@@ -138,7 +138,7 @@ def _row(row: RuleRow) -> None:
                 st.caption(" · ".join(flags))
             # **근거를 값 옆에 둔다.** 확인처는 링크가 아니라 툴팁이다
             # (16세션 4절) — 화면에서 나가지 않고 조문 번호와 시행일을 읽는다.
-            st.caption(row.source_text, help=_source_tip(row))
+            st.caption(markdown_safe(row.source_text), help=_source_tip(row))
             st.caption(f"확인일 — {row.verified_text}")
             if row.view.note:
                 st.caption(f"비고 — {row.view.note}")
@@ -180,7 +180,7 @@ def _editor(row: RuleRow) -> None:
     if row.changed and buttons[2].button(
         "되돌리기",
         key=f"revert_{row.key}",
-        help=f"출고값 {row.view.default_value!r} 로 되돌립니다.",
+        help=markdown_safe(f"출고값 {row.view.default_value!r} 로 되돌립니다."),
     ):
         _report(apply_rule_edit(restore_item(row.key)))
     if row.changed:
@@ -295,7 +295,9 @@ def _source_tip(row: RuleRow) -> str:
         parts.append(f"확인처 — {where}")
     if row.view.note:
         parts.append(row.view.note)
-    return " · ".join(parts)
+    # 기준 데이터에서 온 글이다. **툴팁도 마크다운을 해석하므로** escape 한다
+    # (24세션 2절) — 시행 기간을 ``2023~2025`` 로 적은 항목이 취소선이 되었다.
+    return markdown_safe(" · ".join(parts))
 
 
 def _source_name(link: str) -> str:
