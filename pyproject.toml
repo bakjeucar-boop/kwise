@@ -29,7 +29,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.6", "mypy>=1.11"]
+# mypy 는 판을 못박는다. 두 PC 의 도구 판이 갈리면 한쪽에서만 실패한다 —
+# 배포의 requirements.txt 를 == 로 못박은 것과 같은 이유다 (2026-08-15).
+#
+# 상한이 tests\ 오류를 없애 주지는 않는다. 2.3.1 이 33건, 1.20.2 가 38건으로
+# 오히려 구판이 더 문다 — 그 오류는 판과 무관하게 원래 있던 것이다
+# (PROCEED.md 「도구·형 정리」). 여기서 고정하는 것은 결과의 재현성이지
+# 통과 여부가 아니다. 판단은 `mypy src` 로 한다.
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.11,<2",
+    # batch.py 의 import yaml. 없으면 strict 가 stub 없다고 잡는다.
+    # 적어 두지 않으면 PC 마다 있고 없고가 갈린다 — 상한을 박는 것과 같은 이유다.
+    "types-PyYAML",
+]
 
 [tool.setuptools]
 package-dir = { "" = "src" }

@@ -140,11 +140,14 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 ### 4.2 패키지 설치
 
 ```powershell
-pip install -e .
-pip install pytest ruff mypy
+pip install -e ".[dev]"
 ```
 
 안드로이드에서 쓰던 `uvx` 격리 실행은 필요 없다. 개발 도구도 `.venv` 에 직접 넣는다.
+
+**`pip install pytest ruff mypy` 로 낱개로 깔지 않는다.** `.[dev]` 로 깔아야
+`pyproject.toml` 의 판 상한(`mypy>=1.11,<2`)과 `types-PyYAML` 이 함께 따라온다.
+낱개로 깔면 mypy 2.x 가 들어와 PC 마다 검사 결과가 갈린다 (2026-08-15).
 
 **python 실행은 `.venv\Scripts\python.exe` 로 한다.** 셸이 `.venv` 를 활성화하지 않은 채
 실행될 수 있어 시스템 python 을 쓰면 패키지를 못 찾는다.
@@ -187,6 +190,11 @@ pytest
 ruff check .
 mypy src
 ```
+
+**`mypy src` 다 — 맨 `mypy` 가 아니다.** `pyproject.toml` 의
+`files = ["src", "tests", "tools"]` 는 `tests\` 까지 검사하는데, 여기서 38건이
+뜬다 (형 정리 미완, `PROCEED.md` 「도구·형 정리」 참조). `src\` 103파일과
+`tools\` 12파일은 깨끗하다. 정리를 끝내면 이 어긋남도 함께 없앤다.
 
 ### 6.2 Streamlit
 

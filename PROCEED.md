@@ -12,7 +12,8 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 | 최근 세션 | 2026-08-14 — **Streamlit Cloud 배포** (23세션 뒤) |
 | 다음 작업 | **24세션 — 화면 캡처** (그래프까지 끝나 이제 찍을 때다) |
 | 배포 | **동작 중** — github.com/bakjeucar-boop/kwise → Streamlit Cloud. 건물명부터 보고서 내려받기까지 확인 |
-| 테스트 상태 | pytest **1,130 passed** / ruff pass / mypy pass (strict, src 103 files) |
+| 테스트 상태 | pytest **1,130 passed** / ruff pass / **`mypy src`** pass (strict, 103 files) |
+| mypy 범위 | **`mypy src` 로 판단한다.** 맨 `mypy` 는 `tests\` 38건을 문다 (미해결, 막지 않음) |
 | 문서 | 기술서 7장 + 부록 3 · 매뉴얼 8장 + 부록. **md 원본 → html 생성** |
 | 기준 데이터 | `rules_kr.json` 31항목 + `assumptions.json` **33항목**. **코드 기본값 없음** |
 | 케이스 스터디 | **타당성 66/66 통과** · 35.7초 (23세션 재확인 — 요금 계산 값 불변) |
@@ -74,8 +75,7 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
     cd kwise
     py -3.12 -m venv .venv                        ← 3.13 이상은 쓰지 않는다
     .venv\Scripts\python.exe -m pip install --upgrade pip
-    .venv\Scripts\python.exe -m pip install -e .
-    .venv\Scripts\python.exe -m pip install pytest ruff mypy
+    .venv\Scripts\python.exe -m pip install -e ".[dev]"    ← dev 로 깐다
     (input\ 을 옮겨 넣는다 — 저장소에 없다)
     [Environment]::SetEnvironmentVariable("PYTHONUTF8", "1", "User")
     [Environment]::SetEnvironmentVariable("PROJECT_CACHE", "$env:LOCALAPPDATA\kwise\cache", "User")
@@ -83,6 +83,10 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 환경변수는 **새 창부터** 반영된다. 등록한 창에서 이어서 작업하려면 `$env:` 로
 같은 값을 임시 설정한다.
+
+**개발 도구는 `pip install pytest ruff mypy` 로 따로 깔지 않는다.** `.[dev]` 로
+깔아야 `pyproject.toml` 의 상한(`mypy>=1.11,<2`)과 `types-PyYAML` 이 따라온다.
+낱개로 깔면 mypy 2.x 가 들어와 PC 마다 결과가 갈린다 — 상한을 박은 이유가 없어진다.
 
 **첫 실행은 케이스 스터디 1건이 실패한다 — 정상이다.**
 `test_case_study_runs_sequentially_and_hits_the_weather_cache` 가
@@ -157,7 +161,7 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 | 가상환경 | 프로젝트 내 `.venv` — **전역 pip 에 아무것도 넣지 않았다** |
 | pytest | **1,130 passed** (8분 39초) |
 | ruff | pass |
-| mypy | **tests\ 에서 33건** — 아래 「미해결」 참조 |
+| mypy | `mypy src` **pass (103파일)** · 전체 config 는 **tests\ 38건** — 아래 참조 |
 | `input\` | CSV 7개 모두 있음 (뿌리 1 + `input\cases\` 6) |
 | `data\weather\` | 406파일 42.5 MB — `git pull` 로 따라왔다 |
 
@@ -167,19 +171,47 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - 사용자 환경변수 `PYTHONUTF8=1`, `PROJECT_CACHE=%LOCALAPPDATA%\kwise\cache` 등록
 - 캐시 폴더 `C:\Users\user\AppData\Local\kwise\cache` 생성
 - 시험 전량 통과 확인 (두 번째 실행에서 1,130/1,130)
+- **mypy 에 상한을 박았다** — `mypy>=1.11` → `mypy>=1.11,<2`, 그리고 `types-PyYAML`
+  을 dev 에 추가. 아래 절에 경위를 남긴다
 
 **만든 파일**
 
-- 없음. `.venv\` 와 캐시는 `.gitignore` 대상이다. `PROCEED.md` 만 고쳤다
+- 없음. `.venv\` 와 캐시는 `.gitignore` 대상이다. `PROCEED.md` 와 `pyproject.toml` 만 고쳤다
+
+### mypy 상한을 박으며 알게 된 것 — 기록이 가리키던 것과 달랐다
+
+상한을 박은 계기는 "새로 깔린 mypy 2.3.1 이 `tests\` 에서 33건을 새로 잡는다" 였다.
+**그 진단은 틀렸다.** 1.20.2 로 내려 보니 오히려 **39건**이 나왔다.
+
+| 실행 방식 | mypy 2.3.1 | mypy 1.20.2 |
+|---|---|---|
+| `mypy` (pyproject `files` = src·tests·tools, 145파일) | 33건 | **39건** |
+| `mypy src` (103파일) | 0건 | 1건 (yaml stub) |
+
+- **`tests\` 오류는 2.x 가 만든 것이 아니다. 원래 있었다.** 1.20.2 는 `test_pv.py`·
+  `test_io_usage.py`·`test_compare.py` 에서 5건을 더 잡는다
+- **지난 세션들의 "mypy pass (strict, src 103 files)" 는 `mypy src` 를 돌린 기록이다.**
+  파일 수 103이 정확히 맞는다. 즉 **`tests\` 는 지금껏 mypy 를 통과한 적이 없다** —
+  검사 대상에서 사실상 빠져 있었다
+- `pyproject.toml` 의 `files = ["src", "tests", "tools"]` 와 `docs\ENVIRONMENT.md`
+  6.1 의 `mypy src` 가 **서로 어긋난다.** 맨 `mypy` 를 돌리면 38건을 만난다
+- `mypy src` 의 1건은 코드 결함이 아니라 `types-PyYAML` 미설치였다
+  (`batch.py:17 import yaml`). 1번 PC 는 따로 깔아 두었을 것이다 — 개발 의존성에
+  적혀 있지 않아 **PC 마다 갈리던 바로 그 문제다.** dev 에 넣어 못박았다
+
+**상한을 박은 뒤 확인** — `pip install -e ".[dev]"` 가 mypy 1.20.2 를 유지한다
+(2.x 를 끌어오지 않는다). `mypy src` **pass (103파일)** · `mypy tools` **pass (12파일)**.
 
 **미해결**
 
-- **mypy 33건 — 전부 `tests\` 다. `src\` 는 깨끗하다.** `test_integration.py` 24건,
-  `test_ui_screen.py` 6건, `test_notices.py` 3건 (`arg-type` 22 · `attr-defined` 6 ·
-  `unused-ignore` 4 · `return-value` 1). 이전 세션 기록은 mypy pass 였으므로
-  **새로 깔린 mypy 2.3.1 이 엄격해진 탓으로 본다** — `pyproject.toml` 은 `>=1.11`
-  이라 상한이 없다. 계산 코드의 결함이 아니어서 이번에 손대지 않았다.
-  다음 세션에서 상한을 박든(`mypy>=1.11,<2`) 시험 쪽 형을 고치든 정한다
+- **`tests\` mypy 38건.** `test_integration.py` 24 · `test_ui_screen.py` 6 ·
+  `test_notices.py` 3 · `test_pv.py` 2 · `test_io_usage.py` 2 · `test_compare.py` 1.
+  (`arg-type` · `attr-defined` · `unused-ignore` · `return-value`)
+  **`src\` 와 `tools\` 는 깨끗하다** — 계산 코드의 결함이 아니다.
+  형 정리는 분량이 있어 별도 작업으로 미룬다. 정리 전까지는 `mypy src` 로 판단한다
+- **`pyproject.files` 와 `ENVIRONMENT.md` 6.1 의 어긋남.** 위 형 정리를 끝낸 뒤
+  맨 `mypy` 가 통과하게 만들지, `files` 를 `src`·`tools` 로 줄일지 함께 정한다.
+  이번엔 상한 박기가 범위라 손대지 않았다
 - 화면이 계속 도는지는 **사람이 눌러 확인해야 한다.** 띄우지 않고 명령만 안내했다
 
 **다음 세션이 알아야 할 것**
@@ -188,13 +220,18 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
   예시다 — 경로를 하드코딩하지 않는다
 - **새 PC 첫 pytest 는 케이스 스터디 1건이 반드시 실패한다.** 찬 캐시 탓이며
   두 번째 실행부터 통과한다. 위 「새 PC 에서 처음 할 일」에 적어 두었다
+- **mypy 는 `mypy src` 로 판단한다.** 맨 `mypy` 는 `tests\` 38건을 문다 —
+  아직 정리 전이다. 지난 기록의 "pass" 도 전부 `mypy src` 였다
 - 설치된 주요 판: pandas 3.0.5 · numpy 2.5.2 · streamlit 1.61.1 · pvlib 0.15.2 ·
-  pytest 9.1.1 · ruff 0.16.3 · mypy 2.3.1. 상한이 없어 PC 마다 달라질 수 있다
+  pytest 9.1.1 · ruff 0.16.3 · **mypy 1.20.2 (`<2` 로 못박음)** ·
+  types-PyYAML 6.0.12. **mypy 말고는 아직 상한이 없어 PC 마다 달라질 수 있다** —
+  갈려서 곤란해지면 그때 같은 방식으로 박는다
 
 **테스트**
 - pytest: 1,130 passed
 - ruff: pass
-- mypy: **fail (tests\ 33건, src\ 0건)** — 위 「미해결」 참조
+- mypy: **`mypy src` pass (strict, 103 files)** · `mypy tools` pass (12 files) ·
+  전체 config 는 `tests\` 38건 (위 「미해결」)
 
 ---
 
@@ -2665,6 +2702,24 @@ ESS 단가 재설계도 오늘 안에 들어갔다.
 `DEFAULT_POWER_FACTOR_PCT`·`DEFAULT_MARGIN_RATIO` 를 기준 데이터로 옮겼다
 (아래 세션 기록 참조). 값이 같아 숫자는 바뀌지 않았고 케이스 스터디 66/66 이
 그대로다.
+
+**2026-08-15 에 하나 더 올렸다 — 자료가 아니라 우리 손에 달린 것이다** (아래
+「도구·형 정리」). 위 8건과 성격이 달라 표에 넣지 않았다.
+
+### 도구·형 정리 (2026-08-15 추가)
+
+- [ ] **`tests\` mypy 38건** — `test_integration.py` 24 · `test_ui_screen.py` 6 ·
+      `test_notices.py` 3 · `test_pv.py` 2 · `test_io_usage.py` 2 · `test_compare.py` 1.
+      갈래는 `arg-type` · `attr-defined` · `unused-ignore` · `return-value` 다.
+      **`src\`(103파일)·`tools\`(12파일) 은 깨끗하다 — 계산 코드의 결함이 아니다.**
+      mypy 2.3.1 이 새로 만든 것이 아니라 원래 있던 것이다 (1.20.2 는 오히려 39건).
+      지난 기록의 "mypy pass" 는 전부 `mypy src` 를 돌린 것이었다.
+      **정리 전까지는 `mypy src` 로 판단한다.** 막지 않는다
+- [ ] **`pyproject.files` 와 `ENVIRONMENT.md` 6.1 의 어긋남** — 전자는
+      `["src", "tests", "tools"]`, 후자는 `mypy src` 다. 위 형 정리를 끝낸 뒤
+      맨 `mypy` 가 통과하게 할지 `files` 를 줄일지 함께 정한다. 막지 않는다
+- [x] ~~mypy 판이 PC 마다 갈림~~ — `mypy>=1.11,<2` 로 못박고 `types-PyYAML` 을
+      dev 에 넣어 해결 (2026-08-15). **나머지 도구는 아직 상한이 없다**
 
 ### 참고단가를 확보해야 풀리는 것
 
