@@ -345,6 +345,13 @@ def calculate_bill(
     band_kwh: dict[pd.Period, dict[str, float]] = {
         month: dict.fromkeys(BANDS, 0.0) for month in months
     }
+    # 시간대별 **금액**도 함께 쌓는다 (27세션 3-2). 화면의 월별 요금 구성 그래프가
+    # 쓴다. ``light_kwh`` 와 단가만으로는 되돌릴 수 없다 — 할인 특례(산업용(을)
+    # 봄·가을 주말)가 같은 시간대 안에서도 요일·시각에 따라 갈리기 때문이다.
+    # **기존 값은 손대지 않는다.** ``energy_won`` 은 그대로 쌓고 여기에 더한다.
+    band_won: dict[pd.Period, dict[str, float]] = {
+        month: dict.fromkeys(BANDS, 0.0) for month in months
+    }
     energy_won: dict[pd.Period, float] = dict.fromkeys(months, 0.0)
     discount_won: dict[pd.Period, float] = dict.fromkeys(months, 0.0)
     season_of: dict[pd.Period, str] = {}
@@ -353,6 +360,7 @@ def calculate_bill(
         value = 0.0 if pd.isna(kwh) else float(kwh)
         rate = rates.rate(str(season), str(band))
         band_kwh[period][str(band)] += value
+        band_won[period][str(band)] += value * rate * (1.0 - float(discount))
         energy_won[period] += value * rate * (1.0 - float(discount))
         discount_won[period] += value * rate * float(discount)
         season_of[period] = str(season)
@@ -446,6 +454,9 @@ def calculate_bill(
                 "mid_kwh": band_kwh[month]["mid"],
                 "peak_kwh": band_kwh[month]["peak"],
                 "total_kwh": sum(band_kwh[month].values()),
+                "light_won": band_won[month]["light"],
+                "mid_won": band_won[month]["mid"],
+                "peak_won": band_won[month]["peak"],
                 "discount_won": discount_won[month],
                 "power_factor_won": power_factor_won,
                 "energy_won": observed_energy_won,

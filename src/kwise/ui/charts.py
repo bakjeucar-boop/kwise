@@ -32,6 +32,7 @@ from kwise.report.days import RepresentativeDay
 from kwise.report.frames import (
     BAND_LABELS,
     CAPACITY_ROWS,
+    MONTHLY_CHARGE_PARTS,
     PEAK_ZOOM_HOURS,
     TARIFF_PARTS,
     band_frame,
@@ -41,6 +42,7 @@ from kwise.report.frames import (
     ess_day_frame,
     ess_target_frame,
     hourly_profile_frame,
+    monthly_charge_frame,
     monthly_peak_frame,
     peak_window,
     power_factor_day_frame,
@@ -60,6 +62,9 @@ from kwise.report.frames import (
 __all__ = [
     "BAND_LABELS",
     "CAPACITY_ROWS",
+    "LEGEND",
+    "LEGEND_BELOW",
+    "MONTHLY_CHARGE_PARTS",
     "PEAK_ZOOM_HOURS",
     "TARIFF_PARTS",
     "band_chart",
@@ -75,6 +80,8 @@ __all__ = [
     "ess_target_frame",
     "hourly_profile_chart",
     "hourly_profile_frame",
+    "monthly_charge_chart",
+    "monthly_charge_frame",
     "monthly_peak_chart",
     "monthly_peak_frame",
     "power_factor_day_chart",
@@ -133,10 +140,28 @@ _CUT_SCALE = alt.Scale(zero=False, nice=True)
 #     ② **배경을 칠하지 않는다.** 테마 배경이 그대로 비쳐 두 모드에서 다 읽힌다
 #     ③ 글자색을 고정하지 않는다 — 흰색·회색을 박아 두면 한쪽 모드가 깨진다
 
-#: 전 차트가 쓰는 범례. **한 벌만 둔다** — 차트마다 달리 주면 또 갈라진다.
+#: 전 차트가 쓰는 범례. **기본은 이것 하나다** — 차트마다 달리 주면 또 갈라진다.
 LEGEND = alt.Legend(
     orient="right",
     direction="vertical",
+    offset=10,
+    labelLimit=200,
+    fillColor=None,
+    strokeColor=None,
+    padding=0,
+)
+
+#: **그림 안의 글자가 오른쪽으로 뻗는 차트만 아래에 둔다** (27세션 6절).
+#:
+#: 바깥 오른쪽 범례는 그림 오른쪽 **위**에서부터 쌓인다. 도형 옆에 설명을 직접
+#: 적는 차트(전력삼각형)는 그 글자가 꼭짓점에서 오른쪽으로 뻗어 같은 자리를
+#: 다툰다 — 규약이 적용되지 않은 것이 아니라, **적용된 규약이 이 그림에서만
+#: 부딪힌다.** 위아래로 자리를 갈라 겹침을 없앤다.
+#:
+#: 나머지 셋(배경 없음·안쪽 금지·글자색 고정 금지)은 그대로다.
+LEGEND_BELOW = alt.Legend(
+    orient="bottom",
+    direction="horizontal",
     offset=10,
     labelLimit=200,
     fillColor=None,
@@ -212,13 +237,68 @@ def hourly_profile_chart(peak: PeakProfile) -> alt.Chart:
     )
 
 
+# 계시별 시간대 색 — **1단계의 두 그림이 같은 색을 쓴다** (27세션 3-2). 파랑이
+# 짙어질수록 단가가 높은 시간대다. 기본요금은 사용량과 무관한 몫이라 회색으로
+# 갈라 둔다.
+_BAND_RANGE: dict[str, str] = {"경부하": "#c6dbef", "중간부하": "#6baed6", "최대부하": "#08519c"}
+_BASE_FEE_COLOR = "#737373"
+
+
+def _band_scale(*, with_base_fee: bool = False) -> alt.Scale:
+    colors = ({"기본요금": _BASE_FEE_COLOR} | _BAND_RANGE) if with_base_fee else _BAND_RANGE
+    return alt.Scale(domain=list(colors), range=list(colors.values()))
+
+
+def monthly_charge_chart(structure: ChargeStructure) -> alt.Chart:
+    """월별 요금 구성 — 기본요금 + 계시별 전력량요금 **누적 막대** (27세션 3-2).
+
+    한 달치 청구액이 어떻게 나뉘는지, 그리고 **달마다 무엇이 달라지는지**를 한
+    그림에서 본다. 기본요금이 같은 높이로 이어지는 것 자체가 요금적용전력
+    12개월 규칙의 모습이다.
+
+    **막대는 자르지 않는다** (17세션 0절 · 23세션 2절). 길이가 곧 금액이다.
+    """
+    frame = monthly_charge_frame(structure)
+    return (
+        alt.Chart(frame)
+        .mark_bar()
+        .encode(
+            x=alt.X("월:N", title=None, sort=None),
+            y=alt.Y("원:Q", title="요금 (원)", stack="zero"),
+            color=alt.Color(
+                "구분:N",
+                title=None,
+                sort=list(MONTHLY_CHARGE_PARTS),
+                scale=_band_scale(with_base_fee=True),
+                legend=LEGEND,
+            ),
+            # **쌓는 순서를 색 순서에 묶는다.** 주지 않으면 달마다 순서가 달라져
+            # 밑단이 흔들린다.
+            order=alt.Order("순서:Q", sort="ascending"),
+            tooltip=[
+                "월",
+                "구분",
+                alt.Tooltip("원:Q", format=",.0f"),
+                alt.Tooltip("합계(원):Q", format=",.0f"),
+            ],
+        )
+        .properties(height=300)
+    )
+
+
 def band_chart(structure: ChargeStructure) -> alt.Chart:
     return (
         alt.Chart(band_frame(structure))
         .mark_bar()
         .encode(
             x=alt.X("사용량(kWh):Q", title="사용량 (kWh)", stack="normalize"),
-            color=alt.Color("시간대:N", title=None, sort=list(BAND_LABELS.values()), legend=LEGEND),
+            color=alt.Color(
+                "시간대:N",
+                title=None,
+                sort=list(BAND_LABELS.values()),
+                scale=_band_scale(),
+                legend=LEGEND,
+            ),
             tooltip=[
                 "시간대",
                 alt.Tooltip("사용량(kWh):Q", format=",.0f"),
@@ -404,6 +484,11 @@ def tariff_delta_chart(switch: TariffSwitchResult) -> alt.LayerChart:
 
     0 을 기준으로 좌우로 뻗는다 — 절감은 왼쪽, 증가는 오른쪽이다. 절대 금액을
     지우고 변화만 남기면 "얼마나 줄어드는가" 가 한눈에 읽힌다.
+
+    **오른쪽에 글자 자리를 비워 둔다** (27세션 4-1). 막대 끝 글자는 왼쪽 정렬로
+    오른쪽으로 뻗는데, 갈아탈 요금제가 모두 절감이면 0 이 그림의 오른쪽 끝이라
+    「현행」 글자가 그림 밖으로 나가 바깥 오른쪽 범례 위에 겹쳤다. 축 범위를
+    글자 폭만큼 넓혀 **그림을 왼쪽으로 줄인다** — 글자가 그림 안에 남는다.
     """
     frame = tariff_delta_frame(switch)
     labelled = frame.assign(
@@ -414,12 +499,21 @@ def tariff_delta_chart(switch: TariffSwitchResult) -> alt.LayerChart:
         ]
     )
     order = list(frame["요금제"])
+    values = [*(float(value) for value in frame["현행 대비(원)"]), 0.0]
+    low, high = min(values), max(values)
+    span = (high - low) or 1.0
+    # 왼쪽은 막대만, 오른쪽은 **막대 + 글자**가 들어간다.
+    domain = [low - span * 0.05, high + span * 0.45]
     bars = (
         alt.Chart(labelled)
         .mark_bar()
         .encode(
             y=alt.Y("요금제:N", title=None, sort=order),
-            x=alt.X("현행 대비(원):Q", title="현행 대비 (원) — 왼쪽이 절감"),
+            x=alt.X(
+                "현행 대비(원):Q",
+                title="현행 대비 (원) — 왼쪽이 절감",
+                scale=alt.Scale(domain=domain, nice=False),
+            ),
             color=alt.Color(
                 "방향:N",
                 title=None,
@@ -501,6 +595,9 @@ def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
 
     **각이 좁아지는 모습**이 이 그림의 전부다. 유효전력을 1 로 두고 무효전력만
     줄어드는 것을 겹쳐 보인다.
+
+    **범례만 아래에 둔다** (27세션 6절). 꼭짓점 옆의 설명 글자가 오른쪽으로
+    뻗어 바깥 오른쪽 범례와 같은 자리를 다툰다 — :data:`LEGEND_BELOW` 참조.
     """
     frame = power_triangle_frame(result)
     lines = pd.DataFrame(
@@ -518,7 +615,7 @@ def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
         .encode(
             x=alt.X("유효전력:Q", title="유효전력 (기준 1)"),
             y=alt.Y("무효전력:Q", title="무효전력"),
-            color=alt.Color("구분:N", title=None, legend=LEGEND),
+            color=alt.Color("구분:N", title=None, legend=LEGEND_BELOW),
             order="순서:Q",
             tooltip=["구분"],
         )
@@ -540,7 +637,7 @@ def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
             x="유효전력:Q",
             y="무효전력:Q",
             text="설명:N",
-            color=alt.Color("구분:N", title=None, legend=LEGEND),
+            color=alt.Color("구분:N", title=None, legend=LEGEND_BELOW),
         )
     )
     # 원점 쪽 각도 표기 — **각이 좁아지는 모습**이 이 그림의 전부다.
@@ -551,7 +648,7 @@ def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
             x=alt.value(46),
             y=alt.Y("각도y:Q"),
             text="각도라벨:N",
-            color=alt.Color("구분:N", title=None, legend=LEGEND),
+            color=alt.Color("구분:N", title=None, legend=LEGEND_BELOW),
         )
     )
     return (shape + labels + angles).properties(height=280)

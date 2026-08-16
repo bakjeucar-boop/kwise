@@ -113,6 +113,8 @@ from kwise.measures.solar import (
 )
 from kwise.measures.surplus import (
     ELIGIBILITY_NOTICE,
+    EXTERNAL_SCENARIO,
+    OFFSET_SCENARIO,
     SurplusResult,
     SurplusScenario,
     evaluate_surplus,
@@ -129,8 +131,10 @@ __all__ = [
     "DEFAULT_USABLE_RATIO",
     "DR_ADVISORY",
     "ELIGIBILITY_NOTICE",
+    "EXTERNAL_SCENARIO",
     "MARGIN_NOTICE",
     "MEASURE_CATALOG",
+    "OFFSET_SCENARIO",
     "PV_COST_BASIS_NOTE",
     "PV_REFERENCE_NOTE",
     "PV_UNPRICED_REASON",

@@ -175,12 +175,14 @@ def evaluate_tariff_switch(
     if best_selection != current_selection:
         # **코드 식별자를 문구에 넣지 않는다** (12세션 규약, 15세션에 되살아난 것을
         # 통합 시험이 잡았다). 계산 모듈의 노트도 화면·산출물로 그대로 나간다.
-        # **주의** — 다른 카드의 기준선이 여기에 딸려 움직인다.
+        #
+        # **뒷문장을 뺐다** (27세션 4-4) — 「다른 수단의 기준선을 현행으로 둘지
+        # 최적으로 둘지에 따라 그 수단의 절감액이 달라진다」. 기준선을 고르는
+        # 것은 사용자가 하는 일이 아니다. 2단계는 언제나 현행 기준이고 상호작용은
+        # 3단계가 다시 계산한다 — 그 규약을 이 자리에서 되묻게 만들던 문장이다.
         notices.append(
             warn(
-                f"가장 유리한 요금제는 {selection_label(table, best_selection)} 입니다. "
-                "다른 수단의 기준선을 현행으로 둘지 최적으로 둘지에 따라 그 수단의 "
-                "절감액이 달라집니다.",
+                f"가장 유리한 요금제는 {selection_label(table, best_selection)} 입니다.",
                 fact="tariff_switch.best_selection",
             )
         )

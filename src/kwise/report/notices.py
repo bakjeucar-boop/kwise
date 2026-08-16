@@ -88,7 +88,8 @@ DATA_SOURCES: tuple[str, ...] = (
 # 금액을 내지 못한 항목의 사유. 빈칸으로 두지 않는다.
 UNPRICED_REASONS: dict[str, str] = {
     "contract": "미산출 — 요금적용전력 하한 규정 미확인 (한전 기본공급약관 확인 필요)",
-    "external_price": "미산출 — 외부 신재생에너지 구매 단가 미입력",
+    # 입력칸 이름 그대로 적는다 (27세션 7-2).
+    "external_price": "미산출 — 잉여 판매 단가 미입력",
     "pv_price": "미산출 — 태양광 설치 단가 미입력 (원/kWp 또는 총액을 넣으십시오)",
     "no_saving": "절감 없음",
     "arbitrage_not_summed": (

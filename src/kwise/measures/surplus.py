@@ -3,12 +3,15 @@
 **자격요건은 판정하지 않는다.** 제도별 자격요건과 행정 절차는 별도 확인 사항이며,
 여기서는 금액만 참고로 제시한다. 예상 행정 부담을 한 줄로 병기한다.
 
-    시나리오 A  버림(자가소비만)              0원
-    시나리오 B  상계거래                      그 시각의 전력량요금 단가로 상계
-    시나리오 C  외부 신재생에너지 구매 연계   사용자가 넣은 외부 단가
+    시나리오 A  상계거래(한전)   그 시각의 전력량요금 단가로 상계
+    시나리오 B  외부 판매        사용자가 넣은 잉여 판매 단가
+
+**「버림」 을 뺐다** (27세션 7-3). 언제나 0원인 줄이라 고를 것이 없고, 남는 둘을
+견주는 데도 보탬이 되지 않는다 — 아무것도 하지 않으면 0원이라는 것은 표가 없어도
+안다. **이름도 파는 곳으로 적는다** — 상계는 한전과, 외부 판매는 제3자와 한다.
 
 상계거래 금액은 요금표에서 계산한다 — 잉여가 난 슬롯의 계절·시간대 단가를 그대로
-쓴다. 단가를 지어내지 않는다. 외부 구매는 단가를 모르므로 입력이 없으면 비운다.
+쓴다. 단가를 지어내지 않는다. 외부 판매는 단가를 모르므로 입력이 없으면 비운다.
 """
 
 from __future__ import annotations
@@ -29,6 +32,8 @@ from kwise.tariff import (
 
 __all__ = [
     "ELIGIBILITY_NOTICE",
+    "EXTERNAL_SCENARIO",
+    "OFFSET_SCENARIO",
     "SurplusResult",
     "SurplusScenario",
     "evaluate_surplus",
@@ -38,10 +43,13 @@ ELIGIBILITY_NOTICE = (
     "제도별 자격요건과 행정 절차는 별도 확인이 필요합니다. 본 도구는 자격을 "
     "판정하지 않으며 금액만 참고로 제시합니다."
 )
+#: 시나리오 이름. **파는 곳으로 적는다** (27세션 7-3).
+OFFSET_SCENARIO = "상계거래(한전)"
+EXTERNAL_SCENARIO = "외부 판매"
+
 _ADMIN_NOTES = {
-    "버림": "행정 부담 없음. 잉여를 계통에 내보내지 않고 버린다.",
-    "상계거래": "계약 변경, 역송 계량기, 월별 정산 관리가 필요하다.",
-    "외부 신재생에너지 구매 연계": "구매자 발굴·계약, 정산 대행, 계량·인증 관리가 필요하다.",
+    OFFSET_SCENARIO: "계약 변경, 역송 계량기, 월별 정산 관리가 필요하다.",
+    EXTERNAL_SCENARIO: "구매자 발굴·계약, 정산 대행, 계량·인증 관리가 필요하다.",
 }
 
 
@@ -74,11 +82,17 @@ class SurplusResult:
     notices: tuple[Notice, ...] = field(default=())
 
     @property
-    def weekend_share(self) -> float | None:
-        """주말·공휴일 집중도. 높으면 자가소비가 어려운 구조다."""
+    def off_day_share(self) -> float | None:
+        """**토·일·공휴일 집중도.** 높으면 자가소비가 어려운 구조다.
+
+        26세션에 태양광 카드가 같은 지표를 「토·일·공휴일 잉여」 로 냈으므로
+        이름을 맞춘다 (27세션 7-1). 옛 이름은 ``weekend_share`` 였는데 값에
+        토요일이 빠져 있었다 — ``holiday_kwh`` 만 세고 있었고, 그러면서 이름은
+        「주말」 이었다. **이름과 값을 함께 고친다.**
+        """
         if self.total_kwh <= 0:
             return None
-        return self.holiday_kwh / self.total_kwh
+        return (self.weekend_kwh + self.holiday_kwh) / self.total_kwh
 
     def scenario(self, name: str) -> SurplusScenario:
         for item in self.scenarios:
@@ -97,11 +111,11 @@ def evaluate_surplus(
     external_price_won_per_kwh: float | None = None,
     options: BillingOptions | None = None,
 ) -> SurplusResult:
-    """잉여량·시간대 분포와 활용 시나리오 3종을 낸다.
+    """잉여량·시간대 분포와 활용 시나리오 둘을 낸다.
 
     Args:
         surplus_kw: 역송된 출력. :func:`kwise.measures.apply_generation` 의 결과.
-        external_price_won_per_kwh: 외부 신재생에너지 구매 단가. 없으면 금액을 비운다.
+        external_price_won_per_kwh: 잉여 판매 단가. 없으면 금액을 비운다.
     """
     opts = options if options is not None else BillingOptions()
     index = pd.DatetimeIndex(usage.kw.index)
@@ -153,24 +167,25 @@ def evaluate_surplus(
     weekday_kwh = float(energy[~(weekend_mask | holiday_mask)].sum())
 
     scenarios = (
-        SurplusScenario("버림", 0.0, "자가소비만 한다. 잉여는 버린다.", _ADMIN_NOTES["버림"]),
         SurplusScenario(
-            "상계거래",
+            OFFSET_SCENARIO,
             offset_won,
             f"잉여가 난 슬롯의 전력량요금 단가로 상계 ({table.effective_date} 시행 요금표).",
-            _ADMIN_NOTES["상계거래"],
+            _ADMIN_NOTES[OFFSET_SCENARIO],
         ),
         SurplusScenario(
-            "외부 신재생에너지 구매 연계",
+            EXTERNAL_SCENARIO,
             total_kwh * external_price_won_per_kwh
             if external_price_won_per_kwh is not None
             else None,
+            # **입력 이름 그대로 적는다** (27세션 7-2). 입력칸은 「잉여 판매 단가」
+            # 인데 표에서는 「외부 단가」 라고 불러 두 값인 줄 알게 했다.
             (
-                f"외부 단가 {external_price_won_per_kwh:,.1f} 원/kWh 적용"
+                f"잉여 판매 단가 {external_price_won_per_kwh:,.1f} 원/kWh 적용"
                 if external_price_won_per_kwh is not None
-                else "외부 단가를 입력하면 산출합니다. 단가를 지어내지 않습니다."
+                else "잉여 판매 단가를 입력하면 산출합니다. 단가를 지어내지 않습니다."
             ),
-            _ADMIN_NOTES["외부 신재생에너지 구매 연계"],
+            _ADMIN_NOTES[EXTERNAL_SCENARIO],
         ),
     )
     return SurplusResult(

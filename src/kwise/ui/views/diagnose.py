@@ -346,7 +346,8 @@ def _contract_block(table: TariffTable, building: BuildingInfo | None) -> Contra
                 value=float(saved.contract_kw) if saved and saved.contract_kw else None,
                 step=1.0,
                 placeholder="청구서 기재값",
-                help="청구서 기재값입니다. 계약 적정성 진단(2단계 7.2)이 이 값을 전제로 합니다.",
+                help="청구서 기재값입니다. 계약 적정성 진단(2단계 계약전력 조정)이 "
+                "이 값을 전제로 합니다.",
             )
             options = option_choices(table, contract_type, voltage)
             default_option = saved.option if saved and saved.option in options else options[0]
@@ -651,14 +652,29 @@ def _structure_block(usage: UsageData, diagnosis: Diagnosis, building: BuildingI
         return
     st.subheader("현재 요금 구조")
     structure = diagnosis.structure
-    columns = st.columns(3)
-    columns[0].metric("기본요금", fmt.won_short(structure.base_won))
+    # **합계를 함께 낸다** (27세션 3-1). 둘만 있으면 읽는 사람이 더해야 했고,
+    # 그 합이 청구액인지도 알 수 없었다.
+    #
+    # **역률요금은 기본요금에 합쳐 적는다.** 기본요금의 ±% 조정이라 따로 세울
+    # 값이 아니고, 요금 엔진의 12개월 환산도 둘을 함께 묶는다
+    # (:meth:`~kwise.tariff.BillingResult.annualize`). 그래야 **기본 + 전력량 =
+    # 합계**가 화면에서 그대로 성립한다 — 샘플은 역률 조정이 0원이라 값이 같다.
+    base_won = structure.base_won + structure.bill.total_power_factor_won
+    total_won = structure.total_won
+    columns = st.columns(4)
+    columns[0].metric("기본요금", fmt.won_short(base_won))
     columns[1].metric("전력량요금", fmt.won_short(structure.energy_won))
-    columns[2].metric(
+    columns[2].metric("합계", fmt.won_short(total_won))
+    columns[3].metric(
         "기본요금 비중",
-        fmt.ratio_pct(structure.base_share),
+        fmt.ratio_pct(base_won / total_won if total_won else None),
         help=manual_tip("charge-structure"),
     )
+    # **달마다 무엇이 달라지는지가 여기서 읽힌다** (27세션 3-2). 밑단(기본요금)이
+    # 같은 높이로 이어지고 그 위 세 조각만 계절따라 움직이는 것이 이 요금제의
+    # 모습이다.
+    st.altair_chart(charts.monthly_charge_chart(structure), width="stretch")
+    st.caption("월별 요금 구성", help=fmt.chart_tip("chart.monthly_charge"))
     st.altair_chart(charts.band_chart(structure), width="stretch")
     st.caption("계시별 사용량 구성", help=fmt.chart_tip("chart.band"))
     _intensity_line(usage, building)

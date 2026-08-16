@@ -97,7 +97,7 @@ from kwise.ui.cache import (
     usage_token,
 )
 from kwise.ui.context import AnalysisContext
-from kwise.ui.labels import option_label
+from kwise.ui.labels import measure_title, option_label
 from kwise.ui.notices import screen_notices, tooltip_text
 from kwise.ui.pipeline import ContractForm, combination_specs
 from kwise.ui.progress import progress_panel
@@ -133,8 +133,10 @@ def render(
     # ---- 검토 범위. **빠진 것을 조용히 빼지 않는다.**
     with st.container(border=True):
         st.markdown("**검토 범위**")
-        st.write("검토함 — " + (", ".join(scope.reviewed_labels) or "없음"))
-        st.write("미검토 — " + (", ".join(scope.skipped_labels) or "없음"))
+        # **화면은 순번으로 적는다** (27세션 2절). :class:`ReviewScope` 는 절 번호
+        # 그대로 두고 (Word 보고서가 같은 목록을 쓴다) 낼 때만 바꾼다.
+        st.write("검토함 — " + (", ".join(map(measure_title, scope.reviewed_labels)) or "없음"))
+        st.write("미검토 — " + (", ".join(map(measure_title, scope.skipped_labels)) or "없음"))
         st.caption(
             "미검토는 '효과가 없다' 가 아니라 '보지 않았다' 입니다.",
             help=manual_tip("known-limits"),
@@ -309,8 +311,13 @@ def _standalone_block(rows: tuple[StandaloneRow, ...]) -> None:
     if not rows:
         callout.note("2단계에서 수단을 하나도 켜지 않았습니다.")
         return
+    # **표의 「수단」 칸도 화면 순번이다** (27세션 2절). 표 자체는 Excel·Word 와
+    # 같은 것을 쓰므로 정본을 고치지 않고 낼 때만 바꾼다.
+    frame = standalone_frame(rows)
+    if not frame.empty:
+        frame = frame.assign(**{"수단": [measure_title(str(value)) for value in frame["수단"]]})
     st.dataframe(
-        standalone_frame(rows),
+        frame,
         hide_index=True,
         width="stretch",
         column_config={
@@ -368,12 +375,14 @@ def _combined_block(
     if excluded:
         st.caption(
             "합산효과에 넣지 않은 수단 — "
-            + ", ".join(row.title for row in excluded)
+            + ", ".join(measure_title(row.title) for row in excluded)
             + ". 요금이 아니라 별도 정산·수익이라 조합 부하에 얹을 수 없습니다."
         )
     dropped = [row for row in rows if row.combinable and row.key not in set(chosen)]
     if dropped:
-        st.caption("조합에서 뺀 개선안 — " + ", ".join(row.title for row in dropped) + ".")
+        st.caption(
+            "조합에서 뺀 개선안 — " + ", ".join(measure_title(row.title) for row in dropped) + "."
+        )
 
     # **이유는 계산 근거로 내린다** (22세션 2절). 「왜 단순 합과 다른가」 는
     # 산출 근거이지 결론이 아니다. 본문에 세 줄을 쌓으면 정작 위의 지표 셋이

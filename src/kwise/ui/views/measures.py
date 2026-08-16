@@ -71,8 +71,8 @@ from kwise.ui.cache import (
     usage_token,
 )
 from kwise.ui.context import AnalysisContext
-from kwise.ui.labels import option_label, selection_label
-from kwise.ui.notices import screen_notices, tooltip_text
+from kwise.ui.labels import measure_title, option_label, selection_label
+from kwise.ui.notices import partition_facts, screen_notices, tooltip_text
 from kwise.ui.pipeline import ContractForm, SolarInputs
 from kwise.ui.progress import progress_panel
 from kwise.ui.spec import MEASURES, MeasureSpec
@@ -99,7 +99,7 @@ def render(
         context.quality,
     )
     st.header("🛠 2단계 · 개선 수단")
-    st.caption("7.1부터 7.7까지 차례로 놓았습니다.", help=manual_tip("combination"))
+    st.caption("개선안 일곱을 차례로 놓았습니다.", help=manual_tip("combination"))
     # **기준선을 한 번만 밝힌다.** 카드마다 되풀이하면 읽히지 않는다 (10.7).
     st.write(
         "각 개선안은 **따로따로** 평가합니다. 카드의 절감액은 「지금 이 수단만 "
@@ -176,6 +176,19 @@ def _open_key(measure_key: str) -> str:
     return f"_kwise_opened_{measure_key}"
 
 
+#: 7.1 카드 본문에서 내리는 사실 둘 (27세션 4-3·4-4).
+#:
+#:     결측 신뢰 제한   **1단계 「데이터 품질」 이 낸다.** 요금 엔진이 요금제마다
+#:                     같은 사실을 다시 실어 보내지만, 그것으로 요금제를 고르지
+#:                     않는다. 달 판별자가 붙어 사실 ID 중복 판정을 빠져나간다
+#:     최적 요금제      **카드 본문이 같은 문장을 이미 쓴다.** 뒷문장을 뺀 뒤로는
+#:                     둘이 완전히 같아졌다 — 산출물에는 그대로 실린다
+_TARIFF_HIDDEN_FACTS: tuple[str, ...] = (
+    "quality.month_missing_rate",
+    "tariff_switch.best_selection",
+)
+
+
 def _card(
     spec: MeasureSpec,
     usage: UsageData,
@@ -194,24 +207,27 @@ def _card(
     펴야 했다. **열림 상태를 세션에 담고 ``expanded=`` 에 그 값을 넣는다.**
 
     Streamlit 은 사용자가 손으로 접은 것을 알려 주지 않으므로, 켜 둔 카드는
-    rerun 마다 다시 펼쳐진다. 접어 두고 싶으면 토글을 끈다 — 끄면 3단계 조합에서
+    rerun 마다 다시 펼쳐진다. 접어 두고 싶으면 체크를 푼다 — 풀면 3단계 조합에서
     빠지므로, 「켜 두고 접기」 는 애초에 두 뜻이 섞인 상태였다.
+
+    **고르는 것은 체크박스이고 이름이 곧 그 라벨이다** (27세션 1절). 슬라이드
+    단추는 손가락으로 맞히기 어려웠다 — 표적이 스위치 하나뿐이었기 때문이다.
+    이름을 라벨로 삼으면 제목 전체가 누를 자리가 되고, 「검토에 포함」 이라는
+    줄도 하나 준다. **세션 키는 그대로다** (``measure_on_*``) — 16세션에 잡은
+    키 충돌과 값 유실을 다시 열지 않는다.
     """
     icon = _ICONS[spec.key]
-    # 절 번호와 이름을 **묶음 머리보다 크게** 둔다 (16세션 6-1). 카드가 일곱이라
+    # 번호와 이름을 **묶음 머리보다 크게** 둔다 (16세션 6-1). 카드가 일곱이라
     # 스크롤 중에 경계가 눈에 걸려야 하는데, 묶음 머리와 같은 크기로는 묻혔다.
-    st.markdown(
-        f"<div style='font-size:1.5rem;font-weight:600;padding-top:0.6rem'>"
-        f"{icon} {spec.title}</div>",
-        unsafe_allow_html=True,
-    )
-    enabled = st.toggle("검토에 포함", key=toggle_key(spec.key))
+    # 체크박스 라벨은 글꼴 크기를 받지 않으므로 **굵게**로 무게만 준다.
+    title = measure_title(spec.title)
+    enabled = st.checkbox(f"**{icon} {title}**", key=toggle_key(spec.key))
     opened_key = _open_key(spec.key)
     if not enabled:
         st.session_state[opened_key] = False
         return
     st.session_state[opened_key] = True
-    with st.expander(f"{spec.title} — 입력과 결과", expanded=True):
+    with st.expander(f"{title} — 입력과 결과", expanded=True):
         st.caption(spec.headline, help=manual_tip(spec.anchor))
         handler = _HANDLERS[spec.key]
         handler(spec, usage, table, form, diagnosis, quality, baseline, day, building)
@@ -284,14 +300,15 @@ def _tariff_switch(
     # **① 차액이 먼저다** (17세션 1-3). 35억 위에서 5천만원이 움직이는 것을 절대
     # 금액 축에 그리면 막대 셋이 같은 높이로 보인다 — 변화만 떼어 먼저 보인다.
     st.altair_chart(charts.tariff_delta_chart(result), width="stretch")
+    # **읽는 법은 툴팁 하나로 족하다** (27세션 4-2). 「0 보다 왼쪽이면 절감」 이
+    # 물음표 안에 이미 있는데 바로 아래 캡션이 같은 말을 되풀이하고 있었다.
+    # 절사 각주도 여기 두지 않는다 — 3단계 「개선안별 요약」 한 곳이다 (25세션 4-5).
     st.caption("현행 대비 차액", help=fmt.chart_tip("chart.tariff_delta"))
-    # **절사 각주는 3단계 「개선안별 요약」 한 곳에만 둔다** (25세션 4-5). 항목 합과
-    # 합계가 어긋나 보이는 자리가 거기이고, 카드마다 되풀이하면 읽히지 않는다.
-    st.caption("현행을 0 으로 두고 좌우로 뻗은 막대입니다. 왼쪽(초록)이 절감입니다.")
     # **② 그룹 막대** (17세션 1-2). 쌓으면 기본요금끼리·전력량요금끼리 견줄 수 없다.
     st.altair_chart(charts.tariff_option_chart(result), width="stretch")
     st.caption("요금제별 기본·전력량·합계", help=fmt.chart_tip("chart.tariff_option"))
-    _notices(result.notices)
+    # 본문에서 내리는 사실 둘은 :data:`_TARIFF_HIDDEN_FACTS` 가 쥔다 (27세션 4-3·4-4).
+    _notices(partition_facts(result.notices, _TARIFF_HIDDEN_FACTS)[1])
     _worksheet(tariff_switch_worksheet(result))
 
 
@@ -313,23 +330,18 @@ def _contract(
         _overview(spec)
         _caution("계약전력을 입력해야 조정 여지를 봅니다 (1단계 계약 정보).")
         return
-    _adequacy(diagnosis)
     # **여유가 없으면 입력칸을 감춘다** (13세션). 움직여도 0% 라 고장으로 보인다.
     peak = diagnosis.peak.billing_demand_kw
     headroom = (form.contract_kw - peak) / form.contract_kw if form.contract_kw else 0.0
     low, high = margin_range()
     if headroom <= low:
-        st.write(
-            f"현재 계약전력 {fmt.kw(form.contract_kw, decimals=0)} 는 요금적용전력 "
-            f"{fmt.kw(peak)} 대비 여유가 {fmt.ratio_pct(headroom)} 입니다. "
-            "하향 여지가 없습니다."
-        )
         # **여유율을 세션에 남긴다.** 입력칸을 감춘 경우에도 3단계가 같은 값을
         # 읽어야 2단계 카드와 숫자가 어긋나지 않는다 (14세션 5-1). 위젯이 이번
         # 실행에서 만들어지지 않았으므로 키를 직접 써도 된다.
         margin = default_margin_ratio()
         st.session_state[input_key("contract", "margin")] = margin
     else:
+        _adequacy(diagnosis)
         # **슬라이더가 아니라 수치 입력이다** (16세션 0-2). 슬라이더는 끄는 동안
         # 실행이 이어져 화면이 계속 다시 그려진다 — ± 한 번에 한 번만 돈다.
         margin = st.number_input(
@@ -356,6 +368,17 @@ def _contract(
         rules_stamp(),
     )
     _overview(spec)
+    if result.reduction_kw <= 0:
+        # **여지가 없으면 이유 한 줄만 남긴다** (27세션 5절). 지표 넷(현행·권장·
+        # 하향 여지·절감액)은 모두 「0」 을 말하고, 경고 둘과 산출 근거는 하지도
+        # 못할 하향을 조심하라는 말이다. 읽는 사람이 할 일이 없는 글은 화면에
+        # 두지 않는다 — 적정성 지표도 같은 사실을 다른 이름으로 되풀이한다.
+        st.write(
+            f"현재 계약전력 {fmt.kw(result.contract_kw, decimals=0)} 는 요금적용전력 "
+            f"{fmt.kw(peak)} 대비 여유가 {fmt.ratio_pct(headroom)} 입니다. "
+            "하향 여지가 없습니다."
+        )
+        return
     columns = st.columns(4)
     columns[0].metric("현행 계약전력", fmt.kw(result.contract_kw))
     columns[1].metric("권장", fmt.kw(result.suggested_contract_kw))
@@ -1217,6 +1240,7 @@ def _surplus(
         key=input_key("surplus", "price"),
         help="우리가 파는 쪽의 단가입니다. 넣지 않으면 외부 판매 금액을 산출하지 않습니다.",
     )
+    # **표의 사유 문구도 이 이름을 쓴다** (27세션 7-2 · :mod:`kwise.measures.surplus`).
     _overview(spec)
 
     inputs = get_solar_inputs()
@@ -1225,7 +1249,7 @@ def _surplus(
     if inputs is None or capacity <= 0:
         st.write("태양광을 켜지 않아 잉여가 0 입니다.")
         st.caption(
-            "7.5 태양광을 켜고 계산하면 잉여량과 활용 시나리오가 여기에 나옵니다. "
+            "태양광을 켜고 계산하면 잉여량과 활용 시나리오가 여기에 나옵니다. "
             + fmt.markdown_safe(ELIGIBILITY_NOTICE)
         )
         return

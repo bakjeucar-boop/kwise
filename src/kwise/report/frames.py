@@ -37,6 +37,7 @@ __all__ = [
     "CAPACITY_ROWS",
     "CAPACITY_WINDOW",
     "DAY_TYPE_LABELS",
+    "MONTHLY_CHARGE_PARTS",
     "TARIFF_PARTS",
     "band_frame",
     "combination_frame",
@@ -44,6 +45,7 @@ __all__ = [
     "ess_day_frame",
     "ess_target_frame",
     "hourly_profile_frame",
+    "monthly_charge_frame",
     "monthly_peak_frame",
     "power_factor_day_frame",
     "power_triangle_frame",
@@ -104,6 +106,49 @@ def hourly_profile_frame(peak: PeakProfile) -> pd.DataFrame:
             "평균 부하(kW)": profile.astype(float).to_numpy(),
         }
     )
+
+
+#: 월별 요금 구성 막대의 쌓는 순서. **기본요금이 맨 아래다** — 사용량과 무관하게
+#: 깔리는 몫이라 밑단에 있어야 그 위의 전력량요금이 무엇에 얹혀 있는지 읽힌다.
+MONTHLY_CHARGE_PARTS: tuple[str, ...] = ("기본요금", "경부하", "중간부하", "최대부하")
+
+
+def monthly_charge_frame(structure: ChargeStructure) -> pd.DataFrame:
+    """월별 요금 구성 — 기본요금과 계시별 전력량요금 (27세션 3-2).
+
+    **기본요금에 역률요금을 합쳐 적는다.** 역률요금은 기본요금의 ±% 조정이라
+    따로 세우면 막대에 뜻 없는 실오라기가 하나 늘고, 요금 엔진의 12개월 환산
+    (:meth:`~kwise.tariff.BillingResult.annualize`)도 이미 둘을 함께 묶는다.
+    그래서 **네 조각의 합이 그달 청구액**(``total_won``)과 정확히 맞는다.
+
+    **기본요금이 달마다 같은 값으로 이어지는 것이 정상이다** (27세션 3-2).
+    요금적용전력이 직전 12개월 최대로 결정되므로 한 번 최대가 서면 그 뒤로는
+    같은 값이 이어진다 — 그 사실을 보이려고 막대에 넣는다. 선으로 빼면 축이
+    둘이 되고, 주석으로 내리면 「전력량요금만 있는 요금」 처럼 읽힌다.
+    """
+    monthly = structure.monthly
+    rows: list[dict[str, object]] = []
+    for month, row in monthly.iterrows():
+        base = float(row["base_won"]) + float(row.get("power_factor_won", 0.0))
+        values = {
+            "기본요금": base,
+            "경부하": float(row.get("light_won", 0.0)),
+            "중간부하": float(row.get("mid_won", 0.0)),
+            "최대부하": float(row.get("peak_won", 0.0)),
+        }
+        total = sum(values.values())
+        rows.extend(
+            {
+                "월": str(month),
+                "구분": part,
+                "원": values[part],
+                "합계(원)": total,
+                # 쌓는 순서. 그림 쪽에서 다시 정하면 달마다 밑단이 흔들린다.
+                "순서": order,
+            }
+            for order, part in enumerate(MONTHLY_CHARGE_PARTS)
+        )
+    return pd.DataFrame(rows, columns=["월", "구분", "원", "합계(원)", "순서"])
 
 
 def band_frame(structure: ChargeStructure) -> pd.DataFrame:

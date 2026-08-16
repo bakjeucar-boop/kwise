@@ -48,8 +48,11 @@ MEASURE_KEYS = (
     "ess",
     "surplus",
 )
-#: 수단 카드 머리글. :func:`kwise.ui.views.measures._card` 가 이 크기로 낸다.
-_CARD_HEADER = re.compile(r"font-size:1\.5rem")
+#: 수단 카드 머리글. **개선안 이름이 곧 체크박스 라벨이다** (27세션 1절).
+#: 26세션까지는 ``font-size:1.5rem`` 짜리 markdown 이었다 — 그것으로 자리를
+#: 갈랐으므로 여기도 함께 옮긴다. 못 옮기면 카드 셋이 한 자리로 합쳐져 예산이
+#: 카드별로 재어지지 않는다.
+_CARD_TOGGLE_PREFIX = "measure_on_"
 _TAG = re.compile(r"<[^>]+>")
 
 
@@ -111,6 +114,11 @@ def _walk(block: object) -> list[tuple[str, str]]:
         except Exception:
             value = None
         label = getattr(child, "label", None)
+        key = str(getattr(child, "key", "") or "")
+        if key.startswith(_CARD_TOGGLE_PREFIX):
+            # 개선안 카드의 시작. **라벨이 카드 이름이다.**
+            out.append(("CardHeader", str(label or "")))
+            continue
         out.append((type(child).__name__, str(value if value is not None else (label or ""))))
     return out
 
@@ -127,8 +135,8 @@ def measure(app: AppTest | None = None) -> list[Section]:
         clean = text.strip()
         if not clean:
             continue
-        if kind in {"Subheader", "Header"} or (kind == "Markdown" and _CARD_HEADER.search(text)):
-            sections.append(Section(_TAG.sub("", clean).strip()))
+        if kind in {"Subheader", "Header", "CardHeader"}:
+            sections.append(Section(_TAG.sub("", clean).strip().strip("*")))
             continue
         slot = current()
         if kind == "Error":

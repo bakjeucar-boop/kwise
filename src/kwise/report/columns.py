@@ -55,6 +55,9 @@ COLUMN_LABELS: dict[str, str] = {
     "peak_kwh": "최대부하(kWh)",
     "total_kwh": "사용량(kWh)",
     # 금액
+    "light_won": "경부하 요금(원)",
+    "mid_won": "중간부하 요금(원)",
+    "peak_won": "최대부하 요금(원)",
     "base_won": "기본요금(원)",
     "energy_won": "전력량요금(원)",
     "energy_won_adjusted": "전력량요금 보정(원)",

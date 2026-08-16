@@ -16,6 +16,8 @@ import pytest
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData, load_usage
 from kwise.measures import (
+    EXTERNAL_SCENARIO,
+    OFFSET_SCENARIO,
     PV_UNPRICED_REASON,
     Certainty,
     ContractStatus,
@@ -619,13 +621,14 @@ def test_surplus_scenarios(surplus_case: SurplusCase, tariff: TariffTable) -> No
         external_price_won_per_kwh=90.0,
     )
     assert result.total_kwh == pytest.approx(net.surplus_kwh)
-    assert result.scenario("버림").revenue_won == 0.0
-    offset = result.scenario("상계거래")
+    # **시나리오는 둘이다** (27세션 7-3). 「버림」 은 언제나 0원이라 고를 것이 없다.
+    assert [item.name for item in result.scenarios] == [OFFSET_SCENARIO, EXTERNAL_SCENARIO]
+    offset = result.scenario(OFFSET_SCENARIO)
     assert offset.revenue_won is not None
     assert offset.revenue_won > 0
     # 상계 단가는 요금표에서 나온다. 경부하(92.8)~최대부하(227.8) 사이여야 한다
     assert 92.8 <= offset.revenue_won / result.total_kwh <= 227.8
-    external = result.scenario("외부 신재생에너지 구매 연계")
+    external = result.scenario(EXTERNAL_SCENARIO)
     assert external.revenue_won == pytest.approx(result.total_kwh * 90.0)
 
 
@@ -634,10 +637,12 @@ def test_external_price_is_not_invented(surplus_case: SurplusCase, tariff: Tarif
     result = evaluate_surplus(
         usage, tariff, CURRENT, net.surplus_kw, generation_kwh=net.generated_kwh
     )
-    external = result.scenario("외부 신재생에너지 구매 연계")
+    external = result.scenario(EXTERNAL_SCENARIO)
     assert external.revenue_won is None
     assert not external.is_priced
     assert "지어내지 않습니다" in external.basis
+    # **입력칸과 같은 이름으로 적는다** (27세션 7-2).
+    assert "잉여 판매 단가" in external.basis
 
 
 def test_eligibility_is_not_judged(surplus_case: SurplusCase, tariff: TariffTable) -> None:
@@ -661,7 +666,12 @@ def test_surplus_hour_distribution_is_midday(
     assert int(distribution.idxmax()) in range(11, 15)
     assert distribution.loc[3] == 0.0  # 새벽에는 잉여가 없다
     assert result.share_of_generation is not None
-    assert result.weekend_share is not None
+    # **토·일·공휴일을 함께 센다** (27세션 7-1). 옛 ``weekend_share`` 는 이름에
+    # 주말을 달고 토요일을 빼먹고 있었다.
+    assert result.off_day_share is not None
+    assert result.off_day_share == pytest.approx(
+        (result.weekend_kwh + result.holiday_kwh) / result.total_kwh
+    )
 
 
 # --------------------------------------------------------------------- 순부하 만들기

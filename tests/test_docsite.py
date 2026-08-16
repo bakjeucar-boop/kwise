@@ -199,10 +199,14 @@ def test_툴팁이_제목과_요지를_함께_준다() -> None:
 
 
 def test_모든_앵커가_툴팁을_낸다() -> None:
+    """**제목 + 요지**다. 개선안 번호만 화면 순번으로 바뀐다 (27세션 2절)."""
+    from kwise.ui.labels import measure_title
+
     for item in ANCHORS:
         tip = manual_tip(item.key)
-        assert item.title in tip
-        assert len(tip) > len(item.title)
+        title = measure_title(item.title)
+        assert title in tip
+        assert len(tip) > len(title)
 
 
 def test_등록되지_않은_앵커는_바로_실패한다() -> None:

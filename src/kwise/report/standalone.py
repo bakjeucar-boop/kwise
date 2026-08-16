@@ -17,6 +17,7 @@ import pandas as pd
 
 from kwise import money
 from kwise.measures import (
+    OFFSET_SCENARIO,
     Certainty,
     ContractAdjustment,
     DemandResponseResult,
@@ -176,7 +177,7 @@ def standalone_rows(
             )
         )
     if surplus is not None:
-        offset = surplus.scenario("상계거래")
+        offset = surplus.scenario(OFFSET_SCENARIO)
         rows.append(
             StandaloneRow(
                 kind=measure_kind("surplus"),

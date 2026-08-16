@@ -149,12 +149,16 @@ def test_모든_수단을_켜도_2단계가_돈다() -> None:
 
 
 def test_수단을_켜고_끄기를_반복해도_상태가_꼬이지_않는다() -> None:
-    """토글을 되풀이해도 카드가 살아 있고 예외가 없어야 한다."""
+    """켜고 끄기를 되풀이해도 카드가 살아 있고 예외가 없어야 한다.
+
+    **선택 오브젝트가 체크박스로 바뀌었다** (27세션 1절). 세션 키는 그대로다 —
+    16세션에 잡은 키 충돌·값 유실이 재발하지 않는지 여기서 본다.
+    """
     app = _app(**_on("tariff_switch"))
     for _ in range(2):
-        app.toggle(key="measure_on_tariff_switch").set_value(False).run()
+        app.checkbox(key="measure_on_tariff_switch").set_value(False).run()
         assert not app.exception, app.exception
-        app.toggle(key="measure_on_tariff_switch").set_value(True).run()
+        app.checkbox(key="measure_on_tariff_switch").set_value(True).run()
         assert not app.exception, app.exception
     assert any(item.label == "가장 유리한 요금제" for item in app.metric)
 
@@ -505,7 +509,8 @@ def test_3단계_요약이_2단계_카드와_같다() -> None:
 
     frame = next(item.value for item in card.dataframe if "수단" in list(item.value.columns))
     rows = {str(row["수단"]): row for _, row in frame.iterrows()}
-    assert str(rows["7.6 ESS"]["회수기간"]) == ess_payback
+    # 화면 표는 순번으로 적는다 (27세션 2절). 산출물은 절 번호 그대로다.
+    assert str(rows["6. ESS"]["회수기간"]) == ess_payback
 
 
 def test_단순_합과_합산효과가_다르다() -> None:
@@ -671,14 +676,16 @@ def test_화면에_상세_미산출이_없다() -> None:
     assert not app.exception, app.exception
     body = _text(app)
     assert "상세 미산출" not in body
-    assert "왼쪽(초록)이 절감" in body
+    # **읽는 법은 툴팁 하나로 족하다** (27세션 4-2). 본문 캡션이 같은 말을 했다.
+    assert "왼쪽(초록)이 절감" not in body
 
 
-def test_역률_범례가_그림_바깥_오른쪽이다() -> None:
-    """**바깥 오른쪽 · 배경 없음** (17세션 2절 → 23세션 1절).
+def test_역률_범례가_그림_아래에_있다() -> None:
+    """**꼭짓점 옆 글자와 자리를 다투지 않는다** (23세션 1절 → 27세션 6절).
 
-    17세션에는 우측 **하단 안쪽**이었다. 값이 커질 때 글자를 가리지는 않았지만
-    흰 배경 상자를 깔아 두어 다크 모드에서 흰 바탕에 회색 글씨가 됐다.
+    바깥 오른쪽 범례는 그림 오른쪽 **위**에서부터 쌓인다. 이 그림은 도형 옆에
+    설명을 직접 적으므로 (17세션 2절) 그 글자가 같은 자리로 뻗었다. 배경 없음·
+    안쪽 금지는 그대로다.
     """
     from kwise.ui.charts import power_triangle_chart
 
@@ -690,7 +697,7 @@ def test_역률_범례가_그림_바깥_오른쪽이다() -> None:
         if "legend" in layer["encoding"].get("color", {})
     ]
     assert legends, "범례가 없습니다."
-    assert {item["orient"] for item in legends} == {"right"}
+    assert {item["orient"] for item in legends} == {"bottom"}
     assert all(item.get("fillColor") is None for item in legends), "범례에 배경이 있습니다."
 
 

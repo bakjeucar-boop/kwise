@@ -163,9 +163,7 @@ OS_SPECIFIC_FONTS = (
 #: 주석에 그 말이 나왔다고 잡으면 한국어로 쓴 코드에서 거짓 경보만 난다
 #: (실제로 ``ui\\callout.py``·``ui\\charts.py`` 가 걸렸다). 글꼴로 쓰일 때는
 #: 반드시 문자열 리터럴이므로 따옴표로 좁힌다.
-_FONT_LITERAL = re.compile(
-    "|".join(f"[\"']{re.escape(name)}[\"']" for name in OS_SPECIFIC_FONTS)
-)
+_FONT_LITERAL = re.compile("|".join(f"[\"']{re.escape(name)}[\"']" for name in OS_SPECIFIC_FONTS))
 
 #: 글꼴 이름이 **있어도 되는** 자리와 그 이유. 여기 없는 파일에서 나오면 실패한다.
 FONT_NAME_ALLOWED = {
@@ -328,8 +326,7 @@ def test_every_package_folder_has_an_init() -> None:
         and not (folder / "__init__.py").is_file()
     ]
     assert not missing, (
-        f"__init__.py 가 없습니다: {missing}. "
-        "네임스페이스 패키지가 되어 오류가 엉뚱한 데서 납니다."
+        f"__init__.py 가 없습니다: {missing}. 네임스페이스 패키지가 되어 오류가 엉뚱한 데서 납니다."
     )
 
 
@@ -415,7 +412,7 @@ def test_dev_tools_are_installed_through_the_dev_extra() -> None:
         if bad:
             offenders[name] = bad
     assert not offenders, (
-        f'개발 도구를 낱개로 까는 명령이 남아 있습니다: {offenders}. '
+        f"개발 도구를 낱개로 까는 명령이 남아 있습니다: {offenders}. "
         '`pip install -e ".[dev]"` 로 바꾸십시오.'
     )
 

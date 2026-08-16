@@ -28,6 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from kwise.ui.labels import measure_title
 from kwise.ui.text import markdown_safe
 
 __all__ = [
@@ -120,8 +121,8 @@ ANCHORS: tuple[ManualAnchor, ...] = (
         "1단계가 내는 것과 내지 않는 것",
         "1단계 · 머리말",
         "1단계는 진단만 하고 금액은 2단계에서 낸다 (16세션). 옛 '투자 없이 가능한 "
-        "절감액' 이 7.1·7.2 카드의 어디로 갔는지, 태양광 기여 가능성 등급의 판정 "
-        "모집단이 요금적용전력 대상 슬롯인 이유.",
+        "절감액' 이 선택요금 전환·계약전력 조정 카드의 어디로 갔는지, 태양광 기여 "
+        "가능성 등급의 판정 모집단이 요금적용전력 대상 슬롯인 이유.",
     ),
     ManualAnchor(
         "load-pattern",
@@ -340,8 +341,12 @@ def manual_tip(key: str) -> str:
 
     **없는 키를 쓰면 바로 실패한다** — 빈 툴팁을 화면에 내지 않는다.
     **escape 해서 낸다** (25세션 2절) — ``help=`` 도 마크다운을 해석한다.
+    **개선안 번호는 화면 순번으로 바꿔 낸다** (27세션 2절) — 매뉴얼 소제목
+    (:attr:`ManualAnchor.title`)은 절 번호를 그대로 쓰고, 화면에 실을 때만
+    :func:`~kwise.ui.labels.measure_title` 을 지난다.
     """
-    return markdown_safe(anchor(key).tip)
+    item = anchor(key)
+    return markdown_safe(f"{measure_title(item.title)} — {item.covers}")
 
 
 _DOC_HEADER = f"""# 매뉴얼 앵커 목록

@@ -84,9 +84,7 @@ def weather_cache_state(case_dir: Path) -> WeatherCacheState:
 
 
 @pytest.fixture(scope="module")
-def study(
-    case_dir: Path, tariff: TariffTable, weather_cache_state: WeatherCacheState
-) -> CaseStudy:
+def study(case_dir: Path, tariff: TariffTable, weather_cache_state: WeatherCacheState) -> CaseStudy:
     """케이스 6종 × PV 4단계 × 감도 3종. **순차로 돈다.**"""
     return run_case_study(build_case_definitions(case_dir), tariff)
 

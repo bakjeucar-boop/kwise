@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import datetime as dt
+import functools
 import inspect
 import re
 from pathlib import Path
@@ -1151,15 +1152,16 @@ def test_개선안별_요약이_2단계_카드와_같은_값이다() -> None:
     screen = _running(option="I", **STAGE3_MEASURES)  # type: ignore[arg-type]
     assert not screen.exception, screen.exception
     metrics = _stage2_metrics(screen)
+    # 화면 표는 절 번호가 아니라 순번으로 적는다 (27세션 2절).
     card_payback = {
-        "7.4 역률 개선": _after(metrics, "현재 역률", 3),
-        "7.6 ESS": _after(metrics, "출력 / 용량", 3),
+        "4. 역률 개선": _after(metrics, "현재 역률", 3),
+        "6. ESS": _after(metrics, "출력 / 용량", 3),
     }
 
     frame = next(item.value for item in screen.dataframe if "수단" in list(item.value.columns))
     rows = {str(row["수단"]): row for _, row in frame.iterrows()}
 
-    for title in ("7.1 선택요금 전환", "7.2 계약전력 조정", "7.4 역률 개선", "7.6 ESS"):
+    for title in ("1. 선택요금 전환", "2. 계약전력 조정", "4. 역률 개선", "6. ESS"):
         assert title in rows, rows.keys()
     assert "단순 합" in rows
     for title, expected in card_payback.items():
@@ -1473,6 +1475,7 @@ def _chart_specs() -> dict[str, object]:
         "chart.top_hour": charts.top_hour_chart(diagnosis.peak),
         "chart.hourly_profile": charts.hourly_profile_chart(diagnosis.peak),
         "chart.band": charts.band_chart(diagnosis.structure),
+        "chart.monthly_charge": charts.monthly_charge_chart(diagnosis.structure),
         "chart.tariff_option": charts.tariff_option_chart(switch),
         "chart.tariff_delta": charts.tariff_delta_chart(switch),
         "chart.dr_daily": charts.dr_daily_chart(diagnosis.dr),
@@ -1496,11 +1499,19 @@ def chart_specs() -> dict[str, object]:
     return _chart_specs()
 
 
+#: **범례를 아래에 두는 차트** (27세션 6절). 도형 옆에 설명 글자를 직접 적어
+#: 바깥 오른쪽 범례와 자리를 다투는 그림만이다. 늘리려면 이유를 적는다.
+LEGEND_BELOW_CHARTS = {"chart.power_triangle"}
+
+
 def test_전_차트가_같은_범례_규약을_쓴다(chart_specs: dict[str, object]) -> None:
-    """**바깥 오른쪽 · 배경 없음** (23세션 1절).
+    """**바깥 오른쪽 · 배경 없음** (23세션 1절 · 27세션 6절).
 
     17세션이 준 ``fillColor="white"`` 가 다크 모드에서 흰 상자에 회색 글씨를
     만들었다. 배경을 칠하지 않으면 테마가 그대로 비쳐 두 모드에서 다 읽힌다.
+
+    **예외는 :data:`LEGEND_BELOW_CHARTS` 뿐이다** — 그림 안의 글자가 오른쪽으로
+    뻗는 차트는 아래로 내린다. 배경 없음·안쪽 금지는 예외 없이 지킨다.
     """
     import json
 
@@ -1511,20 +1522,25 @@ def test_전_차트가_같은_범례_규약을_쓴다(chart_specs: dict[str, obj
             offenders.append(f"{name}: 범례에 흰 배경")
         if '"orient": "bottom-right"' in spec:
             offenders.append(f"{name}: 범례가 그림 안쪽")
-        if '"legend"' in spec and '"orient": "right"' not in spec:
-            offenders.append(f"{name}: 범례가 바깥 오른쪽이 아님")
+        if '"legend"' not in spec:
+            continue
+        wanted = '"orient": "bottom"' if name in LEGEND_BELOW_CHARTS else '"orient": "right"'
+        if wanted not in spec:
+            offenders.append(f"{name}: 범례 자리가 규약과 다름")
     assert offenders == [], " / ".join(offenders)
 
 
-def test_범례_설정이_한_벌이다() -> None:
-    """차트마다 따로 주면 또 갈라진다 — 상수 하나를 모두가 쓴다."""
-    from kwise.ui.charts import LEGEND
+def test_범례_설정이_두_벌뿐이다() -> None:
+    """차트마다 따로 주면 또 갈라진다 — 상수 둘을 모두가 나눠 쓴다 (27세션 6절)."""
+    from kwise.ui.charts import LEGEND, LEGEND_BELOW
 
     source = (Path("src") / "kwise" / "ui" / "charts.py").read_text(encoding="utf-8")
     assert "_LEGEND_BOTTOM" not in source, "옛 범례 상수가 남아 있습니다."
-    assert source.count("alt.Legend(") == 1, "범례 정의는 하나여야 합니다."
+    assert source.count("alt.Legend(") == 2, "범례 정의는 기본과 아래 둘뿐이어야 합니다."
     assert LEGEND.to_dict()["orient"] == "right"
-    assert LEGEND.to_dict().get("fillColor") is None
+    assert LEGEND_BELOW.to_dict()["orient"] == "bottom"
+    for legend in (LEGEND, LEGEND_BELOW):
+        assert legend.to_dict().get("fillColor") is None
 
 
 def test_보고서_png_도_같은_범례_규약이다() -> None:
@@ -1890,7 +1906,7 @@ def test_카드_절감액이_3단계_표와_같은_기준이다() -> None:
     # 역률 카드는 언제나 값이 있다 — 두 화면의 금액이 같은 크기여야 한다.
     card = next(value for label, value in _stage2_metrics(screen) if label == "절감액")
     assert card.rstrip("/년"), card
-    assert rows["7.1 선택요금 전환"], rows
+    assert rows["1. 선택요금 전환"], rows
 
 
 def test_잉여_판정이_태양광_카드에_있다() -> None:
@@ -1947,3 +1963,212 @@ def test_발전량을_MWh_로_낸다() -> None:
     assert "fmt.kwh(point.generation_kwh)" not in body
     view = source[source.index("def _capacity_view(") : source.index("def _azimuth_picker(")]
     assert '"발전량": [fmt.per_year(fmt.mwh(' in view, "용량 표 발전량이 MWh 가 아닙니다."
+
+
+# ======================================================== 27세션 · 조작과 표시
+
+
+@functools.lru_cache(maxsize=1)
+def _structure() -> Any:
+    """샘플의 요금 구조 한 벌. **두 시험이 나눠 쓴다** — 요금 계산이 무겁다."""
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.quality import check_quality
+
+    usage = load_usage(SAMPLE)
+    table_ = load_tariff()
+    quality = check_quality(usage)
+    diagnosis = diagnose(
+        usage,
+        table_,
+        ContractInfo(TariffSelection("general_b", "high_a", "I"), contract_kw=5_500.0),
+        quality=quality,
+    )
+    assert diagnosis.structure is not None
+    return diagnosis.structure
+
+
+def test_개선안을_체크박스로_고른다() -> None:
+    """**표적이 제목 전체다** (27세션 1절).
+
+    슬라이드 단추는 스위치 하나만 표적이라 손가락으로 맞히기 어려웠다. 이름을
+    체크박스 라벨로 삼으면 제목 줄 전체가 누를 자리가 된다.
+    """
+    screen = _running(measure_on_tariff_switch=True)
+    assert not screen.exception, screen.exception
+    keys = {str(item.key) for item in screen.checkbox}
+    assert {f"measure_on_{key}" for key in INDEPENDENT_MEASURES} <= keys, keys
+    assert not [item for item in screen.toggle if str(item.key or "").startswith("measure_on_")]
+    # 라벨이 곧 카드 이름이다.
+    label = screen.checkbox(key="measure_on_tariff_switch").label
+    assert "선택요금 전환" in label
+    assert "검토에 포함" not in " ".join(str(item.label) for item in screen.checkbox)
+
+
+def test_체크를_켜고_끄면_카드와_조합이_따라온다() -> None:
+    """**켜고 끄는 동작이 슬라이드 단추 때와 같아야 한다** (27세션 1절).
+
+    16세션에 잡은 것 — 위젯을 다시 그리지 않으면 세션 값이 버려진다 — 이
+    재발하지 않는지 **실제로 눌러** 본다.
+    """
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_tariff_switch=True)
+    assert any(item.label == "가장 유리한 요금제" for item in screen.metric)
+    off = screen.checkbox(key="measure_on_tariff_switch").set_value(False).run(timeout=600)
+    assert not off.exception, off.exception
+    assert not [item for item in off.metric if item.label == "가장 유리한 요금제"]
+    assert "미검토 — 1. 선택요금 전환" in " ".join(str(item.value) for item in off.markdown)
+    on = off.checkbox(key="measure_on_tariff_switch").set_value(True).run(timeout=600)
+    assert not on.exception, on.exception
+    assert any(item.label == "가장 유리한 요금제" for item in on.metric)
+    assert on.session_state["measure_on_tariff_switch"] is True
+
+
+def test_화면에_절_번호가_없다(screen_lines: tuple[object, ...]) -> None:
+    """**7.1~7.7 은 요구사항서 절 번호다** (27세션 2절).
+
+    사용자에게는 뜻이 없고 화면 어디에도 7장이 없다. 순번 1~7 로만 적는다.
+    코드 주석·문서·산출물의 7.x 는 그대로 둔다 — 거기서는 맞물려 있어야 한다.
+    """
+    offenders = [
+        f"[{item.slot}] {item.where} :: {item.text[:60]}"
+        for item in screen_lines
+        if re.search(r"7\.[1-7]", str(item.text))
+    ]
+    assert offenders == [], offenders
+    labels = [str(item.text) for item in screen_lines if item.slot == "라벨"]
+    assert any(label.startswith("1. 선택요금 전환") for label in labels), labels[:20]
+
+
+def test_절_번호는_화면에서만_순번이_된다() -> None:
+    """정본은 그대로다 — 보고서·Excel 이 같은 목록을 쓴다 (27세션 2절)."""
+    from kwise.measures import measure_kind
+    from kwise.ui.labels import measure_title
+
+    assert measure_kind("surplus").title == "7.7 잉여 활용"
+    assert measure_title("7.7 잉여 활용") == "7. 잉여 활용"
+    assert measure_title("7.1 선택요금 전환") == "1. 선택요금 전환"
+    # 절 번호가 없는 이름은 건드리지 않는다.
+    assert measure_title("확실성 등급") == "확실성 등급"
+
+
+def test_요금_구조에_합계와_월별_그래프가_있다(app: AppTest) -> None:
+    """**둘만 보이고 합계가 없었다** (27세션 3-1·3-2)."""
+    labels = _labels(app)
+    for name in ("기본요금", "전력량요금", "합계", "기본요금 비중"):
+        assert name in labels, labels
+    captions = [str(item.value) for item in app.caption]
+    assert "월별 요금 구성" in captions, captions
+
+
+def test_월별_요금_구성이_네_조각이다() -> None:
+    """**기본요금 + 계시별 전력량요금**, 그리고 그 합이 청구액이다 (27세션 3-2).
+
+    기본요금이 달마다 같은 값으로 이어지는 것은 요금적용전력 12개월 규칙의
+    모습이다 — 그 사실을 보이려고 선으로 빼지 않고 막대에 넣는다.
+    """
+    from kwise.report.frames import MONTHLY_CHARGE_PARTS, monthly_charge_frame
+
+    structure = _structure()
+    frame = monthly_charge_frame(structure)
+    assert list(dict.fromkeys(frame["구분"])) == list(MONTHLY_CHARGE_PARTS)
+    monthly = structure.monthly
+    assert len(frame) == len(monthly) * 4
+    for month, group in frame.groupby("월"):
+        row = monthly.loc[next(item for item in monthly.index if str(item) == month)]
+        assert float(group["원"].sum()) == pytest.approx(float(row["total_won"]))
+    # 밑단은 기본요금이고, 요금적용전력이 자리를 잡은 뒤로는 같은 값이 이어진다.
+    base = [float(value) for value in frame[frame["구분"] == "기본요금"]["원"]]
+    assert len(set(round(value) for value in base)) < len(base)
+
+
+def test_월별_요금_구성_막대를_자르지_않는다() -> None:
+    """**길이가 곧 금액이다** (17세션 0절 · 23세션 2절)."""
+    from kwise.ui.charts import monthly_charge_chart
+
+    spec = monthly_charge_chart(_structure()).to_dict()
+    assert spec["encoding"]["y"].get("scale", {}).get("zero") is not False
+    assert spec["encoding"]["y"]["stack"] == "zero"
+
+
+def test_선택요금_전환에_중복_문구가_없다() -> None:
+    """툴팁이 이미 말하는 것을 본문이 되풀이하지 않는다 (27세션 4-2·4-3·4-4).
+
+    샘플의 현행은 선택Ⅱ 이고 그것이 이미 최적이라, **갈아탈 것이 있는 상태**를
+    만들려고 선택Ⅰ 로 띄운다.
+    """
+    screen = _running(option="I", measure_on_tariff_switch=True)
+    assert not screen.exception, screen.exception
+    body = " ".join(
+        str(item.value) for group in (screen.markdown, screen.caption) for item in group
+    )
+    assert "왼쪽(초록)이 절감" not in body
+    assert "천 원 단위로 절사" in body  # 3단계 한 곳에는 남는다
+    assert body.count("천 원 단위로 절사") == 1
+    # 결측 신뢰 제한은 1단계에서 한 번만 (27세션 4-3).
+    assert "결측률이 높은 달" in body
+    assert "결측 보정 기준을 함께 봅니다" not in body
+    # 최적 요금제 안내는 앞 문장만 (27세션 4-4).
+    assert "가장 유리한 요금제는" in body
+    assert "다른 수단의 기준선을" not in body
+
+
+def test_최적_요금제_안내가_한_문장이다() -> None:
+    """뒷문장은 계산 모듈에서 지웠다 — 산출물에도 없다 (27세션 4-4)."""
+    path = Path("src") / "kwise" / "measures" / "tariff_switch.py"
+    body = "".join(_strings(path))
+    assert "다른 수단의 기준선을" not in body, "문구가 남아 있습니다."
+
+
+def test_하향_여지가_없으면_이유_한_줄만_남는다() -> None:
+    """**할 수 없는 일에 경고를 달지 않는다** (27세션 5절).
+
+    샘플의 실제 계약전력 5,500 kW 는 요금적용전력 5,293 kW 대비 여유가 3.8% 라
+    하향 여지가 0 kW 다. 지표 넷·경고 둘·산출 근거가 모두 「0」 을 말한다.
+    """
+    from kwise.report import CONTRACT_CHANGE_WARNING
+
+    screen = _running(contract_kw=5_500.0, nav_page="2단계 · 개선 수단", measure_on_contract=True)
+    assert not screen.exception, screen.exception
+    body = " ".join(
+        str(item.value) for group in (screen.markdown, screen.caption) for item in group
+    )
+    assert "하향 여지가 없습니다" in body
+    assert CONTRACT_CHANGE_WARNING not in body
+    assert "현재 부하 기준의 하향 여지" not in body
+    labels = [label for label, _ in _stage2_metrics(screen)]
+    for banned in ("현행 계약전력", "권장", "하향 여지", "이용률"):
+        assert banned not in labels, labels
+    # 여유가 있으면 그대로 다 나온다 — 감추는 것은 여지가 0 일 때뿐이다.
+    wide = _running(nav_page="2단계 · 개선 수단", measure_on_contract=True)
+    assert "하향 여지" in [label for label, _ in _stage2_metrics(wide)]
+
+
+def test_잉여_시나리오가_둘이다() -> None:
+    """**버림은 언제나 0원이라 고를 것이 없다** (27세션 7-3)."""
+    from kwise.measures import EXTERNAL_SCENARIO, OFFSET_SCENARIO
+
+    assert (OFFSET_SCENARIO, EXTERNAL_SCENARIO) == ("상계거래(한전)", "외부 판매")
+    source = (Path("src") / "kwise" / "measures" / "surplus.py").read_text(encoding="utf-8")
+    assert '"버림"' not in source
+    assert "외부 신재생에너지 구매 연계" not in source
+
+
+def test_잉여_단가_이름이_하나다() -> None:
+    """입력칸과 표가 같은 이름을 쓴다 (27세션 7-2)."""
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_surplus=True)
+    assert not screen.exception, screen.exception
+    labels = [str(item.label) for item in screen.number_input]
+    assert any("잉여 판매 단가" in label for label in labels), labels
+    from kwise.report.notices import UNPRICED_REASONS
+
+    assert "잉여 판매 단가" in UNPRICED_REASONS["external_price"]
+    assert "외부 단가" not in UNPRICED_REASONS["external_price"]
+
+
+def test_토일공휴일_용어가_두_카드에서_같다() -> None:
+    """7.5 지표와 잉여 결과가 같은 말을 쓴다 (27세션 7-1 · 26세션 3-2)."""
+    from kwise.measures.surplus import SurplusResult
+
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    assert '"토·일·공휴일 잉여"' in source
+    assert not hasattr(SurplusResult, "weekend_share"), "옛 이름이 남아 있습니다."
+    assert hasattr(SurplusResult, "off_day_share")
