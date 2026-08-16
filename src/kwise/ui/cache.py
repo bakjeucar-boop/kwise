@@ -221,9 +221,20 @@ def cached_diagnosis(
     form: ContractForm | None,
     stamp: str,
     operating_hours: tuple[int, int] = DEFAULT_OPERATING_HOURS,
+    dr_off_days: tuple[str, ...] = (),
 ) -> Diagnosis:
+    """``dr_off_days`` 는 **캐시 열쇠에 들어가야 한다** (29세션).
+
+    사용자가 쉬는 날을 고르면 DR 감축량이 다시 계산되는데, 열쇠에 없으면 옛
+    결과가 그대로 돌아온다 — 화면은 고쳤는데 숫자가 안 바뀌는 자리가 된다.
+    """
     return pipeline.diagnose_usage(
-        _usage, _table, form, quality=_quality, operating_hours=operating_hours
+        _usage,
+        _table,
+        form,
+        quality=_quality,
+        operating_hours=operating_hours,
+        dr_off_days=dr_off_days,
     )
 
 

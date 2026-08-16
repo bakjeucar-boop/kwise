@@ -2364,3 +2364,96 @@ def test_28세션_중복_셋이_사라졌다() -> None:
     assert "자격요건" in ELIGIBILITY_NOTICE
     # ① 감도 목록 두 줄 (「절감액」 과 「12개월 환산 절감액」) — 목록이 사라졌다.
     assert 'st.expander("지표별 감도 범위"' not in compare_source
+
+
+# ======================================================== 29세션 · 공휴일 보정
+
+
+def test_저부하_평일_목록에_날짜와_요일이_있다() -> None:
+    """**사용자가 알아볼 수 있어야 한다** (29세션). 날짜만으로는 무슨 날인지 모른다."""
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_demand_response=True)
+    assert not screen.exception, screen.exception
+    frame = next(
+        item.value for item in screen.dataframe if "감축 여력(kW)" in list(item.value.columns)
+    )
+    assert list(frame.columns)[:2] == ["날짜", "요일"]
+    assert list(frame["날짜"]) == ["2023-05-01", "2023-10-02"]
+    assert list(frame["요일"]) == ["월", "월"]
+
+
+def test_쉬는_날을_고르면_감축량이_다시_계산된다() -> None:
+    """**목록을 보여 주고 끝내지 않는다** (29세션).
+
+    고른 날은 거래 가능일에서 빠지고 DR 프로파일을 처음부터 다시 만든다 —
+    기준선·문턱·감축량이 함께 움직인다.
+    """
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_demand_response=True)
+    before = {str(item.label): str(item.value) for item in screen.metric}
+    assert before["저부하 평일"] == "2일"
+
+    picker = screen.multiselect(key="measure_demand_response_off_days")
+    assert "쉬는 날" in str(picker.label)
+    assert "근로자의 날이나 임시공휴일" in str(picker.help)
+    # 값은 ISO 날짜다 — 요일은 라벨로만 붙인다 (한 번 더 눌러야 반영되던 자리).
+    after = picker.set_value(["2023-05-01", "2023-10-02"]).run(timeout=600)
+    assert not after.exception, after.exception
+
+    metrics = {str(item.label): str(item.value) for item in after.metric}
+    assert metrics["저부하 평일"] == "0일"
+    assert metrics["연간 감축 가능량"] == "0 kWh"
+    assert metrics["거래 가능일"] != before["거래 가능일"]
+    # **되돌릴 수 있어야 한다** — 목록이 비어도 고르는 칸은 남는다.
+    assert after.multiselect(key="measure_demand_response_off_days").value == [
+        "2023-05-01",
+        "2023-10-02",
+    ]
+
+
+def test_요금_계산은_쉬는_날에_흔들리지_않는다() -> None:
+    """**DR 판정에만 쓴다** (29세션).
+
+    근로자의 날은 2025년까지 법정공휴일이 아니라 한전 요금에서 평일이 맞다.
+    사용자가 「쉬었다」 고 알려 준 것을 요금 달력에 넣으면 계산이 틀린다.
+    """
+    import inspect
+
+    from kwise.diagnose import diagnose
+    from kwise.tariff import BillingOptions
+
+    body = inspect.getsource(diagnose)
+    assert "dr_off_days" in body
+    # 요금 옵션에는 들어가지 않는다 — 공휴일 목록을 건드리지 않는다.
+    assert "dr_off_days" not in set(BillingOptions.__dataclass_fields__)
+    # 쓰이는 자리는 DR 프로파일 하나뿐이다.
+    assert body.count("off_days=dr_off_days") == 1
+    start = body.index("off_days=dr_off_days")
+    assert "dr_profile(" in body[:start], "요금 계산 쪽으로 새고 있습니다."
+    # 달력을 만드는 자리에는 들어가지 않는다 — 넣으면 요금 시간대가 바뀐다.
+    calendar_call = body[body.index("build_calendar(") : body.index("dr_profile(")]
+    assert "dr_off_days" not in calendar_call, "달력에 섞였습니다."
+
+
+def test_공휴일_한계를_문서에_남겼다() -> None:
+    """**다음 사람이 같은 조사를 다시 하지 않도록** (29세션).
+
+    화면에는 툴팁 한 줄만 두고 배경은 보고서 부록(참고 등급)과 매뉴얼이 받는다.
+    """
+    from kwise.diagnose.dr import LIBRARY_HOLIDAY_GAPS
+
+    joined = " ".join(LIBRARY_HOLIDAY_GAPS)
+    assert "근로자의 날" in joined and "2026" in joined
+    manual = Path("docs") / "MANUAL.md"
+    body = manual.read_text(encoding="utf-8")
+    assert "근로자의 날" in body and "임시공휴일" in body
+    # **결과에도 실려 간다** — 참고 등급이라 화면에는 없고 보고서 부록에 남는다.
+    from kwise.diagnose.dr import dr_profile
+    from kwise.notices import Severity
+    from kwise.tariff import build_calendar
+
+    profile = dr_profile(
+        load_usage(SAMPLE).kw, 15, build_calendar(range(2023, 2026)), contract_type="general_b"
+    )
+    gaps = [item for item in profile.notices if item.fact == "dr.holiday_gaps"]
+    assert len(gaps) == 1
+    assert gaps[0].severity is Severity.INFO
+    assert "근로자의 날" in gaps[0].text

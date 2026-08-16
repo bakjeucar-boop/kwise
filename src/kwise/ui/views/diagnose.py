@@ -57,6 +57,7 @@ from kwise.ui.pipeline import (
     voltage_choices,
 )
 from kwise.ui.state import get_form, set_form, store_upload, upload
+from kwise.ui.views.measures import dr_off_days
 
 __all__ = ["render"]
 
@@ -106,6 +107,10 @@ def render(table: TariffTable, building: BuildingInfo | None = None) -> Analysis
     # **운영 시간대는 옆단에서 온다** (21세션 4절). 운영시간 외 부하 판정과 DR 저부하일
     # 판정이 이 값을 쓴다 — 캐시 열쇠에도 들어가야 값이 바뀌면 다시 계산한다.
     hours = building.operating_hours if building else DEFAULT_OPERATING_HOURS
+    # **경제성DR 의 「쉬는 날」 은 2단계 카드에서 고른다** (29세션). 고르는 자리와
+    # 쓰는 자리가 뒤바뀌어 보이지만, 세 화면이 한 실행에서 위에서 아래로 그려지므로
+    # 직전 실행의 선택을 읽으면 된다 — 대표일·ESS 목표와 같은 방식이다.
+    # **DR 판정에만 쓴다.** 요금 계산의 공휴일은 법정 공휴일 그대로다.
     diagnosis = cached_diagnosis(
         usage,
         table,
@@ -114,6 +119,7 @@ def render(table: TariffTable, building: BuildingInfo | None = None) -> Analysis
         form,
         rules_stamp(),
         hours,
+        dr_off_days(),
     )
 
     _headline_block(usage, diagnosis)

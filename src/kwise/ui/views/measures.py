@@ -39,6 +39,7 @@ from kwise.measures import (
     power_factor_floor_pct,
     surplus_free_capacity_kwp,
 )
+from kwise.measures.demand_response import DemandResponseResult
 from kwise.notices import Notice, basis, tooltip
 from kwise.pv import PvPresets, area_from_capacity_m2, capacity_preview, load_pv_presets
 from kwise.quality import QualityReport
@@ -84,7 +85,7 @@ from kwise.ui.state import (
     toggle_key,
 )
 
-__all__ = ["render"]
+__all__ = ["dr_off_days", "render"]
 
 
 def render(
@@ -474,11 +475,21 @@ def _demand_response(
     st.caption("일별 판정 시간대 평균 부하", help=fmt.chart_tip("chart.dr_daily"))
     # **어떤 날인지 보여 준다.** 창립기념일·워크숍처럼 사무실을 비우는 날일 가능성이
     # 높아, 목록을 보면 사용자가 스스로 맞는 날인지 판정할 수 있다 (14세션 4절).
-    if result.low_load_days:
+    #
+    # **판정에서 그치지 않고 뺄 수 있게 했다** (29세션). 목록 아래 고르는 칸이
+    # 그것이고, 고른 날은 거래 가능일에서 빠져 감축량이 다시 계산된다. 앞의
+    # 캡션(「사무실을 비우는 날일 가능성이 높습니다」)은 이 칸이 대신한다 —
+    # 문구를 하나 더할 때는 뺄 것을 함께 정한다 (CLAUDE.md).
+    #
+    # **뺀 날이 있으면 목록이 비어도 접힘을 남긴다.** 남기지 않으면 되돌릴 위젯이
+    # 사라져 선택이 영영 고정된다 — 16세션에 겪은 「그리지 않은 위젯」 의 반대편이다.
+    off_days = dr_off_days()
+    if result.low_load_days or off_days:
         with st.expander(f"저부하 평일 {result.low_load_days}일", expanded=False):
-            st.dataframe(result.low_load_day_table, hide_index=True, width="stretch")
-            st.caption("사무실을 비우는 날(창립기념일·워크숍 등)일 가능성이 높습니다.")
-    else:
+            if result.low_load_days:
+                st.dataframe(result.low_load_day_table, hide_index=True, width="stretch")
+            _off_day_picker(result, off_days)
+    if not result.low_load_days:
         st.write("저부하 평일이 없어 감축 가능량을 0 으로 두었습니다.")
     if result.is_priced:
         st.metric("정산금", fmt.won_short(result.settlement_won))
@@ -491,6 +502,65 @@ def _demand_response(
     # 자리도 함께 지웠다 (20세션에 폐기한 방식의 잔재였다).
     _notices(result.notices)
     _worksheet(demand_response_worksheet(result))
+
+
+def _off_day_picker(result: DemandResponseResult, off_days: tuple[str, ...]) -> None:
+    """**쉬는 날을 사람이 뺀다** (29세션).
+
+    공휴일 라이브러리가 못 잡는 날이 있다 — 근로자의 날은 2026년부터 법정
+    공휴일이고, 임시공휴일은 요금표 관행에 맞춰 계량에서 빼므로 거래일 판정에는
+    평일로 남는다 (:data:`~kwise.diagnose.dr.LIBRARY_HOLIDAY_GAPS`). 앞으로 어떤
+    날이 임시공휴일로 지정될지도 알 수 없으므로 **자동 판정을 늘리는 대신 목록을
+    보여 주고 고르게 한다.**
+
+    고른 날짜는 **위젯 키에 그대로 남고 1단계 진단이 그것을 읽는다** — DR
+    프로파일을 처음부터 다시 만들어야 기준선·문턱·감축량이 함께 움직인다.
+
+    **값은 위젯 키 하나에만 둔다.** 고른 것을 다른 열쇠로 옮겨 적으면 그 옮기는
+    일이 이 카드(2단계)에서 일어나므로, 1단계가 읽는 시점에는 아직 옛 값이다 —
+    한 번 더 눌러야 숫자가 바뀌는 화면이 된다. 라벨(요일)은 ``format_func`` 로
+    그리고 **값 자체는 ISO 날짜**로 둔다.
+    """
+    frame = result.low_load_day_table
+    # **이미 뺀 날도 선택지에 남긴다** — 빼고 나면 목록에서 사라지므로, 선택지가
+    # 목록뿐이면 되돌릴 수가 없다.
+    dates = sorted({str(value) for value in frame["날짜"]} | set(off_days))
+    st.multiselect(
+        "쉬는 날이어서 뺄 날짜",
+        dates,
+        format_func=lambda value: f"{value} ({_weekday_of(value)})",
+        key=_OFF_DAY_WIDGET,
+        help=(
+            "근로자의 날이나 임시공휴일이 섞여 있을 수 있습니다. 고른 날은 거래 "
+            "가능일에서 빼고 감축량을 다시 계산합니다."
+        ),
+    )
+
+
+#: 요일 이름. 목록 표(:meth:`~kwise.diagnose.dr.DrProfile.low_load_day_table`)와
+#: 같은 말을 쓴다 — 고르는 자리와 목록이 다른 말을 하면 같은 날인지 알 수 없다.
+_WEEKDAYS = ("월", "화", "수", "목", "금", "토", "일")
+
+
+def _weekday_of(value: str) -> str:
+    return _WEEKDAYS[dt.date.fromisoformat(value).weekday()]
+
+
+#: 고른 날짜가 담기는 위젯 키. ``measure_`` 로 시작하므로 화면을 갈아 끼워도
+#: :func:`kwise.ui.state.carry_inputs` 가 지켜 준다 (16세션 0-1).
+_OFF_DAY_WIDGET = input_key("demand_response", "off_days")
+
+
+def dr_off_days() -> tuple[str, ...]:
+    """1단계가 읽는 「쉬는 날」 (29세션).
+
+    **화면 순서와 반대로 흐른다.** 고르는 자리는 2단계 카드인데 쓰는 자리는
+    1단계 진단이다 — Streamlit 은 위젯 값을 세션에 먼저 넣고 스크립트를 위에서
+    아래로 다시 돌리므로, 고른 그 실행에서 바로 반영된다. 대표일
+    (:func:`kwise.ui.state.reference_day`)과 ESS 목표가 쓰는 것과 같은 방식이다.
+    """
+    value = st.session_state.get(_OFF_DAY_WIDGET) or ()
+    return tuple(str(item) for item in value)
 
 
 # --------------------------------------------------------------------- 7.4

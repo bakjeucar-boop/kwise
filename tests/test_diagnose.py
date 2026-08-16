@@ -165,6 +165,9 @@ def test_diagnose_takes_no_pv_input() -> None:
         "margin_ratio",
         "operating_hours",
         "contract_floor_ratio",
+        # 사용자가 지목한 「쉬는 날」 (29세션). 설비가 아니라 달력 보정이고
+        # **DR 판정에만** 쓴다 — 요금 계산의 공휴일은 법정 공휴일 그대로다.
+        "dr_off_days",
     }
 
 

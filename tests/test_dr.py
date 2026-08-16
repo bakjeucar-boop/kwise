@@ -555,3 +555,91 @@ def test_시장_시간대와_건물_운영_시간대를_가른다(sample_usage: 
     assert early.windows == ((9, 12), (13, 20))
     assert late.windows == ((9, 12), (13, 18))
     assert early.weekend_baseline_kw != late.weekend_baseline_kw
+
+
+# ===================================================================== 29세션 · 공휴일 보정
+
+
+def test_공휴일_라이브러리가_못_잡는_날이_있다() -> None:
+    """**저부하 평일로 잡힌 두 날이 실은 쉬는 날이었다** (29세션).
+
+    자동 판정을 늘리지 않는 이유가 여기 있다 — 하나는 라이브러리가 아예 모르고,
+    하나는 우리가 요금표 관행에 맞춰 일부러 뺀 것이다.
+    """
+    import datetime as dt
+
+    import holidays
+
+    from kwise.diagnose.dr import LIBRARY_HOLIDAY_GAPS
+
+    korea = holidays.country_holidays("KR", years=[2023, 2026])
+    # ① 근로자의 날 — 2025년까지는 목록에 없고 2026년부터 잡힌다.
+    assert korea.get(dt.date(2023, 5, 1)) is None
+    assert korea.get(dt.date(2026, 5, 1)) is not None
+    # ② 임시공휴일 — 라이브러리는 알지만 요금표 관행에 맞춰 달력에서 뺀다.
+    assert korea.get(dt.date(2023, 10, 2)) == "임시공휴일"
+    calendar = build_calendar([2023])
+    assert not calendar.is_holiday(dt.date(2023, 10, 2))
+    assert dt.date(2023, 10, 2) in calendar.excluded_temporary
+    # 사실을 코드에 남긴다 — 다음 사람이 같은 조사를 다시 하지 않도록.
+    assert any("2026" in line for line in LIBRARY_HOLIDAY_GAPS)
+    assert any("임시공휴일" in line for line in LIBRARY_HOLIDAY_GAPS)
+
+
+def test_쉬는_날을_빼면_감축량이_다시_계산된다(sample_usage: UsageData, calendar: object) -> None:
+    """**빼기만 하는 것이 아니다** (29세션).
+
+    그 날은 거래 가능일에서 빠지고 **기준선 모집단(쉬는 날)으로 옮겨 간다** —
+    기준선과 문턱이 함께 움직여야 나머지 날의 판정도 일관된다.
+    """
+
+    def profile(*off: str) -> object:
+        return dr_profile(
+            sample_usage.kw,
+            15,
+            calendar,  # type: ignore[arg-type]
+            contract_type="general_b",
+            off_days=off,
+        )
+
+    full = profile()
+    assert full.low_load_days_count == 2  # type: ignore[attr-defined]
+    assert full.annual_reducible_kwh > 0  # type: ignore[attr-defined]
+
+    one = profile("2023-05-01")
+    assert one.low_load_days_count == 1  # type: ignore[attr-defined]
+    assert one.eligible_days == full.eligible_days - 1  # type: ignore[attr-defined]
+    assert one.annual_reducible_kwh < full.annual_reducible_kwh  # type: ignore[attr-defined]
+    # 기준선도 다시 잰다 — 쉬는 날이 하나 늘었으므로 평균이 움직인다.
+    assert one.weekend_baseline_kw != full.weekend_baseline_kw  # type: ignore[attr-defined]
+
+    both = profile("2023-05-01", "2023-10-02")
+    assert both.low_load_days_count == 0  # type: ignore[attr-defined]
+    assert both.annual_reducible_kwh == 0.0  # type: ignore[attr-defined]
+    assert both.registered_capacity_kw == 0.0  # type: ignore[attr-defined]
+    # 무엇을 뺐는지 근거로 남는다 — 산출물에서도 되짚을 수 있어야 한다.
+    reasons = [item.text for item in both.notices if item.fact == "dr.user_off_days"]  # type: ignore[attr-defined]
+    assert len(reasons) == 1
+    assert "2023-05-01" in reasons[0] and "2023-10-02" in reasons[0]
+
+
+def test_날짜_꼴이_섞여도_같은_날로_본다(sample_usage: UsageData, calendar: object) -> None:
+    """화면은 ``date``, 세션은 문자열, 프로파일은 ``Timestamp`` 를 쓴다 (29세션)."""
+    import datetime as dt
+
+    from kwise.diagnose.dr import normalized_days
+
+    assert normalized_days(["2023-05-01"]) == normalized_days([dt.date(2023, 5, 1)])
+    assert normalized_days([pd.Timestamp("2023-05-01 13:45")]) == normalized_days(["2023-05-01"])
+
+    text = dr_profile(
+        sample_usage.kw, 15, calendar, contract_type="general_b", off_days=("2023-05-01",)
+    )
+    date = dr_profile(
+        sample_usage.kw,
+        15,
+        calendar,
+        contract_type="general_b",
+        off_days=(dt.date(2023, 5, 1),),
+    )
+    assert text.annual_reducible_kwh == date.annual_reducible_kwh

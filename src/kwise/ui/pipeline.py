@@ -164,14 +164,24 @@ def diagnose_usage(
     *,
     quality: QualityReport | None = None,
     operating_hours: tuple[int, int] = DEFAULT_OPERATING_HOURS,
+    dr_off_days: tuple[str, ...] = (),
 ) -> Diagnosis:
     """1단계 진단. ``form`` 이 ``None`` 이면 **계약 정보 없이** 부하·피크만 낸다.
 
     "사용자가 파일만 올려도 결과가 나온다" 를 여기서 지킨다 (요구사항서 6장).
     ``operating_hours`` 는 옆단 건물 정보에서 온다 (21세션 4절).
+    ``dr_off_days`` 는 2단계 경제성DR 카드에서 고른 「쉬는 날」 이다 (29세션) —
+    **DR 판정에만 쓴다.** 요금 계산의 공휴일은 법정 공휴일 그대로다.
     """
     if form is None:
-        return diagnose(usage, table, None, quality=quality, operating_hours=operating_hours)
+        return diagnose(
+            usage,
+            table,
+            None,
+            quality=quality,
+            operating_hours=operating_hours,
+            dr_off_days=dr_off_days,
+        )
     return diagnose(
         usage,
         table,
@@ -179,6 +189,7 @@ def diagnose_usage(
         quality=quality,
         options=form.billing_options(),
         operating_hours=operating_hours,
+        dr_off_days=dr_off_days,
     )
 
 

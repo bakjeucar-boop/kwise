@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -20,7 +20,7 @@ from kwise.diagnose.contract import (
     ContractInfo,
     assess_contract,
 )
-from kwise.diagnose.dr import DrProfile, dr_profile
+from kwise.diagnose.dr import DateLike, DrProfile, dr_profile
 from kwise.diagnose.peak import DEFAULT_TOP_N, PeakProfile, peak_profile
 from kwise.diagnose.structure import ChargeStructure, charge_structure
 from kwise.diagnose.summary import (
@@ -85,6 +85,7 @@ def diagnose(
     margin_ratio: float | None = None,
     contract_floor_ratio: float | None = None,
     operating_hours: tuple[int, int] = DEFAULT_OPERATING_HOURS,
+    dr_off_days: Iterable[DateLike] = (),
 ) -> Diagnosis:
     """업로드와 계약 정보만으로 진단한다.
 
@@ -96,6 +97,9 @@ def diagnose(
         operating_hours: **건물** 운영 시간대 ``(시작, 끝)``. 운영시간 외 부하 진단과
             DR 저부하일 판정에 쓴다. 경제성DR 의 **시장 운영 시간대**는 제도
             규정이라 이 값과 무관하다 (:func:`~kwise.diagnose.dr.dr_market_windows`).
+        dr_off_days: 사용자가 「쉬는 날」 로 지목한 날짜 (29세션). **DR 판정에만
+            쓴다** — 요금 계산의 공휴일은 법정 공휴일이므로 건드리지 않는다.
+            근로자의 날(2025년까지)은 한전 요금에서 평일이 맞다.
     """
     report = quality if quality is not None else check_quality(usage)
     interval = usage.meta.interval_minutes
@@ -154,6 +158,7 @@ def diagnose(
         contract_kw=contract.contract_kw if contract else None,
         outage_mask=outage_slot_mask(index, report.outages),
         operating_hours=operating_hours,
+        off_days=dr_off_days,
     )
 
     notices: list[Notice] = list(report.notices)

@@ -41,11 +41,17 @@
 (최대부하 → 중간부하로 낮출 뿐) 일요일만 공휴일로 계량한다. DR 은 토·일·공휴일이
 모두 똑같이 제외다. 그래서 :func:`dr_day_mask` 를 :mod:`kwise.tariff.tou` 와
 **따로 둔다.** 같은 함수로 판정하면 두 규칙이 조용히 섞인다.
+
+**공휴일 판정에는 사람이 메워야 하는 자리가 있다** (29세션 · :data:`LIBRARY_HOLIDAY_GAPS`).
+저부하 평일로 잡힌 날이 실은 쉬는 날일 수 있으므로 :func:`dr_profile` 에
+``off_days`` 를 두어 사용자가 뺄 수 있게 했다. 빼면 그 날은 거래 가능일에서
+빠지고 **기준선 모집단(쉬는 날)에 들어가** 문턱과 감축량이 다시 계산된다.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import datetime as dt
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -57,6 +63,7 @@ from kwise.rules import assumption, rule_value
 from kwise.tariff import HolidayCalendar
 
 __all__ = [
+    "LIBRARY_HOLIDAY_GAPS",
     "PARTICIPATION_NOTICE",
     "DrPotential",
     "DrProfile",
@@ -74,10 +81,33 @@ __all__ = [
     "judge_resource_types",
     "low_load_multiple",
     "national_dr_max_contract_kw",
+    "normalized_days",
     "registration_percentile",
     "resource_type_labels",
     "small_medium_dr_industrial_max_kw",
 ]
+
+type DateLike = dt.date | str | pd.Timestamp
+
+#: **공휴일 라이브러리가 못 잡는 것** (29세션). 저부하 평일로 잡힌 날이 실은
+#: 쉬는 날일 수 있고, 그것을 데이터만 보고 가릴 방법이 없다.
+#:
+#:     근로자의 날   ``holidays`` 는 **2026년부터** 「노동절」 로 잡는다. 2025년
+#:                  까지는 관공서 공휴일이 아니라 목록에 없다 — 그런데 대부분의
+#:                  사업장이 쉰다. 샘플의 2023-05-01(월)이 그 경우다
+#:     임시공휴일    라이브러리에 있지만 **요금표 관행에 맞춰 달력에서 뺀다**
+#:                  (:func:`kwise.tariff.build_calendar` 의 ``exclude_temporary``).
+#:                  요금은 그렇게 계량하는 것이 맞고, DR 거래일 판정에서는 그
+#:                  날이 평일로 남는다. 샘플의 2023-10-02(월)이 그 경우다.
+#:                  **앞으로 어떤 날이 지정될지는 아무도 모른다**
+#:
+#: 그래서 자동 판정을 늘리는 대신 **사용자가 목록을 보고 빼게 한다**
+#: (:func:`dr_profile` 의 ``off_days``). 화면은 날짜와 요일을 함께 적는다.
+LIBRARY_HOLIDAY_GAPS: tuple[str, ...] = (
+    "근로자의 날은 2026년부터 법정공휴일이라 그해부터 자동으로 빠집니다. "
+    "2025년까지는 공휴일 목록에 없어 평일로 셉니다.",
+    "임시공휴일은 요금표 관행에 맞춰 계량에서 빼므로 거래일 판정에는 평일로 남습니다.",
+)
 
 PARTICIPATION_NOTICE = (
     "연간 참여 일수 제한은 없으나 하루 최대 2회(총 {daily:,.0f}시간)이며 평일 "
@@ -217,6 +247,8 @@ def dr_eligible_days(
     index: pd.DatetimeIndex,
     interval_minutes: int,
     calendar: HolidayCalendar,
+    *,
+    off_days: Iterable[DateLike] = (),
 ) -> pd.DatetimeIndex:
     """경제성DR 거래 가능일 (제12.4.2.1조 제1항 1호).
 
@@ -226,15 +258,31 @@ def dr_eligible_days(
 
     귀속은 :func:`kwise.io.slot_start` 로 판정한 구간 시작 시각의 날짜다.
     라벨 ``2024-03-05 00:00`` 은 04일 23:45~24:00 이므로 4일에 속한다.
+
+    Args:
+        off_days: **사용자가 쉬는 날로 지목한 날짜** (29세션). 공휴일 판정을
+            사람이 보완하는 자리다 — :data:`LIBRARY_HOLIDAY_GAPS` 참조.
     """
     starts = slot_start(pd.DatetimeIndex(index), interval_minutes)
     days = pd.DatetimeIndex(pd.Series(starts.normalize()).unique()).sort_values()
+    excluded = normalized_days(off_days)
     keep = [
         day
         for day in days
-        if day.weekday() < 5 and not calendar.is_holiday(day)  # 토(5)·일(6) 제외
+        # 토(5)·일(6) 제외 → 공휴일 제외 → 사용자가 지목한 날 제외
+        if day.weekday() < 5 and not calendar.is_holiday(day) and day not in excluded
     ]
     return pd.DatetimeIndex(keep, name="dr_day")
+
+
+def normalized_days(days: Iterable[DateLike]) -> frozenset[pd.Timestamp]:
+    """날짜 입력을 **자정 기준 Timestamp** 로 맞춘다.
+
+    화면은 ``datetime.date``, 세션은 문자열, 프로파일은 ``pd.Timestamp`` 를 쓴다.
+    비교하려면 한 꼴로 모아야 한다 — 시각이 붙은 값이 섞이면 집합 비교가 조용히
+    빗나간다.
+    """
+    return frozenset(pd.Timestamp(value).normalize() for value in days)
 
 
 def dr_day_mask(
@@ -467,12 +515,17 @@ def dr_profile(
     low_load_ratio: float | None = None,
     registration_quantile: float | None = None,
     high_capacity_kw: float | None = None,
+    off_days: Iterable[DateLike] = (),
 ) -> DrProfile:
     """경제성DR 참여 여력을 진단한다 (요구사항서 6.6 · 14세션 4절).
 
     Args:
         outage_mask: 정전 슬롯 마스크. 저부하 평일에서 정전일을 뺀다 — 정전은
             감축 여력이 아니다.
+        off_days: **사용자가 「쉬는 날」 로 지목한 날짜** (29세션). 공휴일
+            라이브러리가 못 잡는 날을 사람이 메우는 자리다
+            (:data:`LIBRARY_HOLIDAY_GAPS`). 거래 가능일에서 빠지고 기준선
+            모집단으로 옮겨 가므로 **문턱과 감축량이 다시 계산된다.**
         windows: 감축 여력을 재는 **시장** 시간대. 기본은 규칙 값(09~12·13~20시).
         operating_hours: **건물** 운영 시간대. 주면 시장 시간대와 겹치는 구간만
             본다 — 사람이 없는 시간의 부하는 감축 여력이 아니다 (21세션 4절).
@@ -497,7 +550,8 @@ def dr_profile(
 
     index = pd.DatetimeIndex(observed.index)
     starts = slot_start(index, interval_minutes)
-    eligible_days = dr_eligible_days(index, interval_minutes, calendar)
+    user_off_days = normalized_days(off_days)
+    eligible_days = dr_eligible_days(index, interval_minutes, calendar, off_days=user_off_days)
     all_days = pd.DatetimeIndex(pd.Series(starts.normalize()).unique())
     day_of = pd.Series(starts.normalize(), index=observed.index)
     is_dr_day = day_of.isin(set(eligible_days))
@@ -536,6 +590,14 @@ def dr_profile(
             "며칠이냐」 하나입니다.",
             fact="dr.no_annual_cap",
         ),
+        # **한계를 결과에 실어 보낸다** (29세션). 화면에는 목록 옆 툴팁 한 줄만
+        # 두고, 배경은 보고서 부록과 매뉴얼이 받는다.
+        info(
+            "공휴일 판정에는 사람이 메워야 하는 자리가 있습니다. "
+            + " ".join(LIBRARY_HOLIDAY_GAPS)
+            + " 저부하 평일 목록에서 쉬는 날을 골라 빼면 감축 가능량이 다시 계산됩니다.",
+            fact="dr.holiday_gaps",
+        ),
     ]
     if contract_kw is None:
         notices.append(
@@ -543,6 +605,17 @@ def dr_profile(
                 "계약전력이 없어 국민DR·중소형DR 해당 여부를 확정하지 못했습니다 "
                 "(제12.1.1조). 표준DR 은 계약종별 제한이 없습니다.",
                 fact="dr.contract_unknown",
+            )
+        )
+    if user_off_days:
+        # **사용자가 손댄 것은 반드시 적는다.** 숫자가 왜 달라졌는지 산출물에서도
+        # 되짚을 수 있어야 한다 (29세션).
+        listed = ", ".join(f"{day:%Y-%m-%d}" for day in sorted(user_off_days))
+        notices.append(
+            basis(
+                f"쉬는 날로 지목한 {len(user_off_days)}일({listed})을 거래 가능일에서 "
+                "뺐습니다. 그 날의 부하는 기준선(쉬는 날 평균)에 들어갑니다.",
+                fact="dr.user_off_days",
             )
         )
 
