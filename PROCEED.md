@@ -127,11 +127,19 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 ### 백업 번들
 
-`C:\Users\SAMSUNG\Documents\kwise-backup\` 에 둔다. 원격이 살아 있으면 필요
-없지만, 이력을 고치는 작업(`filter-branch` 등) 전에는 반드시 하나 뜬다.
+**PC 마다 자기 폴더에 둔다.** 원격이 살아 있으면 필요 없지만, 이력을 고치는
+작업(`filter-branch` 등) 전에는 반드시 하나 뜬다.
 
-    git bundle create ..\kwise-backup\kwise_20260814_1611.bundle --all
+| PC | 폴더 |
+|---|---|
+| 1번 PC (`SAMSUNG`) | `C:\Users\SAMSUNG\Documents\kwise-backup\` |
+| 2번 PC (`user`) | `C:\Users\user\Documents\claude\kwise-backup\` |
+
+    git bundle create <폴더>\kwise_20260816_2218.bundle --all
     git bundle verify <그 파일>
+
+**최근 5개만 남긴다.** 한 벌이 30 MB 라 쌓아 둘 이유가 없다 — 원격이 정본이고
+번들은 이력을 고치기 직전의 안전망이다.
 
 ---
 
