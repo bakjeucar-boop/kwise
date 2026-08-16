@@ -11,6 +11,8 @@
 
 항목을 각각 절사하고 합계는 원값을 절사해 내므로 **항목 합과 합계 표시가
 1천 원 내외 다를 수 있다.** 표 아래에 :data:`TRUNCATION_FOOTNOTE` 를 단다.
+만원 표기를 쓰는 표는 :data:`ROUNDING_FOOTNOTE` 다 — **각주가 표기 방식을
+그대로 적어야 한다** (28세션).
 
 억·만원 표기(:func:`won_short`)도 같은 곳에서 관리한다. 이쪽은 만원 자리에서
 반올림하므로 천 원 절사보다 이미 굵다 — 따로 절사하지 않는다.
@@ -21,6 +23,7 @@ from __future__ import annotations
 import math
 
 __all__ = [
+    "ROUNDING_FOOTNOTE",
     "TRUNCATION_FOOTNOTE",
     "TRUNCATION_UNIT_WON",
     "truncate_won",
@@ -33,6 +36,11 @@ TRUNCATION_UNIT_WON = 1_000
 """표시 절사 단위. 천 원."""
 
 TRUNCATION_FOOTNOTE = "금액은 천 원 단위로 절사 표시되어 항목 합과 차이가 날 수 있습니다."
+
+#: 만원 표기(:func:`won_short`)를 쓰는 표의 각주 (28세션 1-3). 절사가 아니라
+#: **반올림**이라 같은 말을 쓸 수 없다 — 각주가 표기 방식을 잘못 적으면 항목 합이
+#: 어긋나 보일 때 읽는 사람이 엉뚱한 자리를 의심한다.
+ROUNDING_FOOTNOTE = "금액은 만원 단위로 반올림 표시되어 항목 합과 차이가 날 수 있습니다."
 
 _EOK = 100_000_000
 _MAN = 10_000

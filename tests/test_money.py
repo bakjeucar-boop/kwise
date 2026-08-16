@@ -77,6 +77,10 @@ def test_내부_계산은_원_단위를_유지한다() -> None:
     truncated_sum = sum(money.truncate_won(item) for item in items)
     assert truncated_sum != money.truncate_won(total)
     assert "천 원 단위로 절사" in money.TRUNCATION_FOOTNOTE
+    # **각주는 표기 방식을 그대로 적는다** (28세션 1-3). 만원 표기(`won_short`)를
+    # 쓰는 표에 절사 각주를 달면 어긋난 자리를 엉뚱하게 의심하게 된다.
+    assert "만원 단위로 반올림" in money.ROUNDING_FOOTNOTE
+    assert money.won_short(1_234_567.0, reason="—") == "123만원"
 
 
 def test_요금_계산_결과는_절사되지_않는다(sample_bill: object) -> None:

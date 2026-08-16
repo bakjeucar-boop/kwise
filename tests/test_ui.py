@@ -80,7 +80,7 @@ def test_없는_앵커는_바로_실패한다() -> None:
 
 def test_툴팁에_링크가_없다() -> None:
     """**화면에서 링크를 걷어냈다** (16세션 4절). 요지만 얹는다."""
-    tip = manual_tip("certainty")
+    tip = manual_tip("payback")
     assert "](" not in tip
     assert "http" not in tip
     assert "MANUAL.html" not in tip
@@ -389,17 +389,18 @@ def test_투자비를_모르면_회수기간이_빈칸이_아니다() -> None:
     assert text.payback(None, investment_won=0.0) == text.DASH
 
 
-def test_확실성은_등급만_낸다() -> None:
-    """근거는 매뉴얼로 보낸다 (10.2).
+def test_확실성_등급이_화면_표기에서_사라졌다() -> None:
+    """**화면에서 등급을 뺐다** (28세션 4절).
 
-    **범위 기호로 바꿔 낸다** (25세션 2절). 등급 이름의 물결표를 그대로 두면
-    화면에서 취소선 위험이 있고, escape 하면 지표 delta 자리에 역슬래시가 보인다.
-    등급 이름 자체(``중간~낮음``)는 Excel·Word·문서가 함께 쓰므로 고치지 않는다.
+    무엇에 대한 확실성인지가 이름에 없어 「높음」 이 어느 정도인지 알 수 없었고,
+    잉여가 0 이라 수익 0원이 확정인 줄에도 「중간~낮음」 이 붙었다. 등급 자체는
+    Excel·Word 가 그대로 쓰므로 :class:`~kwise.measures.Certainty` 는 남는다.
     """
     from kwise.measures import Certainty
 
     assert str(Certainty.MEDIUM_LOW) == "중간~낮음"
-    assert text.certainty_badge(Certainty.MEDIUM_LOW) == f"확실성 중간{text.RANGE}낮음"
+    assert not hasattr(text, "certainty_badge"), "화면 뱃지가 남아 있습니다."
+    assert "certainty" not in text.TIPS
 
 
 def test_비율_표기() -> None:

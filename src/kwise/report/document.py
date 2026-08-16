@@ -267,9 +267,11 @@ def measure_entries(
                 f"연간 감축 가능량 {demand_response.annual_reducible_kwh:,.0f} kWh 입니다."
             ),
             saving=(
+                # 사유는 이미 「미산출 — …」 꼴이다. 앞에 한 번 더 붙이지 않는다
+                # (28세션 1-4 에 문구를 줄이면서 겹침이 드러났다).
                 _won(demand_response.settlement_won)
                 if demand_response.is_priced
-                else f"{_UNPRICED} — {demand_response.settlement_label}"
+                else demand_response.settlement_label
             ),
             investment=_won(0.0),
             payback=_payback_text(0.0, 0.0),

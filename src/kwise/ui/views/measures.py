@@ -285,12 +285,8 @@ def _tariff_switch(
     columns = st.columns(3)
     columns[0].metric("현행", option_label(result.current.selection.option))
     columns[1].metric("가장 유리한 요금제", option_label(result.best.selection.option))
-    columns[2].metric(
-        "절감액",
-        fmt.won_year(result.annual_saving_won),
-        fmt.certainty_badge(result.certainty),
-        help=fmt.tip("certainty"),
-    )
+    # **확실성 등급은 화면에 없다** (28세션 4절). Excel·Word 에는 그대로 남는다.
+    columns[2].metric("절감액", fmt.won_year(result.annual_saving_won))
     if result.switch_needed:
         st.write(
             f"가장 유리한 요금제는 **{selection_label(table, result.best.selection)}** 입니다."
@@ -795,10 +791,7 @@ def _solar(
     columns[1].metric("발전량", fmt.per_year(fmt.mwh(annualize(point.generation_kwh, months))))
     columns[2].metric("절감액", fmt.won_year(point.annual_saving_won))
     columns[3].metric(
-        "회수기간",
-        fmt.payback(point.payback_years, investment_won=point.investment_won),
-        fmt.certainty_badge(curve.certainty),
-        help=fmt.tip("certainty"),
+        "회수기간", fmt.payback(point.payback_years, investment_won=point.investment_won)
     )
     # **투자비를 모르면 빈칸이나 0원이 아니라 사유다** (7.5).
     st.caption("투자비 — " + fmt.won(point.investment_won, reason=curve.cost.reason))
@@ -1107,10 +1100,7 @@ def _ess(
     columns[1].metric("절감액", fmt.won_year(result.annual_saving_won))
     columns[2].metric("투자비", fmt.won_short(result.investment_won))
     columns[3].metric(
-        "회수기간",
-        fmt.payback(result.payback_years, investment_won=result.investment_won),
-        fmt.certainty_badge(result.certainty),
-        help=fmt.tip("certainty"),
+        "회수기간", fmt.payback(result.payback_years, investment_won=result.investment_won)
     )
     # **언제 담고 언제 쓰는지**를 2단 그림으로 보인다 (15세션 2-5 · 17세션 4-1).
     if day is not None:

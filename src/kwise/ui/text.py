@@ -23,17 +23,16 @@ from __future__ import annotations
 import re
 
 from kwise import money
-from kwise.measures import Certainty
-from kwise.money import TRUNCATION_FOOTNOTE
+from kwise.money import ROUNDING_FOOTNOTE, TRUNCATION_FOOTNOTE
 from kwise.report.notices import format_won
 
 __all__ = [
     "CHART_TIPS",
     "DASH",
     "RANGE",
+    "ROUNDING_FOOTNOTE",
     "TIPS",
     "TRUNCATION_FOOTNOTE",
-    "certainty_badge",
     "chart_tip",
     "count",
     "days",
@@ -64,27 +63,9 @@ __all__ = [
 #
 # **그래서 툴팁도 escape 한다** (25세션 2절). 여기 있는 글을 ``help=`` 에 곧장
 # 넣지 말고 :func:`tip` 으로 꺼낸다 — 굵게는 살리고 물결표만 막는다.
+# **확실성 툴팁과 감도 툴팁을 지웠다** (28세션 4·5절). 화면에서 둘 다 뺐으므로
+# 붙일 자리가 없다. 등급의 뜻과 감도의 정의는 Excel·보고서·매뉴얼에 남는다.
 TIPS: dict[str, str] = {
-    "certainty": "\n\n".join(
-        (
-            "**확실성** — 결과를 얼마나 믿을 수 있는지의 등급입니다.",
-            "**높음** 요금표와 약관만으로 확정됩니다 (요금제 전환·계약전력·역률).",
-            "**중간** 발전량 예측이 끼어 있습니다 (태양광).",
-            "**중간~낮음** 운전 전략과 열화에 좌우됩니다 (ESS·잉여 활용).",
-            # 「조합의 등급은 가장 낮은 구성 요소를 따릅니다」 를 뺐다 (25세션 3-3 · F).
-            # 3단계 근거(``combination.certainty_rule``)가 같은 말을 하고, 이 툴팁이
-            # 붙는 자리는 **단독 평가** 카드라 조합 규칙을 적을 곳이 아니다.
-        )
-    ),
-    "sensitivity": "\n\n".join(
-        (
-            "**감도 범위** — 태양광 발전 프로파일의 불확실성을 반영한 폭입니다.",
-            "흔드는 축은 총량이 아니라 **정오의 첨예도**입니다. 재분석 기상 자료가 "
-            "피크 발전량을 평탄하게 내는 경향이 있어, 총량은 맞아도 피크 절감이 "
-            "달라집니다.",
-            "이 축에는 좋고 나쁨이 없습니다 — 세 값 중 하나를 고르는 것이 아닙니다.",
-        )
-    ),
     "discharge_hours": "\n\n".join(
         (
             "**방전시간** = 하루 최대 초과 에너지 ÷ 최대 초과 출력.",
@@ -203,12 +184,9 @@ CHART_TIPS: dict[str, str] = {
         "값어치가 그만큼 큽니다."
     ),
     "chart.combination": (
-        "조합별 절감액을 나란히 세운 그림이고, 색이 확실성 등급입니다.\n\n"
-        "막대가 길어도 등급이 낮으면 그만큼 불확실합니다 — 길이와 색을 함께 봅니다."
-    ),
-    "chart.sensitivity": (
-        "태양광 발전 프로파일의 첨예도를 흔들었을 때 지표가 움직이는 범위입니다.\n\n"
-        "범위가 넓을수록 그 지표는 기상 가정에 민감합니다 — 좁은 지표부터 믿습니다."
+        "고른 수단을 하나씩 쌓아 가며 조합마다 요금을 다시 계산한 절감액입니다.\n\n"
+        "막대가 위에서 아래로 길어지는 폭이 그 수단을 더해 얻는 몫입니다 — 폭이 "
+        "좁아지면 앞의 수단과 겹치는 부분이 있다는 뜻입니다."
     ),
 }
 
@@ -384,11 +362,6 @@ def payback(years: float | None, *, investment_won: float | None = None) -> str:
     return f"{years:,.1f}년"
 
 
-def certainty_badge(certainty: Certainty | str) -> str:
-    """확실성 등급. **등급만 낸다** — 근거는 매뉴얼로 보낸다 (10.2).
-
-    등급 이름의 물결표(``중간~낮음``)를 화면 범위 기호로 바꿔 낸다 (25세션 2절).
-    지표 delta 자리는 escape 한 역슬래시가 그대로 보이므로 :func:`markdown_safe`
-    를 쓸 수 없고, 등급 이름 자체는 Excel·Word·문서가 함께 쓰므로 고치지 않는다.
-    """
-    return f"확실성 {str(certainty).replace('~', RANGE)}"
+# **확실성 뱃지를 지웠다** (28세션 4절). 화면에서 등급을 빼기로 했으므로 이
+# 껍데기도 함께 없앤다 — 남겨 두면 다음에 누군가 다시 붙인다. 등급 이름의
+# 물결표를 범위 기호로 바꾸던 일(25세션 2절)도 화면에 등급이 없으니 끝났다.

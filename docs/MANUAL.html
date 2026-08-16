@@ -280,7 +280,7 @@ li.task input { margin-right:.5rem; }
 <ul>
 <li>같은 계약종별·전압구분 안에서만 견준다. <strong>종별은 용도로 정해지는 계약이지 고를 수 있는 요금제가 아니다.</strong></li>
 <li>전환에는 한전 신청이 필요하고 제한 기간이 있을 수 있다. 한전에 확인하십시오.</li>
-<li>확실성 <strong>높음</strong> — 실측과 요금표만으로 확정된다.</li>
+<li>산출물 확실성 <strong>높음</strong> — 실측과 요금표만으로 확정된다.</li>
 </ul>
 <h3 id="measure-contract">4.2 계약전력 조정 (투자 0원)</h3>
 <p><strong>무엇인가.</strong> 계약전력이 실제 사용보다 크면 기본요금을 더 내고 있을 수 있다.</p>
@@ -291,7 +291,7 @@ li.task input { margin-right:.5rem; }
 <li><strong>한 번의 초과가 12개월간 기본요금을 올린다.</strong> 여유를 넉넉히 두십시오.</li>
 <li>계약 변경에는 한전 절차와 비용이 따를 수 있다.</li>
 <li>절감액이 &quot;미산출&quot;이면 하한 규정을 모르는 종별이다. 없는 절감을 만들어내지 않으려고 비워 둔 것이다.</li>
-<li>확실성 <strong>높음</strong>.</li>
+<li>산출물 확실성 <strong>높음</strong>.</li>
 </ul>
 <h3 id="measure-dr">4.3 경제성DR (투자 0원)</h3>
 <p><strong>무엇인가.</strong> 전력거래소 수요반응 시장에 <strong>하루 전 자발적으로</strong> 감축을 입찰해 정산금을 받는 제도다. 설비가 필요 없다.</p>
@@ -309,7 +309,7 @@ li.task input { margin-right:.5rem; }
 <li>등록값을 평균으로 잡으면 절반의 날에 미달하고 <strong>미달은 6개월 입찰 제한</strong>이다. 그래서 하위값으로 잡는다.</li>
 <li>실제 정산 기준량(CBL)은 전력거래소가 별도 방식으로 산정한다. 여기 값은 실측 부하 기준의 추정이다.</li>
 <li>기본요금 절감은 계산하지 않는다. 참여일이 연중 최대수요일과 겹칠 확률이 낮다.</li>
-<li>확실성 <strong>중간</strong> — 낙찰 여부와 참여일 수가 운영에 달렸다.</li>
+<li>산출물 확실성 <strong>중간</strong> — 낙찰 여부와 참여일 수가 운영에 달렸다.</li>
 </ul>
 <h3 id="measure-power-factor">4.4 역률 개선 (저투자)</h3>
 <p><strong>무엇인가.</strong> 지상역률이 92% 미만이면 기본요금에 추가요금이 붙고, 넘으면 감액을 받는다. 역률 개선 설비를 달아 역률을 올린다.</p>
@@ -322,7 +322,7 @@ li.task input { margin-right:.5rem; }
 <li><strong>현재 역률이 92% 미만이면 경고가 뜬다.</strong> 매 1%p마다 기본요금이 0.2%씩 붙는다.</li>
 <li>역률을 넣지 않았으면 92%를 가정한 값이다. 이 값에서 조정액은 0원이므로 <strong>청구서의 역률을 넣어야 실제 금액이 나온다.</strong></li>
 <li><strong>역률 개선 설비를 너무 키우면 야간에 진상으로 넘어가 오히려 추가요금이 붙는다.</strong> 자동제어형 역률 개선 설비를 검토하십시오.</li>
-<li>확실성 <strong>높음</strong>.</li>
+<li>산출물 확실성 <strong>높음</strong>.</li>
 </ul>
 <h3 id="measure-solar">4.5 태양광</h3>
 <p><strong>무엇인가.</strong> 지붕·유휴 부지에 태양광을 올려 낮 사용량과 피크를 줄인다.</p>
@@ -347,7 +347,7 @@ li.task input { margin-right:.5rem; }
 <p><strong>주의사항.</strong></p>
 <ul>
 <li><strong>발전량 예측은 피크를 과소 산출하는 경향이 있다.</strong> 피크 절감량이 보수적으로 나온다.</li>
-<li>확실성 <strong>중간</strong> — 기상 예측 오차가 있다.</li>
+<li>산출물 확실성 <strong>중간</strong> — 기상 예측 오차가 있다.</li>
 <li>구조 안전성·인허가·계통 연계는 판정하지 않는다.</li>
 </ul>
 <div class="figure-slot"><strong>캡처 C-07</strong><br>태양광 카드 — 면적·밀도·방위·지역 입력과 용량 판정</div>
@@ -363,7 +363,7 @@ li.task input { margin-right:.5rem; }
 <div class="table-wrap"><table><thead><tr><th>밀도</th><th>1,000 m² 환산</th><th>상충 관계</th></tr></thead><tbody><tr><td>높음</td><td><strong>110 kWp</strong></td><td>면적당 용량이 가장 크다. 대신 앞열 그림자가 늘어 kWp당 발전량은 가장 작다</td></tr><tr><td><strong>보통</strong></td><td><strong>80 kWp</strong></td><td>균형점. 국내 옥상 설치의 일반적인 배치다 (기본값)</td></tr><tr><td>낮음</td><td><strong>60 kWp</strong></td><td>kWp당 발전량이 가장 크다. 대신 같은 면적의 용량이 가장 작다</td></tr></tbody></table></div>
 <p><strong>환산 용량은 선택지 라벨에 붙어 있고, 상충 관계는 물음표에 있다.</strong> 「높음 — 110 kWp」 처럼 보이고 동그라미 물음표에 마우스를 올리면 위 표의 설명이 나온다. 선택지와 설명이 화면상 떨어져 있으면 고르는 순간에 읽히지 않는다.</p>
 <p><strong>&quot;높음이 좋다&quot;가 아니다</strong> — 면적이 부족하면 높음, 여유가 있으면 낮음이다.</p>
-<p>같은 방식으로 <strong>확실성 등급·감도 범위·방전시간·계약전력 여유율</strong>도 물음표에 설명을 붙였다.</p>
+<p>같은 방식으로 <strong>방전시간·계약전력 여유율</strong>에도 물음표에 설명을 붙였다.</p>
 <p>용량을 이미 알고 있으면 상세 패널에서 직접 넣을 수 있다. 그때는 면적 환산을 덮어쓴다.</p>
 <h4 id="pv-cost">투자비를 넣지 않으면</h4>
 <p><strong>투자비 칸에 0원이 아니라 &quot;미산출 — 사유&quot;가 들어간다.</strong></p>
@@ -400,7 +400,7 @@ li.task input { margin-right:.5rem; }
 <li>경부하 충전이 <strong>새 야간 피크</strong>를 만들 수 있다. 목표를 넘으면 경고한다.</li>
 <li>규칙기반 단일 운전 전략이다. 실제 최적 운전과는 차이가 있다.</li>
 <li>OPEX·열화·수명·교체비를 넣지 않은 <strong>단순 회수기간</strong>이다.</li>
-<li>확실성 <strong>중간~낮음</strong>.</li>
+<li>산출물 확실성 <strong>중간~낮음</strong>.</li>
 </ul>
 <h4 id="ess-cost-reference">투자비와 성립 조건 보는 법</h4>
 <p>투자비는 국내 조달 사례로 맞춘 모델에서 나온다.</p>
@@ -423,7 +423,7 @@ li.task input { margin-right:.5rem; }
 <ul>
 <li><strong>자격요건을 판정하지 않는다.</strong> 상계거래·잉여 판매 모두 제도 요건이 있다. 금액만 참고하십시오.</li>
 <li>잉여 판매 단가를 넣지 않으면 산출하지 않는다.</li>
-<li>확실성 <strong>중간~낮음</strong>.</li>
+<li>3단계 표의 상계 수익은 <strong>12개월 환산</strong>이다 (28세션). 다른 줄과 기준이 같다.</li>
 </ul>
 <hr>
 <h2 id="manual-compare">5. 3단계 · 개선안 조합</h2>
@@ -432,10 +432,14 @@ li.task input { margin-right:.5rem; }
 <p><strong>조합은 직접 짠다</strong> (16세션). 개선안별 요약 아래에 체크박스가 있고, 기본은 2단계에서 켠 수단 전부다. 체크를 풀면 그 수단을 뺀 조합으로 합산효과를 다시 계산한다. 뺀 수단도 개선안별 요약에는 남는다 — 뺀 것이 얼마짜리였는지 보여야 뺄지 말지 정할 수 있다.</p>
 <p>미리 정해 둔 조합 세트를 나란히 놓고 고르게 하던 표는 없앴다. 쓰는 사람은 「태양광은 빼고 나머지」 처럼 자기 조합을 이미 알고 있는데 목록에 없었다.</p>
 <p><strong>① 개선안별 요약은 2단계 카드의 값 그대로다.</strong> 여기서 다시 계산하지 않는다 — 두 화면의 숫자가 다르면 어느 쪽을 믿어야 할지 알 수 없다. 합계 행에는 <strong>「단순 합」</strong> 이라고 적는다. 그것이 최종 효과가 아니기 때문이다.</p>
+<div class="table-wrap"><table><thead><tr><th>열</th><th>무엇이 들어가나</th></tr></thead><tbody><tr><td>수단</td><td>개선안 이름 (화면은 1~7 순번)</td></tr><tr><td><strong>개선 방안</strong></td><td><strong>무엇을 얼마나 하는지</strong> — 「80 kWp 설치」·「34,350 kWh 입찰」·「177 kW 하향」처럼 끝에 동사가 붙는다 (28세션)</td></tr><tr><td>연간 절감액</td><td>12개월 환산. <strong>만원 단위</strong>로 적는다 — 원 단위 대조는 Excel 이다</td></tr><tr><td>투자비</td><td>만원 단위. 단가를 넣지 않았으면 사유</td></tr><tr><td>회수기간</td><td>투자비 ÷ 연간 절감액</td></tr></tbody></table></div>
+<p><strong>모든 금액과 수량이 12개월 환산이다</strong> (28세션). 잉여 상계 수익만 기간 값이라 한 칸의 기준이 달랐던 것을 고쳤다 — 12개월치 자료에서는 값이 같지만, 반년치를 올리면 그 칸만 절반으로 나왔다.</p>
 <p><strong>② 합산효과가 3단계의 존재 이유다.</strong></p>
 <div class="code"><pre><code>단순 합    6,715만원
 합산효과   6,912만원
-차이         196만원  (+2.9%)</code></pre></div>
+차이         196만원  (+2.9%)
+회수기간     7.8년      (투자비 1억 9,200만원)</code></pre></div>
+<p><strong>회수기간은 조합 전체 기준이다</strong> (28세션). 고른 수단의 투자비를 합쳐 합산효과 절감액으로 나눈다 — 수단별 회수기간을 눈으로 더할 일이 없다. 투자가 없는 수단만 골랐으면 <strong>즉시</strong>다.</p>
 <p>차이가 생기는 이유를 항목별로 적는다 — <strong>실제로 발생한 것만</strong> 적는다.</p>
 <ul>
 <li>요금제가 바뀌면 다른 수단의 기준 단가가 바뀐다</li>
@@ -455,12 +459,14 @@ li.task input { margin-right:.5rem; }
 <p><strong>미검토는 &quot;효과가 없다&quot;가 아니라 &quot;보지 않았다&quot;이다.</strong> 둘은 결론이 다르다. 제안서에 옮길 때 이 구분을 지우지 마십시오.</p>
 <div class="figure-slot"><strong>캡처 C-08</strong><br>3단계 화면 — 검토 범위 상자와 조합 구성 체크박스</div>
 <h3 id="certainty">5.2 확실성 등급의 의미</h3>
-<p>같은 표에 절감액과 함께 등급이 붙는다. <strong>금액의 크기와 믿음의 정도는 다른 축이다.</strong></p>
+<blockquote><strong>화면에는 등급이 없다</strong> (28세션). Excel 「수단별 결과」·「조합 비교」 와 Word 보고서 3장에만 있다. 무엇에 대한 등급인지가 이름에 없어 「높음」 이 어느 정도의 믿음인지 가늠할 수 없었고, 잉여가 0 이라 수익 0원이 확정인 줄에도 「중간~낮음」 이 붙었다. 이 도구는 <strong>초기 검토용</strong>이고 등급이 보증이 아니므로, 화면에서는 회수기간과 「미산출 — …」 사유가 그 자리를 대신한다.</blockquote>
+<p>산출물에 붙는 등급의 뜻은 아래와 같다. <strong>금액의 크기와 믿음의 정도는 다른 축이다.</strong></p>
 <div class="table-wrap"><table><thead><tr><th>등급</th><th>대상</th><th>근거</th></tr></thead><tbody><tr><td><strong>높음</strong></td><td>선택요금 전환, 계약전력 조정, 역률 개선</td><td>실측 데이터와 요금표·약관만으로 확정된다. 예측이 들어가지 않는다</td></tr><tr><td><strong>중간</strong></td><td>태양광, 경제성DR</td><td>발전량 예측 오차 / 낙찰·참여일 불확실성</td></tr><tr><td><strong>중간~낮음</strong></td><td>ESS, 잉여 활용</td><td>운전 전략과 열화에 좌우된다</td></tr></tbody></table></div>
 <p><strong>조합의 등급은 가장 낮은 구성 요소를 따른다.</strong> 태양광과 ESS 를 함께 넣으면 조합 전체가 &#x27;중간~낮음&#x27;이다.</p>
 <p>의사결정에 쓰는 법 — <strong>&#x27;높음&#x27;부터 실행하십시오.</strong> 투자가 없고 확실하다. &#x27;중간~낮음&#x27;은 별도 검토와 견적이 전제다.</p>
 <h3 id="sensitivity">5.3 감도 범위의 의미</h3>
-<p>태양광이 있으면 감도가 함께 나온다.</p>
+<blockquote><strong>화면에는 감도가 없다</strong> (28세션). 태양광이 있으면 계산은 그대로 돌지만 결과는 Excel 「감도」·「감도 상세」 시트와 보고서에만 싣는다. 이유 둘. ① <strong>결론이 움직이지 않는다</strong> — 첨예도를 흔들어도 총 절감액은 ±1.3%, 회수기간은 7.8→8.0년 이다. 벌어지는 것은 기본요금 절감액 한 줄뿐이다. ② 목록에 함께 실리던 「전력량요금 절감액」 은 <strong>조합 전체(요금제 전환 포함)의 값</strong>이라 1억을 넘는데 그 감도 폭은 0.03% 다 — 요금제 전환이 기본요금과 전력량요금을 맞바꾸므로 짝인 기본요금 절감액이 음수로 뜨기도 해서, 감도와 무관한 숫자가 감도 이름 아래에 놓여 있었다.</blockquote>
+<p>Excel 에 실리는 형식은 아래와 같다.</p>
 <div class="code"><pre><code>기본요금 절감액 31,518,402원 (프로파일 감도 범위 28,968,918 ~ 32,657,891원)</code></pre></div>
 <p><strong>흔드는 것은 총 발전량이 아니라 정오의 뾰족한 정도다.</strong> 재분석 기상 데이터는 맑은 날 정오 출력을 평탄하게 보는 경향이 있어, 그 부분이 실제 불확실성이다. 일별 총 발전량은 세 시나리오에서 같다(±0.01%).</p>
 <h4 id="manual-sensitivity-why">왜 3열이 아니라 범위인가</h4>
@@ -468,12 +474,14 @@ li.task input { margin-right:.5rem; }
 <p><strong>&#x27;첨예형&#x27;은 좋은 시나리오가 아니다.</strong> 총량이 보존되므로 정오가 높아지면 아침·저녁 어깨가 낮아지는데, 피크 저감은 어깨 출력에 걸린다. 부하 피크가 정오에 정확히 있지 않으면 첨예형이 오히려 불리하다.</p>
 <blockquote>케이스 6종 × 3용량 = <strong>18개 조합에서 기본요금 절감액의 상한이 &#x27;첨예형&#x27;이었던 적은 한 번도 없다.</strong> 평탄형 16건, 기준 2건이었다.</blockquote>
 <p>그래서 최댓값·최솟값만 뽑아 범위로 적는다. 원자료 3행은 Excel 「감도 상세」 시트에 근거로 남는다.</p>
+<p><strong>감도가 뜻을 갖는 지표는 기본요금 절감액 하나다.</strong> 전력량요금은 일별 총량이 보존되어 거의 움직이지 않고, 요금적용전력도 0.1% 안에서 흔들린다.</p>
 <p><strong>요금제 전환·계약전력 조정·역률 개선에는 감도를 적용하지 않는다</strong> — 예측이 들어가지 않는 확정 계산이다.</p>
 <h3 id="payback">5.4 회수기간 읽는 법</h3>
 <div class="code"><pre><code>회수기간 = 투자비 ÷ 12개월 환산 절감액</code></pre></div>
 <p><strong>단순 회수기간이다.</strong> 할인율·OPEX·열화·교체비를 넣지 않았다.</p>
-<div class="table-wrap"><table><thead><tr><th>표시</th><th>뜻</th></tr></thead><tbody><tr><td><code>5.7년</code></td><td>산출된 값</td></tr><tr><td><code>즉시</code></td><td>투자가 없는 수단이다</td></tr><tr><td><code>미산출 — 투자비를 모릅니다</code></td><td><strong>단가를 넣지 않았다.</strong> 0년이 아니다</td></tr></tbody></table></div>
-<p><strong>빈칸이나 0원을 보게 되는 일은 없다.</strong> 산출하지 못한 항목에는 사유가 들어간다.</p>
+<div class="table-wrap"><table><thead><tr><th>표시</th><th>뜻</th></tr></thead><tbody><tr><td><code>5.7년</code></td><td>산출된 값</td></tr><tr><td><code>즉시</code></td><td>투자가 없는 수단이다</td></tr><tr><td><code>미산출 — 투자비 미입력</code></td><td><strong>단가를 넣지 않았다.</strong> 0년이 아니다</td></tr></tbody></table></div>
+<p><strong>빈칸이나 0원을 보게 되는 일은 없다.</strong> 산출하지 못한 항목에는 사유가 들어간다. 사유는 <strong>「미산출 — 무엇이 없다」 한 마디</strong>다 (28세션) — 왜 지어내지 않는지는 그 자리의 입력 라벨과 경고, 그리고 이 매뉴얼이 말한다. 표 한 칸에 문단을 넣으면 표를 읽을 수 없다.</p>
+<p><strong>회수기간은 개선안별로도, 조합 전체로도 나온다.</strong> 합산효과의 회수기간은 고른 수단의 투자비 합을 조합 절감액으로 나눈 값이다 — 개별 회수기간의 평균이 아니다.</p>
 <hr>
 <h2 id="manual-export">6. 결과 내보내기</h2>
 <p>3단계 아래 「내려받기」에 탭이 둘 있다.</p>
@@ -601,7 +609,7 @@ li.task input { margin-right:.5rem; }
 </ul>
 <h3 id="manual-case-compare">3단계 — 조합과 판단</h3>
 <div class="table-wrap"><table><thead><tr><th>조합</th><th>절감액</th><th>투자비</th><th>회수기간</th><th>확실성</th></tr></thead><tbody><tr><td>기준선 (현행)</td><td>—</td><td>—</td><td>—</td><td>높음</td></tr><tr><td>선택요금 전환 (Ⅱ)</td><td>5,358만원</td><td>0원</td><td>즉시</td><td><strong>높음</strong></td></tr><tr><td>+ 태양광 960 kWp</td><td><strong>2.20억원</strong></td><td>12.48억원</td><td>5.7년</td><td>중간</td></tr></tbody></table></div>
-<p><strong>감도.</strong></p>
+<p><strong>감도</strong> (Excel 「감도」 시트 — 화면에는 없다).</p>
 <div class="code"><pre><code>기본요금 절감액   -4,831만원 (범위 -5,242 ~ -4,623만원)
 전력량요금 절감액  2억 6,827만원 (범위 2억 6,775 ~ 2억 6,827만원)
 절감액           2억 1,996만원 (범위 2억 1,533 ~ 2억 2,200만원)
@@ -610,8 +618,8 @@ li.task input { margin-right:.5rem; }
 <p><strong>회수기간 범위가 5.6~5.8년으로 좁다.</strong> 총 발전량이 감도에서 보존되므로 전력량요금 절감액이 거의 움직이지 않기 때문이다. 흔들리는 것은 기본요금 절감액뿐인데 이 건물에서는 그 비중이 작다.</p>
 <h3 id="manual-case-conclusion">이 건물에 대한 결론</h3>
 <ol>
-<li><strong>선택Ⅱ 로 바꾸십시오.</strong> 5,358만원, 투자 0원, 확실성 높음. 먼저 할 일이다.</li>
-<li><strong>태양광 960 kWp 는 검토할 만하다.</strong> 회수 5.7년, 확실성 중간. 다만 <strong>12.48억원은 가정 단가</strong>이므로 실제 견적을 받아 다시 넣으십시오.</li>
+<li><strong>선택Ⅱ 로 바꾸십시오.</strong> 5,358만원, 투자 0원, 즉시 회수. 먼저 할 일이다.</li>
+<li><strong>태양광 960 kWp 는 검토할 만하다.</strong> 회수 5.7년. 다만 <strong>12.48억원은 가정 단가</strong>이므로 실제 견적을 받아 다시 넣으십시오.</li>
 <li><strong>계약전력은 손대지 마십시오.</strong> 이용률 91% 라 여유가 없다.</li>
 <li><strong>미검토</strong> — 경제성DR, ESS, 잉여 활용. 검토하지 않았을 뿐 효과가 없다는 뜻이 아니다.</li>
 </ol>

@@ -7,6 +7,13 @@
 합계 행은 **「단순 합」** 이라고 명시한다. 수단을 함께 도입하면 서로 영향을 주므로
 이 합이 최종 효과가 아니다 — 그 차이를 보이는 것이 3단계의 존재 이유이고,
 :mod:`kwise.compare.combination` 이 조합을 통째로 재계산해서 낸다.
+
+**이 표는 화면 전용이다.** Excel 은 :func:`kwise.report.excel.measure_summary_frame`,
+Word 는 :func:`kwise.report.document.measure_entries` 가 따로 만든다.
+
+**모든 금액과 수량은 12개월 환산이다** (28세션 3절). 한 칸이라도 기간 값이면
+같은 열에서 기준이 갈라지는데, 표에는 그 사실을 적을 자리가 없다 — 잉여 상계
+수익이 그랬다. 환산은 :func:`standalone_rows` 가 ``base_fee_months`` 로 한다.
 """
 
 from __future__ import annotations
@@ -27,8 +34,10 @@ from kwise.measures import (
     SolarPoint,
     SurplusResult,
     TariffSwitchResult,
+    annualize,
     measure_kind,
 )
+from kwise.report.columns import option_label
 from kwise.report.notices import UNPRICED_REASONS
 
 __all__ = [
@@ -62,7 +71,9 @@ class StandaloneRow:
     """개선안 하나의 독립 평가 결과.
 
     Attributes:
-        reduction: 절감량 — 수단마다 단위가 다르다 (kW·kWh·%). **문자열이다.**
+        reduction: **개선 방안** — 무엇을 얼마나 하는지 (28세션 1절). 수단마다
+            단위가 다르므로(kW·kWh·kWp·%) 문자열이고, **끝에 동사를 붙인다** —
+            「80 kWp」 만으로는 그것을 짓자는 것인지 줄이자는 것인지 알 수 없다.
         annual_saving_won: 12개월 환산 절감액. 모르면 ``None`` 이고 사유가 붙는다.
         combinable: 합산효과 재계산에 들어가는가. 아니면 표에서 따로 적는다.
     """
@@ -101,16 +112,28 @@ def standalone_rows(
     solar_investment_reason: str = "",
     ess: EssResult | None = None,
     surplus: SurplusResult | None = None,
+    base_fee_months: float | None = None,
 ) -> tuple[StandaloneRow, ...]:
-    """켠 수단을 **7장 순서 그대로** 한 줄씩. 계산하지 않고 옮기기만 한다."""
+    """켠 수단을 **7장 순서 그대로** 한 줄씩. 계산하지 않고 옮기기만 한다.
+
+    Args:
+        base_fee_months: 기간을 12개월로 환산하는 데 쓴다 (28세션 3절). **잉여를
+            넣으면 필수다** — 상계 수익만 기간 값이라 이것 없이는 다른 줄과 기준이
+            갈라진다. 기본값을 두지 않는 것은 ``contract_floor_ratio`` 와 같은
+            이유다 (5세션) — 지어낸 가정으로 만든 금액을 누군가 근거로 쓴다.
+    """
     rows: list[StandaloneRow] = []
 
     if switch is not None:
+        current, best = switch.current.selection.option, switch.best.selection.option
         rows.append(
             StandaloneRow(
                 kind=measure_kind("tariff_switch"),
-                reduction=f"요금제 {switch.current.selection.option} → "
-                f"{switch.best.selection.option}",
+                reduction=(
+                    f"{option_label(current)} 유지"
+                    if current == best
+                    else f"{option_label(current)} → {option_label(best)} 전환"
+                ),
                 annual_saving_won=switch.annual_saving_won,
                 investment_won=0.0,
                 payback_years=0.0,
@@ -133,7 +156,7 @@ def standalone_rows(
         rows.append(
             StandaloneRow(
                 kind=measure_kind("demand_response"),
-                reduction=f"{demand_response.annual_reducible_kwh:,.0f} kWh 감축",
+                reduction=f"{demand_response.annual_reducible_kwh:,.0f} kWh 입찰",
                 annual_saving_won=demand_response.settlement_won,
                 investment_won=0.0,
                 payback_years=0.0 if demand_response.is_priced else None,
@@ -145,7 +168,9 @@ def standalone_rows(
         rows.append(
             StandaloneRow(
                 kind=measure_kind("power_factor"),
-                reduction=f"{power_factor.current_pct:,.1f}% → {power_factor.target_pct:,.1f}%",
+                reduction=(
+                    f"{power_factor.current_pct:,.1f}% → {power_factor.target_pct:,.1f}% 개선"
+                ),
                 annual_saving_won=power_factor.annual_saving_won,
                 investment_won=power_factor.investment_won,
                 payback_years=power_factor.payback_years,
@@ -156,7 +181,7 @@ def standalone_rows(
         rows.append(
             StandaloneRow(
                 kind=measure_kind("solar"),
-                reduction=f"{solar.capacity_kwp:,.0f} kWp",
+                reduction=f"{solar.capacity_kwp:,.0f} kWp 설치",
                 annual_saving_won=solar.annual_saving_won,
                 investment_won=solar.investment_won,
                 payback_years=solar.payback_years,
@@ -168,8 +193,8 @@ def standalone_rows(
         rows.append(
             StandaloneRow(
                 kind=measure_kind("ess"),
-                reduction=f"목표 {ess.excess.target_kw:,.0f} kW · "
-                f"{ess.power_kw:,.0f} kW / {ess.capacity_kwh:,.0f} kWh",
+                reduction=f"{ess.power_kw:,.0f} kW / {ess.capacity_kwh:,.0f} kWh 설치 "
+                f"(목표 {ess.excess.target_kw:,.0f} kW)",
                 annual_saving_won=ess.annual_saving_won,
                 investment_won=ess.investment_won,
                 payback_years=ess.payback_years,
@@ -177,13 +202,27 @@ def standalone_rows(
             )
         )
     if surplus is not None:
+        if base_fee_months is None:
+            raise ValueError(
+                "잉여 상계 수익은 기간 값입니다. 12개월로 환산하려면 "
+                "base_fee_months 를 주십시오 (28세션 3절)."
+            )
         offset = surplus.scenario(OFFSET_SCENARIO)
+        # **기간 값을 12개월로 환산한다** (28세션 3절). 26세션이 남긴 미해결이다 —
+        # 이 한 칸만 기간 기준이라 열 이름(「연간 절감액」)이 거짓말을 하고 있었다.
+        # 수량(MWh)도 같은 이유로 함께 환산한다.
         rows.append(
             StandaloneRow(
                 kind=measure_kind("surplus"),
                 # 발전·잉여 에너지는 MWh 로 적는다 (26세션 3-3). kWh 는 자릿수가 크다.
-                reduction=f"{surplus.total_kwh / 1000.0:,.1f} MWh 잉여",
-                annual_saving_won=offset.revenue_won,
+                reduction=(
+                    f"{annualize(surplus.total_kwh, base_fee_months) / 1000.0:,.1f} MWh 상계"
+                ),
+                annual_saving_won=(
+                    None
+                    if offset.revenue_won is None
+                    else annualize(offset.revenue_won, base_fee_months)
+                ),
                 investment_won=0.0,
                 payback_years=0.0 if offset.is_priced else None,
                 certainty=Certainty.MEDIUM_LOW,
@@ -208,20 +247,32 @@ def simple_sum_won(rows: tuple[StandaloneRow, ...], *, combinable_only: bool = F
 
 
 def standalone_frame(rows: tuple[StandaloneRow, ...]) -> pd.DataFrame:
-    """화면·산출물이 같이 쓰는 표. **합계 행에 「단순 합」이라고 적는다.**"""
+    """3단계 화면의 요약 표. **합계 행에 「단순 합」이라고 적는다.**
+
+    **금액은 만원 단위다** (28세션 1-3). 원 단위 아홉 자리가 여섯 줄 늘어서면
+    자릿수를 세어 가며 읽어야 한다 — 여기는 대조하는 자리가 아니라 크기를
+    견주는 자리다. 원 단위 대조는 Excel 「수단별 결과」 가 맡는다.
+
+    **열 이름은 「개선 방안」이다** (28세션 1-1). 「절감량」 이라고 적어 두고
+    용량(kWp)·요금제 이름처럼 절감량이 아닌 것을 담고 있었다.
+
+    **확실성 열은 없다** (28세션 4절). 무엇에 대한 등급인지가 이름에 없어
+    「높음」 이 어느 정도인지 읽는 사람이 가늠할 수 없었고, 잉여가 0 이라
+    수익 0원이 확정인 줄에도 「중간~낮음」 이 붙었다. 등급 자체는 데이터와
+    Excel·Word 에 그대로 남는다 — 없앤 것은 화면 표기다.
+    """
     body: list[dict[str, object]] = [
         {
             "수단": row.title,
-            "절감량": row.reduction,
-            "연간 절감액": money.won(
+            "개선 방안": row.reduction,
+            "연간 절감액": money.won_short(
                 row.annual_saving_won,
                 reason=row.saving_reason or UNPRICED_REASONS["contract"],
             ),
-            "투자비": money.won(
+            "투자비": money.won_short(
                 row.investment_won, reason=row.investment_reason or "미산출 — 단가 미입력"
             ),
             "회수기간": _payback(row),
-            "확실성": str(row.certainty),
         }
         for row in rows
     ]
@@ -229,11 +280,12 @@ def standalone_frame(rows: tuple[StandaloneRow, ...]) -> pd.DataFrame:
         body.append(
             {
                 "수단": SIMPLE_SUM_LABEL,
-                "절감량": "—",
-                "연간 절감액": money.won(simple_sum_won(rows), reason="—"),
-                "투자비": money.won(sum(row.investment_won or 0.0 for row in rows), reason="—"),
+                "개선 방안": "—",
+                "연간 절감액": money.won_short(simple_sum_won(rows), reason="—"),
+                "투자비": money.won_short(
+                    sum(row.investment_won or 0.0 for row in rows), reason="—"
+                ),
                 "회수기간": "—",
-                "확실성": "—",
             }
         )
     return pd.DataFrame(body)

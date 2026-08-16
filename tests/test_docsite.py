@@ -5,7 +5,7 @@
     ① md 두 개에서 html 두 개가 나온다
     ② html 이 **단일 파일이다** — 바깥 이미지·스타일·스크립트를 참조하지 않는다
     ③ 목차 링크가 실제 절로 연결된다 (죽은 링크가 없다)
-    ④ 앵커 32개가 매뉴얼에 모두 있다
+    ④ 앵커 30개가 매뉴얼에 모두 있다
     ⑤ 화면의 [자세히] 링크가 살아나고 그 앵커가 매뉴얼과 일치한다
 """
 
@@ -167,10 +167,10 @@ def test_슬러그가_한글을_남긴다() -> None:
     assert slugify("!!!") == "section"
 
 
-# ===================================================================== ④ 앵커 32개
+# ===================================================================== ④ 앵커 30개
 
 
-def test_앵커_32개가_매뉴얼에_모두_있다() -> None:
+def test_앵커가_매뉴얼에_모두_있다() -> None:
     """없으면 화면 툴팁의 요지에 대응하는 전문이 없다 (16세션 4절)."""
     present = set(collect_anchors((DOCS / "MANUAL.md").read_text(encoding="utf-8")))
     missing = [key for key in anchor_keys() if key not in present]
@@ -183,8 +183,11 @@ def test_생성된_매뉴얼_html_에도_앵커가_있다(built: Path) -> None:
     assert set(anchor_keys()) <= ids
 
 
-def test_앵커_수가_32개다() -> None:
-    assert len(ANCHORS) == 32
+def test_앵커_수가_30개다() -> None:
+    """**확실성·감도 앵커를 뺐다** (28세션 4·5절). 화면에서 없앤 자리는 앵커도 없다."""
+    assert len(ANCHORS) == 30
+    assert "certainty" not in anchor_keys()
+    assert "sensitivity" not in anchor_keys()
 
 
 # ===================================================================== ⑤ 화면 툴팁
@@ -192,9 +195,9 @@ def test_앵커_수가_32개다() -> None:
 
 def test_툴팁이_제목과_요지를_함께_준다() -> None:
     """**링크가 아니라 툴팁이다** (16세션 4절). 화면에서 나가지 않고 요지를 읽는다."""
-    tip = manual_tip("certainty")
-    assert tip.startswith("확실성 등급")
-    assert "판정 근거" in tip
+    tip = manual_tip("payback")
+    assert tip.startswith("회수기간")
+    assert "OPEX" in tip
     assert "](" not in tip and "http" not in tip
 
 

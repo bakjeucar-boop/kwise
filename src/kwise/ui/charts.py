@@ -408,16 +408,21 @@ def ess_target_chart(curve: EssTargetCurve) -> alt.LayerChart | alt.FacetChart:
 
 
 def combination_chart(comparison: ComparisonResult) -> alt.Chart:
-    """조합별 절감액. **확실성으로 색을 나눈다** — 같은 표에서 등급이 보여야 한다 (8장)."""
+    """조합별 절감액.
+
+    **확실성으로 색을 나누던 것을 걷어냈다** (28세션 4절). 등급이 무엇에 대한
+    것인지 이름에 없어 색이 무엇을 가리키는지도 알 수 없었다. 이 그림이 말하는
+    것은 하나다 — **수단을 쌓을수록 절감액이 어떻게 늘어나는가.** 등급은
+    Excel·Word 에 남는다.
+    """
     frame = combination_frame(comparison)
     return (
         alt.Chart(frame)
-        .mark_bar()
+        .mark_bar(color="#08519c")
         .encode(
             y=alt.Y("조합:N", title=None, sort=list(frame["조합"])),
             x=alt.X("절감액(원):Q", title="기간 절감액 (원)"),
-            color=alt.Color("확실성:N", title="확실성", legend=LEGEND),
-            tooltip=["조합", alt.Tooltip("절감액(원):Q", format=",.0f"), "확실성"],
+            tooltip=["조합", alt.Tooltip("절감액(원):Q", format=",.0f")],
         )
         .properties(height=max(_HEIGHT, 44 * len(frame)))
     )

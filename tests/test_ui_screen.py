@@ -674,11 +674,15 @@ def test_비교_화면이_합산효과_지표를_낸다(compare_app: AppTest) ->
     assert "12개월 환산 절감액" not in labels
 
 
-def test_비교_화면에_감도_원자료_표가_없다(compare_app: AppTest) -> None:
-    """3단계 표는 개선안별 요약 하나뿐이다. 감도는 범위 한 줄로 적는다."""
+def test_비교_화면에_감도가_없다(compare_app: AppTest) -> None:
+    """**감도를 화면에서 뺐다** (28세션 5절). 계산은 돌고 산출물에만 실린다."""
     headings = [str(item.value) for item in compare_app.subheader]
     assert "조합 비교" not in headings
-    assert "감도" in headings
+    assert "감도" not in headings
+    body = " ".join(
+        str(item.value) for group in (compare_app.markdown, compare_app.caption) for item in group
+    )
+    assert "감도 범위" not in body
 
 
 def test_엑셀을_내려받아도_결과가_남는다(compare_app: AppTest) -> None:
@@ -1206,11 +1210,16 @@ def test_화면의_원_단위_금액이_모두_천의_배수다(stage3: AppTest)
     assert not offenders, offenders
 
 
-def test_절사_각주가_화면에_있다(stage3: AppTest) -> None:
-    """항목 합과 합계 표시가 어긋날 수 있다는 사실을 적는다 (14세션 1절)."""
+def test_반올림_각주가_화면에_있다(stage3: AppTest) -> None:
+    """항목 합과 합계 표시가 어긋날 수 있다는 사실을 적는다 (14세션 1절).
+
+    **표기가 만원 반올림으로 바뀌었으므로 각주도 바뀐다** (28세션 1-3).
+    산출물(Excel·Word)은 원 단위 절사 그대로라 각주도 그대로다.
+    """
     assert not stage3.exception, stage3.exception
     body = " ".join(str(item.value) for item in stage3.caption)
-    assert text.TRUNCATION_FOOTNOTE in body
+    assert text.ROUNDING_FOOTNOTE in body
+    assert text.TRUNCATION_FOOTNOTE not in body
 
 
 def test_조합_기준_하향_여지를_합산효과에서_낸다(stage3: AppTest) -> None:
@@ -1656,15 +1665,21 @@ def test_ESS_충방전이_문구로_나온다() -> None:
     assert "VConcatChart" not in inspect.signature(ess_day_chart).return_annotation
 
 
-def test_감도_상세가_접힘_안에_있다() -> None:
-    """본문에는 대표 범위 한 줄만 남긴다 (23세션 7절)."""
+def test_감도는_계산만_하고_화면에_그리지_않는다() -> None:
+    """**결론이 움직이지 않는 값은 화면에 두지 않는다** (28세션 5절).
+
+    계산은 그대로 돈다 — Excel 「감도 상세」·「감도 범위」 와 보고서가 같은
+    프레임을 받는다. 없앤 것은 화면 표기뿐이다.
+    """
     source = (VIEWS / "compare.py").read_text(encoding="utf-8")
-    body = source[source.index("def _sensitivity_block(") : source.index("def _download_block(")]
-    assert 'st.expander("지표별 감도 범위"' in body
-    expander_at = body.index('st.expander("지표별 감도 범위"')
-    # 지표를 줄줄이 적는 반복문이 접힘 **안**에 있어야 한다.
-    loop_at = body.index("for item in shown:")
-    assert expander_at < loop_at, "감도 목록이 본문에 남아 있습니다."
+    body = source[source.index("def _sensitivity_data(") : source.index("def _download_block(")]
+    assert "cached_sensitivity(" in body, "감도 계산까지 사라졌습니다."
+    for banned in ("st.subheader", "st.expander", "st.write", "st.caption", "callout."):
+        assert banned not in body, f"감도가 화면에 무언가를 그립니다: {banned}"
+    # Excel 시트는 그대로다.
+    from kwise.report.excel import SHEET_ORDER
+
+    assert "감도 상세" in SHEET_ORDER
 
 
 # ======================================================== 25세션 · 실주행 감사
@@ -2101,8 +2116,8 @@ def test_선택요금_전환에_중복_문구가_없다() -> None:
         str(item.value) for group in (screen.markdown, screen.caption) for item in group
     )
     assert "왼쪽(초록)이 절감" not in body
-    assert "천 원 단위로 절사" in body  # 3단계 한 곳에는 남는다
-    assert body.count("천 원 단위로 절사") == 1
+    # 반올림 각주는 3단계 「개선안별 요약」 한 곳뿐이다 (25세션 4-5 · 28세션 1-3).
+    assert body.count("항목 합과 차이가 날 수 있습니다") == 1
     # 결측 신뢰 제한은 1단계에서 한 번만 (27세션 4-3).
     assert "결측률이 높은 달" in body
     assert "결측 보정 기준을 함께 봅니다" not in body
@@ -2172,3 +2187,180 @@ def test_토일공휴일_용어가_두_카드에서_같다() -> None:
     assert '"토·일·공휴일 잉여"' in source
     assert not hasattr(SurplusResult, "weekend_share"), "옛 이름이 남아 있습니다."
     assert hasattr(SurplusResult, "off_day_share")
+
+
+# ======================================================== 28세션 · 3단계 표시
+
+
+def test_개선안별_요약_열이_개선_방안이다(stage3: AppTest) -> None:
+    """**「절감량」 이라 적어 두고 절감량이 아닌 것을 담고 있었다** (28세션 1-1)."""
+    frame = next(item.value for item in stage3.dataframe if "수단" in list(item.value.columns))
+    columns = list(frame.columns)
+    assert columns == ["수단", "개선 방안", "연간 절감액", "투자비", "회수기간"], columns
+    assert "절감량" not in columns
+    # **확실성 열은 뺐다** (28세션 4절).
+    assert "확실성" not in columns
+
+
+def test_개선_방안에_동사가_붙는다() -> None:
+    """**무엇을 하는 것인지 드러나야 한다** (28세션 1-2)."""
+    from kwise.measures import Certainty, measure_kind
+    from kwise.report import StandaloneRow, standalone_frame
+
+    screen = _running(
+        option="I",
+        measure_on_tariff_switch=True,
+        measure_on_contract=True,
+        measure_on_demand_response=True,
+        measure_on_power_factor=True,
+        measure_on_ess=True,
+        measure_ess_target=5_170.0,
+    )
+    assert not screen.exception, screen.exception
+    frame = next(item.value for item in screen.dataframe if "수단" in list(item.value.columns))
+    plans = {str(row["수단"]): str(row["개선 방안"]) for _, row in frame.iterrows()}
+    assert plans["1. 선택요금 전환"].endswith("전환"), plans
+    assert plans["2. 계약전력 조정"].endswith("하향"), plans
+    assert plans["3. 경제성DR"].endswith("입찰"), plans
+    assert plans["4. 역률 개선"].endswith("개선"), plans
+    assert "설치" in plans["6. ESS"], plans
+    # 태양광·잉여는 기상에서 격리되어 이 실행에 줄이 없다 (25세션). 만드는 함수로
+    # 직접 본다 — 값이 아니라 **동사가 붙는지**를 보는 시험이다.
+    row = StandaloneRow(
+        kind=measure_kind("solar"),
+        reduction="80 kWp 설치",
+        annual_saving_won=1.0,
+        investment_won=0.0,
+        payback_years=0.0,
+        certainty=Certainty.MEDIUM,
+    )
+    assert standalone_frame((row,)).iloc[0]["개선 방안"] == "80 kWp 설치"
+
+
+def test_요약표_금액이_만원_단위다(stage3: AppTest) -> None:
+    """**원 단위 아홉 자리가 여섯 줄 늘어서면 자릿수를 세어 읽는다** (28세션 1-3)."""
+    frame = next(item.value for item in stage3.dataframe if "수단" in list(item.value.columns))
+    values = [
+        str(row[column]) for _, row in frame.iterrows() for column in ("연간 절감액", "투자비")
+    ]
+    shown = [item for item in values if not item.startswith("미산출")]
+    assert shown, values
+    for item in shown:
+        assert item.endswith(("만원", "억원", "원")), item
+        # 원 단위 여섯 자리 이상이 그대로 남아 있으면 안 된다.
+        assert not re.fullmatch(r"[\d,]{7,}원", item), item
+
+
+def test_미산출_문구가_한_칸에_들어간다() -> None:
+    """**사유는 「무엇이 없어서 못 냈나」 가 전부다** (28세션 1-4).
+
+    왜 지어내지 않는지·무엇을 넣어야 하는지는 그 자리의 입력 라벨·툴팁·차단
+    안내·보고서가 이미 말한다. 표 안에서 되풀이하면 표가 문단이 된다.
+    """
+    from kwise.measures.demand_response import UNPRICED_REASON
+    from kwise.report.notices import UNPRICED_REASONS
+
+    reasons = {
+        "dr": UNPRICED_REASON,
+        "contract": UNPRICED_REASONS["contract"],
+        "external_price": UNPRICED_REASONS["external_price"],
+        "pv_price": UNPRICED_REASONS["pv_price"],
+    }
+    for name, reason in reasons.items():
+        assert reason.startswith("미산출 — "), name
+        assert len(reason) <= 24, f"{name}: {len(reason)}자 — {reason}"
+        assert "." not in reason, f"{name}: 문장이 둘 이상입니다 — {reason}"
+    assert UNPRICED_REASON == "미산출 — 정산 단가 미입력"
+
+
+def test_합산효과에_회수기간이_있다(stage3: AppTest) -> None:
+    """**조합의 결론은 회수기간이다** (28세션 2절). 투자비 합 ÷ 12개월 환산 절감액."""
+    labels = _stage3_metrics(stage3)
+    assert labels[:4] == ["단순 합", "합산효과", "차이", "회수기간"], labels
+    payback = [item for item in stage3.metric if str(item.label) == "회수기간"][-1]
+    assert str(payback.value).endswith(("년", "즉시")) or "미산출" in str(payback.value)
+    assert "투자비" in str(payback.delta)
+
+
+def test_투자가_없는_조합은_즉시다() -> None:
+    """투자비가 0 인 수단만 고르면 회수기간은 「즉시」 다 (28세션 2절)."""
+    from kwise.measures import payback_years
+
+    assert payback_years(0.0, 1_000.0) == 0.0
+    assert text.payback(0.0, investment_won=0.0) == "즉시"
+
+
+def test_3단계_금액_열이_모두_12개월_환산이다() -> None:
+    """**한 칸이라도 기간 값이면 열 이름이 거짓말을 한다** (28세션 3절).
+
+    잉여 상계 수익만 기간 값이었다. 샘플은 정확히 12.00개월이라 환산 계수가
+    1.0 이지만, 짧은 기간 자료에서는 값이 달라진다 — 여기서 그것을 잰다.
+    """
+    import dataclasses
+
+    import pandas as pd
+
+    from kwise.measures import Certainty, SurplusResult, SurplusScenario
+    from kwise.measures.surplus import OFFSET_SCENARIO
+    from kwise.report import standalone_rows
+
+    surplus = SurplusResult(
+        total_kwh=1_200.0,
+        generation_kwh=10_000.0,
+        share_of_generation=0.12,
+        hour_distribution=pd.Series(dtype=float),
+        weekday_kwh=1_000.0,
+        weekend_kwh=100.0,
+        holiday_kwh=100.0,
+        scenarios=(SurplusScenario(OFFSET_SCENARIO, 600_000.0, "근거", "행정"),),
+    )
+    full = standalone_rows(surplus=surplus, base_fee_months=12.0)[0]
+    half = standalone_rows(surplus=surplus, base_fee_months=6.0)[0]
+    assert full.annual_saving_won == pytest.approx(600_000.0)
+    assert half.annual_saving_won == pytest.approx(1_200_000.0), "환산이 걸리지 않았습니다."
+    assert "2.4 MWh 상계" in half.reduction
+    assert full.certainty is Certainty.MEDIUM_LOW
+    # **기준을 모르면 만들지 않는다.** 기본값을 두면 지어낸 가정이 금액이 된다.
+    with pytest.raises(ValueError, match="base_fee_months"):
+        standalone_rows(surplus=surplus)
+    # 다른 수단은 이미 12개월 환산이다 — 기간 값을 쓰는 줄이 남아 있지 않다.
+    source = (Path("src") / "kwise" / "report" / "standalone.py").read_text(encoding="utf-8")
+    body = source[source.index("def standalone_rows(") : source.index("def simple_sum_won(")]
+    assert "period_" not in body, "기간 값을 쓰는 줄이 있습니다."
+    assert dataclasses.is_dataclass(surplus)
+
+
+def test_확실성이_화면에_없다(screen_lines: tuple[object, ...]) -> None:
+    """**등급을 화면에서 뺐다** (28세션 4절). Excel·Word 에는 그대로 있다."""
+    offenders = [
+        f"[{item.slot}] {item.where} :: {item.text[:60]}"
+        for item in screen_lines
+        if "확실성" in str(item.text)
+    ]
+    assert offenders == [], offenders
+    from kwise.report.excel import measure_summary_frame
+
+    assert "확실성" in list(measure_summary_frame().columns)
+
+
+def test_조합_차트가_색으로_등급을_나누지_않는다() -> None:
+    """색이 무엇을 가리키는지 알 수 없었다 (28세션 4절)."""
+    source = (Path("src") / "kwise" / "ui" / "charts.py").read_text(encoding="utf-8")
+    body = source[source.index("def combination_chart(") : source.index("def sensitivity_chart(")]
+    assert "확실성" not in body.split('"""')[2], body
+
+
+def test_28세션_중복_셋이_사라졌다() -> None:
+    """25세션 도구로 다시 세어 골라낸 셋이다 (28세션 6절)."""
+    from kwise.measures import ELIGIBILITY_NOTICE
+    from kwise.ui.spec import measure
+
+    compare_source = (VIEWS / "compare.py").read_text(encoding="utf-8")
+    # ② 조합 구성 캡션 — 바로 아래 「합산효과에 넣지 않은 수단」 이 이름까지 적는다.
+    assert compare_source.count("요금이 아니라 별도 정산") == 1
+    # ③ 잉여 카드 개요 — 같은 문장이 아래 자격요건 안내에 있다.
+    overview = measure("surplus").overview
+    assert "자격요건" not in overview, overview
+    assert "자격요건" in ELIGIBILITY_NOTICE
+    # ① 감도 목록 두 줄 (「절감액」 과 「12개월 환산 절감액」) — 목록이 사라졌다.
+    assert 'st.expander("지표별 감도 범위"' not in compare_source

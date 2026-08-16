@@ -12,8 +12,9 @@
 **조합마다 요금을 다시 계산한다.** 수단별 절감액을 더하지 않는다 — 태양광이
 사용량을 줄이면 최적 선택요금이 바뀌고 ESS 가 피크를 낮추면 기본요금 기반이 바뀐다.
 
-감도는 **범위**로 낸다. 세 값을 나란히 놓으면 "어느 쪽이 좋은 값인가" 를 찾게
-되는데 이 축에는 좋고 나쁨이 없다 (9.2). 원자료 3행은 근거표로 접는다.
+**감도는 화면에 없다** (28세션 5절). 계산은 그대로 돌지만 결과는 Excel 두 시트와
+보고서에만 싣는다 — 첨예도를 흔들어도 총 절감액이 ±1.3% 라 결론이 움직이지 않고,
+목록에 함께 실리던 분해 지표는 감도와 무관한 억 단위 금액이었다.
 """
 
 from __future__ import annotations
@@ -113,6 +114,11 @@ from kwise.ui.state import (
 )
 
 __all__ = ["render"]
+
+#: 화면에서 내리는 사실 (28세션 4절). **화면에 없는 것을 설명하지 않는다** —
+#: 확실성 등급을 화면에서 뺐으므로 「조합의 등급은 가장 낮은 구성 요소를 따른다」
+#: 는 규칙도 가리킬 대상이 없다. Excel·Word 에는 그대로 실린다.
+_HIDDEN_FACTS: frozenset[str] = frozenset({"combination.certainty_rule"})
 
 
 def render(
@@ -231,7 +237,11 @@ def render(
     # **문구가 아니라 사실로 견준다** (20세션). 조합 쪽 문구에는 조합명이 앞에
     # 붙어 문자열 비교로는 같은 사실이 다르게 보였다.
     seen = results.shown_facts()
-    fresh = tuple(item for item in comparison.notices if dedupe_key(item, base=True) not in seen)
+    fresh = tuple(
+        item
+        for item in comparison.notices
+        if dedupe_key(item, base=True) not in seen and item.fact_base not in _HIDDEN_FACTS
+    )
     for notice in screen_notices(fresh):
         callout.render_notice(notice)
     # **근거는 툴팁 하나로** (19세션 1절). 조합 표의 숫자가 어떻게 만들어졌는지는
@@ -243,7 +253,7 @@ def render(
             help=tooltip_text(fresh, header="**이 숫자가 어디서 나왔나**"),
         )
 
-    sensitivity_frame, sensitivity_ranges = _sensitivity_block(
+    sensitivity_frame, sensitivity_ranges = _sensitivity_data(
         usage, table, baseline, unit_profile, quality, form, specs
     )
     _download_block(
@@ -293,10 +303,11 @@ def _combination_picker(reviewed: tuple[str, ...]) -> tuple[str, ...]:
             # 같은 판단을 두 번 시킨다.
             if st.checkbox(spec.label, value=True, key=_pick_key(key)):
                 picked.append(key)
+    # 뒷문장(「경제성DR·잉여 활용은 …」)은 뺐다 (28세션 6절). 바로 아래 합산효과의
+    # 「합산효과에 넣지 않은 수단 — …」 이 같은 말을 **이름까지 적어** 한다.
     st.caption(
         "체크한 개선안만 합산효과에 넣습니다. 체크를 풀어도 위의 개선안별 요약에는 "
-        "남습니다 — 뺀 것이 얼마짜리였는지 보여야 뺄지 말지 정할 수 있습니다. "
-        "경제성DR·잉여 활용은 요금이 아니라 별도 정산이라 합산효과에 들어가지 않습니다."
+        "남습니다 — 뺀 것이 얼마짜리였는지 보여야 뺄지 말지 정할 수 있습니다."
     )
     return tuple(picked)
 
@@ -320,16 +331,18 @@ def _standalone_block(rows: tuple[StandaloneRow, ...]) -> None:
         frame,
         hide_index=True,
         width="stretch",
+        # 확실성 열은 28세션에 뺐다 (4절). Excel·Word 에는 그대로 있다.
         column_config={
-            "확실성": st.column_config.TextColumn("확실성", help=manual_tip("certainty")),
             "회수기간": st.column_config.TextColumn("회수기간", help=manual_tip("payback")),
         },
     )
+    # **각주는 표기 방식을 그대로 적는다** (28세션 1-3). 금액을 만원으로 바꿨으므로
+    # 「천 원 절사」 가 아니라 「만원 반올림」 이다.
     st.caption(
         "각 줄은 **그 수단만 도입했을 때**의 값입니다 (현재 요금제·현재 사용량 기준). "
         + SIMPLE_SUM_NOTE
         + " "
-        + fmt.TRUNCATION_FOOTNOTE
+        + fmt.ROUNDING_FOOTNOTE
     )
 
 
@@ -358,15 +371,27 @@ def _combined_block(
     ratio = gap / simple if simple else None
 
     st.subheader("합산효과")
-    # **셋 다 12개월 환산이다** (26세션 2-3). 값에 기간 단위를 붙인다 — 라벨만
+    # **금액 셋은 12개월 환산이다** (26세션 2-3). 값에 기간 단위를 붙인다 — 라벨만
     # 보고는 한 달인지 한 해인지 알 수 없다.
-    columns = st.columns(3)
+    #
+    # **회수기간을 함께 낸다** (28세션 2절). 조합은 투자비도 함께 물리므로 조합의
+    # 회수기간이 곧 이 화면의 결론인데, 그것만 없어 수단별 회수기간을 눈으로
+    # 더해야 했다. 값은 조합 계산이 이미 낸 것을 옮기기만 한다
+    # (``CombinationResult.payback_years`` = 투자비 합 ÷ 12개월 환산 절감액).
+    # 투자비가 0 인 수단만 고르면 「즉시」 다.
+    columns = st.columns(4)
     columns[0].metric("단순 합", fmt.won_year(simple))
     columns[1].metric("합산효과", fmt.won_year(actual))
     columns[2].metric(
         "차이",
         fmt.won_year(gap),
         fmt.ratio_pct(ratio) if ratio is not None else fmt.DASH,
+    )
+    columns[3].metric(
+        "회수기간",
+        fmt.payback(combined.payback_years, investment_won=combined.investment_won),
+        f"투자비 {fmt.won_short(combined.investment_won, reason='미산출')}",
+        delta_color="off",
     )
     # 「부하를 처음부터 다시 만들어…」 는 근거(``combination.not_additive``)가 같은
     # 말을 한다 (25세션 3-3 · M).
@@ -537,6 +562,8 @@ class _MeasureResults:
     solar_unpriced_reason: str = ""
     ess: EssResult | None = None
     surplus: SurplusResult | None = None
+    base_fee_months: float = 0.0
+    """기간을 12개월로 환산하는 데 쓴다 (28세션 3절). 잉여 상계 수익이 기간 값이다."""
 
     def excel_frame(self) -> pd.DataFrame:
         return measure_summary_frame(
@@ -581,6 +608,7 @@ class _MeasureResults:
             solar_investment_reason=self.solar_unpriced_reason,
             ess=self.ess,
             surplus=self.surplus,
+            base_fee_months=self.base_fee_months or None,
         )
 
     # 차트 재료 (15세션 2절). **화면과 같은 프레임을 보고서에도 넘긴다.**
@@ -765,6 +793,7 @@ def _measure_results(
         solar_unpriced_reason=solar_reason,
         ess=ess,
         surplus=surplus,
+        base_fee_months=baseline.base_fee_months,
         usage=usage,
         day=day,
         dr_profile=diagnosis.dr,
@@ -773,7 +802,7 @@ def _measure_results(
     )
 
 
-def _sensitivity_block(
+def _sensitivity_data(
     usage: UsageData,
     table: TariffTable,
     baseline: BillingResult,
@@ -782,15 +811,25 @@ def _sensitivity_block(
     form: ContractForm,
     specs: tuple[CombinationSpec, ...],
 ) -> tuple[pd.DataFrame, tuple[SensitivityRange, ...]]:
-    # 매뉴얼 요지를 소제목 툴팁에 합쳤다 (25세션 3-3 · G) — 아래 캡션이 같은 말을
-    # 하고 있어 지웠으므로, 그 캡션이 달고 있던 앵커가 여기로 온다.
-    st.subheader("감도", help=f"{fmt.tip('sensitivity')}\n\n{manual_tip('sensitivity')}")
+    """감도를 훑어 **산출물에만 넘긴다** (28세션 5절).
+
+    23세션까지는 대표 범위 한 줄과 「지표별 감도 범위」 접힘을 화면에 그렸다.
+    걷어낸 이유 셋.
+
+        ① **결론이 움직이지 않는다.** 첨예도를 흔들어도 총 절감액은 ±1.3%,
+          회수기간은 7.8→8.0년이다. 벌어지는 것은 기본요금 절감액 한 줄뿐이다
+        ② **감도와 무관한 절대 금액이 함께 실렸다.** 목록의 「전력량요금 절감액」
+          은 조합 전체(요금제 전환 포함)의 값이라 1억을 넘는데, 그 범위 폭은
+          0.03% 다. 요금제 전환이 기본·전력량을 맞바꾸므로 짝인 기본요금 절감액이
+          음수로 뜨기도 한다 — 다른 화면의 수단별 값과 견주면 어긋나 보인다
+        ③ 「절감액」 과 「12개월 환산 절감액」 이 12개월 자료에서는 같은 값이라
+          같은 줄이 두 번 나왔다
+
+    **계산은 그대로 돈다.** Excel 「감도 상세」·「감도 범위」 와 보고서가 같은
+    프레임을 받는다 — 없앤 것은 화면 표기뿐이다.
+    """
     pv_specs = [spec for spec in specs if spec.has_pv]
     if not pv_specs or unit_profile is None:
-        callout.note(
-            "태양광이 없어 감도를 적용할 항목이 없습니다. 감도는 PV 출력의 첨예도에만 "
-            "적용하며 요금제 전환·계약전력 조정·역률 개선은 확정 계산입니다."
-        )
         return no_pv_sensitivity_frame(), ()
 
     panel, runner = progress_panel("감도를 훑는 중…")
@@ -808,46 +847,7 @@ def _sensitivity_block(
             form.billing_options(),
             report,
         )
-    # **본문에는 대표 범위 한 줄, 나머지는 접힘으로** (23세션 7절).
-    #
-    # 확실성을 판단하는 근거이지만 지표마다 범위를 늘어놓으면 숫자가 여럿이라
-    # 어느 것이 결과인지 흐려진다. 감도 차트와 3행 원자료 표는 12세션에 이미
-    # 화면에서 뺐고 Excel 「감도 상세」 시트가 그 자리다.
-    shown = [item for item in ranges if item.base is not None]
-    headline = next((item for item in shown if item.unit == "원"), None)
-    if headline is not None:
-        st.write(
-            f"**{headline.metric}** {fmt.money_range(headline.base, headline.low, headline.high)}"
-        )
-    if shown:
-        with st.expander("지표별 감도 범위", expanded=False):
-            for item in shown:
-                # **지표 이름을 두 번 적지 않는다** (25세션 3절).
-                st.write(f"- **{_metric_label(item)}** {_range_text(item)}")
     return frame, ranges
-
-
-def _metric_label(item: SensitivityRange) -> str:
-    """지표 이름. **값을 MWh 로 내면 이름도 MWh 다** (26세션 3-3).
-
-    원자료 열 이름은 kWh 로 두고 (Excel 「감도 상세」가 그것을 그대로 싣는다)
-    화면에 적을 때만 바꾼다.
-    """
-    return item.metric.replace("(kWh)", "(MWh)") if item.unit == "kWh" else item.metric
-
-
-def _range_text(item: SensitivityRange) -> str:
-    """감도 범위 한 줄. **단위마다 읽기 좋은 자릿수로 낸다.**
-
-    금액은 억·만원으로 줄이고 (:func:`~kwise.ui.text.money_range`), 발전량은
-    **MWh** 로 낸다 (26세션 3-3) — 백만 자리 kWh 는 눈으로 읽히지 않는다.
-    원자료(Excel 「감도 상세」)는 kWh 그대로 둔다.
-    """
-    if item.unit == "원":
-        return fmt.money_range(item.base, item.low, item.high)
-    if item.unit == "kWh":
-        return fmt.range_text(fmt.mwh(item.base), fmt.mwh(item.low), fmt.mwh(item.high))
-    return fmt.markdown_safe(item.range_text())
 
 
 def _download_block(
