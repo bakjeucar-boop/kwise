@@ -74,6 +74,25 @@ class IntervalConsistency:
     def uniform(self) -> bool:
         return self.duplicate_rows == 0 and self.partial_metering_rows == 0
 
+    @property
+    def dropped_rows(self) -> tuple[tuple[str, int], ...]:
+        """읽지 못했거나 음수여서 **버린** 행. ``(이름, 건수)`` 이며 0 은 빼고 준다.
+
+        셋을 한 묶음으로 내는 이유 (31세션 0-2). 셋 다 "값이 조용히 사라졌다" 는
+        같은 사실이고, 사용자가 할 일도 하나다 — **원본 파일의 그 행을 보는 것.**
+        따로 세 줄을 내면 같은 말을 세 번 하게 된다.
+
+        **원인은 적지 않는다.** 한전 사이버지점 내려받기에서는 나오지 않는 행이라
+        실물을 본 적이 없다 — 무엇 때문에 그런 행이 생겼는지 짐작해 적으면 그
+        짐작이 맞는지 확인할 길이 없다. 건수만 사실대로 낸다.
+        """
+        counts = (
+            ("검침일을 읽지 못한 행", self.invalid_datetime_rows),
+            ("전력량을 읽지 못한 행", self.invalid_energy_rows),
+            ("음수 전력량 행", self.negative_energy_rows),
+        )
+        return tuple((label, count) for label, count in counts if count)
+
 
 @dataclass(frozen=True)
 class QualityReport:
@@ -327,6 +346,19 @@ def _with_warnings(report: QualityReport) -> QualityReport:
             basis(
                 f"중복 시각 {consistency.duplicate_rows:,}건을 합산했습니다.",
                 fact="quality.duplicate_rows",
+            )
+        )
+    dropped = consistency.dropped_rows
+    if dropped:
+        # **주의다** (31세션 0-2). 22세션까지 이 셋은 ``UsageMeta.warnings`` 에
+        # 문자열로만 남아 **화면도 산출물도 읽지 않았다.** 값이 조용히 빠지는데
+        # 총 사용량만 줄어들어 그대로 진단이 나간다 — 결과 해석을 바꾸므로
+        # 근거가 아니라 주의로 올린다.
+        messages.append(
+            warn(
+                " · ".join(f"{label} {count:,}건" for label, count in dropped)
+                + " — 계산에서 제외했습니다. 원본 파일의 해당 행을 확인하십시오.",
+                fact="quality.dropped_rows",
             )
         )
 

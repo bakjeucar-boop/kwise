@@ -60,7 +60,10 @@ __all__ = [
     "power_factor_floor_pct",
     "roof_capacity_limit_kwp",
     "solar_curve",
+    "solar_point",
     "surplus_free_capacity_kwp",
+    "surplus_heavy_share",
+    "surplus_share_capacity_kwp",
     "unit_generation_kw",
 ]
 
@@ -116,6 +119,72 @@ def surplus_free_capacity_kwp(usage: UsageData, unit_generation_kw: pd.Series) -
         return 0.0
     headroom = (load[observed] / generation[observed]).min()
     return max(float(headroom), 0.0)
+
+
+#: 잉여 비중을 이분법으로 찾을 때의 용량 상한 배수 (31세션 4-1). 잉여 비중은
+#: 용량이 커질수록 1 에 가까워지므로 어떤 목표 비중이든 유한한 용량에서 만난다.
+#: 「잉여 없는 최대」 의 이 배수까지 훑으면 실무 범위를 넉넉히 덮는다.
+_SURPLUS_SEARCH_LIMIT = 64.0
+_SURPLUS_SEARCH_ROUNDS = 40
+
+
+def _surplus_share(load: pd.Series, generation: pd.Series, capacity_kwp: float) -> float:
+    """용량 ``capacity_kwp`` 에서 잉여 ÷ 발전량.
+
+    :func:`kwise.measures.apply_generation` 과 **같은 모집단**(부하가 관측된
+    슬롯)을 본다 — 다른 슬롯을 세면 화면의 「연간 잉여」 비중과 어긋난다.
+    """
+    if capacity_kwp <= 0:
+        return 0.0
+    generated = float(generation.sum()) * capacity_kwp
+    if generated <= 0:
+        return 0.0
+    surplus = float((generation * capacity_kwp - load).clip(lower=0.0).sum())
+    return surplus / generated
+
+
+def surplus_share_capacity_kwp(
+    usage: UsageData,
+    unit_generation_kw: pd.Series,
+    *,
+    share: float,
+) -> float | None:
+    """잉여가 **발전량의 ``share``** 에 이르는 용량 (kWp · 31세션 4-1).
+
+    「잉여가 많이 생기는 용량」 을 눈대중이 아니라 한 값으로 못박는 자리다.
+    :func:`surplus_free_capacity_kwp` 가 「어디서부터 남기 시작하나」 를 답하고
+    이쪽이 「어디부터 많이 남나」 를 답한다.
+
+    잉여 비중은 용량에 대해 **단조 증가**한다 — 용량을 키우면 슬롯마다 역송이
+    늘거나 그대로이고 발전량은 비례로만 늘기 때문이다. 그래서 이분법으로 찾는다.
+    요금을 다시 계산하지 않으므로 값싸다.
+
+    Returns:
+        해당 용량. 발전이 없거나(``None``) 찾지 못하면 ``None``.
+    """
+    if not 0 < share < 1:
+        raise ValueError(f"잉여 비중은 0 과 1 사이여야 합니다: {share}")
+    index = pd.DatetimeIndex(usage.kw.index)
+    generation = unit_generation_kw.reindex(index).fillna(0.0).astype(float)
+    load = usage.kw.astype(float)
+    observed = load.notna()
+    load = load[observed]
+    generation = generation[observed]
+    if float(generation.sum()) <= 0:
+        return None
+
+    low = surplus_free_capacity_kwp(usage, unit_generation_kw)
+    high = max(low, 1.0) * _SURPLUS_SEARCH_LIMIT
+    if _surplus_share(load, generation, high) < share:
+        # 상한까지 키워도 목표 비중에 못 미친다 — **없는 값을 지어내지 않는다.**
+        return None
+    for _ in range(_SURPLUS_SEARCH_ROUNDS):
+        middle = (low + high) / 2.0
+        if _surplus_share(load, generation, middle) < share:
+            low = middle
+        else:
+            high = middle
+    return high
 
 
 def unit_generation_kw(
@@ -362,6 +431,11 @@ def payback_tie_ratio() -> float:
     return float(assumption("pv.payback_tie_ratio"))
 
 
+def surplus_heavy_share() -> float:
+    """잉여가 **많다**고 볼 발전량 대비 비중 (31세션 4-1). 기준 데이터에서 읽는다."""
+    return float(assumption("pv.surplus_heavy_share"))
+
+
 def capacity_verdict(curve: SolarCurve) -> CapacityVerdict:
     """이미 산출된 20단계 결과에서 최적 용량을 **고른다** (15세션 1-3).
 
@@ -408,6 +482,110 @@ def capacity_verdict(curve: SolarCurve) -> CapacityVerdict:
         basis=basis,
         limiter_key="" if at_limit else _limiting_reason(curve, best, limit),
         monotonic=monotonic,
+    )
+
+
+def _evaluate_point(
+    usage: UsageData,
+    table: TariffTable,
+    selection: TariffSelection,
+    unit: pd.Series,
+    capacity_kwp: float,
+    *,
+    pricing: PvCostInput,
+    base_bill: BillingResult,
+    quality: QualityReport | None,
+    options: BillingOptions,
+    power_factor_pct: float,
+) -> SolarPoint:
+    """용량 하나에서 **요금을 다시 계산해** 한 점을 낸다.
+
+    ``unit`` 은 **첨예도를 이미 먹인** 단위 프로파일이다 — 곡선이 한 번만 먹이고
+    돌려쓰므로 여기서 또 건드리면 두 번 적용된다.
+    """
+    generation = unit * capacity_kwp
+    net = apply_generation(usage, generation)
+    bill = calculate_bill(net.usage, table, selection, options=options, quality=quality)
+
+    investment = pricing.investment_won(capacity_kwp)
+    saving = base_bill.total_won - bill.total_won
+    annual_saving = annualize(saving, base_bill.base_fee_months)
+
+    # 역률 악화분 (약관 제43조). 기준 역률 대비 조정 비율의 차이를
+    # 도입 후 기본요금에 곱한다. 92% 미만이면 양수(추가)다.
+    after_pct = power_factor_after_pct(
+        usage.kw,
+        generation,
+        power_factor_pct=power_factor_pct,
+        interval_minutes=usage.meta.interval_minutes,
+    )
+    extra_won = bill.total_base_won * (
+        lagging_adjustment_ratio(after_pct) - lagging_adjustment_ratio(power_factor_pct)
+    )
+    return SolarPoint(
+        capacity_kwp=capacity_kwp,
+        generation_kwh=net.generated_kwh,
+        self_consumed_kwh=net.self_consumed_kwh,
+        surplus_kwh=net.surplus_kwh,
+        self_consumption_ratio=net.self_consumption_ratio,
+        billing_demand_kw=bill.billing_demand_kw,
+        base_saving_won=base_bill.total_base_won - bill.total_base_won,
+        energy_saving_won=base_bill.total_energy_won - bill.total_energy_won,
+        total_saving_won=saving,
+        annual_saving_won=annual_saving,
+        investment_won=investment,
+        payback_years=(
+            payback_years(investment, annual_saving) if investment is not None else None
+        ),
+        power_factor_after_pct=after_pct,
+        power_factor_extra_won=extra_won,
+    )
+
+
+def solar_point(
+    usage: UsageData,
+    table: TariffTable,
+    selection: TariffSelection,
+    unit_kw_per_kwp: pd.Series,
+    capacity_kwp: float,
+    *,
+    cost: PvCostInput | None = None,
+    sharpness: float = 1.0,
+    power_factor_pct: float | None = None,
+    baseline: BillingResult | None = None,
+    quality: QualityReport | None = None,
+    options: BillingOptions | None = None,
+) -> SolarPoint:
+    """**곡선 밖의 용량 한 점** (31세션 4-1).
+
+    :func:`solar_curve` 는 0 부터 설치 가능 면적이 허용하는 용량까지만 훑는다 —
+    그래서 「잉여가 처음 생기는 용량」 이 그 위에 있으면 곡선 어디에도 없다.
+    화면의 용량 비교가 **선정 용량보다 작은 것들만** 늘어놓던 까닭이 이것이다.
+
+    **곡선을 늘리지 않고 점을 따로 낸다.** 곡선에 얹으면 최적 용량 판정
+    (:func:`capacity_verdict`)이 설치할 수 없는 용량을 고를 수 있다 — 면적 상한을
+    상한으로 둔 이유가 사라진다. 표에 한 줄 더하려고 판정을 흔들지 않는다.
+    """
+    pricing = cost if cost is not None else PvCostInput.unpriced()
+    power_factor_pct = lagging_standard_pct() if power_factor_pct is None else power_factor_pct
+    opts = options if options is not None else BillingOptions()
+    base_bill = (
+        baseline
+        if baseline is not None
+        else calculate_bill(usage, table, selection, options=opts, quality=quality)
+    )
+    unit = sharpen(unit_kw_per_kwp.reindex(pd.DatetimeIndex(usage.kw.index)).fillna(0.0), sharpness)
+    return _evaluate_point(
+        usage,
+        table,
+        selection,
+        unit,
+        capacity_kwp,
+        pricing=pricing,
+        base_bill=base_bill,
+        quality=quality,
+        options=opts,
+        power_factor_pct=power_factor_pct,
     )
 
 
@@ -466,43 +644,18 @@ def solar_curve(
     for step in range(steps + 1):  # 0 kWp 포함
         capacity = max_capacity_kwp * step / steps
         report.step(step, f"용량 곡선 {step}/{steps} — {capacity:,.0f} kWp")
-        generation = unit * capacity
-        net = apply_generation(usage, generation)
-        bill = calculate_bill(net.usage, table, selection, options=opts, quality=quality)
-
-        investment = pricing.investment_won(capacity)
-        saving = base_bill.total_won - bill.total_won
-        annual_saving = annualize(saving, base_bill.base_fee_months)
-
-        # 역률 악화분 (약관 제43조). 기준 역률 대비 조정 비율의 차이를
-        # 도입 후 기본요금에 곱한다. 92% 미만이면 양수(추가)다.
-        after_pct = power_factor_after_pct(
-            usage.kw,
-            generation,
-            power_factor_pct=power_factor_pct,
-            interval_minutes=usage.meta.interval_minutes,
-        )
-        extra_won = bill.total_base_won * (
-            lagging_adjustment_ratio(after_pct) - lagging_adjustment_ratio(power_factor_pct)
-        )
         points.append(
-            SolarPoint(
-                capacity_kwp=capacity,
-                generation_kwh=net.generated_kwh,
-                self_consumed_kwh=net.self_consumed_kwh,
-                surplus_kwh=net.surplus_kwh,
-                self_consumption_ratio=net.self_consumption_ratio,
-                billing_demand_kw=bill.billing_demand_kw,
-                base_saving_won=base_bill.total_base_won - bill.total_base_won,
-                energy_saving_won=base_bill.total_energy_won - bill.total_energy_won,
-                total_saving_won=saving,
-                annual_saving_won=annual_saving,
-                investment_won=investment,
-                payback_years=(
-                    payback_years(investment, annual_saving) if investment is not None else None
-                ),
-                power_factor_after_pct=after_pct,
-                power_factor_extra_won=extra_won,
+            _evaluate_point(
+                usage,
+                table,
+                selection,
+                unit,
+                capacity,
+                pricing=pricing,
+                base_bill=base_bill,
+                quality=quality,
+                options=opts,
+                power_factor_pct=power_factor_pct,
             )
         )
 

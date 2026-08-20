@@ -46,6 +46,7 @@ from kwise.tariff import (
 from kwise.tariff.labels import season_label
 
 __all__ = [
+    "ESS_SAVING_LABEL",
     "ArbitrageValue",
     "SeasonSpread",
     "arbitrage_value",
@@ -53,6 +54,12 @@ __all__ = [
     "default_cycles_per_day",
     "peak_days_by_season",
 ]
+
+#: ESS 카드가 「절감액」 으로 내는 값의 **이름** (31세션 5-2).
+#:
+#: 차익거래 안내가 「무엇에 더하지 않았나」 를 말하려면 그 값을 부를 이름이
+#: 있어야 한다. 이름을 여기 한 곳에 두어 화면·Excel·보고서가 같은 말을 쓴다.
+ESS_SAVING_LABEL = "ESS 절감액(기본요금 + 전력량요금)"
 
 
 def _season_days(days: dict[str, int]) -> str:
@@ -253,7 +260,12 @@ def arbitrage_value(
         ),
         # **주의다.** 그대로 더하면 이중 계산이 되므로 금액을 읽는 방법 자체가 달라진다.
         warn(
-            "**피크저감 절감액에 더하지 않았습니다.** 피크컷 디스패치가 이미 일부를 "
+            # **무엇에 더하지 않았는지를 이름으로 적는다** (31세션 5-2). 29세션까지는
+            # 「피크저감 절감액에 더하지 않았습니다」 였는데, **「피크저감 절감액」 은
+            # 화면 어디에도 없는 이름**이라 무엇을 가리키는지 알 수 없었다 — 카드가
+            # 내는 이름은 그냥 「절감액」 이다. 자리(「위」)로 적으면 Excel·보고서에서
+            # 틀리므로 값의 이름으로 적는다.
+            f"**{ESS_SAVING_LABEL}에 더하지 않은 값입니다.** 피크컷 운전이 이미 일부를 "
             "실현하고 있어 그대로 더하면 이중 계산이 됩니다. 이 값은 매 평일 한 사이클을 "
             "온전히 돌렸을 때의 잠재값입니다.",
             fact="arbitrage.not_additive",

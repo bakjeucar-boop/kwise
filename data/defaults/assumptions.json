@@ -325,6 +325,13 @@
       "value": 0.05,
       "verified_on": "2026-08-12"
     },
+    "pv.surplus_heavy_share": {
+      "label": "잉여 다량 기준 비중",
+      "note": "용량별 비교 표에서 「잉여 다량」 지점을 정하는 기준이다. 발전량의 이 비중만큼 역송되는 용량을 표에 세운다. 잉여를 내면 상계거래 계약과 역송 계량기가 따라오므로, 발전량의 얼마부터 「많다」 고 볼지는 사람이 정한다.",
+      "source": "판단값",
+      "value": 0.1,
+      "verified_on": "2026-08-20"
+    },
     "sensitivity.labels": {
       "label": "감도 시나리오 표시 라벨",
       "note": "내부 키(conservative/base/optimistic)와 분리한다.",

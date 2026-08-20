@@ -27,6 +27,7 @@ from kwise.compare import (
 )
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
+from kwise.magnitude import magnitude
 from kwise.measures import (
     DR_ADVISORY,
     Certainty,
@@ -207,15 +208,22 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
 
     rows.append(("요금", "기본요금", f"{format_won(bill.total_base_won)} 원"))
     charge = bill.power_factor
-    rows.append(
-        (
-            "요금",
-            "역률요금",
+    # **0 원을 「추가」 라 적지 않는다** (31세션 0-1). `is_rebate` 는 음수만 참이라
+    # 조정이 없는 92.0%(약관 제42조 간주값)에서 「추가, 기본요금의 +0.0%」 가 됐다 —
+    # 손대지 않은 자료가 전부 그 문구를 받는다. 세 갈래로 가른다.
+    if charge.total_won == 0:
+        power_factor_text = (
+            f"{format_won(bill.total_power_factor_won)} 원 "
+            f"(조정 없음, 주간 지상 {charge.lagging_pct:.1f}%)"
+        )
+    else:
+        power_factor_text = (
             f"{format_won(bill.total_power_factor_won)} 원 "
             f"({'감액' if charge.is_rebate else '추가'}, 기본요금의 "
-            f"{charge.total_ratio:+.1%}, 주간 지상 {charge.lagging_pct:.1f}%)",
+            f"{magnitude(abs(charge.total_ratio) * 100.0, '%')}, "
+            f"주간 지상 {charge.lagging_pct:.1f}%)"
         )
-    )
+    rows.append(("요금", "역률요금", power_factor_text))
     rows.append(("요금", "전력량요금", f"{format_won(bill.total_energy_won)} 원"))
     rows.append(("요금", "합계 (관측 기준)", f"{format_won(bill.total_won)} 원"))
     rows.append(("요금", "합계 (결측 보정 기준)", f"{format_won(bill.total_won_adjusted)} 원"))

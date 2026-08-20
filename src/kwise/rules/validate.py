@@ -157,6 +157,7 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "ess.target_step_kw": _positive,
     "ess.target_search_ratio": _ratio,
     "pv.area_per_kwp_m2": _positive,
+    "pv.surplus_heavy_share": _ratio,
     "contract.margin_ratio": _ratio,
     "contract.margin_range": _ratio_range,
     "dr.bid_restriction_months": _positive,

@@ -108,7 +108,10 @@ from kwise.measures.solar import (
     power_factor_floor_pct,
     roof_capacity_limit_kwp,
     solar_curve,
+    solar_point,
     surplus_free_capacity_kwp,
+    surplus_heavy_share,
+    surplus_share_capacity_kwp,
     unit_generation_kw,
 )
 from kwise.measures.surplus import (
@@ -213,7 +216,10 @@ __all__ = [
     "shortfall_penalty_won",
     "size_for_target",
     "solar_curve",
+    "solar_point",
     "surplus_free_capacity_kwp",
+    "surplus_heavy_share",
+    "surplus_share_capacity_kwp",
     "unit_generation_kw",
     "with_load",
 ]

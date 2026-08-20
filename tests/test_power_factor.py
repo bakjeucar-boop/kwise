@@ -119,6 +119,52 @@ def test_charge_is_zero_at_the_deemed_92() -> None:
     assert not charge.is_rebate
 
 
+def test_meeting_the_standard_is_not_a_shortfall() -> None:
+    """**기준과 같으면 미달이 아니다** (31세션 0-1).
+
+    29세션까지 조건이 ``<=`` 한 줄이라 92.0% 가 「기준 92% 대비 0.0%p 미달,
+    기본요금의 +0.0% 추가」 로 나갔다. 약관 제42조의 간주값이 바로 92% 라
+    **역률을 손대지 않은 자료가 전부 그 문구를 받았다.**
+    """
+    charge = power_factor_charge(1_000_000.0, lagging_pct=92.0)
+    text = next(item.text for item in charge.notices if item.fact == "power_factor.lagging_ratio")
+    assert "충족" in text
+    assert "미달" not in text
+    assert "추가" not in text or "추가·감액 없음" in text
+
+
+def test_a_small_shortfall_is_not_rounded_to_zero() -> None:
+    """**0 이 아닌 값을 0 으로 적지 않는다** (31세션 0-1).
+
+    91.96% 는 진짜 미달인데 ``.1f`` 로는 역률도 미달폭도 뭉개져
+    「92.0% — 0.0%p 미달」 이 됐다. 보일 때까지 자릿수를 늘린다.
+    """
+    charge = power_factor_charge(1_000_000.0, lagging_pct=91.96)
+    text = next(item.text for item in charge.notices if item.fact == "power_factor.lagging_ratio")
+    assert "0.04%p 미달" in text, text
+    assert "91.96%" in text, text
+    assert "0.0%p" not in text
+
+
+def test_exceeding_the_standard_reads_as_a_rebate() -> None:
+    """초과 쪽도 폭을 적는다. 감액이므로 「추가」 라 하지 않는다."""
+    charge = power_factor_charge(1_000_000.0, lagging_pct=93.0)
+    text = next(item.text for item in charge.notices if item.fact == "power_factor.lagging_ratio")
+    assert "1.0%p 초과" in text
+    assert "0.2% 감액" in text
+    assert "미달" not in text
+
+
+def test_leading_shortfall_shows_its_size() -> None:
+    """야간 진상도 같은 병을 앓았다 — 94.96% 가 「95.0% 가 기준 95% 에 미달」 이었다."""
+    charge = power_factor_charge(1_000_000.0, leading_pct=94.96)
+    text = next(
+        item.text for item in charge.notices if item.fact == "power_factor.leading_below_standard"
+    )
+    assert "94.96%" in text, text
+    assert "0.01% 가 추가" in text, text
+
+
 def test_charge_splits_lagging_and_leading() -> None:
     charge = power_factor_charge(1_000_000.0, lagging_pct=90.0, leading_pct=93.0)
     assert charge.lagging_won == pytest.approx(4_000.0)  # 2%p × 0.2%

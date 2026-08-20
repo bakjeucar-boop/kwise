@@ -42,6 +42,24 @@ def write_csv(
     return path
 
 
+def write_raw_csv(
+    path: Path,
+    rows: list[tuple[str, str]],
+    *,
+    encoding: str = "utf-8-sig",
+    header: tuple[str, str] = HEADER,
+) -> Path:
+    """두 칸을 **적힌 그대로** 쓴다 (31세션 0-2).
+
+    :func:`write_csv` 는 전력량을 ``float`` 로 받아 서식을 씌우므로 「읽지 못하는
+    값」 을 만들 수 없다. 읽기 실패·음수 행처럼 **원본이 망가진 경우**를 재현하려면
+    문자열을 그대로 넣을 길이 있어야 한다.
+    """
+    text = ",".join(header) + "\n" + "".join(f"{label},{value}\n" for label, value in rows)
+    path.write_text(text, encoding=encoding)
+    return path
+
+
 KEPCO_HEADER = ("계기번호", "고객번호", "검침일", "순방향 유효전력량(KWH)")
 
 

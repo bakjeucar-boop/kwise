@@ -28,6 +28,7 @@ from tests._synthetic import (
     parse_label,
     to_rows,
     write_csv,
+    write_raw_csv,
 )
 
 NOVEMBER_GAP = (pd.Timestamp("2023-11-03 17:30"), pd.Timestamp("2023-11-13 09:45"), 930)
@@ -299,6 +300,65 @@ def test_clean_data_has_no_warnings(tmp_path: Path) -> None:
     assert report.longest_gap is None
     assert report.outages == ()
     assert [message for message in texts(report.notices) if "12개월 미만" not in message] == []
+
+
+# --------------------------------------------------------------------- 버린 행 (31세션 0-2)
+
+
+def _bad_rows(path: Path) -> Path:
+    """검침일·전력량을 읽지 못하는 행과 음수 행을 섞은 한 달치.
+
+    **한전 사이버지점 내려받기에서는 나오지 않는 행이다.** 실물을 본 적이 없어
+    합성으로 만든다 — 그래서 문구도 건수만 적고 원인은 짐작하지 않는다.
+    """
+    rows = [(label, "100.00") for date in march_2024_dates() for label in make_labels(date)]
+    rows.append(("읽을 수 없는 날짜", "100.00"))
+    rows.append(("읽을 수 없는 날짜 2", "100.00"))
+    rows.append(("2024-03-15 06:15", "값없음"))
+    rows.append(("2024-03-15 06:30", "-50.00"))
+    return write_raw_csv(path, rows)
+
+
+def test_버린_행을_세어_둔다(tmp_path: Path) -> None:
+    usage = load_usage(_bad_rows(tmp_path / "bad.csv"))
+    assert usage.meta.invalid_datetime_rows == 2
+    assert usage.meta.invalid_energy_rows == 1
+    assert usage.meta.negative_energy_rows == 1
+
+
+def test_버린_행이_결측률에_잡히지_않는다(tmp_path: Path) -> None:
+    """**이것이 이 안내를 만든 이유다** (31세션 0-2).
+
+    값이 조용히 빠지는데 결측률에도 안 잡히고 총 사용량만 줄어든다. 검침일을 읽지
+    못한 행은 시각 자체가 없어 어느 슬롯이 비었는지도 알 수 없고, 전력량 쪽은 같은
+    시각에 성한 행이 있으면 그 행이 슬롯을 채워 결측이 되지 않는다.
+    """
+    usage = load_usage(_bad_rows(tmp_path / "bad.csv"))
+    assert usage.meta.missing_rows == 0
+    assert usage.meta.missing_ratio == 0.0
+
+
+def test_버린_행이_주의로_나온다(tmp_path: Path) -> None:
+    """**근거가 아니라 주의다.** 결과 해석을 바꾸므로 화면에 남아야 한다."""
+    report = check_quality(load_usage(_bad_rows(tmp_path / "bad.csv")))
+    dropped = [item for item in report.notices if item.fact == "quality.dropped_rows"]
+    assert len(dropped) == 1, "한 줄로 묶어 낸다 — 셋을 따로 내면 같은 말을 세 번 한다."
+    notice = dropped[0]
+    assert str(notice.severity) == "주의"
+    assert "검침일을 읽지 못한 행 2건" in notice.text
+    assert "전력량을 읽지 못한 행 1건" in notice.text
+    assert "음수 전력량 행 1건" in notice.text
+    # **원인을 짐작해 적지 않는다** — 실물을 본 적이 없다.
+    for guess in ("계기", "통신", "정전", "오류로"):
+        assert guess not in notice.text, notice.text
+
+
+def test_버린_행이_없으면_안내도_없다(tmp_path: Path) -> None:
+    """0 건을 늘 띄우면 「0건」 이 화면 한 줄을 영영 차지한다."""
+    rows = [(label, 100.0) for date in march_2024_dates() for label in make_labels(date)]
+    report = check_quality(load_usage(write_csv(tmp_path / "clean.csv", rows)))
+    assert report.consistency.dropped_rows == ()
+    assert not [item for item in report.notices if item.fact == "quality.dropped_rows"]
 
 
 # --------------------------------------------------------------------- 결측 처리 (4.2)

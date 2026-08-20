@@ -29,7 +29,12 @@ from kwise.io import UsageData
 from kwise.measures import (
     PvCostInput,
     SolarCurve,
+    SolarPoint,
     solar_curve,
+    solar_point,
+    surplus_free_capacity_kwp,
+    surplus_heavy_share,
+    surplus_share_capacity_kwp,
     unit_generation_kw,
 )
 from kwise.progress import ProgressReporter
@@ -59,6 +64,8 @@ from kwise.tariff import (
 )
 
 __all__ = [
+    "SURPLUS_HEAVY_LABEL",
+    "SURPLUS_ONSET_LABEL",
     "AzimuthOption",
     "ContractForm",
     "SolarInputs",
@@ -72,6 +79,7 @@ __all__ = [
     "option_choices",
     "solar_config",
     "solar_result",
+    "surplus_capacity_points",
     "unit_pv_profile",
     "voltage_choices",
 ]
@@ -431,12 +439,15 @@ def load_weather_for(usage: UsageData, inputs: SolarInputs) -> WeatherData:
     return load_weather(request)
 
 
-def daily_temperature(usage: UsageData, region_key: str) -> pd.Series | None:
-    """부하 기간의 시간별 기온 (℃). **없으면 ``None`` 이다** (30세션 4절).
+def daily_temperature(usage: UsageData, region_key: str) -> tuple[pd.Series, str] | None:
+    """부하 기간의 시간별 기온 (℃)과 **기상 출처**. 없으면 ``None`` (30세션 4절).
 
     태양광이 쓰는 것과 **같은 지역·기간·격자**를 쓴다 — 같은
     :class:`~kwise.pv.WeatherRequest` 를 만들므로 캐시 파일도 같은 것을 본다.
     한 화면에서 기온이 둘로 갈리지 않는다.
+
+    **출처를 함께 돌려준다** (31세션 4-2). 태양광 카드가 출처를 적는데 기온
+    그래프만 적지 않으면, 같은 자료를 쓴다는 사실이 화면에서 끊긴다.
 
     **예외를 밖으로 내보내지 않는다.** 진단은 설비 정보 없이 돌아야 하는 화면이라,
     기상을 못 받았다고 1단계가 통째로 죽으면 안 된다. 못 받으면 그림을 감춘다.
@@ -451,7 +462,8 @@ def daily_temperature(usage: UsageData, region_key: str) -> pd.Series | None:
     hourly = weather.hourly
     if "temp_air" not in hourly.columns:
         return None
-    return pd.Series(hourly["temp_air"].astype(float).to_numpy(), index=hourly.index)
+    series = pd.Series(hourly["temp_air"].astype(float).to_numpy(), index=hourly.index)
+    return series, weather.source
 
 
 def unit_pv_profile(
@@ -501,6 +513,61 @@ def solar_result(
         options=form.billing_options(),
         progress=progress,
     )
+
+
+#: 용량 비교 표에 세우는 잉여 지점 둘의 표식 (31세션 4-1). **표식과 계산을 한
+#: 자리에 묶는다** — 이름을 화면에서 따로 붙이면 어느 줄이 어느 값인지 어긋난다.
+SURPLUS_ONSET_LABEL = "잉여 시작"
+SURPLUS_HEAVY_LABEL = "잉여 다량"
+
+
+def surplus_capacity_points(
+    usage: UsageData,
+    table: TariffTable,
+    form: ContractForm,
+    unit_profile: pd.Series,
+    *,
+    cost: PvCostInput | None = None,
+    baseline: BillingResult | None = None,
+    quality: QualityReport | None = None,
+) -> tuple[tuple[str, SolarPoint], ...]:
+    """**곡선 밖의 잉여 지점 둘** — 용량 비교 표가 세울 줄 (31세션 4-1).
+
+    잉여가 처음 생기는 용량은 설치 가능 면적이 허용하는 용량보다 클 수 있다.
+    그러면 곡선 어디에도 없으므로 :func:`~kwise.measures.solar_point` 로 그
+    용량 하나만 따로 계산한다 — 요금 재계산 두 번이다.
+
+    용량이 0 이거나 (부하가 0 인 슬롯에 발전이 있는 경우) 목표 비중에 닿지
+    못하면 그 줄은 **없는 채로 둔다.** 지어내지 않는다.
+    """
+    onset = surplus_free_capacity_kwp(usage, unit_profile)
+    heavy = surplus_share_capacity_kwp(usage, unit_profile, share=surplus_heavy_share())
+    wanted = ((SURPLUS_ONSET_LABEL, onset), (SURPLUS_HEAVY_LABEL, heavy))
+
+    points: list[tuple[str, SolarPoint]] = []
+    for label, capacity in wanted:
+        if capacity is None or capacity <= 0:
+            continue
+        points.append(
+            (
+                label,
+                solar_point(
+                    usage,
+                    table,
+                    form.selection,
+                    unit_profile,
+                    capacity,
+                    # **곡선과 같은 단가를 쓴다.** 다른 값을 쓰면 한 표 안에서
+                    # 회수기간 열의 잣대가 줄마다 달라진다.
+                    cost=cost,
+                    power_factor_pct=form.lagging_pct,
+                    baseline=baseline,
+                    quality=quality,
+                    options=form.billing_options(),
+                ),
+            )
+        )
+    return tuple(points)
 
 
 # --------------------------------------------------------------------- 3단계 · 조합

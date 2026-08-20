@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+from collections.abc import Sequence
 
 import pandas as pd
 
@@ -25,6 +26,7 @@ from kwise.measures import (
     EssTargetCurve,
     PowerFactorResult,
     SolarCurve,
+    SolarPoint,
     TariffSwitchResult,
     annualize,
 )
@@ -34,6 +36,7 @@ from kwise.tariff import day_window, option_sort_key
 
 __all__ = [
     "BAND_LABELS",
+    "CAPACITY_COLUMNS",
     "CAPACITY_ROWS",
     "CAPACITY_WINDOW",
     "DAY_TYPE_LABELS",
@@ -201,65 +204,108 @@ def solar_curve_frame(curve: SolarCurve) -> pd.DataFrame:
 CAPACITY_ROWS = 5
 
 
-def solar_capacity_table(
-    curve: SolarCurve, *, verdict: CapacityVerdict | None = None, rows: int = CAPACITY_ROWS
-) -> pd.DataFrame:
-    """**대표 용량 몇 개를 표로** (17세션 3-3).
+CAPACITY_COLUMNS: tuple[str, ...] = (
+    "용량(kWp)",
+    "필요 면적(m²)",
+    "연간 발전량(kWh)",
+    "자가소비율",
+    "기본요금 절감(원)",
+    "전력량요금 절감(원)",
+    "투자비(원)",
+    "회수기간(년)",
+    "표식",
+)
 
-    20단계 곡선은 Excel 로 보내고 화면에는 의미 있는 지점만 남긴다. **상한과
-    최적은 반드시 넣고** 나머지는 고르게 흩어 뽑는다 — 그래야 "용량을 키우면
-    무엇이 어떻게 변하는가" 가 표 하나로 읽힌다.
+
+def solar_capacity_table(
+    curve: SolarCurve,
+    *,
+    verdict: CapacityVerdict | None = None,
+    surplus_points: Sequence[tuple[str, SolarPoint]] = (),
+    gcr: float | None = None,
+    area_per_kwp_m2: float | None = None,
+    area_limit_m2: float | None = None,
+    rows: int = CAPACITY_ROWS,
+) -> pd.DataFrame:
+    """**잉여 발생 지점을 가운데 둔 용량 비교** (17세션 3-3 · 31세션 4-1).
+
+    26세션에 판단의 갈림길을 잉여로 옮겼는데, 표는 그대로 **선정 용량 아래에서만**
+    지점을 골랐다 — 곡선이 0 부터 설치 가능 면적이 허용하는 용량까지만 돌기
+    때문이다. 그래서 정작 「어디서부터 잉여가 생기나」 가 표에 없었다.
+
+    다섯 지점을 세운다.
+
+        선정 용량보다 작은 것 둘   곡선에서 고르게 뽑는다
+        선정 용량                 카드가 머리에 낸 그 용량
+        잉여가 처음 생기는 용량    :func:`~kwise.measures.surplus_free_capacity_kwp`
+        잉여가 많이 생기는 용량    :func:`~kwise.measures.surplus_share_capacity_kwp`
+
+    뒤의 둘은 **곡선 밖일 수 있다** — 그래서 ``surplus_points`` 로 따로 받는다
+    (:func:`~kwise.measures.solar_point` 가 낸 점). 곡선에 얹지 않는 이유는
+    최적 판정이 설치할 수 없는 용량을 고르면 안 되기 때문이다.
+
+    **면적을 함께 낸다.** kWp 는 설비 규격이라 지붕을 보고 판단할 수 없다.
+    ``area_limit_m2`` 를 주면 그 면적을 넘는 줄에 표식을 단다 — 값을 지우지는
+    않는다. 「이만큼 지으면 이런 값인데 자리가 없다」 가 판단에 필요한 사실이다.
 
     금액과 발전량은 **12개월 환산**이다. 회수기간이 연 단위라 같은 축에 두려면
     기간값을 그대로 쓸 수 없다.
     """
     usable = [point for point in curve.points if point.capacity_kwp > 0]
     if not usable:
-        return pd.DataFrame(
-            columns=[
-                "용량(kWp)",
-                "연간 발전량(kWh)",
-                "자가소비율",
-                "기본요금 절감(원)",
-                "전력량요금 절감(원)",
-                "투자비(원)",
-                "회수기간(년)",
-                "표식",
-            ]
-        )
+        return pd.DataFrame(columns=list(CAPACITY_COLUMNS))
     months = curve.base_fee_months
     limit = usable[-1]
     best = verdict.best if verdict is not None else None
-    keep = {limit.capacity_kwp}
+
+    marks: dict[float, list[str]] = {limit.capacity_kwp: ["선정 용량"]}
+    if best is not None and best.capacity_kwp != limit.capacity_kwp:
+        marks.setdefault(best.capacity_kwp, []).append("최적")
+    picked: dict[float, SolarPoint] = {limit.capacity_kwp: limit}
     if best is not None:
-        keep.add(best.capacity_kwp)
-    # 남은 자리를 고르게 채운다. 이미 든 것은 건너뛴다.
-    span = max(rows - len(keep), 0)
-    if span:
-        step = max(len(usable) // (span + 1), 1)
-        for index in range(step, len(usable), step):
-            if len(keep) >= rows:
-                break
-            keep.add(usable[index - 1].capacity_kwp)
-    picked = sorted(
-        (point for point in usable if point.capacity_kwp in keep),
-        key=lambda point: point.capacity_kwp,
-    )
-    marks = {limit.capacity_kwp: "면적 상한"}
-    if best is not None:
-        marks[best.capacity_kwp] = (
-            "최적 · 면적 상한" if best.capacity_kwp == limit.capacity_kwp else "최적"
-        )
+        picked.setdefault(best.capacity_kwp, best)
+
+    # **선정 용량보다 작은 것 둘.** 곡선을 삼등분해 뽑는다 — 아래쪽이 어떻게
+    # 생겼는지 보이기만 하면 되므로 촘촘할 이유가 없다.
+    below = [point for point in usable if point.capacity_kwp < limit.capacity_kwp]
+    for fraction in (1, 2):
+        if not below:
+            break
+        target = limit.capacity_kwp * fraction / 3.0
+        near = min(below, key=lambda point: abs(point.capacity_kwp - target))
+        picked.setdefault(near.capacity_kwp, near)
+
+    for label, point in surplus_points:
+        picked.setdefault(point.capacity_kwp, point)
+        marks.setdefault(point.capacity_kwp, []).append(label)
+
+    ordered = sorted(picked.values(), key=lambda point: point.capacity_kwp)[: max(rows, len(marks))]
+
+    def area(capacity_kwp: float) -> float | None:
+        if gcr is None or area_per_kwp_m2 is None or gcr <= 0:
+            return None
+        return capacity_kwp * area_per_kwp_m2 / gcr
+
+    def mark(point: SolarPoint) -> str:
+        labels = list(marks.get(point.capacity_kwp, ()))
+        needed = area(point.capacity_kwp)
+        if area_limit_m2 is not None and needed is not None and needed > area_limit_m2 + 1e-6:
+            labels.append("면적 초과")
+        return " · ".join(labels)
+
     return pd.DataFrame(
         {
-            "용량(kWp)": [point.capacity_kwp for point in picked],
-            "연간 발전량(kWh)": [annualize(point.generation_kwh, months) for point in picked],
-            "자가소비율": [point.self_consumption_ratio for point in picked],
-            "기본요금 절감(원)": [annualize(point.base_saving_won, months) for point in picked],
-            "전력량요금 절감(원)": [annualize(point.energy_saving_won, months) for point in picked],
-            "투자비(원)": [point.investment_won for point in picked],
-            "회수기간(년)": [point.payback_years for point in picked],
-            "표식": [marks.get(point.capacity_kwp, "") for point in picked],
+            "용량(kWp)": [point.capacity_kwp for point in ordered],
+            "필요 면적(m²)": [area(point.capacity_kwp) for point in ordered],
+            "연간 발전량(kWh)": [annualize(point.generation_kwh, months) for point in ordered],
+            "자가소비율": [point.self_consumption_ratio for point in ordered],
+            "기본요금 절감(원)": [annualize(point.base_saving_won, months) for point in ordered],
+            "전력량요금 절감(원)": [
+                annualize(point.energy_saving_won, months) for point in ordered
+            ],
+            "투자비(원)": [point.investment_won for point in ordered],
+            "회수기간(년)": [point.payback_years for point in ordered],
+            "표식": [mark(point) for point in ordered],
         }
     )
 

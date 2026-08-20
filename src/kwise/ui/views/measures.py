@@ -66,6 +66,7 @@ from kwise.ui.cache import (
     cached_power_factor,
     cached_solar,
     cached_surplus,
+    cached_surplus_points,
     cached_tariff_switch,
     cached_unit_pv,
     rules_stamp,
@@ -85,7 +86,30 @@ from kwise.ui.state import (
     toggle_key,
 )
 
-__all__ = ["dr_off_days", "render"]
+__all__ = ["WEATHER_SOURCE_LABELS", "dr_off_days", "render", "weather_source_label"]
+
+
+#: 기상 출처의 **표시 이름** (31세션 4-2).
+#:
+#: :class:`~kwise.pv.WeatherData` 의 ``source`` 는 셋(``network``·``cache``·
+#: ``archive``)이지만 **사용자에게는 둘**이다 — 앞의 둘은 같은 Open-Meteo 자료이고
+#: 우리가 그것을 파일로 들고 있느냐만 다르다. 저장 방식은 결과를 바꾸지 않으므로
+#: 이름을 가르지 않는다. 반면 사전 취득분은 **망을 못 탔을 때 물러선 자리**라
+#: 그 사실이 보여야 한다 (요구사항서 7.5 — 조용히 바꾸지 않는다).
+WEATHER_SOURCE_LABELS: dict[str, str] = {
+    "network": "Open-Meteo",
+    "cache": "Open-Meteo",
+    "archive": "아카이브(Open-Meteo)",
+}
+
+
+def weather_source_label(source: str) -> str:
+    """``cache`` → ``Open-Meteo``. **모르는 값은 그대로 두지 않는다.**
+
+    코드 식별자가 화면에 나가는 것을 막는 것이 이 함수의 목적이므로, 새 출처가
+    생기면 옛 이름 대신 「기타」 로 적고 표에 더할 때까지 눈에 띄게 둔다.
+    """
+    return WEATHER_SOURCE_LABELS.get(source, "기타")
 
 
 def render(
@@ -100,12 +124,15 @@ def render(
         context.quality,
     )
     st.header("🛠 2단계 · 개선 수단")
-    st.caption("개선안 일곱을 차례로 놓았습니다.", help=manual_tip("combination"))
+    # **머리말 캡션을 뺐다** (31세션 1-1). 「개선안 일곱을 차례로 놓았습니다」 는
+    # 화면을 보면 아는 사실이었다. 달려 있던 `combination` 앵커는 제 자리인
+    # 3단계 「조합 구성」 으로 옮겼다 — 조합 이야기를 하는 화면이 그쪽이다.
+    #
     # **기준선을 한 번만 밝힌다.** 카드마다 되풀이하면 읽히지 않는다 (10.7).
     st.write(
-        "각 개선안은 **따로따로** 평가합니다. 카드의 절감액은 「지금 이 수단만 "
-        "도입하면 얼마」이며, 기준은 언제나 현재 요금제와 현재 사용량입니다. "
-        "수단을 함께 켰을 때의 최종 효과는 3단계 합산효과에서 다시 계산합니다."
+        "각 개선안은 독립적으로 평가합니다. 카드의 절감액은 해당 수단만 적용했을 "
+        "때의 효과이며, 기준은 현재 요금제와 사용량입니다. 여러 수단을 동시에 "
+        "적용한 효과는 3단계 합산효과에서 별도로 산정합니다."
     )
     baseline = diagnosis.structure.bill if diagnosis.structure is not None else None
     day = _reference_day(usage)
@@ -366,10 +393,28 @@ def _contract(
     )
     _overview(spec)
     if result.reduction_kw <= 0:
-        # **여지가 없으면 이유 한 줄만 남긴다** (27세션 5절). 지표 넷(현행·권장·
-        # 하향 여지·절감액)은 모두 「0」 을 말하고, 경고 둘과 산출 근거는 하지도
-        # 못할 하향을 조심하라는 말이다. 읽는 사람이 할 일이 없는 글은 화면에
-        # 두지 않는다 — 적정성 지표도 같은 사실을 다른 이름으로 되풀이한다.
+        # **지표는 되살리고 경고·근거는 계속 감춘다** (31세션 2절).
+        #
+        # 27세션에 이 자리를 한 줄로 줄였다 — 지표 넷이 모두 「0」 을 말하고 경고
+        # 둘은 하지도 못할 하향을 조심하라는 말이었기 때문이다. 줄이고 보니 이
+        # 카드만 큰 글자 숫자가 없어 **다른 개선안과 나란히 훑을 수가 없었다.**
+        # 「할 일이 없다」 와 「값을 알 수 없다」 는 다르다.
+        #
+        # 그래서 **무엇을 보이느냐를 바꿨다.** 현행·권장·절감액(전부 0)이 아니라
+        # **왜 여지가 없는지 말하는 넷**을 세운다 — 계약전력과 요금적용전력이
+        # 얼마나 붙어 있는지가 그 이유다. 경고와 산출 근거는 그대로 감춘다.
+        columns = st.columns(4)
+        columns[0].metric("현재 계약전력", fmt.kw(result.contract_kw))
+        columns[1].metric("요금적용전력", fmt.kw(peak))
+        columns[2].metric(
+            "여유",
+            fmt.ratio_pct(headroom),
+            help=fmt.markdown_safe(
+                "(계약전력 − 요금적용전력) ÷ 계약전력.\n\n"
+                "이 값이 확보할 여유율보다 작으면 낮출 자리가 없습니다."
+            ),
+        )
+        columns[3].metric("하향 여지", fmt.kw(result.reduction_kw))
         st.write(
             f"현재 계약전력 {fmt.kw(result.contract_kw, decimals=0)} 는 요금적용전력 "
             f"{fmt.kw(peak)} 대비 여유가 {fmt.ratio_pct(headroom)} 입니다. "
@@ -450,12 +495,51 @@ def _demand_response(
     result = evaluate_demand_response(diagnosis.dr, unit_price_won_per_kwh=unit_price or None)
 
     _overview(spec)
-    # **연간 한도가 없으므로 실질 제약은 저부하 평일 수 하나다** (14세션 4절).
-    columns = st.columns(3)
-    columns[0].metric("거래 가능일", fmt.days(result.eligible_days))
-    columns[1].metric("저부하 평일", fmt.days(result.low_load_days))
-    columns[2].metric("등록 권장 용량", fmt.kw(result.registered_capacity_kw))
-    st.metric("연간 감축 가능량", fmt.kwh(result.annual_reducible_kwh))
+    # **넷을 한 줄에 둔다** (31세션 3-1). 27세션까지 3+1 로 갈려 있어 연간 감축
+    # 가능량만 아래에 따로 섰다 — 다른 개선안은 모두 넷이 한 줄이라, 이 카드만
+    # 훑는 눈이 한 번 더 멈췄다. **값이 아니라 자리가 문제였다.**
+    #
+    # **넷 다 툴팁을 단다** (31세션 3-2). 이름만으로는 무엇을 센 것인지 알 수
+    # 없다 — 「거래 가능일」 이 평일 전부인지 참여할 수 있는 날인지, 「등록 권장
+    # 용량」 이 평균인지 보수값인지가 갈린다.
+    columns = st.columns(4)
+    columns[0].metric(
+        "거래 가능일",
+        fmt.days(result.eligible_days),
+        help=fmt.markdown_safe(
+            "분석 기간의 평일 수입니다. 토·일·공휴일은 입찰할 수 없어 뺐습니다.\n\n"
+            "이 가운데 감축할 여력이 있는 날만 아래 「저부하 평일」 로 셉니다."
+        ),
+    )
+    columns[1].metric(
+        "저부하 평일",
+        fmt.days(result.low_load_days),
+        help=fmt.markdown_safe(
+            "거래 가능일 중 부하가 쉬는 날 수준까지 내려온 날 수입니다.\n\n"
+            "**연간 참여 일수 제한이 없으므로 이 날 수가 실질 제약입니다** — "
+            "감축할 여력이 있는 날이 몇 날이냐가 전부입니다."
+        ),
+    )
+    columns[2].metric(
+        "등록 권장 용량",
+        # **소수점을 없앤다** (31세션 3-3). 저부하일 여력 분포의 분위수라 원래
+        # 소수 자리에 뜻이 없고, 사업자와 계약할 때 적는 값도 정수다.
+        fmt.kw(result.registered_capacity_kw, decimals=0),
+        help=fmt.markdown_safe(
+            "사업자 등록 시 제시할 보수적인 감축 가능 용량입니다.\n\n"
+            "저부하일 여력 분포의 하위값이라 어느 참여일에나 지킬 수 있습니다 — "
+            "평균으로 등록하면 절반의 날에 미달하고, 미달은 입찰 제한으로 이어집니다."
+        ),
+    )
+    columns[3].metric(
+        "연간 감축 가능량",
+        fmt.kwh(result.annual_reducible_kwh),
+        help=fmt.markdown_safe(
+            "실제 참여 가능 시간과 일별 감축 여력을 반영한 연간 감축 잠재량입니다.\n\n"
+            "저부하일마다 (그날 여력 × 그날 참여 가능 시간)을 더해 365일로 "
+            "환산했습니다 — 등록 용량 × 시간이 아닙니다."
+        ),
+    )
     st.caption(
         f"운영 시간대 {fmt.markdown_safe(diagnosis.dr.window_label)} · 하루 한도 "
         f"{dr_max_events_per_day()}회 × 최대 {fmt.hours(dr_event_hours()[1], decimals=0)} "
@@ -710,7 +794,13 @@ def _solar(
             ),
         )
 
-    st.caption(f"지역 — {region_key.replace('/', ' ')} (옆단 「건물 정보」 에서 고칩니다)")
+    st.caption(
+        f"지역 — {region_key.replace('/', ' ')} (옆단 「건물 정보」 에서 고칩니다)",
+        # **`weather-source` 앵커의 새 자리다** (31세션 4-2). 격자와 시군구 선택
+        # 이야기라 지역을 적는 이 줄이 제자리이고, 출처 이름 옆에서는 「이 이름이
+        # 무슨 뜻인가」 를 묻게 만들 뿐이었다.
+        help=manual_tip("weather-source"),
+    )
 
     # ---- 방위 (15세션 1-1). **각도가 아니라 8방위로 고른다.**
     tilt = presets.density(density).tilt_deg
@@ -849,7 +939,10 @@ def _solar(
                 rules_stamp(),
                 report,
             )
-    st.caption(f"기상 출처 — {source}.", help=manual_tip("weather-source"))
+    # **출처는 이름으로 적는다** (31세션 4-2). `cache`·`network`·`archive` 라는
+    # 코드 식별자가 그대로 화면에 나가고 있었다. 툴팁은 뗐다 — 출처 이름 하나면
+    # 되고, 격자·라이선스 이야기는 위 「지역」 캡션의 물음표에 있다.
+    st.caption(f"기상 출처 — {weather_source_label(source)}")
     point = curve.points[-1]
     if stale:
         st.caption("**묵은 결과** — 지금 화면의 입력이 아니라 마지막 계산의 입력 기준입니다.")
@@ -880,15 +973,42 @@ def _solar(
     # **대표 지점을 표로** (17세션 3-3). 곡선 그래프는 26세션에 걷어냈다 —
     # 절감액 세 계열이 단조롭게 늘기만 해 읽을 것이 없었고, 판단은 위의 잉여
     # 숫자로 한다. 20단계 상세는 Excel 로 간다.
+    #
+    # **잉여 지점 둘을 표에 세운다** (31세션 4-1). 곡선은 설치 가능 면적이
+    # 허용하는 용량까지만 도므로, 그것만 뽑으면 비교 용량이 전부 선정 용량보다
+    # 작았다 — 정작 「어디서부터 잉여가 생기나」 가 표에 없었다.
+    surplus_points = cached_surplus_points(
+        usage,
+        table,
+        unit_profile,
+        baseline,  # type: ignore[arg-type]
+        quality,
+        usage_token(usage),
+        form,
+        inputs,
+        rules_stamp(),
+    )
+    # 이름을 `density` 로 두면 위쪽 라디오 선택값(문자열)을 덮는다.
+    density_preset = presets.density(inputs.density_key or presets.default.key)
     st.markdown("**용량별 비교**")
     st.dataframe(
-        _capacity_view(charts.solar_capacity_table(curve, verdict=verdict)),
+        _capacity_view(
+            charts.solar_capacity_table(
+                curve,
+                verdict=verdict,
+                surplus_points=surplus_points,
+                gcr=density_preset.gcr,
+                area_per_kwp_m2=presets.area_per_kwp_m2,
+                area_limit_m2=inputs.area_m2 or None,
+            )
+        ),
         hide_index=True,
         width="stretch",
     )
     st.caption(
-        f"의미 있는 지점 {charts.CAPACITY_ROWS}개만 골랐습니다 — 면적 상한과 최적은 항상 "
-        "들어갑니다. 20단계 상세는 Excel 「태양광 용량 곡선」 시트에 있습니다."
+        "잉여가 생기기 시작하는 용량과 많이 생기는 용량을 함께 세웠습니다 — "
+        "설치 가능 면적을 넘는 줄은 「면적 초과」 로 적습니다. 20단계 상세는 "
+        "Excel 「태양광 용량 곡선」 시트에 있습니다."
     )
 
     generation = unit_profile * point.capacity_kwp
@@ -993,6 +1113,12 @@ def _capacity_view(frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "용량(kWp)": [fmt.kwp(value) for value in frame["용량(kWp)"]],
+            # **면적이 판단 기준이다** (31세션 4-1). kWp 는 설비 규격이라 지붕을
+            # 보고 「지을 수 있나」 를 정할 수 없다.
+            "필요 면적": [
+                fmt.count(value, " m²", decimals=0) if pd.notna(value) else fmt.DASH
+                for value in frame["필요 면적(m²)"]
+            ],
             # 발전량은 MWh 로 낸다 (26세션 3-3). 12개월 환산값이라 /년 을 붙인다.
             "발전량": [fmt.per_year(fmt.mwh(value)) for value in frame["연간 발전량(kWh)"]],
             "자가소비율": [fmt.ratio_pct(value) for value in frame["자가소비율"]],
@@ -1167,7 +1293,19 @@ def _ess(
         f"방전 {fmt.hours(result.discharge_hours, decimals=1)}",
         help=fmt.tip("discharge_hours"),
     )
-    columns[1].metric("절감액", fmt.won_year(result.annual_saving_won))
+    # **무엇의 합인지 밝힌다** (31세션 5-3). 사용자가 이 숫자가 피크저감인지
+    # 충방전 차익인지 몰랐다 — 샘플에서 99.8%가 기본요금 절감이고 차익거래는
+    # 아예 들어 있지 않다.
+    columns[1].metric(
+        "절감액",
+        fmt.won_year(result.annual_saving_won),
+        help=fmt.markdown_safe(
+            "기본요금 절감 + 전력량요금 절감입니다. 목표까지 피크를 깎은 순부하로 "
+            "요금을 다시 계산해 12개월로 환산했습니다.\n\n"
+            "**충방전 차익거래는 들어 있지 않습니다** — 이중 계산이 되므로 확인사항에 "
+            "잠재값으로 따로 적습니다."
+        ),
+    )
     columns[2].metric("투자비", fmt.won_short(result.investment_won))
     columns[3].metric(
         "회수기간", fmt.payback(result.payback_years, investment_won=result.investment_won)
@@ -1275,6 +1413,26 @@ def _ess_cost_inputs() -> tuple[float, float | None, float | None]:
 # --------------------------------------------------------------------- 7.7
 
 
+def _surplus_metric(annual_kwh: float, *, share: float | None = None) -> None:
+    """잉여 총량 지표 — **0 이라도 낸다** (31세션 6절).
+
+    다른 카드의 지표와 같은 크기로 보이도록 4열의 첫 칸에 세운다. 한 칸만 쓰는
+    것은 이 카드가 자기 것으로 낼 수 있는 값이 이 하나이기 때문이다 — 나머지
+    잉여 지표는 태양광 카드가 용량을 고르는 자리에서 낸다 (26세션 3-2).
+    """
+    columns = st.columns(4)
+    columns[0].metric(
+        "연간 잉여",
+        fmt.per_year(fmt.mwh(annual_kwh)),
+        f"발전량의 {fmt.ratio_pct(share)}" if share is not None else None,
+        delta_color="off",
+        help=fmt.markdown_safe(
+            "자가소비하고 남아 계통으로 되돌아가는 양입니다.\n\n"
+            "아래 시나리오의 수익이 모두 이 양에서 나옵니다 — 0 이면 팔 것이 없습니다."
+        ),
+    )
+
+
 def _surplus(
     spec: MeasureSpec,
     usage: UsageData,
@@ -1307,6 +1465,10 @@ def _surplus(
     presets = load_pv_presets()
     capacity = inputs.resolved_capacity_kwp(presets) if inputs is not None else 0.0
     if inputs is None or capacity <= 0:
+        # **0 이라도 지표를 낸다** (31세션 6절 · 2절과 같은 원칙). 글만 남기면 이
+        # 카드에는 큰 글자 숫자가 하나도 없어 다른 개선안과 나란히 훑을 수가 없다 —
+        # 「할 일이 없다」 와 「값을 알 수 없다」 는 다르다.
+        _surplus_metric(0.0)
         st.write("태양광을 켜지 않아 잉여가 0 입니다.")
         st.caption(
             "태양광을 켜고 계산하면 잉여량과 활용 시나리오가 여기에 나옵니다. "
@@ -1324,8 +1486,15 @@ def _surplus(
     )
     # **잉여량 지표 셋을 7.5 로 옮겼다** (26세션 3-2). 「얼마나 남는가」 는 용량을
     # 정하는 물음이라 태양광 카드의 일이고, 이 카드는 **남는 것으로 무엇을 하나**를
-    # 낸다 — 같은 사실을 두 카드에 두지 않는다.
+    # 낸다.
     #
+    # **다만 총량 하나는 여기에도 둔다** (31세션 6절). 셋을 되돌리는 것이 아니라
+    # **이 카드가 무엇을 팔지 정하는 밑값**을 세우는 것이다 — 아래 시나리오 수익이
+    # 전부 이 한 값에서 나오는데, 그 값이 화면에 없으면 수익이 어디서 왔는지 알
+    # 수 없다. 태양광 카드의 잉여 넷은 **용량을 고르는** 자리라 그대로 둔다.
+    months = getattr(baseline, "base_fee_months", 12.0)
+    _surplus_metric(annualize(result.total_kwh, months), share=result.share_of_generation)
+
     # **잉여가 주말에 몰리는지**가 보여야 한다 (15세션 2-6).
     if result.total_kwh > 0:
         surplus_kw = apply_generation(usage, unit_profile * capacity).surplus_kw

@@ -41,6 +41,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from kwise.magnitude import magnitude, places
 from kwise.notices import Notice, basis, info, warn
 from kwise.rules import rule_value
 
@@ -239,6 +240,7 @@ def power_factor_charge(
     """
     standard = lagging_standard_pct()
     floor = lagging_floor_pct()
+    cap = lagging_rebate_cap_pct()
     # **기준이 아니라 간주값으로 채운다** (제42조). 둘은 오늘 같은 92% 지만
     # 조문이 다르므로, 기준이 개정돼도 모르는 고객의 역률은 따라가지 않는다.
     lagging_pct = deemed_lagging_pct() if lagging_pct is None else lagging_pct
@@ -259,20 +261,39 @@ def power_factor_charge(
         ),
     ]
 
-    if lagging_pct <= standard:
+    # **세 갈래로 가른다** (31세션 0-1). 29세션까지는 `<=` 한 줄이라 **기준과 같은
+    # 92.0% 가 「0.0%p 미달」** 로 나갔다 — 간주값이 바로 92% 라 손대지 않은 자료가
+    # 전부 그 문구를 받았다. 같으면 미달이 아니다.
+    #
+    # 자릿수도 함께 늘린다. 91.96% 는 진짜 미달인데 `.1f` 로는 역률도 미달폭도
+    # 0 으로 뭉개져 「92.0% — 0.0%p 미달」 이 됐다 (:mod:`kwise.magnitude`).
+    gap = standard - lagging_pct
+    digits = places(gap)
+    shown_pct = f"{lagging_pct:,.{digits}f}%"
+    if gap == 0.0:
         notices.append(
             basis(
-                f"주간 지상역률 {lagging_pct:.1f}% — 기준 92% 대비 "
-                f"{max(0.0, standard - lagging_pct):.1f}%p 미달, "
-                f"기본요금의 {lagging_ratio:+.1%} 추가.",
+                f"주간 지상역률 {shown_pct} — 기준 {standard:.0f}% 충족, 추가·감액 없음.",
+                fact="power_factor.lagging_ratio",
+            )
+        )
+    elif gap > 0.0:
+        notices.append(
+            basis(
+                f"주간 지상역률 {shown_pct} — 기준 {standard:.0f}% 대비 "
+                f"{magnitude(gap, '%p', decimals=digits)} 미달, "
+                # **부호를 붙이지 않는다** — 「+0.1% 추가」 는 같은 말을 두 번 한다.
+                f"기본요금의 {magnitude(lagging_ratio * 100.0, '%')} 추가.",
                 fact="power_factor.lagging_ratio",
             )
         )
     else:
         notices.append(
             basis(
-                f"주간 지상역률 {lagging_pct:.1f}% — 기준 92% 초과, "
-                f"기본요금의 {lagging_ratio:+.1%} 감액 (97% 초과분은 인정되지 않습니다).",
+                f"주간 지상역률 {shown_pct} — 기준 {standard:.0f}% 대비 "
+                f"{magnitude(-gap, '%p', decimals=digits)} 초과, "
+                f"기본요금의 {magnitude(-lagging_ratio * 100.0, '%')} 감액 "
+                f"({cap:.0f}% 초과분은 인정되지 않습니다).",
                 fact="power_factor.lagging_ratio",
             )
         )
@@ -289,8 +310,9 @@ def power_factor_charge(
     if lagging_pct < standard:
         notices.append(
             warn(
-                f"주간 지상역률이 기준 92% 에 미달합니다 ({lagging_pct:.1f}%). "
-                f"기본요금의 {lagging_ratio:.1%} 가 추가됩니다. 역률 개선 설비 용량 조정을 "
+                f"주간 지상역률이 기준 {standard:.0f}% 에 미달합니다 ({shown_pct}). "
+                f"기본요금의 {magnitude(lagging_ratio * 100.0, '%')} 가 추가됩니다. "
+                "역률 개선 설비 용량 조정을 "
                 "검토하십시오 (한전 기본공급약관 제41·43조).",
                 fact="power_factor.lagging_below_standard",
             )
@@ -320,11 +342,15 @@ def power_factor_charge(
             )
         )
     elif leading_ratio > 0:
+        # 자릿수는 미달폭에 맞춘다 — 94.96% 는 미달인데 `.1f` 로는 95.0% 로 찍혀
+        # 「95.0% 가 기준 95% 에 미달합니다」 가 된다 (:mod:`kwise.magnitude`).
+        leading_digits = places(leading_standard_pct() - leading_pct)
         notices.append(
             warn(
-                f"야간 진상역률 {leading_pct:.1f}% 가 기준 95% 에 미달합니다"
+                f"야간 진상역률 {leading_pct:,.{leading_digits}f}% 가 "
+                f"기준 {leading_standard_pct():.0f}% 에 미달합니다"
                 + (f" (하한 {leading_floor_pct():.0f}% 적용)" if deemed != leading_pct else "")
-                + f". 기본요금의 {leading_ratio:.1%} 가 추가됩니다. "
+                + f". 기본요금의 {magnitude(leading_ratio * 100.0, '%')} 가 추가됩니다. "
                 "**역률 개선 설비 과보상입니다** — 부하가 줄어든 야간에 진상 무효전력이 남는 "
                 "것이므로 고정형 역률 개선 설비 용량을 줄이거나 자동제어형 역률 개선 설비로 "
                 "시간대별 투입 단수를 조절하십시오.",

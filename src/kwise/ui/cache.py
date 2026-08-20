@@ -42,6 +42,7 @@ from kwise.measures import (
     EssTargetCurve,
     PowerFactorResult,
     SolarCurve,
+    SolarPoint,
     SurplusResult,
     TariffSwitchResult,
     apply_generation,
@@ -76,6 +77,7 @@ __all__ = [
     "cached_sensitivity",
     "cached_solar",
     "cached_surplus",
+    "cached_surplus_points",
     "cached_tariff",
     "cached_tariff_switch",
     "cached_unit_pv",
@@ -252,7 +254,9 @@ def cached_baseline_bill(
 
 
 @st.cache_data(show_spinner="기온 자료를 읽는 중…")
-def cached_daily_temperature(_usage: UsageData, token: str, region_key: str) -> pd.Series | None:
+def cached_daily_temperature(
+    _usage: UsageData, token: str, region_key: str
+) -> tuple[pd.Series, str] | None:
     """부하 패턴이 곁들이는 기온 (30세션 4절). **못 받으면 ``None`` 이다.**
 
     캐시 열쇠는 자료와 지역뿐이다 — 기상은 요금 기준 데이터와 무관하므로
@@ -268,7 +272,7 @@ def cached_unit_pv(
     return pipeline.unit_pv_profile(_usage, inputs)
 
 
-@st.cache_data(show_spinner="여덟 방위를 견주는 중…")
+@st.cache_data(show_spinner="여덟 방위를 비교하는 중…")
 def cached_azimuth_options(
     _usage: UsageData,
     token: str,
@@ -326,6 +330,37 @@ def cached_solar(
             baseline=_baseline,
             quality=_quality,
             progress=_progress,
+        ),
+    )
+
+
+def cached_surplus_points(
+    _usage: UsageData,
+    _table: TariffTable,
+    _unit: pd.Series,
+    _baseline: BillingResult | None,
+    _quality: QualityReport | None,
+    token: str,
+    form: ContractForm,
+    inputs: SolarInputs,
+    stamp: str,
+) -> tuple[tuple[str, SolarPoint], ...]:
+    """용량 비교 표의 잉여 지점 둘 (31세션 4-1). **요금 재계산 두 번이다.**
+
+    ``cached_solar`` 와 같은 세션 기억을 쓴다 — 태양광 카드는 입력을 만질 때마다
+    다시 그려지므로, 캐시하지 않으면 두 번의 재계산이 매 실행에 붙는다.
+    """
+    key = f"surplus_points|{token}|{form_token(form)}|{inputs}|{stamp}"
+    return session_memo(
+        key,
+        lambda: pipeline.surplus_capacity_points(
+            _usage,
+            _table,
+            form,
+            _unit,
+            cost=inputs.cost(),
+            baseline=_baseline,
+            quality=_quality,
         ),
     )
 

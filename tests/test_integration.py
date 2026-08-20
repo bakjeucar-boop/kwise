@@ -729,8 +729,12 @@ def test_태양광_판정_근거를_적는다() -> None:
 
 
 @pytest.mark.usefixtures("real_weather")
-def test_태양광_용량_표가_다섯_줄이다() -> None:
-    """20단계는 Excel 로, 화면에는 의미 있는 지점만 (17세션 3-3)."""
+def test_태양광_용량_표가_잉여_지점을_세운다() -> None:
+    """20단계는 Excel 로, 화면에는 의미 있는 지점만 (17세션 3-3 · 31세션 4-1).
+
+    **잉여 지점 둘이 표에 있어야 한다.** 26세션에 판단을 잉여로 옮겼는데 표는
+    선정 용량 아래에서만 뽑아, 정작 「어디서부터 잉여가 생기나」 가 없었다.
+    """
     from kwise.ui.charts import CAPACITY_ROWS
 
     app = _app(**_on("solar"))
@@ -740,6 +744,7 @@ def test_태양광_용량_표가_다섯_줄이다() -> None:
     assert len(frame) == CAPACITY_ROWS == 5
     assert set(frame.columns) >= {
         "용량(kWp)",
+        "필요 면적",  # 31세션 4-1 — 면적이 판단 기준이다
         "발전량",  # 26세션 3-3 — MWh/년 로 낸다
         "자가소비율",
         "기본요금 절감",
@@ -747,7 +752,12 @@ def test_태양광_용량_표가_다섯_줄이다() -> None:
         "투자비",
         "회수기간",
     }
-    assert "면적 상한" in " ".join(str(value) for value in frame["표식"])
+    marks = " ".join(str(value) for value in frame["표식"])
+    assert "선정 용량" in marks
+    assert "잉여 시작" in marks
+    assert "잉여 다량" in marks
+    # 설치 가능 면적을 넘는 지점은 값을 지우지 않고 **그 사실만** 적는다.
+    assert "면적 초과" in marks
 
 
 def test_태양광_연간_차트가_발전량만_그린다() -> None:

@@ -61,7 +61,7 @@ from kwise.ui.pipeline import (
     voltage_choices,
 )
 from kwise.ui.state import get_form, set_form, store_upload, upload
-from kwise.ui.views.measures import dr_off_days
+from kwise.ui.views.measures import dr_off_days, weather_source_label
 
 __all__ = ["render"]
 
@@ -176,7 +176,15 @@ MISSING_FACTS = (
     "quality.longest_gap",
     "quality.month_missing_rate",
     "quality.peak_skew",
+    # **버린 행도 같은 자리다** (31세션 0-2). 결측과 나란히 읽어야 「빠진 값이
+    # 얼마나 되나」 가 한 번에 잡힌다 — 위쪽 확인사항에 두면 결측률과 떨어진다.
+    "quality.dropped_rows",
 )
+
+#: 「데이터 품질」 절이 **문구 그대로** 다시 그리는 사실 (31세션 0-2).
+#: :func:`missing_lines` 는 문구를 새로 짓지만 이쪽은 안내의 글을 그대로 낸다 —
+#: 건수만 적는 한 줄이라 두 벌로 적을 이유가 없다.
+DROPPED_ROWS_FACT = "quality.dropped_rows"
 
 #: 계약전력 변경 경고는 **2단계 7.2 카드**가 낸다 (16세션 3절). 바꾸자고
 #: 제안하는 자리가 그 경고의 제자리다 — 여기서 미리 읽으면 무엇을 조심하라는
@@ -530,6 +538,20 @@ def missing_lines(quality: QualityReport) -> tuple[str, ...]:
     return tuple(lines[:MISSING_LINE_LIMIT])
 
 
+def dropped_row_lines(quality: QualityReport) -> tuple[str, ...]:
+    """버린 행 안내 — **있을 때만 한 줄** (31세션 0-2).
+
+    **문구를 새로 짓지 않는다.** 품질 검사가 낸 안내(:data:`DROPPED_ROWS_FACT`)를
+    그대로 낸다 — 건수만 적는 한 줄이라 화면과 보고서가 다른 말을 할 이유가 없고,
+    두 벌로 적으면 한쪽만 고쳐진다.
+    """
+    return tuple(
+        fmt.markdown_safe(notice.text)
+        for notice in quality.notices
+        if notice.fact == DROPPED_ROWS_FACT
+    )
+
+
 def missing_month_frame(quality: QualityReport) -> pd.DataFrame:
     """월별 결측 구간 표 (30세션 2절).
 
@@ -598,6 +620,11 @@ def _quality_block(usage: UsageData, quality: QualityReport) -> None:
                 f"피크 시간대 편중 배수 {fmt.count(quality.skew.multiple, decimals=2)} → "
                 "그 달의 최대수요가 실제보다 낮게 잡혔을 수 있음"
             )
+        # **버린 행은 결측 옆에서 읽어야 한다** (31세션 0-2). 해당 행이 없으면
+        # 줄 자체가 없다 — 한전 내려받기 형식에서는 대개 0 이라, 늘 떠 있으면
+        # 「0건」 이 화면 한 줄을 영영 차지한다.
+        for line in dropped_row_lines(quality):
+            st.write(line)
     # **달마다 다른 값은 표로 낸다** (30세션 2절). 본문 두 줄은 전체와 「결측이
     # 있는 달」 이라는 덩어리까지만 말하고, 어느 달이 얼마나 비었는지는 여기서 본다.
     frame = missing_month_frame(quality)
@@ -690,12 +717,18 @@ def _temperature_chart(usage: UsageData, building: BuildingInfo | None) -> None:
     (:func:`kwise.ui.pipeline.daily_temperature`).
     """
     region_key = building.region_key if building else ""
-    temperature = cached_daily_temperature(usage, usage_token(usage), region_key)
-    if temperature is None or temperature.empty:
+    loaded = cached_daily_temperature(usage, usage_token(usage), region_key)
+    if loaded is None or loaded[0].empty:
         st.caption("옆단에서 지역을 고르면 일평균 기온을 함께 그립니다.")
         return
+    temperature, source = loaded
     st.altair_chart(charts.daily_temperature_chart(usage, temperature), width="stretch")
-    st.caption("일별 사용량과 일평균 기온", help=fmt.chart_tip("chart.daily_temperature"))
+    # **출처를 태양광 카드와 같은 이름으로 적는다** (31세션 4-2). 같은 자료를
+    # 쓰는데 한쪽만 출처를 적으면 두 그림이 다른 기상을 본다고 읽힌다.
+    st.caption(
+        f"일별 사용량과 일평균 기온 · {weather_source_label(source)}",
+        help=fmt.chart_tip("chart.daily_temperature"),
+    )
 
 
 # --------------------------------------------------------------------- 계절 갈래

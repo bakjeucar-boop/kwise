@@ -122,7 +122,7 @@ _OVERVIEW: dict[str, str] = {
 _SCREEN: dict[str, tuple[str, str]] = {
     "tariff_switch": (
         "measure-tariff-switch",
-        "현행 선택요금과 같은 종별·전압의 다른 선택요금을 모두 다시 계산해 견줍니다.",
+        "현행 선택요금과 같은 종별·전압의 다른 선택요금을 모두 다시 계산해 비교합니다.",
     ),
     "contract": (
         "measure-contract",

@@ -28,7 +28,7 @@ from streamlit.testing.v1 import AppTest
 
 from kwise.compare import CombinationSpec
 from kwise.io import load_usage
-from kwise.measures import AppliedMeasure, measure_kind
+from kwise.measures import AppliedMeasure, EssResult, measure_kind
 from kwise.notices import Notice, basis, block, dedupe, info, warn
 from kwise.report.excel import SHEET_ORDER
 from kwise.tariff import TariffSelection, TariffTable, load_tariff
@@ -707,9 +707,15 @@ def test_수단_화면이_기준선을_한_번_밝힌다() -> None:
     screen = _running(nav_page="2단계 · 개선 수단", measure_on_tariff_switch=True)
     assert not screen.exception, screen.exception
     body = [item.value for item in screen.markdown]
-    assert any("따로따로" in str(item) for item in body), body
-    assert any("현재 요금제와 현재 사용량" in str(item) for item in body), body
+    # 31세션 1-2 에 문구를 다시 썼다. **지켜야 할 사실 셋은 그대로다** —
+    # 독립 평가라는 것, 기준선이 현재 요금제와 사용량이라는 것, 합산은 3단계라는 것.
+    assert any("독립적으로 평가합니다" in str(item) for item in body), body
+    assert any("현재 요금제와 사용량" in str(item) for item in body), body
     assert any("3단계 합산효과" in str(item) for item in body), body
+    # 머리말 캡션은 뺐다 (31세션 1-1) — 화면을 보면 아는 사실이었다.
+    assert not [item for item in screen.caption if "차례로 놓았습니다" in str(item.value)], (
+        "머리말 캡션이 남아 있습니다."
+    )
 
 
 # ======================================================== 13세션
@@ -1029,7 +1035,9 @@ def test_기온_그래프가_부하_패턴에_있다(tmp_path: Path, monkeypatch
     screen = _running()
     assert not screen.exception, screen.exception
     captions = [str(item.value) for item in screen.caption]
-    assert "일별 사용량과 일평균 기온" in captions
+    # **출처를 태양광 카드와 같은 이름으로 적는다** (31세션 4-2). 여기서는 취득을
+    # 실패시켰으므로 사전 취득분으로 물러선 사실이 이름에 드러나야 한다.
+    assert "일별 사용량과 일평균 기온 · 아카이브(Open-Meteo)" in captions, captions
     assert "옆단에서 지역을 고르면 일평균 기온을 함께 그립니다." not in captions
     cached_daily_temperature.clear()
 
@@ -2364,11 +2372,15 @@ def test_최적_요금제_안내가_한_문장이다() -> None:
     assert "다른 수단의 기준선을" not in body, "문구가 남아 있습니다."
 
 
-def test_하향_여지가_없으면_이유_한_줄만_남는다() -> None:
-    """**할 수 없는 일에 경고를 달지 않는다** (27세션 5절).
+def test_하향_여지가_없어도_지표는_낸다() -> None:
+    """**경고는 감추고 지표는 되살린다** (27세션 5절 → 31세션 2절).
 
     샘플의 실제 계약전력 5,500 kW 는 요금적용전력 5,293 kW 대비 여유가 3.8% 라
-    하향 여지가 0 kW 다. 지표 넷·경고 둘·산출 근거가 모두 「0」 을 말한다.
+    하향 여지가 0 kW 다. 27세션에 한 줄로 줄였더니 이 카드만 큰 글자 숫자가 없어
+    대시보드 구실을 못 했다 — 「할 일이 없다」 와 「값을 알 수 없다」 는 다르다.
+
+    보이는 넷은 **왜 여지가 없는지 말하는 값들**이다. 하지도 못할 하향을 조심하라는
+    경고와 산출 근거는 그대로 감춘다.
     """
     from kwise.report import CONTRACT_CHANGE_WARNING
 
@@ -2380,12 +2392,223 @@ def test_하향_여지가_없으면_이유_한_줄만_남는다() -> None:
     assert "하향 여지가 없습니다" in body
     assert CONTRACT_CHANGE_WARNING not in body
     assert "현재 부하 기준의 하향 여지" not in body
+
     labels = [label for label, _ in _stage2_metrics(screen)]
-    for banned in ("현행 계약전력", "권장", "하향 여지", "이용률"):
+    assert labels == ["현재 계약전력", "요금적용전력", "여유", "하향 여지"], labels
+    values = dict(_stage2_metrics(screen))
+    assert values["하향 여지"] == "0.0 kW"
+    # 여지가 0 일 때는 적정성 지표(권장·이용률)와 절감액을 내지 않는다 — 셋 다
+    # 같은 사실을 다른 이름으로 되풀이한다.
+    for banned in ("권장", "이용률", "절감액"):
         assert banned not in labels, labels
-    # 여유가 있으면 그대로 다 나온다 — 감추는 것은 여지가 0 일 때뿐이다.
-    wide = _running(nav_page="2단계 · 개선 수단", measure_on_contract=True)
-    assert "하향 여지" in [label for label, _ in _stage2_metrics(wide)]
+
+    # 여유가 있으면 권장·절감액까지 그대로 나온다.
+    wide = [label for label, _ in _stage2_metrics(_running(measure_on_contract=True))]
+    assert "권장" in wide and "하향 여지" in wide
+
+
+def test_버린_행_안내가_결측_옆에_나온다(tmp_path: Path) -> None:
+    """**「결측 구간」 옆 한 줄** (31세션 0-2).
+
+    값이 조용히 빠지는 것은 결측과 함께 읽어야 「빠진 값이 얼마나 되나」 가 한 번에
+    잡힌다. 위쪽 확인사항에 두면 결측률과 떨어진다.
+    """
+    from kwise.quality import check_quality
+    from kwise.ui.views.diagnose import DROPPED_ROWS_FACT, dropped_row_lines
+    from tests._synthetic import make_labels, month_dates, write_raw_csv
+
+    rows = [(label, "100.00") for date in month_dates(2024, 3) for label in make_labels(date)]
+    rows.append(("읽을 수 없는 날짜", "100.00"))
+    rows.append(("2024-03-15 06:30", "-50.00"))
+    quality = check_quality(load_usage(write_raw_csv(tmp_path / "bad.csv", rows)))
+
+    lines = dropped_row_lines(quality)
+    assert len(lines) == 1
+    assert "검침일을 읽지 못한 행 1건" in lines[0]
+    assert "음수 전력량 행 1건" in lines[0]
+    # **문구를 새로 짓지 않는다** — 품질 검사가 낸 안내를 그대로 낸다.
+    source = next(item.text for item in quality.notices if item.fact == DROPPED_ROWS_FACT)
+    assert lines[0] == text.markdown_safe(source)
+
+    # 위쪽 확인사항으로 새지 않는다 (`MISSING_FACTS` 가 걸러 낸다).
+    from kwise.ui.views.diagnose import MISSING_FACTS
+
+    assert DROPPED_ROWS_FACT in MISSING_FACTS
+
+
+def test_버린_행이_없으면_줄이_없다(app: AppTest) -> None:
+    """샘플에는 그런 행이 없다 — 「0건」 이 화면 한 줄을 차지하면 안 된다."""
+    from kwise.quality import check_quality
+    from kwise.ui.views.diagnose import dropped_row_lines
+
+    assert dropped_row_lines(check_quality(load_usage(SAMPLE))) == ()
+    rendered = _screen_lines(app)
+    assert not [item for item in rendered if "읽지 못한 행" in item], rendered
+
+
+def test_견주다를_화면에_쓰지_않는다() -> None:
+    """**'견주다' 를 '비교' 로 바꿨다** (31세션 1-3).
+
+    사용자에게 나가는 글만 본다 — 코드 주석과 독스트링은 우리끼리 쓰는 말이라
+    화면 문구 규약의 대상이 아니다.
+    """
+    import ast
+
+    banned = re.compile(r"견주|견줍|견줘|견줄|견준|견줌")
+    offenders: list[str] = []
+    for path in sorted((Path("src") / "kwise").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        docs = {
+            id(node.body[0].value)
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.body
+            and isinstance(node.body[0], ast.Expr)
+            and isinstance(node.body[0].value, ast.Constant)
+        }
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and id(node) not in docs
+                and banned.search(node.value)
+            ):
+                offenders.append(f"{path.name}:{node.lineno} {node.value[:50]}")
+    assert offenders == [], offenders
+
+    for name in ("MANUAL.md", "TECHNICAL.md"):
+        body = (Path("docs") / name).read_text(encoding="utf-8")
+        assert not banned.search(body), name
+
+
+def test_경제성DR_지표_넷이_한_줄이다() -> None:
+    """**다른 개선안은 넷이 한 줄이다** (31세션 3-1). 이 카드만 3+1 로 갈려 있었다."""
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_demand_response=True)
+    assert not screen.exception, screen.exception
+    labels = [label for label, _ in _stage2_metrics(screen)]
+    assert labels[:4] == ["거래 가능일", "저부하 평일", "등록 권장 용량", "연간 감축 가능량"]
+
+
+def test_경제성DR_지표에_툴팁이_있다() -> None:
+    """이름만으로는 무엇을 센 것인지 알 수 없다 (31세션 3-2)."""
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_demand_response=True)
+    tips = {item.label: item.help for item in screen.metric}
+    assert "보수적인 감축 가능 용량" in str(tips["등록 권장 용량"])
+    assert "연간 감축 잠재량" in str(tips["연간 감축 가능량"])
+    for label in ("거래 가능일", "저부하 평일"):
+        assert tips[label], f"{label} 에 툴팁이 없습니다."
+
+
+def test_등록_권장_용량에_소수점이_없다() -> None:
+    """분위수라 소수 자리에 뜻이 없고, 계약서에 적는 값도 정수다 (31세션 3-3)."""
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_demand_response=True)
+    value = next(item.value for item in screen.metric if item.label == "등록 권장 용량")
+    assert re.fullmatch(r"[\d,]+ kW", str(value)), value
+
+
+def test_기상_출처를_이름으로_적는다() -> None:
+    """``cache``·``network``·``archive`` 가 그대로 화면에 나가고 있었다 (31세션 4-2)."""
+    from kwise.ui.views.measures import WEATHER_SOURCE_LABELS, weather_source_label
+
+    assert weather_source_label("network") == "Open-Meteo"
+    assert weather_source_label("cache") == "Open-Meteo"
+    assert weather_source_label("archive") == "아카이브(Open-Meteo)"
+    # 새 출처가 생기면 옛 이름 대신 눈에 띄는 값으로 떨어진다.
+    assert weather_source_label("없는출처") == "기타"
+    assert set(WEATHER_SOURCE_LABELS) == {"network", "cache", "archive"}
+
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    assert 'f"기상 출처 — {source}."' not in source
+    assert 'help=manual_tip("weather-source")' in source, "앵커는 지역 캡션으로 옮겼다."
+
+
+def test_잉여_지점_용량을_따로_계산한다() -> None:
+    """**곡선 밖의 용량이다** (31세션 4-1).
+
+    곡선은 설치 가능 면적이 허용하는 용량까지만 돈다. 잉여가 처음 생기는 용량이
+    그 위에 있으면 곡선 어디에도 없으므로 점을 따로 낸다 — 곡선에 얹으면 최적
+    판정이 설치할 수 없는 용량을 고를 수 있다.
+    """
+    import pandas as pd
+
+    from kwise.measures import surplus_free_capacity_kwp, surplus_share_capacity_kwp
+
+    usage = load_usage(SAMPLE)
+    index = pd.DatetimeIndex(usage.kw.index)
+    # 낮에만 발전하는 단순 프로파일. 값은 중요하지 않고 **단조성**만 본다.
+    unit = pd.Series(
+        [(0.001 if 9 <= stamp.hour < 16 else 0.0) for stamp in index], index=index, dtype=float
+    )
+    onset = surplus_free_capacity_kwp(usage, unit)
+    heavy = surplus_share_capacity_kwp(usage, unit, share=0.1)
+    assert onset > 0
+    assert heavy is not None and heavy > onset, (onset, heavy)
+    # 비중이 클수록 필요한 용량도 크다 — 단조 증가여야 이분법이 성립한다.
+    heavier = surplus_share_capacity_kwp(usage, unit, share=0.3)
+    assert heavier is not None and heavier > heavy
+
+
+def test_잉여_비중은_0과_1_사이여야_한다() -> None:
+    from kwise.measures import surplus_share_capacity_kwp
+
+    usage = load_usage(SAMPLE)
+    with pytest.raises(ValueError):
+        surplus_share_capacity_kwp(usage, usage.kw * 0.0, share=0.0)
+
+
+def test_ESS_절감액_툴팁이_구성을_밝힌다() -> None:
+    """사용자가 이 숫자가 피크저감인지 충방전 차익인지 몰랐다 (31세션 5-3)."""
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_ess=True)
+    assert not screen.exception, screen.exception
+    tips = [item.help for item in screen.metric if item.label == "절감액"]
+    ess_tip = next(str(item) for item in tips if item and "기본요금 절감" in str(item))
+    assert "전력량요금 절감" in ess_tip
+    assert "차익거래는 들어 있지 않습니다" in ess_tip
+
+
+def test_ESS_절감액이_기본요금과_전력량요금의_합이다(sample_ess: EssResult) -> None:
+    """**툴팁이 적은 그대로여야 한다** (31세션 5-1).
+
+    샘플에서는 99% 넘게 기본요금 절감이다 — 피크를 깎아 요금적용전력을 낮춘 몫이고,
+    충방전 차익거래는 여기 들어 있지 않다.
+    """
+    assert sample_ess.total_saving_won == pytest.approx(
+        sample_ess.base_saving_won + sample_ess.energy_saving_won
+    )
+    assert sample_ess.arbitrage is not None
+    assert sample_ess.arbitrage.annual_won > 0
+    # 차익거래는 절감액에 더해지지 않는다 — 더하면 회수기간이 달라진다.
+    assert sample_ess.payback_with_arbitrage_years is not None
+    assert sample_ess.payback_years is not None
+    assert sample_ess.payback_with_arbitrage_years < sample_ess.payback_years
+
+
+def test_차익거래_안내가_무엇에_더하지_않았는지_적는다() -> None:
+    """「피크저감 절감액」 은 화면 어디에도 없는 이름이었다 (31세션 5-2)."""
+    from kwise.measures.arbitrage import ESS_SAVING_LABEL
+
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_ess=True)
+    body = " ".join(
+        str(item.value) for group in (screen.markdown, screen.caption) for item in group
+    )
+    assert f"{ESS_SAVING_LABEL}에 더하지 않은 값입니다" in body, body
+    assert "피크저감 절감액에 더하지 않았습니다" not in body
+
+
+def test_잉여_활용이_0일_때도_지표를_낸다() -> None:
+    """**계약전력 조정과 같은 원칙이다** (31세션 6절).
+
+    태양광을 켜지 않으면 잉여가 0 인데, 27세션까지는 글만 남아 이 카드에 큰 글자
+    숫자가 하나도 없었다 — 「할 일이 없다」 와 「값을 알 수 없다」 는 다르다.
+    """
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_surplus=True)
+    assert not screen.exception, screen.exception
+    labels = [label for label, _ in _stage2_metrics(screen)]
+    assert "연간 잉여" in labels, labels
+    value = next(item.value for item in screen.metric if item.label == "연간 잉여")
+    assert str(value).startswith("0.0 MWh"), value
+    body = " ".join(str(item.value) for item in screen.markdown)
+    assert "태양광을 켜지 않아 잉여가 0 입니다." in body
 
 
 def test_잉여_시나리오가_둘이다() -> None:
