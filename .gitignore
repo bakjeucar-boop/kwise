@@ -30,3 +30,4 @@ data/*.damaged
 # 식별 정보는 없으나 실제 건물의 가동 시간대가 드러난다. 로컬에만 둔다.
 # 이력에서도 걷어냈다 — 되살리려면 kwise-backup-20260814.bundle 을 쓴다.
 input/
+review/
