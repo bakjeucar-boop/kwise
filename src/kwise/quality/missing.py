@@ -33,6 +33,7 @@ __all__ = [
     "PeakHourSkew",
     "find_missing_gaps",
     "longest_gap",
+    "monthly_longest_gaps",
     "monthly_missing",
     "peak_hour_skew",
 ]
@@ -122,6 +123,30 @@ def longest_gap(gaps: tuple[MissingGap, ...]) -> MissingGap | None:
     if not gaps:
         return None
     return max(gaps, key=lambda gap: gap.slots)
+
+
+def monthly_longest_gaps(
+    gaps: tuple[MissingGap, ...], interval_minutes: int
+) -> dict[pd.Period, MissingGap]:
+    """월별 최장 연속 결측 구간.
+
+    **월 귀속은 구간 시작 시각으로 판정한다** — :func:`monthly_missing` 과 같은
+    규약이다. 라벨이 구간 끝이라 ``02-01 00:00`` 은 1월의 마지막 구간이며, 라벨로
+    나누면 그 구간만 2월로 넘어가 두 표의 달이 어긋난다.
+
+    구간이 달을 넘어가면 **시작한 달에 센다.** 쪼개면 "최장 연속" 이라는 말이
+    뜻을 잃는다 — 9일짜리 하나가 4일과 5일 둘로 보인다.
+    """
+    if not gaps:
+        return {}
+    starts = slot_start(pd.DatetimeIndex([gap.start for gap in gaps]), interval_minutes)
+    longest: dict[pd.Period, MissingGap] = {}
+    for gap, start in zip(gaps, starts, strict=True):
+        month = pd.Period(start, freq="M")
+        current = longest.get(month)
+        if current is None or gap.slots > current.slots:
+            longest[month] = gap
+    return longest
 
 
 def monthly_missing(

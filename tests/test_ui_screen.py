@@ -781,19 +781,42 @@ def test_렌더된_문자열에_맨_물결표가_없다(app: AppTest) -> None:
 
 
 def test_결측_안내가_한_블록이다(app: AppTest) -> None:
-    """같은 사실을 세 번 말하던 것을 세 줄 한 묶음으로 합쳤다 (13세션·16세션 3절)."""
+    """세 줄 한 묶음이던 것을 **두 줄 + 접힘**으로 다시 짰다 (30세션 2절).
+
+    본문은 전체와 「결측이 있는 달」 이라는 덩어리까지만 말하고, 달마다 다른 값은
+    「결측 구간」 표가 낸다.
+    """
     from kwise.quality import check_quality
 
     quality = check_quality(load_usage(SAMPLE))
     lines = missing_lines(quality)
-    assert len(lines) == 3
+    assert len(lines) == 2
     assert "보간하지 않고" in lines[0]
-    assert lines[1].startswith("최장 연속")
-    assert "신뢰 제한" in lines[2]
+    assert lines[1].startswith("결측이 있는 달")
 
     # 위쪽 경고 목록에는 결측 문구가 남아 있지 않다.
     shown = [item.value for item in app.warning]
     assert not [item for item in shown if "결측" in item], shown
+
+
+def test_결측_구간_접힘이_달마다_낸다(app: AppTest) -> None:
+    """**최장 연속과 결측률 높은 달을 본문에서 표로 옮겼다** (30세션 2절).
+
+    한 줄로 뭉뚱그리면 어느 달을 조심하라는 것인지 알 수 없었다. 열 넷이 달마다
+    「몇 구간·몇 %·최장 몇 일」 을 낸다.
+    """
+    from kwise.quality import check_quality
+    from kwise.ui.views.diagnose import missing_month_frame
+
+    quality = check_quality(load_usage(SAMPLE))
+    frame = missing_month_frame(quality)
+    assert list(frame.columns) == ["월", "결측 구간 수", "비율", "최장 연속 구간"]
+    # 결측이 있는 달만 낸다 — 0 인 달로 표를 채우지 않는다.
+    assert len(frame) == len([month for month in quality.monthly if month.missing_slots])
+    assert int(frame["결측 구간 수"].sum()) == quality.missing_slots
+    assert "구간 (" in frame["최장 연속 구간"].iloc[0]
+
+    assert [box for box in app.expander if box.label == "결측 구간"]
 
 
 def _screen_lines(screen: AppTest) -> list[str]:
@@ -809,12 +832,12 @@ def _screen_lines(screen: AppTest) -> list[str]:
     return lines
 
 
-def test_결측_안내가_화면에_세_줄뿐이다(app: AppTest) -> None:
+def test_결측_안내가_화면에_두_줄뿐이다(app: AppTest) -> None:
     """**같은 사실이 다섯 번 나왔다** (18세션 2절).
 
-    세 줄(:func:`missing_lines`)에 더해 「데이터 품질」 확인사항 두 건이 최장 연속
-    결측과 월별 결측률을 되풀이했다. 13세션이 위쪽 경고에서 확인사항으로 내리고,
-    16세션이 같은 사실을 세 줄로 정리한 두 조치가 겹친 자리다.
+    본문 줄에 더해 「데이터 품질」 확인사항 두 건이 최장 연속 결측과 월별 결측률을
+    되풀이했다. 13세션이 위쪽 경고에서 확인사항으로 내리고, 16세션이 같은 사실을
+    세 줄로 정리한 두 조치가 겹친 자리다. 30세션에 두 줄로 줄였다.
 
     ``partition(…, MISSING_MARKERS)`` 은 제대로 걸러 왔다 — 걸러 낸 쪽을 품질
     블록이 **다시 그린 것**이 원인이었다. 패턴을 늘려 막는 방식이 아니므로,
@@ -825,7 +848,7 @@ def test_결측_안내가_화면에_세_줄뿐이다(app: AppTest) -> None:
 
     quality = check_quality(load_usage(SAMPLE))
     lines = missing_lines(quality)
-    assert len(lines) == 3
+    assert len(lines) == 2
 
     rendered = _screen_lines(app)
     for line in lines:
@@ -839,6 +862,214 @@ def test_결측_안내가_화면에_세_줄뿐이다(app: AppTest) -> None:
         if item not in lines and len(item) >= 20 and ("결측" in item or "보간" in item)
     ]
     assert others == [], others
+
+
+def _metric(app: AppTest, label: str) -> Any:
+    """라벨로 지표 하나를 집는다. **첫 자리를 쓴다** — 같은 이름이 둘이면 둘 다 본다."""
+    found = [item for item in app.metric if item.label == label]
+    assert found, f"「{label}」 지표가 없습니다"
+    return found
+
+
+def test_부하율_툴팁이_두_자리에서_같다(app: AppTest) -> None:
+    """**같은 지표면 같은 문구다** (30세션 1-1).
+
+    지표 카드와 부하 패턴 절에 부하율이 각각 있는데 한쪽에만 물음표가 있었다.
+    문구를 두 벌로 적으면 어느 쪽이 정의인지 알 수 없으므로, 카드 쪽이 부하 패턴
+    절과 **같은 함수**(:func:`~kwise.ui.views.diagnose._pattern_formulas`)를 본다.
+    """
+    from kwise.ui.views.diagnose import _pattern_formulas
+
+    tips = {item.help for item in _metric(app, "부하율")}
+    assert len(tips) == 1, tips
+    assert tips == {_pattern_formulas(object())["load_factor"]}
+
+
+def test_결측과_정전_지표에_툴팁이_있다(app: AppTest) -> None:
+    """**「결측」 과 「정전 추정」 도 뜻을 물을 수 있어야 한다** (30세션 1-2·1-3)."""
+    missing = _metric(app, "결측")[0]
+    assert missing.help and "데이터가 없는 구간" in missing.help
+
+    outage = _metric(app, "정전 추정")[0]
+    assert outage.help and "정전 흔적" in outage.help
+
+
+def test_정전_추정에_지속_시간이_보인다(app: AppTest) -> None:
+    """**건수만으로는 규모를 알 수 없다** (30세션 1-3).
+
+    15분짜리 하나도 1건이고 며칠이 통째로 빈 것도 1건이다. 지속 시간을 지표의
+    작은 글씨(delta)에 함께 낸다 — 「분석 기간」 이 기간을 그 자리에 두는 것과 같다.
+    """
+    from kwise.quality import check_quality
+
+    quality = check_quality(load_usage(SAMPLE))
+    assert quality.outages, "샘플에 정전 추정이 있어야 이 시험이 뜻을 가진다"
+    total = sum(event.duration_hours for event in quality.outages)
+
+    outage = _metric(app, "정전 추정")[0]
+    assert outage.value == f"{len(quality.outages):,}건"
+    assert outage.delta == f"{total:,.1f}시간"
+
+
+def test_피크_특성_제목에_툴팁이_없다() -> None:
+    """**절 제목은 자리 이름이지 지표가 아니다** (30세션 1-4).
+
+    매뉴얼 앵커는 지운 것이 아니라 「상위 구간 주말 비중」 지표로 옮겼다.
+    """
+    source = (VIEWS / "diagnose.py").read_text(encoding="utf-8")
+    assert 'st.subheader("피크 특성")' in source
+    assert 'st.subheader("피크 특성", help=' not in source
+
+
+def test_상위_구간_캡션에서_태양광_문구를_뺐다(app: AppTest) -> None:
+    """캡션은 그림 이름만 적는다 (30세션 6절). 읽는 법은 물음표 안에 있다."""
+    captions = [str(item.value) for item in app.caption]
+    assert "상위 100구간 발생 시각" in captions
+    assert not [item for item in captions if "태양광 기여 가능성" in item], captions
+
+
+def test_계절별_전환이_두_그래프에_모두_있다(app: AppTest) -> None:
+    """시간대별 평균 부하와 계시별 사용량 구성을 넷으로 가른다 (30세션 5절).
+
+    계절 구분은 **요금표의 정의 그대로**이며, 갈래는 자료에 있는 계절만 만든다.
+    """
+    labels = [item.label for item in app.tabs]
+    assert labels.count("전체") == 2
+    for season in ("봄·가을", "여름", "겨울"):
+        assert labels.count(season) == 2, (season, labels)
+
+
+def test_계절_갈래는_자료에_있는_계절만_낸다() -> None:
+    """**없는 계절 탭을 만들지 않는다** — 빈 그림은 「그 계절엔 안 쓴다」 로 읽힌다."""
+    from kwise.ui.views.diagnose import season_choices
+
+    assert season_choices(["summer", "winter"]) == (
+        ("전체", None),
+        ("여름", "summer"),
+        ("겨울", "winter"),
+    )
+    # 계절이 갈리지 않으면 「전체」 하나 — 부르는 쪽이 갈래를 아예 그리지 않는다.
+    assert season_choices([]) == (("전체", None),)
+
+
+def test_계절별_사용량이_전체와_맞는다() -> None:
+    """**접는 방향이 달라도 값은 같다** (30세션 5-2).
+
+    계절 × 시간대 표는 요금 계산이 쓴 분류기 한 벌에서 나오므로, 열로 접으면
+    시간대별 합계가 되고 행으로 접으면 계절별 합계가 된다. 어긋나면 화면의
+    계절 탭이 요금과 다른 수를 그린다는 뜻이다.
+    """
+    import pandas as pd
+
+    from kwise.diagnose import ContractInfo, diagnose
+
+    usage = load_usage(SAMPLE)
+    table = load_tariff()
+    result = diagnose(
+        usage,
+        table,
+        ContractInfo(selection=TariffSelection("general_b", "high_a", "II"), contract_kw=6_000.0),
+    )
+    structure = result.structure
+    assert structure is not None
+    wide = structure.band_season_kwh
+    pd.testing.assert_series_equal(
+        wide.sum(axis=0).rename("kwh").rename_axis("band"),
+        structure.band_kwh.astype(float),
+        check_names=False,
+    )
+    pd.testing.assert_series_equal(
+        wide.sum(axis=1).rename("kwh").rename_axis("season"),
+        structure.season_kwh.astype(float),
+        check_names=False,
+    )
+
+
+def test_계절별_시각_프로파일이_계절마다_다르다() -> None:
+    """계절을 갈랐는데 같은 선이 나오면 가른 뜻이 없다."""
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.report.frames import hourly_profile_frame
+
+    usage = load_usage(SAMPLE)
+    table = load_tariff()
+    result = diagnose(
+        usage,
+        table,
+        ContractInfo(selection=TariffSelection("general_b", "high_a", "II"), contract_kw=6_000.0),
+    )
+    peak = result.peak
+    assert set(peak.hourly_profile_by_season.columns) == {"spring_fall", "summer", "winter"}
+    summer = hourly_profile_frame(peak, season="summer")
+    winter = hourly_profile_frame(peak, season="winter")
+    assert len(summer) == len(winter) == 24
+    assert not summer["평균 부하(kW)"].equals(winter["평균 부하(kW)"])
+    # 없는 계절은 빈 표다 — 0 으로 채워 그리지 않는다.
+    assert hourly_profile_frame(peak, season="없는계절").empty
+
+
+def test_기온_그래프가_부하_패턴에_있다(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    r"""**연간 일별 사용량과 일평균 기온을 함께 낸다** (30세션 4절).
+
+    **망을 타지 않는다.** 취득을 실패시켜 저장소의 사전 취득분(``data\weather``)
+    으로만 그리게 한다 — 여기서 확인할 것은 기상 취득이 아니라 「지역이 있으면
+    그림이 나오는가」 이고, 망 사정에 시험 결과가 흔들리면 안 된다.
+    """
+    from kwise.pv.weather import WeatherUnavailableError
+    from kwise.ui.cache import cached_daily_temperature
+
+    monkeypatch.setenv("KWISE_WEATHER_DIR", str(Path("data") / "weather"))
+    monkeypatch.setenv("PROJECT_CACHE", str(tmp_path))
+
+    def offline(request: object) -> object:
+        raise WeatherUnavailableError("시험에서는 망을 타지 않는다")
+
+    monkeypatch.setattr("kwise.pv.weather.fetch_open_meteo", offline)
+    cached_daily_temperature.clear()
+
+    screen = _running()
+    assert not screen.exception, screen.exception
+    captions = [str(item.value) for item in screen.caption]
+    assert "일별 사용량과 일평균 기온" in captions
+    assert "옆단에서 지역을 고르면 일평균 기온을 함께 그립니다." not in captions
+    cached_daily_temperature.clear()
+
+
+def test_기온_그래프의_두_축에_이름이_있다() -> None:
+    """**축이 둘이면 어느 선이 어느 축인지 라벨이 말해야 한다** (17세션 0절 · 30세션 4절)."""
+    import pandas as pd
+
+    from kwise.ui.charts import daily_temperature_chart
+
+    usage = load_usage(SAMPLE)
+    index = pd.date_range(usage.meta.start, usage.meta.end, freq="h")
+    temperature = pd.Series(range(len(index)), index=index, dtype=float) % 30.0
+    spec = daily_temperature_chart(usage, temperature).to_dict()
+
+    titles = [layer["encoding"]["y"]["title"] for layer in spec["layer"]]
+    assert titles == ["일 사용량 (kWh)", "일평균 기온 (℃)"]
+    # 축 둘이 각자 눈금을 쓴다 — 한 축에 얹으면 사용량 옆에서 기온이 뭉개진다.
+    assert spec["resolve"]["scale"]["y"] == "independent"
+    # 범례 이름이 어느 쪽 축인지 적는다.
+    domains = [layer["encoding"]["color"]["scale"]["domain"] for layer in spec["layer"]]
+    assert domains[0] == ["일 사용량 (왼쪽 축)", "일평균 기온 (오른쪽 축)"]
+
+
+def test_지역이_없으면_기온을_구하지_않는다() -> None:
+    """**옆단 지역은 선택 입력이다** (30세션 4절).
+
+    지역이 없거나 기상 자료가 없으면 ``None`` 이고, 화면은 그림을 감춘 채 사유
+    한 줄만 남긴다. 1단계는 설비 정보 없이 돌아야 하는 화면이라 **여기서 예외를
+    올리면 진단이 통째로 죽는다.**
+    """
+    from kwise.ui.pipeline import daily_temperature
+
+    usage = load_usage(SAMPLE)
+    assert daily_temperature(usage, "") is None
+    # 좌표를 못 찾는 지역 이름도 「없음」 이다 — 예외로 올라오지 않는다.
+    assert daily_temperature(usage, "없는시도/없는구") is None
+
+    source = (VIEWS / "diagnose.py").read_text(encoding="utf-8")
+    assert "옆단에서 지역을 고르면 일평균 기온을 함께 그립니다." in source
 
 
 def test_같은_값이면_피크_지표를_한_줄로_접는다(app: AppTest) -> None:
@@ -1256,8 +1487,8 @@ def test_같은_지문이_화면에_두_번_나오지_않는다() -> None:
     assert repeated == [], repeated
 
 
-def test_결측_안내가_세_줄을_넘지_않는다() -> None:
-    """편중된 달마다 한 줄씩 붙어 열두 줄이 되던 자리다 (16세션 3절)."""
+def test_결측_안내가_두_줄을_넘지_않는다() -> None:
+    """편중된 달마다 한 줄씩 붙어 열두 줄이 되던 자리다 (16세션 3절 · 30세션 2절)."""
     import dataclasses
 
     from kwise.quality import check_quality
@@ -1269,8 +1500,8 @@ def test_결측_안내가_세_줄을_넘지_않는다() -> None:
     many = dataclasses.replace(quality, monthly=flagged)
     assert len(many.flagged_months) == 12
     lines = missing_lines(many)
-    assert len(lines) <= MISSING_LINE_LIMIT == 3
-    assert "결측률이 높은 달" in lines[-1]
+    assert len(lines) <= MISSING_LINE_LIMIT == 2
+    assert lines[-1].startswith("결측이 있는 달")
 
 
 def test_계약전력_변경_경고가_7_2_카드에_있다() -> None:
@@ -2118,8 +2349,8 @@ def test_선택요금_전환에_중복_문구가_없다() -> None:
     assert "왼쪽(초록)이 절감" not in body
     # 반올림 각주는 3단계 「개선안별 요약」 한 곳뿐이다 (25세션 4-5 · 28세션 1-3).
     assert body.count("항목 합과 차이가 날 수 있습니다") == 1
-    # 결측 신뢰 제한은 1단계에서 한 번만 (27세션 4-3).
-    assert "결측률이 높은 달" in body
+    # 결측 안내는 1단계에서 한 번만 (27세션 4-3 · 30세션 2절에 문구를 다시 짰다).
+    assert body.count("결측이 있는 달") == 1
     assert "결측 보정 기준을 함께 봅니다" not in body
     # 최적 요금제 안내는 앞 문장만 (27세션 4-4).
     assert "가장 유리한 요금제는" in body

@@ -26,6 +26,7 @@ from kwise.quality.missing import (
     PeakHourSkew,
     find_missing_gaps,
     longest_gap,
+    monthly_longest_gaps,
     monthly_missing,
     peak_hour_skew,
 )
@@ -68,6 +69,7 @@ __all__ = [
     "find_missing_gaps",
     "load_pattern",
     "longest_gap",
+    "monthly_longest_gaps",
     "monthly_missing",
     "outage_slot_mask",
     "peak_hour_skew",

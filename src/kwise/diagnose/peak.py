@@ -27,7 +27,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
@@ -61,6 +61,8 @@ class PeakProfile:
         demand_eligible_slots: 관측 슬롯 중 요금적용전력 대상인 것의 수.
         demand_eligible_applied: 마스크를 받았는지. False 면 두 모집단이 같다.
         hourly_profile: 시각별 평균 부하 (kW).
+        hourly_profile_by_season: 계절별 시각별 평균 부하 (kW). 열이 계절이다.
+            계절 구분을 받지 않으면 **빈 표**다 — 지어내지 않는다.
     """
 
     monthly: pd.DataFrame
@@ -78,6 +80,7 @@ class PeakProfile:
     demand_eligible_slots: int
     demand_eligible_applied: bool
     demand_months: tuple[int, ...]
+    hourly_profile_by_season: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     @property
     def weekend_slots(self) -> int:
@@ -158,6 +161,7 @@ def peak_profile(
     demand_months: tuple[int, ...] | None = None,
     contract_kw: float | None = None,
     contract_floor_ratio: float | None = None,
+    seasons: pd.Series | None = None,
 ) -> PeakProfile:
     """월별 최대수요, 상위 구간 분포, 시각별 평균 부하를 낸다.
 
@@ -171,6 +175,9 @@ def peak_profile(
             넘긴다 (요구사항서 5.2 ①).
         demand_months: 요금적용전력 대상월. 전력량요금의 계절과 다르다 (5.2 ②).
         contract_kw, contract_floor_ratio: 하한 규정 (5.2 ③).
+        seasons: 슬롯별 계절 (:func:`~kwise.tariff.classify_slots` 의 ``season``).
+            주면 계절별 시각 프로파일을 함께 낸다. **요금표의 계절 정의를 그대로
+            쓰려고 밖에서 받는다** — 여기서 달로 다시 나누면 두 벌이 된다.
     """
     observed = kw.dropna()
     if observed.empty:
@@ -231,6 +238,9 @@ def peak_profile(
     hourly_profile = observed.groupby(labels.hour, observed=True).mean()
     hourly_profile.index.name = "hour"
     hourly_profile.name = "mean_kw"
+    # **시각은 검침 라벨 기준이다** — 전체 프로파일과 같은 잣대를 쓴다. 계절만
+    # 요금 귀속(구간 시작)으로 갈린다. 두 축이 다른 규약을 쓰는 것이 맞다.
+    by_season = _season_profile(observed, labels, seasons)
 
     return PeakProfile(
         monthly=monthly,
@@ -248,4 +258,23 @@ def peak_profile(
         observed_slots=len(observed),
         demand_eligible_slots=int(eligible.sum()),
         demand_eligible_applied=demand_eligible is not None,
+        hourly_profile_by_season=by_season,
     )
+
+
+def _season_profile(
+    observed: pd.Series, labels: pd.DatetimeIndex, seasons: pd.Series | None
+) -> pd.DataFrame:
+    """계절 × 시각 평균 부하. 계절을 받지 않으면 빈 표다."""
+    if seasons is None:
+        return pd.DataFrame()
+    aligned = seasons.reindex(observed.index)
+    frame = pd.DataFrame(
+        {"season": aligned.to_numpy(), "hour": labels.hour, "kw": observed.to_numpy(dtype=float)}
+    ).dropna(subset=["season"])
+    if frame.empty:
+        return pd.DataFrame()
+    wide = frame.pivot_table(index="hour", columns="season", values="kw", observed=True)
+    wide.index.name = "hour"
+    wide.columns.name = "season"
+    return wide

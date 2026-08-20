@@ -67,6 +67,7 @@ __all__ = [
     "cached_baseline_bill",
     "cached_comparison",
     "cached_contract_adjustment",
+    "cached_daily_temperature",
     "cached_diagnosis",
     "cached_ess",
     "cached_ess_targets",
@@ -248,6 +249,16 @@ def cached_baseline_bill(
     stamp: str,
 ) -> BillingResult:
     return pipeline.baseline_bill(_usage, _table, form, quality=_quality)
+
+
+@st.cache_data(show_spinner="기온 자료를 읽는 중…")
+def cached_daily_temperature(_usage: UsageData, token: str, region_key: str) -> pd.Series | None:
+    """부하 패턴이 곁들이는 기온 (30세션 4절). **못 받으면 ``None`` 이다.**
+
+    캐시 열쇠는 자료와 지역뿐이다 — 기상은 요금 기준 데이터와 무관하므로
+    ``rules_stamp()`` 를 물리지 않는다.
+    """
+    return pipeline.daily_temperature(_usage, region_key)
 
 
 @st.cache_data(show_spinner="기상 자료로 발전 프로파일을 만드는 중…")

@@ -143,6 +143,9 @@ def diagnose(
         demand_months=type_rules.demand_months if type_rules else default_demand_months(),
         contract_kw=contract.contract_kw if contract else None,
         contract_floor_ratio=type_rules.contract_floor_ratio if type_rules else None,
+        # **계절 구분은 요금표에서 온다** (30세션 5절). 화면이 계절별 프로파일을
+        # 나눠 그리는데, 여기서 달로 다시 나누면 요금표와 두 벌이 된다.
+        seasons=slots["season"],
     )
     # 등급은 요금적용전력 대상 슬롯만 놓고 매긴다. 판정 모집단을 산출물에 적는다.
     potential, midday_share = judge_pv_potential(peak)

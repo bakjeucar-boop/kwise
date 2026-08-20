@@ -66,6 +66,7 @@ __all__ = [
     "baseline_bill",
     "combination_specs",
     "contract_type_choices",
+    "daily_temperature",
     "default_lagging_pct",
     "diagnose_usage",
     "option_choices",
@@ -428,6 +429,29 @@ def load_weather_for(usage: UsageData, inputs: SolarInputs) -> WeatherData:
     latitude, longitude = inputs.coordinates()
     request = WeatherRequest.for_index(pd.DatetimeIndex(usage.kw.index), latitude, longitude)
     return load_weather(request)
+
+
+def daily_temperature(usage: UsageData, region_key: str) -> pd.Series | None:
+    """부하 기간의 시간별 기온 (℃). **없으면 ``None`` 이다** (30세션 4절).
+
+    태양광이 쓰는 것과 **같은 지역·기간·격자**를 쓴다 — 같은
+    :class:`~kwise.pv.WeatherRequest` 를 만들므로 캐시 파일도 같은 것을 본다.
+    한 화면에서 기온이 둘로 갈리지 않는다.
+
+    **예외를 밖으로 내보내지 않는다.** 진단은 설비 정보 없이 돌아야 하는 화면이라,
+    기상을 못 받았다고 1단계가 통째로 죽으면 안 된다. 못 받으면 그림을 감춘다.
+    """
+    if not region_key:
+        return None
+    try:
+        weather = load_weather_for(usage, SolarInputs(region_key=region_key))
+    except Exception:
+        # 좌표를 못 찾거나(지역 데이터 변경) 기상을 못 받은 경우 — 둘 다 「없음」이다.
+        return None
+    hourly = weather.hourly
+    if "temp_air" not in hourly.columns:
+        return None
+    return pd.Series(hourly["temp_air"].astype(float).to_numpy(), index=hourly.index)
 
 
 def unit_pv_profile(

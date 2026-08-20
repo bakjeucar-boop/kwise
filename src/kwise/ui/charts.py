@@ -37,6 +37,7 @@ from kwise.report.frames import (
     TARIFF_PARTS,
     band_frame,
     combination_frame,
+    daily_temperature_frame,
     dispatch_schedule,
     dr_daily_frame,
     ess_day_frame,
@@ -71,6 +72,8 @@ __all__ = [
     "band_frame",
     "combination_chart",
     "combination_frame",
+    "daily_temperature_chart",
+    "daily_temperature_frame",
     "dispatch_schedule",
     "dr_daily_chart",
     "dr_daily_frame",
@@ -224,9 +227,10 @@ def top_hour_chart(peak: PeakProfile, *, split: bool = True) -> alt.Chart:
     )
 
 
-def hourly_profile_chart(peak: PeakProfile) -> alt.Chart:
+def hourly_profile_chart(peak: PeakProfile, *, season: str | None = None) -> alt.Chart:
+    """시각별 평균 부하. ``season`` 을 주면 그 계절만 그린다 (30세션 5-1)."""
     return (
-        alt.Chart(hourly_profile_frame(peak))
+        alt.Chart(hourly_profile_frame(peak, season=season))
         .mark_line(point=True)
         .encode(
             x=alt.X("시각:N", title="시각", sort=None),
@@ -235,6 +239,64 @@ def hourly_profile_chart(peak: PeakProfile) -> alt.Chart:
         )
         .properties(height=_HEIGHT)
     )
+
+
+# ===================================================================== 30세션 4절 · 두 축
+#
+# **축이 둘이면 어느 선이 어느 축인지 라벨이 말해야 한다** (17세션 0절의 연장).
+# 17세션은 축이 다른 값을 한 축에 얹지 말라고 했고, 그래서 여태 두 축짜리 그림을
+# 두지 않았다. 기온은 예외다 — 사용량과 **함께 봐야** 관계가 보이는데 단위가
+# 아예 다르다. 그림을 나누면 눈이 두 그림을 오가며 날짜를 맞춰야 한다.
+#
+#     ① 축 제목에 단위를 적고, **범례 이름에 어느 쪽 축인지 적는다**
+#     ② 축 제목 색을 선 색과 맞춘다 — 라벨을 못 읽어도 색으로 이어진다
+#     ③ 둘 다 0 에서 시작하지 않는다. 기온은 음수가 나오고, 사용량은 변화가 뜻이다
+_LOAD_COLOR = "#08519c"
+_TEMP_COLOR = "#d95f0e"
+_LOAD_SERIES = "일 사용량 (왼쪽 축)"
+_TEMP_SERIES = "일평균 기온 (오른쪽 축)"
+
+
+def daily_temperature_chart(usage: UsageData, temperature: pd.Series) -> alt.LayerChart:
+    """연간 일별 사용량과 일평균 기온 (30세션 4절).
+
+    **냉난방이 부하의 얼마를 차지하는지**를 눈으로 재는 그림이다. 여름·겨울에
+    두 선이 함께 솟으면 냉난방 부하가 크고, 기온이 오르내려도 사용량이 평평하면
+    공정 부하다 — 태양광·ESS 판단이 갈리는 자리다.
+    """
+    frame = daily_temperature_frame(usage, temperature)
+    frame = frame.assign(계열=_LOAD_SERIES, 기온계열=_TEMP_SERIES)
+    scale = alt.Scale(domain=[_LOAD_SERIES, _TEMP_SERIES], range=[_LOAD_COLOR, _TEMP_COLOR])
+    base = alt.Chart(frame).encode(x=alt.X("날짜:T", title=None))
+    load = base.mark_line(strokeWidth=1).encode(
+        y=alt.Y(
+            "사용량(kWh):Q",
+            title="일 사용량 (kWh)",
+            scale=_CUT_SCALE,
+            axis=alt.Axis(titleColor=_LOAD_COLOR),
+        ),
+        color=alt.Color("계열:N", title=None, scale=scale, legend=LEGEND),
+        tooltip=[
+            alt.Tooltip("날짜:T", format="%Y-%m-%d"),
+            alt.Tooltip("사용량(kWh):Q", format=",.0f"),
+            alt.Tooltip("일평균 기온(℃):Q", format=",.1f"),
+        ],
+    )
+    temp = base.mark_line(strokeWidth=1).encode(
+        y=alt.Y(
+            "일평균 기온(℃):Q",
+            title="일평균 기온 (℃)",
+            scale=_CUT_SCALE,
+            axis=alt.Axis(orient="right", titleColor=_TEMP_COLOR),
+        ),
+        color=alt.Color("기온계열:N", title=None, scale=scale, legend=LEGEND),
+        tooltip=[
+            alt.Tooltip("날짜:T", format="%Y-%m-%d"),
+            alt.Tooltip("사용량(kWh):Q", format=",.0f"),
+            alt.Tooltip("일평균 기온(℃):Q", format=",.1f"),
+        ],
+    )
+    return alt.layer(load, temp).resolve_scale(y="independent").properties(height=300)
 
 
 # 계시별 시간대 색 — **1단계의 두 그림이 같은 색을 쓴다** (27세션 3-2). 파랑이
@@ -286,9 +348,10 @@ def monthly_charge_chart(structure: ChargeStructure) -> alt.Chart:
     )
 
 
-def band_chart(structure: ChargeStructure) -> alt.Chart:
+def band_chart(structure: ChargeStructure, *, season: str | None = None) -> alt.Chart:
+    """계시별 사용량 구성. ``season`` 을 주면 그 계절 안에서 비중을 다시 잰다."""
     return (
-        alt.Chart(band_frame(structure))
+        alt.Chart(band_frame(structure, season=season))
         .mark_bar()
         .encode(
             x=alt.X("사용량(kWh):Q", title="사용량 (kWh)", stack="normalize"),

@@ -41,6 +41,7 @@ __all__ = [
     "TARIFF_PARTS",
     "band_frame",
     "combination_frame",
+    "daily_temperature_frame",
     "dr_daily_frame",
     "ess_day_frame",
     "ess_target_frame",
@@ -98,8 +99,18 @@ def top_hour_frame(peak: PeakProfile) -> pd.DataFrame:
     )
 
 
-def hourly_profile_frame(peak: PeakProfile) -> pd.DataFrame:
+def hourly_profile_frame(peak: PeakProfile, *, season: str | None = None) -> pd.DataFrame:
+    """시각별 평균 부하. ``season`` 을 주면 그 계절만 (30세션 5-1).
+
+    **없는 계절은 빈 표다.** 반년치 자료에는 여름이 없을 수 있는데, 없는 것을
+    0 으로 그리면 "여름에 안 쓴다" 로 읽힌다.
+    """
     profile = peak.hourly_profile
+    if season is not None:
+        wide = peak.hourly_profile_by_season
+        if wide.empty or season not in wide.columns:
+            return pd.DataFrame({"시각": [], "평균 부하(kW)": []})
+        profile = wide[season].dropna()
     return pd.DataFrame(
         {
             "시각": [f"{int(hour):02d}시" for hour in profile.index],
@@ -151,13 +162,24 @@ def monthly_charge_frame(structure: ChargeStructure) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["월", "구분", "원", "합계(원)", "순서"])
 
 
-def band_frame(structure: ChargeStructure) -> pd.DataFrame:
-    share = structure.band_share
+def band_frame(structure: ChargeStructure, *, season: str | None = None) -> pd.DataFrame:
+    """계시별 사용량 구성. ``season`` 을 주면 그 계절만 (30세션 5-2).
+
+    비중은 **그 계절 안에서 다시 잰다.** 전체 대비로 두면 세 계절의 막대가 각각
+    3분의 1 길이로 그려져 무엇의 구성인지 알 수 없다.
+    """
+    kwh = structure.band_kwh
+    if season is not None:
+        wide = structure.band_season_kwh
+        if wide.empty or season not in wide.index:
+            return pd.DataFrame({"시간대": [], "사용량(kWh)": [], "비중": []})
+        kwh = wide.loc[season]
+    total = float(kwh.sum())
     return pd.DataFrame(
         {
-            "시간대": [BAND_LABELS.get(str(band), str(band)) for band in structure.band_kwh.index],
-            "사용량(kWh)": structure.band_kwh.astype(float).to_numpy(),
-            "비중": [float(share.get(band, 0.0)) for band in structure.band_kwh.index],
+            "시간대": [BAND_LABELS.get(str(band), str(band)) for band in kwh.index],
+            "사용량(kWh)": kwh.astype(float).to_numpy(),
+            "비중": [float(value) / total if total else 0.0 for value in kwh],
         }
     )
 
@@ -575,6 +597,40 @@ def solar_annual_frame(usage: UsageData, generation_kw: pd.Series) -> pd.DataFra
     return daily[
         ["날짜", "사용량(kWh)", "계통 수전(kWh)", "자가소비(kWh)", "잉여(kWh)", "발전량(kWh)"]
     ]
+
+
+def daily_temperature_frame(usage: UsageData, temperature: pd.Series) -> pd.DataFrame:
+    """연간 일별 사용량과 일평균 기온 (30세션 4절).
+
+    **관측이 있는 날만 낸다.** 결측일을 0 kWh 로 그리면 그날 기온이 무엇이든
+    사용량이 바닥으로 떨어져, 기온과 사용량의 관계가 있지도 않은 곳에서 보인다.
+
+    Args:
+        temperature: 시간별 기온 (℃). 인덱스는 tz 유무를 가리지 않는다 —
+            **여기서 벗겨 날짜로만 묶는다.** 부하 인덱스는 tz-naive 지방시다.
+    """
+    interval = usage.meta.interval_minutes
+    load = usage.kw.dropna()
+    index = pd.DatetimeIndex(load.index)
+    days = slot_start(index, interval).normalize()
+    daily_kwh = (
+        pd.Series(load.to_numpy(dtype=float) * (interval / 60.0), index=days).groupby(level=0).sum()
+    )
+
+    stamps = pd.DatetimeIndex(temperature.index)
+    if stamps.tz is not None:
+        stamps = stamps.tz_localize(None)
+    daily_temp = (
+        pd.Series(temperature.to_numpy(dtype=float), index=stamps.normalize())
+        .groupby(level=0)
+        .mean()
+    )
+
+    frame = pd.DataFrame({"사용량(kWh)": daily_kwh, "일평균 기온(℃)": daily_temp}).dropna()
+    frame.index.name = "day"
+    frame = frame.reset_index()
+    frame["날짜"] = [pd.Timestamp(value).date() for value in frame["day"]]
+    return frame[["날짜", "사용량(kWh)", "일평균 기온(℃)"]]
 
 
 def dispatch_schedule(frame: pd.DataFrame) -> tuple[str, str]:

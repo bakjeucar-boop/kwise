@@ -24,22 +24,26 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import replace
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
 from kwise.notices import tooltip
-from kwise.quality import DEFAULT_OPERATING_HOURS, QualityReport
+from kwise.quality import DEFAULT_OPERATING_HOURS, QualityReport, monthly_longest_gaps
 from kwise.report import localize
 from kwise.tariff import TENTATIVE_BASE_FEE_BASIS_WARNING, TariffTable
+from kwise.tariff.labels import SEASON_LABELS
 from kwise.ui import callout, charts
 from kwise.ui import text as fmt
 from kwise.ui.anchors import manual_tip
 from kwise.ui.building import BuildingInfo, intensity_kwh_per_m2, narrow_contract_types
 from kwise.ui.cache import (
+    cached_daily_temperature,
     cached_diagnosis,
     cached_quality,
     cached_usage,
@@ -125,7 +129,7 @@ def render(table: TariffTable, building: BuildingInfo | None = None) -> Analysis
     _headline_block(usage, diagnosis)
     _notice_block(quality, diagnosis)
     _quality_block(usage, quality)  # ④
-    _pattern_block(diagnosis)  # ⑤
+    _pattern_block(diagnosis, usage, building)  # ⑤
     _peak_block(diagnosis)  # ⑥
     _structure_block(usage, diagnosis, building)  # ⑦
 
@@ -150,7 +154,13 @@ def _headline_block(usage: UsageData, diagnosis: Diagnosis) -> None:
         delta_color="off",
     )
     columns[1].metric("최대수요", fmt.kw(meta.max_demand_kw))
-    columns[2].metric("부하율", fmt.ratio_pct(diagnosis.pattern.load_factor))
+    # **부하 패턴 절과 같은 문구를 쓴다** (30세션 1-1). 같은 지표가 두 자리에 있는데
+    # 설명이 두 벌이면 어느 쪽이 정의인지 알 수 없다 — 문구를 낳는 자리를 하나로 둔다.
+    columns[2].metric(
+        "부하율",
+        fmt.ratio_pct(diagnosis.pattern.load_factor),
+        help=_pattern_formulas(diagnosis.pattern)["load_factor"],
+    )
     # 1년치가 아닌 자료를 "연간" 이라 적으면 그 자체가 오독이다. 라벨을 기간에 맞춘다.
     span = meta.period_days or 0
     columns[3].metric("연간 사용량" if span >= 350 else "기간 사용량", fmt.mwh(meta.total_kwh))
@@ -481,38 +491,70 @@ def _tentative_basis_block(table: TariffTable, form: ContractForm | None) -> Non
 # --------------------------------------------------------------------- 데이터 품질
 
 
-#: 결측 안내는 **세 줄을 넘지 않는다** (16세션 3절).
-MISSING_LINE_LIMIT = 3
+#: 결측 안내는 **두 줄을 넘지 않는다** (30세션 2절). 16세션의 세 줄에서 하나
+#: 줄였다 — 최장 연속과 결측률 높은 달은 「결측 구간」 접힘의 표가 달마다 낸다.
+MISSING_LINE_LIMIT = 2
 
 
 def missing_lines(quality: QualityReport) -> tuple[str, ...]:
-    """결측 안내 **세 줄** (13세션 · 16세션 3절).
+    """결측 안내 **두 줄** (13세션 · 16세션 3절 · 30세션 2절).
 
-    같은 사실이 세 군데서 세 번 나왔다 — 총 결측, 최장 연속, 월별 편중이 각각
-    다른 문장으로 흩어져 있었다. 13세션에 한 블록으로 모았지만 **편중된 달마다
-    한 줄씩 붙어** 열두 줄이 되는 자료가 있었다. 달을 한 줄로 합쳐 세 줄로
-    고정한다 — 달별 수치는 확인사항에 그대로 있다.
+    같은 사실이 세 군데서 세 번 나왔다 — 13세션에 한 블록으로 모으고, 16세션에
+    세 줄로 고정했다. **30세션에 둘로 줄인다.**
 
-        ① 총 결측과 미보간 원칙
-        ② 최장 연속 결측 구간
-        ③ 결측률이 높은 달 (있을 때만)
+        ① 전체 결측 구간 수와 비율, 그리고 미보간 원칙
+        ② 결측이 있는 달들의 구간 수와 비율 (있을 때만)
+
+    16세션의 ②최장 연속과 ③결측률 높은 달을 뺀 것은 지워서가 아니라 **옮겨서**다.
+    둘 다 달마다 다른 값인데 한 줄로 뭉뚱그리면 어느 달을 조심하라는 것인지 알 수
+    없었다 — :func:`missing_month_frame` 의 표가 달마다 낸다. 두 자리에 두면 같은
+    사실을 두 번 말하는 것이므로 여기서는 뺀다.
+
+    ②의 분모는 **그 달들의 구간 수**다. 전체 대비로 두면 ①과 같은 수가 되어 줄이
+    하나 더 늘 뿐이다.
     """
     lines = [
         f"결측 {fmt.count(quality.missing_slots, '구간')} / "
         f"{fmt.count(quality.expected_slots, '구간')} "
         f"({fmt.ratio_pct(quality.missing_ratio)}) · 보간하지 않고 계산에서 제외"
     ]
-    gap = quality.longest_gap
-    if gap is not None:
+    months = tuple(month for month in quality.monthly if month.missing_slots)
+    if months:
+        missing = sum(month.missing_slots for month in months)
+        expected = sum(month.expected_slots for month in months)
         lines.append(
-            f"최장 연속 {fmt.count(gap.days, '일', decimals=2)} "
-            f"({gap.start:%Y-%m-%d} {fmt.RANGE} {gap.end:%m-%d})"
+            f"결측이 있는 달 {fmt.count(len(months), '개')} — "
+            f"{fmt.count(missing, '구간')} / {fmt.count(expected, '구간')} "
+            f"({fmt.ratio_pct(missing / expected if expected else None)})"
         )
-    flagged = quality.flagged_months
-    if flagged:
-        months = ", ".join(f"{month.month} {fmt.ratio_pct(month.ratio)}" for month in flagged)
-        lines.append(f"결측률이 높은 달 — {months} → 해당 월 최대수요는 신뢰 제한")
     return tuple(lines[:MISSING_LINE_LIMIT])
+
+
+def missing_month_frame(quality: QualityReport) -> pd.DataFrame:
+    """월별 결측 구간 표 (30세션 2절).
+
+    **결측이 있는 달만 낸다.** 열두 줄 중 열 줄이 0 이면 표가 아니라 여백이다.
+
+    「최장 연속 구간」 은 구간 수와 일수를 함께 적는다 — 구간 수만으로는 15분짜리
+    하나인지 며칠인지 알 수 없고(정전 지표와 같은 병이다), 일수만으로는 옆 열의
+    「결측 구간 수」 와 이어지지 않는다.
+    """
+    longest = monthly_longest_gaps(quality.gaps, quality.interval_minutes)
+    rows = [
+        {
+            "월": str(month.month),
+            "결측 구간 수": int(month.missing_slots),
+            "비율": fmt.ratio_pct(month.ratio),
+            "최장 연속 구간": (
+                f"{fmt.count(gap.slots, '구간')} ({fmt.count(gap.days, '일', decimals=2)})"
+                if (gap := longest.get(month.month)) is not None
+                else fmt.DASH
+            ),
+        }
+        for month in quality.monthly
+        if month.missing_slots
+    ]
+    return pd.DataFrame(rows, columns=["월", "결측 구간 수", "비율", "최장 연속 구간"])
 
 
 def _quality_block(usage: UsageData, quality: QualityReport) -> None:
@@ -523,8 +565,29 @@ def _quality_block(usage: UsageData, quality: QualityReport) -> None:
     columns[0].metric(
         "검침 간격", f"{meta.interval_minutes}분", help=manual_tip("label-convention")
     )
-    columns[1].metric("결측", f"{fmt.ratio_pct(quality.missing_ratio)}")
-    columns[2].metric("정전 추정", fmt.count(len(quality.outages), "건"))
+    columns[1].metric(
+        "결측",
+        f"{fmt.ratio_pct(quality.missing_ratio)}",
+        help=fmt.markdown_safe(
+            "데이터가 없는 구간 ÷ 전체 구간.\n\n"
+            "높을수록 덜 본 자료입니다 — 그 달의 최대수요를 그대로 믿기 어렵습니다."
+        ),
+    )
+    # **건수만으로는 규모를 알 수 없다** (30세션 1-3). 15분 하나가 1건이고 며칠이
+    # 통째로 빈 것도 1건이라, 지속 시간을 delta 자리에 함께 낸다.
+    outage_hours = sum(event.duration_hours for event in quality.outages)
+    columns[2].metric(
+        "정전 추정",
+        fmt.count(len(quality.outages), "건"),
+        fmt.count(outage_hours, "시간", decimals=1) if quality.outages else None,
+        delta_color="off",
+        help=fmt.markdown_safe(
+            "연속 결측 중 정전 흔적(그리드 이탈 행·복전 후 저부하)이 둘 다 있는 "
+            "구간입니다.\n\n"
+            "아래 작은 숫자가 합친 지속 시간입니다. 정전 중에는 피크가 날 수 없어 "
+            "편중 판정에서 뺍니다."
+        ),
+    )
 
     with st.container(border=True):
         for line in missing_lines(quality):
@@ -535,10 +598,16 @@ def _quality_block(usage: UsageData, quality: QualityReport) -> None:
                 f"피크 시간대 편중 배수 {fmt.count(quality.skew.multiple, decimals=2)} → "
                 "그 달의 최대수요가 실제보다 낮게 잡혔을 수 있음"
             )
+    # **달마다 다른 값은 표로 낸다** (30세션 2절). 본문 두 줄은 전체와 「결측이
+    # 있는 달」 이라는 덩어리까지만 말하고, 어느 달이 얼마나 비었는지는 여기서 본다.
+    frame = missing_month_frame(quality)
+    if not frame.empty:
+        with st.expander("결측 구간", expanded=False):
+            st.dataframe(frame, hide_index=True, width="stretch")
     # **확인사항을 달지 않는다** (18세션 2절). 13세션에 위쪽 경고에서 여기 확인사항
-    # 으로 내렸고, 16세션에 :func:`missing_lines` 가 같은 사실을 세 줄로 정리했다.
-    # 두 조치가 겹쳐 **같은 사실이 다섯 번** 나왔다 — 세 줄 + 확인사항 두 건이
-    # 최장 연속 결측과 월별 결측률을 되풀이한다. 세 줄만 남긴다.
+    # 으로 내렸고, 16세션에 :func:`missing_lines` 가 같은 사실을 정리했다. 두 조치가
+    # 겹쳐 **같은 사실이 다섯 번** 나왔다 — 본문 줄 + 확인사항 두 건이 최장 연속
+    # 결측과 월별 결측률을 되풀이한다. 본문 줄만 남긴다.
     #
     # 부분 문자열로 걸러 왔던 자리는 **20세션에 사실 ID 로 갈음했다**
     # (:data:`MISSING_FACTS`). 문구가 바뀌어도 새지 않는다.
@@ -582,7 +651,7 @@ def _pattern_formulas(pattern: object) -> dict[str, str]:
     return {key: fmt.markdown_safe(value) for key, value in formulas.items()}
 
 
-def _pattern_block(diagnosis: Diagnosis) -> None:
+def _pattern_block(diagnosis: Diagnosis, usage: UsageData, building: BuildingInfo | None) -> None:
     st.subheader("부하 패턴")
     pattern = diagnosis.pattern
     tips = _pattern_formulas(pattern)
@@ -606,6 +675,72 @@ def _pattern_block(diagnosis: Diagnosis) -> None:
         f"운영 {pattern.operating_hours[0]}{fmt.RANGE}{pattern.operating_hours[1]}시 기준.",
         help=manual_tip("load-pattern"),
     )
+    _temperature_chart(usage, building)
+
+
+def _temperature_chart(usage: UsageData, building: BuildingInfo | None) -> None:
+    """일별 사용량과 일평균 기온을 겹쳐 그린다 (30세션 4절).
+
+    **지역이 없거나 기상 자료가 없으면 그림을 감춘다.** 옆단 지역은 선택 입력이고,
+    고른 격자·기간을 사전 취득분이 덮지 못할 수도 있다. 기온 없이 사용량만 그리면
+    이 자리에서 아무 말도 하지 못한다 — 월별 최대수요·시간대별 프로파일이 이미
+    사용량의 모양을 낸다. 그래서 **빈 축을 남기지 않고 사유 한 줄로 갈음한다.**
+
+    기상은 **태양광이 쓰는 것과 같은 지역·기간·격자**다
+    (:func:`kwise.ui.pipeline.daily_temperature`).
+    """
+    region_key = building.region_key if building else ""
+    temperature = cached_daily_temperature(usage, usage_token(usage), region_key)
+    if temperature is None or temperature.empty:
+        st.caption("옆단에서 지역을 고르면 일평균 기온을 함께 그립니다.")
+        return
+    st.altair_chart(charts.daily_temperature_chart(usage, temperature), width="stretch")
+    st.caption("일별 사용량과 일평균 기온", help=fmt.chart_tip("chart.daily_temperature"))
+
+
+# --------------------------------------------------------------------- 계절 갈래
+
+
+#: 계절 갈래. **요금표의 계절 정의를 그대로 쓴다** (30세션 5절) — 여름 6~8월 ·
+#: 봄가을 3~5·9~10월 · 겨울 11~2월이 ``data\\tariff_*.json`` 의
+#: ``season_definition`` 이고, 화면이 달을 다시 나누면 두 벌이 된다. 이름도
+#: :data:`~kwise.tariff.labels.SEASON_LABELS` 를 그대로 쓴다.
+SEASON_CHOICES: tuple[tuple[str, str | None], ...] = (
+    ("전체", None),
+    *((label, key) for key, label in SEASON_LABELS.items()),
+)
+
+
+def season_choices(available: Iterable[object]) -> tuple[tuple[str, str | None], ...]:
+    """자료에 있는 계절만 갈래로 남긴다.
+
+    **없는 계절 갈래를 두지 않는다.** 반년치 자료에 여름 탭을 만들면 빈 그림이
+    나오고, 빈 그림은 「여름에 안 쓴다」 로 읽힌다. 계절이 하나도 갈리지 않으면
+    「전체」 하나만 남고, 부르는 쪽이 갈래를 아예 그리지 않는다.
+    """
+    keys = set(map(str, available))
+    return tuple(item for item in SEASON_CHOICES if item[1] is None or item[1] in keys)
+
+
+def _season_chart(
+    draw: Callable[[str | None], alt.Chart],
+    available: Iterable[object],
+    caption: str,
+    tip_key: str,
+) -> None:
+    """계절 갈래를 탭으로 전환해 그린다. **넷을 한꺼번에 그리지 않는다.**
+
+    캡션은 탭 **밖**에 한 번만 둔다 — 안에 넣으면 갈래 수만큼 같은 글이 늘어난다.
+    """
+    choices = season_choices(available)
+    if len(choices) <= 1:
+        st.altair_chart(draw(None), width="stretch")
+    else:
+        tabs = st.tabs([label for label, _key in choices])
+        for tab, (_label, key) in zip(tabs, choices, strict=True):
+            with tab:
+                st.altair_chart(draw(key), width="stretch")
+    st.caption(caption, help=fmt.chart_tip(tip_key))
 
 
 # --------------------------------------------------------------------- 피크 특성
@@ -613,7 +748,9 @@ def _pattern_block(diagnosis: Diagnosis) -> None:
 
 def _peak_block(diagnosis: Diagnosis) -> None:
     """**차트가 먼저다.** 상위 구간 분포가 태양광 판단의 근거다 (6.2)."""
-    st.subheader("피크 특성", help=manual_tip("peak-profile"))
+    # **제목에 툴팁을 달지 않는다** (30세션 1-4). 절 제목은 자리 이름이지 지표가
+    # 아니라 물음표가 붙을 자리가 아니다. 매뉴얼 앵커는 아래 상위 구간 지표로 옮겼다.
+    st.subheader("피크 특성")
     peak = diagnosis.peak
     # **같은 값이면 한 줄로 접는다** (13세션). 연간 최대가 중간·최대부하 시간대에
     # 있으면 관측 최대와 요금적용 대상 최대가 같은 값이다 — 두 칸을 나란히 두면
@@ -629,6 +766,7 @@ def _peak_block(diagnosis: Diagnosis) -> None:
     columns[2].metric(
         "상위 구간 주말 비중",
         fmt.ratio_pct(peak.weekend_slots / peak.top_n if peak.top_n else None),
+        help=manual_tip("peak-profile"),
     )
     if split:
         st.caption(
@@ -641,13 +779,16 @@ def _peak_block(diagnosis: Diagnosis) -> None:
     # **시간대별 프로파일을 상위 구간 분포보다 먼저 둔다** (23세션 4절). 하루가
     # 어떻게 생겼는지를 본 뒤에 「그 중 가장 높은 100구간은 언제였나」 를 읽어야
     # 순서가 맞다 — 상위 구간부터 보면 무엇에 견주는 분포인지 알 수 없다.
-    st.altair_chart(charts.hourly_profile_chart(peak), width="stretch")
-    st.caption("시간대별 평균 부하", help=fmt.chart_tip("chart.hourly_profile"))
-    st.altair_chart(charts.top_hour_chart(peak, split=split), width="stretch")
-    st.caption(
-        f"상위 {peak.top_n}구간 발생 시각 — **태양광 기여 가능성을 즉시 보여 주는 지표**입니다.",
-        help=fmt.chart_tip("chart.top_hour"),
+    # **계절로 갈라 본다** (30세션 5-1). 여름 낮 봉우리와 겨울 아침 봉우리가 한
+    # 그림에서 평균으로 뭉개지면 어느 계절을 겨냥해야 할지 알 수 없다.
+    _season_chart(
+        lambda season: charts.hourly_profile_chart(peak, season=season),
+        peak.hourly_profile_by_season.columns,
+        "시간대별 평균 부하",
+        "chart.hourly_profile",
     )
+    st.altair_chart(charts.top_hour_chart(peak, split=split), width="stretch")
+    st.caption(f"상위 {peak.top_n}구간 발생 시각", help=fmt.chart_tip("chart.top_hour"))
 
 
 # --------------------------------------------------------------------- 요금 구조
@@ -681,8 +822,15 @@ def _structure_block(usage: UsageData, diagnosis: Diagnosis, building: BuildingI
     # 모습이다.
     st.altair_chart(charts.monthly_charge_chart(structure), width="stretch")
     st.caption("월별 요금 구성", help=fmt.chart_tip("chart.monthly_charge"))
-    st.altair_chart(charts.band_chart(structure), width="stretch")
-    st.caption("계시별 사용량 구성", help=fmt.chart_tip("chart.band"))
+    # **계절로 갈라 본다** (30세션 5-2). 여름·겨울은 중간부하와 최대부하의 경계가
+    # 아예 다른 시각이라, 셋을 합친 구성만 보면 어느 계절의 최대부하를 옮겨야
+    # 하는지 알 수 없다. 비중은 그 계절 안에서 다시 잰다.
+    _season_chart(
+        lambda season: charts.band_chart(structure, season=season),
+        structure.band_season_kwh.index,
+        "계시별 사용량 구성",
+        "chart.band",
+    )
     _intensity_line(usage, building)
     st.caption(
         "기본요금과 전력량요금만 계산합니다. 그 밖의 요금요소는 미포함이며 실제 절감액은 "
