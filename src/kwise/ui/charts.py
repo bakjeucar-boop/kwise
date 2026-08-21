@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import altair as alt
 import pandas as pd
 
@@ -48,7 +50,6 @@ from kwise.report.frames import (
     peak_window,
     power_factor_day_frame,
     power_triangle_frame,
-    season_charge_frame,
     sensitivity_frame,
     solar_annual_frame,
     solar_capacity_table,
@@ -70,13 +71,13 @@ __all__ = [
     "LEGEND",
     "LEGEND_BELOW",
     "MONTHLY_CHARGE_PARTS",
+    "MONTH_BAR_STEP",
     "PEAK_ZOOM_HOURS",
     "TARIFF_PARTS",
     "TIME_FORMAT",
     "TIME_TOOLTIP_FORMAT",
-    "band_chart",
+    "band_donut_chart",
     "band_frame",
-    "charge_donut_chart",
     "combination_chart",
     "combination_frame",
     "daily_temperature_chart",
@@ -92,6 +93,7 @@ __all__ = [
     "ess_target_frame",
     "hourly_profile_chart",
     "hourly_profile_frame",
+    "monthly_charge_chart",
     "monthly_charge_frame",
     "monthly_peak_chart",
     "monthly_peak_frame",
@@ -424,71 +426,134 @@ def _band_scale(*, with_base_fee: bool = False) -> alt.Scale:
     return alt.Scale(domain=list(colors), range=list(colors.values()))
 
 
+# ===================================================================== 32세션 2절 · 막대 두께
+#
+# **막대 폭을 그림에 못박는다.** 폭을 적지 않으면 vega-lite 가 칸 하나를 기본
+# 20px 로 잡고, 그 85%(streamlit 테마)인 **17px** 짜리 실오라기가 열두 개
+# 그려진다 — 누적 막대는 조각이 넷이라 이 폭에서는 경부하 조각이 선으로 보인다.
+#
+#     ① 칸을 **60px** 로 잡는다 (기본 20px 의 세 배). 막대는 그 85% 인 51px
+#     ② 막대 사이 간격도 함께 세 배가 된다 (3px → 9px) — 비율을 손대지 않는다
+#     ③ 달이 많으면 칸을 줄여 **가로 스크롤을 만들지 않는다** (아래 상한)
+#
+# 화면 폭에 맞춰 늘어나는 경로에서는 vega 가 이 값을 화면 폭으로 덮어쓴다.
+# 그때는 칸이 더 넓어지므로 이 상수가 **하한**으로 작동한다.
+MONTH_BAR_STEP = 60
+
+#: 그림 하나가 차지할 가로 상한 (px). 자료가 여러 해면 달 수가 늘어 60px × N 이
+#: 화면을 넘는다 — 넘기느니 칸을 줄인다.
+_MONTH_CHART_MAX_WIDTH = 1_440
+
+#: 칸의 하한. 여기까지 줄여도 안 들어가면 그때는 스크롤이 낫다.
+_MONTH_BAR_MIN_STEP = 20
+
+
+def _month_step(months: int) -> int:
+    """달 수에 맞춘 칸 폭 (32세션 2절). 열두 달이면 그대로 :data:`MONTH_BAR_STEP`."""
+    if months <= 0:
+        return MONTH_BAR_STEP
+    fitted = _MONTH_CHART_MAX_WIDTH // months
+    return int(max(_MONTH_BAR_MIN_STEP, min(MONTH_BAR_STEP, fitted)))
+
+
+def monthly_charge_chart(structure: ChargeStructure) -> alt.Chart:
+    """월별 요금 구성 — 기본요금 + 계시별 전력량요금 **누적 막대** (27세션 3-2).
+
+    한 달치 청구액이 어떻게 나뉘는지, 그리고 **달마다 무엇이 달라지는지**를 한
+    그림에서 본다. 기본요금이 같은 높이로 이어지는 것 자체가 요금적용전력
+    12개월 규칙의 모습이다.
+
+    **막대는 자르지 않는다** (17세션 0절 · 23세션 2절). 길이가 곧 금액이다.
+
+    **칸 폭을 못박는다** (32세션 2절). 위 「막대 두께」 주석 참조.
+    """
+    frame = monthly_charge_frame(structure)
+    step = _month_step(int(frame["월"].nunique()))
+    return (
+        alt.Chart(frame)
+        .mark_bar()
+        .encode(
+            x=alt.X("월:N", title=None, sort=None),
+            y=alt.Y("원:Q", title="요금 (원)", stack="zero"),
+            color=alt.Color(
+                "구분:N",
+                title=None,
+                sort=list(MONTHLY_CHARGE_PARTS),
+                scale=_band_scale(with_base_fee=True),
+                legend=LEGEND,
+            ),
+            # **쌓는 순서를 색 순서에 묶는다.** 주지 않으면 달마다 순서가 달라져
+            # 밑단이 흔들린다.
+            order=alt.Order("순서:Q", sort="ascending"),
+            tooltip=[
+                "월",
+                "구분",
+                alt.Tooltip("원:Q", format=",.0f"),
+                alt.Tooltip("합계(원):Q", format=",.0f"),
+            ],
+        )
+        .properties(width=alt.Step(step), height=300)
+    )
+
+
 # ===================================================================== 33세션 3절 · 원 넷
 #
-# **월별 요금 구성 누적 막대를 버렸다.** 32세션에 칸 폭을 60px 로 못 박았는데
-# 화면에서는 그대로였다 — 화면 폭에 맞춰 늘어나는 경로에서 vega 가 spec 의 폭을
-# **화면 폭으로 덮어쓰기** 때문이다 (32세션 5절이 예상한 대로다). 그림 폭을
-# 우리가 못 정하는 이상 막대 두께도 우리 손에 없다.
+# **비중을 견주는 그림은 원이 낫다** (33세션 → 34세션에 자리를 옮겼다).
+# 33세션은 이것을 **월별 요금 구성**에 붙였는데 지시가 잘못 전달된 것이었고,
+# 34세션에 제자리인 **계시별 사용량 구성**으로 옮겼다. 요금 구성은 달마다의
+# 높이를 비교하는 그림이라 막대가 맞다 (위 「막대 두께」).
 #
-# 그래서 **묻는 것을 바꿨다.** 열세 달의 높이를 견주는 그림이 아니라, 계절마다
-# **무엇이 얼마를 차지하는가**를 원 넷으로 낸다.
-#
-#     ① 갈래는 계절 탭과 같다 — 전체 · 봄·가을 · 여름 · 겨울
-#        (한 화면에서 같은 자료를 두 가지로 나누면 어느 쪽이 맞는지 묻게 된다)
+#     ① 갈래는 계절 탭과 같다 — 전체 · 봄·가을 · 여름 · 겨울. **탭이 아니라
+#        한 줄에 넷**이다. 갈아 끼우면 계절을 나란히 볼 수 없다
 #     ② 조각마다 **이름과 비중을 함께 적는다.** 원이 넷이라 범례를 달면 같은
 #        이름 넷이 네 번 실린다 — 조각 위 라벨이면 한 번이다
-#     ③ 합계 금액은 그림 제목이 적는다 (원 아래 자리는 라벨이 쓴다)
-#     ④ 달마다의 값은 Excel 「월별 집계」 로 간다
+#     ③ 합계는 그림 제목이 적는다 (원 아래 자리는 라벨이 쓴다)
 #
 # **17세션 축 규약은 막대에 대한 것이다.** 원에는 축이 없어 「자르지 않는다」 가
-# 성립하지 않는다 — 규약을 고칠 일이 아니라 **해당 없음**이다.
+# 성립하지 않는다 — 규약을 고칠 일이 아니라 **해당 없음**이다. 대신 각이 곧
+# 비중이라 ``theta`` 를 쌓아 같은 뜻을 지킨다.
 
-#: 도넛의 안·바깥 반지름 (px). 안을 비우면 조각 넷의 각을 견주기 쉽고, 가운데
-#: 빈자리가 제목·합계와 부딪히지 않는다.
+#: 도넛의 안·바깥 반지름 (px). 안을 비우면 조각의 각을 견주기 쉽다.
 _DONUT_INNER = 42
 _DONUT_OUTER = 78
 
 #: 조각 라벨을 놓을 반지름. 바깥보다 조금 더 밖이라 조각을 가리지 않는다.
 _DONUT_LABEL_RADIUS = _DONUT_OUTER + 22
 
+#: 도넛 하나의 높이. 라벨이 바깥으로 뻗으므로 반지름의 두 배보다 넉넉해야 한다.
+_DONUT_HEIGHT = 230
 
-def charge_donut_chart(
-    structure: ChargeStructure,
+
+def _donut(
+    frame: pd.DataFrame,
     *,
-    season: str | None = None,
-    title: str = "",
-    subtitle: str = "",
+    value: str,
+    group: str,
+    order: Sequence[str],
+    scale: alt.Scale,
+    tooltip: Sequence[alt.Tooltip | str],
+    title: str,
+    subtitle: str,
 ) -> alt.LayerChart | alt.FacetChart:
-    """계절별 요금 구성 **도넛** (33세션 3절).
-
-    한 계절의 청구액이 **기본요금·경부하·중간부하·최대부하**로 어떻게 갈리는지
-    낸다. 계절을 나란히 놓으면 여름·겨울에 최대부하 조각이 두꺼워지는 것이
-    그대로 보인다 — 그 조각을 깎는 수단(태양광·ESS)의 값어치가 거기서 갈린다.
+    """도넛 한 장. **비중을 견주는 그림은 전부 이것을 쓴다** (33세션 3절).
 
     Args:
-        season: ``None`` 이면 전 기간.
-        title: 그림 제목 (계절 이름). 부르는 쪽이 준다.
-        subtitle: 제목 아래 한 줄. 합계 금액을 적는다 — 돈 표기는 화면 쪽
-            :mod:`kwise.ui.text` 가 맡으므로 여기서 만들지 않는다.
+        value: 각을 정하는 열.
+        group: 조각을 가르는 열. ``라벨`` 열이 그 이름과 비중을 함께 적는다.
+        order: 조각 순서. 주지 않으면 자료 순서가 달라질 때 색이 돈다.
     """
-    frame = season_charge_frame(structure, season=season)
     base = alt.Chart(frame).encode(
-        theta=alt.Theta("원:Q", stack=True),
+        theta=alt.Theta(f"{value}:Q", stack=True),
         order=alt.Order("순서:Q", sort="ascending"),
         color=alt.Color(
-            "구분:N",
+            f"{group}:N",
             title=None,
-            sort=list(MONTHLY_CHARGE_PARTS),
-            scale=_band_scale(with_base_fee=True),
+            sort=list(order),
+            scale=scale,
             # **범례를 달지 않는다** — 조각마다 이름이 적혀 있다.
             legend=None,
         ),
-        tooltip=[
-            "구분",
-            alt.Tooltip("원:Q", format=",.0f"),
-            alt.Tooltip("비중:Q", format=".1%"),
-        ],
+        tooltip=list(tooltip),
     )
     arc = base.mark_arc(innerRadius=_DONUT_INNER, outerRadius=_DONUT_OUTER)
     labels = base.mark_text(radius=_DONUT_LABEL_RADIUS, fontSize=11).encode(text=alt.Text("라벨:N"))
@@ -498,31 +563,41 @@ def charge_donut_chart(
     )
 
 
-#: 도넛 하나의 높이. 라벨이 바깥으로 뻗으므로 반지름의 두 배보다 넉넉해야 한다.
-_DONUT_HEIGHT = 230
+def band_donut_chart(
+    structure: ChargeStructure,
+    *,
+    season: str | None = None,
+    title: str = "",
+    subtitle: str = "",
+) -> alt.LayerChart | alt.FacetChart:
+    """계시별 사용량 구성 **도넛** (33세션 3절 · 34세션 1절).
 
+    한 계절의 사용량이 **경부하·중간부하·최대부하**로 어떻게 갈리는지 낸다.
+    계절을 나란히 놓으면 여름·겨울에 최대부하 조각이 두꺼워지는 것이 그대로
+    보인다 — 그 조각을 옮기거나 깎는 수단의 값어치가 거기서 갈린다.
 
-def band_chart(structure: ChargeStructure, *, season: str | None = None) -> alt.Chart:
-    """계시별 사용량 구성. ``season`` 을 주면 그 계절 안에서 비중을 다시 잰다."""
-    return (
-        alt.Chart(band_frame(structure, season=season))
-        .mark_bar()
-        .encode(
-            x=alt.X("사용량(kWh):Q", title="사용량 (kWh)", stack="normalize"),
-            color=alt.Color(
-                "시간대:N",
-                title=None,
-                sort=list(BAND_LABELS.values()),
-                scale=_band_scale(),
-                legend=LEGEND,
-            ),
-            tooltip=[
-                "시간대",
-                alt.Tooltip("사용량(kWh):Q", format=",.0f"),
-                alt.Tooltip("비중:Q", format=".1%"),
-            ],
-        )
-        .properties(height=90)
+    **비중은 그 계절 안에서 다시 잰다** (30세션 5-2). 전체 대비로 두면 세 계절의
+    원이 각각 3분의 1 만 칠해져 무엇의 구성인지 알 수 없다.
+
+    Args:
+        season: ``None`` 이면 전 기간.
+        title: 그림 제목 (계절 이름). 부르는 쪽이 준다.
+        subtitle: 제목 아래 한 줄. 합계 사용량을 적는다 — 단위 표기는 화면 쪽
+            :mod:`kwise.ui.text` 가 맡으므로 여기서 만들지 않는다.
+    """
+    return _donut(
+        band_frame(structure, season=season),
+        value="사용량(kWh)",
+        group="시간대",
+        order=list(BAND_LABELS.values()),
+        scale=_band_scale(),
+        tooltip=[
+            "시간대",
+            alt.Tooltip("사용량(kWh):Q", format=",.0f"),
+            alt.Tooltip("비중:Q", format=".1%"),
+        ],
+        title=title,
+        subtitle=subtitle,
     )
 
 

@@ -942,15 +942,22 @@ def test_상위_구간_캡션에서_태양광_문구를_뺐다(app: AppTest) -> 
     assert not [item for item in captions if "태양광 기여 가능성" in item], captions
 
 
-def test_계절별_전환이_두_그래프에_모두_있다(app: AppTest) -> None:
+def test_계절_갈래가_두_그래프에_모두_있다(app: AppTest) -> None:
     """시간대별 평균 부하와 계시별 사용량 구성을 넷으로 가른다 (30세션 5절).
 
     계절 구분은 **요금표의 정의 그대로**이며, 갈래는 자료에 있는 계절만 만든다.
+
+    **가르는 방법이 둘이다** (34세션 1절). 시간대별 평균 부하는 탭이고, 계시별
+    사용량 구성은 **한 줄에 원 넷**이다 — 뒤엣것은 계절 사이의 차이가 볼 것이라
+    갈아 끼우면 안 된다. 넷이 그려지는지는 그림 제목으로 본다.
     """
-    labels = [item.label for item in app.tabs]
-    assert labels.count("전체") == 2
-    for season in ("봄·가을", "여름", "겨울"):
-        assert labels.count(season) == 2, (season, labels)
+    import json
+
+    tabs = [item.label for item in app.tabs]
+    donuts = [spec["title"]["text"] for spec in _rendered_specs(app) if '"arc"' in json.dumps(spec)]
+    for season in ("전체", "봄·가을", "여름", "겨울"):
+        assert tabs.count(season) == 1, (season, tabs)
+        assert donuts.count(season) == 1, (season, donuts)
 
 
 def test_계절_갈래는_자료에_있는_계절만_낸다() -> None:
@@ -1250,8 +1257,12 @@ def test_기온_그래프_오른쪽_축에_눈금과_단위가_있다() -> None:
     assert axes[0] == axes[1] == axes[2]
 
 
-def test_화면에_계절별_원_넷이_그려진다(app: AppTest) -> None:
-    """**원 넷을 한 줄에** (33세션 3절). 갈래는 계절 탭과 같다."""
+def test_화면에_계시별_원_넷이_그려진다(app: AppTest) -> None:
+    """**원 넷을 한 줄에, 탭 없이** (34세션 1절).
+
+    갈래는 계절 탭과 같되 **갈아 끼우지 않는다** — 여기서 볼 것이 계절 사이의
+    차이인데 탭은 하나씩만 보여 준다.
+    """
     import json
 
     arcs = [spec for spec in _rendered_specs(app) if '"arc"' in json.dumps(spec)]
@@ -1259,57 +1270,98 @@ def test_화면에_계절별_원_넷이_그려진다(app: AppTest) -> None:
     titles = [spec["title"]["text"] for spec in arcs]
     assert titles == ["전체", "봄·가을", "여름", "겨울"], titles
     for spec in arcs:
-        assert spec["title"]["subtitle"], "합계 금액이 제목 아래에 없습니다."
+        assert spec["title"]["subtitle"].endswith("MWh"), "합계 사용량이 제목 아래에 없습니다."
         # 조각마다 이름과 비중을 적는다 — 범례 대신이다.
         assert spec["layer"][1]["encoding"]["text"]["field"] == "라벨"
         assert spec["layer"][0]["encoding"]["color"]["legend"] is None
 
+    # **월별 요금 구성은 막대로 돌아왔다.** 같은 화면에 둘이 함께 있어야 한다.
+    bars = [
+        spec
+        for spec in _rendered_specs(app)
+        if spec.get("mark", {}) and spec.get("mark", {}).get("type") == "bar"
+    ]
+    assert any(spec.get("width") == {"step": 60} for spec in bars), (
+        "월별 요금 구성 막대가 없습니다."
+    )
 
-def test_계절별_요금_구성이_원_넷이다() -> None:
-    """**막대를 버리고 원으로 갔다** (33세션 3절).
+    # 계시별 구성에 **탭이 없다.** 계절 탭은 시간대별 평균 부하 하나뿐이다.
+    labels = [str(item.label) for item in app.get("tab")]
+    assert labels.count("여름") == 1, labels
 
-    32세션에 칸 폭을 60px 로 못 박았으나 화면은 그대로였다 — 화면 폭에 맞춰
-    늘어나는 경로에서 vega 가 spec 의 폭을 덮어쓴다. 폭을 우리가 못 정하면
-    막대 두께도 우리 손에 없다.
+
+def test_계시별_사용량_구성이_원_넷이다() -> None:
+    """**비중을 견주는 그림은 원이 낫다** (33세션 3절 → 34세션 1절에 자리 이동).
+
+    33세션은 원을 **월별 요금 구성**에 붙였는데 지시가 잘못 전달된 것이었다.
+    제자리는 계시별 사용량 구성이다.
     """
-    from kwise.ui.charts import charge_donut_chart
+    from kwise.ui.charts import band_donut_chart
 
     structure = _structure()
-    spec = charge_donut_chart(
-        structure, season="summer", title="여름", subtitle="10.7억원"
+    spec = band_donut_chart(
+        structure, season="summer", title="여름", subtitle="6,668.5 MWh"
     ).to_dict()
     # 조각(arc)과 라벨(text) 두 층.
     assert [layer["mark"]["type"] for layer in spec["layer"]] == ["arc", "text"]
     assert spec["layer"][0]["mark"]["innerRadius"] > 0, "도넛이 아니라 원입니다."
-    # 제목이 계절, 그 아래가 합계 금액이다.
+    # 제목이 계절, 그 아래가 합계 사용량이다.
     assert spec["title"]["text"] == "여름"
-    assert spec["title"]["subtitle"] == "10.7억원"
+    assert spec["title"]["subtitle"] == "6,668.5 MWh"
     # 조각마다 이름과 비중을 적는다 — 범례를 달지 않는다.
     assert spec["layer"][1]["encoding"]["text"]["field"] == "라벨"
     assert spec["layer"][0]["encoding"]["color"]["legend"] is None
-    # 막대 시절의 상수는 남기지 않는다.
+    # 33세션이 요금 구성에 붙였던 것은 남기지 않는다.
     from kwise.ui import charts
 
-    assert not hasattr(charts, "MONTH_BAR_STEP"), "옛 막대 상수가 남아 있습니다."
-    assert not hasattr(charts, "monthly_charge_chart"), "옛 막대 차트가 남아 있습니다."
+    assert not hasattr(charts, "charge_donut_chart"), "요금 구성 도넛이 남아 있습니다."
+    assert not hasattr(charts, "band_chart"), "옛 가로 막대가 남아 있습니다."
 
 
-def test_계절별_요금_구성의_네_조각이_청구액과_맞는다() -> None:
-    """**요금과 다른 수를 그리지 않는다.** 계절은 요금표가 붙인 그대로다."""
-    from kwise.report.frames import MONTHLY_CHARGE_PARTS, season_charge_frame, season_charge_total
+def test_계시별_사용량_구성의_세_조각이_그_계절_안에서_1이_된다() -> None:
+    """**비중은 그 계절 안에서 다시 잰다** (30세션 5-2).
+
+    전체 대비로 두면 세 계절의 원이 각각 3분의 1 만 칠해져 무엇의 구성인지
+    알 수 없다.
+    """
+    from kwise.report.frames import BAND_LABELS, band_frame
 
     structure = _structure()
-    frame = season_charge_frame(structure)
-    assert list(frame["구분"]) == list(MONTHLY_CHARGE_PARTS)
-    assert float(frame["원"].sum()) == pytest.approx(structure.total_won)
-    assert float(frame["비중"].sum()) == pytest.approx(1.0)
-    # 계절을 다 더하면 전체다.
-    seasons = structure.monthly["season"].astype(str).unique()
-    parts = sum(season_charge_total(structure, season=str(key)) for key in seasons)
-    assert parts == pytest.approx(season_charge_total(structure))
-    # 라벨에 이름과 비중이 함께 적힌다.
-    assert frame.loc[0, "라벨"].startswith("기본요금 ")
-    assert frame.loc[0, "라벨"].endswith("%")
+    for season in structure.band_season_kwh.index:
+        frame = band_frame(structure, season=str(season))
+        assert list(frame["시간대"]) == list(BAND_LABELS.values())
+        assert float(frame["비중"].sum()) == pytest.approx(1.0)
+        # 라벨에 이름과 비중이 함께 적힌다.
+        assert frame.loc[0, "라벨"].startswith("경부하 ")
+        assert frame.loc[0, "라벨"].endswith("%")
+    # 계절을 다 더하면 전체 사용량이다.
+    total = float(band_frame(structure)["사용량(kWh)"].sum())
+    parts = sum(
+        float(band_frame(structure, season=str(season))["사용량(kWh)"].sum())
+        for season in structure.band_season_kwh.index
+    )
+    assert parts == pytest.approx(total)
+
+
+def test_월별_요금_구성이_다시_막대다() -> None:
+    """**33세션에 원으로 바꿨다가 34세션에 되돌렸다** (지시가 잘못 전달됐다).
+
+    달마다의 높이를 비교하는 그림은 막대가 맞다. 17세션 축 규약과 32세션 칸 폭도
+    함께 되살린다.
+    """
+    from kwise.ui.charts import MONTH_BAR_STEP, _month_step, monthly_charge_chart
+
+    assert MONTH_BAR_STEP == 60  # vega-lite 기본 20px 의 세 배
+    spec = monthly_charge_chart(_structure()).to_dict()
+    assert spec["mark"]["type"] == "bar"
+    assert spec["width"] == {"step": MONTH_BAR_STEP}
+    # **막대는 자르지 않는다** (17세션 0절 · 23세션 2절). 길이가 곧 금액이다.
+    assert spec["encoding"]["y"].get("scale", {}).get("zero") is not False
+    assert spec["encoding"]["y"]["stack"] == "zero"
+    # 달이 많으면 칸을 줄여 가로 스크롤을 막는다.
+    assert _month_step(12) == MONTH_BAR_STEP
+    assert _month_step(36) < MONTH_BAR_STEP
+    assert _month_step(500) == 20
 
 
 def test_ESS_절감액_툴팁이_전력량요금_절감의_까닭을_밝힌다() -> None:
@@ -1672,6 +1724,79 @@ def test_체크를_풀고_계산을_눌러야_합산효과가_바뀐다() -> Non
     assert not any("선택이 변경되었습니다" in str(item.value) for item in run.markdown)
     body = " ".join(str(item.value) for item in run.caption)
     assert "조합에서 뺀 개선안" in body, body
+
+
+def test_체크만_바꾸면_계산이_돌지_않는다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**계산 버튼을 두었으면 체크에는 계산이 없어야 한다** (34세션 2절).
+
+    Streamlit 은 위젯을 건드리면 스크립트를 다시 돌린다 — 재실행 자체는 피할 수
+    없다. 그때 **계산까지 도는지**가 다른 문제이고, 그것이 이 시험이 보는 것이다.
+    """
+    from kwise.compare import combination as combo
+    from kwise.ui import cache
+
+    calls: list[str] = []
+
+    def counted(name: str, original: object) -> object:
+        def inner(*args: object, **kwargs: object) -> object:
+            calls.append(name)
+            return original(*args, **kwargs)  # type: ignore[operator]
+
+        return inner
+
+    monkeypatch.setattr(
+        cache, "compare_combinations", counted("compare", cache.compare_combinations)
+    )
+    monkeypatch.setattr(
+        combo, "evaluate_combination", counted("evaluate", combo.evaluate_combination)
+    )
+
+    screen = _running(option="I", **STAGE3_MEASURES)  # type: ignore[arg-type]
+    assert not screen.exception, screen.exception
+    assert calls, "첫 실행에서는 조합을 계산해야 합니다."
+
+    calls.clear()
+    toggled = screen.checkbox(key="combo_pick_ess").set_value(False).run(timeout=600)
+    assert not toggled.exception, toggled.exception
+    assert calls == [], f"체크만 바꿨는데 계산이 돌았습니다: {calls}"
+
+    # 단추를 누르면 그때 돈다.
+    ran = toggled.button(key="combo_run").click().run(timeout=600)
+    assert not ran.exception, ran.exception
+    assert "compare" in calls
+
+
+def test_산출_근거_툴팁에_앞머리가_없다(stage3: AppTest) -> None:
+    """**캡션이 이미 「산출 근거 N건」 이다** (34세션 3절).
+
+    「이 숫자가 어디서 나왔나」 를 세 자리에서 똑같이 얹고 있었다 — 같은 말을
+    두 번 한다.
+    """
+    tips = [str(item.help) for item in stage3.caption if item.help]
+    grounds = [tip for tip in tips if "조합의 절감액은" in tip]
+    assert grounds, "조합 근거 툴팁이 없습니다."
+    assert not any("이 숫자가 어디서 나왔나" in tip for tip in tips), tips
+    # **33세션이 놓친 자리다** — 소스만 고치고 화면을 안 봤다.
+    assert "수단별 절감액의 단순 합이 아니라" in grounds[0], grounds[0]
+    assert "각 조합의 부하를 재구성하여 처음부터 다시 산출한 값입니다" in grounds[0]
+    source = (Path("src") / "kwise" / "ui" / "views").glob("*.py")
+    for path in source:
+        assert "이 숫자가 어디서 나왔나" not in path.read_text(encoding="utf-8"), path.name
+
+
+def test_코드를_고치면_계산_캐시_키가_달라진다() -> None:
+    """**33세션이 걸린 덫** (34세션 3절).
+
+    ``st.cache_data`` 는 감싼 함수의 소스만 해시한다. 그 함수가 부르는 모듈이
+    바뀌어도 키가 그대로라, 앱이 떠 있는 채로 코드를 고치면 화면이 옛 값을 낸다.
+    """
+    from kwise.ui.cache import code_stamp, rules_stamp
+
+    stamp = code_stamp()
+    assert stamp and len(stamp) == 12
+    assert stamp in rules_stamp(), "코드 지문이 캐시 키에 물려 있지 않습니다."
+    # 프로세스마다 한 번만 잰다 — 재실행마다 100여 파일을 훑으면 안 된다.
+    assert code_stamp() is stamp
 
 
 def test_계산을_누르기_전에는_합산효과가_없다() -> None:
@@ -2060,8 +2185,8 @@ def _chart_specs() -> dict[str, object]:
         "chart.monthly_peak": charts.monthly_peak_chart(diagnosis.peak),
         "chart.top_hour": charts.top_hour_chart(diagnosis.peak),
         "chart.hourly_profile": charts.hourly_profile_chart(diagnosis.peak),
-        "chart.band": charts.band_chart(diagnosis.structure),
-        "chart.monthly_charge": charts.charge_donut_chart(diagnosis.structure),
+        "chart.band": charts.band_donut_chart(diagnosis.structure),
+        "chart.monthly_charge": charts.monthly_charge_chart(diagnosis.structure),
         "chart.tariff_option": charts.tariff_option_chart(switch),
         "chart.tariff_delta": charts.tariff_delta_chart(switch),
         "chart.dr_daily": charts.dr_daily_chart(diagnosis.dr),
@@ -2089,10 +2214,10 @@ def chart_specs() -> dict[str, object]:
 #: 바깥 오른쪽 범례와 자리를 다투는 그림만이다. 늘리려면 이유를 적는다.
 LEGEND_BELOW_CHARTS = {"chart.power_triangle"}
 
-#: **범례를 아예 달지 않는 차트** (33세션 3절). 계절별 요금 구성은 원이 넷이라
-#: 범례를 달면 같은 이름 넷이 네 번 실린다 — 조각마다 이름과 비중을 적는 편이
-#: 짧고 정확하다. 늘리려면 이유를 적는다.
-NO_LEGEND_CHARTS = {"chart.monthly_charge"}
+#: **범례를 아예 달지 않는 차트** (33세션 3절 · 34세션 1절). 계시별 사용량 구성은
+#: 원이 넷이라 범례를 달면 같은 이름 넷이 네 번 실린다 — 조각마다 이름과 비중을
+#: 적는 편이 짧고 정확하다. 늘리려면 이유를 적는다.
+NO_LEGEND_CHARTS = {"chart.band"}
 
 
 def test_전_차트가_같은_범례_규약을_쓴다(chart_specs: dict[str, object]) -> None:
@@ -2661,7 +2786,7 @@ def test_요금_구조에_합계와_월별_그래프가_있다(app: AppTest) -> 
     for name in ("기본요금", "전력량요금", "합계", "기본요금 비중"):
         assert name in labels, labels
     captions = [str(item.value) for item in app.caption]
-    assert "계절별 요금 구성" in captions, captions  # 33세션 3절
+    assert "월별 요금 구성" in captions, captions  # 34세션 1절에 되돌렸다
 
 
 def test_월별_요금_구성이_네_조각이다() -> None:
@@ -2685,16 +2810,16 @@ def test_월별_요금_구성이_네_조각이다() -> None:
     assert len(set(round(value) for value in base)) < len(base)
 
 
-def test_계절별_요금_구성은_각을_자르지_않는다() -> None:
-    """**17세션 축 규약은 막대에 대한 것이다** (33세션 3절).
+def test_계시별_사용량_구성은_각을_자르지_않는다() -> None:
+    """**17세션 축 규약은 막대에 대한 것이다** (33세션 3절 · 34세션 1절).
 
     원에는 축이 없어 「자르지 않는다」 가 성립하지 않는다 — 대신 **각이 곧
     비중**이라 조각을 쌓는 것으로 같은 뜻을 지킨다. 규약을 고칠 일이 아니라
     해당 없음이다.
     """
-    from kwise.ui.charts import charge_donut_chart
+    from kwise.ui.charts import band_donut_chart
 
-    spec = charge_donut_chart(_structure()).to_dict()
+    spec = band_donut_chart(_structure()).to_dict()
     theta = spec["layer"][0]["encoding"]["theta"]
     assert theta["stack"] is True
     assert "y" not in spec["layer"][0]["encoding"], "원에는 축이 없습니다."

@@ -20,6 +20,8 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from functools import lru_cache
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -83,6 +85,7 @@ __all__ = [
     "cached_unit_pv",
     "cached_usage",
     "clear_calc_cache",
+    "code_stamp",
     "ess_cost_model",
     "form_token",
     "rules_stamp",
@@ -94,8 +97,49 @@ __all__ = [
 # --------------------------------------------------------------------- 토큰
 
 
+# ===================================================================== 34세션 3절 · 코드 지문
+#
+# **``st.cache_data`` 는 감싼 함수의 소스만 해시한다.** 그 함수가 부르는 다른
+# 모듈이 바뀌어도 키가 그대로라, 앱이 떠 있는 채로 코드를 고치면 **소스는 새 값인데
+# 화면은 옛 값**이 된다. Streamlit 은 스크립트를 다시 읽어도 캐시는 들고 있다.
+#
+# 33세션이 여기 걸렸다 — 조합 근거 문구를 고쳤는데 화면이 그대로였다. 문구가
+# :class:`~kwise.compare.ComparisonResult` 안에 담겨 **캐시된 결과의 일부**로
+# 돌아오기 때문이다. 기준 데이터에 같은 병이 있어 이 모듈 머리에 적어 둔 그것과
+# 원인이 같다.
+#
+# **패키지 소스의 지문을 캐시 키에 함께 물린다.** 파일 하나만 바뀌어도 모든
+# 캐시 키가 달라진다.
+#
+#     · 한 프로세스에서 **한 번만** 잰다 (`lru_cache`). 배포지에서는 소스가
+#       바뀌지 않으므로 재실행마다 파일을 훑을 이유가 없다
+#     · 크기와 수정 시각만 본다 — 내용을 읽으면 100여 파일을 매번 읽게 된다
+def _source_fingerprint() -> str:
+    """``src\\kwise`` 전체의 지문 (34세션 3절). 파일 하나만 바뀌어도 달라진다."""
+    root = Path(__file__).resolve().parent.parent
+    parts = [
+        f"{path.relative_to(root).as_posix()}:{stat.st_size}:{stat.st_mtime_ns}"
+        for path in sorted(root.rglob("*.py"))
+        for stat in (path.stat(),)
+    ]
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:12]
+
+
+@lru_cache(maxsize=1)
+def code_stamp() -> str:
+    """코드 지문. **프로세스마다 한 번 잰다** (34세션 3절)."""
+    try:
+        return _source_fingerprint()
+    except OSError:  # 소스를 읽을 수 없는 배포 형태 — 캐시 키만 못 물릴 뿐이다
+        return ""
+
+
 def rules_stamp() -> str:
-    """기준 데이터 47항목의 지문. 값이 하나라도 바뀌면 달라진다."""
+    """기준 데이터 47항목 **과 코드**의 지문. 하나라도 바뀌면 달라진다.
+
+    코드까지 무는 이유는 위 「코드 지문」 주석에 있다 — 값만 물면 앱이 떠 있는
+    채로 코드를 고쳤을 때 화면이 옛 값을 낸다.
+    """
     payload = {
         origin.filename: {key: ruleset[key].value for key in sorted(ruleset.item_keys())}
         for origin, ruleset in (
@@ -104,7 +148,8 @@ def rules_stamp() -> str:
         )
     }
     text = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return f"{digest}.{code_stamp()}"
 
 
 def upload_digest() -> str:

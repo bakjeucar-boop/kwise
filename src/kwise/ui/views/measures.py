@@ -1559,7 +1559,7 @@ def _notices(notices: tuple[Notice, ...]) -> None:
     if grounds:
         st.caption(
             f"산출 근거 {len(grounds)}건",
-            help=tooltip_text(notices, header="**이 숫자가 어디서 나왔나**"),
+            help=tooltip_text(notices),
         )
 
 

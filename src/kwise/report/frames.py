@@ -35,6 +35,7 @@ from kwise.report.days import day_profile
 from kwise.tariff import day_window, option_sort_key
 
 __all__ = [
+    "BAND_FRAME_COLUMNS",
     "BAND_LABELS",
     "CAPACITY_COLUMNS",
     "CAPACITY_ROWS",
@@ -54,8 +55,6 @@ __all__ = [
     "monthly_peak_frame",
     "power_factor_day_frame",
     "power_triangle_frame",
-    "season_charge_frame",
-    "season_charge_total",
     "sensitivity_frame",
     "solar_annual_frame",
     "solar_capacity_table",
@@ -186,56 +185,15 @@ def monthly_charge_frame(structure: ChargeStructure) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["월", "구분", "원", "합계(원)", "순서"])
 
 
-def season_charge_frame(structure: ChargeStructure, *, season: str | None = None) -> pd.DataFrame:
-    """계절별 요금 구성 — 기본요금과 계시별 전력량요금 (33세션 3절).
-
-    :func:`monthly_charge_frame` 과 **같은 네 조각**이고 같은 규칙으로 묶는다
-    (역률요금은 기본요금에 합친다). 다른 것은 가로축뿐이다 — 달 열셋 대신
-    계절 하나로 접는다.
-
-    **계절은 요금표가 정한 그대로다.** 달마다 이미 ``season`` 이 붙어 있으므로
-    (요금 엔진이 붙였다) 여기서 달을 다시 나누지 않는다. 화면이 계절을 다시
-    정의하면 요금과 다른 수를 그리게 된다.
-
-    Args:
-        season: ``None`` 이면 전 기간. 주면 그 계절의 달만 접는다.
-
-    Returns:
-        ``구분`` · ``원`` · ``비중`` · ``라벨`` · ``순서`` — 네 줄.
-    """
-    monthly = structure.monthly
-    if season is not None:
-        monthly = monthly[monthly["season"].astype(str) == season]
-    base = float(monthly["base_won"].sum()) + float(
-        monthly["power_factor_won"].sum() if "power_factor_won" in monthly else 0.0
-    )
-    values = {
-        "기본요금": base,
-        "경부하": float(monthly["light_won"].sum()) if "light_won" in monthly else 0.0,
-        "중간부하": float(monthly["mid_won"].sum()) if "mid_won" in monthly else 0.0,
-        "최대부하": float(monthly["peak_won"].sum()) if "peak_won" in monthly else 0.0,
-    }
-    total = sum(values.values())
-    rows = []
-    for order, part in enumerate(MONTHLY_CHARGE_PARTS):
-        share = values[part] / total if total else 0.0
-        rows.append(
-            {
-                "구분": part,
-                "원": values[part],
-                "비중": share,
-                # **이름과 비중을 한 조각에 적는다** (33세션 3절). 원 넷을 한 줄에
-                # 놓으면 범례가 넷이 되어 같은 이름이 네 번 실린다.
-                "라벨": f"{part} {share * 100:.0f}%",
-                "순서": order,
-            }
-        )
-    return pd.DataFrame(rows, columns=["구분", "원", "비중", "라벨", "순서"])
-
-
-def season_charge_total(structure: ChargeStructure, *, season: str | None = None) -> float:
-    """그 계절의 청구액 합계 (33세션 3절). 원 아래에 적는다."""
-    return float(season_charge_frame(structure, season=season)["원"].sum())
+#: 계시별 사용량 구성 표의 열. **빈 표도 같은 열을 낸다** — 없는 계절에서
+#: 열이 사라지면 그림 쪽이 KeyError 로 죽는다.
+BAND_FRAME_COLUMNS: dict[str, list[object]] = {
+    "시간대": [],
+    "사용량(kWh)": [],
+    "비중": [],
+    "라벨": [],
+    "순서": [],
+}
 
 
 def band_frame(structure: ChargeStructure, *, season: str | None = None) -> pd.DataFrame:
@@ -248,14 +206,23 @@ def band_frame(structure: ChargeStructure, *, season: str | None = None) -> pd.D
     if season is not None:
         wide = structure.band_season_kwh
         if wide.empty or season not in wide.index:
-            return pd.DataFrame({"시간대": [], "사용량(kWh)": [], "비중": []})
+            return pd.DataFrame(BAND_FRAME_COLUMNS)
         kwh = wide.loc[season]
     total = float(kwh.sum())
+    names = [BAND_LABELS.get(str(band), str(band)) for band in kwh.index]
+    shares = [float(value) / total if total else 0.0 for value in kwh]
     return pd.DataFrame(
         {
-            "시간대": [BAND_LABELS.get(str(band), str(band)) for band in kwh.index],
+            "시간대": names,
             "사용량(kWh)": kwh.astype(float).to_numpy(),
-            "비중": [float(value) / total if total else 0.0 for value in kwh],
+            "비중": shares,
+            # **이름과 비중을 한 조각에 적는다** (34세션 1절). 원이 넷이라 범례를
+            # 달면 같은 이름이 네 번 실린다.
+            "라벨": [
+                f"{name} {share * 100:.0f}%" for name, share in zip(names, shares, strict=True)
+            ],
+            # 조각 순서. 자료 순서에 맡기면 계절마다 색이 돈다.
+            "순서": list(range(len(names))),
         }
     )
 

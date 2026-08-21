@@ -180,8 +180,10 @@ def test_근거는_툴팁으로_간다(sample_ess: EssResult) -> None:
     deduped = {item.text for item in dedupe(sample_ess.notices) if item.severity is Severity.BASIS}
     assert set(grounds) == deduped
 
-    rendered = tooltip_text(sample_ess.notices, header="**이 숫자가 어디서 나왔나**")
-    assert rendered.startswith("**이 숫자가 어디서 나왔나**")
+    # **앞머리를 붙이지 않는다** (34세션 3절). 툴팁을 여는 캡션이 이미
+    # 「산출 근거 N건」 이라 같은 말을 두 번 하고 있었다.
+    rendered = tooltip_text(sample_ess.notices)
+    assert rendered.startswith("- ")
     # **툴팁도 escape 한다** (25세션 2절) — ``help=`` 가 마크다운을 해석한다.
     for line in grounds:
         assert markdown_safe(line) in rendered
