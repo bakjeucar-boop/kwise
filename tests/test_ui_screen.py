@@ -42,6 +42,7 @@ from kwise.ui.notices import (
     tooltip_text,
 )
 from kwise.ui.pipeline import ContractForm
+from kwise.ui.spec import MEASURES
 from kwise.ui.views.diagnose import missing_lines
 
 VIEWS = Path("src") / "kwise" / "ui" / "views"
@@ -525,6 +526,13 @@ def _running(*, option: str = "II", contract_kw: float = 6_000.0, **state: objec
     )
     for key, value in state.items():
         running.session_state[key] = value
+    # **3단계는 「합산효과 계산」 을 누른 뒤에 그린다** (33세션 5절). 시험마다
+    # 단추를 눌러 한 벌 더 돌리면 시험 시간이 두 배가 되므로, 누른 것과 같은
+    # 상태를 세션에 미리 심는다 — 단추가 하는 일이 그것뿐이다.
+    if "combination_pick" not in state:
+        running.session_state["combination_pick"] = tuple(
+            item.key for item in MEASURES if state.get(f"measure_on_{item.key}")
+        )
     return running.run()
 
 
@@ -1123,46 +1131,248 @@ def test_관측이_1년에_못_미치면_기간_평균으로_적는다() -> None
     assert float(temperature_mean_frame(frame(30)).loc[0, "평균 기온(℃)"]) == pytest.approx(13.2)
 
 
-def test_월별_요금_구성_막대가_세_배_두껍다() -> None:
-    """**칸 폭을 못박는다** (32세션 2절).
+# ======================================================== 33세션 · 날짜 표기와 원 넷
 
-    적지 않으면 vega-lite 기본 20px 칸에 17px 막대가 그려진다. 열두 달이면
-    60px 칸이고, 달이 많아지면 가로 스크롤 대신 칸을 줄인다.
+
+def _rendered_specs(screen: AppTest) -> list[dict[str, Any]]:
+    """화면에 실제로 그려진 vega 스펙 전부. **모듈 시험이 못 보는 자리다.**"""
+    import json
+
+    return [json.loads(item.proto.spec) for item in screen.get("vega_lite_chart")]
+
+
+def _encodings(node: object) -> list[dict[str, Any]]:
+    """스펙 어디에 묻혀 있든 ``encoding`` 을 전부 끌어낸다 (층·묶음 상관없이)."""
+    found: list[dict[str, Any]] = []
+    if isinstance(node, dict):
+        if isinstance(node.get("encoding"), dict):
+            found.append(node["encoding"])
+        for value in node.values():
+            found.extend(_encodings(value))
+    elif isinstance(node, list):
+        for value in node:
+            found.extend(_encodings(value))
+    return found
+
+
+def test_모든_날짜_축이_한국식이다(stage3: AppTest) -> None:
+    """**vega 의 기본 로케일은 영어다** (33세션 1절).
+
+    ``May`` · ``Apr 30`` 이 축에 찍히던 자리다. 차트마다 ``format`` 을 적으면
+    다음에 새 차트가 또 영어로 나오므로, **라벨 식 한 벌**을 날짜 축 전부가
+    쓰는지 화면에 그려진 스펙으로 훑는다.
     """
-    from kwise.ui.charts import MONTH_BAR_STEP, _month_step, monthly_charge_chart
+    from kwise.ui.charts import DATE_FORMAT, DATE_LABEL_EXPR, TIME_FORMAT, TIME_TOOLTIP_FORMAT
 
-    assert MONTH_BAR_STEP == 60  # 기본 20px 의 세 배
-    spec = monthly_charge_chart(_structure()).to_dict()
-    assert spec["width"] == {"step": MONTH_BAR_STEP}
-    # 축 규약은 그대로다 — 막대는 자르지 않는다 (17세션 0절 · 23세션 2절).
-    assert spec["encoding"]["y"].get("scale", {}).get("zero") is not False
+    offenders: list[str] = []
+    seen = 0
+    for spec in _rendered_specs(stage3):
+        for encoding in _encodings(spec):
+            for channel in ("x", "y"):
+                item = encoding.get(channel)
+                if not isinstance(item, dict) or item.get("type") != "temporal":
+                    continue
+                seen += 1
+                axis = item.get("axis") or {}
+                if axis.get("labelExpr") != DATE_LABEL_EXPR and axis.get("format") != TIME_FORMAT:
+                    offenders.append(f"{channel} 축 {item.get('field')}")
+            tooltip = encoding.get("tooltip")
+            for item in tooltip if isinstance(tooltip, list) else []:
+                if not isinstance(item, dict) or item.get("type") != "temporal":
+                    continue
+                seen += 1
+                if item.get("format") not in (DATE_FORMAT, TIME_TOOLTIP_FORMAT):
+                    offenders.append(f"툴팁 {item.get('field')} — {item.get('format')}")
+    assert seen, "날짜 축이 하나도 안 그려졌습니다 — 시험이 아무것도 못 봤습니다."
+    assert offenders == [], " / ".join(sorted(set(offenders)))
 
-    # 여러 해 자료는 칸을 줄여 한 화면에 넣는다. 하한 아래로는 내려가지 않는다.
-    assert _month_step(12) == MONTH_BAR_STEP
-    assert _month_step(36) < MONTH_BAR_STEP
-    assert _month_step(500) == 20
+
+def test_화면에_영문_달_이름이_없다(stage3: AppTest) -> None:
+    """**표기 규약을 빠뜨린 자리는 서식 문자로 드러난다** (33세션 1절)."""
+    import json
+    import re
+
+    english = re.compile(r"%[-_0]?[abhB]|(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)")
+    for spec in _rendered_specs(stage3):
+        rendered = json.dumps(spec, ensure_ascii=False)
+        # 자료 값(ISO 날짜)은 영어가 아니다. 서식 문자와 달 이름만 본다.
+        assert not english.search(rendered), english.search(rendered)
+
+
+def test_보고서_png_도_같은_날짜_규약이다() -> None:
+    """**화면만 고치면 어긋난다** (13세션). matplotlib 도 기본이 영어다."""
+    import datetime as date_module
+
+    from kwise.report.figures import korean_date_label
+
+    assert korean_date_label(date_module.datetime(2024, 1, 1)) == "2024년"
+    assert korean_date_label(date_module.datetime(2024, 5, 1)) == "5월"
+    assert korean_date_label(date_module.datetime(2024, 4, 30)) == "4월 30일"
+    source = (Path("src") / "kwise" / "report" / "figures.py").read_text(encoding="utf-8")
+    assert source.count("date_axis(axes)") == 3, "날짜 축 png 셋이 모두 규약을 타야 합니다."
+    assert source.count("time_axis(axes)") == 2
+
+
+def test_월_축_라벨이_한국식이다() -> None:
+    """**해는 바뀔 때만 적는다** (33세션 1절). 열세 달에 「4월」 이 둘 생긴다."""
+    from kwise.report.frames import month_labels, monthly_peak_frame
+
+    assert month_labels(["2023-12", "2024-01", "2024-02"]) == ["2023년 12월", "2024년 1월", "2월"]
+    peak = _diagnosis().peak
+    months = list(monthly_peak_frame(peak)["월"])
+    assert months[0] == "2023년 4월"
+    assert not [item for item in months if any(ch.isascii() and ch.isalpha() for ch in item)]
+
+
+def test_기온_그래프_오른쪽_축에_눈금과_단위가_있다() -> None:
+    """**32세션에 오른쪽 눈금이 사라졌다** (33세션 2절).
+
+    기준선·라벨에 ``axis=None`` 을 주었더니 vega 가 층의 y 축을 합칠 때 null 이
+    이겨, 기온 곡선은 그려지는데 범위와 단위(℃)를 읽을 수 없었다.
+    """
+    import pandas as pd
+
+    from kwise.ui.charts import daily_temperature_chart
+
+    usage = load_usage(SAMPLE)
+    index = pd.date_range(usage.meta.start, usage.meta.end, freq="h")
+    temperature = pd.Series(range(len(index)), index=index, dtype=float) % 30.0
+    spec = daily_temperature_chart(usage, temperature).to_dict()
+
+    right = spec["layer"][1]["layer"]
+    for layer in right:
+        axis = layer["encoding"]["y"].get("axis")
+        assert axis is not None, "축을 지운 층이 있습니다 — 합칠 때 null 이 이깁니다."
+        assert axis["orient"] == "right"
+        assert layer["encoding"]["y"]["title"] == "일평균 기온 (℃)"
+    # 세 층의 축 정의가 **똑같아야** 합쳐도 다툴 것이 없다.
+    axes = [layer["encoding"]["y"]["axis"] for layer in right]
+    assert axes[0] == axes[1] == axes[2]
+
+
+def test_화면에_계절별_원_넷이_그려진다(app: AppTest) -> None:
+    """**원 넷을 한 줄에** (33세션 3절). 갈래는 계절 탭과 같다."""
+    import json
+
+    arcs = [spec for spec in _rendered_specs(app) if '"arc"' in json.dumps(spec)]
+    assert len(arcs) == 4, f"원이 {len(arcs)}개입니다 — 전체·봄·가을·여름·겨울 넷이어야 합니다."
+    titles = [spec["title"]["text"] for spec in arcs]
+    assert titles == ["전체", "봄·가을", "여름", "겨울"], titles
+    for spec in arcs:
+        assert spec["title"]["subtitle"], "합계 금액이 제목 아래에 없습니다."
+        # 조각마다 이름과 비중을 적는다 — 범례 대신이다.
+        assert spec["layer"][1]["encoding"]["text"]["field"] == "라벨"
+        assert spec["layer"][0]["encoding"]["color"]["legend"] is None
+
+
+def test_계절별_요금_구성이_원_넷이다() -> None:
+    """**막대를 버리고 원으로 갔다** (33세션 3절).
+
+    32세션에 칸 폭을 60px 로 못 박았으나 화면은 그대로였다 — 화면 폭에 맞춰
+    늘어나는 경로에서 vega 가 spec 의 폭을 덮어쓴다. 폭을 우리가 못 정하면
+    막대 두께도 우리 손에 없다.
+    """
+    from kwise.ui.charts import charge_donut_chart
+
+    structure = _structure()
+    spec = charge_donut_chart(
+        structure, season="summer", title="여름", subtitle="10.7억원"
+    ).to_dict()
+    # 조각(arc)과 라벨(text) 두 층.
+    assert [layer["mark"]["type"] for layer in spec["layer"]] == ["arc", "text"]
+    assert spec["layer"][0]["mark"]["innerRadius"] > 0, "도넛이 아니라 원입니다."
+    # 제목이 계절, 그 아래가 합계 금액이다.
+    assert spec["title"]["text"] == "여름"
+    assert spec["title"]["subtitle"] == "10.7억원"
+    # 조각마다 이름과 비중을 적는다 — 범례를 달지 않는다.
+    assert spec["layer"][1]["encoding"]["text"]["field"] == "라벨"
+    assert spec["layer"][0]["encoding"]["color"]["legend"] is None
+    # 막대 시절의 상수는 남기지 않는다.
+    from kwise.ui import charts
+
+    assert not hasattr(charts, "MONTH_BAR_STEP"), "옛 막대 상수가 남아 있습니다."
+    assert not hasattr(charts, "monthly_charge_chart"), "옛 막대 차트가 남아 있습니다."
+
+
+def test_계절별_요금_구성의_네_조각이_청구액과_맞는다() -> None:
+    """**요금과 다른 수를 그리지 않는다.** 계절은 요금표가 붙인 그대로다."""
+    from kwise.report.frames import MONTHLY_CHARGE_PARTS, season_charge_frame, season_charge_total
+
+    structure = _structure()
+    frame = season_charge_frame(structure)
+    assert list(frame["구분"]) == list(MONTHLY_CHARGE_PARTS)
+    assert float(frame["원"].sum()) == pytest.approx(structure.total_won)
+    assert float(frame["비중"].sum()) == pytest.approx(1.0)
+    # 계절을 다 더하면 전체다.
+    seasons = structure.monthly["season"].astype(str).unique()
+    parts = sum(season_charge_total(structure, season=str(key)) for key in seasons)
+    assert parts == pytest.approx(season_charge_total(structure))
+    # 라벨에 이름과 비중이 함께 적힌다.
+    assert frame.loc[0, "라벨"].startswith("기본요금 ")
+    assert frame.loc[0, "라벨"].endswith("%")
 
 
 def test_ESS_절감액_툴팁이_전력량요금_절감의_까닭을_밝힌다() -> None:
     """**「충전을 하는 ESS 에서 전력량요금 절감이 가능한가」** 에 답한다 (32세션 3절).
 
-    31세션 문구는 합만 적어 물음을 낳았다. 옮겨 담기와 왕복효율 손실이 거의
-    상쇄된다는 것이 답이고, 금액 둘은 같은 화면의 「계산 근거」 표가 이미 낸다.
+    **33세션에 부호로 문장을 갈랐다.** 왕복효율 손실이 단가차익보다 크면
+    전력량요금 절감이 음수가 되고 기본요금 비중이 100%를 넘는다 — 사용자가
+    화면에서 100.4% 를 보고 물었다.
     """
-    from kwise.ui.text import ess_saving_share_line
+    from kwise.ui.text import ess_saving_line
 
     source = (VIEWS / "measures.py").read_text(encoding="utf-8")
     assert "경부하에 충전해 최대부하에 방전하니" in source
     assert "왕복효율 손실만큼 총 사용량이" in source
+    # 「거의 상쇄됩니다」 는 틀린 말이었다 — 손실이 더 크면 늘어난다.
+    assert "둘이 거의 상쇄됩니다" not in source
+    assert "맞부딪힙니다" in source
     # 31세션 문구는 남지 않는다 — 합만 적으면 물음이 되돌아온다.
     assert "기본요금 절감 + 전력량요금 절감입니다." not in source
     # 차익거래가 빠져 있다는 사실은 이 자리 하나에만 있다 (중복 금지).
     assert source.count("충방전 차익거래는 들어 있지 않습니다") == 1
 
-    # 비중 한 마디가 「99.8%가 기본요금」 을 낸다.
-    assert ess_saving_share_line(10_409_000, 10_425_000) == "거의 전부 기본요금 절감입니다 (99.8%)."
-    assert ess_saving_share_line(6_000_000, 10_000_000) == "기본요금 절감이 60.0% 입니다."
-    assert ess_saving_share_line(0.0, 0.0) == "기본요금 절감과 전력량요금 절감입니다."
+    # 전력량요금이 줄어든 경우 — 비중을 적는다. 이 갈래는 100% 를 넘지 않는다.
+    plus = ess_saving_line(10_409_000, 16_000, 16_000)
+    assert "거의 전부 기본요금 절감입니다" in plus and "(99.8%)" in plus
+    assert "2만원" in plus
+    # 전력량요금이 늘어난 경우 — **비중을 적지 않는다.** 100.4% 가 나오던 자리다.
+    minus = ess_saving_line(10_409_000, -40_000, -42_000)
+    assert "오히려" in minus and "늘었습니다" in minus
+    assert "%" not in minus, minus
+    # 반반이면 비중을 그대로 적는다.
+    assert "60.0%" in ess_saving_line(6_000_000, 4_000_000, 4_200_000)
+
+
+def test_대표일은_ESS_절감액을_바꾸지_않는다() -> None:
+    """**대표일은 그림에만 쓴다** (33세션 4절).
+
+    사용자가 물었다 — 대표일을 결측일로 잡으면 값이 달라지나. 달라지면 결함이다.
+    :func:`~kwise.measures.evaluate_ess` 는 날을 인자로 받지 않지만, 화면이
+    어딘가에서 날을 섞어 넣을 수도 있어 **화면으로 확인한다.**
+    """
+    import inspect
+
+    from kwise.measures import evaluate_ess
+
+    assert "day" not in inspect.signature(evaluate_ess).parameters
+
+    import datetime as date_module
+
+    from kwise.report.days import MAX_DEMAND_KEY
+
+    def saving(**day: object) -> str:
+        screen = _running(option="I", measure_on_ess=True, **day)  # type: ignore[arg-type]
+        assert not screen.exception, screen.exception
+        return next(str(item.value) for item in screen.metric if item.label == "절감액")
+
+    # 최대수요일과 **결측 구간 한가운데의 날** — 절감액은 같아야 한다.
+    peak_day = saving(measure_common_ref_day=MAX_DEMAND_KEY)
+    missing_day = saving(
+        measure_common_ref_day="custom",
+        measure_common_ref_day_custom=date_module.date(2023, 11, 6),
+    )
+    assert peak_day == missing_day
 
 
 def test_지역이_없으면_기온을_구하지_않는다() -> None:
@@ -1435,8 +1645,11 @@ def test_개선안마다_체크박스가_있다(stage3: AppTest) -> None:
     assert all(item.value for item in picks), "기본은 전부 체크다."
 
 
-def test_체크를_풀면_합산효과가_다시_계산된다() -> None:
+def test_체크를_풀고_계산을_눌러야_합산효과가_바뀐다() -> None:
     """뺀 만큼 줄어야 한다 — 화면이 옛 값을 들고 있으면 안 된다.
+
+    **33세션 5절에 계산 버튼이 생겼다.** 체크만 풀면 묵은 결과가 흐리게 남고
+    「선택이 변경되었습니다」 가 뜬다. 눌러야 다시 계산된다.
 
     **한 벌을 따로 띄운다.** 묶음 fixture 를 건드리면 뒤따르는 시험이 뺀 조합을
     보게 된다.
@@ -1444,12 +1657,34 @@ def test_체크를_풀면_합산효과가_다시_계산된다() -> None:
     screen = _running(option="I", **STAGE3_MEASURES)  # type: ignore[arg-type]
     assert not screen.exception, screen.exception
     before = {str(item.label): str(item.value) for item in screen.metric}
+
     dropped = screen.checkbox(key="combo_pick_ess").set_value(False).run(timeout=600)
     assert not dropped.exception, dropped.exception
-    after = {str(item.label): str(item.value) for item in dropped.metric}
+    # 아직은 묵은 결과다. 사유가 화면에 있다.
+    stale = {str(item.label): str(item.value) for item in dropped.metric}
+    assert stale["합산효과"] == before["합산효과"]
+    assert any("선택이 변경되었습니다" in str(item.value) for item in dropped.markdown)
+
+    run = dropped.button(key="combo_run").click().run(timeout=600)
+    assert not run.exception, run.exception
+    after = {str(item.label): str(item.value) for item in run.metric}
     assert after["합산효과"] != before["합산효과"]
-    body = " ".join(str(item.value) for item in dropped.caption)
+    assert not any("선택이 변경되었습니다" in str(item.value) for item in run.markdown)
+    body = " ".join(str(item.value) for item in run.caption)
     assert "조합에서 뺀 개선안" in body, body
+
+
+def test_계산을_누르기_전에는_합산효과가_없다() -> None:
+    """**체크마다 조합 전부의 요금이 다시 돌던 자리다** (33세션 5절)."""
+    screen = _running(option="I", combination_pick=None, **STAGE3_MEASURES)  # type: ignore[arg-type]
+    assert not screen.exception, screen.exception
+    assert "합산효과" not in _labels(screen)
+    body = " ".join(str(item.value) for item in screen.caption)
+    assert "「합산효과 계산」 을 누르십시오" in body, body
+
+    run = screen.button(key="combo_run").click().run(timeout=600)
+    assert not run.exception, run.exception
+    assert "합산효과" in _labels(run)
 
 
 def test_단순_합과_합산효과와_차이를_모두_보인다(stage3: AppTest) -> None:
@@ -1826,7 +2061,7 @@ def _chart_specs() -> dict[str, object]:
         "chart.top_hour": charts.top_hour_chart(diagnosis.peak),
         "chart.hourly_profile": charts.hourly_profile_chart(diagnosis.peak),
         "chart.band": charts.band_chart(diagnosis.structure),
-        "chart.monthly_charge": charts.monthly_charge_chart(diagnosis.structure),
+        "chart.monthly_charge": charts.charge_donut_chart(diagnosis.structure),
         "chart.tariff_option": charts.tariff_option_chart(switch),
         "chart.tariff_delta": charts.tariff_delta_chart(switch),
         "chart.dr_daily": charts.dr_daily_chart(diagnosis.dr),
@@ -1854,6 +2089,11 @@ def chart_specs() -> dict[str, object]:
 #: 바깥 오른쪽 범례와 자리를 다투는 그림만이다. 늘리려면 이유를 적는다.
 LEGEND_BELOW_CHARTS = {"chart.power_triangle"}
 
+#: **범례를 아예 달지 않는 차트** (33세션 3절). 계절별 요금 구성은 원이 넷이라
+#: 범례를 달면 같은 이름 넷이 네 번 실린다 — 조각마다 이름과 비중을 적는 편이
+#: 짧고 정확하다. 늘리려면 이유를 적는다.
+NO_LEGEND_CHARTS = {"chart.monthly_charge"}
+
 
 def test_전_차트가_같은_범례_규약을_쓴다(chart_specs: dict[str, object]) -> None:
     """**바깥 오른쪽 · 배경 없음** (23세션 1절 · 27세션 6절).
@@ -1874,6 +2114,9 @@ def test_전_차트가_같은_범례_규약을_쓴다(chart_specs: dict[str, obj
         if '"orient": "bottom-right"' in spec:
             offenders.append(f"{name}: 범례가 그림 안쪽")
         if '"legend"' not in spec:
+            continue
+        if name in NO_LEGEND_CHARTS:
+            assert '"legend": null' in spec, f"{name}: 범례를 달지 않기로 한 차트입니다."
             continue
         wanted = '"orient": "bottom"' if name in LEGEND_BELOW_CHARTS else '"orient": "right"'
         if wanted not in spec:
@@ -2326,22 +2569,27 @@ def test_발전량을_MWh_로_낸다() -> None:
 
 
 @functools.lru_cache(maxsize=1)
-def _structure() -> Any:
-    """샘플의 요금 구조 한 벌. **두 시험이 나눠 쓴다** — 요금 계산이 무겁다."""
+def _diagnosis() -> Any:
+    """샘플의 진단 한 벌. **여러 시험이 나눠 쓴다** — 요금 계산이 무겁다."""
     from kwise.diagnose import ContractInfo, diagnose
     from kwise.quality import check_quality
 
     usage = load_usage(SAMPLE)
     table_ = load_tariff()
     quality = check_quality(usage)
-    diagnosis = diagnose(
+    return diagnose(
         usage,
         table_,
         ContractInfo(TariffSelection("general_b", "high_a", "I"), contract_kw=5_500.0),
         quality=quality,
     )
-    assert diagnosis.structure is not None
-    return diagnosis.structure
+
+
+def _structure() -> Any:
+    """샘플의 요금 구조."""
+    structure = _diagnosis().structure
+    assert structure is not None
+    return structure
 
 
 def test_개선안을_체크박스로_고른다() -> None:
@@ -2413,7 +2661,7 @@ def test_요금_구조에_합계와_월별_그래프가_있다(app: AppTest) -> 
     for name in ("기본요금", "전력량요금", "합계", "기본요금 비중"):
         assert name in labels, labels
     captions = [str(item.value) for item in app.caption]
-    assert "월별 요금 구성" in captions, captions
+    assert "계절별 요금 구성" in captions, captions  # 33세션 3절
 
 
 def test_월별_요금_구성이_네_조각이다() -> None:
@@ -2437,13 +2685,19 @@ def test_월별_요금_구성이_네_조각이다() -> None:
     assert len(set(round(value) for value in base)) < len(base)
 
 
-def test_월별_요금_구성_막대를_자르지_않는다() -> None:
-    """**길이가 곧 금액이다** (17세션 0절 · 23세션 2절)."""
-    from kwise.ui.charts import monthly_charge_chart
+def test_계절별_요금_구성은_각을_자르지_않는다() -> None:
+    """**17세션 축 규약은 막대에 대한 것이다** (33세션 3절).
 
-    spec = monthly_charge_chart(_structure()).to_dict()
-    assert spec["encoding"]["y"].get("scale", {}).get("zero") is not False
-    assert spec["encoding"]["y"]["stack"] == "zero"
+    원에는 축이 없어 「자르지 않는다」 가 성립하지 않는다 — 대신 **각이 곧
+    비중**이라 조각을 쌓는 것으로 같은 뜻을 지킨다. 규약을 고칠 일이 아니라
+    해당 없음이다.
+    """
+    from kwise.ui.charts import charge_donut_chart
+
+    spec = charge_donut_chart(_structure()).to_dict()
+    theta = spec["layer"][0]["encoding"]["theta"]
+    assert theta["stack"] is True
+    assert "y" not in spec["layer"][0]["encoding"], "원에는 축이 없습니다."
 
 
 def test_선택요금_전환에_중복_문구가_없다() -> None:
@@ -2669,8 +2923,8 @@ def test_ESS_절감액_툴팁이_구성을_밝힌다() -> None:
     assert not screen.exception, screen.exception
     tips = [item.help for item in screen.metric if item.label == "절감액"]
     ess_tip = next(str(item) for item in tips if item and "기본요금 절감" in str(item))
-    # 샘플은 99.8% 가 기본요금이다 — 비중이 그 사실을 낸다.
-    assert "거의 전부 기본요금 절감입니다 (99.8%)." in ess_tip, ess_tip
+    # 샘플은 99.8% 가 기본요금이다 — 비중이 그 사실을 낸다 (33세션 4절에 굵게).
+    assert "거의 전부 기본요금 절감입니다** (99.8%)" in ess_tip, ess_tip
     # 전력량요금이 왜 줄어드는지가 적힌다 (옮겨 담기 ↔ 왕복효율 손실).
     assert "싼 시간으로" in ess_tip
     assert "왕복효율 손실" in ess_tip

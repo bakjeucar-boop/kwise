@@ -95,6 +95,8 @@ def _run(**state: object) -> AppTest:
     )
     for key in MEASURE_KEYS:
         app.session_state[f"measure_on_{key}"] = True
+    # 3단계는 「합산효과 계산」 을 누른 뒤에 그린다 (33세션 5절).
+    app.session_state["combination_pick"] = tuple(MEASURE_KEYS)
     for key, value in state.items():
         app.session_state[key] = value
     return app.run()

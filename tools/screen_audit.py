@@ -107,7 +107,13 @@ def _clean(value: object) -> str:
 
 
 def _chart_labels(spec: str) -> Iterator[str]:
-    """차트 제목과 축 이름. **화면에 글자로 나오는 것만** 본다."""
+    """차트 제목과 축 이름. **화면에 글자로 나오는 것만** 본다.
+
+    ``labelExpr`` 은 예외다 (33세션 1절). 눈금 이름을 만드는 **vega 표현식**이라
+    글자 그대로 화면에 나오지 않는다 — 세면 날짜 축 하나당 문구가 하나씩 늘고,
+    코드가 문구로 잡혀 규칙 검사까지 흐려진다. 그것이 내는 글자(「5월」)는
+    자료에서 나오므로 축 이름과 같은 갈래가 아니다.
+    """
     try:
         parsed = json.loads(spec)
     except (TypeError, ValueError):
@@ -117,7 +123,7 @@ def _chart_labels(spec: str) -> Iterator[str]:
         node = stack.pop()
         if isinstance(node, dict):
             for key, value in node.items():
-                if key in {"title", "text", "labelExpr"} and isinstance(value, str):
+                if key in {"title", "text"} and isinstance(value, str):
                     yield value
                 elif key in {"title", "text"} and isinstance(value, list):
                     yield from (item for item in value if isinstance(item, str))
@@ -250,6 +256,9 @@ def run(*, solar: bool = True, steps: int = 4) -> AppTest:
     )
     for key in MEASURE_KEYS:
         app.session_state[f"measure_on_{key}"] = True
+    # **3단계는 「합산효과 계산」 을 누른 뒤에 그린다** (33세션 5절). 누르지 않으면
+    # 조합 문구가 통째로 빠져 감사가 「줄었다」 고 잘못 세운다.
+    app.session_state["combination_pick"] = tuple(MEASURE_KEYS)
     if solar:
         province = list_provinces()[0]
         region_key = list_sigungu(province)[0].key

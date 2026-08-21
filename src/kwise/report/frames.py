@@ -49,10 +49,13 @@ __all__ = [
     "ess_day_frame",
     "ess_target_frame",
     "hourly_profile_frame",
+    "month_labels",
     "monthly_charge_frame",
     "monthly_peak_frame",
     "power_factor_day_frame",
     "power_triangle_frame",
+    "season_charge_frame",
+    "season_charge_total",
     "sensitivity_frame",
     "solar_annual_frame",
     "solar_capacity_table",
@@ -69,6 +72,22 @@ __all__ = [
 BAND_LABELS: dict[str, str] = {"light": "경부하", "mid": "중간부하", "peak": "최대부하"}
 
 
+#: 달 축 라벨 (33세션 1절). **해는 바뀔 때만 적는다** — 열세 달짜리 자료에
+#: 「4월」 이 둘 생기면 어느 쪽이 앞인지 알 수 없고, 달마다 해를 적으면 라벨이
+#: 두 배가 되어 눕는다. 날짜 축의 :data:`~kwise.ui.charts.DATE_LABEL_EXPR` 와
+#: 같은 규칙이다.
+def month_labels(periods: Sequence[object]) -> list[str]:
+    """``[2023-04, 2023-05, …]`` → ``["2023년 4월", "5월", …]`` (33세션 1절)."""
+    labels: list[str] = []
+    year: int | None = None
+    for value in periods:
+        stamp = pd.Period(str(value), freq="M")
+        head = f"{stamp.year}년 " if stamp.year != year else ""
+        labels.append(f"{head}{stamp.month}월")
+        year = stamp.year
+    return labels
+
+
 def monthly_peak_frame(peak: PeakProfile) -> pd.DataFrame:
     """월별 최대수요와 요금적용전력 기준값.
 
@@ -76,7 +95,8 @@ def monthly_peak_frame(peak: PeakProfile) -> pd.DataFrame:
     관측 최대와 나란히 두어야 "밤 피크는 요금적용전력이 아니다" 가 보인다.
     """
     frame = peak.monthly.reset_index()
-    frame["월"] = frame["month"].astype(str)
+    # **축에 적히는 이름은 한국식이다** (33세션 1절).
+    frame["월"] = month_labels(frame["month"].tolist())
     return pd.DataFrame(
         {
             "월": frame["월"],
@@ -164,6 +184,58 @@ def monthly_charge_frame(structure: ChargeStructure) -> pd.DataFrame:
             for order, part in enumerate(MONTHLY_CHARGE_PARTS)
         )
     return pd.DataFrame(rows, columns=["월", "구분", "원", "합계(원)", "순서"])
+
+
+def season_charge_frame(structure: ChargeStructure, *, season: str | None = None) -> pd.DataFrame:
+    """계절별 요금 구성 — 기본요금과 계시별 전력량요금 (33세션 3절).
+
+    :func:`monthly_charge_frame` 과 **같은 네 조각**이고 같은 규칙으로 묶는다
+    (역률요금은 기본요금에 합친다). 다른 것은 가로축뿐이다 — 달 열셋 대신
+    계절 하나로 접는다.
+
+    **계절은 요금표가 정한 그대로다.** 달마다 이미 ``season`` 이 붙어 있으므로
+    (요금 엔진이 붙였다) 여기서 달을 다시 나누지 않는다. 화면이 계절을 다시
+    정의하면 요금과 다른 수를 그리게 된다.
+
+    Args:
+        season: ``None`` 이면 전 기간. 주면 그 계절의 달만 접는다.
+
+    Returns:
+        ``구분`` · ``원`` · ``비중`` · ``라벨`` · ``순서`` — 네 줄.
+    """
+    monthly = structure.monthly
+    if season is not None:
+        monthly = monthly[monthly["season"].astype(str) == season]
+    base = float(monthly["base_won"].sum()) + float(
+        monthly["power_factor_won"].sum() if "power_factor_won" in monthly else 0.0
+    )
+    values = {
+        "기본요금": base,
+        "경부하": float(monthly["light_won"].sum()) if "light_won" in monthly else 0.0,
+        "중간부하": float(monthly["mid_won"].sum()) if "mid_won" in monthly else 0.0,
+        "최대부하": float(monthly["peak_won"].sum()) if "peak_won" in monthly else 0.0,
+    }
+    total = sum(values.values())
+    rows = []
+    for order, part in enumerate(MONTHLY_CHARGE_PARTS):
+        share = values[part] / total if total else 0.0
+        rows.append(
+            {
+                "구분": part,
+                "원": values[part],
+                "비중": share,
+                # **이름과 비중을 한 조각에 적는다** (33세션 3절). 원 넷을 한 줄에
+                # 놓으면 범례가 넷이 되어 같은 이름이 네 번 실린다.
+                "라벨": f"{part} {share * 100:.0f}%",
+                "순서": order,
+            }
+        )
+    return pd.DataFrame(rows, columns=["구분", "원", "비중", "라벨", "순서"])
+
+
+def season_charge_total(structure: ChargeStructure, *, season: str | None = None) -> float:
+    """그 계절의 청구액 합계 (33세션 3절). 원 아래에 적는다."""
+    return float(season_charge_frame(structure, season=season)["원"].sum())
 
 
 def band_frame(structure: ChargeStructure, *, season: str | None = None) -> pd.DataFrame:

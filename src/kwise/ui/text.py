@@ -36,7 +36,7 @@ __all__ = [
     "chart_tip",
     "count",
     "days",
-    "ess_saving_share_line",
+    "ess_saving_line",
     "hours",
     "kw",
     "kwh",
@@ -123,10 +123,10 @@ CHART_TIPS: dict[str, str] = {
         "움직여도 사용량이 평평하면 조업 부하가 지배하는 건물입니다."
     ),
     "chart.monthly_charge": (
-        "달마다 청구액이 기본요금과 계시별 전력량요금으로 어떻게 나뉘는지 쌓아 "
+        "계절마다 청구액이 기본요금과 계시별 전력량요금으로 어떻게 나뉘는지 "
         "보여줍니다.\n\n"
-        "밑단(기본요금)은 요금적용전력으로 매겨져 대개 같은 높이로 이어지고, 그 위 "
-        "세 조각이 계절과 조업에 따라 움직입니다."
+        "기본요금은 요금적용전력으로 매겨져 계절과 무관하고, 나머지 세 조각이 "
+        "계절과 조업에 따라 움직입니다. 달마다의 값은 Excel 「월별 집계」 에 있습니다."
     ),
     "chart.band": (
         "계시별 시간대(경부하·중간부하·최대부하)에 사용량이 어떻게 나뉘는지 보여줍니다.\n\n"
@@ -348,25 +348,46 @@ def range_text(base: str, low: str, high: str) -> str:
 _ALMOST_ALL = 0.95
 
 
-def ess_saving_share_line(base_won: float, total_won: float) -> str:
-    """ESS 절감액에서 기본요금이 차지하는 몫 한 마디 (32세션 3절).
+def ess_saving_line(base_won: float, energy_won: float, annual_energy_won: float) -> str:
+    """ESS 절감액이 무엇으로 이루어졌나 한 마디 (32세션 3절 · 33세션 4절).
 
     **「충전을 하는 ESS 에서 전력량요금 절감이 가능한가」 에 대한 앞머리다.**
-    합계만 적으면 두 성분이 반씩인 것처럼 읽힌다 — 샘플은 99.8%가 기본요금이다.
-    금액 둘은 같은 화면의 「계산 근거」 표가 이미 내므로 여기서는 비중만 적는다.
 
-    비중은 관측 기간과 12개월 환산에서 같은 값이라 **환산 여부를 가리지 않는다.**
+    32세션은 기본요금 비중 하나만 적었는데, 어떤 자료에서 **100.4%** 가 나왔다.
+    버그가 아니다 — 왕복효율 손실로 늘어난 사용량이 단가차익보다 크면
+    **전력량요금 절감이 음수**가 되고 기본요금 몫이 100%를 넘는다. 그래도
+    「100%를 넘는 비중」 은 그 자체로 오해를 부르므로, **부호가 갈리는 자리에서
+    문장을 가른다.**
+
+        전력량요금이 늘었다   비중을 적지 않는다. **늘어난 금액**을 적는다
+        전력량요금이 줄었다   여태처럼 비중을 적는다 (이 갈래에서는 100% 이하다)
+
+    금액은 **12개월 환산분**이다 — 카드가 내는 절감액이 환산값이라 기간이 다른
+    두 수를 나란히 두면 더해지지 않는다.
 
     Args:
-        base_won: 기본요금 절감액.
-        total_won: 절감액 합계 (기본요금 + 전력량요금).
+        base_won: 기본요금 절감액 (관측 기간).
+        energy_won: 전력량요금 절감액 (관측 기간). **음수일 수 있다.**
+        annual_energy_won: 같은 값의 12개월 환산분. 화면에 적는 것은 이쪽이다.
     """
-    if total_won <= 0:
+    if energy_won < 0:
+        return (
+            "**기본요금 절감이 전부입니다** — 전력량요금은 오히려 "
+            f"{won_short(-annual_energy_won)} 늘었습니다."
+        )
+    total = base_won + energy_won
+    if total <= 0:
         return "기본요금 절감과 전력량요금 절감입니다."
-    share = base_won / total_won
+    share = base_won / total
     if share >= _ALMOST_ALL:
-        return f"거의 전부 기본요금 절감입니다 ({ratio_pct(share)})."
-    return f"기본요금 절감이 {ratio_pct(share)} 입니다."
+        return (
+            f"**거의 전부 기본요금 절감입니다** ({ratio_pct(share)}) — 전력량요금 절감은 "
+            f"{won_short(annual_energy_won)} 입니다."
+        )
+    return (
+        f"**기본요금 절감이 {ratio_pct(share)} 입니다** — 전력량요금 절감은 "
+        f"{won_short(annual_energy_won)} 입니다."
+    )
 
 
 def markdown_safe(value: str) -> str:

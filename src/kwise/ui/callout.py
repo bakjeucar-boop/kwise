@@ -19,7 +19,15 @@ import streamlit as st
 from kwise.ui.notices import Notice, Severity
 from kwise.ui.text import markdown_safe
 
-__all__ = ["BLOCK_ICON", "CAUTION_ICON", "blocked", "caution", "note", "render_notice"]
+__all__ = [
+    "BLOCK_ICON",
+    "CAUTION_ICON",
+    "blocked",
+    "caution",
+    "note",
+    "render_notice",
+    "stale",
+]
 
 CAUTION_ICON = "⚠"
 BLOCK_ICON = "⛔"
@@ -45,6 +53,31 @@ def caution(text: str) -> None:
 def note(text: str) -> None:
     """참고 — 전제·근거. 작은 글씨로 흘려 둔다."""
     st.caption(f"· {markdown_safe(text)}")
+
+
+# ===================================================================== 33세션 5절 · 묵은 결과
+#
+# **다시 계산해야 하는 결과를 지우지 않는다.** 지우면 방금 본 수가 사라져
+# 무엇이 달라지는지 견줄 수 없고, 그대로 두면 새 선택의 결과로 읽힌다.
+# **흐리게** 두는 것이 답이다 — 남아 있되 결론이 아니라는 표시다.
+#
+# 옆단 단추와 같은 방식이다 (:mod:`kwise.ui.nav`) — 컨테이너 ``key`` 가 DOM 에
+# ``st-key-<key>`` 를 남기므로 그 하나만 골라 칠한다.
+_STALE_STYLE = """
+<style>
+.st-key-%s { opacity: 0.45; }
+</style>
+"""
+
+
+def stale(key: str) -> st.delta_generator.DeltaGenerator:
+    """묵은 결과를 담을 자리. **흐리게 그린다** (33세션 5절).
+
+    Args:
+        key: 컨테이너 키. DOM 의 ``st-key-{key}`` 가 되어 CSS 가 이것만 고른다.
+    """
+    st.markdown(_STALE_STYLE % key, unsafe_allow_html=True)
+    return st.container(key=key)
 
 
 def render_notice(item: Notice) -> None:

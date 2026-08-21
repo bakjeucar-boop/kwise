@@ -503,8 +503,8 @@ def compare_combinations(
             for item in prefixed(result.notices, result.name, tag=f"c{index}")
         ),
         basis(
-            "조합의 절감액은 수단별 절감액의 합이 아닙니다. 조합마다 부하를 다시 만들어 "
-            "요금을 처음부터 산출했습니다.",
+            "조합의 절감액은 수단별 절감액의 단순 합이 아니라, 각 조합의 부하를 "
+            "재구성하여 처음부터 다시 산출한 값입니다.",
             fact="combination.not_additive",
         ),
         basis("확실성 등급은 가장 낮은 구성 요소를 따릅니다.", fact="combination.certainty_rule"),

@@ -31,11 +31,12 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from kwise.diagnose import Diagnosis
+from kwise.diagnose import ChargeStructure, Diagnosis
 from kwise.io import UsageData
 from kwise.notices import tooltip
 from kwise.quality import DEFAULT_OPERATING_HOURS, QualityReport, monthly_longest_gaps
 from kwise.report import localize
+from kwise.report.frames import season_charge_total
 from kwise.tariff import TENTATIVE_BASE_FEE_BASIS_WARNING, TariffTable
 from kwise.tariff.labels import SEASON_LABELS
 from kwise.ui import callout, charts
@@ -827,6 +828,30 @@ def _peak_block(diagnosis: Diagnosis) -> None:
 # --------------------------------------------------------------------- 요금 구조
 
 
+def _charge_donuts(structure: ChargeStructure) -> None:
+    """계절별 요금 구성 **원 넷을 한 줄에** (33세션 3절).
+
+    갈래는 계절 탭과 같다 (:func:`season_choices`) — 한 화면에서 같은 자료를 두
+    가지로 나누면 어느 쪽이 맞는지 묻게 된다. **없는 계절은 그리지 않는다.**
+
+    합계 금액은 그림 제목 아래 한 줄로 간다. 원 아래 자리는 조각 라벨이 쓴다.
+    """
+    choices = season_choices(structure.monthly["season"].astype(str).unique())
+    columns = st.columns(len(choices))
+    for column, (label, key) in zip(columns, choices, strict=True):
+        with column:
+            st.altair_chart(
+                charts.charge_donut_chart(
+                    structure,
+                    season=key,
+                    title=label,
+                    subtitle=fmt.won_short(season_charge_total(structure, season=key)),
+                ),
+                width="stretch",
+            )
+    st.caption("계절별 요금 구성", help=fmt.chart_tip("chart.monthly_charge"))
+
+
 def _structure_block(usage: UsageData, diagnosis: Diagnosis, building: BuildingInfo | None) -> None:
     if diagnosis.structure is None:
         return
@@ -850,11 +875,11 @@ def _structure_block(usage: UsageData, diagnosis: Diagnosis, building: BuildingI
         fmt.ratio_pct(base_won / total_won if total_won else None),
         help=manual_tip("charge-structure"),
     )
-    # **달마다 무엇이 달라지는지가 여기서 읽힌다** (27세션 3-2). 밑단(기본요금)이
-    # 같은 높이로 이어지고 그 위 세 조각만 계절따라 움직이는 것이 이 요금제의
-    # 모습이다.
-    st.altair_chart(charts.monthly_charge_chart(structure), width="stretch")
-    st.caption("월별 요금 구성", help=fmt.chart_tip("chart.monthly_charge"))
+    # **계절마다 무엇이 얼마를 차지하는지가 여기서 읽힌다** (33세션 3절).
+    # 27세션의 열세 달 누적 막대를 버렸다 — 화면 폭에 맞춰 늘어나는 경로에서
+    # 막대 두께를 우리가 정할 수 없어 조각이 실오라기가 됐다 (32세션 2절·5절).
+    # 달마다의 값은 Excel 「월별 집계」 로 간다.
+    _charge_donuts(structure)
     # **계절로 갈라 본다** (30세션 5-2). 여름·겨울은 중간부하와 최대부하의 경계가
     # 아예 다른 시각이라, 셋을 합친 구성만 보면 어느 계절의 최대부하를 옮겨야
     # 하는지 알 수 없다. 비중은 그 계절 안에서 다시 잰다.

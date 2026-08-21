@@ -29,6 +29,7 @@ from kwise.notices import texts
 from kwise.report import SHEET_ORDER
 from kwise.ui.nav import RULES_PAGE, TABS
 from kwise.ui.pipeline import ContractForm
+from kwise.ui.spec import MEASURES
 
 APP = (Path("src") / "kwise" / "ui" / "app.py").resolve()
 SAMPLE = Path("input") / "사용량조회_20240429.csv"
@@ -61,6 +62,12 @@ def _app(**state: object) -> AppTest:
     )
     for key, value in state.items():
         running.session_state[key] = value
+    # 3단계는 「합산효과 계산」 을 누른 뒤에 그린다 (33세션 5절). 단추가 하는 일이
+    # 이 상태를 심는 것뿐이라, 시험은 눌린 상태로 시작한다.
+    if "combination_pick" not in state:
+        running.session_state["combination_pick"] = tuple(
+            item.key for item in MEASURES if state.get(f"measure_on_{item.key}")
+        )
     return running.run()
 
 
@@ -336,6 +343,8 @@ def compare_screen() -> AppTest:
     )
     for key in BILLED_MEASURES:
         running.session_state[f"measure_on_{key}"] = True
+    # 3단계는 「합산효과 계산」 을 누른 뒤에 그린다 (33세션 5절).
+    running.session_state["combination_pick"] = tuple(BILLED_MEASURES)
     return running.run()
 
 

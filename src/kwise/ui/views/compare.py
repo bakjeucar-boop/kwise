@@ -106,11 +106,13 @@ from kwise.ui.session import build_report_bytes
 from kwise.ui.spec import ReviewScope, measure, review_scope
 from kwise.ui.state import (
     enabled_measures,
+    get_combination_pick,
     get_solar_inputs,
     input_key,
     measure_float,
     reference_day,
     session_id,
+    set_combination_pick,
 )
 
 __all__ = ["render"]
@@ -174,7 +176,30 @@ def render(
     _standalone_block(rows)
 
     # **조합은 사용자가 짠다** (16세션 5절). 기본은 2단계에서 켠 수단 전부다.
-    enabled = _combination_picker(reviewed)
+    picked = _combination_picker(reviewed)
+
+    # **계산한 그 선택으로 그린다** (33세션 5절). 체크가 바뀌어도 「합산효과 계산」
+    # 을 누르기 전까지는 묵은 결과가 그대로 남는다 — 지우면 방금 본 수가 사라져
+    # 무엇이 달라지는지 견줄 수 없다. 대신 **흐리게** 두고 사유를 적는다.
+    computed = get_combination_pick()
+    if computed is None:
+        if reviewed:
+            callout.note("개선안을 고르고 「합산효과 계산」 을 누르십시오.")
+        _download_block(
+            usage,
+            baseline,
+            diagnosis,
+            None,
+            no_pv_sensitivity_frame(),
+            (),
+            results,
+            scope,
+            building,
+            table,
+        )
+        return
+    stale = computed != picked
+    enabled = tuple(key for key in computed if key in reviewed)
 
     # 2단계에서 넣은 값을 그대로 읽는다 (위젯 키로 세션에 남는다).
     ess_target = _ess_target(usage, table, form, diagnosis) if "ess" in enabled else None
@@ -231,7 +256,12 @@ def render(
         )
 
     # **② 합산효과 — 단순 합과의 차이가 3단계의 존재 이유다** (14세션 5-2).
-    _combined_block(usage, form, comparison, rows, results.contract, enabled)
+    if stale:
+        callout.caution("선택이 변경되었습니다 — 다시 계산하십시오.")
+        with callout.stale(_STALE_KEY):
+            _combined_block(usage, form, comparison, rows, results.contract, enabled)
+    else:
+        _combined_block(usage, form, comparison, rows, results.contract, enabled)
     # **2단계 카드가 이미 낸 경고는 여기서 되풀이하지 않는다** (16세션 3절).
     # 세 화면이 한 번에 그려지므로 같은 문장이 두 번 뜬다 — 조합 자체의 경고만 남긴다.
     # **문구가 아니라 사실로 견준다** (20세션). 조합 쪽 문구에는 조합명이 앞에
@@ -276,6 +306,12 @@ def render(
 _PICK_PREFIX = "combo_pick_"
 
 
+#: 「합산효과 계산」 단추의 위젯 키.
+_RUN_KEY = "combo_run"
+#: 묵은 결과를 흐리게 그릴 자리의 키.
+_STALE_KEY = "combo_stale"
+
+
 def _pick_key(measure_key: str) -> str:
     return f"{_PICK_PREFIX}{measure_key}"
 
@@ -313,6 +349,12 @@ def _combination_picker(reviewed: tuple[str, ...]) -> tuple[str, ...]:
         # 조합을 짜는 이 화면이 맞다.
         help=manual_tip("combination"),
     )
+    # **계산 버튼을 둔다** (33세션 5절 · 태양광과 같은 규칙 13세션).
+    # 체크 하나에 조합 전부의 요금이 다시 돌아 화면이 그때마다 멈췄다 —
+    # 다 고르고 한 번 누르게 한다.
+    if st.button("합산효과 계산", type="primary", key=_RUN_KEY):
+        set_combination_pick(tuple(picked))
+        st.rerun()
     return tuple(picked)
 
 

@@ -23,12 +23,14 @@ __all__ = [
     "carry_inputs",
     "clear_upload",
     "enabled_measures",
+    "get_combination_pick",
     "get_form",
     "get_solar_inputs",
     "input_key",
     "measure_float",
     "reference_day",
     "session_id",
+    "set_combination_pick",
     "set_form",
     "set_solar_inputs",
     "store_upload",
@@ -44,6 +46,7 @@ _UPLOAD = "upload_bytes"
 _UPLOAD_NAME = "upload_name"
 _FORM = "contract_form"
 _SOLAR = "solar_inputs"
+_COMBO = "combination_pick"
 
 
 def session_id() -> str:
@@ -165,6 +168,17 @@ def reference_day(usage: UsageData) -> RepresentativeDay | None:
 def enabled_measures() -> tuple[str, ...]:
     """켠 수단. **7장 순서 그대로** 돌려준다."""
     return tuple(item.key for item in MEASURES if st.session_state.get(toggle_key(item.key)))
+
+
+def set_combination_pick(picked: tuple[str, ...]) -> None:
+    """「합산효과 계산」 을 누른 그 순간의 선택 (33세션 5절)."""
+    st.session_state[_COMBO] = tuple(picked)
+
+
+def get_combination_pick() -> tuple[str, ...] | None:
+    """마지막으로 계산한 선택. 한 번도 누르지 않았으면 ``None``."""
+    value = st.session_state.get(_COMBO)
+    return tuple(str(item) for item in value) if isinstance(value, tuple) else None
 
 
 def set_solar_inputs(inputs: SolarInputs) -> None:

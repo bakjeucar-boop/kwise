@@ -13,6 +13,7 @@ Word 에 넣을 png 를 만든다. 표는 여기서 그리지 않는다 — **�
 
 from __future__ import annotations
 
+import datetime as dt
 import io
 import logging
 from functools import lru_cache
@@ -22,11 +23,14 @@ import matplotlib
 
 matplotlib.use("Agg")  # GUI 없는 환경에서 돈다. import 순서를 지킨다.
 
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib import font_manager
+from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from matplotlib.ticker import FuncFormatter
 
 from kwise.compare import ComparisonResult
 from kwise.diagnose import PeakProfile
@@ -59,9 +63,11 @@ __all__ = [
     "add_legend",
     "apply_style",
     "combination_png",
+    "date_axis",
     "dr_daily_png",
     "ess_day_png",
     "hourly_profile_png",
+    "korean_date_label",
     "korean_font",
     "monthly_peak_png",
     "power_triangle_png",
@@ -70,6 +76,7 @@ __all__ = [
     "solar_day_png",
     "surplus_daily_png",
     "tariff_option_png",
+    "time_axis",
     "top_hour_png",
 ]
 
@@ -181,6 +188,36 @@ def apply_style() -> None:
     plt.rcParams["grid.alpha"] = 0.3
     plt.rcParams["axes.spines.top"] = False
     plt.rcParams["axes.spines.right"] = False
+
+
+# ===================================================================== 33세션 1절 · 날짜 표기
+#
+# **matplotlib 도 기본 로케일이 영어다.** 화면(vega)만 고치면 보고서 png 에는
+# ``May`` 가 남아 두 그림이 어긋난다 (13세션에 겪은 그 병이다). 규칙은 화면과
+# 같다 — 1월 1일은 「2024년」, 달의 첫날은 「5월」, 나머지는 「4월 30일」.
+#
+# ``%-m`` 은 Windows 의 strftime 이 모르므로 **직접 만든다.**
+
+
+def korean_date_label(stamp: dt.datetime) -> str:
+    """날짜 눈금 하나 (33세션 1절). 화면의 ``DATE_LABEL_EXPR`` 와 같은 규칙이다."""
+    if stamp.month == 1 and stamp.day == 1:
+        return f"{stamp.year}년"
+    if stamp.day == 1:
+        return f"{stamp.month}월"
+    return f"{stamp.month}월 {stamp.day}일"
+
+
+def date_axis(axes: Axes) -> None:
+    """날짜 축을 한국식 눈금으로 (33세션 1절)."""
+    axes.xaxis.set_major_formatter(
+        FuncFormatter(lambda value, _pos: korean_date_label(mdates.num2date(value)))
+    )
+
+
+def time_axis(axes: Axes) -> None:
+    """하루 안 축을 ``시:분`` 으로 (33세션 1절). 날짜는 그림 제목이 적는다."""
+    axes.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
 
 
 def render_png(figure: Figure) -> bytes:
@@ -419,6 +456,7 @@ def dr_daily_png(profile: DrProfile) -> bytes:
             label="저부하 평일",
         )
     axes.set_ylabel("운영 시간대 평균 부하 (kW)")
+    date_axis(axes)
     axes.tick_params(axis="x", rotation=45, labelsize=8)
     add_legend(axes, ncol=3)
     return render_png(figure)
@@ -484,6 +522,7 @@ def solar_day_png(usage: UsageData, generation_kw: pd.Series, day: Representativ
         )
     axes.set_ylabel("출력 (kW)")
     axes.set_xlabel(f"{day.title} · 15분")
+    time_axis(axes)
     axes.tick_params(axis="x", rotation=45, labelsize=8)
     add_legend(axes)
     return render_png(figure)
@@ -502,6 +541,7 @@ def solar_annual_png(usage: UsageData, generation_kw: pd.Series) -> bytes:
         frame["날짜"], 0.0, frame["발전량(kWh)"], color="#31a354", alpha=0.85, label="발전량"
     )
     axes.set_ylabel("일별 발전량 (kWh)")
+    date_axis(axes)
     axes.tick_params(axis="x", rotation=45, labelsize=8)
     add_legend(axes)
     return render_png(figure)
@@ -552,6 +592,7 @@ def ess_day_png(
         axes.set_ylim(low - margin, high + margin)
     axes.set_ylabel("부하 (kW)")
     axes.set_xlabel(title)
+    time_axis(axes)
     axes.tick_params(axis="x", rotation=45, labelsize=8)
     add_legend(axes)
     return render_png(figure)
@@ -572,6 +613,7 @@ def surplus_daily_png(usage: UsageData, surplus_kw: pd.Series) -> bytes:
             width=1.0,
         )
     axes.set_ylabel("일별 잉여 (kWh)")
+    date_axis(axes)
     axes.tick_params(axis="x", rotation=45, labelsize=8)
     add_legend(axes)
     return render_png(figure)

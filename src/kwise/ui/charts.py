@@ -48,6 +48,7 @@ from kwise.report.frames import (
     peak_window,
     power_factor_day_frame,
     power_triangle_frame,
+    season_charge_frame,
     sensitivity_frame,
     solar_annual_frame,
     solar_capacity_table,
@@ -64,18 +65,24 @@ from kwise.report.frames import (
 __all__ = [
     "BAND_LABELS",
     "CAPACITY_ROWS",
+    "DATE_FORMAT",
+    "DATE_LABEL_EXPR",
     "LEGEND",
     "LEGEND_BELOW",
     "MONTHLY_CHARGE_PARTS",
-    "MONTH_BAR_STEP",
     "PEAK_ZOOM_HOURS",
     "TARIFF_PARTS",
+    "TIME_FORMAT",
+    "TIME_TOOLTIP_FORMAT",
     "band_chart",
     "band_frame",
+    "charge_donut_chart",
     "combination_chart",
     "combination_frame",
     "daily_temperature_chart",
     "daily_temperature_frame",
+    "date_axis",
+    "date_tooltip",
     "dispatch_schedule",
     "dr_daily_chart",
     "dr_daily_frame",
@@ -85,7 +92,6 @@ __all__ = [
     "ess_target_frame",
     "hourly_profile_chart",
     "hourly_profile_frame",
-    "monthly_charge_chart",
     "monthly_charge_frame",
     "monthly_peak_chart",
     "monthly_peak_frame",
@@ -111,6 +117,8 @@ __all__ = [
     "tariff_option_frame",
     "tariff_option_long_frame",
     "temperature_mean_frame",
+    "time_axis",
+    "time_tooltip",
     "top_hour_chart",
     "top_hour_frame",
 ]
@@ -244,6 +252,65 @@ def hourly_profile_chart(peak: PeakProfile, *, season: str | None = None) -> alt
     )
 
 
+# ===================================================================== 33세션 1절 · 날짜 표기
+#
+# **vega 의 기본 로케일은 영어다.** 날짜 축을 그대로 두면 눈금에 ``May`` ·
+# ``Apr 30`` 이 찍히고, 툴팁도 ``Apr 30, 2024`` 가 된다. vega-lite **spec 에는
+# 로케일을 실을 수 없고** (vega-embed 옵션이라 streamlit 을 거쳐 넘길 길이 없다),
+# 차트마다 ``format`` 을 적으면 다음에 새 차트가 또 영어로 나온다.
+#
+# **그래서 라벨 식을 한 벌만 만들고 날짜 축 전부가 그것을 쓴다.**
+#
+#     ① 눈금 단위에 따라 이름이 바뀐다 — 1월 1일은 「2024년」, 달의 첫날은
+#        「5월」, 나머지는 「4월 30일」. 해가 바뀌는 자리가 축에 남아야
+#        두 해에 걸친 자료에서 같은 「4월」 이 둘 생기지 않는다
+#     ② 툴팁은 눈금과 달리 **언제나 온전한 날짜**를 적는다 (「2024년 4월 30일」)
+#     ③ 하루 안을 그리는 축(시각)은 날짜가 아니라 **시:분**이다
+#
+# 새 차트를 만들 때는 :func:`date_axis` · :func:`date_tooltip` 을 쓴다.
+# 시험이 ``:T`` 축에 이 규약이 붙었는지 훑는다.
+
+#: 날짜 눈금 라벨. vega 표현식이라 눈금 단위마다 다른 이름을 낼 수 있다.
+DATE_LABEL_EXPR = (
+    "month(datum.value) === 0 && date(datum.value) === 1"
+    " ? timeFormat(datum.value, '%Y년')"
+    " : date(datum.value) === 1"
+    " ? timeFormat(datum.value, '%-m월')"
+    " : timeFormat(datum.value, '%-m월 %-d일')"
+)
+
+#: 날짜 툴팁. 눈금과 달리 **줄여 적지 않는다** — 짚어 본 그 날이 어느 해인지가
+#: 툴팁에서까지 흐려지면 읽을 길이 없다.
+DATE_FORMAT = "%Y년 %-m월 %-d일"
+
+#: 하루 안을 그리는 축의 눈금·툴팁. 날짜는 그림 제목이 이미 적는다.
+TIME_FORMAT = "%H:%M"
+
+#: 하루 안 툴팁은 날짜를 함께 적는다 — 대표일이 바뀌면 그림 제목만 보고는
+#: 어느 날의 곡선인지 헷갈린다.
+TIME_TOOLTIP_FORMAT = "%-m월 %-d일 %H:%M"
+
+
+def date_axis(**kwargs: object) -> alt.Axis:
+    """날짜 축 눈금 (33세션 1절). ``labelExpr`` 를 여기서만 정한다."""
+    return alt.Axis(labelExpr=DATE_LABEL_EXPR, **kwargs)  # type: ignore[arg-type]
+
+
+def time_axis(**kwargs: object) -> alt.Axis:
+    """하루 안 축 눈금 (33세션 1절)."""
+    return alt.Axis(format=TIME_FORMAT, **kwargs)  # type: ignore[arg-type]
+
+
+def date_tooltip(field: str = "날짜", **kwargs: object) -> alt.Tooltip:
+    """날짜 툴팁 (33세션 1절)."""
+    return alt.Tooltip(f"{field}:T", format=DATE_FORMAT, **kwargs)  # type: ignore[arg-type]
+
+
+def time_tooltip(field: str = "시각", **kwargs: object) -> alt.Tooltip:
+    """하루 안 툴팁 (33세션 1절)."""
+    return alt.Tooltip(f"{field}:T", format=TIME_TOOLTIP_FORMAT, **kwargs)  # type: ignore[arg-type]
+
+
 # ===================================================================== 30세션 4절 · 두 축
 #
 # **축이 둘이면 어느 선이 어느 축인지 라벨이 말해야 한다** (17세션 0절의 연장).
@@ -259,6 +326,30 @@ _TEMP_COLOR = "#d95f0e"
 _LOAD_SERIES = "일 사용량 (왼쪽 축)"
 _TEMP_SERIES = "일평균 기온 (오른쪽 축)"
 
+# ===================================================================== 33세션 2절 · 층과 축
+#
+# **한 층 안에서 축은 하나로 합쳐진다.** 32세션에 기준선·라벨을 기온 선과 같은
+# 층에 묶으면서 그 둘에 ``axis=None`` 을 주었더니, vega 가 층의 y 축을 합칠 때
+# **null 을 이겨 오른쪽 눈금이 통째로 사라졌다** — 기온 곡선은 그려지는데
+# 범위와 단위(℃)를 읽을 수 없는 그림이 됐다.
+#
+#     세 층이 **똑같은 축 정의**를 쓰게 한다. 합칠 것이 하나뿐이면 다툴 일이 없다.
+#
+# 필드 이름은 층마다 다르다 (곡선은 일별 값, 기준선은 평균). 축 제목은 하나이므로
+# 합쳐도 어긋나지 않는다.
+_TEMP_AXIS = alt.Axis(orient="right", titleColor=_TEMP_COLOR)
+
+
+def _temp_y(field: str) -> alt.Y:
+    """기온 축 하나. **층 셋이 이것을 그대로 쓴다** (33세션 2절)."""
+    return alt.Y(
+        field,
+        type="quantitative",
+        title="일평균 기온 (℃)",
+        scale=_CUT_SCALE,
+        axis=_TEMP_AXIS,
+    )
+
 
 def daily_temperature_chart(usage: UsageData, temperature: pd.Series) -> alt.LayerChart:
     """연간 일별 사용량과 일평균 기온 (30세션 4절).
@@ -270,7 +361,7 @@ def daily_temperature_chart(usage: UsageData, temperature: pd.Series) -> alt.Lay
     frame = daily_temperature_frame(usage, temperature)
     frame = frame.assign(계열=_LOAD_SERIES, 기온계열=_TEMP_SERIES)
     scale = alt.Scale(domain=[_LOAD_SERIES, _TEMP_SERIES], range=[_LOAD_COLOR, _TEMP_COLOR])
-    base = alt.Chart(frame).encode(x=alt.X("날짜:T", title=None))
+    base = alt.Chart(frame).encode(x=alt.X("날짜:T", title=None, axis=date_axis()))
     load = base.mark_line(strokeWidth=1).encode(
         y=alt.Y(
             "사용량(kWh):Q",
@@ -280,21 +371,16 @@ def daily_temperature_chart(usage: UsageData, temperature: pd.Series) -> alt.Lay
         ),
         color=alt.Color("계열:N", title=None, scale=scale, legend=LEGEND),
         tooltip=[
-            alt.Tooltip("날짜:T", format="%Y-%m-%d"),
+            date_tooltip(),
             alt.Tooltip("사용량(kWh):Q", format=",.0f"),
             alt.Tooltip("일평균 기온(℃):Q", format=",.1f"),
         ],
     )
     temp = base.mark_line(strokeWidth=1).encode(
-        y=alt.Y(
-            "일평균 기온(℃):Q",
-            title="일평균 기온 (℃)",
-            scale=_CUT_SCALE,
-            axis=alt.Axis(orient="right", titleColor=_TEMP_COLOR),
-        ),
+        y=_temp_y("일평균 기온(℃)"),
         color=alt.Color("기온계열:N", title=None, scale=scale, legend=LEGEND),
         tooltip=[
-            alt.Tooltip("날짜:T", format="%Y-%m-%d"),
+            date_tooltip(),
             alt.Tooltip("사용량(kWh):Q", format=",.0f"),
             alt.Tooltip("일평균 기온(℃):Q", format=",.1f"),
         ],
@@ -313,12 +399,12 @@ def daily_temperature_chart(usage: UsageData, temperature: pd.Series) -> alt.Lay
     mean_base = alt.Chart(mean_frame)
     mean_rule = mean_base.mark_rule(
         color=_TEMP_COLOR, strokeDash=[6, 4], strokeWidth=1, opacity=0.7
-    ).encode(y=alt.Y("평균 기온(℃):Q", title=None, axis=None))
+    ).encode(y=_temp_y("평균 기온(℃)"))
     mean_text = mean_base.mark_text(
         align="left", baseline="bottom", dx=4, dy=-3, color=_TEMP_COLOR, fontSize=11
     ).encode(
-        x=alt.X("날짜:T", title=None),
-        y=alt.Y("평균 기온(℃):Q", title=None, axis=None),
+        x=alt.X("날짜:T", title=None, axis=date_axis()),
+        y=_temp_y("평균 기온(℃)"),
         text=alt.Text("기준선:N"),
     )
     # 기온·기준선·라벨을 한 층으로 묶어 축 하나를 함께 쓴다.
@@ -338,74 +424,82 @@ def _band_scale(*, with_base_fee: bool = False) -> alt.Scale:
     return alt.Scale(domain=list(colors), range=list(colors.values()))
 
 
-# ===================================================================== 32세션 2절 · 막대 두께
+# ===================================================================== 33세션 3절 · 원 넷
 #
-# **막대 폭을 그림에 못박는다.** 폭을 적지 않으면 vega-lite 가 칸 하나를 기본
-# 20px 로 잡고, 그 85%(streamlit 테마)인 **17px** 짜리 실오라기가 열두 개
-# 그려진다 — 누적 막대는 조각이 넷이라 이 폭에서는 경부하 조각이 선으로 보인다.
+# **월별 요금 구성 누적 막대를 버렸다.** 32세션에 칸 폭을 60px 로 못 박았는데
+# 화면에서는 그대로였다 — 화면 폭에 맞춰 늘어나는 경로에서 vega 가 spec 의 폭을
+# **화면 폭으로 덮어쓰기** 때문이다 (32세션 5절이 예상한 대로다). 그림 폭을
+# 우리가 못 정하는 이상 막대 두께도 우리 손에 없다.
 #
-#     ① 칸을 **60px** 로 잡는다 (기본 20px 의 세 배). 막대는 그 85% 인 51px
-#     ② 막대 사이 간격도 함께 세 배가 된다 (3px → 9px) — 비율을 손대지 않는다
-#     ③ 달이 많으면 칸을 줄여 **가로 스크롤을 만들지 않는다** (아래 상한)
+# 그래서 **묻는 것을 바꿨다.** 열세 달의 높이를 견주는 그림이 아니라, 계절마다
+# **무엇이 얼마를 차지하는가**를 원 넷으로 낸다.
 #
-# 화면 폭에 맞춰 늘어나는 경로에서는 vega 가 이 값을 화면 폭으로 덮어쓴다.
-# 그때는 칸이 더 넓어지므로 이 상수가 **하한**으로 작동한다.
-MONTH_BAR_STEP = 60
+#     ① 갈래는 계절 탭과 같다 — 전체 · 봄·가을 · 여름 · 겨울
+#        (한 화면에서 같은 자료를 두 가지로 나누면 어느 쪽이 맞는지 묻게 된다)
+#     ② 조각마다 **이름과 비중을 함께 적는다.** 원이 넷이라 범례를 달면 같은
+#        이름 넷이 네 번 실린다 — 조각 위 라벨이면 한 번이다
+#     ③ 합계 금액은 그림 제목이 적는다 (원 아래 자리는 라벨이 쓴다)
+#     ④ 달마다의 값은 Excel 「월별 집계」 로 간다
+#
+# **17세션 축 규약은 막대에 대한 것이다.** 원에는 축이 없어 「자르지 않는다」 가
+# 성립하지 않는다 — 규약을 고칠 일이 아니라 **해당 없음**이다.
 
-#: 그림 하나가 차지할 가로 상한 (px). 자료가 여러 해면 달 수가 늘어 60px × N 이
-#: 화면을 넘는다 — 넘기느니 칸을 줄인다.
-_MONTH_CHART_MAX_WIDTH = 1_440
+#: 도넛의 안·바깥 반지름 (px). 안을 비우면 조각 넷의 각을 견주기 쉽고, 가운데
+#: 빈자리가 제목·합계와 부딪히지 않는다.
+_DONUT_INNER = 42
+_DONUT_OUTER = 78
 
-#: 칸의 하한. 여기까지 줄여도 안 들어가면 그때는 스크롤이 낫다.
-_MONTH_BAR_MIN_STEP = 20
-
-
-def _month_step(months: int) -> int:
-    """달 수에 맞춘 칸 폭 (32세션 2절). 열두 달이면 그대로 :data:`MONTH_BAR_STEP`."""
-    if months <= 0:
-        return MONTH_BAR_STEP
-    fitted = _MONTH_CHART_MAX_WIDTH // months
-    return int(max(_MONTH_BAR_MIN_STEP, min(MONTH_BAR_STEP, fitted)))
+#: 조각 라벨을 놓을 반지름. 바깥보다 조금 더 밖이라 조각을 가리지 않는다.
+_DONUT_LABEL_RADIUS = _DONUT_OUTER + 22
 
 
-def monthly_charge_chart(structure: ChargeStructure) -> alt.Chart:
-    """월별 요금 구성 — 기본요금 + 계시별 전력량요금 **누적 막대** (27세션 3-2).
+def charge_donut_chart(
+    structure: ChargeStructure,
+    *,
+    season: str | None = None,
+    title: str = "",
+    subtitle: str = "",
+) -> alt.LayerChart | alt.FacetChart:
+    """계절별 요금 구성 **도넛** (33세션 3절).
 
-    한 달치 청구액이 어떻게 나뉘는지, 그리고 **달마다 무엇이 달라지는지**를 한
-    그림에서 본다. 기본요금이 같은 높이로 이어지는 것 자체가 요금적용전력
-    12개월 규칙의 모습이다.
+    한 계절의 청구액이 **기본요금·경부하·중간부하·최대부하**로 어떻게 갈리는지
+    낸다. 계절을 나란히 놓으면 여름·겨울에 최대부하 조각이 두꺼워지는 것이
+    그대로 보인다 — 그 조각을 깎는 수단(태양광·ESS)의 값어치가 거기서 갈린다.
 
-    **막대는 자르지 않는다** (17세션 0절 · 23세션 2절). 길이가 곧 금액이다.
-
-    **칸 폭을 못박는다** (32세션 2절). 위 「막대 두께」 주석 참조.
+    Args:
+        season: ``None`` 이면 전 기간.
+        title: 그림 제목 (계절 이름). 부르는 쪽이 준다.
+        subtitle: 제목 아래 한 줄. 합계 금액을 적는다 — 돈 표기는 화면 쪽
+            :mod:`kwise.ui.text` 가 맡으므로 여기서 만들지 않는다.
     """
-    frame = monthly_charge_frame(structure)
-    step = _month_step(int(frame["월"].nunique()))
-    return (
-        alt.Chart(frame)
-        .mark_bar()
-        .encode(
-            x=alt.X("월:N", title=None, sort=None),
-            y=alt.Y("원:Q", title="요금 (원)", stack="zero"),
-            color=alt.Color(
-                "구분:N",
-                title=None,
-                sort=list(MONTHLY_CHARGE_PARTS),
-                scale=_band_scale(with_base_fee=True),
-                legend=LEGEND,
-            ),
-            # **쌓는 순서를 색 순서에 묶는다.** 주지 않으면 달마다 순서가 달라져
-            # 밑단이 흔들린다.
-            order=alt.Order("순서:Q", sort="ascending"),
-            tooltip=[
-                "월",
-                "구분",
-                alt.Tooltip("원:Q", format=",.0f"),
-                alt.Tooltip("합계(원):Q", format=",.0f"),
-            ],
-        )
-        .properties(width=alt.Step(step), height=300)
+    frame = season_charge_frame(structure, season=season)
+    base = alt.Chart(frame).encode(
+        theta=alt.Theta("원:Q", stack=True),
+        order=alt.Order("순서:Q", sort="ascending"),
+        color=alt.Color(
+            "구분:N",
+            title=None,
+            sort=list(MONTHLY_CHARGE_PARTS),
+            scale=_band_scale(with_base_fee=True),
+            # **범례를 달지 않는다** — 조각마다 이름이 적혀 있다.
+            legend=None,
+        ),
+        tooltip=[
+            "구분",
+            alt.Tooltip("원:Q", format=",.0f"),
+            alt.Tooltip("비중:Q", format=".1%"),
+        ],
     )
+    arc = base.mark_arc(innerRadius=_DONUT_INNER, outerRadius=_DONUT_OUTER)
+    labels = base.mark_text(radius=_DONUT_LABEL_RADIUS, fontSize=11).encode(text=alt.Text("라벨:N"))
+    return alt.layer(arc, labels).properties(
+        height=_DONUT_HEIGHT,
+        title=alt.TitleParams(text=title, subtitle=subtitle, anchor="middle", fontSize=13),
+    )
+
+
+#: 도넛 하나의 높이. 라벨이 바깥으로 뻗으므로 반지름의 두 배보다 넉넉해야 한다.
+_DONUT_HEIGHT = 230
 
 
 def band_chart(structure: ChargeStructure, *, season: str | None = None) -> alt.Chart:
@@ -673,11 +767,11 @@ def dr_daily_chart(profile: DrProfile) -> alt.LayerChart | alt.FacetChart:
         alt.Chart(frame)
         .mark_circle(size=26, opacity=0.75)
         .encode(
-            x=alt.X("날짜:T", title="날짜"),
+            x=alt.X("날짜:T", title="날짜", axis=date_axis()),
             y=alt.Y("운영시간대 평균(kW):Q", title="운영 시간대 평균 부하 (kW)", scale=_CUT_SCALE),
             color=alt.Color("구분:N", title=None, scale=_DAY_TYPE_COLORS, legend=LEGEND),
             tooltip=[
-                alt.Tooltip("날짜:T"),
+                date_tooltip(),
                 "구분",
                 alt.Tooltip("운영시간대 평균(kW):Q", format=",.0f"),
                 "저부하 평일",
@@ -707,10 +801,10 @@ def dr_daily_chart(profile: DrProfile) -> alt.LayerChart | alt.FacetChart:
             alt.Chart(marked)
             .mark_point(size=170, shape="triangle-down", filled=True, color="crimson")
             .encode(
-                x="날짜:T",
+                x=alt.X("날짜:T", axis=date_axis()),
                 y="운영시간대 평균(kW):Q",
                 tooltip=[
-                    alt.Tooltip("날짜:T"),
+                    date_tooltip(),
                     alt.Tooltip("운영시간대 평균(kW):Q", format=",.0f"),
                 ],
             )
@@ -791,15 +885,15 @@ def power_factor_day_chart(
         alt.Chart(frame)
         .mark_line(color="#08519c")
         .encode(
-            x=alt.X("시각:T", title=f"{day.title} · 15분 부하"),
+            x=alt.X("시각:T", title=f"{day.title} · 15분 부하", axis=time_axis()),
             y=alt.Y("부하(kW):Q", title="부하 (kW)", scale=_CUT_SCALE),
-            tooltip=[alt.Tooltip("시각:T"), alt.Tooltip("부하(kW):Q", format=",.0f"), "구간"],
+            tooltip=[time_tooltip(), alt.Tooltip("부하(kW):Q", format=",.0f"), "구간"],
         )
     )
     window = (
         alt.Chart(frame[frame["구간"].str.startswith("주간")])
         .mark_point(size=18, opacity=0.35, color="#fd8d3c")
-        .encode(x="시각:T", y="부하(kW):Q", tooltip=["구간"])
+        .encode(x=alt.X("시각:T", axis=time_axis()), y="부하(kW):Q", tooltip=["구간"])
     )
     return (load + window).properties(height=280)
 
@@ -831,10 +925,10 @@ def solar_annual_chart(usage: UsageData, generation_kw: pd.Series) -> alt.Chart:
         alt.Chart(frame)
         .mark_area(opacity=0.85, color="#31a354", line={"color": "#238b45"})
         .encode(
-            x=alt.X("날짜:T", title="날짜"),
+            x=alt.X("날짜:T", title="날짜", axis=date_axis()),
             y=alt.Y("발전량(kWh):Q", title="일별 발전량 (kWh)"),
             tooltip=[
-                alt.Tooltip("날짜:T", title="날짜"),
+                date_tooltip(),
                 alt.Tooltip("발전량(kWh):Q", format=",.0f", title="발전량(kWh)"),
             ],
         )
@@ -875,7 +969,7 @@ def solar_day_chart(
         alt.Chart(frame.assign(구분="저감분"))
         .mark_area(opacity=0.75)
         .encode(
-            x=alt.X("시각:T", title=title),
+            x=alt.X("시각:T", title=title, axis=time_axis()),
             y=alt.Y("순부하(kW):Q", title="출력 (kW)", scale=_CUT_SCALE),
             y2=alt.Y2("원부하(kW)"),
             color=alt.Color(
@@ -885,7 +979,7 @@ def solar_day_chart(
                 legend=LEGEND,
             ),
             tooltip=[
-                alt.Tooltip("시각:T"),
+                time_tooltip(),
                 alt.Tooltip("원부하(kW):Q", format=",.0f"),
                 alt.Tooltip("순부하(kW):Q", format=",.0f"),
                 alt.Tooltip("발전량(kW):Q", format=",.0f"),
@@ -899,7 +993,7 @@ def solar_day_chart(
         alt.Chart(long)
         .mark_line(strokeWidth=1.8)
         .encode(
-            x="시각:T",
+            x=alt.X("시각:T", axis=time_axis()),
             y=alt.Y("kW:Q", title="출력 (kW)", scale=_CUT_SCALE),
             color=alt.Color(
                 "구분:N",
@@ -907,7 +1001,7 @@ def solar_day_chart(
                 scale=alt.Scale(domain=["원부하(kW)", "순부하(kW)"], range=["#9ecae1", "#08519c"]),
                 legend=LEGEND,
             ),
-            tooltip=[alt.Tooltip("시각:T"), "구분", alt.Tooltip("kW:Q", format=",.0f")],
+            tooltip=[time_tooltip(), "구분", alt.Tooltip("kW:Q", format=",.0f")],
         )
     )
     peak = frame.loc[frame["원부하(kW)"].idxmax()]
@@ -926,17 +1020,17 @@ def solar_day_chart(
     arrow = (
         alt.Chart(mark)
         .mark_rule(color="crimson", strokeWidth=2)
-        .encode(x="시각:T", y="kW:Q", y2=alt.Y2("아래"))
+        .encode(x=alt.X("시각:T", axis=time_axis()), y="kW:Q", y2=alt.Y2("아래"))
     )
     caps = (
         alt.Chart(mark)
         .mark_point(shape="triangle-down", size=90, filled=True, color="crimson")
-        .encode(x="시각:T", y="아래:Q", tooltip=["설명"])
+        .encode(x=alt.X("시각:T", axis=time_axis()), y="아래:Q", tooltip=["설명"])
     )
     label = (
         alt.Chart(mark)
         .mark_text(dy=-12, color="crimson", fontWeight="bold")
-        .encode(x="시각:T", y="kW:Q", text="설명:N")
+        .encode(x=alt.X("시각:T", axis=time_axis()), y="kW:Q", text="설명:N")
     )
     return (band + lines + arrow + caps + label).properties(height=300)
 
@@ -978,7 +1072,7 @@ def ess_day_chart(
         alt.Chart(frame.assign(구분="저감분"))
         .mark_area(opacity=0.7, color="#31a354")
         .encode(
-            x=alt.X("시각:T", title=title),
+            x=alt.X("시각:T", title=title, axis=time_axis()),
             y=alt.Y("순부하(kW):Q", title="부하 (kW)", scale=_CUT_SCALE),
             y2=alt.Y2("원부하(kW)"),
         )
@@ -990,7 +1084,7 @@ def ess_day_chart(
         alt.Chart(load)
         .mark_line(strokeWidth=1.8)
         .encode(
-            x=alt.X("시각:T", title=title),
+            x=alt.X("시각:T", title=title, axis=time_axis()),
             y=alt.Y("kW:Q", title="부하 (kW)", scale=_CUT_SCALE),
             color=alt.Color(
                 "구분:N",
@@ -998,7 +1092,7 @@ def ess_day_chart(
                 scale=alt.Scale(domain=["원부하(kW)", "순부하(kW)"], range=["#9ecae1", "#08519c"]),
                 legend=LEGEND,
             ),
-            tooltip=[alt.Tooltip("시각:T"), "구분", alt.Tooltip("kW:Q", format=",.0f")],
+            tooltip=[time_tooltip(), "구분", alt.Tooltip("kW:Q", format=",.0f")],
         )
     )
     layers.append(
@@ -1016,10 +1110,10 @@ def surplus_daily_chart(usage: UsageData, surplus_kw: pd.Series) -> alt.Chart:
         alt.Chart(frame)
         .mark_bar()
         .encode(
-            x=alt.X("날짜:T", title="날짜"),
+            x=alt.X("날짜:T", title="날짜", axis=date_axis()),
             y=alt.Y("잉여(kWh):Q", title="일별 잉여 (kWh)"),
             color=alt.Color("구분:N", title=None, scale=_DAY_TYPE_COLORS, legend=LEGEND),
-            tooltip=[alt.Tooltip("날짜:T"), "구분", alt.Tooltip("잉여(kWh):Q", format=",.0f")],
+            tooltip=[date_tooltip(), "구분", alt.Tooltip("잉여(kWh):Q", format=",.0f")],
         )
         .properties(height=280)
     )

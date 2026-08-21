@@ -297,7 +297,8 @@ def test_comparison_frame_has_the_required_columns(
         assert column in frame.columns
     assert frame.index.name == "조합"
     assert len(frame) == 4
-    assert any("합이 아닙니다" in note for note in texts(sample_comparison.notices))
+    # 33세션 6절에 문구를 다시 썼다 — 뜻은 그대로다.
+    assert any("단순 합이 아니라" in note for note in texts(sample_comparison.notices))
 
 
 def test_empty_specs_raise(sample_usage: UsageData, tariff: TariffTable) -> None:

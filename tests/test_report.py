@@ -313,9 +313,34 @@ def test_summary_records_the_missing_data_policy(summary_text: str) -> None:
     assert "972슬롯" in summary_text
 
 
+def test_excel_dates_are_iso_not_english(sample_sections: ReportSections, tmp_path: Path) -> None:
+    """**Excel 의 날짜 표기를 확인했다** (33세션 1절).
+
+    화면·png 는 영어로 나오고 있었지만 **Excel 은 아니었다.** 날짜 셀에
+    ISO 서식(``YYYY-MM-DD HH:MM:SS``)이 박혀 나가고, 글자로 적힌 달은 ``2023-04``
+    라 로케일을 타지 않는다. 화면과 달리 Excel 은 **정렬과 재계산에 쓰는 자료**라
+    「4월 30일」 로 바꾸지 않는다 — 확인만 하고 그대로 둔다.
+    """
+    path = export_report(sample_sections, output_dir=tmp_path)
+    workbook = load_workbook(path, read_only=True)
+    try:
+        english = re.compile(r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)")
+        formats: set[str] = set()
+        for name in workbook.sheetnames:
+            for row in workbook[name].iter_rows(max_row=40):
+                for cell in row:
+                    if isinstance(cell.value, str):
+                        assert not english.search(cell.value), f"{name}!{cell.coordinate}"
+                    if cell.is_date:
+                        formats.add(str(cell.number_format))
+        assert formats == {"YYYY-MM-DD HH:MM:SS"}, formats
+    finally:
+        workbook.close()
+
+
 def test_summary_carries_the_recalculation_note(summary_text: str) -> None:
     """조합 절감액은 합이 아니라는 것을 산출물에 적는다 (8장)."""
-    assert "수단별 절감액의 합이 아닙니다" in summary_text
+    assert "수단별 절감액의 단순 합이 아니라" in summary_text  # 33세션 6절
     assert "확실성 등급은 가장 낮은 구성 요소를 따릅니다" in summary_text
 
 
