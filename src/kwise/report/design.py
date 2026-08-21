@@ -123,16 +123,20 @@ class Palette:
     포인트로만 쓴다. 슬라이드 폭을 가로지르는 색 바는 만들지 않는다 (3-5).
 
     **읽지 않는 값을 두지 않는다.** 고쳐도 아무 일이 일어나지 않는 항목은
-    가이드를 못 믿게 만든다 — 이 파일이 막으려는 바로 그것이다. 표지의 다크가
-    둘(딥그린·다크 프라이머리)이라 :attr:`cover_background` 로 **고르게** 두었다 —
-    쓰지 않는 색을 이름만 남겨 두는 대신이다.
+    가이드를 못 믿게 만든다 — 이 파일이 막으려는 바로 그것이다. 다크가
+    둘(딥그린·다크 프라이머리)이라 **이름으로 고르게** 두었다 — 쓰지 않는 색을
+    이름만 남겨 두는 대신이다.
 
     Attributes:
         cover_background: 표지 배경으로 쓸 색의 **이름.** ``deep_green`` 또는
             ``dark_primary``. 가이드에서 바꾸면 코드를 고치지 않아도 따라온다.
+        closing_background: 마무리 배경. 샌드위치의 아랫빵이다 (37세션).
+        on_dark_rule: 다크 배경 위의 구분선. 밝은 :attr:`rule` 을 그대로 쓰면
+            검은 바탕에서 선이 튄다.
     """
 
     cover_background: str
+    closing_background: str
     deep_green: str
     dark_primary: str
     white: str
@@ -143,23 +147,32 @@ class Palette:
     rule: str
     on_dark: str
     on_dark_muted: str
+    on_dark_rule: str
 
-    @property
-    def cover(self) -> str:
-        """표지 배경색. 가이드가 이름으로 고른다.
+    def _band(self, name: str, where: str) -> str:
+        """전체 배경 밴드로 쓸 색 하나. **다크 둘 중에서만 고른다** (3-2).
 
         Raises:
-            DesignGuideError: 전체 배경 밴드로 쓸 수 없는 색을 골랐을 때.
-                코랄로 슬라이드를 통째로 칠하는 일은 가이드가 금지한다 (3-2).
+            DesignGuideError: 코랄처럼 작은 포인트로만 쓰는 색을 골랐을 때.
         """
         allowed = {"deep_green": self.deep_green, "dark_primary": self.dark_primary}
-        if self.cover_background not in allowed:
+        if name not in allowed:
             raise DesignGuideError(
-                f"표지 배경으로 쓸 수 없는 색입니다: {self.cover_background}. "
+                f"{where} 배경으로 쓸 수 없는 색입니다: {name}. "
                 f"{' 또는 '.join(allowed)} 가운데 고르십시오 — 딥그린·다크만 "
                 "전체 배경 밴드로 쓸 수 있습니다."
             )
-        return allowed[self.cover_background]
+        return allowed[name]
+
+    @property
+    def cover(self) -> str:
+        """표지 배경색. 가이드가 이름으로 고른다."""
+        return self._band(self.cover_background, "표지")
+
+    @property
+    def closing(self) -> str:
+        """마무리 배경색 (37세션). 표지와 함께 샌드위치의 바깥을 이룬다."""
+        return self._band(self.closing_background, "마무리")
 
 
 @dataclass(frozen=True)
@@ -271,6 +284,7 @@ def load_design_guide(path: str | None = None) -> DesignGuide:
         ),
         colors=Palette(
             cover_background=str(_pick(colors, "cover_background", target)),
+            closing_background=str(_pick(colors, "closing_background", target)),
             deep_green=str(_pick(colors, "deep_green", target)),
             dark_primary=str(_pick(colors, "dark_primary", target)),
             white=str(_pick(colors, "white", target)),
@@ -281,6 +295,7 @@ def load_design_guide(path: str | None = None) -> DesignGuide:
             rule=str(_pick(colors, "rule", target)),
             on_dark=str(_pick(colors, "on_dark", target)),
             on_dark_muted=str(_pick(colors, "on_dark_muted", target)),
+            on_dark_rule=str(_pick(colors, "on_dark_rule", target)),
         ),
         chart=ChartPalette(
             canvas=str(_pick(chart, "canvas", target)),

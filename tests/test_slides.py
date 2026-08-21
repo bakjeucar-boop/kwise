@@ -26,14 +26,21 @@ from pptx.util import Inches
 from kwise.compare import ComparisonResult
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
-from kwise.measures import TariffSwitchResult
+from kwise.measures import MEASURE_CATALOG, TariffSwitchResult
 from kwise.report import figures
 from kwise.report.appendix import APPENDIX_TITLES
 from kwise.report.design import DesignGuideError, design_path, load_design_guide
-from kwise.report.document import DocumentSections, build_document, measure_entries
+from kwise.report.document import (
+    DocumentSections,
+    MeasureEntry,
+    build_document,
+    measure_entries,
+)
 from kwise.report.slides import (
     APPENDIX_ROW_LIMIT,
     LAYOUTS,
+    NEXT_STEPS,
+    NEXT_STEPS_HEADLINE,
     SLIDE_TITLES,
     agenda_items,
     build_slides,
@@ -63,6 +70,7 @@ EXPECTED_ORDER: tuple[str, ...] = (
     SLIDE_TITLES["measure_summary"],
     SLIDE_TITLES["combination"],
     SLIDE_TITLES["appendix"],
+    SLIDE_TITLES["closing"],
 )
 
 
@@ -119,13 +127,49 @@ def _slide_text(slide: object) -> str:
             parts.append(shape.text_frame.text)
         if shape.has_table:
             parts.extend(
-                cell.text for row in shape.table.rows for cell in row.cells  # type: ignore[union-attr]
+                cell.text
+                for row in shape.table.rows
+                for cell in row.cells  # type: ignore[union-attr]
             )
     return "\n".join(parts)
 
 
 def _deck_text(deck: object) -> str:
     return "\n".join(_slide_text(slide) for slide in deck.slides)  # type: ignore[attr-defined]
+
+
+def _seven_measures(sections: DocumentSections) -> tuple[MeasureEntry, ...]:
+    """일곱 수단을 **모두 켠** 항목 목록.
+
+    실제로 일곱을 계산하면 시험이 몇 분 늘어난다. 여기서 보는 것은 **장 수가
+    수단 수를 따라가는가** 하나이므로 항목만 채워 만든다 — 카탈로그 차례를
+    그대로 쓰므로 실제 경로와 같은 순서다.
+    """
+    known = {entry.kind.key: entry for entry in sections.measures}
+    return tuple(
+        known.get(
+            kind.key,
+            MeasureEntry(
+                kind=kind,
+                conclusion=f"{kind.title} 검토 결과입니다.",
+                saving="0원",
+                investment="0원",
+                payback="즉시",
+                certainty="높음",
+            ),
+        )
+        for kind in MEASURE_CATALOG
+    )
+
+
+def _slide_by_key(deck: object, sections: DocumentSections, key: str) -> object:
+    """자리표의 열쇠로 실물 슬라이드를 찾는다.
+
+    **차례에서 세지 않는다.** 「맨 뒤」 같은 자리 표현은 장이 하나 붙는 순간
+    조용히 다른 슬라이드를 가리킨다 — 37세션에 마무리를 붙이며 겪었다.
+    """
+    index = [spec.key for spec in slide_specs(sections)].index(key)
+    return list(deck.slides)[index]  # type: ignore[attr-defined]
 
 
 def _visual_shapes(slide: object) -> list[object]:
@@ -147,6 +191,7 @@ def test_슬라이드_구성이_목차대로다(full_sections: DocumentSections)
         *measures,  # 검토한 수단별 1장씩 — **켠 것만, 차례대로**
         *EXPECTED_ORDER[8:],
     ]
+    assert expected[-1] == SLIDE_TITLES["closing"], "마무리는 맨 뒤다."
     assert titles == expected
 
 
@@ -187,9 +232,8 @@ def test_수단_0개면_개선안별_요약이_비어_있음을_적는다(
     diagnosis_only: DocumentSections,
 ) -> None:
     """**빈 표를 남기지 않는다.** 빈칸은 「효과가 없다」 로 읽힌다."""
-    deck = build_slides(diagnosis_only)
-    index = list(EXPECTED_ORDER).index(SLIDE_TITLES["measure_summary"])
-    assert "검토한 수단이 없습니다" in _slide_text(list(deck.slides)[index])
+    slide = _slide_by_key(build_slides(diagnosis_only), diagnosis_only, "measure_summary")
+    assert "검토한 수단이 없습니다" in _slide_text(slide)
 
 
 # ===================================================================== ③ 값이 오는 자리
@@ -353,13 +397,20 @@ def test_슬라이드_밖으로_나가는_것이_없다(full_sections: DocumentS
             assert bottom <= height + Inches(0.01), f"{index}장이 아래로 넘칩니다."
 
 
-def test_표지만_다크다(full_sections: DocumentSections) -> None:
-    """**샌드위치 구조** (36세션 3-2). 딥그린은 전체 배경 밴드로만 쓴다."""
+def test_표지와_마무리가_다크다(full_sections: DocumentSections) -> None:
+    """**샌드위치 구조** (36세션 3-2 · 37세션).
+
+    36세션은 표지만 다크로 두어 구조가 반쪽이었다 — 지시서 목차에 마무리 장이
+    없었기 때문이다. 아랫빵을 붙여 앞뒤가 짝을 이룬다.
+    """
     guide = load_design_guide()
     deck = build_slides(full_sections)
     fills = [str(slide.background.fill.fore_color.rgb) for slide in deck.slides]
     assert fills[0] == guide.colors.cover.lstrip("#").upper()
-    assert set(fills[1:]) == {guide.colors.white.lstrip("#").upper()}
+    assert fills[-1] == guide.colors.closing.lstrip("#").upper()
+    assert set(fills[1:-1]) == {guide.colors.white.lstrip("#").upper()}, (
+        "본문 콘텐츠는 라이트다 — 다크는 바깥 둘뿐이다."
+    )
 
 
 def test_전체_배경_밴드에_포인트색을_쓸_수_없다() -> None:
@@ -369,9 +420,67 @@ def test_전체_배경_밴드에_포인트색을_쓸_수_없다() -> None:
     from kwise.report.design import DesignGuideError
 
     colors = load_design_guide().colors
-    assert colors.cover in (colors.deep_green, colors.dark_primary)
+    for value in (colors.cover, colors.closing):
+        assert value in (colors.deep_green, colors.dark_primary)
     with pytest.raises(DesignGuideError, match="전체 배경 밴드"):
         _ = replace(colors, cover_background="coral").cover
+    with pytest.raises(DesignGuideError, match="전체 배경 밴드"):
+        _ = replace(colors, closing_background="coral").closing
+
+
+# ===================================================================== 37세션 · 마무리
+
+
+def test_마무리가_맨_뒤에_있다(full_sections: DocumentSections) -> None:
+    """**표지·목차와 같은 취급이다** — 자료가 무엇이든 늘 나온다 (37세션)."""
+    for sections in (
+        full_sections,
+        DocumentSections(usage=full_sections.usage, bill=full_sections.bill),
+    ):
+        specs = slide_specs(sections)
+        assert specs[-1].key == "closing"
+        assert specs[-1].layout == "closing"
+        assert specs[-1].title == SLIDE_TITLES["closing"]
+
+
+def test_마무리가_다음_단계를_적는다(full_sections: DocumentSections) -> None:
+    """**결론이 아니라 성격을 밝힌다.** 채택한 안은 현장에서 확정된다."""
+    deck = build_slides(full_sections)
+    text = _slide_text(list(deck.slides)[-1])
+    assert SLIDE_TITLES["closing"] in text
+    assert NEXT_STEPS_HEADLINE in text
+    for title, detail in NEXT_STEPS:
+        assert title in text and detail in text
+    assert _visual_shapes(list(deck.slides)[-1]), "마무리에 시각 요소가 없습니다."
+
+
+def test_다음_단계_문구가_앞뒤로_겹치지_않는다(loaded_sections: DocumentSections) -> None:
+    """**같은 말을 두 번 하지 않는다** (37세션).
+
+    덱 어디에도 없던 문구라 옮겨 올 것이 없었다 — 새로 적는 자리도 마무리
+    하나뿐이어야 한다. 앞 장이 같은 말을 하기 시작하면 여기서 걸린다.
+    """
+    deck = build_slides(loaded_sections)
+    slides = list(deck.slides)
+    assert _deck_text(deck).count(NEXT_STEPS_HEADLINE) == 1
+    front = "\n".join(_slide_text(slide) for slide in slides[:-1])
+    for _title, detail in NEXT_STEPS:
+        assert detail not in front, f"「{detail}」 가 앞 장에도 있습니다."
+    assert "초기 판단용" not in front
+
+
+def test_장수가_수단_개수를_따라간다(
+    full_sections: DocumentSections, diagnosis_only: DocumentSections
+) -> None:
+    """뼈대 열한 장 + 켠 수단 수 (37세션). 수단 0개면 11장, 일곱이면 18장이다."""
+    from dataclasses import replace
+
+    assert len(slide_specs(diagnosis_only)) == 11
+    assert len(slide_specs(full_sections)) == 11 + len(full_sections.measures)
+
+    seven = replace(full_sections, measures=_seven_measures(full_sections))
+    assert len(seven.measures) == 7
+    assert len(slide_specs(seven)) == 18
 
 
 # ===================================================================== ⑥ 부록
@@ -427,8 +536,8 @@ def test_부록이_넘치면_뺀_줄_수를_적는다(full_sections: DocumentSec
 
     sheet = full_sections.worksheets[0]
     many = Worksheet(key=sheet.key, title=sheet.title, rows=sheet.rows * 6)
-    deck = build_slides(replace(full_sections, worksheets=(many,)))
-    text = _slide_text(list(deck.slides)[-1])
+    sections = replace(full_sections, worksheets=(many,))
+    text = _slide_text(_slide_by_key(build_slides(sections), sections, "appendix"))
     assert "줄은 자리가 모자라 뺐습니다" in text
     assert "Excel·Word 부록 A" in text
     assert len(many.frame()) > APPENDIX_ROW_LIMIT
@@ -494,9 +603,7 @@ def test_바이트를_돌려줄_때도_같은_이름이다(full_sections: Docume
     assert name == "kwise_report_20260811_0905.pptx"
 
 
-def test_저장_경로에_폴더가_없으면_만든다(
-    full_sections: DocumentSections, tmp_path: Path
-) -> None:
+def test_저장_경로에_폴더가_없으면_만든다(full_sections: DocumentSections, tmp_path: Path) -> None:
     target = tmp_path / "없던" / "폴더"
     path = export_slides(full_sections, output_dir=target)
     assert path.is_file()

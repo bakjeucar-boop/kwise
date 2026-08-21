@@ -54,9 +54,12 @@ from kwise.tariff.labels import SEASON_LABELS
 
 __all__ = [
     "APPENDIX_SLIDE_TITLE",
+    "CLOSING_SLIDE_TITLE",
     "DECK_TITLE",
     "DEFAULT_OUTPUT_DIR",
     "LAYOUTS",
+    "NEXT_STEPS",
+    "NEXT_STEPS_HEADLINE",
     "SLIDE_TITLES",
     "SlideSpec",
     "agenda_items",
@@ -71,6 +74,7 @@ __all__ = [
 DECK_TITLE = "전력 비용 진단 보고서"
 DEFAULT_OUTPUT_DIR = Path("output")
 APPENDIX_SLIDE_TITLE = "부록 산출근거 상세"
+CLOSING_SLIDE_TITLE = "다음 단계"
 
 #: 슬라이드 제목 — **지시서의 괄호 하나가 한 장이다** (36세션 2절).
 SLIDE_TITLES: dict[str, str] = {
@@ -84,6 +88,7 @@ SLIDE_TITLES: dict[str, str] = {
     "measure_summary": "개선안별 요약",
     "combination": "조합구성 및 합산효과",
     "appendix": APPENDIX_SLIDE_TITLE,
+    "closing": CLOSING_SLIDE_TITLE,
 }
 
 #: 레이아웃 형태 (36세션 3-4). **같은 형태를 반복하지 않는다.**
@@ -96,6 +101,7 @@ SLIDE_TITLES: dict[str, str] = {
 #:     chart_pair   같은 크기의 그림 둘을 좌우로
 #:     split        좌우가 서로 다른 것을 담는다 (지표+차트 | 격자)
 #:     compare      비교형 — 좌우 2단에 중앙 얇은 구분선
+#:     closing      마무리 — 표지와 짝이 되는 다크 배경 밴드 (37세션)
 LAYOUTS: tuple[str, ...] = (
     "cover",
     "agenda",
@@ -105,6 +111,7 @@ LAYOUTS: tuple[str, ...] = (
     "chart_pair",
     "split",
     "compare",
+    "closing",
 )
 
 _UNPRICED = "미산출"
@@ -152,6 +159,9 @@ def slide_specs(sections: DocumentSections) -> tuple[SlideSpec, ...]:
 
     **수단을 하나도 켜지 않으면 수단별 장만 빠진다.** 나머지는 그대로다 —
     진단만 보고 받아 가는 것이 정상 경로다 (Word 와 같은 규약).
+
+    표지·목차·**마무리**는 자료가 무엇이든 늘 나온다. 셋 다 내용이 아니라
+    덱의 뼈대이기 때문이다 (37세션).
     """
     specs = [
         SlideSpec("cover", SLIDE_TITLES["cover"], "cover"),
@@ -169,6 +179,7 @@ def slide_specs(sections: DocumentSections) -> tuple[SlideSpec, ...]:
     )
     specs.append(SlideSpec("combination", SLIDE_TITLES["combination"], "compare"))
     specs.append(SlideSpec("appendix", SLIDE_TITLES["appendix"], "table"))
+    specs.append(SlideSpec("closing", SLIDE_TITLES["closing"], "closing"))
     return tuple(specs)
 
 
@@ -191,6 +202,7 @@ def agenda_items(sections: DocumentSections) -> tuple[str, ...]:
         lines.append(f"검토한 수단별 상세 — {names}")
     lines.append(SLIDE_TITLES["combination"])
     lines.append(SLIDE_TITLES["appendix"])
+    lines.append(SLIDE_TITLES["closing"])
     return tuple(lines)
 
 
@@ -375,6 +387,7 @@ def _aspect(png: bytes) -> float:
     """그림의 세로÷가로. **꾸러미에 넣지 않고** 바이트에서 읽는다."""
     width, height = Image.from_blob(png).size
     return height / width if width else 1.0
+
 
 # ===================================================================== 그림 비율
 #
@@ -1236,6 +1249,124 @@ def _build_appendix(
     )
 
 
+# ===================================================================== 37세션 · 마무리
+#
+# **샌드위치의 아랫빵이다** (가이드 3-2). 36세션은 표지만 다크로 두었는데,
+# 지시서 목차에 마무리 장이 없었기 때문이다 — 구조가 반쪽이었다.
+#
+# 여기서 하는 말은 **다음 단계** 하나다. 이 검토는 초기 판단용이고, 채택한
+# 개선안은 현장에서 확인해야 확정된다. 앞에서 같은 말을 하지 않는다 — 덱 어디에도
+# 없던 문구라 옮겨 올 것이 없었고, 새로 적는 자리도 여기 하나뿐이다.
+#
+# **Word 에는 이 문구가 없다.** 그쪽에는 마무리 장이 없고, 있지도 않은 자리에
+# 문구만 심으면 두 산출물이 같은 말을 다른 무게로 하게 된다. 필요해지면 그때
+# 이 상수를 함께 읽으면 된다.
+
+#: 마무리의 헤드라인. **결론이 아니라 성격을 밝힌다.**
+NEXT_STEPS_HEADLINE = "이 결과는 초기 판단용입니다."
+
+#: 다음 단계 셋. **무엇을 확인하는지까지 적는다** — 「현장 조사」 만으로는
+#: 무엇을 보러 가는지 알 수 없다.
+NEXT_STEPS: tuple[tuple[str, str], ...] = (
+    ("현장 조사", "설치 공간과 수전 설비, 계통 연계 여건을 봅니다."),
+    ("설비 사양 확인", "견적 단가와 실제 사양이 본 산출의 전제와 맞는지 봅니다."),
+    ("담당자 인터뷰", "운영 계획과 제약을 듣습니다 — 부하는 자료가 고정입니다."),
+)
+
+
+def _build_closing(
+    slide: Slide, guide: DesignGuide, _sections: DocumentSections, spec: SlideSpec
+) -> None:
+    """마무리 — **전체 배경 밴드가 다크다** (가이드 3-2 · 37세션).
+
+    표지와 짝을 이룬다. 코랄은 라벨 한 줄에만 쓰고(3-2), 슬라이드 폭을 가로지르는
+    색 바는 만들지 않는다(3-5) — 항목을 가르는 얇은 선뿐이다.
+
+    **구분선 색이 표형 슬라이드와 다르다.** 밝은 회색을 검은 바탕에 그으면 선이
+    튀어 내용보다 먼저 보인다 (:attr:`~kwise.report.design.Palette.on_dark_rule`).
+    """
+    geometry = guide.slide
+    colors = guide.colors
+    scale = guide.type_scale
+    slide.background.fill.solid()
+    slide.background.fill.fore_color.rgb = _rgb(colors.closing)
+
+    left = geometry.margin_in + 0.5
+    width = geometry.content_width_in - 1.0
+    _text(
+        slide,
+        guide,
+        [spec.title],
+        left=left,
+        top=1.95,
+        width=width,
+        height=0.3,
+        size=scale.body,
+        color=colors.coral,
+        bold=True,
+    )
+    _text(
+        slide,
+        guide,
+        [NEXT_STEPS_HEADLINE],
+        left=left,
+        top=2.42,
+        width=width,
+        height=0.8,
+        size=scale.section,
+        color=colors.on_dark,
+        bold=True,
+    )
+    _text(
+        slide,
+        guide,
+        ["채택한 개선안은 아래 셋을 거쳐 확정합니다."],
+        left=left,
+        top=3.5,
+        width=width,
+        height=0.32,
+        size=scale.body,
+        color=colors.on_dark_muted,
+    )
+
+    step = 0.72
+    top = 4.06
+    for index, (title, detail) in enumerate(NEXT_STEPS):
+        y = top + step * index
+        _text(
+            slide,
+            guide,
+            [title],
+            left=left,
+            top=y,
+            width=3.0,
+            height=0.3,
+            size=scale.body,
+            color=colors.on_dark,
+            bold=True,
+        )
+        _text(
+            slide,
+            guide,
+            [detail],
+            left=left + 3.2,
+            top=y,
+            width=width - 3.2,
+            height=0.3,
+            size=scale.body,
+            color=colors.on_dark_muted,
+        )
+        # **선이 이 장의 시각 요소다.** 항목을 가르되 배경 위로 튀지 않는다.
+        _rule(
+            slide,
+            guide,
+            left=left,
+            top=y + step - 0.18,
+            length=width,
+            color=colors.on_dark_rule,
+        )
+
+
 _BUILDERS: dict[str, Callable[[Slide, DesignGuide, DocumentSections, SlideSpec], None]] = {
     "cover": _build_cover,
     "agenda": _build_agenda,
@@ -1246,6 +1377,7 @@ _BUILDERS: dict[str, Callable[[Slide, DesignGuide, DocumentSections, SlideSpec],
     "structure": _build_structure,
     "measure_summary": _build_measure_summary,
     "combination": _build_combination,
+    "closing": _build_closing,
     "appendix": _build_appendix,
 }
 

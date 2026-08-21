@@ -37,8 +37,9 @@
   },
 
   "colors": {
-    "note": "딥그린·다크는 전체 배경 밴드로만, 코랄·블루는 작은 포인트로만.",
+    "note": "딥그린·다크는 전체 배경 밴드로만, 코랄·블루는 작은 포인트로만. 표지와 마무리가 샌드위치의 바깥이다.",
     "cover_background": "deep_green",
+    "closing_background": "dark_primary",
     "deep_green": "#003C33",
     "dark_primary": "#17171C",
     "white": "#FFFFFF",
@@ -48,7 +49,8 @@
     "muted": "#5A5A66",
     "rule": "#D5D5DD",
     "on_dark": "#FFFFFF",
-    "on_dark_muted": "#B9C6C3"
+    "on_dark_muted": "#B9C6C3",
+    "on_dark_rule": "#3A3A44"
   },
 
   "chart": {
