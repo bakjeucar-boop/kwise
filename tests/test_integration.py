@@ -363,20 +363,51 @@ def test_엑셀을_만들고_내려받아도_결과가_남는다(compare_screen:
     assert _stage2_metrics(after), "내려받기 뒤 2단계 카드가 사라졌습니다."
 
 
-def test_워드를_만들고_내려받아도_결과가_남는다(compare_screen: AppTest) -> None:
-    built = compare_screen.button(key="build_word").click().run(timeout=900)
+def test_피피티를_만들고_내려받아도_결과가_남는다(compare_screen: AppTest) -> None:
+    built = compare_screen.button(key="build_ppt").click().run(timeout=900)
     assert not built.exception, built.exception
-    after = built.download_button(key="dl_word").click().run(timeout=900)
+    after = built.download_button(key="dl_ppt").click().run(timeout=900)
     assert not after.exception, after.exception
-    assert after.download_button(key="dl_word"), "내려받기 뒤 단추가 사라졌습니다."
+    assert after.download_button(key="dl_ppt"), "내려받기 뒤 단추가 사라졌습니다."
     assert _stage3_labels(after)[:3] == ["단순 합", "합산효과", "차이"]
     assert _stage2_metrics(after), "내려받기 뒤 2단계 카드가 사라졌습니다."
+
+
+def test_화면_단추는_엑셀과_피피티_둘뿐이다(compare_screen: AppTest) -> None:
+    """**Word 는 화면에서 감췄다** (36세션 1절).
+
+    지운 것이 아니다 — 만드는 코드와 시험은 그대로 있고 단추만 없앴다. 산출물이
+    셋이면 받는 사람이 「어느 것을 봐야 하나」 를 먼저 골라야 하는데, Word 와
+    PPT 는 같은 재료로 같은 이야기를 하는 두 매체라 고를 근거가 없다.
+    """
+    keys = {button.key for button in compare_screen.button}
+    assert "build_excel" in keys
+    assert "build_ppt" in keys
+    assert "build_word" not in keys, "Word 단추가 화면에 다시 나왔습니다."
+
+    built = compare_screen.button(key="build_ppt").click().run(timeout=900)
+    download_keys = {item.key for item in built.download_button}
+    assert "dl_word" not in download_keys
+
+    # 단추 이름·탭 이름·캡션 어디에도 남기지 않는다.
+    written = _text(compare_screen) + " ".join(str(item.label) for item in compare_screen.button)
+    assert "Word" not in written, "화면 문구에 Word 가 남아 있습니다."
+
+
+def test_워드_생성_코드와_시험이_남아_있다() -> None:
+    """**되살릴 수 있어야 한다** (36세션 1절)."""
+    from kwise.report.document import build_document, document_bytes, export_document
+
+    assert callable(build_document) and callable(document_bytes) and callable(export_document)
+    assert (Path("tests") / "test_document.py").is_file()
+    source = (Path("src") / "kwise" / "ui" / "views" / "compare.py").read_text(encoding="utf-8")
+    assert "36세션 1절 · Word" in source, "감춘 이유를 코드 주석에 남기십시오."
 
 
 def test_수단이_없어도_두_산출물이_만들어진다() -> None:
     """진단만 보고 받아 가는 것이 정상 경로다 (8세션에 Excel 에서 잡았다)."""
     app = _app()
-    for build, download in (("build_excel", "dl_excel"), ("build_word", "dl_word")):
+    for build, download in (("build_excel", "dl_excel"), ("build_ppt", "dl_ppt")):
         after = app.button(key=build).click().run(timeout=900)
         assert not after.exception, after.exception
         assert after.download_button(key=download)

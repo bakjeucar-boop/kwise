@@ -183,9 +183,13 @@ def test_생성된_매뉴얼_html_에도_앵커가_있다(built: Path) -> None:
     assert set(anchor_keys()) <= ids
 
 
-def test_앵커_수가_30개다() -> None:
-    """**확실성·감도 앵커를 뺐다** (28세션 4·5절). 화면에서 없앤 자리는 앵커도 없다."""
-    assert len(ANCHORS) == 30
+def test_앵커_수가_31개다() -> None:
+    """**화면에서 없앤 자리는 앵커도 없다** (28세션 4·5절 · 36세션 1절).
+
+    확실성·감도가 빠졌고, Word 는 애초에 앵커가 없었다. 36세션에 PPT 가 하나
+    늘었다 (``ppt-report``).
+    """
+    assert len(ANCHORS) == 31
     assert "certainty" not in anchor_keys()
     assert "sensitivity" not in anchor_keys()
 

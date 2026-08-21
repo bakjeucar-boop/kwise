@@ -58,11 +58,11 @@ from kwise.report import (
     MeasureEntry,
     ReportSections,
     StandaloneRow,
-    document_bytes,
     measure_entries,
     measure_summary_frame,
     no_pv_sensitivity_frame,
     simple_sum_won,
+    slides_bytes,
     standalone_frame,
     standalone_rows,
 )
@@ -908,14 +908,17 @@ def _download_block(
     building: BuildingInfo | None,
     table: TariffTable,
 ) -> None:
-    """산출물 둘 — 분석자용 Excel 과 의사결정자용 Word (10.3·10.5).
+    """산출물 둘 — 분석자용 Excel 과 의사결정자용 PPT (10.3·10.5).
 
     ``table`` 은 **부록 B** 가 요금표 시행일을 적는 데 쓴다 (22세션 3절).
+
+    **Word 는 화면에서 감췄다** (36세션 1절). 아래 「Word」 주석을 보라 —
+    만드는 코드와 시험은 그대로 남아 있고 단추만 없앴다.
     """
     st.subheader("내려받기")
     count = 0 if comparison is None else len(comparison.combinations)
     token = f"{usage_token(usage)}|{rules_stamp()}|{count}"
-    excel_tab, word_tab = st.tabs(["Excel — 분석자용", "Word 보고서 — 의사결정자용"])
+    excel_tab, deck_tab = st.tabs(["Excel — 분석자용", "PPT 보고서 — 의사결정자용"])
 
     with excel_tab:
         st.caption(
@@ -953,17 +956,37 @@ def _download_block(
             key="dl_excel",
         )
 
-    with word_tab:
+    # ================================================================= 36세션 1절 · Word
+    #
+    # **Word 단추를 화면에서 뺐다. 코드는 그대로 둔다.**
+    #
+    # 산출물이 셋(Excel·Word·PPT)이면 받는 사람이 「어느 것을 봐야 하나」 를 먼저
+    # 골라야 한다. Word 와 PPT 는 **같은 재료로 같은 이야기를 하는 두 매체**라
+    # 나란히 두면 고를 근거가 없다 — 의사결정자에게 건네는 쪽을 PPT 하나로 정했다.
+    #
+    # 지운 것이 아니라 감춘 것이다. :func:`kwise.report.document.build_document` 와
+    # ``tests	est_document.py`` 는 손대지 않았으므로, 아래 세 줄만 되살리면
+    # 단추가 돌아온다.
+    #
+    #     word_tab 을 st.tabs 에 되넣고
+    #     DocumentSections(...) 를 만들어 document_bytes 로 _build 하고
+    #     _offer(slot="word", ...) 를 부른다
+    #
+    # **CLI 배치(:mod:`kwise.report.batch`)는 손대지 않았다.** 거기서는 Word 를
+    # 애초에 만들지 않았고(케이스별 Excel 과 요약 CSV 뿐이다), 배치는 여러 건을
+    # 견주는 자리라 건별 문서가 쓰이는 자리가 아니다.
+
+    with deck_tab:
         st.caption(
-            "결론부터 쓴 다섯 장짜리 보고서입니다. **표는 Word 표 객체라** 제안서에 "
-            "그대로 복사해 쓸 수 있습니다."
+            "한 장에 한 가지만 담은 슬라이드입니다. 켠 수단만 한 장씩 들어갑니다.",
+            help=manual_tip("ppt-report"),
         )
         # **건물명은 옆단에서 온다** (16세션 2절). 같은 것을 두 곳에서 물으면
         # 두 값이 갈리고, 어느 쪽이 표지에 실릴지 알 수 없다.
         name = building.title if building is not None else NAME_MISSING
         st.caption(f"표지 이름 — **{name}** (옆단 「건물 정보」 에서 고칩니다)")
-        word_token = f"{token}|{name}"
-        if st.button("Word 보고서 만들기", type="primary", key="build_word"):
+        deck_token = f"{token}|{name}"
+        if st.button("PPT 보고서 만들기", type="primary", key="build_ppt"):
             document = DocumentSections(
                 usage=usage,
                 bill=baseline,
@@ -979,17 +1002,17 @@ def _download_block(
                 skipped_labels=scope.skipped_labels,
             )
             _build(
-                lambda: document_bytes(document),
-                slot="word",
-                label="Word 보고서",
-                token=word_token,
+                lambda: slides_bytes(document),
+                slot="ppt",
+                label="PPT 보고서",
+                token=deck_token,
             )
         _offer(
-            slot="word",
-            token=word_token,
-            label="Word 내려받기",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            key="dl_word",
+            slot="ppt",
+            token=deck_token,
+            label="PPT 내려받기",
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            key="dl_ppt",
         )
 
 

@@ -13,6 +13,7 @@ streamlit==1.61.1
 altair==6.2.2
 openpyxl==3.1.5
 python-docx==1.2.0
+python-pptx==1.0.2
 matplotlib==3.11.1
 pyarrow==24.0.0
 requests==2.34.2

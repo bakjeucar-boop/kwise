@@ -1217,8 +1217,17 @@ def test_보고서_png_도_같은_날짜_규약이다() -> None:
     assert korean_date_label(date_module.datetime(2024, 1, 1)) == "2024년"
     assert korean_date_label(date_module.datetime(2024, 5, 1)) == "5월"
     assert korean_date_label(date_module.datetime(2024, 4, 30)) == "4월 30일"
+    # **날짜를 가로축에 두는 png 는 전부 이 규약을 탄다.** 개수를 세는 대신
+    # 그림마다 확인한다 — 수를 박아 두면 그림이 늘 때마다 시험이 깨지는데,
+    # 그때 정말 물어야 할 것은 「새 그림이 규약을 탔는가」 이지 개수가 아니다.
     source = (Path("src") / "kwise" / "report" / "figures.py").read_text(encoding="utf-8")
-    assert source.count("date_axis(axes)") == 3, "날짜 축 png 셋이 모두 규약을 타야 합니다."
+    dated = ("dr_daily_png", "solar_annual_png", "surplus_daily_png", "daily_usage_png")
+    for name in dated:
+        body = source.split(f"def {name}")[1].split("\ndef ")[0]
+        assert "date_axis(axes)" in body, f"{name} 이 날짜 축 규약을 타지 않습니다."
+    assert source.count("date_axis(axes)") == len(dated), (
+        "날짜 축을 쓰는 png 가 늘었습니다. 위 목록에 올리십시오."
+    )
     assert source.count("time_axis(axes)") == 2
 
 

@@ -1,0 +1,75 @@
+{
+  "schema": "0.1",
+  "name": "kWise PPT 디자인 가이드",
+  "updated": "2026-08-21",
+  "note": "36세션. 슬라이드와 보고서 png 의 색·크기는 전부 여기서 온다. 코드에 값을 박지 않는다.",
+
+  "slide": {
+    "width_in": 13.333,
+    "height_in": 7.5,
+    "margin_in": 0.5,
+    "block_gap_in": 0.35,
+    "title_gap_in": 0.28,
+    "text_slack": 0.1,
+    "rule_pt": 0.75
+  },
+
+  "font": {
+    "candidates": [
+      "맑은 고딕",
+      "Malgun Gothic",
+      "Apple SD Gothic Neo",
+      "NanumGothic",
+      "Noto Sans KR"
+    ],
+    "fallback": "sans-serif",
+    "note": "pptx 는 글꼴 이름만 적는다 — 그리는 것은 읽는 사람의 PowerPoint 다. png 는 서버가 그리므로 figures.korean_font() 가 설치된 것을 고른다."
+  },
+
+  "type_scale": {
+    "note": "section 은 섹션 구분 슬라이드용이다 — 지금 목차에는 그런 장이 없어 쓰이지 않는다. 가이드 3-3 의 위계를 그대로 옮겨 둔다.",
+    "cover": 46,
+    "section": 38,
+    "slide_title": 30,
+    "card_title": 21,
+    "body": 15,
+    "caption": 11.5
+  },
+
+  "colors": {
+    "note": "딥그린·다크는 전체 배경 밴드로만, 코랄·블루는 작은 포인트로만.",
+    "cover_background": "deep_green",
+    "deep_green": "#003C33",
+    "dark_primary": "#17171C",
+    "white": "#FFFFFF",
+    "coral": "#FF7759",
+    "blue": "#1863DC",
+    "ink": "#17171C",
+    "muted": "#5A5A66",
+    "rule": "#D5D5DD",
+    "on_dark": "#FFFFFF",
+    "on_dark_muted": "#B9C6C3"
+  },
+
+  "chart": {
+    "note": "png 전용 팔레트. 흰 캔버스가 확정이라 글자·눈금에 어두운 중립색을 쓴다 — 화면(altair)의 다크모드 규약은 여기에 적용되지 않는다.",
+    "canvas": "#FFFFFF",
+    "text": "#17171C",
+    "grid": "#D5D5DD",
+    "series": ["#1863DC", "#8FB4F2", "#FF7759", "#0C2E6E"],
+    "day_series": ["#1863DC", "#8FB4F2", "#FF7759", "#C24A2E"],
+    "band": {
+      "경부하": "#BFD3F7",
+      "중간부하": "#5D8FE8",
+      "최대부하": "#0C2E6E"
+    },
+    "base_fee": "#9A9AA6",
+    "saving": "#1863DC",
+    "increase": "#FF7759",
+    "neutral": "#9A9AA6",
+    "highlight": "#FF7759",
+    "fill": "#1863DC",
+    "fill_alpha": 0.25,
+    "fill_note": "두 선 사이를 채우는 띠의 투명도. 선과 같은 색이라 옅어야 셋(원부하·순부하·저감분)이 갈린다."
+  }
+}

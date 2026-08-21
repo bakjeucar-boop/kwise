@@ -46,6 +46,7 @@ __all__ = [
     "band_frame",
     "combination_frame",
     "daily_temperature_frame",
+    "daily_usage_frame",
     "dr_daily_frame",
     "ess_day_frame",
     "ess_target_frame",
@@ -685,6 +686,37 @@ def solar_annual_frame(usage: UsageData, generation_kw: pd.Series) -> pd.DataFra
     ]
 
 
+def _daily_kwh(usage: UsageData) -> pd.Series:
+    """일별 사용량 (kWh). **관측이 있는 날만** — 결측일을 0 으로 만들지 않는다.
+
+    날짜 귀속은 :func:`~kwise.io.slot_start` 를 거친다. 라벨(구간 끝)로 묶으면
+    자정 구간이 다음 날로 넘어가 하루가 15분씩 밀린다.
+    """
+    interval = usage.meta.interval_minutes
+    load = usage.kw.dropna()
+    index = pd.DatetimeIndex(load.index)
+    days = slot_start(index, interval).normalize()
+    return (
+        pd.Series(load.to_numpy(dtype=float) * (interval / 60.0), index=days).groupby(level=0).sum()
+    )
+
+
+def daily_usage_frame(usage: UsageData) -> pd.DataFrame:
+    """연간 일별 사용량 (36세션 2절 · PPT 「전력사용현황」).
+
+    기온을 곁들인 :func:`daily_temperature_frame` 과 **같은 일별 합계**를 쓴다.
+    지역을 고르지 않았거나 기상 자료가 없어도 이 그림은 나와야 한다 — 슬라이드
+    한 장이 통째로 비면 「사용량이 없다」 로 읽힌다.
+    """
+    daily = _daily_kwh(usage)
+    return pd.DataFrame(
+        {
+            "날짜": [pd.Timestamp(value).date() for value in daily.index],
+            "사용량(kWh)": daily.astype(float).to_numpy(),
+        }
+    )
+
+
 def daily_temperature_frame(usage: UsageData, temperature: pd.Series) -> pd.DataFrame:
     """연간 일별 사용량과 일평균 기온 (30세션 4절).
 
@@ -695,13 +727,7 @@ def daily_temperature_frame(usage: UsageData, temperature: pd.Series) -> pd.Data
         temperature: 시간별 기온 (℃). 인덱스는 tz 유무를 가리지 않는다 —
             **여기서 벗겨 날짜로만 묶는다.** 부하 인덱스는 tz-naive 지방시다.
     """
-    interval = usage.meta.interval_minutes
-    load = usage.kw.dropna()
-    index = pd.DatetimeIndex(load.index)
-    days = slot_start(index, interval).normalize()
-    daily_kwh = (
-        pd.Series(load.to_numpy(dtype=float) * (interval / 60.0), index=days).groupby(level=0).sum()
-    )
+    daily_kwh = _daily_kwh(usage)
 
     stamps = pd.DatetimeIndex(temperature.index)
     if stamps.tz is not None:
