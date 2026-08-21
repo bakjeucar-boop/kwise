@@ -834,22 +834,21 @@ def _band_donuts(structure: ChargeStructure) -> None:
     갈아 끼우면 계절을 나란히 볼 수 없는데, 이 그림에서 볼 것이 바로 계절 사이의
     차이다. **없는 계절은 그리지 않는다.**
 
-    합계 사용량은 그림 제목 아래 한 줄로 간다. 원 아래 자리는 조각 라벨이 쓴다.
+    **계절 이름과 합계는 그림 위에 Streamlit 텍스트로 둔다** (35세션 1-1·1-2).
+    vega 제목으로 두었더니 층 차트의 높이 계산에 들어가지 않아 **윗부분이 잘렸고**,
+    부제는 vega 기본색(검정)이라 다크 모드에서 배경에 묻혔다. 캡션으로 빼면 둘 다
+    없어진다 — 글자색이 테마를 따르고, 잘릴 자리도 없다.
+
+    **캡션이지 본문이 아니다.** 넷을 본문으로 적으면 이 자리의 본문 예산
+    (3줄, ``screen_budget``)을 그림 이름 넷이 통째로 먹는다.
     """
     choices = season_choices(structure.band_season_kwh.index)
     columns = st.columns(len(choices))
     for column, (label, key) in zip(columns, choices, strict=True):
-        frame = charts.band_frame(structure, season=key)
+        total = float(charts.band_frame(structure, season=key)["사용량(kWh)"].sum())
         with column:
-            st.altair_chart(
-                charts.band_donut_chart(
-                    structure,
-                    season=key,
-                    title=label,
-                    subtitle=fmt.mwh(float(frame["사용량(kWh)"].sum())),
-                ),
-                width="stretch",
-            )
+            st.caption(f"**{label}** · {fmt.mwh(total)}")
+            st.altair_chart(charts.band_donut_chart(structure, season=key), width="stretch")
     st.caption("계시별 사용량 구성", help=fmt.chart_tip("chart.band"))
 
 

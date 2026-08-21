@@ -954,10 +954,12 @@ def test_계절_갈래가_두_그래프에_모두_있다(app: AppTest) -> None:
     import json
 
     tabs = [item.label for item in app.tabs]
-    donuts = [spec["title"]["text"] for spec in _rendered_specs(app) if '"arc"' in json.dumps(spec)]
+    donuts = [spec for spec in _rendered_specs(app) if '"arc"' in json.dumps(spec)]
+    heads = [str(item.value) for item in app.caption if str(item.value).startswith("**")]
+    assert len(donuts) == 4, len(donuts)
     for season in ("전체", "봄·가을", "여름", "겨울"):
         assert tabs.count(season) == 1, (season, tabs)
-        assert donuts.count(season) == 1, (season, donuts)
+        assert sum(head.startswith(f"**{season}**") for head in heads) == 1, (season, heads)
 
 
 def test_계절_갈래는_자료에_있는_계절만_낸다() -> None:
@@ -1267,10 +1269,17 @@ def test_화면에_계시별_원_넷이_그려진다(app: AppTest) -> None:
 
     arcs = [spec for spec in _rendered_specs(app) if '"arc"' in json.dumps(spec)]
     assert len(arcs) == 4, f"원이 {len(arcs)}개입니다 — 전체·봄·가을·여름·겨울 넷이어야 합니다."
-    titles = [spec["title"]["text"] for spec in arcs]
-    assert titles == ["전체", "봄·가을", "여름", "겨울"], titles
+    # **제목과 합계는 그림 위 캡션이다** (35세션 1-1·1-2). vega 제목은 층 차트에서
+    # 잘리고, 부제는 기본색(검정)이라 다크 모드에서 배경에 묻힌다.
+    heads = [str(item.value) for item in app.caption if str(item.value).startswith("**")]
+    assert heads == [
+        "**전체** · 22,284.8 MWh",
+        "**봄·가을** · 9,051.9 MWh",
+        "**여름** · 6,668.5 MWh",
+        "**겨울** · 6,564.4 MWh",
+    ], heads
     for spec in arcs:
-        assert spec["title"]["subtitle"].endswith("MWh"), "합계 사용량이 제목 아래에 없습니다."
+        assert "title" not in spec, "제목이 그림 안에 남아 있습니다."
         # 조각마다 이름과 비중을 적는다 — 범례 대신이다.
         assert spec["layer"][1]["encoding"]["text"]["field"] == "라벨"
         assert spec["layer"][0]["encoding"]["color"]["legend"] is None
@@ -1299,18 +1308,20 @@ def test_계시별_사용량_구성이_원_넷이다() -> None:
     from kwise.ui.charts import band_donut_chart
 
     structure = _structure()
-    spec = band_donut_chart(
-        structure, season="summer", title="여름", subtitle="6,668.5 MWh"
-    ).to_dict()
+    spec = band_donut_chart(structure, season="summer").to_dict()
     # 조각(arc)과 라벨(text) 두 층.
     assert [layer["mark"]["type"] for layer in spec["layer"]] == ["arc", "text"]
-    assert spec["layer"][0]["mark"]["innerRadius"] > 0, "도넛이 아니라 원입니다."
-    # 제목이 계절, 그 아래가 합계 사용량이다.
-    assert spec["title"]["text"] == "여름"
-    assert spec["title"]["subtitle"] == "6,668.5 MWh"
+    arc = spec["layer"][0]["mark"]
+    assert arc["innerRadius"] > 0, "도넛이 아니라 원입니다."
+    # **제목을 vega 에 담지 않는다** (35세션 1-1). 층 차트의 제목은 잘린다.
+    assert "title" not in spec, "제목이 그림 안에 남아 있습니다."
+    # **라벨이 조각 밖에 있다** (35세션 1-3). 좁은 칸에서 안쪽으로 파고들었다.
+    assert spec["layer"][1]["mark"]["radius"] > arc["outerRadius"] + 12
     # 조각마다 이름과 비중을 적는다 — 범례를 달지 않는다.
     assert spec["layer"][1]["encoding"]["text"]["field"] == "라벨"
     assert spec["layer"][0]["encoding"]["color"]["legend"] is None
+    # **글자색을 박지 않는다** (35세션 1-2). 테마가 칠한다.
+    assert "color" not in spec["layer"][1]["mark"]
     # 33세션이 요금 구성에 붙였던 것은 남기지 않는다.
     from kwise.ui import charts
 
@@ -1764,6 +1775,66 @@ def test_체크만_바꾸면_계산이_돌지_않는다(monkeypatch: pytest.Monk
     ran = toggled.button(key="combo_run").click().run(timeout=600)
     assert not ran.exception, ran.exception
     assert "compare" in calls
+
+
+def test_산출_근거가_한_건이면_점을_붙이지_않는다() -> None:
+    """**한 문장에 목록 기호를 붙이지 않는다** (35세션 2절).
+
+    항목이 하나인데 앞에 점을 찍으면 「목록의 첫 줄」 처럼 보인다 — 뒤에 무엇이
+    더 있는 줄 알고 찾게 된다.
+    """
+    from kwise.ui.text import bullet_list
+
+    assert bullet_list(["한 문장"]) == "한 문장"
+    assert bullet_list([]) == ""
+    # **둘 이상이면 붙인다.** 좁은 툴팁에서 문장이 접히면 경계를 알 길이 없다.
+    assert bullet_list(["첫", "둘"]) == "- 첫\n- 둘"
+
+    # 화면에서 확인한다 — 근거가 하나뿐인 조합을 띄운다.
+    screen = _running(option="I", measure_on_tariff_switch=True)
+    assert not screen.exception, screen.exception
+    grounds = [item for item in screen.caption if str(item.value).startswith("산출 근거 1건")]
+    assert grounds, [str(item.value) for item in screen.caption]
+    for item in grounds:
+        assert not str(item.help).startswith("- "), item.help
+
+
+def test_목록_기호는_한_곳에서_정한다() -> None:
+    """**같은 처리가 필요한 자리를 함께 고쳤다** (35세션 2절).
+
+    툴팁·기준 데이터 경고·검증 실패 셋이 각자 ``f"- "`` 를 적고 있었다.
+    """
+    for name in ("notices.py", "views/rules_admin.py"):
+        source = (Path("src") / "kwise" / "ui" / name).read_text(encoding="utf-8")
+        assert 'f"- ' not in source, f"{name} 이 목록 기호를 직접 적습니다."
+        assert "bullet_list" in source, name
+
+
+def test_그림_글자에_중립색을_박지_않는다() -> None:
+    """**흰·회·검을 글자에 박으면 한쪽 모드가 깨진다** (23세션 1절 · 35세션 1-2).
+
+    34세션의 도넛 부제가 vega 기본색(검정)으로 나가 다크 모드에서 묻혔다.
+    채색은 허용한다 — 그 글자가 어느 선의 것인지 색이 말해 주기 때문이다.
+    다만 **두 바탕에서 다 읽히는 중간 명도**여야 한다.
+    """
+    import re
+
+    from kwise.ui.charts import _LOAD_COLOR, _TEMP_COLOR
+
+    source = (Path("src") / "kwise" / "ui" / "charts.py").read_text(encoding="utf-8")
+    neutral = {"white", "black", "gray", "grey", "#fff", "#ffffff", "#000", "#000000"}
+    offenders = [
+        line.strip()
+        for line in source.splitlines()
+        if ("mark_text(" in line or "titleColor" in line)
+        for found in re.findall(r"color=\"([^\"]+)\"", line)
+        if found.lower() in neutral
+    ]
+    assert offenders == [], offenders
+
+    # 어두운 남색은 검은 바탕에서 선도 축 제목도 가라앉는다 — 중간 명도로 올렸다.
+    assert _LOAD_COLOR == "#3182bd", "일 사용량 색이 다시 어두워졌습니다."
+    assert _TEMP_COLOR == "#d95f0e"
 
 
 def test_산출_근거_툴팁에_앞머리가_없다(stage3: AppTest) -> None:

@@ -44,7 +44,7 @@ from kwise.ui.rules_view import (
     header_text,
     weather_panel,
 )
-from kwise.ui.text import markdown_safe
+from kwise.ui.text import bullet_list, markdown_safe
 
 __all__ = ["render", "render_alerts"]
 
@@ -67,8 +67,8 @@ def render_alerts() -> None:
     warnings = expiry_warnings()
     if warnings:
         with st.expander(f"⚠ 기준 데이터 확인 필요 {len(warnings)}건", expanded=False):
-            for warning in warnings:
-                st.write(f"- {markdown_safe(warning.message())}")
+            # **한 건이면 점을 붙이지 않는다** (35세션 2절).
+            st.write(bullet_list(markdown_safe(item.message()) for item in warnings))
 
 
 def render() -> None:
@@ -194,8 +194,7 @@ def _report(result: EditResult) -> None:
         st.rerun()
     else:
         callout.blocked(result.message)
-        for issue in result.issues:
-            st.write(f"- {markdown_safe(str(issue))}")
+        st.write(bullet_list(markdown_safe(str(issue)) for issue in result.issues))
 
 
 # --------------------------------------------------------------------- 원복 세 경로

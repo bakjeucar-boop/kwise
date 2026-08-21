@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 
 from kwise import money
 from kwise.money import ROUNDING_FOOTNOTE, TRUNCATION_FOOTNOTE
@@ -33,6 +34,7 @@ __all__ = [
     "ROUNDING_FOOTNOTE",
     "TIPS",
     "TRUNCATION_FOOTNOTE",
+    "bullet_list",
     "chart_tip",
     "count",
     "days",
@@ -390,6 +392,25 @@ def ess_saving_line(base_won: float, energy_won: float, annual_energy_won: float
         f"**기본요금 절감이 {ratio_pct(share)} 입니다** — 전력량요금 절감은 "
         f"{won_short(annual_energy_won)} 입니다."
     )
+
+
+def bullet_list(lines: Iterable[str]) -> str:
+    """여러 줄을 목록으로, **한 줄이면 그대로** (35세션 2절).
+
+    항목이 하나인데 앞에 점을 찍으면 「목록의 첫 줄」 처럼 보인다 — 뒤에 무엇이
+    더 있는 줄 알고 찾게 된다. 산출 근거 툴팁이 그랬다.
+
+    **둘 이상이면 점을 붙인다.** 좁은 툴팁에서 문장이 줄바꿈으로 접히면 어디서
+    한 항목이 끝나고 다음이 시작하는지 점 말고는 알 길이 없다.
+
+    **줄은 이미 escape 되어 있어야 한다** — 여기서는 잇기만 한다.
+    """
+    items = list(lines)
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    return "\n".join(f"- {item}" for item in items)
 
 
 def markdown_safe(value: str) -> str:

@@ -27,7 +27,7 @@ from kwise.notices import (
     screen_body,
     tooltip,
 )
-from kwise.ui.text import markdown_safe
+from kwise.ui.text import bullet_list, markdown_safe
 
 __all__ = [
     "Notice",
@@ -68,11 +68,10 @@ def tooltip_text(*groups: Iterable[Notice]) -> str:
     **앞머리를 붙이지 않는다** (34세션 3절). 「이 숫자가 어디서 나왔나」 를 세
     자리에서 똑같이 얹고 있었는데, 그 툴팁을 여는 캡션이 이미 **「산출 근거 N건」**
     이다 — 같은 말을 두 번 한다.
+
+    **한 건이면 점도 붙이지 않는다** (35세션 2절). :func:`bullet_list` 참조.
     """
-    lines = tooltip(*groups)
-    if not lines:
-        return ""
-    return "\n".join(f"- {markdown_safe(line)}" for line in lines)
+    return bullet_list(markdown_safe(line) for line in tooltip(*groups))
 
 
 def report_notices(*groups: Iterable[Notice]) -> tuple[Notice, ...]:

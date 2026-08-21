@@ -155,6 +155,16 @@ _CUT_SCALE = alt.Scale(zero=False, nice=True)
 #     ① 자리는 **바깥 오른쪽**. 그림이 그만큼 좁아지지만 가리는 것이 없다
 #     ② **배경을 칠하지 않는다.** 테마 배경이 그대로 비쳐 두 모드에서 다 읽힌다
 #     ③ 글자색을 고정하지 않는다 — 흰색·회색을 박아 두면 한쪽 모드가 깨진다
+#
+# **③ 을 글자 전부로 넓힌다** (35세션 1-2). 34세션의 도넛 부제(합계 사용량)가
+# vega 기본색(검정)으로 나가 다크 모드에서 배경에 묻혔다. 규칙을 나눠 적는다.
+#
+#     · **중립색(흰·회·검)을 글자에 박지 않는다.** 한쪽 모드가 반드시 깨진다.
+#       테마가 칠하게 두거나, 아예 Streamlit 텍스트로 뺀다
+#     · **채색은 허용한다** — 그 글자가 어느 선의 것인지 색이 말해 주기 때문이다
+#       (30세션 축 제목 규약). 다만 **두 바탕에서 다 읽히는 중간 명도**여야 한다.
+#       35세션에 일 사용량 색을 `#08519c` → `#3182bd` 로 올린 것이 그 이유다 —
+#       어두운 남색은 검은 바탕에서 선도 축 제목도 가라앉았다
 
 #: 전 차트가 쓰는 범례. **기본은 이것 하나다** — 차트마다 달리 주면 또 갈라진다.
 LEGEND = alt.Legend(
@@ -323,7 +333,7 @@ def time_tooltip(field: str = "시각", **kwargs: object) -> alt.Tooltip:
 #     ① 축 제목에 단위를 적고, **범례 이름에 어느 쪽 축인지 적는다**
 #     ② 축 제목 색을 선 색과 맞춘다 — 라벨을 못 읽어도 색으로 이어진다
 #     ③ 둘 다 0 에서 시작하지 않는다. 기온은 음수가 나오고, 사용량은 변화가 뜻이다
-_LOAD_COLOR = "#08519c"
+_LOAD_COLOR = "#3182bd"
 _TEMP_COLOR = "#d95f0e"
 _LOAD_SERIES = "일 사용량 (왼쪽 축)"
 _TEMP_SERIES = "일평균 기온 (오른쪽 축)"
@@ -513,15 +523,32 @@ def monthly_charge_chart(structure: ChargeStructure) -> alt.Chart:
 # 성립하지 않는다 — 규약을 고칠 일이 아니라 **해당 없음**이다. 대신 각이 곧
 # 비중이라 ``theta`` 를 쌓아 같은 뜻을 지킨다.
 
-#: 도넛의 안·바깥 반지름 (px). 안을 비우면 조각의 각을 견주기 쉽다.
-_DONUT_INNER = 42
-_DONUT_OUTER = 78
+# ===================================================================== 35세션 1절 · 도넛 세 가지
+#
+# **제목을 vega 에 두지 않는다.** 34세션에 `TitleParams` 로 계절 이름과 합계를
+# 얹었더니 화면에서 **제목 윗부분이 잘렸다** — 층(layer) 차트의 제목은 높이
+# 계산에 들어가지 않는 경우가 있다. 그리고 부제는 vega 기본색(검정)이라
+# **다크 모드에서 배경에 묻혔다.**
+#
+#     ① 제목·합계는 **Streamlit 텍스트로 그림 위에 둔다.** 잘리지 않고,
+#        글자색도 테마를 따른다 (23세션 3항의 연장)
+#     ② 도넛을 줄이고 라벨을 더 밖으로 민다 — 좁은 칸에서 라벨이 조각을 파고들었다
+#
+# 넷이 한 줄에 들어가는 것은 그대로다.
 
-#: 조각 라벨을 놓을 반지름. 바깥보다 조금 더 밖이라 조각을 가리지 않는다.
-_DONUT_LABEL_RADIUS = _DONUT_OUTER + 22
+#: 도넛의 안·바깥 반지름 (px). 안을 비우면 조각의 각을 견주기 쉽다.
+#:
+#: **넷이 한 줄이라 칸 하나가 좁다** (전체 폭의 4분의 1). 34세션의 78px 은 그
+#: 칸에서 라벨이 놓일 자리를 남기지 않았다.
+_DONUT_INNER = 34
+_DONUT_OUTER = 62
+
+#: 조각 라벨을 놓을 반지름. **바깥보다 24px 밖**이라 글자가 조각을 파고들지 않는다.
+_DONUT_LABEL_RADIUS = _DONUT_OUTER + 24
 
 #: 도넛 하나의 높이. 라벨이 바깥으로 뻗으므로 반지름의 두 배보다 넉넉해야 한다.
-_DONUT_HEIGHT = 230
+#: 제목이 그림 밖으로 나갔으므로 34세션(230)보다 낮아도 된다.
+_DONUT_HEIGHT = 200
 
 
 def _donut(
@@ -532,10 +559,11 @@ def _donut(
     order: Sequence[str],
     scale: alt.Scale,
     tooltip: Sequence[alt.Tooltip | str],
-    title: str,
-    subtitle: str,
 ) -> alt.LayerChart | alt.FacetChart:
     """도넛 한 장. **비중을 견주는 그림은 전부 이것을 쓴다** (33세션 3절).
+
+    **제목을 담지 않는다** (35세션 1절). 계절 이름과 합계는 부르는 쪽이
+    그림 **위에 Streamlit 텍스트로** 적는다 — vega 제목은 잘리고 색이 고정된다.
 
     Args:
         value: 각을 정하는 열.
@@ -557,18 +585,11 @@ def _donut(
     )
     arc = base.mark_arc(innerRadius=_DONUT_INNER, outerRadius=_DONUT_OUTER)
     labels = base.mark_text(radius=_DONUT_LABEL_RADIUS, fontSize=11).encode(text=alt.Text("라벨:N"))
-    return alt.layer(arc, labels).properties(
-        height=_DONUT_HEIGHT,
-        title=alt.TitleParams(text=title, subtitle=subtitle, anchor="middle", fontSize=13),
-    )
+    return alt.layer(arc, labels).properties(height=_DONUT_HEIGHT)
 
 
 def band_donut_chart(
-    structure: ChargeStructure,
-    *,
-    season: str | None = None,
-    title: str = "",
-    subtitle: str = "",
+    structure: ChargeStructure, *, season: str | None = None
 ) -> alt.LayerChart | alt.FacetChart:
     """계시별 사용량 구성 **도넛** (33세션 3절 · 34세션 1절).
 
@@ -579,11 +600,10 @@ def band_donut_chart(
     **비중은 그 계절 안에서 다시 잰다** (30세션 5-2). 전체 대비로 두면 세 계절의
     원이 각각 3분의 1 만 칠해져 무엇의 구성인지 알 수 없다.
 
+    **계절 이름과 합계는 그림 위에 있다** (35세션 1절). 부르는 쪽이 적는다.
+
     Args:
         season: ``None`` 이면 전 기간.
-        title: 그림 제목 (계절 이름). 부르는 쪽이 준다.
-        subtitle: 제목 아래 한 줄. 합계 사용량을 적는다 — 단위 표기는 화면 쪽
-            :mod:`kwise.ui.text` 가 맡으므로 여기서 만들지 않는다.
     """
     return _donut(
         band_frame(structure, season=season),
@@ -596,8 +616,6 @@ def band_donut_chart(
             alt.Tooltip("사용량(kWh):Q", format=",.0f"),
             alt.Tooltip("비중:Q", format=".1%"),
         ],
-        title=title,
-        subtitle=subtitle,
     )
 
 
