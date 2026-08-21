@@ -1053,13 +1053,116 @@ def test_기온_그래프의_두_축에_이름이_있다() -> None:
     temperature = pd.Series(range(len(index)), index=index, dtype=float) % 30.0
     spec = daily_temperature_chart(usage, temperature).to_dict()
 
-    titles = [layer["encoding"]["y"]["title"] for layer in spec["layer"]]
+    # **기온 쪽은 층이 하나 더 깊다** (32세션 1절) — 기준선·라벨이 기온 축을
+    # 함께 써야 해서 한 층으로 묶었다. 바깥 층은 사용량과 기온 둘이다.
+    load, right = spec["layer"]
+    temp = right["layer"][0]
+    titles = [load["encoding"]["y"]["title"], temp["encoding"]["y"]["title"]]
     assert titles == ["일 사용량 (kWh)", "일평균 기온 (℃)"]
     # 축 둘이 각자 눈금을 쓴다 — 한 축에 얹으면 사용량 옆에서 기온이 뭉개진다.
     assert spec["resolve"]["scale"]["y"] == "independent"
     # 범례 이름이 어느 쪽 축인지 적는다.
-    domains = [layer["encoding"]["color"]["scale"]["domain"] for layer in spec["layer"]]
+    domains = [layer["encoding"]["color"]["scale"]["domain"] for layer in (load, temp)]
     assert domains[0] == ["일 사용량 (왼쪽 축)", "일평균 기온 (오른쪽 축)"]
+    assert domains[0] == domains[1]
+
+
+def test_기온_그래프에_평균_기준선과_값이_있다() -> None:
+    """**평균과의 거리로 냉난방 몫을 읽는다** (32세션 1절).
+
+    선만 그으면 그 선이 무엇인지 알 수 없다. 값을 **선 위 라벨**로 적고,
+    범례는 늘리지 않는다 (23세션 1절).
+    """
+    import pandas as pd
+
+    from kwise.ui.charts import daily_temperature_chart
+
+    usage = load_usage(SAMPLE)
+    index = pd.date_range(usage.meta.start, usage.meta.end, freq="h")
+    temperature = pd.Series(range(len(index)), index=index, dtype=float) % 30.0
+    spec = daily_temperature_chart(usage, temperature).to_dict()
+
+    right = spec["layer"][1]["layer"]
+    marks = [layer["mark"]["type"] for layer in right]
+    assert marks == ["line", "rule", "text"], marks
+    # 기준선과 라벨은 기온과 **같은 축**을 쓴다. 이 층에는 resolve 가 없다.
+    assert "resolve" not in spec["layer"][1]
+    for layer in right[1:]:
+        assert layer["encoding"]["y"]["field"] == "평균 기온(℃)"
+    # 값이 라벨로 적힌다 — 샘플은 1년을 넘으므로 「연평균」 이다.
+    label = right[2]["encoding"]["text"]["field"]
+    assert label == "기준선"
+    data = right[2]["data"]
+    values = data.get("values") or spec["datasets"][data["name"]]
+    assert values[0]["기준선"].startswith("연평균 ")
+    assert values[0]["기준선"].endswith("℃")
+    # 범례는 늘지 않는다 — 기준선·라벨에 color 인코딩이 없다.
+    assert "color" not in right[1]["encoding"]
+    assert "color" not in right[2]["encoding"]
+
+
+def test_관측이_1년에_못_미치면_기간_평균으로_적는다() -> None:
+    """**반년치 평균을 「연평균」 이라 적으면 평년값처럼 읽힌다** (32세션 1절)."""
+    import pandas as pd
+
+    from kwise.report.frames import temperature_mean_frame
+
+    def frame(days: int) -> pd.DataFrame:
+        dates = pd.date_range("2024-01-01", periods=days, freq="D")
+        return pd.DataFrame(
+            {
+                "날짜": [value.date() for value in dates],
+                "사용량(kWh)": [1_000.0] * days,
+                "일평균 기온(℃)": [13.2] * days,
+            }
+        )
+
+    assert temperature_mean_frame(frame(365)).loc[0, "기준선"] == "연평균 13.2℃"
+    assert temperature_mean_frame(frame(364)).loc[0, "기준선"] == "기간 평균 13.2℃"
+    # 값은 일별 기온의 평균이다.
+    assert float(temperature_mean_frame(frame(30)).loc[0, "평균 기온(℃)"]) == pytest.approx(13.2)
+
+
+def test_월별_요금_구성_막대가_세_배_두껍다() -> None:
+    """**칸 폭을 못박는다** (32세션 2절).
+
+    적지 않으면 vega-lite 기본 20px 칸에 17px 막대가 그려진다. 열두 달이면
+    60px 칸이고, 달이 많아지면 가로 스크롤 대신 칸을 줄인다.
+    """
+    from kwise.ui.charts import MONTH_BAR_STEP, _month_step, monthly_charge_chart
+
+    assert MONTH_BAR_STEP == 60  # 기본 20px 의 세 배
+    spec = monthly_charge_chart(_structure()).to_dict()
+    assert spec["width"] == {"step": MONTH_BAR_STEP}
+    # 축 규약은 그대로다 — 막대는 자르지 않는다 (17세션 0절 · 23세션 2절).
+    assert spec["encoding"]["y"].get("scale", {}).get("zero") is not False
+
+    # 여러 해 자료는 칸을 줄여 한 화면에 넣는다. 하한 아래로는 내려가지 않는다.
+    assert _month_step(12) == MONTH_BAR_STEP
+    assert _month_step(36) < MONTH_BAR_STEP
+    assert _month_step(500) == 20
+
+
+def test_ESS_절감액_툴팁이_전력량요금_절감의_까닭을_밝힌다() -> None:
+    """**「충전을 하는 ESS 에서 전력량요금 절감이 가능한가」** 에 답한다 (32세션 3절).
+
+    31세션 문구는 합만 적어 물음을 낳았다. 옮겨 담기와 왕복효율 손실이 거의
+    상쇄된다는 것이 답이고, 금액 둘은 같은 화면의 「계산 근거」 표가 이미 낸다.
+    """
+    from kwise.ui.text import ess_saving_share_line
+
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    assert "경부하에 충전해 최대부하에 방전하니" in source
+    assert "왕복효율 손실만큼 총 사용량이" in source
+    # 31세션 문구는 남지 않는다 — 합만 적으면 물음이 되돌아온다.
+    assert "기본요금 절감 + 전력량요금 절감입니다." not in source
+    # 차익거래가 빠져 있다는 사실은 이 자리 하나에만 있다 (중복 금지).
+    assert source.count("충방전 차익거래는 들어 있지 않습니다") == 1
+
+    # 비중 한 마디가 「99.8%가 기본요금」 을 낸다.
+    assert ess_saving_share_line(10_409_000, 10_425_000) == "거의 전부 기본요금 절감입니다 (99.8%)."
+    assert ess_saving_share_line(6_000_000, 10_000_000) == "기본요금 절감이 60.0% 입니다."
+    assert ess_saving_share_line(0.0, 0.0) == "기본요금 절감과 전력량요금 절감입니다."
 
 
 def test_지역이_없으면_기온을_구하지_않는다() -> None:
@@ -2557,13 +2660,24 @@ def test_잉여_비중은_0과_1_사이여야_한다() -> None:
 
 
 def test_ESS_절감액_툴팁이_구성을_밝힌다() -> None:
-    """사용자가 이 숫자가 피크저감인지 충방전 차익인지 몰랐다 (31세션 5-3)."""
+    """사용자가 이 숫자가 피크저감인지 충방전 차익인지 몰랐다 (31세션 5-3).
+
+    **32세션에 「왜 그렇게 나뉘는가」 로 다시 썼다** — 합만 적었더니 「충전을
+    하는 ESS 에서 전력량요금 절감이 가능한가」 가 되물어졌다.
+    """
     screen = _running(nav_page="2단계 · 개선 수단", measure_on_ess=True)
     assert not screen.exception, screen.exception
     tips = [item.help for item in screen.metric if item.label == "절감액"]
     ess_tip = next(str(item) for item in tips if item and "기본요금 절감" in str(item))
-    assert "전력량요금 절감" in ess_tip
+    # 샘플은 99.8% 가 기본요금이다 — 비중이 그 사실을 낸다.
+    assert "거의 전부 기본요금 절감입니다 (99.8%)." in ess_tip, ess_tip
+    # 전력량요금이 왜 줄어드는지가 적힌다 (옮겨 담기 ↔ 왕복효율 손실).
+    assert "싼 시간으로" in ess_tip
+    assert "왕복효율 손실" in ess_tip
     assert "차익거래는 들어 있지 않습니다" in ess_tip
+    # 금액 둘은 같은 화면의 「계산 근거」 표가 낸다 — 툴팁에 다시 적지 않는다.
+    grounds = [str(item.value) for item in screen.dataframe]
+    assert any("기본요금 절감" in text and "전력량요금 절감" in text for text in grounds)
 
 
 def test_ESS_절감액이_기본요금과_전력량요금의_합이다(sample_ess: EssResult) -> None:

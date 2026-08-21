@@ -62,6 +62,7 @@ __all__ = [
     "tariff_delta_frame",
     "tariff_option_frame",
     "tariff_option_long_frame",
+    "temperature_mean_frame",
     "top_hour_frame",
 ]
 
@@ -677,6 +678,41 @@ def daily_temperature_frame(usage: UsageData, temperature: pd.Series) -> pd.Data
     frame = frame.reset_index()
     frame["날짜"] = [pd.Timestamp(value).date() for value in frame["day"]]
     return frame[["날짜", "사용량(kWh)", "일평균 기온(℃)"]]
+
+
+#: 기준선 이름이 갈리는 지점 — **관측이 1년에 못 미치면 「연평균」이 아니다** (32세션 1절).
+#: 반년치 자료의 평균을 「연평균」 이라 적으면 그 해의 평년값처럼 읽힌다.
+_FULL_YEAR_DAYS = 365
+
+
+def temperature_mean_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """기온 곡선에 그을 기준선 한 줄 — 값과 이름 (32세션 1절).
+
+    **여름 고온·겨울 저온이 부하를 얼마나 밀어 올리는지는 평균과의 거리로 읽힌다.**
+    선이 없으면 곡선의 오르내림이 어느 쪽으로 얼마나 벗어난 것인지 눈금을 세어야 한다.
+
+    이름은 관측 기간이 정한다 — 1년(365일) 이상이면 「연평균」, 못 미치면
+    **「기간 평균」** 이다.
+
+    Args:
+        frame: :func:`daily_temperature_frame` 이 낸 표.
+
+    Returns:
+        한 줄짜리 표. ``날짜`` 는 라벨을 놓을 자리(관측 첫날)이고,
+        ``평균 기온(℃)`` 이 값, ``기준선`` 이 화면에 적히는 문구다.
+    """
+    temps = frame["일평균 기온(℃)"].astype(float)
+    mean = float(temps.mean())
+    days = pd.DatetimeIndex(pd.to_datetime(frame["날짜"]))
+    span = int((days.max() - days.min()).days) + 1 if len(days) else 0
+    name = "연평균" if span >= _FULL_YEAR_DAYS else "기간 평균"
+    return pd.DataFrame(
+        {
+            "날짜": [days.min().date() if len(days) else None],
+            "평균 기온(℃)": [mean],
+            "기준선": [f"{name} {mean:,.1f}℃"],
+        }
+    )
 
 
 def dispatch_schedule(frame: pd.DataFrame) -> tuple[str, str]:

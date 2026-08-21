@@ -36,6 +36,7 @@ __all__ = [
     "chart_tip",
     "count",
     "days",
+    "ess_saving_share_line",
     "hours",
     "kw",
     "kwh",
@@ -341,6 +342,31 @@ def period(start: object, end: object, span_days: float | None = None) -> str:
 def range_text(base: str, low: str, high: str) -> str:
     """``3,152만원 (2,897 – 3,266만원)`` — 감도 범위를 기준값 옆에 붙인다 (9.2)."""
     return f"{base} ({low} {RANGE} {high})"
+
+
+#: 「거의 전부」 로 부를 하한. 이 아래면 비중을 그대로 적는다 (32세션 3절).
+_ALMOST_ALL = 0.95
+
+
+def ess_saving_share_line(base_won: float, total_won: float) -> str:
+    """ESS 절감액에서 기본요금이 차지하는 몫 한 마디 (32세션 3절).
+
+    **「충전을 하는 ESS 에서 전력량요금 절감이 가능한가」 에 대한 앞머리다.**
+    합계만 적으면 두 성분이 반씩인 것처럼 읽힌다 — 샘플은 99.8%가 기본요금이다.
+    금액 둘은 같은 화면의 「계산 근거」 표가 이미 내므로 여기서는 비중만 적는다.
+
+    비중은 관측 기간과 12개월 환산에서 같은 값이라 **환산 여부를 가리지 않는다.**
+
+    Args:
+        base_won: 기본요금 절감액.
+        total_won: 절감액 합계 (기본요금 + 전력량요금).
+    """
+    if total_won <= 0:
+        return "기본요금 절감과 전력량요금 절감입니다."
+    share = base_won / total_won
+    if share >= _ALMOST_ALL:
+        return f"거의 전부 기본요금 절감입니다 ({ratio_pct(share)})."
+    return f"기본요금 절감이 {ratio_pct(share)} 입니다."
 
 
 def markdown_safe(value: str) -> str:

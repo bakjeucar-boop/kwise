@@ -57,6 +57,7 @@ from kwise.report.frames import (
     tariff_delta_frame,
     tariff_option_frame,
     tariff_option_long_frame,
+    temperature_mean_frame,
     top_hour_frame,
 )
 
@@ -66,6 +67,7 @@ __all__ = [
     "LEGEND",
     "LEGEND_BELOW",
     "MONTHLY_CHARGE_PARTS",
+    "MONTH_BAR_STEP",
     "PEAK_ZOOM_HOURS",
     "TARIFF_PARTS",
     "band_chart",
@@ -108,6 +110,7 @@ __all__ = [
     "tariff_option_chart",
     "tariff_option_frame",
     "tariff_option_long_frame",
+    "temperature_mean_frame",
     "top_hour_chart",
     "top_hour_frame",
 ]
@@ -296,7 +299,31 @@ def daily_temperature_chart(usage: UsageData, temperature: pd.Series) -> alt.Lay
             alt.Tooltip("일평균 기온(℃):Q", format=",.1f"),
         ],
     )
-    return alt.layer(load, temp).resolve_scale(y="independent").properties(height=300)
+    # ===================================== 32세션 1절 · 평균 기준선
+    #
+    # **여름 고온·겨울 저온이 부하를 미는 크기는 평균과의 거리로 읽힌다.** 선이
+    # 없으면 곡선이 어느 쪽으로 얼마나 벗어난 것인지 눈금을 세어야 했다.
+    #
+    #     ① 값을 **선 위 라벨**로 적는다 — 범례를 늘리지 않는다 (23세션 1절)
+    #     ② 이름은 관측 기간이 정한다 (「연평균」 / 「기간 평균」)
+    #     ③ 기온 축에 얹으므로 **기온 층 안에서 축을 나눠 쓴다** — 바깥 층에
+    #        따로 두면 ``resolve_scale(y="independent")`` 가 이 선에도 제 축을
+    #        만들어 주어 곡선과 다른 높이에 그린다
+    mean_frame = temperature_mean_frame(frame)
+    mean_base = alt.Chart(mean_frame)
+    mean_rule = mean_base.mark_rule(
+        color=_TEMP_COLOR, strokeDash=[6, 4], strokeWidth=1, opacity=0.7
+    ).encode(y=alt.Y("평균 기온(℃):Q", title=None, axis=None))
+    mean_text = mean_base.mark_text(
+        align="left", baseline="bottom", dx=4, dy=-3, color=_TEMP_COLOR, fontSize=11
+    ).encode(
+        x=alt.X("날짜:T", title=None),
+        y=alt.Y("평균 기온(℃):Q", title=None, axis=None),
+        text=alt.Text("기준선:N"),
+    )
+    # 기온·기준선·라벨을 한 층으로 묶어 축 하나를 함께 쓴다.
+    right = alt.layer(temp, mean_rule, mean_text)
+    return alt.layer(load, right).resolve_scale(y="independent").properties(height=300)
 
 
 # 계시별 시간대 색 — **1단계의 두 그림이 같은 색을 쓴다** (27세션 3-2). 파랑이
@@ -311,6 +338,36 @@ def _band_scale(*, with_base_fee: bool = False) -> alt.Scale:
     return alt.Scale(domain=list(colors), range=list(colors.values()))
 
 
+# ===================================================================== 32세션 2절 · 막대 두께
+#
+# **막대 폭을 그림에 못박는다.** 폭을 적지 않으면 vega-lite 가 칸 하나를 기본
+# 20px 로 잡고, 그 85%(streamlit 테마)인 **17px** 짜리 실오라기가 열두 개
+# 그려진다 — 누적 막대는 조각이 넷이라 이 폭에서는 경부하 조각이 선으로 보인다.
+#
+#     ① 칸을 **60px** 로 잡는다 (기본 20px 의 세 배). 막대는 그 85% 인 51px
+#     ② 막대 사이 간격도 함께 세 배가 된다 (3px → 9px) — 비율을 손대지 않는다
+#     ③ 달이 많으면 칸을 줄여 **가로 스크롤을 만들지 않는다** (아래 상한)
+#
+# 화면 폭에 맞춰 늘어나는 경로에서는 vega 가 이 값을 화면 폭으로 덮어쓴다.
+# 그때는 칸이 더 넓어지므로 이 상수가 **하한**으로 작동한다.
+MONTH_BAR_STEP = 60
+
+#: 그림 하나가 차지할 가로 상한 (px). 자료가 여러 해면 달 수가 늘어 60px × N 이
+#: 화면을 넘는다 — 넘기느니 칸을 줄인다.
+_MONTH_CHART_MAX_WIDTH = 1_440
+
+#: 칸의 하한. 여기까지 줄여도 안 들어가면 그때는 스크롤이 낫다.
+_MONTH_BAR_MIN_STEP = 20
+
+
+def _month_step(months: int) -> int:
+    """달 수에 맞춘 칸 폭 (32세션 2절). 열두 달이면 그대로 :data:`MONTH_BAR_STEP`."""
+    if months <= 0:
+        return MONTH_BAR_STEP
+    fitted = _MONTH_CHART_MAX_WIDTH // months
+    return int(max(_MONTH_BAR_MIN_STEP, min(MONTH_BAR_STEP, fitted)))
+
+
 def monthly_charge_chart(structure: ChargeStructure) -> alt.Chart:
     """월별 요금 구성 — 기본요금 + 계시별 전력량요금 **누적 막대** (27세션 3-2).
 
@@ -319,8 +376,11 @@ def monthly_charge_chart(structure: ChargeStructure) -> alt.Chart:
     12개월 규칙의 모습이다.
 
     **막대는 자르지 않는다** (17세션 0절 · 23세션 2절). 길이가 곧 금액이다.
+
+    **칸 폭을 못박는다** (32세션 2절). 위 「막대 두께」 주석 참조.
     """
     frame = monthly_charge_frame(structure)
+    step = _month_step(int(frame["월"].nunique()))
     return (
         alt.Chart(frame)
         .mark_bar()
@@ -344,7 +404,7 @@ def monthly_charge_chart(structure: ChargeStructure) -> alt.Chart:
                 alt.Tooltip("합계(원):Q", format=",.0f"),
             ],
         )
-        .properties(height=300)
+        .properties(width=alt.Step(step), height=300)
     )
 
 
