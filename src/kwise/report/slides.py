@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import datetime as dt
 import io
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,7 +48,7 @@ from kwise import money
 from kwise.diagnose import ChargeStructure
 from kwise.report import figures
 from kwise.report.design import DesignGuide, load_design_guide
-from kwise.report.document import DocumentSections, MeasureEntry
+from kwise.report.document import DocumentSections, MeasureEntry, MeasureFigure
 from kwise.report.notices import NOT_INCLUDED_NOTICE, TRUNCATION_FOOTNOTE
 from kwise.report.worksheet import COLUMNS
 from kwise.tariff.labels import SEASON_LABELS
@@ -57,7 +58,11 @@ __all__ = [
     "CLOSING_SLIDE_TITLE",
     "DECK_TITLE",
     "DEFAULT_OUTPUT_DIR",
+    "FULL_FIGURE",
+    "HALF_FIGURE",
+    "HALF_FIGURE_WITH_LEGEND",
     "LAYOUTS",
+    "MEASURE_AGENDA_ITEM",
     "NEXT_STEPS",
     "NEXT_STEPS_HEADLINE",
     "SLIDE_TITLES",
@@ -65,6 +70,8 @@ __all__ = [
     "agenda_items",
     "build_slides",
     "export_slides",
+    "measure_slide_title",
+    "plain_text",
     "season_pairs",
     "slide_specs",
     "slides_bytes",
@@ -81,9 +88,9 @@ SLIDE_TITLES: dict[str, str] = {
     "cover": DECK_TITLE,
     "agenda": "목차",
     "building": "건물현황 및 계약정보",
-    "usage": "전력사용현황",
-    "load_pattern": "부하패턴 및 피크특성",
-    "peak": "피크특성",
+    "usage_pattern": "전력사용현황 및 부하패턴",
+    "peak_summary": "피크특성 (1/2)",
+    "peak_detail": "피크특성 (2/2)",
     "structure": "현재 요금 구조",
     "measure_summary": "개선안별 요약",
     "combination": "조합구성 및 합산효과",
@@ -116,6 +123,24 @@ LAYOUTS: tuple[str, ...] = (
 
 _UNPRICED = "미산출"
 
+#: 마크다운 강조 표식. **PPT 는 마크다운을 해석하지 않는다** (38세션 1-2).
+#:
+#: 화면·Word 로도 가는 문구라 낳는 자리에서 고칠 수 없다 (Streamlit 은 이것을
+#: 굵게 그린다). 그래서 **슬라이드에 적는 순간 벗긴다** — 화면이 물결표를
+#: escape 하는 것과 같은 자리·같은 이유다 (:func:`kwise.ui.text.markdown_safe`).
+_MARKDOWN_MARKS = re.compile(r"\*\*|__|`")
+
+
+def plain_text(value: str) -> str:
+    """슬라이드에 그대로 적을 수 있는 글자열.
+
+    **여기 한 곳에서만 벗긴다.** 자리마다 벗기면 새 문구를 붙일 때 빠뜨린다 —
+    :func:`_text` 와 :func:`_table` 이 글자를 쓰는 유일한 두 자리이고, 둘 다
+    이것을 지난다.
+    """
+    return _MARKDOWN_MARKS.sub("", value)
+
+
 #: 글자 하나가 차지하는 폭 — 글꼴 크기에 대한 비율.
 #:
 #: **한글은 전각, 숫자·영문은 반각에 가깝다.** 정확한 값은 글꼴이 쥐고 있어
@@ -137,6 +162,22 @@ def _fitting_size(values: Sequence[str], *, span: float, ladder: Sequence[float]
         if all(_text_width_in(value, size) <= span for value in values):
             return size
     return ladder[-1]
+
+
+def _fitting_lines(values: Sequence[str], *, span: float, size: float) -> int:
+    """그 크기로 적었을 때 **가장 긴 값이 차지할 줄 수** (38세션 4절).
+
+    사다리 끝에서도 한 줄에 못 들어가는 값이 있다 — 「9,050,000원 (12개월 환산
+    9,050,000원)」 처럼 한 칸에 두 값을 담은 문구다. 그런 값은 두 줄로 흐르는데,
+    **블록 높이를 한 줄로 잡아 두면 아래 그림 자리를 먹는다.** 자르지 않고
+    자리를 내주되, 몇 줄인지를 세어 그만큼 높이를 잡는다.
+
+    셋 이상은 세지 않는다 — 그만한 값이 지표 칸에 들어갈 자리가 아니다.
+    """
+    if span <= 0:
+        return 1
+    longest = max((_text_width_in(value, size) for value in values), default=0.0)
+    return min(2, max(1, int(-(-longest // span))))
 
 
 @dataclass(frozen=True)
@@ -167,20 +208,54 @@ def slide_specs(sections: DocumentSections) -> tuple[SlideSpec, ...]:
         SlideSpec("cover", SLIDE_TITLES["cover"], "cover"),
         SlideSpec("agenda", SLIDE_TITLES["agenda"], "agenda"),
         SlideSpec("building", SLIDE_TITLES["building"], "table"),
-        SlideSpec("usage", SLIDE_TITLES["usage"], "chart"),
-        SlideSpec("load_pattern", SLIDE_TITLES["load_pattern"], "stat_chart"),
-        SlideSpec("peak", SLIDE_TITLES["peak"], "chart_pair"),
+        SlideSpec("usage_pattern", SLIDE_TITLES["usage_pattern"], "stat_chart"),
+        SlideSpec("peak_summary", SLIDE_TITLES["peak_summary"], "stat_chart"),
+        SlideSpec("peak_detail", SLIDE_TITLES["peak_detail"], "chart_pair"),
         SlideSpec("structure", SLIDE_TITLES["structure"], "split"),
         SlideSpec("measure_summary", SLIDE_TITLES["measure_summary"], "table"),
     ]
+    # **그림이 둘이면 좌우로 나눈다** (38세션 3절). 형태를 자리표가 쥐고 있어야
+    # 시험이 「어느 장이 무엇으로 서는가」 를 셀 수 있다.
     specs.extend(
-        SlideSpec(f"measure_{entry.kind.key}", entry.title, "stat_chart", measure=index)
+        SlideSpec(
+            f"measure_{entry.kind.key}",
+            measure_slide_title(entry),
+            "chart_pair" if len(entry.slide_figures) > 1 else "stat_chart",
+            measure=index,
+        )
         for index, entry in enumerate(sections.measures)
     )
     specs.append(SlideSpec("combination", SLIDE_TITLES["combination"], "compare"))
     specs.append(SlideSpec("appendix", SLIDE_TITLES["appendix"], "table"))
     specs.append(SlideSpec("closing", SLIDE_TITLES["closing"], "closing"))
     return tuple(specs)
+
+
+#: 수단별 장을 가리키는 목차 한 줄 (38세션 1-1).
+#:
+#: **수단을 나열하지 않는다.** 일곱을 이어 적으면 줄이 두 줄로 넘쳐 다음 항목
+#: 자리를 덮는다 — 07번이 08번을 가리고 있었다. 어느 수단을 보았는지는 바로
+#: 다음 장인 「개선안별 요약」 표가 낸다.
+MEASURE_AGENDA_ITEM = "검토한 수단별 상세"
+
+
+def measure_slide_title(entry: MeasureEntry) -> str:
+    """수단 장 제목 — **절 번호를 뗀다** (38세션 1-3).
+
+        7.5 태양광  →  태양광
+
+    「7.」 이 무엇인지 덱 어디에도 적혀 있지 않다. 화면은 27세션에 순번(1~7)으로
+    바꿨는데 PPT 만 요구사항서 번호를 그대로 내고 있었다 — 처음 받아 보는
+    사람에게는 없는 7장을 찾게 만드는 표시다.
+
+    **순번도 붙이지 않는다.** 목차가 수단을 나열하지 않게 되었고(1-1) 장은 차례로
+    넘어가므로, 번호가 지는 몫이 없다. 켠 수단만 실리는 덱이라 「5.」 로 시작하는
+    일도 생긴다.
+
+    **Word·Excel 의 7.x 는 그대로다** — 거기서는 요구사항서와 맞물린 번호다.
+    정본(:attr:`kwise.measures.MeasureKind.title`)을 고치지 않고 낼 때만 바꾼다.
+    """
+    return entry.kind.label
 
 
 def agenda_items(sections: DocumentSections) -> tuple[str, ...]:
@@ -191,15 +266,14 @@ def agenda_items(sections: DocumentSections) -> tuple[str, ...]:
     """
     lines = [
         SLIDE_TITLES["building"],
-        SLIDE_TITLES["usage"],
-        SLIDE_TITLES["load_pattern"],
-        SLIDE_TITLES["peak"],
+        SLIDE_TITLES["usage_pattern"],
+        SLIDE_TITLES["peak_summary"],
+        SLIDE_TITLES["peak_detail"],
         SLIDE_TITLES["structure"],
         SLIDE_TITLES["measure_summary"],
     ]
     if sections.measures:
-        names = " · ".join(entry.title for entry in sections.measures)
-        lines.append(f"검토한 수단별 상세 — {names}")
+        lines.append(MEASURE_AGENDA_ITEM)
     lines.append(SLIDE_TITLES["combination"])
     lines.append(SLIDE_TITLES["appendix"])
     lines.append(SLIDE_TITLES["closing"])
@@ -278,7 +352,7 @@ def _text(
         paragraph.alignment = align
         paragraph.line_spacing = spacing
         run = paragraph.add_run()
-        run.text = line
+        run.text = plain_text(line)
         _apply_font(run, guide, size, color, bold=bold)
 
 
@@ -383,6 +457,20 @@ def _caption(
 _CAPTION_HEIGHT = 0.32
 
 
+def _table_room(guide: DesignGuide, *, top: float, footnote: bool) -> float:
+    """표에 내줄 수 있는 높이 (38세션 4절).
+
+    **행 높이의 여유(slack)를 미리 빼 둔다.** :func:`_table` 은 줄마다 10% 여유를
+    두므로(36세션 3-1) 넘긴 높이보다 실제 표가 그만큼 크다 — 빼지 않고 칸을 꽉
+    채워 넘기면 마지막 줄이 아래 각주에 닿는다. 부록 장이 그러고 있었다.
+    """
+    geometry = guide.slide
+    room = geometry.height_in - geometry.margin_in - top
+    if footnote:
+        room -= 0.3 + geometry.block_gap_in
+    return max(0.0, room) / (1.0 + geometry.text_slack)
+
+
 def _aspect(png: bytes) -> float:
     """그림의 세로÷가로. **꾸러미에 넣지 않고** 바이트에서 읽는다."""
     width, height = Image.from_blob(png).size
@@ -405,6 +493,12 @@ HALF_FIGURE_WITH_LEGEND = (5.4, 4.6)
 
 #: 좌우 2단의 넓은 쪽.
 WIDE_FIGURE = (7.2, 4.4)
+
+#: **폭을 다 쓰는 칸**의 그림 (38세션 4절). 4·5장이 이 크기로 굽는다.
+#:
+#: 기본 비율(9:3.6)로 구우면 슬라이드에서 높이가 먼저 차서 폭의 8할만 쓰고
+#: 좌우가 통째로 빈다 — 칸의 가로세로에서 나온 값이라 여기 둔다.
+FULL_FIGURE = (12.0, 3.4)
 
 
 def _picture(
@@ -527,7 +621,7 @@ def _table(
             paragraph = cell.text_frame.paragraphs[0]
             paragraph.alignment = PP_ALIGN.LEFT
             run = paragraph.add_run()
-            run.text = str(value)
+            run.text = plain_text(str(value))
             head = row_index == 0
             _apply_font(
                 run,
@@ -582,12 +676,14 @@ def _stats(
     # **칸에 안 들어가면 글자를 줄인다.** 「28억 9,828만원」·「1,234,000원 (12개월
     # 환산 …)」 처럼 늘어지는 값이 있는데, 큰 글씨 그대로 두면 두 줄로 넘쳐 아래
     # 그림과 겹친다. 길이만 보고 정하면 칸 수에 따라 또 넘친다 — **폭으로 잰다.**
-    size = _fitting_size(
-        [value for _label, value in items],
-        span=span - 0.24,
-        ladder=(scale.card_title, scale.body + 2, scale.body),
-    )
-    block = 0.86 if size >= scale.card_title else 0.94
+    values = [value for _label, value in items]
+    inner = span - 0.24
+    size = _fitting_size(values, span=inner, ladder=(scale.card_title, scale.body + 2, scale.body))
+    # **두 줄이 될 값이 있으면 그만큼 높이를 잡는다** (38세션 4절). 예전에는 한
+    # 줄 높이로 고정해 두어, 넘친 줄이 아래 그림의 윗여백을 먹고 지표 넷 가운데
+    # 하나만 아래로 처져 보였다 — 역률·태양광·ESS 세 장에서 같은 모양이었다.
+    lines = _fitting_lines(values, span=inner, size=size)
+    block = (0.86 if size >= scale.card_title else 0.94) + (size / 72.0) * 1.5 * (lines - 1)
     for index, (label, value) in enumerate(items):
         x = left + span * index
         _text(
@@ -607,7 +703,7 @@ def _stats(
             [value],
             left=x + (0.16 if index else 0.0),
             top=top + 0.26,
-            width=span - 0.24,
+            width=inner,
             height=block - 0.32,
             size=size,
             color=colors.ink,
@@ -772,40 +868,63 @@ def _build_building(
         left=geometry.margin_in,
         top=top,
         width=geometry.content_width_in,
-        height=min(5.0, 0.44 * len(rows)),
+        height=min(_table_room(guide, top=top, footnote=False), 0.44 * len(rows)),
         widths=(0.26, 0.74),
     )
 
 
-def _build_usage(
+def _build_usage_pattern(
     slide: Slide, guide: DesignGuide, sections: DocumentSections, spec: SlideSpec
 ) -> None:
-    """전력사용현황 — **연간 사용량 그래프 한 장을 크게** (36세션 2절).
+    """전력사용현황 및 부하패턴 — **두 장을 하나로 합쳤다** (38세션 2-1).
 
-    한 장에 한 메시지다. 여기서 말하는 것은 「한 해가 어떻게 오르내리는가」다.
+    **화면 1단계의 차례를 그대로 따른다.** 화면은 머릿수 지표 자리에 그림이 없고
+    첫 그림이 「부하 패턴」 절에 나온다. 36세션의 덱은 그 구조와 어긋나 4장에
+    사용량 그래프를 억지로 넣고, 5장이 같은 이야기를 지표만 바꿔 되풀이했다.
+
+    **지표 넷을 고른 자리다.** 화면이 두 절에 걸쳐 낸 일곱 가운데 넷만 선다.
+
+        분석 기간      3장 「건물현황 및 계약정보」 표에 이미 있다 — 뺀다
+        최대수요       다음 장 「피크특성 (1/2)」 의 첫 지표다 — 그쪽으로 넘긴다
+        요금적용전력   같은 이유로 넘긴다
+        주말 부하 비율 「운영시간 외 부하 비중」 이 주말을 품고(주말은 전부 밖이다)
+                       주말 이야기는 다음 장의 「상위 구간 주말 비중」 이 잇는다
+
+    남는 넷이 **규모 하나(연간 사용량)와 모양 셋**이다.
+
+    그림은 **일별 사용량에 일평균 기온을 겹친 한 장**이다 — 냉난방이 부하의
+    얼마를 차지하는지가 태양광·ESS 판단을 가른다 (30세션 4절). 기온이 없으면
+    사용량만 그린다 (화면과 같은 규칙).
     """
     geometry = guide.slide
     top = _title(slide, guide, spec.title)
     meta = sections.usage.meta
+    diagnosis = sections.diagnosis
+    if diagnosis is None:  # pragma: no cover - 진단 없이 부르지 않는다
+        return
+    pattern = diagnosis.pattern
+    # 1년치가 아닌 자료를 「연간」 이라 적으면 그 자체가 오독이다 (화면과 같다).
+    span_label = "연간 사용량" if (meta.period_days or 0) >= 350 else "기간 사용량"
     bottom = _stats(
         slide,
         guide,
         [
-            ("총 사용량", f"{meta.total_kwh / 1000:,.0f} MWh"),
-            ("최대수요", f"{meta.max_demand_kw:,.0f} kW"),
-            ("평균 부하", f"{meta.mean_kw:,.0f} kW"),
-            ("관측 기간", f"{meta.period_days:.0f}일"),
+            (span_label, f"{meta.total_kwh / 1000:,.0f} MWh"),
+            ("부하율", _pct(pattern.load_factor)),
+            ("기저부하 비율", _pct(pattern.base_load_ratio)),
+            ("운영시간 외 부하 비중", _pct(pattern.off_hours_energy_share)),
         ],
         left=geometry.margin_in,
         top=top,
         width=geometry.content_width_in,
     )
     body = bottom + geometry.block_gap_in
+    png, caption = _usage_figure(sections)
     _picture_block(
         slide,
         guide,
-        figures.daily_usage_png(sections.usage),
-        "일별 사용량 — 관측이 있는 날만 그렸습니다. 결측일은 0 으로 채우지 않습니다.",
+        png,
+        caption,
         left=geometry.margin_in,
         top=body,
         width=geometry.content_width_in,
@@ -813,26 +932,81 @@ def _build_usage(
     )
 
 
-def _build_load_pattern(
+#: 기온을 곁들인 그림의 캡션과, 곁들이지 못했을 때의 캡션.
+_TEMPERATURE_CAPTION = (
+    "일별 사용량과 일평균 기온 — 두 선이 함께 솟으면 냉난방 부하가 큽니다. "
+    "관측이 있는 날만 그렸습니다."
+)
+_USAGE_ONLY_CAPTION = (
+    "일별 사용량 — 관측이 있는 날만 그렸습니다. 결측일은 0 으로 채우지 않습니다. "
+    "지역을 고르면 일평균 기온을 함께 그립니다."
+)
+
+
+def _usage_figure(sections: DocumentSections) -> tuple[bytes, str]:
+    """4장의 그림 하나. **기온이 없으면 사유를 캡션에 적고 사용량만 그린다.**
+
+    빈 축을 남기지 않는 것이 화면의 규칙이고(30세션 4절), 슬라이드는 지역 입력
+    없이도 한 장이 채워져야 한다.
+    """
+    temperature = sections.temperature
+    if temperature is not None and len(temperature):
+        try:
+            png = figures.daily_temperature_png(sections.usage, temperature, size=FULL_FIGURE)
+            return png, _TEMPERATURE_CAPTION
+        except Exception:  # pragma: no cover - 그림 하나 때문에 덱을 잃지 않는다
+            pass
+    return figures.daily_usage_png(sections.usage, size=FULL_FIGURE), _USAGE_ONLY_CAPTION
+
+
+def _peak_stats(sections: DocumentSections) -> list[tuple[str, str]]:
+    """피크 지표 — **화면 「피크 특성」 절과 같은 갈림이다** (38세션 2-2).
+
+    관측 최대와 요금적용 대상 최대가 같은 값이면 한 칸으로 접는다 — 두 칸을
+    나란히 두면 둘이 다른 개념인 줄 알고 차이를 찾게 된다 (13세션). 야간
+    피크형에서만 갈린다.
+
+    **화면은 칸이 셋이라 갈릴 때 정오 비중을 밀어냈다.** 슬라이드는 넷이므로
+    밀어낼 것이 없다 — 정오 비중이 태양광 판정의 근거라 어느 갈래에서도 남는다.
+    """
+    diagnosis = sections.diagnosis
+    assert diagnosis is not None
+    peak = diagnosis.peak
+    split = peak.billing_demand_kw < peak.peak_kw * 0.99
+    items: list[tuple[str, str]] = []
+    if split:
+        items.append(("관측 최대수요", f"{peak.peak_kw:,.0f} kW"))
+        items.append(("요금적용전력", f"{peak.billing_demand_kw:,.0f} kW"))
+    else:
+        items.append(("최대수요 = 요금적용전력", f"{peak.peak_kw:,.0f} kW"))
+    items.append(("상위 구간 정오 비중", _pct(diagnosis.summary.pv_midday_share)))
+    items.append(
+        (
+            "상위 구간 주말 비중",
+            _pct(peak.weekend_slots / peak.top_n if peak.top_n else None),
+        )
+    )
+    return items
+
+
+def _build_peak_summary(
     slide: Slide, guide: DesignGuide, sections: DocumentSections, spec: SlideSpec
 ) -> None:
-    """부하패턴 및 피크특성 — **통계 강조형** (지표 + 월별 최대수요)."""
+    """피크특성 (1/2) — **지표 셋과 월별 최대수요** (38세션 2-2).
+
+    **정오 비중이 태양광 판정의 근거다.** 36세션의 덱에는 이 숫자가 없어 상위
+    구간 그래프만 덩그러니 서 있었다 — 그림이 무엇을 말하는지 읽는 사람이
+    스스로 세어야 했다.
+    """
     geometry = guide.slide
     top = _title(slide, guide, spec.title)
     diagnosis = sections.diagnosis
-    if diagnosis is None:  # pragma: no cover - 진단 없이 부르지 않는다
+    if diagnosis is None:  # pragma: no cover
         return
-    pattern = diagnosis.pattern
-    peak = diagnosis.peak
     bottom = _stats(
         slide,
         guide,
-        [
-            ("부하율", _pct(pattern.load_factor)),
-            ("기저부하 비율", _pct(pattern.base_load_ratio)),
-            ("주말 부하 비율", _pct(pattern.weekend_ratio)),
-            ("요금적용전력", f"{peak.billing_demand_kw:,.0f} kW"),
-        ],
+        _peak_stats(sections),
         left=geometry.margin_in,
         top=top,
         width=geometry.content_width_in,
@@ -841,7 +1015,7 @@ def _build_load_pattern(
     _picture_block(
         slide,
         guide,
-        figures.monthly_peak_png(peak),
+        figures.monthly_peak_png(diagnosis.peak, size=FULL_FIGURE),
         "월별 최대수요와 요금적용전력 — 경부하 시간대의 피크는 요금적용전력이 되지 않습니다.",
         left=geometry.margin_in,
         top=body,
@@ -850,10 +1024,10 @@ def _build_load_pattern(
     )
 
 
-def _build_peak(
+def _build_peak_detail(
     slide: Slide, guide: DesignGuide, sections: DocumentSections, spec: SlideSpec
 ) -> None:
-    """피크특성 — **그림 둘을 위아래로.** 시간대별 평균부하와 상위 구간 시각.
+    """피크특성 (2/2) — **그림 둘을 좌우로.** 시간대별 평균 부하와 상위 구간 시각.
 
     **그림 크기를 칸에 맞춰 부른다** (:data:`HALF_FIGURE`). Word 의 가로 긴
     비율을 그대로 반 칸에 넣으면 눈금이 겹치고 위아래가 남는다.
@@ -952,8 +1126,16 @@ def _build_measure_summary(
     geometry = guide.slide
     top = _title(slide, guide, spec.title)
     rows = [["개선 수단", "절감액", "투자비", "회수기간", "확실성"]]
+    # **절 번호를 뗀다** (38세션 1-3). 장 제목과 같은 이름이어야 표에서 고른
+    # 줄을 뒤에서 찾을 수 있다.
     rows.extend(
-        [entry.title, entry.saving, entry.investment, entry.payback, entry.certainty]
+        [
+            measure_slide_title(entry),
+            entry.saving,
+            entry.investment,
+            entry.payback,
+            entry.certainty,
+        ]
         for entry in sections.measures
     )
     if len(rows) == 1:
@@ -965,7 +1147,7 @@ def _build_measure_summary(
         left=geometry.margin_in,
         top=top,
         width=geometry.content_width_in,
-        height=min(4.6, 0.5 * len(rows)),
+        height=min(_table_room(guide, top=top, footnote=True), 0.5 * len(rows)),
         widths=(0.22, 0.28, 0.2, 0.15, 0.15),
     )
     _caption(
@@ -996,19 +1178,52 @@ def _cautions(entry: MeasureEntry) -> tuple[str, ...]:
     return tuple(seen)[:CAUTION_LIMIT]
 
 
+def _measure_pictures(
+    slide: Slide,
+    guide: DesignGuide,
+    drawings: Sequence[MeasureFigure],
+    *,
+    top: float,
+    height: float,
+) -> None:
+    """수단 장의 그림들 — **둘이면 좌우로, 하나면 폭 전체로** (38세션 3절).
+
+    화면이 그림 둘로 답하는 물음을 슬라이드가 하나로 줄이면, 남은 하나가 무엇의
+    근거인지 알 수 없어진다 — ESS 의 「목표 5,170 kW 는 어디서 나왔나」 가 그
+    자리였다. 셋 이상은 두지 않는다: 반 칸 아래로 내려가면 축 눈금이 뭉개진다.
+    """
+    geometry = guide.slide
+    gap = geometry.block_gap_in
+    count = min(len(drawings), 2)
+    width = (geometry.content_width_in - gap * (count - 1)) / count
+    for index, item in enumerate(drawings[:count]):
+        _picture_block(
+            slide,
+            guide,
+            item.png,
+            item.caption,
+            left=geometry.margin_in + (width + gap) * index,
+            top=top,
+            width=width,
+            height=height,
+        )
+
+
 def _build_measure(
     slide: Slide, guide: DesignGuide, sections: DocumentSections, spec: SlideSpec
 ) -> None:
-    """수단 한 장 — **차트 + 지표** (통계 강조형).
+    """수단 한 장 — **차트 + 지표**.
 
     **결론 한 줄이 먼저다.** 그림이 없는 수단은 표 대신 주의사항이 자리를 채운다 —
     빈 그림 자리를 남기지 않는다.
+
+    **그림이 둘이면 좌우로 나눈다** (38세션 3절). 역률·태양광·ESS 가 그렇다.
     """
     geometry = guide.slide
     colors = guide.colors
     assert spec.measure is not None
     entry: MeasureEntry = sections.measures[spec.measure]
-    top = _title(slide, guide, entry.title)
+    top = _title(slide, guide, measure_slide_title(entry))
     _text(
         slide,
         guide,
@@ -1037,30 +1252,26 @@ def _build_measure(
     )
     body = bottom + geometry.block_gap_in
     height = geometry.height_in - geometry.margin_in - body - 0.32
-    if entry.figure is not None:
-        _picture_block(
-            slide,
-            guide,
-            entry.figure,
-            entry.figure_caption,
-            left=geometry.margin_in,
-            top=body,
-            width=geometry.content_width_in,
-            height=height,
-        )
+    drawings = entry.slide_figures
+    if drawings:
+        _measure_pictures(slide, guide, drawings, top=body, height=height)
         return
-    # 그림이 없는 수단(계약전력 조정)은 **주의사항 표**가 시각 요소를 진다.
+    # 그림이 없는 수단(계약전력 조정·잉여 0)은 **주의사항 표**가 시각 요소를 진다.
     rows = [["주의사항"], *[[line] for line in _cautions(entry)]]
     if len(rows) == 1:
         rows.append(["—"])
+    table_height = min(height, 0.7 * len(rows))
+    # **남는 높이 가운데 앉힌다** — 그림 덩어리와 같은 규약이다 (36세션 3-3).
+    # 주의사항이 한 줄뿐인 장(잉여 0)은 표가 짧아, 위로 붙여 두면 아래 절반이
+    # 통째로 비어 슬라이드가 덜 만들어진 것처럼 보인다.
     _table(
         slide,
         guide,
         rows,
         left=geometry.margin_in,
-        top=body,
+        top=body + max(0.0, (height - table_height) / 2),
         width=geometry.content_width_in,
-        height=min(height, 0.7 * len(rows)),
+        height=table_height,
     )
 
 
@@ -1232,7 +1443,7 @@ def _build_appendix(
         left=geometry.margin_in,
         top=top,
         width=geometry.content_width_in,
-        height=min(4.8, 0.4 * len(rows)),
+        height=min(_table_room(guide, top=top, footnote=True), 0.4 * len(rows)),
         widths=(0.24, 0.5, 0.26),
     )
     omitted = max(0, total - (len(rows) - 1))
@@ -1371,9 +1582,9 @@ _BUILDERS: dict[str, Callable[[Slide, DesignGuide, DocumentSections, SlideSpec],
     "cover": _build_cover,
     "agenda": _build_agenda,
     "building": _build_building,
-    "usage": _build_usage,
-    "load_pattern": _build_load_pattern,
-    "peak": _build_peak,
+    "usage_pattern": _build_usage_pattern,
+    "peak_summary": _build_peak_summary,
+    "peak_detail": _build_peak_detail,
     "structure": _build_structure,
     "measure_summary": _build_measure_summary,
     "combination": _build_combination,

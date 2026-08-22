@@ -39,6 +39,7 @@ from kwise.measures import (
     ContractAdjustment,
     DemandResponseResult,
     EssResult,
+    EssTargetCurve,
     PowerFactorResult,
     SolarCurve,
     SolarPoint,
@@ -86,6 +87,7 @@ from kwise.ui.building import NAME_MISSING, BuildingInfo
 from kwise.ui.cache import (
     cached_comparison,
     cached_contract_adjustment,
+    cached_daily_temperature,
     cached_ess,
     cached_ess_targets,
     cached_power_factor,
@@ -607,6 +609,8 @@ class _MeasureResults:
     solar_certainty: Certainty | None = None
     solar_unpriced_reason: str = ""
     ess: EssResult | None = None
+    ess_curve: EssTargetCurve | None = None
+    """회수기간 U곡선 (38세션 3-3). **PPT 가 「목표가 어디서 나왔나」 를 이것으로 답한다.**"""
     surplus: SurplusResult | None = None
     base_fee_months: float = 0.0
     """기간을 12개월로 환산하는 데 쓴다 (28세션 3절). 잉여 상계 수익이 기간 값이다."""
@@ -700,6 +704,7 @@ class _MeasureResults:
             solar_unpriced_reason=self.solar_unpriced_reason,
             solar_notices=self.solar_curve.notices if self.solar_curve is not None else (),
             ess=self.ess,
+            ess_curve=self.ess_curve,
             surplus=self.surplus,
             usage=self.usage,
             day=self.day,
@@ -783,8 +788,21 @@ def _measure_results(
         solar_reason = curve.cost.reason
 
     ess = None
+    ess_curve = None
     ess_target = _ess_target(usage, table, form, diagnosis)
     if "ess" in enabled and ess_target is not None:
+        # **회수기간 곡선을 함께 들고 간다** (38세션 3-3). 2단계 카드가 이미 돌린
+        # 것이라 캐시에 걸린다 — 계산이 한 번 더 도는 것이 아니다.
+        if diagnosis.peak.billing_demand_kw > 0:
+            ess_curve = cached_ess_targets(
+                usage,
+                token,
+                float(diagnosis.peak.billing_demand_kw),
+                float(table.rates(form.selection).base_won_per_kw),
+                measure_float("ess", "fixed_cost"),
+                measure_float("ess", "per_kwh_cost"),
+                stamp,
+            )
         # **2단계와 같은 인자로 부른다** — 캐시에 걸려 같은 값이 나온다 (14세션 5-1).
         ess = cached_ess(
             usage,
@@ -838,6 +856,7 @@ def _measure_results(
         solar_certainty=solar_certainty,
         solar_unpriced_reason=solar_reason,
         ess=ess,
+        ess_curve=ess_curve,
         surplus=surplus,
         base_fee_months=baseline.base_fee_months,
         usage=usage,
@@ -997,6 +1016,10 @@ def _download_block(
                 worksheets=results.worksheets(),
                 tariff_table=table,
                 ess_cases=load_ess_cost_model().case_table(),
+                # **4장 그림이 화면 「부하 패턴」 과 같은 기온을 본다** (38세션 2-1).
+                # 지역을 안 골랐거나 기상을 못 받으면 ``None`` 이고, 그때는
+                # 슬라이드가 사용량만 그린다 — 화면과 같은 규칙이다.
+                temperature=_temperature(usage, building),
                 building_name=name,
                 reviewed_labels=scope.reviewed_labels,
                 skipped_labels=scope.skipped_labels,
@@ -1014,6 +1037,17 @@ def _download_block(
             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
             key="dl_ppt",
         )
+
+
+def _temperature(usage: UsageData, building: BuildingInfo | None) -> pd.Series | None:
+    """PPT 4장이 겹쳐 그릴 기온. **1단계 그림과 같은 캐시를 탄다** (38세션 2-1).
+
+    출처는 여기서 쓰지 않는다 — 슬라이드 캡션은 「무엇을 그렸나」 만 적고,
+    기상 출처 표기는 화면과 태양광 장이 진다.
+    """
+    region_key = building.region_key if building is not None else ""
+    loaded = cached_daily_temperature(usage, usage_token(usage), region_key)
+    return loaded[0] if loaded is not None else None
 
 
 def _build(make: Callable[[], tuple[bytes, str]], *, slot: str, label: str, token: str) -> None:

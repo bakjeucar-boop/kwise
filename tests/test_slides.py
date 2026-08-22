@@ -39,12 +39,15 @@ from kwise.report.document import (
 from kwise.report.slides import (
     APPENDIX_ROW_LIMIT,
     LAYOUTS,
+    MEASURE_AGENDA_ITEM,
     NEXT_STEPS,
     NEXT_STEPS_HEADLINE,
     SLIDE_TITLES,
     agenda_items,
     build_slides,
     export_slides,
+    measure_slide_title,
+    plain_text,
     season_pairs,
     slide_specs,
     slides_bytes,
@@ -63,9 +66,9 @@ EXPECTED_ORDER: tuple[str, ...] = (
     SLIDE_TITLES["cover"],
     SLIDE_TITLES["agenda"],
     SLIDE_TITLES["building"],
-    SLIDE_TITLES["usage"],
-    SLIDE_TITLES["load_pattern"],
-    SLIDE_TITLES["peak"],
+    SLIDE_TITLES["usage_pattern"],
+    SLIDE_TITLES["peak_summary"],
+    SLIDE_TITLES["peak_detail"],
     SLIDE_TITLES["structure"],
     SLIDE_TITLES["measure_summary"],
     SLIDE_TITLES["combination"],
@@ -184,7 +187,7 @@ def _visual_shapes(slide: object) -> list[object]:
 def test_슬라이드_구성이_목차대로다(full_sections: DocumentSections) -> None:
     """**괄호 하나가 슬라이드 한 장이다** (36세션 2절)."""
     titles = [spec.title for spec in slide_specs(full_sections)]
-    measures = [entry.title for entry in full_sections.measures]
+    measures = [measure_slide_title(entry) for entry in full_sections.measures]
     assert measures, "이 시험은 수단이 켜진 덱을 본다."
     expected = [
         *EXPECTED_ORDER[:8],
@@ -205,12 +208,200 @@ def test_실물_덱이_차례와_같다(full_sections: DocumentSections) -> None
 
 
 def test_목차가_수단을_한_줄로_묶는다(full_sections: DocumentSections) -> None:
-    """슬라이드마다 한 줄을 적으면 수단이 일곱일 때 목차가 열두 줄이 된다."""
+    """슬라이드마다 한 줄을 적으면 수단이 일곱일 때 목차가 열두 줄이 된다.
+
+    **수단 이름을 나열하지도 않는다** (38세션 1-1). 어느 수단을 보았는지는
+    바로 다음 장인 「개선안별 요약」 표가 낸다.
+    """
     items = agenda_items(full_sections)
     assert len(items) == len(EXPECTED_ORDER) - 2 + 1  # 표지·목차를 빼고 수단 묶음 한 줄
-    assert any("검토한 수단별" in line for line in items)
+    assert MEASURE_AGENDA_ITEM in items
     for entry in full_sections.measures:
-        assert entry.title in " ".join(items)
+        assert measure_slide_title(entry) not in " ".join(items), (
+            "목차에 수단을 나열하면 줄이 넘쳐 다음 항목을 덮는다."
+        )
+
+
+def test_목차_항목이_한_줄을_넘지_않는다(full_sections: DocumentSections) -> None:
+    """**07번이 08번을 덮고 있었다** (38세션 1-1).
+
+    목차는 번호 칸(0.8in)을 뺀 폭에 한 줄로 앉는다. 두 줄이 되면 아래 항목의
+    자리를 침범하는데, 줄 간격이 항목 수로 정해져 있어 **넘친 만큼 겹친다.**
+
+    수단이 일곱일 때가 가장 긴 경우다 — 그때도 넘치지 않아야 한다.
+    """
+    from dataclasses import replace
+
+    from kwise.report.design import load_design_guide
+    from kwise.report.slides import _text_width_in
+
+    guide = load_design_guide()
+    span = guide.slide.content_width_in - 0.8
+    seven = replace(full_sections, measures=_seven_measures(full_sections))
+    for sections in (full_sections, seven, diagnosis_only_of(full_sections)):
+        for line in agenda_items(sections):
+            width = _text_width_in(line, guide.type_scale.card_title)
+            assert width <= span, (
+                f"목차 「{line}」 가 한 줄을 넘습니다 ({width:.2f}in > {span:.2f}in)"
+            )
+
+
+def diagnosis_only_of(sections: DocumentSections) -> DocumentSections:
+    """수단을 뺀 같은 자료. 목차가 가장 짧은 경우다."""
+    from dataclasses import replace
+
+    return replace(sections, measures=())
+
+
+# ===================================================================== 38세션 · 편집 결함
+
+
+#: PPT 가 해석하지 못하는 마크다운 표식 (38세션 1-2).
+#: 화면(Streamlit)은 이것을 굵게 그리지만 PowerPoint 는 글자 그대로 찍는다.
+MARKDOWN_MARKS: tuple[str, ...] = ("**", "__", "`")
+
+
+def test_마크다운_기호가_슬라이드에_남지_않는다(loaded_sections: DocumentSections) -> None:
+    """**PPT 는 마크다운을 해석하지 않는다** (38세션 1-2).
+
+    「자격요건은 판정하지 않았습니다」 를 감싼 별표가 슬라이드에 그대로
+    찍히고 있었다. 문구는 화면·Word 로도 가므로 낳는 자리에서 고칠 수 없어,
+    **적는 순간 벗긴다** — :func:`~kwise.report.slides.plain_text` 한 곳이다.
+    """
+    text = _deck_text(build_slides(loaded_sections))
+    for mark in MARKDOWN_MARKS:
+        assert mark not in text, f"슬라이드에 마크다운 표식 「{mark}」 이 남아 있습니다."
+
+
+def test_마크다운을_벗기는_자리가_하나다() -> None:
+    """**자리마다 벗기면 새 문구를 붙일 때 빠뜨린다.**
+
+    글자를 쓰는 곳은 :func:`_text` 와 :func:`_table` 둘뿐이고, 둘 다
+    ``plain_text`` 를 지나야 한다.
+    """
+    assert plain_text("**굵게** 와 `코드` 와 __밑줄__") == "굵게 와 코드 와 밑줄"
+    source = (SRC_ROOT / "report" / "slides.py").read_text(encoding="utf-8")
+    writes = [line for line in source.splitlines() if "run.text =" in line]
+    assert writes, "글자를 쓰는 자리를 찾지 못했습니다."
+    for line in writes:
+        assert "plain_text(" in line, f"마크다운을 벗기지 않는 자리가 있습니다: {line.strip()}"
+
+
+def test_절_번호가_슬라이드에_없다(loaded_sections: DocumentSections) -> None:
+    """**7.1~7.7 을 뺀다** (38세션 1-3).
+
+    「7.」 이 무엇인지 덱 어디에도 적혀 있지 않다 — 처음 받아 보는 사람에게는
+    없는 7장을 찾게 만드는 표시다. 화면은 27세션에 이미 뗐다.
+    """
+    sections = loaded_sections
+    text = _deck_text(build_slides(sections))
+    for kind in MEASURE_CATALOG:
+        assert kind.number not in text, f"절 번호 「{kind.number}」 이 슬라이드에 남아 있습니다."
+    # **이름은 남는다.** 번호만 뗀 것이지 수단을 감춘 것이 아니다.
+    for entry in sections.measures:
+        assert entry.kind.label in text
+
+
+def test_Word_에는_절_번호가_남아_있다(loaded_sections: DocumentSections) -> None:
+    """**PPT 에서만 뗐다.** Word·Excel 은 요구사항서와 맞물린 번호를 쓴다."""
+    document = build_document(loaded_sections)
+    text = "\n".join(item.text for item in document.paragraphs)
+    for entry in loaded_sections.measures:
+        assert entry.kind.number in text, f"Word 에서 「{entry.kind.number}」 이 사라졌습니다."
+
+
+# ===================================================================== 38세션 2절 · 4~6장
+
+
+def test_4장이_전력사용현황과_부하패턴을_합친다(full_sections: DocumentSections) -> None:
+    """**화면 1단계의 차례를 그대로 따른다** (38세션 2-1).
+
+    화면은 머릿수 지표 자리에 그림이 없고 첫 그림이 「부하 패턴」 절에 나온다.
+    36세션의 덱은 그 구조와 어긋나 두 장이 같은 이야기를 지표만 바꿔 되풀이했다.
+    """
+    specs = slide_specs(full_sections)
+    frame = [spec for spec in specs if spec.measure is None]
+    assert [spec.key for spec in frame[2:6]] == [
+        "building",
+        "usage_pattern",
+        "peak_summary",
+        "peak_detail",
+    ]
+    slide = _slide_by_key(build_slides(full_sections), full_sections, "usage_pattern")
+    text = _slide_text(slide)
+    assert SLIDE_TITLES["usage_pattern"] == "전력사용현황 및 부하패턴"
+    for label in ("부하율", "기저부하 비율", "운영시간 외 부하 비중"):
+        assert label in text, f"「{label}」 지표가 4장에 없습니다."
+    assert "사용량" in text
+    # **겹치는 것은 뺐다** — 최대수요·요금적용전력은 다음 장이 낸다.
+    assert "최대수요" not in text and "요금적용전력" not in text
+    assert "분석 기간" not in text, "3장 표에 이미 있는 값이다."
+
+
+def test_4장_그림이_기온을_겹쳐_그린다(full_sections: DocumentSections) -> None:
+    """**냉난방이 부하의 얼마를 차지하는지**가 태양광·ESS 판단을 가른다.
+
+    기온이 없으면 사용량만 그리고 캡션이 그 사실을 적는다 — 화면과 같은 규칙이다.
+    """
+    from dataclasses import replace
+
+    import pandas as pd
+
+    slide = _slide_by_key(build_slides(full_sections), full_sections, "usage_pattern")
+    assert "지역을 고르면" in _slide_text(slide), "기온이 없으면 사유를 적는다."
+
+    index = pd.date_range(full_sections.usage.meta.start, periods=48, freq="h")
+    warm = replace(full_sections, temperature=pd.Series(range(48), index=index, dtype=float))
+    slide = _slide_by_key(build_slides(warm), warm, "usage_pattern")
+    text = _slide_text(slide)
+    assert "일평균 기온" in text and "지역을 고르면" not in text
+
+
+def test_5장이_정오_비중을_낸다(full_sections: DocumentSections) -> None:
+    """**정오 비중이 태양광 판정의 근거다** (38세션 2-2).
+
+    36세션의 덱에는 이 숫자가 없어 상위 구간 그래프만 덩그러니 서 있었다.
+    """
+    slide = _slide_by_key(build_slides(full_sections), full_sections, "peak_summary")
+    text = _slide_text(slide)
+    assert "상위 구간 정오 비중" in text
+    assert "상위 구간 주말 비중" in text
+    assert "요금적용전력" in text
+
+
+def test_5장_지표가_화면과_같은_갈림이다(full_sections: DocumentSections) -> None:
+    """관측 최대와 요금적용 대상 최대가 같으면 **한 칸으로 접는다** (13세션).
+
+    갈릴 때는 넷이 된다 — 화면은 칸이 셋이라 정오 비중을 밀어냈지만 슬라이드는
+    밀어낼 것이 없다.
+    """
+    from dataclasses import replace
+
+    from kwise.report.slides import _peak_stats
+
+    diagnosis = full_sections.diagnosis
+    assert diagnosis is not None
+    joined = [label for label, _value in _peak_stats(full_sections)]
+    assert joined[0] == "최대수요 = 요금적용전력"
+    assert len(joined) == 3
+
+    night = replace(diagnosis, peak=replace(diagnosis.peak, billing_demand_kw=1_000.0))
+    split = [label for label, _value in _peak_stats(replace(full_sections, diagnosis=night))]
+    assert split[:2] == ["관측 최대수요", "요금적용전력"]
+    assert "상위 구간 정오 비중" in split
+    assert len(split) == 4
+
+
+def test_6장이_그림_둘을_좌우로_놓는다(full_sections: DocumentSections) -> None:
+    """지금 구성 그대로다 — 시간대별 평균 부하와 상위 구간 발생 시각."""
+    sections = full_sections
+    spec = next(item for item in slide_specs(sections) if item.key == "peak_detail")
+    assert spec.layout == "chart_pair"
+    slide = _slide_by_key(build_slides(sections), sections, "peak_detail")
+    pictures = [shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    assert len(pictures) == 2
+    text = _slide_text(slide)
+    assert "시간대별 평균 부하" in text and "발생 시각" in text
 
 
 # ===================================================================== ② 수단 0개
@@ -481,6 +672,112 @@ def test_장수가_수단_개수를_따라간다(
     seven = replace(full_sections, measures=_seven_measures(full_sections))
     assert len(seven.measures) == 7
     assert len(slide_specs(seven)) == 18
+
+
+# ===================================================================== 38세션 3절 · 그래프 대조
+
+
+#: **화면 그림 → PPT 그림.** 38세션 3-5 에 하나씩 대조한 결과다.
+#:
+#: 화면에 있는데 PPT 에 없던 것이 셋이었다 — 역률 일일 곡선 · 태양광 연간
+#: 발전량 · ESS 회수기간 곡선. 셋 다 「무엇을 보고 그렇게 판단했나」 에 답하는
+#: 그림이라, 빠지면 슬라이드에 결론만 남는다.
+#:
+#: **요금제 전환 둘은 png 한 장이 함께 진다** — ``tariff_option_png`` 가 위 칸에
+#: 그룹 막대, 아래 칸에 현행 대비 차액을 그린다 (17세션 1-2·1-3).
+SCREEN_TO_DECK: dict[str, str] = {
+    "daily_temperature_chart": "daily_temperature_png",
+    "monthly_peak_chart": "monthly_peak_png",
+    "hourly_profile_chart": "hourly_profile_png",
+    "top_hour_chart": "top_hour_png",
+    "monthly_charge_chart": "monthly_charge_png",
+    "band_donut_chart": "band_donut_grid_png",
+    "tariff_delta_chart": "tariff_option_png",
+    "tariff_option_chart": "tariff_option_png",
+    "dr_daily_chart": "dr_daily_png",
+    "power_triangle_chart": "power_triangle_png",
+    "power_factor_day_chart": "power_factor_day_png",
+    "solar_annual_chart": "solar_annual_png",
+    "solar_day_chart": "solar_day_png",
+    "ess_target_chart": "ess_payback_png",
+    "ess_day_chart": "ess_day_png",
+    "surplus_daily_chart": "surplus_daily_png",
+}
+
+
+def _screen_charts() -> set[str]:
+    """화면이 **실제로 그리는** 그림 이름. 정의만 있고 안 그리는 것은 세지 않는다."""
+    pattern = re.compile(r"charts\.(\w+_chart)\(")
+    names: set[str] = set()
+    for path in (SRC_ROOT / "ui" / "views").glob("*.py"):
+        names |= set(pattern.findall(path.read_text(encoding="utf-8")))
+    return names
+
+
+def test_화면에_있는_그림이_PPT_에도_있다() -> None:
+    """**하나씩 세어 대조한다** (38세션 3-5).
+
+    화면에 그림을 더하고 슬라이드를 잊으면, 받는 사람은 「분석은 했는데 근거는
+    없는」 보고서를 받는다. 그 어긋남은 둘을 나란히 놓고서야 드러나므로 시험이
+    센다 — 짝을 못 지으면 :data:`SCREEN_TO_DECK` 에 한 줄을 더하거나 png 를
+    새로 만들어야 한다.
+    """
+    drawn = _screen_charts()
+    assert drawn, "화면 그림을 찾지 못했습니다 — 훑는 규칙이 낡았습니다."
+    missing = sorted(drawn - set(SCREEN_TO_DECK))
+    assert not missing, (
+        f"화면에만 있고 PPT 에 없는 그림입니다: {missing}. "
+        "png 를 만들어 슬라이드에 싣거나, 싣지 않는 이유를 SCREEN_TO_DECK 옆에 적으십시오."
+    )
+    stale = sorted(set(SCREEN_TO_DECK) - drawn)
+    assert not stale, f"화면이 더는 그리지 않는 그림이 표에 남아 있습니다: {stale}"
+    for screen, deck in SCREEN_TO_DECK.items():
+        assert deck in figures.__all__, f"「{screen}」 의 짝 「{deck}」 이 figures 에 없습니다."
+
+
+def test_역률_태양광_ESS_가_그림_둘을_싣는다(full_sections: DocumentSections) -> None:
+    """**화면은 셋 다 그림이 둘이다** (38세션 3-1·3-2·3-3).
+
+    36세션의 덱은 하나씩만 실어, 전력삼각형만으로 「어느 시간대가 요금 대상인가」
+    를, 대표일 곡선만으로 「한 해에 얼마나 만드나」 를, 충·방전 곡선만으로
+    「목표 5,170 kW 는 어디서 나왔나」 를 답하지 못했다.
+    """
+    from kwise.report.document import MeasureFigure
+
+    entry = MeasureEntry(
+        kind=MEASURE_CATALOG[0],
+        conclusion="본문",
+        saving="0원",
+        investment="0원",
+        payback="즉시",
+        certainty="높음",
+        figures=(MeasureFigure(b"a", "왼쪽"), MeasureFigure(b"b", "오른쪽")),
+    )
+    assert len(entry.slide_figures) == 2
+    spec = slide_specs(_with_measures(full_sections, (entry,)))[8]
+    assert spec.layout == "chart_pair", "그림이 둘이면 좌우로 나눈다."
+
+    # 하나만 주면 폭 전체를 쓴다 — 빈 칸을 남기지 않는다.
+    single = MeasureEntry(
+        kind=MEASURE_CATALOG[0],
+        conclusion="본문",
+        saving="0원",
+        investment="0원",
+        payback="즉시",
+        certainty="높음",
+        figure=b"a",
+        figure_caption="하나",
+    )
+    assert len(single.slide_figures) == 1
+    assert slide_specs(_with_measures(full_sections, (single,)))[8].layout == "stat_chart"
+
+
+def _with_measures(
+    sections: DocumentSections, measures: tuple[MeasureEntry, ...]
+) -> DocumentSections:
+    from dataclasses import replace
+
+    return replace(sections, measures=measures)
 
 
 # ===================================================================== ⑥ 부록

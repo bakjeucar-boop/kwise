@@ -37,7 +37,12 @@ from kwise.compare import ComparisonResult
 from kwise.diagnose import ChargeStructure, PeakProfile
 from kwise.diagnose.dr import DrProfile
 from kwise.io import UsageData
-from kwise.measures import DispatchResult, PowerFactorResult, TariffSwitchResult
+from kwise.measures import (
+    DispatchResult,
+    EssTargetCurve,
+    PowerFactorResult,
+    TariffSwitchResult,
+)
 from kwise.report.days import RepresentativeDay
 from kwise.report.design import ChartPalette, load_design_guide
 from kwise.report.frames import (
@@ -46,20 +51,24 @@ from kwise.report.frames import (
     PEAK_ZOOM_HOURS,
     band_frame,
     combination_frame,
+    daily_temperature_frame,
     daily_usage_frame,
     dr_daily_frame,
     ess_day_frame,
+    ess_target_frame,
     hourly_profile_frame,
     month_labels,
     monthly_charge_frame,
     monthly_peak_frame,
     peak_window,
+    power_factor_day_frame,
     power_triangle_frame,
     solar_annual_frame,
     solar_day_frame,
     surplus_daily_frame,
     tariff_delta_frame,
     tariff_option_frame,
+    temperature_mean_frame,
     top_hour_frame,
 )
 
@@ -73,15 +82,18 @@ __all__ = [
     "band_donut_grid_png",
     "chart_palette",
     "combination_png",
+    "daily_temperature_png",
     "daily_usage_png",
     "date_axis",
     "dr_daily_png",
     "ess_day_png",
+    "ess_payback_png",
     "hourly_profile_png",
     "korean_date_label",
     "korean_font",
     "monthly_charge_png",
     "monthly_peak_png",
+    "power_factor_day_png",
     "power_triangle_png",
     "render_png",
     "solar_annual_png",
@@ -308,7 +320,7 @@ def hourly_profile_png(peak: PeakProfile, *, size: tuple[float, float] | None = 
     return render_png(figure)
 
 
-def monthly_peak_png(peak: PeakProfile) -> bytes:
+def monthly_peak_png(peak: PeakProfile, *, size: tuple[float, float] | None = None) -> bytes:
     """월별 최대수요와 요금적용전력 (2장 · 피크 특성).
 
     **관측 최대와 요금적용 대상 최대를 나란히 둔다.** 둘이 벌어지는 건물은
@@ -318,7 +330,7 @@ def monthly_peak_png(peak: PeakProfile) -> bytes:
     frame = monthly_peak_frame(peak)
     positions = range(len(frame))
     width = 0.4
-    figure, axes = plt.subplots(figsize=_SIZE)
+    figure, axes = plt.subplots(figsize=size or _SIZE)
     axes.bar(
         [pos - width / 2 for pos in positions],
         frame["관측 최대(kW)"],
@@ -423,7 +435,9 @@ def combination_png(comparison: ComparisonResult) -> bytes:
 # 같은 이름의 차트가 서로 다른 수를 그리게 되고, 그 어긋남은 눈으로 잡히지 않는다.
 
 
-def tariff_option_png(switch: TariffSwitchResult) -> bytes:
+def tariff_option_png(
+    switch: TariffSwitchResult, *, size: tuple[float, float] | None = None
+) -> bytes:
     """요금제별 기본·전력량·합계 **그룹 막대**와 현행 대비 차액 (3장 · 7.1).
 
     **쌓지 않고 나란히 세운다** (17세션 1-2). 누적은 합계만 보이고 기본요금끼리·
@@ -436,9 +450,8 @@ def tariff_option_png(switch: TariffSwitchResult) -> bytes:
     frame = tariff_option_frame(switch)
     delta = tariff_delta_frame(switch)
     positions = np.arange(len(frame), dtype=float)
-    figure, (upper, lower) = plt.subplots(
-        2, 1, figsize=(_SIZE[0], _SIZE[1] * 1.45), height_ratios=(3, 1), sharex=True
-    )
+    shape = size or (_SIZE[0], _SIZE[1] * 1.45)
+    figure, (upper, lower) = plt.subplots(2, 1, figsize=shape, height_ratios=(3, 1), sharex=True)
 
     width = 0.26
     series = (
@@ -493,14 +506,14 @@ def tariff_option_png(switch: TariffSwitchResult) -> bytes:
     return render_png(figure)
 
 
-def dr_daily_png(profile: DrProfile) -> bytes:
+def dr_daily_png(profile: DrProfile, *, size: tuple[float, float] | None = None) -> bytes:
     """연간 일별 운영시간대 평균 부하 (3장 · 7.3).
 
     **기준선 근처로 내려온 평일이 감축 가능일이다.**
     """
     apply_style()
     frame = dr_daily_frame(profile)
-    figure, axes = plt.subplots(figsize=_SIZE)
+    figure, axes = plt.subplots(figsize=size or _SIZE)
     palette = dict(zip(DAY_TYPE_LABELS.values(), _day_series(), strict=True))
     for kind, group in frame.groupby("구분", sort=False):
         axes.scatter(
@@ -554,7 +567,13 @@ def power_triangle_png(result: PowerFactorResult) -> bytes:
     return render_png(figure)
 
 
-def solar_day_png(usage: UsageData, generation_kw: pd.Series, day: RepresentativeDay) -> bytes:
+def solar_day_png(
+    usage: UsageData,
+    generation_kw: pd.Series,
+    day: RepresentativeDay,
+    *,
+    size: tuple[float, float] | None = None,
+) -> bytes:
     """대표일의 원부하·순부하와 **그 사이 저감분** (3장 · 7.5 · 17세션 3-5).
 
     **축을 0 부터 시작하지 않고 두 선 사이를 채운다.** 5,000 kW 대 부하에 수백
@@ -562,7 +581,7 @@ def solar_day_png(usage: UsageData, generation_kw: pd.Series, day: Representativ
     """
     apply_style()
     frame = solar_day_frame(usage, generation_kw, day.date)
-    figure, axes = plt.subplots(figsize=_SIZE)
+    figure, axes = plt.subplots(figsize=size or _SIZE)
     if len(frame):
         axes.fill_between(
             frame["시각"],
@@ -603,7 +622,9 @@ def solar_day_png(usage: UsageData, generation_kw: pd.Series, day: Representativ
     return render_png(figure)
 
 
-def solar_annual_png(usage: UsageData, generation_kw: pd.Series) -> bytes:
+def solar_annual_png(
+    usage: UsageData, generation_kw: pd.Series, *, size: tuple[float, float] | None = None
+) -> bytes:
     """연간 **일별 발전량** (3장 · 7.5 · 23세션 5절).
 
     **화면과 같은 그림이다.** 넷을 한 축에 얹었더니 사용량(일 60 MWh 대)에
@@ -611,7 +632,7 @@ def solar_annual_png(usage: UsageData, generation_kw: pd.Series) -> bytes:
     """
     apply_style()
     frame = solar_annual_frame(usage, generation_kw)
-    figure, axes = plt.subplots(figsize=_SIZE)
+    figure, axes = plt.subplots(figsize=size or _SIZE)
     axes.fill_between(
         frame["날짜"],
         0.0,
@@ -633,6 +654,7 @@ def ess_day_png(
     day: RepresentativeDay,
     *,
     zoom: bool = True,
+    size: tuple[float, float] | None = None,
 ) -> bytes:
     """대표일의 ESS — **피크 앞뒤만 확대한 한 칸** (3장 · 7.6 · 23세션 6절).
 
@@ -646,7 +668,7 @@ def ess_day_png(
         frame = peak_window(frame)
         title = f"{day.title} · 피크 앞뒤 {PEAK_ZOOM_HOURS}시간"
 
-    figure, axes = plt.subplots(figsize=_SIZE)
+    figure, axes = plt.subplots(figsize=size or _SIZE)
     if len(frame):
         axes.fill_between(
             frame["시각"],
@@ -680,11 +702,13 @@ def ess_day_png(
     return render_png(figure)
 
 
-def surplus_daily_png(usage: UsageData, surplus_kw: pd.Series) -> bytes:
+def surplus_daily_png(
+    usage: UsageData, surplus_kw: pd.Series, *, size: tuple[float, float] | None = None
+) -> bytes:
     """연간 일별 잉여량 (3장 · 7.7). **주말에 몰리는지**가 보여야 한다."""
     apply_style()
     frame = surplus_daily_frame(usage, surplus_kw)
-    figure, axes = plt.subplots(figsize=_SIZE)
+    figure, axes = plt.subplots(figsize=size or _SIZE)
     palette = {"평일": _series()[0], "토요일": _series()[3], "일요일": _series()[2]}
     for kind, group in frame.groupby("구분", sort=False):
         axes.bar(
@@ -730,6 +754,156 @@ def daily_usage_png(usage: UsageData, *, size: tuple[float, float] | None = None
     axes.set_ylabel("일 사용량 (MWh)")
     date_axis(axes)
     axes.tick_params(axis="x", rotation=45, labelsize=8)
+    return render_png(figure)
+
+
+def daily_temperature_png(
+    usage: UsageData, temperature: pd.Series, *, size: tuple[float, float] | None = None
+) -> bytes:
+    """일별 사용량과 일평균 기온을 겹친 한 장 (38세션 · 화면 「부하 패턴」).
+
+    **냉난방이 부하의 얼마를 차지하는지**를 눈으로 재는 그림이다 (30세션 4절).
+    여름·겨울에 두 선이 함께 솟으면 냉난방 부하가 크고, 기온이 오르내려도
+    사용량이 평평하면 공정 부하다 — 태양광·ESS 판단이 갈리는 자리다.
+
+    **평균 기준선을 함께 긋는다** (32세션 1절). 고온·저온이 부하를 미는 크기는
+    평균과의 거리로 읽히므로, 선이 없으면 곡선이 어느 쪽으로 얼마나 벗어난
+    것인지 눈금을 세어야 한다. 이름은 관측 기간이 정한다 (연평균 / 기간 평균).
+
+    **기온 축은 오른쪽이다.** 단위가 다른 둘을 한 축에 얹으면 사용량 축의
+    범위가 기온에 끌려가 하루치 차이가 뭉개진다 — 화면과 같은 규약이다.
+    """
+    apply_style()
+    marks = chart_palette()
+    frame = daily_temperature_frame(usage, temperature)
+    figure, axes = plt.subplots(figsize=size or _SIZE)
+    load_color, temp_color = marks.series[0], marks.increase
+    axes.plot(
+        frame["날짜"],
+        frame["사용량(kWh)"] / 1000.0,
+        color=load_color,
+        linewidth=1.0,
+        label="일 사용량",
+    )
+    axes.set_ylabel("일 사용량 (MWh)", color=load_color)
+    date_axis(axes)
+    axes.tick_params(axis="x", rotation=45, labelsize=8)
+
+    right = axes.twinx()
+    right.plot(
+        frame["날짜"],
+        frame["일평균 기온(℃)"],
+        color=temp_color,
+        linewidth=1.0,
+        label="일평균 기온",
+    )
+    right.set_ylabel("일평균 기온 (℃)", color=temp_color)
+    right.grid(visible=False)
+    if len(frame):
+        mean = temperature_mean_frame(frame)
+        value = float(mean["평균 기온(℃)"].iloc[0])
+        right.axhline(value, color=temp_color, linestyle="--", linewidth=1.0, alpha=0.7)
+        # **값을 선 위 라벨로 적는다** (32세션 1절). 범례를 늘리지 않는다.
+        #
+        # **바탕을 깔아 준다.** 사용량 곡선이 이 높이를 지나가면 글자가 선 위에
+        # 겹쳐 읽히지 않는다 — 흰 캔버스가 확정이라(36세션 4절) 같은 색으로
+        # 덮으면 된다. 화면(altair)에서는 tooltip 이 있어 필요 없던 장치다.
+        right.annotate(
+            str(mean["기준선"].iloc[0]),
+            xy=(0.008, value),
+            xycoords=("axes fraction", "data"),
+            xytext=(0, 3),
+            textcoords="offset points",
+            fontsize=8,
+            color=temp_color,
+            bbox={"facecolor": marks.canvas, "edgecolor": "none", "pad": 1.0, "alpha": 0.85},
+        )
+    # **범례를 두 축에서 모아 하나로 단다.** twinx 는 축마다 따로 그려서
+    # 그대로 두면 상자가 둘 겹친다.
+    handles = axes.get_lines() + right.get_lines()[:1]
+    add_legend(axes, handles=handles, labels=[line.get_label() for line in handles])
+    return render_png(figure)
+
+
+def power_factor_day_png(
+    usage: UsageData,
+    day: RepresentativeDay,
+    *,
+    current_pct: float,
+    target_pct: float,
+    size: tuple[float, float] | None = None,
+) -> bytes:
+    """대표일 부하와 **역률 판정 창** (38세션 · 화면 7.4 의 둘째 그림).
+
+    **역률은 시각마다 재지 않는다** — 무효전력 실측이 없다. 주간(08~22시)만
+    지상역률 판정 대상이므로 그 구간에 표식을 얹어 **어디가 요금 대상인지**를
+    보인다. 곡선이 아니라 창을 보여 주는 그림이다 (15세션 2-3).
+    """
+    apply_style()
+    marks = chart_palette()
+    frame = power_factor_day_frame(usage, day.date, current_pct=current_pct, target_pct=target_pct)
+    figure, axes = plt.subplots(figsize=size or _SIZE)
+    if len(frame):
+        axes.plot(
+            frame["시각"],
+            frame["부하(kW)"],
+            color=marks.series[0],
+            linewidth=1.6,
+            label="15분 부하",
+        )
+        window = frame[frame["구간"].str.startswith("주간")]
+        if len(window):
+            axes.scatter(
+                window["시각"],
+                window["부하(kW)"],
+                s=12,
+                color=marks.highlight,
+                alpha=0.45,
+                label="지상역률 판정 구간",
+            )
+    axes.set_ylabel("부하 (kW)")
+    axes.set_xlabel(f"{day.title} · 15분")
+    time_axis(axes)
+    axes.tick_params(axis="x", rotation=45, labelsize=8)
+    add_legend(axes)
+    return render_png(figure)
+
+
+def ess_payback_png(curve: EssTargetCurve, *, size: tuple[float, float] | None = None) -> bytes:
+    """ESS 회수기간 곡선 — **축 하나·선 하나·표식 하나** (38세션 · 화면 7.6).
+
+    **목표가 어디서 나왔는지 답하는 그림이다.** 목표를 낮출수록 저감량이 커져
+    절감액이 늘지만 필요 용량이 급증해 투자비가 더 빨리 오른다. 그 사이에
+    최소 지점이 생기고, 카드가 낸 목표가 바로 그 점이다 (26세션 1절).
+
+    x 는 목표가 아니라 **정격 용량(kWh)** 이다 — 사용자가 실제로 사야 할 것이고,
+    목표를 낮출수록 용량이 급증한다는 사실이 축 자체로 읽혀야 한다 (26세션 1-1).
+    """
+    apply_style()
+    marks = chart_palette()
+    frame = ess_target_frame(curve)
+    figure, axes = plt.subplots(figsize=size or _SIZE)
+    axes.plot(
+        frame["정격 용량(kWh)"],
+        frame["회수기간(년)"],
+        color=marks.series[0],
+        linewidth=1.8,
+        label="회수기간",
+    )
+    best = curve.best
+    if best is not None and best.payback_years is not None:
+        axes.scatter(
+            [best.nameplate_capacity_kwh],
+            [best.payback_years],
+            s=90,
+            color=marks.highlight,
+            zorder=3,
+            label=f"최소 지점 — 목표 {best.target_kw:,.0f} kW",
+        )
+    axes.set_xlabel("ESS 정격 용량 (kWh)")
+    axes.set_ylabel("회수기간 (년)")
+    axes.ticklabel_format(axis="x", style="plain")
+    add_legend(axes)
     return render_png(figure)
 
 

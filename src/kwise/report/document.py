@@ -40,6 +40,7 @@ from kwise.measures import (
     ContractAdjustment,
     DemandResponseResult,
     EssResult,
+    EssTargetCurve,
     MeasureKind,
     PowerFactorResult,
     SolarPoint,
@@ -73,6 +74,7 @@ __all__ = [
     "TABLE_STYLE",
     "DocumentSections",
     "MeasureEntry",
+    "MeasureFigure",
     "build_document",
     "document_bytes",
     "document_path",
@@ -106,6 +108,22 @@ _UNPRICED = "미산출"
 
 
 @dataclass(frozen=True)
+class MeasureFigure:
+    """수단 한 장에 나란히 놓을 그림 하나 (38세션 3절).
+
+    **PPT 가 쓴다.** 화면은 역률·태양광·ESS 에 그림을 둘씩 그리는데 PPT 는
+    하나씩만 실어, 「무엇을 보고 그렇게 판단했나」 가 슬라이드에서 빠져 있었다.
+    차례가 곧 좌→우다.
+
+    Word 는 :attr:`MeasureEntry.figure` 하나만 쓴다 — 문서는 절마다 세로로
+    쌓이는 자리라 좌우로 나눌 칸이 없고, 36세션에 화면에서 감춘 산출물이다.
+    """
+
+    png: bytes
+    caption: str
+
+
+@dataclass(frozen=True)
 class MeasureEntry:
     """3장의 수단 하나. **모든 수단을 같은 틀로 적는다.**
 
@@ -127,6 +145,17 @@ class MeasureEntry:
     figure: bytes | None = None
     """수단 차트 png (15세션). **화면과 같은 프레임을 본다** — 각자 만들면 어긋난다."""
     figure_caption: str = ""
+    figures: tuple[MeasureFigure, ...] = field(default=())
+    """PPT 가 좌우로 나란히 놓을 그림들 (38세션 3절). 비면 :attr:`figure` 한 장이다."""
+
+    @property
+    def slide_figures(self) -> tuple[MeasureFigure, ...]:
+        """슬라이드에 실을 그림 차례. **둘을 주지 않았으면 있는 하나를 쓴다.**"""
+        if self.figures:
+            return self.figures
+        if self.figure is None:
+            return ()
+        return (MeasureFigure(self.figure, self.figure_caption),)
 
     @property
     def title(self) -> str:
@@ -141,6 +170,40 @@ def body_lines(notices: tuple[Notice, ...]) -> tuple[str, ...]:
     "이 숫자가 어디서 나왔나" 이기 때문이다. 참고는 5장 부록으로 간다.
     """
     return texts(report_body(notices))
+
+
+#: 수단 한 장에 그림을 **둘 나란히** 놓을 때 굽는 크기 (38세션 3절).
+#:
+#: 반 칸(약 6in)에 세로 3.2in 남짓이라, 기본 비율(9:3.6)로 구우면 폭이 먼저 차서
+#: 슬라이드에서 다시 줄어들고 축 눈금이 뭉개진다. 칸의 가로세로에서 나온 값이다.
+MEASURE_PAIR_FIGURE = (6.0, 3.2)
+
+#: 그림이 **하나뿐인** 수단 장의 크기 (38세션 4절). 폭을 다 쓰는 칸이다.
+#:
+#: 기본 비율(9:3.6)로 구우면 슬라이드에서 높이가 먼저 차서 폭의 3분의 2만 쓴다.
+MEASURE_FULL_FIGURE = (12.0, 3.5)
+
+#: 요금제 전환은 **위·아래 두 칸짜리** 한 장이다 (그룹 막대 + 현행 대비 차액).
+#: 세로가 더 필요해 위 값을 그대로 쓸 수 없다.
+TARIFF_FIGURE = (12.0, 4.4)
+
+#: 그림 캡션. **한 자리에 둔다** — 같은 그림이 :attr:`MeasureEntry.figure` 와
+#: :attr:`MeasureEntry.figures` 두 자리에 실리므로, 문구를 두 벌로 적으면 한쪽만
+#: 고쳐진다.
+_PF_TRIANGLE_CAPTION = "전력삼각형 — 각이 좁아질수록 역률이 좋아진다"
+_PF_DAY_CAPTION = "대표일 부하와 지상역률 판정 구간 — 주간만 요금 대상이다"
+_SOLAR_ANNUAL_CAPTION = "연간 일별 발전량 — 한 해에 얼마나 만드는가"
+_SOLAR_DAY_CAPTION = "대표일의 원부하·순부하·발전량 — 피크가 얼마나 내려가는가"
+_ESS_PAYBACK_CAPTION = "목표별 회수기간 곡선 — 최소 지점이 카드가 낸 목표다"
+_ESS_DAY_CAPTION = "대표일의 충·방전 — 경부하에 담아 최대부하에 쓴다"
+
+
+def _pair(*items: tuple[bytes | None, str]) -> tuple[MeasureFigure, ...]:
+    """구운 그림들을 슬라이드 차례로 묶는다. **못 구운 것은 빠진다.**
+
+    하나만 남으면 슬라이드가 그 하나를 크게 그린다 — 빈 칸을 남기지 않는다.
+    """
+    return tuple(MeasureFigure(png, caption) for png, caption in items if png is not None)
 
 
 def _safe_figure(make: Callable[[], bytes]) -> bytes | None:
@@ -194,6 +257,7 @@ def measure_entries(
     solar_notices: tuple[Notice, ...] = (),
     solar_unpriced_reason: str = "",
     ess: EssResult | None = None,
+    ess_curve: EssTargetCurve | None = None,
     surplus: SurplusResult | None = None,
     usage: UsageData | None = None,
     day: RepresentativeDay | None = None,
@@ -231,7 +295,7 @@ def measure_entries(
                 *body_lines(switch.notices),
             ),
             notices=switch.notices,
-            figure=_safe_figure(lambda: figures.tariff_option_png(switch)),
+            figure=_safe_figure(lambda: figures.tariff_option_png(switch, size=TARIFF_FIGURE)),
             figure_caption="요금제별 기본요금·전력량요금 구성",
         )
 
@@ -283,7 +347,7 @@ def measure_entries(
             ),
             notices=demand_response.notices,
             figure=(
-                _safe_figure(lambda: figures.dr_daily_png(dr_profile))
+                _safe_figure(lambda: figures.dr_daily_png(dr_profile, size=MEASURE_FULL_FIGURE))
                 if dr_profile is not None
                 else None
             ),
@@ -291,6 +355,22 @@ def measure_entries(
         )
 
     if power_factor is not None:
+        # **화면은 그림이 둘이다** (38세션 3-1). 전력삼각형만 실으면 「어느
+        # 시간대가 요금 대상인가」 가 슬라이드에서 빠진다.
+        triangle = _safe_figure(lambda: figures.power_triangle_png(power_factor))
+        pf_day = (
+            _safe_figure(
+                lambda: figures.power_factor_day_png(
+                    usage,
+                    day,
+                    current_pct=power_factor.current_pct,
+                    target_pct=power_factor.target_pct,
+                    size=MEASURE_PAIR_FIGURE,
+                )
+            )
+            if usage is not None and day is not None
+            else None
+        )
         entries["power_factor"] = MeasureEntry(
             kind=measure_kind("power_factor"),
             conclusion=(
@@ -304,11 +384,29 @@ def measure_entries(
             certainty=str(power_factor.certainty),
             cautions=body_lines(power_factor.notices),
             notices=power_factor.notices,
-            figure=_safe_figure(lambda: figures.power_triangle_png(power_factor)),
-            figure_caption="전력삼각형 — 각이 좁아질수록 역률이 좋아진다",
+            figure=triangle,
+            figure_caption=_PF_TRIANGLE_CAPTION,
+            figures=_pair(
+                (triangle, _PF_TRIANGLE_CAPTION),
+                (pf_day, _PF_DAY_CAPTION),
+            ),
         )
 
     if solar is not None:
+        # **화면은 연간 발전량과 대표일 곡선을 함께 낸다** (38세션 3-2).
+        # 「한 해에 얼마나 만드나」 와 「그날 피크가 얼마나 내려가나」 는 다른
+        # 물음이라, 하나만 실으면 나머지 하나를 슬라이드에서 답하지 못한다.
+        solar_annual = solar_day = None
+        if usage is not None and solar_generation_kw is not None:
+            load, generation = usage, solar_generation_kw
+            solar_annual = _safe_figure(
+                lambda: figures.solar_annual_png(load, generation, size=MEASURE_PAIR_FIGURE)
+            )
+            if day is not None:
+                point = day
+                solar_day = _safe_figure(
+                    lambda: figures.solar_day_png(load, generation, point, size=MEASURE_PAIR_FIGURE)
+                )
         cautions = [
             "발전량 예측은 피크 발전량을 과소 산출하는 경향이 있어 피크 절감량이 "
             "보수적으로 나옵니다.",
@@ -334,15 +432,29 @@ def measure_entries(
             else str(Certainty.MEDIUM),
             cautions=tuple(cautions),
             notices=solar_notices,
-            figure=(
-                _safe_figure(lambda: figures.solar_day_png(usage, solar_generation_kw, day))
-                if usage is not None and day is not None and solar_generation_kw is not None
-                else None
+            figure=solar_day,
+            figure_caption=_SOLAR_DAY_CAPTION,
+            figures=_pair(
+                (solar_annual, _SOLAR_ANNUAL_CAPTION),
+                (solar_day, _SOLAR_DAY_CAPTION),
             ),
-            figure_caption="대표일의 원부하·순부하·발전량 — 피크가 얼마나 내려가는가",
         )
 
     if ess is not None:
+        # **목표가 어디서 나왔는지 답하는 그림이 빠져 있었다** (38세션 3-3).
+        # 카드가 낸 목표는 이 U곡선의 최소 지점이다.
+        ess_payback = (
+            _safe_figure(lambda: figures.ess_payback_png(ess_curve, size=MEASURE_PAIR_FIGURE))
+            if ess_curve is not None
+            else None
+        )
+        ess_day = (
+            _safe_figure(
+                lambda: figures.ess_day_png(usage, ess.dispatch, day, size=MEASURE_PAIR_FIGURE)
+            )
+            if usage is not None and day is not None
+            else None
+        )
         entries["ess"] = MeasureEntry(
             kind=measure_kind("ess"),
             conclusion=(
@@ -359,12 +471,12 @@ def measure_entries(
                 *body_lines(ess.notices),
             ),
             notices=ess.notices,
-            figure=(
-                _safe_figure(lambda: figures.ess_day_png(usage, ess.dispatch, day))
-                if usage is not None and day is not None
-                else None
+            figure=ess_day,
+            figure_caption=_ESS_DAY_CAPTION,
+            figures=_pair(
+                (ess_payback, _ESS_PAYBACK_CAPTION),
+                (ess_day, _ESS_DAY_CAPTION),
             ),
-            figure_caption="대표일의 충·방전 — 경부하에 담아 최대부하에 쓴다",
         )
 
     if surplus is not None:
@@ -385,7 +497,9 @@ def measure_entries(
             payback=f"{_UNPRICED} — 투자비를 모릅니다",
             certainty=str(Certainty.MEDIUM_LOW),
             figure=(
-                _safe_figure(lambda: figures.surplus_daily_png(usage, surplus_kw))
+                _safe_figure(
+                    lambda: figures.surplus_daily_png(usage, surplus_kw, size=MEASURE_FULL_FIGURE)
+                )
                 if usage is not None and surplus_kw is not None and surplus.total_kwh > 0
                 else None
             ),
@@ -426,6 +540,10 @@ class DocumentSections:
     """부록 B 의 요금표 줄. 없으면 그 줄만 빠진다."""
     ess_cases: pd.DataFrame | None = None
     """ESS 조달 사례. 17세션에 화면에서 뺀 표가 부록 A 로 간다."""
+    temperature: pd.Series | None = None
+    """시간별 기온 (℃). PPT 「전력사용현황 및 부하패턴」이 사용량과 겹쳐 그린다
+    (38세션 2-1). **없으면 사용량만 그린다** — 지역은 선택 입력이고, 고른 격자·
+    기간을 사전 취득분이 덮지 못할 수도 있다 (화면과 같은 규칙)."""
 
     @property
     def prepared(self) -> dt.date:
