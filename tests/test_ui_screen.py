@@ -3177,6 +3177,57 @@ def test_차익거래_안내가_무엇에_더하지_않았는지_적는다() -> 
     assert "피크저감 절감액에 더하지 않았습니다" not in body
 
 
+def _ess_screen_text(screen: AppTest) -> str:
+    """ESS 카드가 실제로 그린 문구 전부 — 툴팁을 포함한다.
+
+    근거 등급 확인사항은 「산출 근거 N건」 캡션의 ``help=`` 로 접히므로
+    ``value`` 만 모으면 놓친다.
+    """
+    parts: list[str] = []
+    for group in (screen.markdown, screen.caption, screen.metric):
+        for item in group:
+            parts.append(str(getattr(item, "value", "")))
+            parts.append(str(item.help or ""))
+    return " ".join(parts)
+
+
+def test_차익거래_근거가_예비_규칙_문제를_밝힌다() -> None:
+    """26세션의 「이중 계산」 은 근거가 틀렸다 (41세션 1-1·1-2).
+
+    그 「일부」 를 재 보니 사이클 1.06% · 금액 0.80% 였고, 화면 툴팁이 그 1% 를
+    함께 찍고 있어 읽는 사람에게 모순으로 보였다. 실질은 **예비 규칙**이다 —
+    없이 돌리면 피크를 못 깎아 회수기간이 30.75 → 50.61년이 된다 (샘플 실측).
+    """
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_ess=True)
+    body = _ess_screen_text(screen)
+    assert "몫을 남기는 운전 규칙" in body, body
+    assert "피크를 못 깎아" in body, body
+
+
+def test_겹침_비율과_이중_계산이_화면에_없다() -> None:
+    """**틀린 근거는 화면에서 뺀다** (41세션 1-3).
+
+    툴팁까지 훑는다 — 겹침 1% 가 있던 자리가 ``ess.payback_with_arbitrage``
+    근거였고 그것은 툴팁으로 나간다.
+    """
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_ess=True)
+    body = _ess_screen_text(screen)
+    assert "이중 계산" not in body, body
+    assert "가정 사이클의" not in body, body
+    assert "이미 일부를 실현" not in body, body
+
+
+def test_차익거래_잠재값은_화면에_그대로_남는다() -> None:
+    """**빼는 것은 근거이지 값이 아니다** (41세션 1-4).
+
+    「이만큼의 여지가 있으나 지금 계산에는 넣지 않았다」 가 사용자에게 유용하다.
+    """
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_ess=True)
+    body = _ess_screen_text(screen)
+    assert "차익거래 잠재 수익까지 더하면" in body, body
+    assert "이쪽이 상한입니다" in body, body
+
+
 def test_잉여_활용이_0일_때도_지표를_낸다() -> None:
     """**계약전력 조정과 같은 원칙이다** (31세션 6절).
 

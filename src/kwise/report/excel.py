@@ -425,7 +425,7 @@ def measure_summary_frame(
             }
         )
         if ess.arbitrage is not None:
-            # 차익거래는 **별도 줄**이다. 피크저감 절감액에 더하면 이중 계산이 된다.
+            # 차익거래는 **별도 줄**이다 — 도구가 돌리지 않는 운전의 잠재값이다.
             arbitrage = ess.arbitrage
             rows.append(
                 {

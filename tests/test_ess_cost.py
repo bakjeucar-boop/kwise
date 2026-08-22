@@ -275,12 +275,58 @@ def test_arbitrage_standalone_payback_outlives_the_battery(
 
 
 def test_arbitrage_is_not_added_to_the_saving(sample_ess: EssResult) -> None:
-    """피크저감 절감액에 더하지 않는다. 더하면 이중 계산이다."""
+    """피크저감 절감액에 더하지 않는다. **값은 41세션에도 그대로다** (B 안)."""
     assert sample_ess.arbitrage is not None
     assert sample_ess.total_saving_won == pytest.approx(
         sample_ess.base_saving_won + sample_ess.energy_saving_won
     )
-    assert any("이중 계산" in note for note in texts(sample_ess.notices))
+
+
+def test_arbitrage_reason_is_the_reserve_rule_not_double_counting(
+    sample_ess: EssResult,
+) -> None:
+    """**근거를 41세션에 다시 썼다.**
+
+    26세션은 「피크컷 디스패치가 이미 일부를 실현해 이중 계산」 이라고 적었는데,
+    그 「일부」 를 재 보니 사이클 1.06% · 금액 0.80% 였다 — 근거가 자기 숫자에
+    반박당하고 있었다. 실질은 **예비 규칙**이다: 그날 피크에 쓸 몫을 남기지 않고
+    돌리면 피크를 못 깎아 회수기간이 30.75 → 50.61년으로 나빠진다 (샘플 실측).
+    """
+    notes = texts(sample_ess.notices)
+    reason = next(note for note in notes if "더하지 않은 값입니다" in note)
+    assert "몫을 남기는 운전 규칙" in reason, reason
+    assert "피크를 못 깎아" in reason, reason
+    assert "회수기간이 나빠집니다" in reason, reason
+    # 틀린 근거는 남기지 않는다.
+    assert not any("이중 계산" in note for note in notes), notes
+    assert not any("이미 일부를 실현" in note for note in notes), notes
+
+
+def test_overlap_ratio_is_gone_from_the_notices(sample_ess: EssResult) -> None:
+    r"""겹침 비율(1%)을 화면에서 뺐다 (41세션 1-3).
+
+    근거가 바뀌었으므로 그 숫자가 설 자리가 없다. 산출 근거는
+    ``docs\TECHNICAL.md`` 6.6 과 :mod:`kwise.measures.arbitrage` 도크스트링에 있다.
+    """
+    upper = next(
+        note for note in texts(sample_ess.notices) if "이쪽이 상한입니다" in note
+    )
+    assert "가정 사이클의" not in upper, upper
+    assert "돌리고 있어" not in upper, upper
+    assert "매 평일 한 사이클을 온전히 돌리는 운전을 전제한 값입니다" in upper, upper
+
+
+def test_arbitrage_potential_is_still_shown(sample_ess: EssResult) -> None:
+    """**잠재값은 계속 보여준다** (41세션 1-4).
+
+    「이만큼의 여지가 있으나 지금 계산에는 넣지 않았다」 가 사용자에게 유용하다.
+    빼는 것은 근거이지 값이 아니다.
+    """
+    arbitrage = sample_ess.arbitrage
+    assert arbitrage is not None
+    assert arbitrage.annual_won > 0
+    assert sample_ess.payback_with_arbitrage_years is not None
+    assert sample_ess.payback_with_arbitrage_years < sample_ess.payback_years
 
 
 def test_arbitrage_scales_with_capacity(

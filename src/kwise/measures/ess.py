@@ -711,7 +711,7 @@ class EssResult:
             강제 입력이 아니다.
         breakeven_unit_cost_won_per_kw: 목표 회수기간을 맞추는 kW당 단가.
             입력 단가와 같은 단위라 그대로 견줄 수 있다.
-        arbitrage: 차익거래 **잠재** 수익. 절감액에 더하지 않았다 (이중 계산 방지).
+        arbitrage: 차익거래 **잠재** 수익. 절감액에 더하지 않았다 (예비 규칙 미정).
         payback_years: **피크저감 절감액만**으로 낸 회수기간. 기본값이자 보수적인 값이다.
         payback_with_arbitrage_years: 차익거래 잠재 수익까지 더한 회수기간. **상한**이다.
         outlook_payback_years: 2030년 전망 단가 기준 회수기간.
@@ -881,9 +881,10 @@ def evaluate_ess(
     payback_with_arbitrage = payback_years(investment, with_arbitrage)
     outlook_payback_with_arbitrage = payback_years(outlook_investment, with_arbitrage)
 
-    # 이미 실현된 차익거래가 얼마나 겹치는지. 겹침이 크면 상한 값이 과대평가다.
-    assumed_cycles_kwh = capacity * dod * arbitrage.period_days * cycles_per_day
-    overlap = dispatch.discharged_kwh / assumed_cycles_kwh if assumed_cycles_kwh > 0 else 0.0
+    # **겹침 비율은 41세션에 뺐다.** 26세션이 「피크컷 디스패치가 이미 가정 사이클의
+    # {overlap:.0%} 를 돌리고 있어」 를 차익거래 제외의 근거로 화면에 적었는데, 재 보니
+    # 사이클 1.06% · 금액 0.80% (케이스 여섯 0.46~1.85%) 라 근거가 자기 숫자에
+    # 반박당하고 있었다. 실질은 예비 규칙이다 — :mod:`kwise.measures.arbitrage` 도크스트링.
 
     notices: list[Notice] = []
     if dispatch.charge_created_new_peak:
@@ -1015,8 +1016,7 @@ def evaluate_ess(
                 f"차익거래 잠재 수익까지 더하면 현재 단가 {payback_with_arbitrage:,.1f}년 / "
                 f"{ref.outlook.label} 단가 "
                 f"{outlook_payback_with_arbitrage:,.1f}년입니다. **이쪽이 상한입니다** — "
-                f"피크컷 디스패치가 이미 가정 사이클의 {overlap:.0%} 를 돌리고 있어 그만큼은 "
-                "절감액에 이미 들어 있습니다.",
+                "매 평일 한 사이클을 온전히 돌리는 운전을 전제한 값입니다.",
                 fact="ess.payback_with_arbitrage",
             )
         )
@@ -1074,7 +1074,7 @@ def ess_payback_curve(
     회수기간이 단조증가한다.
 
     차익거래 잠재 수익을 더한 열을 함께 낸다 — 이쪽이 **상한**이다. 기본 열은
-    순부하 재계산 절감액만 쓴 값이라 이중 계산이 없다.
+    순부하 재계산 절감액만 쓴 값이라 돌리지 않은 운전이 섞이지 않는다.
     """
     round_trip = default_round_trip() if round_trip is None else round_trip
     dod = default_dod() if dod is None else dod
