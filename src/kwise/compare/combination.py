@@ -137,6 +137,25 @@ class CombinationSpec:
     def measure_labels(self) -> tuple[str, ...]:
         return tuple(item.label for item in self.applied)
 
+    def composition(self, baseline: TariffSelection | None = None) -> str:
+        """조합에 **무엇이 들어갔는지 한 줄로** (39세션 3-3).
+
+            선택요금 전환 + 역률 개선 97% + 태양광 240 kWp
+
+        조합 이름(:attr:`name`)은 「+ ESS 목표 5,170 kW」 처럼 **직전 조합에 무엇을
+        더했는가**를 적는다 — 표에서 차례로 읽을 때는 그것이 맞지만, 그 이름
+        하나만 떼어 놓으면 앞의 수단들이 보이지 않는다.
+
+        Args:
+            baseline: 기준선의 선택요금. 이것과 다르면 요금제를 바꾼 조합이므로
+                맨 앞에 「선택요금 전환」 을 세운다. 주지 않으면 세지 않는다.
+        """
+        parts: list[str] = []
+        if baseline is not None and self.selection != baseline:
+            parts.append("선택요금 전환")
+        parts.extend(item.short_label for item in self.applied)
+        return " + ".join(parts) if parts else "현행 유지"
+
 
 @dataclass(frozen=True, eq=False)
 class CombinationResult:

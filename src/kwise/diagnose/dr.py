@@ -63,6 +63,7 @@ from kwise.rules import assumption, rule_value
 from kwise.tariff import HolidayCalendar
 
 __all__ = [
+    "DR_OFF_DAYS_FACT",
     "LIBRARY_HOLIDAY_GAPS",
     "PARTICIPATION_NOTICE",
     "DrPotential",
@@ -90,6 +91,10 @@ __all__ = [
 type DateLike = dt.date | str | pd.Timestamp
 
 #: **공휴일 라이브러리가 못 잡는 것** (29세션). 저부하 평일로 잡힌 날이 실은
+#: 사용자가 쉬는 날로 지목한 날을 뺐다는 사실의 ID (29세션).
+#: **보고서가 이 안내를 이름으로 찾는다** — 문구를 다듬어도 어긋나지 않는다.
+DR_OFF_DAYS_FACT = "dr.user_off_days"
+
 #: 쉬는 날일 수 있고, 그것을 데이터만 보고 가릴 방법이 없다.
 #:
 #:     근로자의 날   ``holidays`` 는 **2026년부터** 「노동절」 로 잡는다. 2025년
@@ -615,7 +620,7 @@ def dr_profile(
             basis(
                 f"쉬는 날로 지목한 {len(user_off_days)}일({listed})을 거래 가능일에서 "
                 "뺐습니다. 그 날의 부하는 기준선(쉬는 날 평균)에 들어갑니다.",
-                fact="dr.user_off_days",
+                fact=DR_OFF_DAYS_FACT,
             )
         )
 

@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import datetime as dt
 import io
-import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,14 +45,16 @@ from pptx.util import Emu, Inches, Pt
 
 from kwise import money
 from kwise.diagnose import ChargeStructure
-from kwise.report import figures
+from kwise.report import figures, narrative
 from kwise.report.design import DesignGuide, load_design_guide
 from kwise.report.document import DocumentSections, MeasureEntry, MeasureFigure
-from kwise.report.notices import NOT_INCLUDED_NOTICE, TRUNCATION_FOOTNOTE
+from kwise.report.narrative import GLOSSARY_KEYS
+from kwise.report.notices import NOT_INCLUDED_NOTICE, TRUNCATION_FOOTNOTE, plain_text
 from kwise.report.worksheet import COLUMNS
 from kwise.tariff.labels import SEASON_LABELS
 
 __all__ = [
+    "ANNUAL_BASIS_NOTE",
     "APPENDIX_SLIDE_TITLE",
     "CLOSING_SLIDE_TITLE",
     "DECK_TITLE",
@@ -66,8 +67,10 @@ __all__ = [
     "NEXT_STEPS",
     "NEXT_STEPS_HEADLINE",
     "SLIDE_TITLES",
+    "AppendixPage",
     "SlideSpec",
     "agenda_items",
+    "appendix_pages",
     "build_slides",
     "export_slides",
     "measure_slide_title",
@@ -76,6 +79,7 @@ __all__ = [
     "slide_specs",
     "slides_bytes",
     "slides_path",
+    "split_reason",
 ]
 
 DECK_TITLE = "전력 비용 진단 보고서"
@@ -123,22 +127,23 @@ LAYOUTS: tuple[str, ...] = (
 
 _UNPRICED = "미산출"
 
-#: 마크다운 강조 표식. **PPT 는 마크다운을 해석하지 않는다** (38세션 1-2).
-#:
-#: 화면·Word 로도 가는 문구라 낳는 자리에서 고칠 수 없다 (Streamlit 은 이것을
-#: 굵게 그린다). 그래서 **슬라이드에 적는 순간 벗긴다** — 화면이 물결표를
-#: escape 하는 것과 같은 자리·같은 이유다 (:func:`kwise.ui.text.markdown_safe`).
-_MARKDOWN_MARKS = re.compile(r"\*\*|__|`")
+#: 「미산출 — 사유」 를 가르는 표식.
+_REASON_MARK = " — "
 
 
-def plain_text(value: str) -> str:
-    """슬라이드에 그대로 적을 수 있는 글자열.
+def split_reason(value: str) -> tuple[str, str]:
+    """「미산출 — 투자비 미입력」 을 (「미산출」, 「투자비 미입력」) 로 가른다 (39세션 2-1).
 
-    **여기 한 곳에서만 벗긴다.** 자리마다 벗기면 새 문구를 붙일 때 빠뜨린다 —
-    :func:`_text` 와 :func:`_table` 이 글자를 쓰는 유일한 두 자리이고, 둘 다
-    이것을 지난다.
+    **지표 칸에는 값만 둔다.** 큰 글씨 자리에 사유가 들어가면 두 줄로 흐르고,
+    넷을 나란히 놓았을 때 하나만 길어 위계가 무너진다. 사유는 각주가 받는다 —
+    무엇을 넣으면 값이 나오는지가 고객에게 필요한 정보이므로 지우지는 않는다.
+
+    미산출이 아닌 값은 그대로 돌려준다.
     """
-    return _MARKDOWN_MARKS.sub("", value)
+    if not value.startswith(_UNPRICED) or _REASON_MARK not in value:
+        return value, ""
+    head, _, reason = value.partition(_REASON_MARK)
+    return head.strip(), reason.strip()
 
 
 #: 글자 하나가 차지하는 폭 — 글꼴 크기에 대한 비율.
@@ -193,6 +198,8 @@ class SlideSpec:
     layout: str
     measure: int | None = None
     """수단별 장이면 :attr:`DocumentSections.measures` 의 자리."""
+    page: int | None = None
+    """부록처럼 여러 장으로 나뉘는 자리의 쪽 번호 (0부터)."""
 
 
 def slide_specs(sections: DocumentSections) -> tuple[SlideSpec, ...]:
@@ -226,7 +233,12 @@ def slide_specs(sections: DocumentSections) -> tuple[SlideSpec, ...]:
         for index, entry in enumerate(sections.measures)
     )
     specs.append(SlideSpec("combination", SLIDE_TITLES["combination"], "compare"))
-    specs.append(SlideSpec("appendix", SLIDE_TITLES["appendix"], "table"))
+    # **부록은 수단마다 한 장 이상이다** (39세션 5절). 한 장에 눌러 담고 「자리가
+    # 모자라 뺐다」 고 적으면 여섯 수단이 통째로 사라진다.
+    specs.extend(
+        SlideSpec("appendix", page.title, "table", page=index)
+        for index, page in enumerate(appendix_pages(sections))
+    )
     specs.append(SlideSpec("closing", SLIDE_TITLES["closing"], "closing"))
     return tuple(specs)
 
@@ -435,6 +447,74 @@ def _title(slide: Slide, guide: DesignGuide, text: str) -> float:
         bold=True,
     )
     return geometry.margin_in + height + geometry.title_gap_in
+
+
+#: 해석 한 줄이 차지하는 높이 (in). **두 줄까지 흐른다** — 판정과 근거 숫자를
+#: 함께 적으면 한 줄에 안 들어가는 자리가 있어 넉넉히 잡는다.
+_LEAD_HEIGHT = 0.74
+
+#: 용어 풀이 각주가 차지하는 높이 (in). 본문 높이에서 미리 뺀다.
+#: **두 줄까지 흐른다** — 용어 셋의 산식이 한 줄에 다 앉지 않는 장이 있다.
+_NOTE_HEIGHT = 0.58
+
+
+def _lead(slide: Slide, guide: DesignGuide, text: str, *, top: float) -> float:
+    """제목 아래 **해석 한 줄** (39세션 1-1).
+
+    그림만 나열하면 무엇을 보아야 하는지 알 수 없다. 문장은
+    :mod:`kwise.report.narrative` 가 짓는다 — 진단이 이미 내린 판정을 옮기거나,
+    값의 크기로 고르거나, 고정 문장이다.
+
+    **돌려주는 값은 본문이 시작할 y 다.** 빈 글이면 자리를 먹지 않는다.
+    """
+    if not text:
+        return top
+    geometry = guide.slide
+    _text(
+        slide,
+        guide,
+        [text],
+        left=geometry.margin_in,
+        top=top,
+        width=geometry.content_width_in,
+        height=_LEAD_HEIGHT,
+        size=guide.type_scale.body,
+        color=guide.colors.ink,
+    )
+    return top + _LEAD_HEIGHT
+
+
+def _note(slide: Slide, guide: DesignGuide, *lines: str) -> None:
+    """슬라이드 **맨 아래 작은 글씨** — 용어 풀이와 각주 (39세션 1-2).
+
+    화면 툴팁의 산식 줄을 그대로 깐다. 그 장에 나오는 용어만 고르므로 대개 한
+    줄에 앉는다 — 전부 깔면 각주가 본문이 된다.
+
+    줄을 여럿 주면 위에서부터 쌓는다. **용어 풀이가 먼저다** — 표를 읽는 데
+    바로 쓰이고, 제도 각주는 그 아래에서 받는다.
+    """
+    kept = [line for line in lines if line]
+    if not kept:
+        return
+    geometry = guide.slide
+    height = 0.2 * len(kept)
+    _text(
+        slide,
+        guide,
+        kept,
+        left=geometry.margin_in,
+        top=geometry.height_in - geometry.margin_in - 0.42 - height + 0.2,
+        width=geometry.content_width_in,
+        height=height,
+        size=guide.type_scale.caption,
+        color=guide.colors.muted,
+    )
+
+
+def _body_bottom(guide: DesignGuide, *, note: bool) -> float:
+    """본문이 끝나야 할 y. **각주가 있으면 그만큼 위에서 끝난다.**"""
+    geometry = guide.slide
+    return geometry.height_in - geometry.margin_in - (_NOTE_HEIGHT if note else 0.0)
 
 
 def _caption(
@@ -835,12 +915,18 @@ def _build_agenda(
 def _build_building(
     slide: Slide, guide: DesignGuide, sections: DocumentSections, spec: SlideSpec
 ) -> None:
-    """건물현황 및 계약정보 — **표형** (36세션 3-4). 카드가 아니다."""
+    """건물현황 및 계약정보 — **표형** (36세션 3-4). 카드가 아니다.
+
+    **결측·정전이 결과에 어떻게 걸리는지 적는다** (39세션 6-2). 「972구간(2.8%)」
+    만으로는 그 값을 어디까지 믿을지 알 수 없다 — 결측이 몰린 달과 정전 지속
+    시간이 화면에는 있는데 슬라이드에는 건수뿐이었다.
+    """
     geometry = guide.slide
     top = _title(slide, guide, spec.title)
     bill = sections.bill
     meta = sections.usage.meta
     quality = sections.diagnosis.quality if sections.diagnosis is not None else None
+    top = _lead(slide, guide, narrative.building_lead(quality), top=top)
     rows = [
         ["항목", "내용"],
         ["건물명", sections.building],
@@ -854,13 +940,19 @@ def _build_building(
         ["총 사용량", f"{meta.total_kwh / 1000:,.1f} MWh"],
         [
             "결측",
-            f"{meta.missing_rows:,}구간 ({meta.missing_ratio:.1%}) — 보간하지 않았습니다",
+            f"{meta.missing_rows:,}구간 ({meta.missing_ratio:.1%}) — 보간하지 않고 뺐습니다",
         ],
         ["적용 요금표 시행일", f"{bill.effective_date}"],
         ["작성일", f"{sections.prepared:%Y-%m-%d}"],
     ]
     if quality is not None:
-        rows.insert(-2, ["정전 추정", f"{len(quality.outages)}건"])
+        # **건수만으로는 규모를 알 수 없다** (30세션 1-3 · 39세션 6-2). 15분 하나가
+        # 1건이고 며칠이 통째로 빈 것도 1건이라, 화면과 같이 지속 시간을 함께 적는다.
+        hours = sum(event.duration_hours for event in quality.outages)
+        outage = f"{len(quality.outages)}건"
+        if quality.outages:
+            outage += f" · 합 {hours:,.1f}시간 — 그 동안은 피크가 날 수 없어 편중 판정에서 뺐습니다"
+        rows.insert(-2, ["정전 추정", outage])
     _table(
         slide,
         guide,
@@ -903,6 +995,7 @@ def _build_usage_pattern(
     if diagnosis is None:  # pragma: no cover - 진단 없이 부르지 않는다
         return
     pattern = diagnosis.pattern
+    top = _lead(slide, guide, narrative.pattern_lead(pattern), top=top)
     # 1년치가 아닌 자료를 「연간」 이라 적으면 그 자체가 오독이다 (화면과 같다).
     span_label = "연간 사용량" if (meta.period_days or 0) >= 350 else "기간 사용량"
     bottom = _stats(
@@ -920,6 +1013,7 @@ def _build_usage_pattern(
     )
     body = bottom + geometry.block_gap_in
     png, caption = _usage_figure(sections)
+    note = narrative.glossary_note(GLOSSARY_KEYS["usage_pattern"], pattern)
     _picture_block(
         slide,
         guide,
@@ -928,19 +1022,14 @@ def _build_usage_pattern(
         left=geometry.margin_in,
         top=body,
         width=geometry.content_width_in,
-        height=geometry.height_in - geometry.margin_in - body,
+        height=_body_bottom(guide, note=bool(note)) - body,
     )
+    _note(slide, guide, note)
 
 
 #: 기온을 곁들인 그림의 캡션과, 곁들이지 못했을 때의 캡션.
-_TEMPERATURE_CAPTION = (
-    "일별 사용량과 일평균 기온 — 두 선이 함께 솟으면 냉난방 부하가 큽니다. "
-    "관측이 있는 날만 그렸습니다."
-)
-_USAGE_ONLY_CAPTION = (
-    "일별 사용량 — 관측이 있는 날만 그렸습니다. 결측일은 0 으로 채우지 않습니다. "
-    "지역을 고르면 일평균 기온을 함께 그립니다."
-)
+_TEMPERATURE_CAPTION = "일별 사용량과 일평균 기온 — 결측일은 그리지 않았습니다."
+_USAGE_ONLY_CAPTION = "일별 사용량 — 결측일은 그리지 않았습니다."
 
 
 def _usage_figure(sections: DocumentSections) -> tuple[bytes, str]:
@@ -1003,6 +1092,7 @@ def _build_peak_summary(
     diagnosis = sections.diagnosis
     if diagnosis is None:  # pragma: no cover
         return
+    top = _lead(slide, guide, narrative.peak_summary_lead(diagnosis), top=top)
     bottom = _stats(
         slide,
         guide,
@@ -1012,16 +1102,18 @@ def _build_peak_summary(
         width=geometry.content_width_in,
     )
     body = bottom + geometry.block_gap_in
+    note = narrative.glossary_note(GLOSSARY_KEYS["peak_summary"], diagnosis.pattern)
     _picture_block(
         slide,
         guide,
         figures.monthly_peak_png(diagnosis.peak, size=FULL_FIGURE),
-        "월별 최대수요와 요금적용전력 — 경부하 시간대의 피크는 요금적용전력이 되지 않습니다.",
+        "월별 최대수요 — 붉은 점선이 기본요금을 매기는 요금적용전력입니다.",
         left=geometry.margin_in,
         top=body,
         width=geometry.content_width_in,
-        height=geometry.height_in - geometry.margin_in - body,
+        height=_body_bottom(guide, note=bool(note)) - body,
     )
+    _note(slide, guide, note)
 
 
 def _build_peak_detail(
@@ -1037,16 +1129,20 @@ def _build_peak_detail(
     diagnosis = sections.diagnosis
     if diagnosis is None:  # pragma: no cover
         return
+    top = _lead(slide, guide, narrative.peak_detail_lead(diagnosis), top=top)
     peak = diagnosis.peak
     gap = geometry.block_gap_in
     half = (geometry.content_width_in - gap) / 2
-    height = geometry.height_in - geometry.margin_in - top
+    height = _body_bottom(guide, note=False) - top
     for index, (png, caption) in enumerate(
         (
-            (figures.hourly_profile_png(peak, size=HALF_FIGURE), "시간대별 평균 부하"),
+            (
+                figures.hourly_profile_png(peak, size=HALF_FIGURE),
+                "하루 24시간의 평균 부하 모양",
+            ),
             (
                 figures.top_hour_png(peak, size=HALF_FIGURE_WITH_LEGEND),
-                f"상위 {peak.top_n}구간 발생 시각",
+                f"최대수요 상위 {peak.top_n}구간이 발생한 시각",
             ),
         )
     ):
@@ -1072,11 +1168,15 @@ def _build_structure(
     structure = diagnosis.structure if diagnosis is not None else None
     if structure is None:  # pragma: no cover - 계약 정보가 없으면 부르지 않는다
         return
+    top = _lead(slide, guide, narrative.structure_lead(structure), top=top)
+    pattern = diagnosis.pattern if diagnosis is not None else None
+    note = narrative.glossary_note(GLOSSARY_KEYS["structure"], pattern)
     gap = geometry.block_gap_in
     left_width = geometry.content_width_in * 0.56
     right_width = geometry.content_width_in - left_width - gap
     right_left = geometry.margin_in + left_width + gap
-    height = geometry.height_in - geometry.margin_in - top
+    bottom_y = _body_bottom(guide, note=bool(note))
+    height = bottom_y - top
 
     base_won = structure.base_won + structure.bill.total_power_factor_won
     chart_top = (
@@ -1101,39 +1201,66 @@ def _build_structure(
         slide,
         guide,
         figures.monthly_charge_png(structure, size=WIDE_FIGURE),
-        "월별 요금 구성 — 밑단(기본요금)이 같은 높이로 이어집니다.",
+        "월별 요금 구성 — 기본요금은 직전 12개월 최대수요로 정해져 매달 같습니다.",
         left=geometry.margin_in,
         top=chart_top,
         width=left_width,
-        height=geometry.height_in - geometry.margin_in - chart_top,
+        height=bottom_y - chart_top,
     )
     _picture_block(
         slide,
         guide,
         figures.band_donut_grid_png(structure, season_pairs(structure)),
-        "계시별 사용량 구성 — 비중은 그 계절 안에서 다시 잰 값입니다.",
+        "계절별 계시 시간대 사용량 구성",
         left=right_left,
         top=top,
         width=right_width,
         height=height,
     )
+    _note(slide, guide, note)
 
 
 def _build_measure_summary(
     slide: Slide, guide: DesignGuide, sections: DocumentSections, spec: SlideSpec
 ) -> None:
-    """개선안별 요약 — **표형.** 켠 수단을 한 자리에 모은다."""
+    """개선안별 요약 — **표형.** 켠 수단을 한 자리에 모은다.
+
+    **투자 없이 가능한 절감액을 여기서 낸다** (39세션 6-1). 화면 1단계 맨 위의
+    숫자인데 슬라이드에 없었다 — 고객이 가장 먼저 보고 싶은 값이고, 개선 수단이
+    처음 나오는 이 장이 그 자리다.
+
+    **금액은 12개월 환산 한 값이다** (2-2). 같은 값을 괄호로 한 번 더 적지 않고,
+    환산 기준이라는 사실은 아래 각주가 한 번 말한다.
+    """
     geometry = guide.slide
     top = _title(slide, guide, spec.title)
+    diagnosis = sections.diagnosis
+    if diagnosis is not None:
+        saving = _won(diagnosis.summary.no_investment_saving_won)
+        top = _lead(slide, guide, narrative.measure_summary_lead(diagnosis, saving), top=top)
+        top = (
+            _stats(
+                slide,
+                guide,
+                [
+                    ("투자 없이 가능한 절감액", saving),
+                    ("검토한 수단", f"{len(sections.measures)}개"),
+                ],
+                left=geometry.margin_in,
+                top=top,
+                width=geometry.content_width_in / 2,
+            )
+            + geometry.block_gap_in
+        )
     rows = [["개선 수단", "절감액", "투자비", "회수기간", "확실성"]]
     # **절 번호를 뗀다** (38세션 1-3). 장 제목과 같은 이름이어야 표에서 고른
     # 줄을 뒤에서 찾을 수 있다.
     rows.extend(
         [
             measure_slide_title(entry),
-            entry.saving,
-            entry.investment,
-            entry.payback,
+            split_reason(entry.slide_saving)[0],
+            split_reason(entry.investment)[0],
+            split_reason(entry.payback)[0],
             entry.certainty,
         ]
         for entry in sections.measures
@@ -1147,18 +1274,20 @@ def _build_measure_summary(
         left=geometry.margin_in,
         top=top,
         width=geometry.content_width_in,
-        height=min(_table_room(guide, top=top, footnote=True), 0.5 * len(rows)),
+        height=min(_table_room(guide, top=top, footnote=True) - 0.3, 0.5 * len(rows)),
         widths=(0.22, 0.28, 0.2, 0.15, 0.15),
     )
-    _caption(
+    _note(
         slide,
         guide,
-        f"{NOT_INCLUDED_NOTICE} {TRUNCATION_FOOTNOTE}",
-        left=geometry.margin_in,
-        top=geometry.height_in - geometry.margin_in - 0.3,
-        width=geometry.content_width_in,
+        narrative.glossary_note(GLOSSARY_KEYS["measure_summary"]),
+        f"{ANNUAL_BASIS_NOTE} {NOT_INCLUDED_NOTICE} {TRUNCATION_FOOTNOTE}",
     )
 
+
+#: 금액 기준을 **한 번만** 적는다 (39세션 2-2). 값마다 「(12개월 환산 ○○원)」 을
+#: 붙이면 같은 값이 두 번 나오고 지표 칸이 두 줄로 흐른다.
+ANNUAL_BASIS_NOTE = "금액은 12개월 환산 기준입니다."
 
 #: 수단 한 장에 실을 주의사항 개수. **슬라이드는 읽는 자리가 아니라 보는 자리다** —
 #: 전문은 Word 3장에 그대로 있다.
@@ -1171,11 +1300,38 @@ def _cautions(entry: MeasureEntry) -> tuple[str, ...]:
     같은 문장이 두 번 실리는 경우가 있다 — 카드가 낸 주의와 안내가 낸 근거가
     같은 말일 때다. 문서에서는 눈에 덜 띄지만 슬라이드에서는 한 화면에 나란히
     놓여 바로 보인다.
+
+    **결론과 무관하면 싣지 않는다** (39세션 4-2). 하향 여지가 없는 계약전력에
+    하향 시 주의사항 셋을, 잉여가 0인 수단에 판매 자격요건을 다는 것은 하지도
+    않을 일을 조심하라는 말이라 결론보다 길어진다. 그 자리는
+    :attr:`MeasureEntry.facts` 가 받는다 — **왜 여지가 없는지 보이는 숫자**다.
     """
+    if not entry.actionable:
+        return ()
     seen: dict[str, None] = {}
     for line in entry.cautions:
         seen.setdefault(line.strip(), None)
     return tuple(seen)[:CAUTION_LIMIT]
+
+
+def _measure_note(entry: MeasureEntry) -> str:
+    """수단 장 맨 아래 작은 글씨 (39세션 2-1).
+
+    **지표 칸에서 뗀 미산출 사유가 여기로 온다.** 값 자리에는 「미산출」 만 두되,
+    무엇을 넣으면 값이 나오는지는 고객에게 필요한 정보라 지우지 않는다.
+    """
+    parts: list[str] = []
+    for label, value in (
+        ("절감액", entry.slide_saving),
+        ("투자비", entry.investment),
+        ("회수기간", entry.payback),
+    ):
+        reason = split_reason(value)[1]
+        if reason:
+            parts.append(f"{label} {_UNPRICED} — {reason}")
+    if entry.slide_note:
+        parts.append(entry.slide_note)
+    return " · ".join(parts)
 
 
 def _measure_pictures(
@@ -1241,22 +1397,36 @@ def _build_measure(
         slide,
         guide,
         [
-            ("절감액", entry.saving),
-            ("투자비", entry.investment),
-            ("회수기간", entry.payback),
+            ("절감액", split_reason(entry.slide_saving)[0]),
+            ("투자비", split_reason(entry.investment)[0]),
+            ("회수기간", split_reason(entry.payback)[0]),
             ("확실성", entry.certainty),
         ],
         left=geometry.margin_in,
         top=stats_top,
         width=geometry.content_width_in,
     )
+    note = _measure_note(entry)
     body = bottom + geometry.block_gap_in
-    height = geometry.height_in - geometry.margin_in - body - 0.32
+    height = _body_bottom(guide, note=bool(note)) - body - 0.32
     drawings = entry.slide_figures
     if drawings:
         _measure_pictures(slide, guide, drawings, top=body, height=height)
+        _note(slide, guide, note)
         return
-    # 그림이 없는 수단(계약전력 조정·잉여 0)은 **주의사항 표**가 시각 요소를 진다.
+    # **여지가 없는 수단은 그 사실을 숫자로 보인다** (39세션 4-2·4-3). 실행
+    # 주의사항 대신 「왜 없는지」 를 세우는 자리다.
+    if not entry.actionable and entry.facts:
+        _stats(
+            slide,
+            guide,
+            list(entry.facts),
+            left=geometry.margin_in,
+            top=body + max(0.0, (height - 0.94) / 2),
+            width=geometry.content_width_in,
+        )
+        _note(slide, guide, note)
+        return
     rows = [["주의사항"], *[[line] for line in _cautions(entry)]]
     if len(rows) == 1:
         rows.append(["—"])
@@ -1273,6 +1443,7 @@ def _build_measure(
         width=geometry.content_width_in,
         height=table_height,
     )
+    _note(slide, guide, note)
 
 
 def _build_combination(
@@ -1287,6 +1458,7 @@ def _build_combination(
     colors = guide.colors
     scale = guide.type_scale
     top = _title(slide, guide, spec.title)
+    top = _lead(slide, guide, narrative.combination_lead(), top=top)
     comparison = sections.comparison
     gap = geometry.block_gap_in
     half = (geometry.content_width_in - gap) / 2
@@ -1329,7 +1501,7 @@ def _build_combination(
     _text(
         slide,
         guide,
-        ["조합 구성"],
+        ["가장 유리한 조합"],
         left=geometry.margin_in,
         top=top,
         width=half,
@@ -1338,21 +1510,23 @@ def _build_combination(
         color=colors.ink,
         bold=True,
     )
-    # **조합에 실제로 들어간 수단 이름을 그대로 쓴다** — 목록을 여기서 다시
-    # 만들면 조합 재계산이 본 것과 갈라진다.
-    members = list(best.spec.measure_labels)
+    # **고른 수단을 순서대로 이어 적는다** (39세션 3-3). 조합 이름은 「+ ESS 목표
+    # 5,170 kW」 처럼 **직전 조합에 무엇을 더했는가**를 적는 것이라, 그것만 떼어
+    # 놓으면 앞의 수단들이 보이지 않았다. 목록을 여기서 다시 만들지 않는다 —
+    # 조합 재계산이 본 것과 갈라진다.
+    baseline = comparison.combinations[0].spec.selection if comparison.combinations else None
     _text(
         slide,
         guide,
-        [f"「{best.name}」"] + [f"· {name}" for name in members],
+        [best.spec.composition(baseline)],
         left=geometry.margin_in,
         top=top + 0.42,
         width=half,
-        height=0.3 * (len(members) + 1),
+        height=0.62,
         size=scale.body,
         color=colors.ink,
     )
-    table_top = top + 0.5 + 0.3 * (len(members) + 1) + gap
+    table_top = top + 0.42 + 0.62 + gap
     rows = [["조합", "절감액", "회수기간"]]
     rows.extend(
         [item.name, _won(item.saving_won), _payback(item.payback_years, item.investment_won)]
@@ -1401,7 +1575,7 @@ def _build_combination(
         slide,
         guide,
         figures.combination_png(comparison),
-        "조합마다 요금을 다시 계산했습니다. 수단별 절감액의 단순 합이 아닙니다.",
+        "조합별 절감액과 투자비",
         left=right_left,
         top=chart_top,
         width=half,
@@ -1409,33 +1583,76 @@ def _build_combination(
     )
 
 
-#: 부록 한 장에 담을 근거 줄 수. **넘치면 넘친 사실을 적는다** — 조용히 자르면
-#: 「이게 전부」 로 읽힌다. 전문은 Excel 부록 A 와 Word 부록 A 에 있다.
+#: 부록 한 장에 담을 근거 줄 수. **넘치면 장을 나눈다** (39세션 5절).
+#:
+#: 36세션까지는 넘친 줄을 잘라 내고 「자리가 모자라 뺐다」 고 적었는데, 그러면
+#: 선택요금 전환 하나만 실리고 **나머지 여섯이 통째로 빠졌다.** 분석한 자료를
+#: 감출 이유가 없다 — 장을 늘린다.
 APPENDIX_ROW_LIMIT = 12
+
+
+@dataclass(frozen=True)
+class AppendixPage:
+    """부록 한 장 — 제목과 표 줄.
+
+    수단 하나가 한 장에 안 들어가면 나눈다. 제목에 ``(1/2)`` 를 달아 이어지는
+    장임을 밝힌다.
+    """
+
+    title: str
+    rows: tuple[tuple[str, str, str], ...]
+
+
+def appendix_pages(sections: DocumentSections) -> tuple[AppendixPage, ...]:
+    """부록 장 목록 (39세션 5절).
+
+    **절감액이 0이거나 미산출인 수단은 뺀다.** 산식과 대입값이 전부 0인 표는
+    읽는 사람에게 알려 주는 것이 없고, 그 수단을 검토했다는 사실은 앞의
+    「개선안별 요약」 표가 이미 말한다.
+
+    수단이 하나도 남지 않으면 **빈 장 하나**를 돌려준다 — 부록 자리는 늘 있다.
+    """
+    priced = {entry.kind.key for entry in sections.measures if entry.has_saving}
+    labels = {entry.kind.key: measure_slide_title(entry) for entry in sections.measures}
+    pages: list[AppendixPage] = []
+    for sheet in sections.worksheets:
+        if sheet.key not in priced:
+            continue
+        records = [
+            (str(value[0]), str(value[1]), str(value[2])) for value in sheet.frame().to_numpy()
+        ]
+        chunks = [
+            records[start : start + APPENDIX_ROW_LIMIT]
+            for start in range(0, len(records), APPENDIX_ROW_LIMIT)
+        ] or [[]]
+        name = labels.get(sheet.key, sheet.title)
+        for index, chunk in enumerate(chunks, start=1):
+            suffix = f" ({index}/{len(chunks)})" if len(chunks) > 1 else ""
+            pages.append(AppendixPage(f"{APPENDIX_SLIDE_TITLE} — {name}{suffix}", tuple(chunk)))
+    return tuple(pages) or (AppendixPage(APPENDIX_SLIDE_TITLE, ()),)
 
 
 def _build_appendix(
     slide: Slide, guide: DesignGuide, sections: DocumentSections, spec: SlideSpec
 ) -> None:
-    """부록 산출근거 상세 — **표형.**
+    """부록 산출근거 상세 — **표형. 수단마다 한 장 이상이다** (39세션 5절).
 
     **PPT 부록에는 산출 근거만 싣는다** (36세션 6절). ESS 조달 사례 표, 적용
     기준 데이터(Word 부록 B), 알려진 한계와 전제(Word 부록 C)는 여기 오지
-    않는다 — 슬라이드에서 읽히지 않는 분량이고, 셋 다 **Word 에는 그대로
-    남아 있다.** 지운 것이 아니라 매체를 가린 것이다.
+    않는다 — 셋 다 **Word 에는 그대로 남아 있다.**
+
+    **절감액이 없는 수단은 빼고, 뺐다는 사실을 각주가 적는다** — 조용히 빼면
+    「검토하지 않았다」 로 읽힌다.
     """
     geometry = guide.slide
     top = _title(slide, guide, spec.title)
+    top = _lead(slide, guide, narrative.APPENDIX_LEAD, top=top)
+    pages = appendix_pages(sections)
+    page = pages[spec.page or 0]
     rows: list[list[str]] = [list(COLUMNS)]
-    total = 0
-    for sheet in sections.worksheets:
-        frame = sheet.frame()
-        total += len(frame)
-        for record in frame.to_numpy():
-            if len(rows) <= APPENDIX_ROW_LIMIT:
-                rows.append([str(value) for value in record])
+    rows.extend([list(record) for record in page.rows])
     if len(rows) == 1:
-        rows.append(["계산 근거", "수단을 켜면 산식과 대입값이 실립니다", "—"])
+        rows.append(["계산 근거", "절감액이 산출된 수단이 없습니다", "—"])
     _table(
         slide,
         guide,
@@ -1446,18 +1663,28 @@ def _build_appendix(
         height=min(_table_room(guide, top=top, footnote=True), 0.4 * len(rows)),
         widths=(0.24, 0.5, 0.26),
     )
-    omitted = max(0, total - (len(rows) - 1))
-    note = "산식과 대입한 값을 나란히 실었습니다."
-    if omitted:
-        note += f" {omitted}줄은 자리가 모자라 뺐습니다 — 전문은 Excel·Word 부록 A 에 있습니다."
     _caption(
         slide,
         guide,
-        note,
+        _appendix_note(sections),
         left=geometry.margin_in,
         top=geometry.height_in - geometry.margin_in - 0.3,
         width=geometry.content_width_in,
     )
+
+
+def _appendix_note(sections: DocumentSections) -> str:
+    """부록 각주. **제작 사정을 적지 않는다** (39세션 2-4).
+
+    「자리가 모자라 뺐습니다」 는 우리 쪽 사정이다. 뺀 것이 있다면 **무엇을 왜
+    뺐는지**와 전문이 어디 있는지를 적는다.
+    """
+    dropped = [entry for entry in sections.measures if not entry.has_saving]
+    note = "전문은 Excel 부록 A 에 있습니다."
+    if dropped:
+        names = " · ".join(measure_slide_title(entry) for entry in dropped)
+        note = f"절감액이 산출되지 않은 수단({names})은 근거를 싣지 않았습니다. {note}"
+    return note
 
 
 # ===================================================================== 37세션 · 마무리

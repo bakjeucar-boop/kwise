@@ -199,7 +199,7 @@ def test_조합_차트가_더해진다(full_document: DocumentType) -> None:
 def test_수단별_차트가_보고서에도_실린다(full_document: DocumentType) -> None:
     """**새 차트를 Word 에도 반영한다** (15세션 2절 공통 원칙)."""
     text = _all_text(full_document)
-    assert "요금제별 기본요금·전력량요금 구성" in text
+    assert "요금제별 요금 구성과 현행 대비 차액" in text
 
 
 def test_차트가_png_이고_한글_폰트를_쓴다() -> None:

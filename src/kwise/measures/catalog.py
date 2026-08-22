@@ -73,6 +73,9 @@ _PARAM_UNITS: dict[str, str] = {
     "target_kw": "kW",
     "contract_kw": "kW",
     "capacity_kwh": "kWh",
+    # **단위가 빠지면 숫자가 무엇인지 알 수 없다** (39세션 2-5). 「역률 개선 (97)」
+    # 이 그렇게 나가고 있었다.
+    "power_factor_pct": "%",
 }
 
 
@@ -97,7 +100,28 @@ class AppliedMeasure:
             return self.key
         if not self.params:
             return name
-        parts = [
-            f"{value:,.0f} {_PARAM_UNITS.get(field, '')}".strip() for field, value in self.params
-        ]
-        return f"{name} ({' · '.join(parts)})"
+        return f"{name} ({' · '.join(self.param_texts)})"
+
+    @property
+    def param_texts(self) -> tuple[str, ...]:
+        """파라미터를 **단위와 함께** 적은 조각들."""
+        return tuple(
+            # 퍼센트는 값과 기호를 붙여 적는다 — 「97 %」 는 우리말 표기가 아니다.
+            f"{value:,.0f}{unit}"
+            if (unit := _PARAM_UNITS.get(field, "")) == "%"
+            else f"{value:,.0f} {unit}".strip()
+            for field, value in self.params
+        )
+
+    @property
+    def short_label(self) -> str:
+        """괄호 없이 이어 적는 이름 — ``태양광 240 kWp`` (39세션 3-3).
+
+        조합 구성을 한 줄로 이을 때 쓴다. 괄호를 겹쳐 적으면 「태양광 (240 kWp)」
+        가 나열되어 무엇이 묶였는지가 오히려 흐려진다.
+        """
+        try:
+            name = measure_kind(self.key).label
+        except KeyError:
+            return self.key
+        return f"{name} {' · '.join(self.param_texts)}" if self.params else name

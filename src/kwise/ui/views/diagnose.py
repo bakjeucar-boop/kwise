@@ -34,8 +34,13 @@ import streamlit as st
 from kwise.diagnose import ChargeStructure, Diagnosis
 from kwise.io import UsageData
 from kwise.notices import tooltip
-from kwise.quality import DEFAULT_OPERATING_HOURS, QualityReport, monthly_longest_gaps
-from kwise.report import localize
+from kwise.quality import (
+    DEFAULT_OPERATING_HOURS,
+    LoadPattern,
+    QualityReport,
+    monthly_longest_gaps,
+)
+from kwise.report import localize, narrative
 from kwise.tariff import TENTATIVE_BASE_FEE_BASIS_WARNING, TariffTable
 from kwise.tariff.labels import SEASON_LABELS
 from kwise.ui import callout, charts
@@ -652,30 +657,16 @@ def _pattern_formulas(pattern: object) -> dict[str, str]:
     어떻다는 것인지**가 없으면 읽고도 할 일이 없다. 두 줄을 규약으로 둔다.
     시간대 경계는 자료마다 다르므로
     :class:`~kwise.quality.pattern.LoadPattern` 이 쓴 값을 그대로 적는다.
+
+    **문구는 :mod:`kwise.report.narrative` 가 쥔다** (39세션 1-2). PPT 가 같은
+    산식을 슬라이드 아래 작은 글씨로 까므로, 두 벌로 적으면 한쪽만 고쳐진다.
     """
-    night = getattr(pattern, "night_hours", (22, 8))
-    operating = getattr(pattern, "operating_hours", (9, 18))
-    night_text = f"{night[0]}시{fmt.RANGE}{night[1]}시"
-    operating_text = f"평일 {operating[0]}시{fmt.RANGE}{operating[1]}시"
-    formulas = {
-        "load_factor": (
-            "평균 수요 ÷ 최대 수요.\n\n"
-            "낮을수록 짧은 피크 하나에 기본요금이 매여 피크 저감 여지가 큽니다."
-        ),
-        "base_load_ratio": (
-            f"야간({night_text}) 평균 수요 ÷ 주간 평균 수요.\n\n"
-            "높을수록 밤에도 도는 설비가 있어 ESS 충전 여력이 좁습니다."
-        ),
-        "weekend_ratio": (
-            "주말 평균 수요 ÷ 평일 평균 수요.\n\n낮을수록 주말 가동이 적어 감축 여지가 큽니다."
-        ),
-        "off_hours_energy_share": (
-            f"운영시간({operating_text}) 밖 사용량 ÷ 전체 사용량. 주말은 전부 밖입니다.\n\n"
-            "높을수록 문 닫은 동안 쓰는 전기가 많아 운전 개선 여지가 큽니다."
-        ),
-    }
+    table = narrative.terms(pattern if isinstance(pattern, LoadPattern) else None)
     # **툴팁도 escape 한다** (25세션 2절). ``help=`` 는 마크다운을 해석한다.
-    return {key: fmt.markdown_safe(value) for key, value in formulas.items()}
+    return {
+        key: fmt.markdown_safe(table[key].tooltip)
+        for key in ("load_factor", "base_load_ratio", "weekend_ratio", "off_hours_energy_share")
+    }
 
 
 def _pattern_block(diagnosis: Diagnosis, usage: UsageData, building: BuildingInfo | None) -> None:

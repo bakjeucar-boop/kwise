@@ -37,13 +37,16 @@ from kwise.report.document import (
     measure_entries,
 )
 from kwise.report.slides import (
+    ANNUAL_BASIS_NOTE,
     APPENDIX_ROW_LIMIT,
     LAYOUTS,
     MEASURE_AGENDA_ITEM,
     NEXT_STEPS,
     NEXT_STEPS_HEADLINE,
     SLIDE_TITLES,
+    _cautions,
     agenda_items,
+    appendix_pages,
     build_slides,
     export_slides,
     measure_slide_title,
@@ -52,6 +55,7 @@ from kwise.report.slides import (
     slide_specs,
     slides_bytes,
     slides_path,
+    split_reason,
 )
 from kwise.tariff import BillingResult
 
@@ -75,6 +79,9 @@ EXPECTED_ORDER: tuple[str, ...] = (
     SLIDE_TITLES["appendix"],
     SLIDE_TITLES["closing"],
 )
+
+#: 부록 앞의 뼈대 장 수 (표지·목차·진단 다섯·요약·조합).
+FRAME_BEFORE_APPENDIX = 9
 
 
 # ===================================================================== 도우미
@@ -189,10 +196,13 @@ def test_슬라이드_구성이_목차대로다(full_sections: DocumentSections)
     titles = [spec.title for spec in slide_specs(full_sections)]
     measures = [measure_slide_title(entry) for entry in full_sections.measures]
     assert measures, "이 시험은 수단이 켜진 덱을 본다."
+    appendix = [page.title for page in appendix_pages(full_sections)]
     expected = [
         *EXPECTED_ORDER[:8],
         *measures,  # 검토한 수단별 1장씩 — **켠 것만, 차례대로**
-        *EXPECTED_ORDER[8:],
+        SLIDE_TITLES["combination"],
+        *appendix,  # 부록은 수단마다 한 장 이상 (39세션 5절)
+        SLIDE_TITLES["closing"],
     ]
     assert expected[-1] == SLIDE_TITLES["closing"], "마무리는 맨 뒤다."
     assert titles == expected
@@ -348,13 +358,11 @@ def test_4장_그림이_기온을_겹쳐_그린다(full_sections: DocumentSectio
     import pandas as pd
 
     slide = _slide_by_key(build_slides(full_sections), full_sections, "usage_pattern")
-    assert "지역을 고르면" in _slide_text(slide), "기온이 없으면 사유를 적는다."
+    assert "일평균 기온" not in _slide_text(slide), "기온이 없으면 사용량만 그린다."
 
     index = pd.date_range(full_sections.usage.meta.start, periods=48, freq="h")
     warm = replace(full_sections, temperature=pd.Series(range(48), index=index, dtype=float))
-    slide = _slide_by_key(build_slides(warm), warm, "usage_pattern")
-    text = _slide_text(slide)
-    assert "일평균 기온" in text and "지역을 고르면" not in text
+    assert "일평균 기온" in _slide_text(_slide_by_key(build_slides(warm), warm, "usage_pattern"))
 
 
 def test_5장이_정오_비중을_낸다(full_sections: DocumentSections) -> None:
@@ -401,7 +409,7 @@ def test_6장이_그림_둘을_좌우로_놓는다(full_sections: DocumentSectio
     pictures = [shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
     assert len(pictures) == 2
     text = _slide_text(slide)
-    assert "시간대별 평균 부하" in text and "발생 시각" in text
+    assert "평균 부하" in text and "발생한 시각" in text
 
 
 # ===================================================================== ② 수단 0개
@@ -520,7 +528,9 @@ def test_레이아웃이_반복되지_않는다(full_sections: DocumentSections)
 
     # 수단별 장은 가이드가 「차트 + 지표」 로 못박은 자리라 형태가 같은 것이 옳다.
     # **나머지 장**을 본다 — 여기가 되풀이되면 덱이 한 형태로 보인다.
-    frame = [spec.layout for spec in specs if spec.measure is None]
+    # **부록은 세지 않는다** (39세션 5절). 수단마다 한 장씩 붙는 자리라 형태가
+    # 같은 것이 옳다 — 세면 「표형이 잦다」 는 결론만 나온다.
+    frame = [spec.layout for spec in specs if spec.measure is None and spec.page is None]
     counts = {kind: frame.count(kind) for kind in set(frame)}
     assert len(counts) >= 5, f"형태가 {len(counts)}가지뿐입니다: {counts}"
     assert max(counts.values()) <= 3, f"한 형태가 너무 잦습니다: {counts}"
@@ -666,12 +676,264 @@ def test_장수가_수단_개수를_따라간다(
     """뼈대 열한 장 + 켠 수단 수 (37세션). 수단 0개면 11장, 일곱이면 18장이다."""
     from dataclasses import replace
 
-    assert len(slide_specs(diagnosis_only)) == 11
-    assert len(slide_specs(full_sections)) == 11 + len(full_sections.measures)
+    # 뼈대 = 표지·목차·진단 다섯·요약·조합·마무리 + **부록 장 수** (39세션 5절).
+    frame = FRAME_BEFORE_APPENDIX + 1  # 마무리
+    assert len(slide_specs(diagnosis_only)) == frame + len(appendix_pages(diagnosis_only))
+    assert len(slide_specs(full_sections)) == (
+        frame + len(full_sections.measures) + len(appendix_pages(full_sections))
+    )
 
     seven = replace(full_sections, measures=_seven_measures(full_sections))
     assert len(seven.measures) == 7
-    assert len(slide_specs(seven)) == 18
+    assert len(slide_specs(seven)) == frame + 7 + len(appendix_pages(seven))
+
+
+# ===================================================================== 39세션 · 해석과 문구
+
+
+#: 해석 한 줄과 용어 각주가 있어야 할 장 (39세션 1절).
+#: 표지·목차·마무리는 뼈대라 빼고, 수단 장은 결론 한 줄이 그 몫을 진다.
+LEAD_SLIDES: tuple[str, ...] = (
+    "building",
+    "usage_pattern",
+    "peak_summary",
+    "peak_detail",
+    "structure",
+    "measure_summary",
+    "combination",
+    "appendix",
+)
+
+
+def test_슬라이드마다_해석_한_줄이_있다(full_sections: DocumentSections) -> None:
+    """**그래프만 나열하면 무엇을 보아야 하는지 알 수 없다** (39세션 1-1).
+
+    제목 아래 문장이 그림보다 먼저 읽혀야 한다. 진단이 이미 내린 판정을 옮기거나,
+    값의 크기로 고르거나, 고정 문장이다.
+    """
+    deck = build_slides(full_sections)
+    specs = slide_specs(full_sections)
+    for slide, spec in zip(deck.slides, specs, strict=True):
+        if spec.key not in LEAD_SLIDES:
+            continue
+        body = _slide_text(slide).replace(spec.title, "", 1)
+        assert any(line.strip().endswith("니다.") for line in body.splitlines()), (
+            f"「{spec.title}」 장에 해석 한 줄이 없습니다."
+        )
+
+
+def test_수단_장은_결론_한_줄이_해석을_진다(full_sections: DocumentSections) -> None:
+    """수단 장에는 별도 해석을 얹지 않는다 — **같은 말을 두 번 하지 않는다.**"""
+    deck = build_slides(full_sections)
+    specs = slide_specs(full_sections)
+    for slide, spec in zip(deck.slides, specs, strict=True):
+        if spec.measure is None:
+            continue
+        entry = full_sections.measures[spec.measure]
+        assert entry.conclusion in _slide_text(slide)
+
+
+def test_판정을_문장으로_옮기고_근거_숫자를_붙인다(full_sections: DocumentSections) -> None:
+    """**진단이 이미 판정한 것은 그 판정을 쓴다** (39세션 1-1).
+
+    화면 「개선 여지 요약」 의 태양광 등급이고, 근거 숫자가 바로 아래 지표의
+    정오 비중이다 — 판정과 근거가 함께 읽혀야 한다.
+    """
+    from kwise.diagnose.summary import PvPotential
+    from kwise.report import narrative
+
+    diagnosis = full_sections.diagnosis
+    assert diagnosis is not None
+    lead = narrative.peak_summary_lead(diagnosis)
+    share = f"{diagnosis.summary.pv_midday_share * 100:,.0f}%"
+    assert share in lead, "판정만 적고 근거 숫자를 빠뜨렸습니다."
+    assert set(PvPotential) == {PvPotential.HIGH, PvPotential.MEDIUM, PvPotential.LOW}
+    # 등급마다 다른 문장을 낸다 — 하나로 뭉뚱그리면 판정을 옮긴 것이 아니다.
+    assert len({text for text in narrative._PV_LEAD.values()}) == len(PvPotential)
+
+
+def test_용어_풀이가_화면_툴팁에서_온다() -> None:
+    """**두 벌로 적지 않는다** (39세션 1-2).
+
+    화면은 「산식 한 줄 + 의미 한 줄」 로 툴팁을 적고, 슬라이드는 같은 산식을
+    각주로 깐다 — 낳는 자리가 하나여야 한쪽만 고쳐지지 않는다.
+    """
+    from kwise.report import narrative
+
+    table = narrative.terms()
+    for key in ("load_factor", "base_load_ratio", "weekend_ratio", "off_hours_energy_share"):
+        term = table[key]
+        assert term.formula and term.meaning
+        assert term.tooltip.startswith(term.formula)
+        assert term.meaning in term.tooltip
+        assert term.name in term.line
+
+    source = (SRC_ROOT / "ui" / "views" / "diagnose.py").read_text(encoding="utf-8")
+    assert "narrative.terms(" in source, "화면이 용어를 따로 들고 있으면 두 벌이 된다."
+
+
+def test_용어_각주가_그_장의_용어만_깐다(full_sections: DocumentSections) -> None:
+    """**전부 깔면 각주가 본문이 된다.** 그 장에 나오는 것만 고른다."""
+    from kwise.report import narrative
+
+    deck = build_slides(full_sections)
+    table = narrative.terms()
+    for key, chosen in narrative.GLOSSARY_KEYS.items():
+        if not chosen:
+            continue
+        text = _slide_text(_slide_by_key(deck, full_sections, key))
+        for term in chosen:
+            assert f"{table[term].name} = " in text, f"「{key}」 장에 「{term}」 풀이가 없습니다."
+        loose = [name for name in set(table) - set(chosen) if f"{table[name].name} = " in text]
+        assert not loose, f"「{key}」 장에 그 장의 용어가 아닌 풀이가 있습니다: {loose}"
+
+
+def test_상위_구간을_왜_보는지_적는다(full_sections: DocumentSections) -> None:
+    """화면 그래프 툴팁에 있던 문장이다 (39세션 1-3). 슬라이드에는 본문으로 낸다."""
+    text = _slide_text(_slide_by_key(build_slides(full_sections), full_sections, "peak_detail"))
+    assert "언제 발생했는지" in text
+    assert "낮에 몰리면 태양광이" in text
+
+
+# ===================================================================== 39세션 2절 · 어투
+
+
+#: 개발자 어투 (39세션 2-1·2-3·2-4). **고객에게 우리 사정을 말하지 않는다.**
+DEVELOPER_VOICE: tuple[str, ...] = (
+    "모릅니다",
+    "넣지 않았습니다",
+    "자리가 모자라",
+    "그렸습니다",
+    "채우지 않습니다",
+    "다시 잰 값",
+)
+
+
+def test_개발자_어투가_없다(loaded_sections: DocumentSections) -> None:
+    """**「모릅니다」 는 우리 사정이다** (39세션 2-1).
+
+    「미산출 — 투자비를 모릅니다」 와 「미산출 — 계통 연계·설비 조건에 따릅니다」 가
+    나란히 있었다. 값 자리에는 「미산출」 만 두고, 무엇을 넣으면 값이 나오는지는
+    각주가 받는다.
+    """
+    text = _deck_text(build_slides(loaded_sections))
+    for phrase in DEVELOPER_VOICE:
+        assert phrase not in text, f"개발자 어투가 남아 있습니다: 「{phrase}」"
+
+
+def test_미산출은_값과_사유를_가른다() -> None:
+    """지표 칸에는 값만, 사유는 각주로 (39세션 2-1)."""
+    assert split_reason("미산출 — 투자비 미입력") == ("미산출", "투자비 미입력")
+    assert split_reason("미산출") == ("미산출", "")
+    assert split_reason("53,575,000원") == ("53,575,000원", "")
+
+
+def test_12개월_환산을_값마다_되풀이하지_않는다(full_sections: DocumentSections) -> None:
+    """**같은 값을 두 번 적지 않는다** (39세션 2-2).
+
+    「9,050,000원 (12개월 환산 9,050,000원)」 이 두 줄로 흐르고, 읽는 사람은 어느
+    쪽이 답인지 되묻는다. 기준은 각주가 **한 번** 적는다.
+    """
+    text = _deck_text(build_slides(full_sections))
+    assert "12개월 환산" not in text.replace(ANNUAL_BASIS_NOTE, "")
+    assert text.count(ANNUAL_BASIS_NOTE) == 1
+    for entry in full_sections.measures:
+        assert "12개월 환산" not in entry.slide_saving
+
+
+def test_Word_에도_마크다운_표식이_없다(loaded_sections: DocumentSections) -> None:
+    """**Word 도 마크다운을 해석하지 않는다** (39세션 2-6).
+
+    38세션에 PPT 만 막았고 Word 에는 별표가 남아 있었다. 벗기는 자리는
+    :func:`kwise.report.notices.plain_text` 하나다.
+    """
+    document = build_document(loaded_sections)
+    parts = [item.text for item in document.paragraphs]
+    for table in document.tables:
+        parts.extend(cell.text for row in table.rows for cell in row.cells)
+    text = "\n".join(parts)
+    for mark in MARKDOWN_MARKS:
+        assert mark not in text, f"Word 에 마크다운 표식 「{mark}」 이 남아 있습니다."
+
+
+def test_Word_가_글자를_쓰는_자리를_모두_지난다() -> None:
+    """**자리마다 벗기면 새 문구를 붙일 때 빠뜨린다** (39세션 2-6)."""
+    source = (SRC_ROOT / "report" / "document.py").read_text(encoding="utf-8")
+    calls = ("document.add_paragraph(", "document.add_heading(", "cell.text =")
+    for line in source.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#") or "plain_text(" in stripped:
+            continue
+        if "add_paragraph()" in stripped:
+            continue
+        for call in calls:
+            assert call not in stripped, f"마크다운을 벗기지 않는 자리가 있습니다: {stripped}"
+
+
+def test_단위가_빠진_칸이_없다() -> None:
+    """「역률 개선 (97)」 이 그렇게 나가고 있었다 (39세션 2-5)."""
+    from kwise.measures import AppliedMeasure
+
+    assert AppliedMeasure("power_factor", (("power_factor_pct", 97.0),)).label == "역률 개선 (97%)"
+    assert AppliedMeasure("solar", (("capacity_kwp", 240.0),)).label == "태양광 (240 kWp)"
+
+
+def test_조합_구성을_한_줄로_이어_적는다(full_sections: DocumentSections) -> None:
+    """**고른 수단을 순서대로** (39세션 3-3).
+
+    조합 이름은 「+ ESS 목표 5,170 kW」 처럼 직전 조합에 무엇을 더했는가를 적는
+    것이라, 그것만 떼어 놓으면 앞의 수단들이 보이지 않았다.
+    """
+    comparison = full_sections.comparison
+    assert comparison is not None
+    baseline = comparison.combinations[0].spec.selection
+    line = comparison.best.spec.composition(baseline)
+    assert " + " in line
+    assert "선택요금 전환" in line
+    assert "(" not in line, "괄호를 겹쳐 적지 않는다."
+    text = _slide_text(_slide_by_key(build_slides(full_sections), full_sections, "combination"))
+    assert line in text
+
+
+# ===================================================================== 39세션 4절 · 값이 0인 수단
+
+
+def test_잉여가_0인_까닭을_숫자로_적는다() -> None:
+    """**0이라는 것 자체가 정보다. 다만 왜 0인지가 있어야 한다** (39세션 4-3)."""
+    from kwise.report import narrative
+
+    line = narrative.surplus_lead(
+        total_kwh=0.0,
+        generation_kwh=281_293.0,
+        self_consumed_kwh=281_293.0,
+        surplus_free_kwp=2_048.0,
+    )
+    assert "자가소비" in line and "2,048 kWp" in line
+    assert "281" in line, "발전량을 숫자로 보인다."
+
+
+def test_DR_이_0인_까닭을_적는다() -> None:
+    """**거래 가능일과 저부하 평일만 적으면 왜 그런지 알 수 없다** (39세션 4-1)."""
+    from kwise.report import narrative
+
+    assert narrative.dr_lead(None) == ""
+
+
+def test_결론과_무관한_주의사항을_싣지_않는다(full_sections: DocumentSections) -> None:
+    """**하지도 않을 일을 조심하라는 글이 결론보다 길어진다** (39세션 4-2)."""
+    from dataclasses import replace
+
+    base = full_sections.measures[0]
+    idle = replace(
+        base,
+        actionable=False,
+        cautions=("계약전력 하향은 되돌리기 어렵습니다.",),
+        facts=(("하향 여지", "0 kW"),),
+        figure=None,
+        figures=(),
+    )
+    assert _cautions(idle) == (), "여지가 없으면 실행 주의사항을 싣지 않는다."
+    assert _cautions(replace(idle, actionable=True)), "여지가 있으면 그대로 싣는다."
 
 
 # ===================================================================== 38세션 3절 · 그래프 대조
@@ -825,8 +1087,12 @@ def test_뺀_셋이_Word_에는_남아_있다(loaded_sections: DocumentSections)
         assert title in text, f"「{title}」 이 Word 에서 사라졌습니다."
 
 
-def test_부록이_넘치면_뺀_줄_수를_적는다(full_sections: DocumentSections) -> None:
-    """**조용히 자르지 않는다.** 자른 채 두면 「이게 전부」 로 읽힌다."""
+def test_부록이_넘치면_장을_나눈다(full_sections: DocumentSections) -> None:
+    """**자르지 않고 나눈다** (39세션 5절).
+
+    36세션까지는 한 장에 눌러 담고 「자리가 모자라 뺐다」 고 적었는데, 그러면
+    선택요금 전환 하나만 실리고 나머지 여섯이 통째로 빠졌다.
+    """
     from dataclasses import replace
 
     from kwise.report.worksheet import Worksheet
@@ -834,10 +1100,39 @@ def test_부록이_넘치면_뺀_줄_수를_적는다(full_sections: DocumentSec
     sheet = full_sections.worksheets[0]
     many = Worksheet(key=sheet.key, title=sheet.title, rows=sheet.rows * 6)
     sections = replace(full_sections, worksheets=(many,))
-    text = _slide_text(_slide_by_key(build_slides(sections), sections, "appendix"))
-    assert "줄은 자리가 모자라 뺐습니다" in text
-    assert "Excel·Word 부록 A" in text
+    pages = appendix_pages(sections)
     assert len(many.frame()) > APPENDIX_ROW_LIMIT
+    assert len(pages) > 1, "넘치면 장을 나눈다."
+    assert sum(len(page.rows) for page in pages) == len(many.frame()), "한 줄도 버리지 않는다."
+    assert all("(" in page.title for page in pages), "이어지는 장임을 제목이 밝힌다."
+    text = _deck_text(build_slides(sections))
+    assert "자리가 모자라" not in text, "제작 사정을 고객에게 말하지 않는다."
+
+
+def test_부록이_수단마다_한_장_이상이다(full_sections: DocumentSections) -> None:
+    """**분석한 자료를 감추지 않는다** (39세션 5절).
+
+    절감액이 산출된 수단은 모두 근거가 실리고, 0이거나 미산출인 수단은 빠지되
+    **뺐다는 사실을 각주가 적는다** — 조용히 빼면 「검토하지 않았다」 로 읽힌다.
+    """
+    sections = full_sections
+    priced = [entry for entry in sections.measures if entry.has_saving]
+    dropped = [entry for entry in sections.measures if not entry.has_saving]
+    assert priced and dropped, "이 시험은 값이 있는 수단과 없는 수단을 함께 본다."
+    titles = [page.title for page in appendix_pages(sections)]
+    sheets = {sheet.key for sheet in sections.worksheets}
+    for entry in priced:
+        if entry.kind.key not in sheets:
+            continue
+        assert any(measure_slide_title(entry) in title for title in titles), (
+            f"「{entry.kind.label}」 의 근거가 부록에 없습니다."
+        )
+    for entry in dropped:
+        assert not any(measure_slide_title(entry) in title for title in titles)
+    text = _deck_text(build_slides(sections))
+    for entry in dropped:
+        assert entry.kind.label in text, "뺐다는 사실을 각주가 적는다."
+    assert "전문은 Excel 부록 A 에 있습니다" in text
 
 
 # ===================================================================== ⑦ 글꼴·한글

@@ -158,6 +158,11 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "ess.target_search_ratio": _ratio,
     "pv.area_per_kwp_m2": _positive,
     "pv.surplus_heavy_share": _ratio,
+    # 보고서 해석 문장의 갈림값 (39세션). **계산에 쓰이지 않는다** — 문장을
+    # 고르는 데만 쓰지만, 사람이 정한 경계라 기준 데이터가 쥔다.
+    "narrative.load_factor_flat": _ratio,
+    "narrative.base_load_high": _ratio,
+    "narrative.base_fee_share_high": _ratio,
     "contract.margin_ratio": _ratio,
     "contract.margin_range": _ratio_range,
     "dr.bid_restriction_months": _positive,

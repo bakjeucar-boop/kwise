@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import re
+
 __all__ = [
     "CONTRACT_CHANGE_WARNING",
     "DATA_SOURCES",
@@ -15,6 +17,7 @@ __all__ = [
     "TRUNCATION_FOOTNOTE",
     "UNPRICED_REASONS",
     "format_won",
+    "plain_text",
 ]
 
 from kwise import money
@@ -101,6 +104,24 @@ UNPRICED_REASONS: dict[str, str] = {
         "매 평일 한 사이클을 온전히 돌렸을 때의 잠재값입니다."
     ),
 }
+
+
+#: 마크다운 강조 표식 (38세션 1-2 · 39세션 2-6).
+#:
+#: **PPT 도 Word 도 마크다운을 해석하지 않는다.** 문구는 화면(Streamlit)으로도
+#: 가는데 그쪽은 이것을 굵게 그리므로, 낳는 자리에서 뗄 수가 없다 — 적는 순간
+#: 벗긴다. 화면이 물결표를 escape 하는 것(:func:`kwise.ui.text.markdown_safe`)과
+#: 같은 자리·같은 이유다.
+_MARKDOWN_MARKS = re.compile(r"\*\*|__|`")
+
+
+def plain_text(value: str) -> str:
+    """산출물에 그대로 적을 수 있는 글자열.
+
+    **벗기는 자리를 하나로 둔다.** 자리마다 벗기면 새 문구를 붙일 때 빠뜨린다 —
+    글자를 쓰는 함수가 이것을 지나는지 시험이 훑는다.
+    """
+    return _MARKDOWN_MARKS.sub("", value)
 
 
 def format_won(value: float | None, *, reason: str = UNPRICED_REASONS["contract"]) -> str:

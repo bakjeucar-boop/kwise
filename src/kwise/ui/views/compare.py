@@ -50,6 +50,7 @@ from kwise.measures import (
     evaluate_contract_adjustment,
     evaluate_demand_response,
     load_ess_cost_model,
+    surplus_free_capacity_kwp,
 )
 from kwise.notices import Notice, dedupe_key, dedupe_keys, tooltip
 from kwise.quality import QualityReport
@@ -611,6 +612,11 @@ class _MeasureResults:
     ess: EssResult | None = None
     ess_curve: EssTargetCurve | None = None
     """회수기간 U곡선 (38세션 3-3). **PPT 가 「목표가 어디서 나왔나」 를 이것으로 답한다.**"""
+    surplus_free_kwp: float | None = None
+    """잉여 없는 최대 용량 (39세션 3-1·4-3). **용량을 정한 근거**이자, 잉여가 0인
+    까닭을 숫자로 보이는 값이다. 31세션에 화면이 세운 것과 같다."""
+    solar_area_m2: float | None = None
+    """설치 면적. 태양광 결론에 함께 적는다 — kWp 만으로는 지을 자리가 있는지 알 수 없다."""
     surplus: SurplusResult | None = None
     base_fee_months: float = 0.0
     """기간을 12개월로 환산하는 데 쓴다 (28세션 3절). 잉여 상계 수익이 기간 값이다."""
@@ -711,6 +717,8 @@ class _MeasureResults:
             dr_profile=self.dr_profile,
             solar_generation_kw=self.solar_generation_kw,
             surplus_kw=self.surplus_kw,
+            surplus_free_kwp=self.surplus_free_kwp,
+            area_m2=self.solar_area_m2,
         )
 
 
@@ -845,6 +853,13 @@ def _measure_results(
         surplus_kw = apply_generation(
             usage, unit_profile * inputs.resolved_capacity_kwp()
         ).surplus_kw
+    # **잉여 없는 최대 용량과 설치 면적** (39세션 3-1·4-3). 닫힌 식이라 요금을
+    # 다시 계산하지 않는다 — 26세션이 그렇게 만든 값이다.
+    surplus_free_kwp = None
+    area_m2 = None
+    if unit_profile is not None and inputs is not None:
+        surplus_free_kwp = surplus_free_capacity_kwp(usage, unit_profile)
+        area_m2 = inputs.area_m2 or None
 
     return _MeasureResults(
         switch=switch,
@@ -858,6 +873,8 @@ def _measure_results(
         ess=ess,
         ess_curve=ess_curve,
         surplus=surplus,
+        surplus_free_kwp=surplus_free_kwp,
+        solar_area_m2=area_m2,
         base_fee_months=baseline.base_fee_months,
         usage=usage,
         day=day,

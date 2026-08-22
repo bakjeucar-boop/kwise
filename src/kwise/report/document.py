@@ -29,10 +29,11 @@ from docx.document import Document as DocumentType
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
+from docx.text.paragraph import Paragraph
 
 from kwise.compare import SCENARIO_NAME_CAVEAT, ComparisonResult, SensitivityRange
 from kwise.diagnose import Diagnosis
-from kwise.diagnose.dr import DrProfile
+from kwise.diagnose.dr import DR_OFF_DAYS_FACT, DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
     MEASURE_CATALOG,
@@ -49,7 +50,7 @@ from kwise.measures import (
     measure_kind,
 )
 from kwise.notices import Notice, Severity, report_appendix, report_body, texts
-from kwise.report import figures
+from kwise.report import figures, narrative
 from kwise.report.appendix import APPENDIX_TITLES, AppendixData, known_limits, reference_rows
 from kwise.report.days import RepresentativeDay
 from kwise.report.notices import (
@@ -58,6 +59,7 @@ from kwise.report.notices import (
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
     format_won,
+    plain_text,
 )
 from kwise.report.worksheet import COLUMNS, Worksheet
 from kwise.tariff import BillingResult, TariffTable
@@ -147,6 +149,33 @@ class MeasureEntry:
     figure_caption: str = ""
     figures: tuple[MeasureFigure, ...] = field(default=())
     """PPT 가 좌우로 나란히 놓을 그림들 (38세션 3절). 비면 :attr:`figure` 한 장이다."""
+    facts: tuple[tuple[str, str], ...] = field(default=())
+    """**여지가 없다는 것을 보이는 지표** (39세션 4-2·4-3).
+
+    결론이 「하향 여지 없음」·「잉여 0」 이면 실행 주의사항은 실을 자리가 아니다 —
+    하지도 않을 일을 조심하라는 글이 결론보다 길어진다. 대신 **왜 없는지 보이는
+    숫자**를 그 자리에 세운다. 화면 카드가 같은 판단으로 세운 지표들이다
+    (31세션 2절·6절)."""
+    actionable: bool = True
+    """실행할 것이 있는가. **거짓이면 슬라이드가 주의사항을 싣지 않는다** (4-2)."""
+    has_saving: bool = True
+    """절감액이 **0도 미산출도 아닌가.** 금액 문자열을 되파싱하지 않으려고
+    숫자를 아는 자리에서 정해 둔다 — 부록이 실을 수단을 이것으로 고른다
+    (39세션 5절)."""
+    slide_note: str = ""
+    """슬라이드 맨 아래 작은 글씨 한 줄 (39세션). **숫자가 왜 달라졌는지**를
+    되짚어야 하는 사실이 여기 온다 — 사람이 쉬는 날을 빼면 감축 가능량이 다시
+    계산되므로 그 사실이 산출물에 남아야 한다 (29세션)."""
+    saving_annual: str = ""
+    """**12개월 환산 한 값만** (39세션 2-2). 슬라이드가 쓴다 — 비면 :attr:`saving`.
+
+    Word 는 :attr:`saving` 을 그대로 쓴다. 문서는 관측 기간 값과 환산값을 나란히
+    두고 대조하는 자리라 두 값이 함께 있어야 한다."""
+
+    @property
+    def slide_saving(self) -> str:
+        """슬라이드에 적을 절감액. **한 칸에 한 값이다.**"""
+        return self.saving_annual or self.saving
 
     @property
     def slide_figures(self) -> tuple[MeasureFigure, ...]:
@@ -190,12 +219,12 @@ TARIFF_FIGURE = (12.0, 4.4)
 #: 그림 캡션. **한 자리에 둔다** — 같은 그림이 :attr:`MeasureEntry.figure` 와
 #: :attr:`MeasureEntry.figures` 두 자리에 실리므로, 문구를 두 벌로 적으면 한쪽만
 #: 고쳐진다.
-_PF_TRIANGLE_CAPTION = "전력삼각형 — 각이 좁아질수록 역률이 좋아진다"
-_PF_DAY_CAPTION = "대표일 부하와 지상역률 판정 구간 — 주간만 요금 대상이다"
-_SOLAR_ANNUAL_CAPTION = "연간 일별 발전량 — 한 해에 얼마나 만드는가"
-_SOLAR_DAY_CAPTION = "대표일의 원부하·순부하·발전량 — 피크가 얼마나 내려가는가"
-_ESS_PAYBACK_CAPTION = "목표별 회수기간 곡선 — 최소 지점이 카드가 낸 목표다"
-_ESS_DAY_CAPTION = "대표일의 충·방전 — 경부하에 담아 최대부하에 쓴다"
+_PF_TRIANGLE_CAPTION = "전력삼각형 — 각이 좁아질수록 역률이 좋습니다."
+_PF_DAY_CAPTION = "대표일 부하 — 주황 점이 역률을 판정하는 주간 구간입니다."
+_SOLAR_ANNUAL_CAPTION = "일별 발전량 — 여름에 높고 겨울에 낮습니다."
+_SOLAR_DAY_CAPTION = "대표일의 부하 — 두 선 사이가 태양광으로 줄어든 몫입니다."
+_ESS_PAYBACK_CAPTION = "용량별 회수기간 — 표식이 회수기간이 가장 짧은 지점입니다."
+_ESS_DAY_CAPTION = "대표일의 부하 — 두 선 사이가 ESS 로 깎은 몫입니다."
 
 
 def _pair(*items: tuple[bytes | None, str]) -> tuple[MeasureFigure, ...]:
@@ -232,10 +261,10 @@ def _won(value: float | None, *, reason: str | None = None) -> str:
 
 def _payback_text(years: float | None, investment_won: float | None) -> str:
     if investment_won is None:
-        return f"{_UNPRICED} — 투자비를 모릅니다"
+        return f"{_UNPRICED} — 투자비 미입력"
     if not investment_won:
         return "즉시 (투자 없음)"
-    return f"{years:,.1f}년" if years is not None else f"{_UNPRICED} — 절감액이 없습니다"
+    return f"{years:,.1f}년" if years is not None else f"{_UNPRICED} — 절감액 없음"
 
 
 def _measure_saving(annual_won: float | None, period_won: float | None) -> str:
@@ -244,6 +273,70 @@ def _measure_saving(annual_won: float | None, period_won: float | None) -> str:
     if annual_won is None:
         return _won(period_won)
     return f"{_won(period_won)} (12개월 환산 {_won(annual_won)})"
+
+
+def _annual_saving(annual_won: float | None, period_won: float | None) -> str:
+    """**12개월 환산 한 값만** (39세션 2-2).
+
+    슬라이드는 한 칸에 두 값을 담지 않는다 — 「9,050,000원 (12개월 환산
+    9,050,000원)」 은 같은 값을 두 번 적어 두 줄로 흐르고, 읽는 사람은 어느 쪽이
+    답인지 되묻는다. 환산 기준이라는 사실은 **각주가 한 번** 적는다.
+    """
+    if annual_won is None and period_won is None:
+        return _won(None)
+    return _won(annual_won if annual_won is not None else period_won)
+
+
+def _notice_text(notices: tuple[Notice, ...], fact: str) -> str:
+    """사실 ID 로 안내 한 건을 꺼낸다. 없으면 빈 글이다.
+
+    **문구를 새로 짓지 않는다** — 계산 모듈이 낸 글을 그대로 낸다 (31세션 0-2 의
+    ``dropped_rows`` 와 같은 규약).
+    """
+    return next((item.text for item in notices if item.fact == fact), "")
+
+
+def _dr_conclusion(result: DemandResponseResult, profile: DrProfile | None) -> str:
+    """경제성DR 결론 (39세션 4-1).
+
+    **0인 까닭이 함께 있어야 한다.** 거래 가능일과 저부하 평일만 적으면 왜 그
+    날이 며칠뿐인지 알 수 없고, 결과가 0이면 「검토하지 않았다」 로 읽힌다 —
+    저부하 판정은 **부하가 쉬는 날 수준까지 내려온 평일**을 세는 것이므로,
+    그런 날이 없다는 사실이 곧 「추가로 줄일 여지가 없다」 는 답이다.
+
+    **사람이 뺀 날은 이름으로 적는다** (29세션). 저부하로 잡혔다가 쉬는 날로
+    판정되어 빠진 날이 있으면 숫자가 왜 달라졌는지 되짚을 수 있어야 한다.
+    """
+    head = narrative.dr_lead(profile)
+    if not result.low_load_days:
+        return head
+    tail = (
+        f" 등록 권장 {result.registered_capacity_kw:,.0f} kW, 연간 감축 가능량 "
+        f"{result.annual_reducible_kwh:,.0f} kWh 입니다."
+    )
+    return head + tail
+
+
+def _solar_conclusion(
+    solar: SolarPoint, surplus_free_kwp: float | None, area_m2: float | None
+) -> str:
+    """태양광 결론 한 줄 (39세션 3-1).
+
+    **용량을 정한 근거가 함께 있어야 한다** — 얼마나 넓은 자리가 드는지,
+    어디서부터 잉여가 생기는지가 그 근거다 (31세션 4-1 이 화면에 세운 값이다).
+    「올리면」 은 우리끼리 쓰는 말이라 「설치하면」 으로 적는다.
+    """
+    head = (
+        f"태양광 {solar.capacity_kwp:,.0f} kWp 를 설치하면 연 "
+        f"{solar.generation_kwh:,.0f} kWh 를 발전해 "
+        f"{_won(solar.total_saving_won)} 줄어듭니다."
+    )
+    tail: list[str] = []
+    if area_m2:
+        tail.append(f"설치 면적 {area_m2:,.0f} m²")
+    if surplus_free_kwp is not None and surplus_free_kwp > 0:
+        tail.append(f"{surplus_free_kwp:,.0f} kWp 까지는 전량 자가소비")
+    return f"{head} ({' · '.join(tail)})" if tail else head
 
 
 def measure_entries(
@@ -264,6 +357,8 @@ def measure_entries(
     dr_profile: DrProfile | None = None,
     solar_generation_kw: pd.Series | None = None,
     surplus_kw: pd.Series | None = None,
+    surplus_free_kwp: float | None = None,
+    area_m2: float | None = None,
 ) -> tuple[MeasureEntry, ...]:
     """검토한 수단을 **7장 순서 그대로** 항목으로 만든다.
 
@@ -287,6 +382,8 @@ def measure_entries(
                 else f"현행 선택{now_option} 이 이미 최선입니다. 바꿀 이유가 없습니다."
             ),
             saving=_measure_saving(switch.annual_saving_won, switch.saving_won),
+            saving_annual=_annual_saving(switch.annual_saving_won, switch.saving_won),
+            has_saving=bool(switch.saving_won),
             investment=_won(0.0),
             payback=_payback_text(0.0, 0.0),
             certainty=str(switch.certainty),
@@ -296,7 +393,7 @@ def measure_entries(
             ),
             notices=switch.notices,
             figure=_safe_figure(lambda: figures.tariff_option_png(switch, size=TARIFF_FIGURE)),
-            figure_caption="요금제별 기본요금·전력량요금 구성",
+            figure_caption="요금제별 요금 구성과 현행 대비 차액",
         )
 
     if contract is not None:
@@ -314,22 +411,32 @@ def measure_entries(
                 if contract.saving_won is not None
                 else f"{_UNPRICED} — {contract.saving_basis}"
             ),
+            saving_annual=(
+                _annual_saving(contract.annual_saving_won, contract.saving_won)
+                if contract.saving_won is not None
+                else f"{_UNPRICED} — {contract.saving_basis}"
+            ),
+            has_saving=bool(contract.saving_won),
             investment=_won(0.0),
             payback=_payback_text(0.0, 0.0),
             certainty=str(contract.certainty),
             cautions=(CONTRACT_CHANGE_WARNING, *body_lines(contract.notices)),
             notices=contract.notices,
+            # **여지가 없으면 왜 없는지 보인다** (39세션 4-2). 화면이 31세션에
+            # 세운 지표 넷과 같은 값이다.
+            actionable=contract.is_over_contracted,
+            facts=(
+                ("현재 계약전력", f"{contract.contract_kw:,.0f} kW"),
+                ("요금적용전력", f"{contract.billing_demand_kw:,.0f} kW"),
+                ("여유", f"{contract.headroom_kw:,.0f} kW"),
+                ("하향 여지", f"{contract.reduction_kw:,.0f} kW"),
+            ),
         )
 
     if demand_response is not None:
         entries["demand_response"] = MeasureEntry(
             kind=measure_kind("demand_response"),
-            conclusion=(
-                f"거래 가능일 {demand_response.eligible_days}일 가운데 저부하 평일 "
-                f"{demand_response.low_load_days}일에 등록 권장 "
-                f"{demand_response.registered_capacity_kw:,.0f} kW, "
-                f"연간 감축 가능량 {demand_response.annual_reducible_kwh:,.0f} kWh 입니다."
-            ),
+            conclusion=_dr_conclusion(demand_response, dr_profile),
             saving=(
                 # 사유는 이미 「미산출 — …」 꼴이다. 앞에 한 번 더 붙이지 않는다
                 # (28세션 1-4 에 문구를 줄이면서 겹침이 드러났다).
@@ -340,18 +447,20 @@ def measure_entries(
             investment=_won(0.0),
             payback=_payback_text(0.0, 0.0),
             certainty=str(demand_response.certainty),
+            has_saving=demand_response.is_priced and bool(demand_response.settlement_won),
             cautions=(
                 "정산 단가는 전력거래소 월별 순편익가격과 사업자 수수료로 정해집니다. "
                 "**수요관리사업자 상담이 필요합니다.**",
                 *body_lines(demand_response.notices),
             ),
             notices=demand_response.notices,
+            slide_note=_notice_text(demand_response.notices, DR_OFF_DAYS_FACT),
             figure=(
                 _safe_figure(lambda: figures.dr_daily_png(dr_profile, size=MEASURE_FULL_FIGURE))
                 if dr_profile is not None
                 else None
             ),
-            figure_caption="연간 일별 운영시간대 평균 부하 — 기준선 근처가 감축 가능일",
+            figure_caption="일별 운영시간대 평균 부하 — 붉은 선 아래가 감축 가능일입니다.",
         )
 
     if power_factor is not None:
@@ -379,6 +488,8 @@ def measure_entries(
                 f"{_won(power_factor.saving_won)} 줄어듭니다."
             ),
             saving=_measure_saving(power_factor.annual_saving_won, power_factor.saving_won),
+            saving_annual=_annual_saving(power_factor.annual_saving_won, power_factor.saving_won),
+            has_saving=bool(power_factor.saving_won),
             investment=_won(power_factor.investment_won),
             payback=_payback_text(power_factor.payback_years, power_factor.investment_won),
             certainty=str(power_factor.certainty),
@@ -415,12 +526,10 @@ def measure_entries(
             cautions.append(solar_unpriced_reason)
         entries["solar"] = MeasureEntry(
             kind=measure_kind("solar"),
-            conclusion=(
-                f"{solar.capacity_kwp:,.0f} kWp 를 올리면 연 "
-                f"{solar.generation_kwh:,.0f} kWh 를 발전해 "
-                f"{_won(solar.total_saving_won)} 줄어듭니다."
-            ),
+            conclusion=_solar_conclusion(solar, surplus_free_kwp, area_m2),
             saving=_measure_saving(solar.annual_saving_won, solar.total_saving_won),
+            saving_annual=_annual_saving(solar.annual_saving_won, solar.total_saving_won),
+            has_saving=bool(solar.total_saving_won),
             investment=(
                 _won(solar.investment_won)
                 if solar.investment_won is not None
@@ -458,11 +567,13 @@ def measure_entries(
         entries["ess"] = MeasureEntry(
             kind=measure_kind("ess"),
             conclusion=(
-                f"목표 {ess.excess.target_kw:,.0f} kW 를 지키려면 "
-                f"{ess.power_kw:,.0f} kW / {ess.capacity_kwh:,.0f} kWh "
-                f"(방전 {ess.discharge_hours:,.2f}h) 가 필요합니다."
+                f"피크를 {ess.excess.target_kw:,.0f} kW 까지 낮추려면 ESS "
+                f"{ess.power_kw:,.0f} kW / {ess.capacity_kwh:,.0f} kWh 가 필요합니다. "
+                "회수기간이 가장 짧은 지점을 목표로 잡았습니다."
             ),
             saving=_measure_saving(ess.annual_saving_won, ess.total_saving_won),
+            saving_annual=_annual_saving(ess.annual_saving_won, ess.total_saving_won),
+            has_saving=bool(ess.total_saving_won),
             investment=_won(ess.investment_won),
             payback=_payback_text(ess.payback_years, ess.investment_won),
             certainty=str(ess.certainty),
@@ -484,17 +595,19 @@ def measure_entries(
         richest = max(priced, key=lambda item: item.revenue_won or 0.0) if priced else None
         entries["surplus"] = MeasureEntry(
             kind=measure_kind("surplus"),
-            conclusion=(
-                f"잉여 {surplus.total_kwh:,.0f} kWh (발전량의 "
-                f"{(surplus.share_of_generation or 0.0) * 100:,.1f}%) 가 남습니다."
+            conclusion=narrative.surplus_lead(
+                total_kwh=surplus.total_kwh,
+                generation_kwh=surplus.generation_kwh,
+                self_consumed_kwh=surplus.generation_kwh - surplus.total_kwh,
+                surplus_free_kwp=surplus_free_kwp,
             ),
             saving=(
                 f"{richest.name} {_won(richest.revenue_won)}"
                 if richest is not None
-                else f"{_UNPRICED} — 단가를 넣지 않았습니다"
+                else f"{_UNPRICED} — 잉여 판매 단가 미입력"
             ),
-            investment=f"{_UNPRICED} — 계통 연계·설비 조건에 따릅니다",
-            payback=f"{_UNPRICED} — 투자비를 모릅니다",
+            investment=f"{_UNPRICED} — 계통 연계·설비 조건에 따름",
+            payback=f"{_UNPRICED} — 투자비 미입력",
             certainty=str(Certainty.MEDIUM_LOW),
             figure=(
                 _safe_figure(
@@ -503,12 +616,35 @@ def measure_entries(
                 if usage is not None and surplus_kw is not None and surplus.total_kwh > 0
                 else None
             ),
-            figure_caption="연간 일별 잉여량 — 주말에 몰리면 자가소비가 어렵다",
+            figure_caption="일별 잉여량 — 주말에 몰리면 자가소비가 어렵습니다.",
             cautions=(
                 "상계거래·외부 구매의 **자격요건은 판정하지 않았습니다.** 금액만 참고하십시오.",
                 *body_lines(surplus.notices),
             ),
             notices=surplus.notices,
+            # **잉여가 0 이면 자격요건 주의를 달지 않는다** (39세션 4-2). 팔 것이
+            # 없는데 파는 절차를 조심하라는 말이 결론보다 길어진다.
+            actionable=surplus.total_kwh > 0,
+            # **시나리오는 표가 아니라 한 줄이다** (39세션 4-3). 금액이 갈리는
+            # 것은 「어디에 파느냐」 하나뿐이라 두 줄짜리 표를 세울 것이 없고,
+            # 잉여가 0 이면 두 값이 모두 0 이라 결론 줄을 되풀이할 뿐이다.
+            slide_note=" · ".join(
+                f"{item.name} {_won(item.revenue_won) if item.is_priced else _UNPRICED}"
+                for item in surplus.scenarios
+            ),
+            has_saving=richest is not None and bool(richest.revenue_won),
+            facts=(
+                ("연간 발전량", f"{surplus.generation_kwh / 1000:,.1f} MWh"),
+                (
+                    "자가소비",
+                    f"{(surplus.generation_kwh - surplus.total_kwh) / 1000:,.1f} MWh",
+                ),
+                ("잉여", f"{surplus.total_kwh / 1000:,.1f} MWh"),
+                (
+                    "잉여 없는 최대 용량",
+                    f"{surplus_free_kwp:,.0f} kWp" if surplus_free_kwp else _UNPRICED,
+                ),
+            ),
         )
 
     return tuple(entries[kind.key] for kind in MEASURE_CATALOG if kind.key in entries)
@@ -617,6 +753,23 @@ def _set_korean_font(document: DocumentType) -> None:
         rpr.rFonts.set(qn("w:eastAsia"), KOREAN_FONT)
 
 
+def _para(document: DocumentType, text: str = "", *, style: str | None = None) -> Paragraph:
+    """문단 하나. **마크다운을 벗겨 적는다** (39세션 2-6).
+
+    Word 도 PPT 와 같이 마크다운을 해석하지 않아 ``**`` 가 글자로 찍힌다. 벗기는
+    자리는 :func:`kwise.report.notices.plain_text` 하나이고, 글자를 쓰는 함수가
+    그것을 지나는지 시험이 훑는다.
+    """
+    if style is not None:
+        return document.add_paragraph(plain_text(text), style=style)
+    return document.add_paragraph(plain_text(text))
+
+
+def _heading(document: DocumentType, text: str, *, level: int) -> Paragraph:
+    """제목 하나. 문단과 같은 이유로 벗겨 적는다."""
+    return document.add_heading(plain_text(text), level=level)
+
+
 def _add_table(
     document: DocumentType, rows: Sequence[Sequence[str]], *, header: bool = True
 ) -> None:
@@ -628,7 +781,7 @@ def _add_table(
     for row_index, row in enumerate(rows):
         for col_index, value in enumerate(row):
             cell = table.cell(row_index, col_index)
-            cell.text = str(value)
+            cell.text = plain_text(str(value))
             for paragraph in cell.paragraphs:
                 for run in paragraph.runs:
                     run.font.size = Pt(9)
@@ -640,7 +793,7 @@ def _add_table(
 def _add_figure(document: DocumentType, png: bytes, caption: str) -> None:
     document.add_picture(io.BytesIO(png), width=_FIGURE_WIDTH)
     document.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
-    label = document.add_paragraph(caption)
+    label = document.add_paragraph(plain_text(caption))
     label.alignment = WD_ALIGN_PARAGRAPH.CENTER
     for run in label.runs:
         run.font.size = Pt(9)
@@ -649,13 +802,13 @@ def _add_figure(document: DocumentType, png: bytes, caption: str) -> None:
 
 def _add_bullets(document: DocumentType, lines: Iterable[str]) -> None:
     for line in lines:
-        document.add_paragraph(line, style="List Bullet")
+        _para(document, line, style="List Bullet")
 
 
 def _conclusion(document: DocumentType, text: str) -> None:
     """**결론 한 줄.** 절의 첫 문단이며 굵게 쓴다 — 데이터를 앞에 놓지 않는다."""
     paragraph = document.add_paragraph()
-    run = paragraph.add_run(text)
+    run = paragraph.add_run(plain_text(text))
     run.bold = True
 
 
@@ -663,9 +816,9 @@ def _conclusion(document: DocumentType, text: str) -> None:
 
 
 def _cover(document: DocumentType, sections: DocumentSections) -> None:
-    title = document.add_heading(DOCUMENT_TITLE, level=0)
+    title = _heading(document, DOCUMENT_TITLE, level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    subtitle = document.add_paragraph(sections.building)
+    subtitle = _para(document, sections.building)
     subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
     document.add_paragraph()
     bill = sections.bill
@@ -689,7 +842,7 @@ def _cover(document: DocumentType, sections: DocumentSections) -> None:
 
 def _chapter_summary(document: DocumentType, sections: DocumentSections, number: int) -> None:
     """**이 장만 읽어도 판단이 되어야 한다.**"""
-    document.add_heading(f"{number}장 {CHAPTER_SUMMARY}", level=1)
+    _heading(document, f"{number}장 {CHAPTER_SUMMARY}", level=1)
     diagnosis = sections.diagnosis
     summary = diagnosis.summary if diagnosis is not None else None
 
@@ -730,19 +883,19 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
         if best is not None
         else ""
     )
-    document.add_paragraph(caution + NOT_INCLUDED_NOTICE + " 자세한 한계는 마지막 장에 있습니다.")
+    _para(document, caution + NOT_INCLUDED_NOTICE + " 자세한 한계는 마지막 장에 있습니다.")
     # 금액은 천 원 단위로 절사해 적는다 (14세션 1절). 항목 합과 합계가 어긋날 수 있다.
-    document.add_paragraph(TRUNCATION_FOOTNOTE)
+    _para(document, TRUNCATION_FOOTNOTE)
     document.add_page_break()
 
 
 def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, number: int) -> None:
-    document.add_heading(f"{number}장 {CHAPTER_DIAGNOSIS}", level=1)
+    _heading(document, f"{number}장 {CHAPTER_DIAGNOSIS}", level=1)
     diagnosis = sections.diagnosis
     meta = sections.usage.meta
 
     # ---- 데이터 개요와 품질
-    document.add_heading(f"{number}.1 데이터 개요와 품질", level=2)
+    _heading(document, f"{number}.1 데이터 개요와 품질", level=2)
     quality = diagnosis.quality if diagnosis is not None else None
     missing = f"{quality.missing_ratio:.1%}" if quality is not None else "—"
     _conclusion(
@@ -773,7 +926,7 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
         return
 
     # ---- 부하 패턴
-    document.add_heading(f"{number}.2 부하 패턴", level=2)
+    _heading(document, f"{number}.2 부하 패턴", level=2)
     pattern = diagnosis.pattern
     _conclusion(
         document,
@@ -809,7 +962,7 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
     )
 
     # ---- 피크 특성
-    document.add_heading(f"{number}.3 피크 특성", level=2)
+    _heading(document, f"{number}.3 피크 특성", level=2)
     peak = diagnosis.peak
     _conclusion(
         document,
@@ -835,7 +988,7 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
     # ---- 현재 요금 구조
     structure = diagnosis.structure
     if structure is not None:
-        document.add_heading(f"{number}.4 현재 요금 구조", level=2)
+        _heading(document, f"{number}.4 현재 요금 구조", level=2)
         _conclusion(
             document,
             f"기본요금이 총액의 {structure.base_share:.1%} 입니다 "
@@ -860,7 +1013,7 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
     # ---- 계약전력 적정성
     adequacy = diagnosis.contract
     if adequacy is not None:
-        document.add_heading(f"{number}.5 계약전력 적정성", level=2)
+        _heading(document, f"{number}.5 계약전력 적정성", level=2)
         _conclusion(
             document,
             (
@@ -889,18 +1042,19 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
                 ],
             ],
         )
-        document.add_paragraph(CONTRACT_CHANGE_WARNING)
+        _para(document, CONTRACT_CHANGE_WARNING)
     document.add_page_break()
 
 
 def _chapter_measures(document: DocumentType, sections: DocumentSections, number: int) -> None:
-    document.add_heading(f"{number}장 {CHAPTER_MEASURES}", level=1)
-    document.add_paragraph(
+    _heading(document, f"{number}장 {CHAPTER_MEASURES}", level=1)
+    _para(
+        document,
         "검토한 수단만 싣습니다. 투자비 순이며, 보지 않은 수단은 마지막 장의 "
-        "「검토 범위」에 있습니다."
+        "「검토 범위」에 있습니다.",
     )
     for index, entry in enumerate(sections.measures, start=1):
-        document.add_heading(f"{number}.{index} {entry.title}", level=2)
+        _heading(document, f"{number}.{index} {entry.title}", level=2)
         _conclusion(document, entry.conclusion)
         _add_table(
             document,
@@ -915,13 +1069,13 @@ def _chapter_measures(document: DocumentType, sections: DocumentSections, number
         if entry.figure is not None:
             _add_figure(document, entry.figure, f"그림 {number}-{index}. {entry.figure_caption}")
         if entry.cautions:
-            document.add_paragraph("주의사항")
+            _para(document, "주의사항")
             _add_bullets(document, entry.cautions)
     document.add_page_break()
 
 
 def _chapter_comparison(document: DocumentType, sections: DocumentSections, number: int) -> None:
-    document.add_heading(f"{number}장 {CHAPTER_COMPARISON}", level=1)
+    _heading(document, f"{number}장 {CHAPTER_COMPARISON}", level=1)
     comparison = sections.comparison
     assert comparison is not None  # build_document 가 없으면 이 장을 부르지 않는다
     best = comparison.best
@@ -943,17 +1097,18 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
             ]
         )
     _add_table(document, rows)
-    document.add_paragraph(
+    _para(
+        document,
         "**조합마다 요금을 다시 계산했습니다.** 수단별 절감액의 단순 합이 아닙니다 — "
         "태양광이 사용량을 줄이면 최적 선택요금이 바뀌고, ESS 가 피크를 낮추면 "
-        "기본요금 기반이 달라집니다."
+        "기본요금 기반이 달라집니다.",
     )
     _add_figure(
         document, figures.combination_png(comparison), f"그림 {number}-1. 조합별 절감액과 투자비"
     )
 
     if sections.sensitivity:
-        document.add_heading(f"{number}.1 감도", level=2)
+        _heading(document, f"{number}.1 감도", level=2)
         _conclusion(
             document,
             "태양광 출력의 첨예도만 흔들어 본 범위입니다. 요금제 전환·계약전력 조정·"
@@ -965,12 +1120,12 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
             [item.metric, item.text()] for item in sections.sensitivity if item.base is not None
         )
         _add_table(document, rows)
-        document.add_paragraph(SCENARIO_NAME_CAVEAT)
+        _para(document, SCENARIO_NAME_CAVEAT)
     document.add_page_break()
 
 
 def _chapter_scope(document: DocumentType, sections: DocumentSections, number: int) -> None:
-    document.add_heading(f"{number}장 {CHAPTER_SCOPE}", level=1)
+    _heading(document, f"{number}장 {CHAPTER_SCOPE}", level=1)
     reviewed, skipped = sections.scope()
     _conclusion(
         document,
@@ -986,14 +1141,14 @@ def _chapter_scope(document: DocumentType, sections: DocumentSections, number: i
         ],
     )
 
-    document.add_heading(f"{number}.1 미포함 요금요소", level=2)
-    document.add_paragraph(NOT_INCLUDED_NOTICE)
-    document.add_paragraph(TRUNCATION_FOOTNOTE)
+    _heading(document, f"{number}.1 미포함 요금요소", level=2)
+    _para(document, NOT_INCLUDED_NOTICE)
+    _para(document, TRUNCATION_FOOTNOTE)
 
-    document.add_heading(f"{number}.2 계약전력 변경 시 주의", level=2)
-    document.add_paragraph(CONTRACT_CHANGE_WARNING)
+    _heading(document, f"{number}.2 계약전력 변경 시 주의", level=2)
+    _para(document, CONTRACT_CHANGE_WARNING)
 
-    document.add_heading(f"{number}.3 추적성", level=2)
+    _heading(document, f"{number}.3 추적성", level=2)
     _add_bullets(document, sections.bill.traceability())
     _add_bullets(document, DATA_SOURCES)
 
@@ -1014,22 +1169,18 @@ def _appendix_a(document: DocumentType, sections: DocumentSections) -> None:
     if not data.worksheets and not data.grounds:
         return
     document.add_page_break()
-    document.add_heading(APPENDIX_TITLES["A"], level=1)
-    document.add_paragraph(
-        "화면에서 접어 둔 계산 근거입니다. 산식과 대입한 값을 나란히 실었습니다."
-    )
+    _heading(document, APPENDIX_TITLES["A"], level=1)
+    _para(document, "화면에서 접어 둔 계산 근거입니다. 산식과 대입한 값을 나란히 실었습니다.")
     grounds = dict(data.grounds)
     for sheet in data.worksheets:
-        document.add_heading(sheet.title, level=2)
+        _heading(document, sheet.title, level=2)
         _add_table(document, [list(COLUMNS), *[list(row) for row in sheet.frame().to_numpy()]])
         lines = grounds.get(sheet.key, ())
         if lines:
             _add_bullets(document, lines)
     if data.cases is not None and not data.cases.empty:
-        document.add_heading("ESS 조달 사례", level=2)
-        document.add_paragraph(
-            "투자비 회귀의 원자료입니다. 화면에서는 뺐고(17세션) 여기에 싣습니다."
-        )
+        _heading(document, "ESS 조달 사례", level=2)
+        _para(document, "투자비 회귀의 원자료입니다. 화면에서는 뺐고(17세션) 여기에 싣습니다.")
         _add_table(
             document,
             [
@@ -1045,10 +1196,11 @@ def _appendix_b(document: DocumentType, sections: DocumentSections) -> None:
     if not rows:
         return
     document.add_page_break()
-    document.add_heading(APPENDIX_TITLES["B"], level=1)
-    document.add_paragraph(
+    _heading(document, APPENDIX_TITLES["B"], level=1)
+    _para(
+        document,
         "이 산출에 쓴 기준 값입니다. 법령 유래와 우리 판단값을 구분해 실었으며, "
-        "값은 기준 데이터 파일에서 그대로 가져옵니다."
+        "값은 기준 데이터 파일에서 그대로 가져옵니다.",
     )
     _add_table(
         document,
@@ -1062,10 +1214,11 @@ def _appendix_c(document: DocumentType, sections: DocumentSections) -> None:
     if not lines:
         return
     document.add_page_break()
-    document.add_heading(APPENDIX_TITLES["C"], level=1)
-    document.add_paragraph(
+    _heading(document, APPENDIX_TITLES["C"], level=1)
+    _para(
+        document,
         "결과를 읽는 데 필요한 한계와 전제입니다. 화면에서는 본문을 가리지 않도록 "
-        "빼고 여기에 모았습니다."
+        "빼고 여기에 모았습니다.",
     )
     _add_bullets(document, lines)
 
