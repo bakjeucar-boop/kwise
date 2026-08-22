@@ -156,6 +156,9 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "ess.payback_target_years": _positive,
     "ess.target_step_kw": _positive,
     "ess.target_search_ratio": _ratio,
+    # 최적 목표 정밀화 (40세션). **계산 시간을 정하는 값이라 기준 데이터가 쥔다.**
+    "ess.refine_window_kw": _positive,
+    "ess.refine_max_widen": _positive,
     "pv.area_per_kwp_m2": _positive,
     "pv.surplus_heavy_share": _ratio,
     # 보고서 해석 문장의 갈림값 (39세션). **계산에 쓰이지 않는다** — 문장을

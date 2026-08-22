@@ -90,6 +90,7 @@ from kwise.ui.cache import (
     cached_contract_adjustment,
     cached_daily_temperature,
     cached_ess,
+    cached_ess_optimum,
     cached_ess_targets,
     cached_power_factor,
     cached_sensitivity,
@@ -205,7 +206,9 @@ def render(
     enabled = tuple(key for key in computed if key in reviewed)
 
     # 2단계에서 넣은 값을 그대로 읽는다 (위젯 키로 세션에 남는다).
-    ess_target = _ess_target(usage, table, form, diagnosis) if "ess" in enabled else None
+    ess_target = (
+        _ess_target(usage, table, form, diagnosis, baseline, quality) if "ess" in enabled else None
+    )
     specs = combination_specs(
         form=form,
         best_selection=(diagnosis.summary.best_selection or form.selection),
@@ -563,21 +566,50 @@ def _contract_headroom(
 
 
 def _ess_target(
-    usage: UsageData, table: TariffTable, form: ContractForm, diagnosis: Diagnosis
+    usage: UsageData,
+    table: TariffTable,
+    form: ContractForm,
+    diagnosis: Diagnosis,
+    baseline: BillingResult,
+    quality: QualityReport,
 ) -> float | None:
     """ESS 목표 요금적용전력. **2단계를 거치지 않아도 같은 값이 나와야 한다** (15세션).
 
-    2단계 카드가 세션에 남긴 값을 먼저 읽고, 없으면 곡선의 최소 지점을 **같은
-    함수로** 다시 찾는다. 옆단에서 3단계로 바로 뛰면 세션이 비어 ESS 행이 통째로
-    빠지던 자리다 — 통합 시험이 잡았다.
+    2단계 카드가 세션에 남긴 값을 먼저 읽고, 없으면 **같은 함수로** 다시 찾는다.
+    옆단에서 3단계로 바로 뛰면 세션이 비어 ESS 행이 통째로 빠지던 자리다 —
+    통합 시험이 잡았다.
+
+    **개략 곡선이 아니라 정밀화가 정한다** (40세션 1절). 2단계 카드와 같은
+    함수를 부르므로 두 화면이 같은 목표를 쓴다.
     """
     saved = measure_float("ess", "target")
     if saved is not None:
         return saved
+    curve = _ess_curve(usage, table, form, diagnosis)
+    if curve is None or curve.best is None:
+        return None
+    return cached_ess_optimum(
+        usage,
+        table,
+        baseline,
+        quality,
+        curve,
+        usage_token(usage),
+        form,
+        measure_float("ess", "fixed_cost"),
+        measure_float("ess", "per_kwh_cost"),
+        rules_stamp(),
+    ).target_kw
+
+
+def _ess_curve(
+    usage: UsageData, table: TariffTable, form: ContractForm, diagnosis: Diagnosis
+) -> EssTargetCurve | None:
+    """개략 곡선. **2단계와 같은 인자로 부른다** — 캐시에 걸려 같은 값이 나온다."""
     peak = diagnosis.peak.billing_demand_kw
     if peak <= 0:
         return None
-    curve = cached_ess_targets(
+    return cached_ess_targets(
         usage,
         usage_token(usage),
         float(peak),
@@ -586,7 +618,6 @@ def _ess_target(
         measure_float("ess", "per_kwh_cost"),
         rules_stamp(),
     )
-    return curve.best.target_kw if curve.best is not None else None
 
 
 def _options_key(form: ContractForm) -> str:
@@ -797,20 +828,11 @@ def _measure_results(
 
     ess = None
     ess_curve = None
-    ess_target = _ess_target(usage, table, form, diagnosis)
+    ess_target = _ess_target(usage, table, form, diagnosis, baseline, quality)
     if "ess" in enabled and ess_target is not None:
         # **회수기간 곡선을 함께 들고 간다** (38세션 3-3). 2단계 카드가 이미 돌린
         # 것이라 캐시에 걸린다 — 계산이 한 번 더 도는 것이 아니다.
-        if diagnosis.peak.billing_demand_kw > 0:
-            ess_curve = cached_ess_targets(
-                usage,
-                token,
-                float(diagnosis.peak.billing_demand_kw),
-                float(table.rates(form.selection).base_won_per_kw),
-                measure_float("ess", "fixed_cost"),
-                measure_float("ess", "per_kwh_cost"),
-                stamp,
-            )
+        ess_curve = _ess_curve(usage, table, form, diagnosis)
         # **2단계와 같은 인자로 부른다** — 캐시에 걸려 같은 값이 나온다 (14세션 5-1).
         ess = cached_ess(
             usage,

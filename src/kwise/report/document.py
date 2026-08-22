@@ -223,7 +223,9 @@ _PF_TRIANGLE_CAPTION = "전력삼각형 — 각이 좁아질수록 역률이 좋
 _PF_DAY_CAPTION = "대표일 부하 — 주황 점이 역률을 판정하는 주간 구간입니다."
 _SOLAR_ANNUAL_CAPTION = "일별 발전량 — 여름에 높고 겨울에 낮습니다."
 _SOLAR_DAY_CAPTION = "대표일의 부하 — 두 선 사이가 태양광으로 줄어든 몫입니다."
-_ESS_PAYBACK_CAPTION = "용량별 회수기간 — 표식이 회수기간이 가장 짧은 지점입니다."
+_ESS_PAYBACK_CAPTION = (
+    "용량별 회수기간 — 곡선은 개략 산정이고, 표식은 요금을 다시 계산해 고른 실제 최적 지점입니다."
+)
 _ESS_DAY_CAPTION = "대표일의 부하 — 두 선 사이가 ESS 로 깎은 몫입니다."
 
 
@@ -553,7 +555,13 @@ def measure_entries(
         # **목표가 어디서 나왔는지 답하는 그림이 빠져 있었다** (38세션 3-3).
         # 카드가 낸 목표는 이 U곡선의 최소 지점이다.
         ess_payback = (
-            _safe_figure(lambda: figures.ess_payback_png(ess_curve, size=MEASURE_PAIR_FIGURE))
+            _safe_figure(
+                lambda: figures.ess_payback_png(
+                    ess_curve,
+                    marker_target_kw=ess.excess.target_kw,
+                    size=MEASURE_PAIR_FIGURE,
+                )
+            )
             if ess_curve is not None
             else None
         )

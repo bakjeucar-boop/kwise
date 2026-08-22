@@ -40,6 +40,7 @@ from kwise.measures import (
     ContractAdjustment,
     EssCostInput,
     EssCostModel,
+    EssOptimum,
     EssResult,
     EssTargetCurve,
     PowerFactorResult,
@@ -55,6 +56,7 @@ from kwise.measures import (
     evaluate_surplus,
     evaluate_tariff_switch,
     load_ess_cost_model,
+    refine_ess_target,
 )
 from kwise.progress import ProgressReporter
 from kwise.quality import DEFAULT_OPERATING_HOURS, QualityReport
@@ -73,6 +75,7 @@ __all__ = [
     "cached_daily_temperature",
     "cached_diagnosis",
     "cached_ess",
+    "cached_ess_optimum",
     "cached_ess_targets",
     "cached_power_factor",
     "cached_quality",
@@ -533,6 +536,45 @@ def cached_ess_targets(
         baseline_demand_kw=baseline_demand_kw,
         base_fee_won_per_kw=base_fee_won_per_kw,
         model=ess_cost_model(fixed_won, per_kwh_won),
+    )
+
+
+def cached_ess_optimum(
+    _usage: UsageData,
+    _table: TariffTable,
+    _baseline: BillingResult | None,
+    _quality: QualityReport | None,
+    _curve: EssTargetCurve,
+    token: str,
+    form: ContractForm,
+    fixed_won: float | None,
+    per_kwh_won: float | None,
+    stamp: str,
+    _progress: ProgressReporter | None = None,
+) -> EssOptimum:
+    """개략 곡선이 고른 목표를 **카드 기준으로 다시 고른다** (40세션).
+
+    **세션 기억을 쓴다** — ``st.cache_data`` 는 진행 표시와 함께 못 쓴다
+    (:func:`cached_solar` 와 같은 이유). 기억에 있으면 본문이 돌지 않아
+    ``step()`` 도 불리지 않는다.
+
+    한 점당 요금을 다시 계산하므로 **21점에 약 8초**다. 입력이 바뀌지 않으면
+    다시 돌지 않는다.
+    """
+    key = f"ess_optimum|{token}|{form_token(form)}|{fixed_won}|{per_kwh_won}|{stamp}"
+    return session_memo(
+        key,
+        lambda: refine_ess_target(
+            _usage,
+            _table,
+            form.selection,
+            curve=_curve,
+            baseline=_baseline,
+            quality=_quality,
+            options=form.billing_options(),
+            model=ess_cost_model(fixed_won, per_kwh_won),
+            progress=_progress,
+        ),
     )
 
 

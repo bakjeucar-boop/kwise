@@ -885,7 +885,9 @@ def test_ESS_본문에_투자비_상세와_성립_조건이_없다() -> None:
     body = " ".join(line for line in body.splitlines() if not line.lstrip().startswith("#"))
     for banned in ("설비 **", "성립 조건", "kW당 배터리비"):
         assert banned not in body, banned
-    assert "_notices((*result.notices, _ess_basis_note(base_fee)))" in source
+    # **정밀화가 낸 안내도 같은 자리로 간다** (40세션 1-2). 창 가장자리 경고가
+    # 여기 실려야 「그 자리가 최적」 으로 읽히지 않는다.
+    assert "_notices((*result.notices, *optimum.notices, _ess_basis_note(base_fee)))" in source
     assert "_ess_details" not in source, "화면이 계산 쪽 근거를 다시 적고 있습니다."
 
 

@@ -37,6 +37,7 @@ from kwise.measures import (
     high_rate_discharge_hours,
     load_ess_cost_model,
     power_factor_floor_pct,
+    refine_targets,
     surplus_free_capacity_kwp,
 )
 from kwise.measures.demand_response import DemandResponseResult
@@ -62,6 +63,7 @@ from kwise.ui.cache import (
     cached_azimuth_options,
     cached_contract_adjustment,
     cached_ess,
+    cached_ess_optimum,
     cached_ess_targets,
     cached_power_factor,
     cached_solar,
@@ -1261,14 +1263,38 @@ def _ess(
         _caution("어떤 목표에서도 초과 구간이 없어 곡선을 그리지 못했습니다.")
         return
 
+    # **목표는 곡선이 고르고 요금 재계산이 다시 고른다** (40세션 1절). 개략
+    # 곡선은 목표마다 다른 크기로 어긋나 최소가 놓인 자리 자체를 옮긴다 —
+    # 케이스 스터디에서 정격 +60%(C3)·+17%(C5) 짜리 배터리를 권하고 있었다.
+    #
+    # **한 점당 요금을 다시 계산하므로 21점에 약 8초다.** 진행을 보인다 —
+    # 아무 말 없이 멈추면 사용자는 화면이 죽은 줄 안다 (13세션과 같은 이유).
+    panel, runner = progress_panel("ESS 최적 목표를 고르는 중…")
+    with panel, runner.running("measures", total_steps=len(refine_targets(curve))) as report:
+        optimum = cached_ess_optimum(
+            usage,
+            table,
+            baseline,  # type: ignore[arg-type]
+            quality,
+            curve,
+            usage_token(usage),
+            form,
+            fixed_won,
+            per_kwh_won,
+            rules_stamp(),
+            report,
+        )
+
     # **그림 하나로 고른다** (26세션 1절). 곡선 아래 대표 지점 표를 없앴고
     # (같은 사양을 아래 지표 카드가 낸다), 오해를 푸는 설명은 툴팁으로 내렸다 —
     # 본문에 줄을 늘리지 않는다.
-    st.altair_chart(charts.ess_target_chart(curve), width="stretch")
-    st.caption("용량별 회수기간", help=fmt.chart_tip("chart.ess_target"))
+    st.altair_chart(
+        charts.ess_target_chart(curve, marker_target_kw=optimum.target_kw), width="stretch"
+    )
+    st.caption(charts.ess_target_caption(curve, optimum), help=fmt.chart_tip("chart.ess_target"))
 
-    # 목표는 곡선이 정한다. 세션에는 남겨 3단계가 같은 값을 읽게 한다.
-    target = best.target_kw
+    # 목표는 정밀화가 정한다. 세션에는 남겨 3단계가 같은 값을 읽게 한다.
+    target = optimum.target_kw
     st.session_state[input_key("ess", "target")] = target
 
     result = cached_ess(
@@ -1368,21 +1394,30 @@ def _ess(
     # 20세션에 화면이 다시 쓰던 넉 줄을 지웠다. 계산 쪽이 같은 사실을 이미
     # 근거로 내고 있어(``ess.quote_breakdown`` · ``ess.cost_model_formula`` ·
     # ``ess.feasibility``) 사실 ID 로 견주니 전부 중복이었다.
-    _notices((*result.notices, _ess_basis_note(base_fee)))
+    _notices((*result.notices, *optimum.notices, _ess_basis_note(base_fee)))
     _worksheet(ess_worksheet(result))
 
 
 def _ess_basis_note(base_fee_won_per_kw: float) -> Notice:
-    """두 기준의 차이 **한 줄** (18세션 1절).
+    """두 기준의 차이 **두 줄** (18세션 1절 · 39세션 조사 · 40세션 3절).
 
-    곡선은 기본요금 절감만 본 개략치로 목표를 고르고, 결론 숫자는 요금을 다시
-    계산한 이 카드가 낸다. 차이를 지우지는 않되 **결론 옆에 두지 않는다** —
-    한 줄이면 되는 사실이라 확인사항으로 내린다.
+    **앞 문구는 방향이 거꾸로였다.** 「기본요금 절감만 본 개략치」 라고만 적으면
+    카드가 기본요금 + 전력량요금이므로 더 커야 하는데, 실제로는 카드가 더 작다.
+    곡선의 **기본요금 절감 자체가 과대**하기 때문이다 — 요금적용전력이 직전
+    12개월 최대라 관측 첫머리 몇 달은 깎을 몫이 없거나 적은데, 곡선은 저감폭을
+    12개월 내내 얻는다고 본다. 샘플에서 차이의 72%가 여기서 나왔다.
+
+    **편차 크기는 자료 창이 정한다.** 연간 피크가 관측 첫 달에 있으면 거의
+    사라지고 끝에 있으면 커진다 — 그래서 폭을 숫자로 적지 않는다.
     """
     return basis(
-        "목표 선택 곡선은 기본요금 절감만 본 개략치입니다 (현행 요금제 기본요금단가 "
-        f"{fmt.count(base_fee_won_per_kw, ' 원/kW')} × 12개월). 위 결과는 그 목표에서 "
-        "요금을 다시 계산하고 왕복효율·DoD 를 반영한 값이라 회수기간이 더 깁니다.",
+        "목표 선택 곡선은 개략 산정입니다 — 전력량요금과 차익거래를 빼고, "
+        "저감폭을 12개월 내내 얻는다고 보며(현행 기본요금단가 "
+        f"{fmt.count(base_fee_won_per_kw, ' 원/kW')} × 12개월), 투자비를 정격이 아닌 "
+        "내보낼 에너지로 매깁니다.\n\n"
+        "위 결과는 요금을 다시 계산한 값입니다. **요금적용전력이 직전 12개월 최대라 "
+        "관측 첫머리 몇 달은 깎을 몫이 적어** 곡선보다 회수기간이 깁니다 — 그 폭은 "
+        "연간 피크가 관측 기간의 어디에 있느냐에 따라 달라집니다.",
         fact="ess.curve_vs_card",
     )
 

@@ -39,6 +39,7 @@ from kwise.measures.ess_cost import (
 )
 from kwise.measures.netload import with_load
 from kwise.notices import Notice, basis, info, warn
+from kwise.progress import ProgressReporter, record
 from kwise.quality import QualityReport
 from kwise.rules import assumption
 from kwise.tariff import (
@@ -54,6 +55,8 @@ from kwise.tariff import (
 __all__ = [
     "U_SHAPE_REASON",
     "DispatchResult",
+    "EssOptimum",
+    "EssOptimumPoint",
     "EssResult",
     "EssTargetCurve",
     "EssTargetPoint",
@@ -73,6 +76,10 @@ __all__ = [
     "high_rate_discharge_hours",
     "light_band_mask",
     "nameplate_capacity_kwh",
+    "refine_ess_target",
+    "refine_max_widen",
+    "refine_targets",
+    "refine_window_kw",
     "required_discharge_hours",
     "size_for_target",
 ]
@@ -1133,6 +1140,277 @@ def ess_payback_curve(
             }
         )
     return pd.DataFrame(rows).set_index("방전시간(h)")
+
+
+# ===================================================================== 40세션 · 최적점 정밀화
+#
+# **개략 곡선이 고른 점은 실제 최적이 아닐 수 있다** (39세션 조사).
+#
+# 곡선은 목표를 고르는 도구라 셋을 생략한다 — 전력량요금·차익거래를 빼고,
+# 기본요금 절감을 12개월 내내 최대 폭으로 얻는다고 보며, 투자비를 정격이 아닌
+# 내보낼 에너지로 매긴다. 그 셋이 목표마다 다른 크기로 어긋나므로 **최소가 놓인
+# 자리 자체가 옮겨 간다.**
+#
+#     C3 평탄형     곡선 3,000 kW → 실제 3,010 kW · 정격 +88.9 kWh (+60%)
+#     C5 겨울 피크형 곡선 5,940 kW → 실제 5,960 kW · 정격 +35.0 kWh (+17%)
+#
+# 회수기간 손해는 2.4%·1.1%로 작지만 **사양 손해가 크다** — 고객이 실제로 사는
+# 것은 배터리이지 회수기간이 아니다.
+#
+# **탐색 알고리즘을 쓰지 않는다.** 카드 기준 곡선은 U자가 아니다 — 국소 최소가
+# 샘플 2개·C2 7개·C3 5개·C5 5개다. C5 는 골짜기가 둘이고 둘의 회수기간 차가
+# 0.76년인데 용량은 3배다 (200.6 kWh 3.47억 vs 619.1 kWh 7.68억). 삼분 탐색과
+# 성긴 격자는 둘 다 엉뚱한 골짜기로 빨려 들어갔다. **균일 격자로 훑는다.**
+#
+# **격자는 곡선과 같은 10 kW 다** (:func:`default_target_step_kw`). 따로 두지
+# 않는 이유가 셋이다.
+#
+#     ① 표식이 곡선 위에 찍혀야 한다 — 곡선에 없는 자리를 고르면 선 밖에 뜬다
+#     ② 목표는 계약·설정에 적는 값이라 눈금에 맞아야 한다 (14세션 3-1)
+#     ③ 1 kW 격자는 201점 84초다. 샘플에서 5,175 kW·30.35년(−0.40년·정격 −15%)을
+#        더 찾지만 그 값을 위해 곡선 전체를 다시 그려야 한다
+
+
+def refine_window_kw() -> float:
+    """정밀화 창의 한쪽 폭 (40세션). **기준 데이터에서 읽는다.**"""
+    return float(assumption("ess.refine_window_kw"))
+
+
+def refine_max_widen() -> int:
+    """창을 넓힐 수 있는 횟수. 넘어서도 가장자리면 경고를 남긴다."""
+    return int(assumption("ess.refine_max_widen"))
+
+
+@dataclass(frozen=True)
+class EssOptimumPoint:
+    """정밀화에서 잰 한 점 — **카드와 같은 산식이다.**"""
+
+    target_kw: float
+    nameplate_capacity_kwh: float
+    investment_won: float
+    annual_saving_won: float
+    payback_years: float | None
+
+
+@dataclass(frozen=True)
+class EssOptimum:
+    """카드 기준으로 다시 고른 최적 목표 (40세션).
+
+    Attributes:
+        target_kw: 고른 목표. **화면·산출물이 쓰는 값이다.**
+        curve_target_kw: 개략 곡선이 고른 목표. 둘이 다르면 그림이 그 사실을 낸다.
+        window_kw: 실제로 훑은 창의 한쪽 폭. 넓혔으면 커진다.
+        widened: 창을 넓힌 횟수.
+        at_edge: 넓힌 뒤에도 최소가 창 가장자리에 있는가. **참이면 경고다** —
+            더 나은 목표가 창 밖에 있을 수 있다.
+    """
+
+    target_kw: float
+    payback_years: float | None
+    curve_target_kw: float
+    window_kw: float
+    widened: int
+    at_edge: bool
+    points: tuple[EssOptimumPoint, ...] = field(default=())
+    notices: tuple[Notice, ...] = field(default=())
+
+    @property
+    def moved(self) -> bool:
+        """개략 곡선이 고른 점과 다른가."""
+        return self.target_kw != self.curve_target_kw
+
+    @property
+    def shift_kw(self) -> float:
+        return self.target_kw - self.curve_target_kw
+
+
+def refine_targets(curve: EssTargetCurve, window_kw: float | None = None) -> tuple[float, ...]:
+    """정밀화에서 훑을 목표들. **진행 막대 길이를 미리 알려 준다.**
+
+    창을 넓히기 전의 첫 바퀴다 — 넓히는 일은 드물고, 막대가 한 번 길어지는 것이
+    「멈춘 줄 알았다」 보다 낫다.
+    """
+    if curve.best is None:
+        return ()
+    window = refine_window_kw() if window_kw is None else window_kw
+    anchor = curve.best.target_kw
+    return tuple(
+        sorted(
+            (
+                point.target_kw
+                for point in curve.points
+                if abs(point.target_kw - anchor) <= window + 1e-9
+            ),
+            reverse=True,
+        )
+    )
+
+
+def refine_ess_target(
+    usage: UsageData,
+    table: TariffTable,
+    selection: TariffSelection,
+    *,
+    curve: EssTargetCurve,
+    charge_mask: pd.Series | None = None,
+    baseline: BillingResult | None = None,
+    quality: QualityReport | None = None,
+    options: BillingOptions | None = None,
+    model: EssCostModel | None = None,
+    indoor: bool = False,
+    round_trip: float | None = None,
+    dod: float | None = None,
+    window_kw: float | None = None,
+    max_widen: int | None = None,
+    progress: ProgressReporter | None = None,
+) -> EssOptimum:
+    """곡선이 고른 목표 둘레를 **카드 기준으로 다시 훑어** 최적을 고른다.
+
+    카드 기준이란 :func:`evaluate_ess` 와 같은 산식이다 — 디스패치를 돌려 요금을
+    처음부터 다시 계산하고, 투자비는 왕복효율·DoD 를 반영한 **정격 용량**으로
+    매긴다. 차익거래·전망단가는 회수기간에 들어가지 않으므로 여기서도 뺀다
+    (한 점당 419 ms 중 48 ms 를 차지한다).
+
+    **창을 검증한다** (40세션 1-2). ±100 kW 라는 폭은 자료 일곱에서 나온 값이라
+    벗어나는 자료가 있을 수 있다. 최소가 창 가장자리에서 잡히면 두 배로 넓혀
+    다시 훑고, 정해진 횟수를 넘어서도 가장자리면 **그 사실을 경고로 남긴다** —
+    조용히 자르면 「그 자리가 최적」 으로 읽힌다.
+
+    Returns:
+        :class:`EssOptimum`. 곡선에 가격이 매겨진 점이 하나도 없으면 곡선의
+        선택을 그대로 돌려준다 (야간 피크형처럼 절감액이 0인 자료다).
+    """
+    opts = options if options is not None else BillingOptions()
+    round_trip = default_round_trip() if round_trip is None else round_trip
+    dod = default_dod() if dod is None else dod
+    cost_model = model if model is not None else load_ess_cost_model()
+    window = refine_window_kw() if window_kw is None else window_kw
+    widen_limit = refine_max_widen() if max_widen is None else max_widen
+    if window <= 0:
+        raise ValueError(f"정밀화 창은 양수여야 합니다: {window}")
+
+    if curve.best is None:
+        return EssOptimum(
+            target_kw=0.0,
+            payback_years=None,
+            curve_target_kw=0.0,
+            window_kw=window,
+            widened=0,
+            at_edge=False,
+        )
+
+    anchor = curve.best.target_kw
+    by_target = {point.target_kw: point for point in curve.points}
+    base_bill = (
+        baseline
+        if baseline is not None
+        else calculate_bill(usage, table, selection, options=opts, quality=quality)
+    )
+    mask = (
+        charge_mask
+        if charge_mask is not None
+        else light_band_mask(usage, table, selection=selection, options=opts)
+    )
+    interval = usage.meta.interval_minutes
+    scored: dict[float, EssOptimumPoint] = {}
+    report = record(progress)
+
+    def measure(target_kw: float) -> EssOptimumPoint:
+        """한 점을 카드와 같은 산식으로 잰다."""
+        if target_kw in scored:
+            return scored[target_kw]
+        excess = analyze_peak_excess(usage.kw, target_kw, interval)
+        power, capacity = size_for_target(excess, dod=dod, round_trip=round_trip)
+        if power <= 0:
+            point = EssOptimumPoint(target_kw, capacity, 0.0, 0.0, None)
+        else:
+            dispatch = dispatch_peak_shaving(
+                usage.kw,
+                target_kw=target_kw,
+                power_kw=power,
+                capacity_kwh=capacity,
+                charge_mask=mask,
+                interval_minutes=interval,
+                round_trip=round_trip,
+                dod=dod,
+            )
+            after = calculate_bill(
+                with_load(usage, dispatch.net_kw, source_suffix=" + ESS"),
+                table,
+                selection,
+                options=opts,
+                quality=quality,
+            )
+            saving = annualize(base_bill.total_won - after.total_won, base_bill.base_fee_months)
+            investment = cost_model.quote(capacity, indoor=indoor).total_won
+            point = EssOptimumPoint(
+                target_kw, capacity, investment, saving, payback_years(investment, saving)
+            )
+        scored[target_kw] = point
+        return point
+
+    widened = 0
+    at_edge = False
+    best: EssOptimumPoint | None = None
+    while True:
+        window_targets = sorted(
+            (target for target in by_target if abs(target - anchor) <= window + 1e-9),
+            reverse=True,
+        )
+        for index, target in enumerate(window_targets, start=1):
+            measure(target)
+            report.step(index, f"ESS 최적 목표 {index}/{len(window_targets)}")
+        priced = [scored[target] for target in window_targets if scored[target].payback_years]
+        if not priced:
+            break
+        best = min(priced, key=lambda item: item.payback_years or math.inf)
+        # **가장자리면 창이 좁았다는 뜻이다.** 곡선 자체의 끝이면 넓힐 곳이 없다.
+        edges = {window_targets[0], window_targets[-1]}
+        curve_ends = {max(by_target), min(by_target)}
+        at_edge = best.target_kw in edges - curve_ends
+        if not at_edge or widened >= widen_limit:
+            break
+        window *= 2.0
+        widened += 1
+
+    if best is None:
+        return EssOptimum(
+            target_kw=anchor,
+            payback_years=None,
+            curve_target_kw=anchor,
+            window_kw=window,
+            widened=widened,
+            at_edge=False,
+            points=tuple(scored[target] for target in sorted(scored)),
+            notices=(
+                info(
+                    "정밀화 구간에서 회수기간이 나오는 목표가 없어 개략 곡선의 선택을 "
+                    "그대로 씁니다. 절감액이 0 이하인 자료입니다.",
+                    fact="ess.refine_unpriced",
+                ),
+            ),
+        )
+
+    notices: list[Notice] = []
+    if at_edge:
+        notices.append(
+            warn(
+                f"최적 목표가 정밀화 구간의 가장자리({best.target_kw:,.0f} kW)에서 잡혔습니다. "
+                f"구간을 {widened}번 넓혔는데도 그대로여서, 더 나은 목표가 구간 밖에 "
+                "있을 수 있습니다.",
+                fact="ess.refine_at_edge",
+            )
+        )
+    return EssOptimum(
+        target_kw=best.target_kw,
+        payback_years=best.payback_years,
+        curve_target_kw=anchor,
+        window_kw=window,
+        widened=widened,
+        at_edge=at_edge,
+        points=tuple(scored[target] for target in sorted(scored)),
+        notices=tuple(notices),
+    )
 
 
 def excess_table(kw: pd.Series, targets: tuple[float, ...], interval_minutes: int) -> pd.DataFrame:

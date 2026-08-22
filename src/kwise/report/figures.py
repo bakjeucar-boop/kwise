@@ -48,6 +48,7 @@ from kwise.report.design import ChartPalette, load_design_guide
 from kwise.report.frames import (
     BAND_LABELS,
     DAY_TYPE_LABELS,
+    ESS_PAYBACK_AXIS,
     PEAK_ZOOM_HOURS,
     band_frame,
     combination_frame,
@@ -55,6 +56,7 @@ from kwise.report.frames import (
     daily_usage_frame,
     dr_daily_frame,
     ess_day_frame,
+    ess_marker_point,
     ess_target_frame,
     hourly_profile_frame,
     month_labels,
@@ -869,7 +871,12 @@ def power_factor_day_png(
     return render_png(figure)
 
 
-def ess_payback_png(curve: EssTargetCurve, *, size: tuple[float, float] | None = None) -> bytes:
+def ess_payback_png(
+    curve: EssTargetCurve,
+    *,
+    marker_target_kw: float | None = None,
+    size: tuple[float, float] | None = None,
+) -> bytes:
     """ESS 회수기간 곡선 — **축 하나·선 하나·표식 하나** (38세션 · 화면 7.6).
 
     **목표가 어디서 나왔는지 답하는 그림이다.** 목표를 낮출수록 저감량이 커져
@@ -878,6 +885,10 @@ def ess_payback_png(curve: EssTargetCurve, *, size: tuple[float, float] | None =
 
     x 는 목표가 아니라 **정격 용량(kWh)** 이다 — 사용자가 실제로 사야 할 것이고,
     목표를 낮출수록 용량이 급증한다는 사실이 축 자체로 읽혀야 한다 (26세션 1-1).
+
+    **표식은 곡선의 최소가 아니다** (40세션 2-1). 요금을 다시 계산해 고른 목표에
+    찍는다 — 화면과 같은 규칙이고 같은 함수를 쓴다
+    (:func:`kwise.report.frames.ess_marker_point`).
     """
     apply_style()
     marks = chart_palette()
@@ -890,18 +901,19 @@ def ess_payback_png(curve: EssTargetCurve, *, size: tuple[float, float] | None =
         linewidth=1.8,
         label="회수기간",
     )
-    best = curve.best
-    if best is not None and best.payback_years is not None:
+    marker = ess_marker_point(curve, marker_target_kw)
+    if marker is not None and marker.payback_years is not None:
         axes.scatter(
-            [best.nameplate_capacity_kwh],
-            [best.payback_years],
+            [marker.nameplate_capacity_kwh],
+            [marker.payback_years],
             s=90,
             color=marks.highlight,
             zorder=3,
-            label=f"최소 지점 — 목표 {best.target_kw:,.0f} kW",
+            label=f"최적 목표 {marker.target_kw:,.0f} kW",
         )
     axes.set_xlabel("ESS 정격 용량 (kWh)")
-    axes.set_ylabel("회수기간 (년)")
+    # **축이 먼저 말한다** (40세션 2-3). 화면과 같은 이름을 쓴다.
+    axes.set_ylabel(ESS_PAYBACK_AXIS)
     axes.ticklabel_format(axis="x", style="plain")
     add_legend(axes)
     return render_png(figure)

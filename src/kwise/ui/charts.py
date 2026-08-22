@@ -34,6 +34,7 @@ from kwise.report.days import RepresentativeDay
 from kwise.report.frames import (
     BAND_LABELS,
     CAPACITY_ROWS,
+    ESS_PAYBACK_AXIS,
     MONTHLY_CHARGE_PARTS,
     PEAK_ZOOM_HOURS,
     TARIFF_PARTS,
@@ -43,6 +44,8 @@ from kwise.report.frames import (
     dispatch_schedule,
     dr_daily_frame,
     ess_day_frame,
+    ess_marker_point,
+    ess_target_caption,
     ess_target_frame,
     hourly_profile_frame,
     monthly_charge_frame,
@@ -68,6 +71,7 @@ __all__ = [
     "CAPACITY_ROWS",
     "DATE_FORMAT",
     "DATE_LABEL_EXPR",
+    "ESS_PAYBACK_AXIS",
     "LEGEND",
     "LEGEND_BELOW",
     "MONTHLY_CHARGE_PARTS",
@@ -89,6 +93,8 @@ __all__ = [
     "dr_daily_frame",
     "ess_day_chart",
     "ess_day_frame",
+    "ess_marker_point",
+    "ess_target_caption",
     "ess_target_chart",
     "ess_target_frame",
     "hourly_profile_chart",
@@ -670,7 +676,9 @@ def solar_curve_chart(
     return alt.layer(*layers).properties(height=300)
 
 
-def ess_target_chart(curve: EssTargetCurve) -> alt.LayerChart | alt.FacetChart:
+def ess_target_chart(
+    curve: EssTargetCurve, *, marker_target_kw: float | None = None
+) -> alt.LayerChart | alt.FacetChart:
     """ESS 회수기간 곡선 — **축 하나·선 하나** (26세션 1절).
 
     23세션까지는 한 그림에 축이 셋이었다 (좌 회수기간·우 정격 용량, 그리고 눈금이
@@ -682,8 +690,11 @@ def ess_target_chart(curve: EssTargetCurve) -> alt.LayerChart | alt.FacetChart:
         표식 최소 지점 하나
 
     보조 축도 범례도 두지 않는다. 범위는 :data:`~kwise.report.frames.CAPACITY_WINDOW`
-    가 최적 둘레로 좁힌다. 회수기간은 기본요금 절감만 본 개략치이므로 **고르는
-    지표**로만 읽는다 — 결론 금액은 카드가 낸다 (18세션 1절).
+    가 최적 둘레로 좁힌다. 회수기간은 개략치이므로 **고르는 지표**로만 읽는다 —
+    결론 금액은 카드가 낸다 (18세션 1절).
+
+    **표식은 곡선의 최소가 아니다** (40세션 2-1). 요금을 다시 계산해 고른
+    목표에 찍으며, 둘이 다른 자료가 있다 — 그것이 사실이므로 숨기지 않는다.
     """
     frame = ess_target_frame(curve)
     line = (
@@ -691,7 +702,8 @@ def ess_target_chart(curve: EssTargetCurve) -> alt.LayerChart | alt.FacetChart:
         .mark_line(color="#08519c", strokeWidth=2)
         .encode(
             x=alt.X("정격 용량(kWh):Q", title="ESS 정격 용량 (kWh)", scale=alt.Scale(zero=False)),
-            y=alt.Y("회수기간(년):Q", title="회수기간 (년)", scale=alt.Scale(zero=False)),
+            # **축이 먼저 말한다** (40세션 2-3). 곡선 값과 카드 값이 다르다.
+            y=alt.Y("회수기간(년):Q", title=ESS_PAYBACK_AXIS, scale=alt.Scale(zero=False)),
             tooltip=[
                 alt.Tooltip("정격 용량(kWh):Q", format=",.0f"),
                 alt.Tooltip("목표 요금적용전력(kW):Q", format=",.0f"),
@@ -701,12 +713,13 @@ def ess_target_chart(curve: EssTargetCurve) -> alt.LayerChart | alt.FacetChart:
         )
     )
     layers: list[alt.Chart] = [line]
-    if curve.best is not None:
+    marker = ess_marker_point(curve, marker_target_kw)
+    if marker is not None:
         best = pd.DataFrame(
             {
-                "정격 용량(kWh)": [curve.best.nameplate_capacity_kwh],
-                "회수기간(년)": [curve.best.payback_years],
-                "사양": [curve.best.spec_label],
+                "정격 용량(kWh)": [marker.nameplate_capacity_kwh],
+                "회수기간(년)": [marker.payback_years],
+                "사양": [marker.spec_label],
             }
         )
         layers.append(

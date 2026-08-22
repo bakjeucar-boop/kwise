@@ -29,12 +29,15 @@ from kwise.measures import (
     EssCostInput,
     PvCostInput,
     apply_generation,
+    ess_target_curve,
     evaluate_contract_adjustment,
     evaluate_demand_response,
     evaluate_ess,
     evaluate_power_factor,
     evaluate_surplus,
     evaluate_tariff_switch,
+    refine_ess_target,
+    refine_targets,
     solar_curve,
     unit_generation_kw,
 )
@@ -72,6 +75,8 @@ STAGE_PARTS: dict[str, tuple[str, ...]] = {
         "7.2 계약전력 조정",
         "7.3 경제성DR",
         "7.4 역률 개선",
+        "7.6 ESS 목표 곡선",
+        "7.6 ESS 목표 정밀화",
         "7.6 ESS",
         "7.7 잉여 활용",
     ),
@@ -161,6 +166,35 @@ def run() -> BenchmarkResult:
             usage, table, SELECTION, baseline=baseline, quality=quality, options=options
         )
     result.notes.append("7.5 태양광은 위의 「PV 용량 곡선」이 그 자리다.")
+    # **목표를 고르는 두 걸음을 함께 잰다** (40세션). 개략 곡선은 싸고
+    # (159점 0.26초) 정밀화는 비싸다 (21점에 요금 재계산 21번). 재지 않으면
+    # 진행률 가중치가 실제와 어긋나 막대가 그 구간에서 멈춘 것처럼 보인다.
+    with measure(result, "7.6 ESS 목표 곡선", detail="159점 개략"):
+        ess_curve = ess_target_curve(
+            usage.kw,
+            usage.meta.interval_minutes,
+            baseline_demand_kw=baseline.billing_demand_kw,
+            base_fee_won_per_kw=float(table.rates(SELECTION).base_won_per_kw),
+        )
+    with measure(
+        result,
+        "7.6 ESS 목표 정밀화",
+        detail=f"{len(refine_targets(ess_curve))}점 요금 재계산",
+    ):
+        optimum = refine_ess_target(
+            usage,
+            table,
+            SELECTION,
+            curve=ess_curve,
+            baseline=baseline,
+            quality=quality,
+            options=options,
+        )
+    result.notes.append(
+        f"ESS 목표 — 개략 {ess_curve.best.target_kw:,.0f} kW → 정밀화 {optimum.target_kw:,.0f} kW"
+        if ess_curve.best is not None
+        else "ESS 목표를 찾지 못했다."
+    )
     target = baseline.billing_demand_kw * 0.9
     with measure(result, "7.6 ESS", detail=f"목표 {target:,.0f} kW"):
         evaluate_ess(

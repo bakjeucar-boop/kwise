@@ -1615,7 +1615,8 @@ def test_ESS_는_그림_하나로_고른다(ess_screen: AppTest) -> None:
     assert not ess_screen.exception, ess_screen.exception
     assert len(ess_screen.get("vega_lite_chart")) >= 1, "회수기간 곡선이 없습니다."
     body = " ".join(str(item.value) for item in ess_screen.caption)
-    assert "용량별 회수기간" in body
+    # **곡선과 표식이 다른 것을 잰다는 사실이 캡션에 있다** (40세션 2-2).
+    assert "개략 산정" in body and "요금을 다시 계산해 고른" in body
     for banned in ("가장 유리한 목표는", "조달", "왼쪽은 최소 규모", "표의 출력·정격 용량"):
         assert banned not in body, banned
     # 목표 선택 표가 없다 — 사양은 아래 지표 카드가 낸다.

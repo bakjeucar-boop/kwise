@@ -24,6 +24,7 @@ from kwise.measures import (
     CapacityVerdict,
     DispatchResult,
     EssTargetCurve,
+    EssTargetPoint,
     PowerFactorResult,
     SolarCurve,
     SolarPoint,
@@ -41,6 +42,7 @@ __all__ = [
     "CAPACITY_ROWS",
     "CAPACITY_WINDOW",
     "DAY_TYPE_LABELS",
+    "ESS_PAYBACK_AXIS",
     "MONTHLY_CHARGE_PARTS",
     "TARIFF_PARTS",
     "band_frame",
@@ -49,6 +51,8 @@ __all__ = [
     "daily_usage_frame",
     "dr_daily_frame",
     "ess_day_frame",
+    "ess_marker_point",
+    "ess_target_caption",
     "ess_target_frame",
     "hourly_profile_frame",
     "month_labels",
@@ -374,6 +378,48 @@ def ess_target_frame(curve: EssTargetCurve) -> pd.DataFrame:
     frame = curve.frame()
     priced = frame[frame["회수기간(년)"].notna()].reset_index(drop=True)
     return _capacity_window(priced, curve)
+
+
+#: 회수기간 곡선의 y축 이름 (40세션 2-3). **화면과 PPT 가 같은 이름을 쓴다** —
+#: 곡선 값이 개략치라는 사실을 축이 먼저 말해야 하고, 두 산출물이 다른 이름을
+#: 달면 나란히 놓았을 때 다른 값을 그린 줄 알게 된다.
+ESS_PAYBACK_AXIS = "회수기간 (개략, 년)"
+
+
+def ess_marker_point(
+    curve: EssTargetCurve, marker_target_kw: float | None
+) -> EssTargetPoint | None:
+    """표식을 찍을 점 (40세션 2-1).
+
+    **곡선의 최소가 아니라 요금을 다시 계산해 고른 목표다.** 둘이 다른 자료가
+    있고(C3·C5) 그것이 사실이므로 숨기지 않는다. 정밀화 격자가 곡선 격자와 같아
+    그 목표는 언제나 곡선 위에 있다 — 표식이 선 밖에 뜨지 않는다.
+    """
+    if marker_target_kw is None:
+        return curve.best
+    return next(
+        (point for point in curve.points if point.target_kw == marker_target_kw), curve.best
+    )
+
+
+def ess_target_caption(curve: EssTargetCurve, optimum: object = None) -> str:
+    """곡선 아래 한 줄 (40세션 2-2).
+
+    **곡선과 표식이 다른 것을 재는 값이라는 사실을 적는다.** 곡선은 목표를
+    고르는 개략 산정이고, 표식은 그 목표에서 요금을 다시 계산해 고른 실제
+    최적이다. 둘이 다른 자리에 있으면 그 사실까지 적는다 — 그림이 자기모순으로
+    보이는 편보다 낫다.
+    """
+    head = "곡선은 개략 산정이고, 표식은 요금을 다시 계산해 고른 실제 최적 지점입니다."
+    moved = bool(getattr(optimum, "moved", False))
+    if not moved or curve.best is None:
+        return head
+    shift = float(getattr(optimum, "shift_kw", 0.0))
+    direction = "높은" if shift > 0 else "낮은"
+    return (
+        f"{head} 개략 최소는 {curve.best.target_kw:,.0f} kW 이지만 실제 최적은 "
+        f"{abs(shift):,.0f} kW {direction} 쪽입니다."
+    )
 
 
 def _capacity_window(frame: pd.DataFrame, curve: EssTargetCurve) -> pd.DataFrame:

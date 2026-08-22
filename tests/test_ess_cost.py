@@ -18,6 +18,7 @@ from kwise.io import UsageData
 from kwise.measures import (
     EssCostInput,
     EssCostReferenceError,
+    EssOptimum,
     EssResult,
     EssTargetCurve,
     analyze_peak_excess,
@@ -32,6 +33,9 @@ from kwise.measures import (
     load_ess_cost_reference,
     peak_days_by_season,
     reference_table,
+    refine_ess_target,
+    refine_targets,
+    refine_window_kw,
     required_discharge_hours,
 )
 from kwise.measures.ess_cost import load_ess_cost_model, reference_data_path
@@ -39,9 +43,11 @@ from kwise.notices import texts
 from kwise.quality import QualityReport
 from kwise.report import frames
 from kwise.report.frames import CAPACITY_WINDOW, ess_target_frame
-from kwise.tariff import BillingResult, TariffTable
+from kwise.tariff import BillingResult, TariffSelection, TariffTable
 
 from .conftest import SAMPLE_SELECTION
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 TARGET_KW = 5_200.0  # 부록 B 초과 분석 표의 첫 줄
 
@@ -732,3 +738,313 @@ def test_잘못된_입력을_막는다(sample_usage: UsageData) -> None:
             base_fee_won_per_kw=7_220.0,
             search_ratio=1.5,
         )
+
+
+# ===================================================================== 40세션 · 최적점 정밀화
+#
+# **개략 곡선이 고른 점은 실제 최적이 아닐 수 있다** (39세션 조사). 여기서
+# 지키는 것은 넷이다.
+#
+#     ① 정밀화가 39세션 전수 조사의 참 최소를 맞힌다 (자료 일곱)
+#     ② 브래킷(±100 kW)이 그 참 최소를 담는다
+#     ③ 창 가장자리에서 잡히면 넓혀 다시 찾는다
+#     ④ 샘플 목표가 5,170 kW 그대로다 — 회귀값이 흔들리지 않는다
+
+
+#: 39세션이 159점 전수로 밝힌 **카드 기준 참 최소.**
+#:
+#: 곡선은 셋을 생략한다 — 전력량요금·차익거래를 빼고, 기본요금 절감을 12개월
+#: 내내 최대 폭으로 얻는다고 보며, 투자비를 정격이 아닌 내보낼 에너지로 매긴다.
+#: 그 셋이 목표마다 다른 크기로 어긋나 **최소가 놓인 자리 자체가 옮겨 간다.**
+CARD_BASIS_OPTIMUM: dict[str, float] = {
+    "샘플": 5_170.0,
+    "C1": 5_170.0,
+    "C2": 5_170.0,
+    "C3": 3_010.0,  # 곡선 3,000 → 정격 +88.9 kWh (+60%) · 투자 +8,751만원
+    "C4": 5_170.0,
+    "C5": 5_960.0,  # 곡선 5,940 → 정격 +35.0 kWh (+17%) · 투자 +4,158만원
+}
+
+
+def _case_material(
+    path: Path, selection: TariffSelection, tariff: TariffTable
+) -> tuple[object, ...]:
+    """케이스 하나의 재료. **케이스 스터디와 같은 계약전력 가정을 쓴다.**"""
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.io import load_usage
+    from kwise.quality import check_quality
+    from kwise.report.casestudy import CONTRACT_MARGIN
+
+    usage = load_usage(path)
+    quality = check_quality(usage)
+    diag = diagnose(
+        usage,
+        tariff,
+        ContractInfo(selection, contract_kw=float(usage.kw.max()) * CONTRACT_MARGIN),
+        quality=quality,
+    )
+    assert diag.structure is not None
+    curve = ess_target_curve(
+        usage.kw,
+        usage.meta.interval_minutes,
+        baseline_demand_kw=diag.peak.billing_demand_kw,
+        base_fee_won_per_kw=float(tariff.rates(selection).base_won_per_kw),
+    )
+    return usage, quality, diag.structure.bill, curve
+
+
+@pytest.fixture(scope="module")
+def sample_optimum(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    sample_bill: BillingResult,
+    tariff: TariffTable,
+    target_curve: EssTargetCurve,
+) -> EssOptimum:
+    return refine_ess_target(
+        sample_usage,
+        tariff,
+        SAMPLE_SELECTION,
+        curve=target_curve,
+        baseline=sample_bill,
+        quality=sample_report,
+    )
+
+
+def test_최적점을_카드_기준으로_다시_고른다(sample_optimum: EssOptimum) -> None:
+    """**개략 곡선의 선택을 그대로 쓰지 않는다** (40세션 1절).
+
+    카드 기준이란 :func:`evaluate_ess` 와 같은 산식이다 — 디스패치를 돌려 요금을
+    처음부터 다시 계산하고, 투자비는 왕복효율·DoD 를 반영한 정격 용량으로 매긴다.
+    """
+    assert sample_optimum.target_kw == CARD_BASIS_OPTIMUM["샘플"]
+    assert sample_optimum.payback_years is not None
+    # 샘플은 개략 곡선과 같은 자리다 — **회귀값이 흔들리지 않는다.**
+    assert sample_optimum.curve_target_kw == 5_170.0
+    assert not sample_optimum.moved
+    assert sample_optimum.shift_kw == 0.0
+
+
+def test_정밀화_회수기간이_카드와_같다(
+    sample_optimum: EssOptimum,
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    sample_bill: BillingResult,
+    tariff: TariffTable,
+) -> None:
+    """**같은 산식이어야 고른 값이 뜻을 갖는다.**
+
+    차익거래·전망단가는 회수기간에 들어가지 않으므로 정밀화에서도 뺀다 — 뺀
+    만큼 값이 달라지면 안 된다.
+    """
+    card = evaluate_ess(
+        sample_usage,
+        tariff,
+        SAMPLE_SELECTION,
+        target_kw=sample_optimum.target_kw,
+        cost=EssCostInput.unpriced(),
+        baseline=sample_bill,
+        quality=sample_report,
+    )
+    assert card.payback_years is not None and sample_optimum.payback_years is not None
+    assert sample_optimum.payback_years == pytest.approx(card.payback_years, abs=1e-6)
+
+
+def test_정밀화_격자가_곡선_격자와_같다(
+    sample_optimum: EssOptimum, target_curve: EssTargetCurve
+) -> None:
+    """**표식이 곡선 위에 찍혀야 한다** (40세션 1-1).
+
+    곡선에 없는 자리를 고르면 표식이 선 밖에 뜬다. 1 kW 격자라면 샘플에서
+    5,175 kW·30.35년(−0.40년·정격 −15%)을 더 찾지만, 그 값을 쓰려면 곡선 전체를
+    1 kW 로 다시 그려야 한다 (201점 84초).
+    """
+    targets = {point.target_kw for point in target_curve.points}
+    assert sample_optimum.target_kw in targets
+    for point in sample_optimum.points:
+        assert point.target_kw in targets
+
+
+def test_브래킷이_참_최소를_담는다(tariff: TariffTable) -> None:
+    """**±100 kW 라는 폭이 옳은지 자료로 확인한다** (40세션 1-2).
+
+    39세션 전수 조사에서 일곱 자료의 참 최소가 모두 개략 최적의 ±20 kW 안에
+    있었고, 그 네 배를 창으로 잡았다. 이 시험이 그 근거를 못박는다.
+    """
+    from kwise.report.casestudy import build_case_definitions
+
+    directory = PROJECT_ROOT / "input" / "cases"
+    if not directory.is_dir():
+        pytest.skip(f"케이스 파일이 없습니다: {directory}")
+    for definition in build_case_definitions(directory):
+        truth = CARD_BASIS_OPTIMUM.get(definition.key)
+        if truth is None:
+            continue
+        _usage, _quality, _bill, curve = _case_material(
+            definition.usage_path, definition.selection, tariff
+        )
+        assert curve.best is not None
+        window = refine_window_kw()
+        assert abs(truth - curve.best.target_kw) <= window, (
+            f"{definition.key}: 참 최소 {truth:,.0f} kW 가 개략 최적 "
+            f"{curve.best.target_kw:,.0f} kW 의 ±{window:,.0f} kW 밖입니다."
+        )
+        assert truth in refine_targets(curve)
+
+
+@pytest.mark.parametrize("key", ["C3", "C5"])
+def test_최소가_옮겨_가는_케이스(key: str, tariff: TariffTable) -> None:
+    """**곡선이 다른 자리를 고르는 자료가 실제로 있다** (39세션 조사).
+
+    회수기간 손해는 2.4%·1.1%로 작지만 **사양 손해가 크다** — C3 는 정격이
+    60% 크고 투자비가 8,751만원 더 든다. 고객이 사는 것은 배터리이지 회수기간이
+    아니다.
+    """
+    from kwise.report.casestudy import build_case_definitions
+
+    directory = PROJECT_ROOT / "input" / "cases"
+    if not directory.is_dir():
+        pytest.skip(f"케이스 파일이 없습니다: {directory}")
+    definition = next(item for item in build_case_definitions(directory) if item.key == key)
+    usage, quality, bill, curve = _case_material(
+        definition.usage_path, definition.selection, tariff
+    )
+    optimum = refine_ess_target(
+        usage,  # type: ignore[arg-type]
+        tariff,
+        definition.selection,
+        curve=curve,  # type: ignore[arg-type]
+        baseline=bill,  # type: ignore[arg-type]
+        quality=quality,  # type: ignore[arg-type]
+    )
+    assert optimum.target_kw == CARD_BASIS_OPTIMUM[key]
+    assert optimum.moved, "이 케이스는 곡선과 다른 자리를 골라야 한다."
+    assert optimum.curve_target_kw != optimum.target_kw
+
+
+def _c3_material(tariff: TariffTable) -> tuple[object, ...]:
+    """C3 평탄형. **곡선과 실제 최적이 10 kW 어긋나는 자료다.**"""
+    from kwise.report.casestudy import build_case_definitions
+
+    directory = PROJECT_ROOT / "input" / "cases"
+    if not directory.is_dir():
+        pytest.skip(f"케이스 파일이 없습니다: {directory}")
+    definition = next(item for item in build_case_definitions(directory) if item.key == "C3")
+    return (*_case_material(definition.usage_path, definition.selection, tariff), definition)
+
+
+def test_창_가장자리면_넓혀_다시_찾는다(tariff: TariffTable) -> None:
+    """**창이 좁으면 조용히 틀린다** (40세션 1-2).
+
+    C3 는 곡선이 3,000 kW 를, 실제는 3,010 kW 를 고르는 자료다. 창을 10 kW 로
+    좁히면 최소가 한쪽 끝(3,010)에서 잡히므로 넓혀 다시 훑어야 한다.
+    """
+    usage, quality, bill, curve, definition = _c3_material(tariff)
+    narrow = refine_ess_target(
+        usage,  # type: ignore[arg-type]
+        tariff,
+        definition.selection,  # type: ignore[attr-defined]
+        curve=curve,  # type: ignore[arg-type]
+        baseline=bill,  # type: ignore[arg-type]
+        quality=quality,  # type: ignore[arg-type]
+        window_kw=10.0,
+        max_widen=4,
+    )
+    assert narrow.target_kw == CARD_BASIS_OPTIMUM["C3"]
+    assert narrow.window_kw > 10.0, "가장자리에서 잡혔으면 창을 넓혀야 한다."
+    assert narrow.widened >= 1
+    assert not narrow.at_edge, "넓히고 나면 가장자리가 아니어야 한다."
+
+
+def test_넓히고도_가장자리면_경고를_남긴다(tariff: TariffTable) -> None:
+    """**조용히 자르지 않는다.** 자른 채 두면 「그 자리가 최적」 으로 읽힌다."""
+    usage, quality, bill, curve, definition = _c3_material(tariff)
+    stuck = refine_ess_target(
+        usage,  # type: ignore[arg-type]
+        tariff,
+        definition.selection,  # type: ignore[attr-defined]
+        curve=curve,  # type: ignore[arg-type]
+        baseline=bill,  # type: ignore[arg-type]
+        quality=quality,  # type: ignore[arg-type]
+        window_kw=10.0,
+        max_widen=0,
+    )
+    assert stuck.at_edge
+    assert stuck.widened == 0
+    facts = {notice.fact for notice in stuck.notices}
+    assert "ess.refine_at_edge" in facts
+
+
+def test_절감액이_없으면_곡선의_선택을_그대로_쓴다(
+    sample_usage: UsageData, tariff: TariffTable, target_curve: EssTargetCurve
+) -> None:
+    """야간 피크형처럼 **카드 기준 회수기간이 아예 안 나오는 자료**가 있다 (C6).
+
+    그때는 개략 곡선의 선택을 그대로 쓰고 그 사실을 적는다 — 목표가 사라지면
+    ESS 행이 통째로 빠진다.
+    """
+    from dataclasses import replace
+
+    # 회수기간이 나올 수 없게 기본요금단가를 0 으로 둔 곡선
+    flat = ess_target_curve(
+        sample_usage.kw,
+        15,
+        baseline_demand_kw=5_293.44,
+        base_fee_won_per_kw=0.0,
+    )
+    assert flat.best is None
+    empty = refine_ess_target(sample_usage, tariff, SAMPLE_SELECTION, curve=flat)
+    assert empty.target_kw == 0.0
+    assert empty.payback_years is None
+    assert replace(target_curve, best=None).best is None
+
+
+def test_표식이_카드_기준_최적점에_찍힌다(target_curve: EssTargetCurve) -> None:
+    """**곡선의 최소가 아닌 자리에 찍힐 수 있다. 그것이 사실이다** (40세션 2-1)."""
+    from kwise.report.frames import ess_marker_point
+
+    other = next(point for point in target_curve.points if point.target_kw == 5_180.0)
+    assert ess_marker_point(target_curve, 5_180.0) is other
+    # 목표를 주지 않으면 곡선의 선택으로 물러선다 (옛 동작).
+    assert ess_marker_point(target_curve, None) is target_curve.best
+
+
+def test_캡션이_곡선과_표식의_차이를_적는다(target_curve: EssTargetCurve) -> None:
+    """**그림이 자기모순으로 보이면 안 된다** (40세션 2-2)."""
+    from kwise.report.frames import ess_target_caption
+
+    assert target_curve.best is not None
+    moved = EssOptimum(
+        target_kw=target_curve.best.target_kw + 20.0,
+        payback_years=30.0,
+        curve_target_kw=target_curve.best.target_kw,
+        window_kw=100.0,
+        widened=0,
+        at_edge=False,
+    )
+    text = ess_target_caption(target_curve, moved)
+    assert "개략" in text and "다시 계산" in text
+    assert f"{target_curve.best.target_kw:,.0f} kW" in text
+    assert "20 kW" in text
+
+    same = replace_optimum(moved, target_kw=target_curve.best.target_kw)
+    plain = ess_target_caption(target_curve, same)
+    assert "개략" in plain
+    assert "이지만 실제 최적은" not in plain
+
+
+def replace_optimum(optimum: EssOptimum, **changes: object) -> EssOptimum:
+    from dataclasses import replace
+
+    return replace(optimum, **changes)  # type: ignore[arg-type]
+
+
+def test_축_이름이_개략임을_밝힌다() -> None:
+    """**축이 먼저 말한다** (40세션 2-3). 화면과 PPT 가 같은 이름을 쓴다."""
+    from kwise.report.frames import ESS_PAYBACK_AXIS
+    from kwise.ui.charts import ESS_PAYBACK_AXIS as SCREEN_AXIS
+
+    assert "개략" in ESS_PAYBACK_AXIS
+    assert SCREEN_AXIS is ESS_PAYBACK_AXIS
+    source = (PROJECT_ROOT / "src" / "kwise" / "report" / "figures.py").read_text(encoding="utf-8")
+    assert "ESS_PAYBACK_AXIS" in source, "PPT 도 같은 축 이름을 써야 한다."
