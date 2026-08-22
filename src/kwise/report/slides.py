@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import datetime as dt
 import io
+import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -449,9 +450,28 @@ def _title(slide: Slide, guide: DesignGuide, text: str) -> float:
     return geometry.margin_in + height + geometry.title_gap_in
 
 
-#: 해석 한 줄이 차지하는 높이 (in). **두 줄까지 흐른다** — 판정과 근거 숫자를
-#: 함께 적으면 한 줄에 안 들어가는 자리가 있어 넉넉히 잡는다.
-_LEAD_HEIGHT = 0.74
+#: 본문 한 줄이 차지하는 높이 (in). 글자 크기가 아니라 **줄 간격**이다.
+_LINE_HEIGHT = 0.28
+
+#: 글 덩어리 아래에 두는 숨 (in).
+_TEXT_GAP = 0.16
+
+
+def _wrapped_height(text: str, guide: DesignGuide, *, width: float, size: float) -> float:
+    """글이 차지할 높이 (in) — **줄 수를 세어 잡는다** (39세션 7절).
+
+    해석 한 줄과 결론 한 줄이 붙으면서 두 줄로 흐르는 자리가 생겼다. 높이를
+    한 줄로 고정해 두면 넘친 줄이 아래 지표 라벨과 겹친다 — 경제성DR 장이
+    그랬다. 폭으로 재어 그만큼 내려 준다.
+
+    **넉넉히 잡는다** (:data:`_WIDE_GLYPH` 와 같은 이유). 좁게 잡아 빈자리가
+    남는 편이 겹치는 것보다 낫다.
+    """
+    if not text or width <= 0:
+        return 0.0
+    lines = max(1, math.ceil(_text_width_in(text, size) / width))
+    return _LINE_HEIGHT * min(lines, 3) + _TEXT_GAP
+
 
 #: 용어 풀이 각주가 차지하는 높이 (in). 본문 높이에서 미리 뺀다.
 #: **두 줄까지 흐른다** — 용어 셋의 산식이 한 줄에 다 앉지 않는 장이 있다.
@@ -470,6 +490,8 @@ def _lead(slide: Slide, guide: DesignGuide, text: str, *, top: float) -> float:
     if not text:
         return top
     geometry = guide.slide
+    size = guide.type_scale.body
+    height = _wrapped_height(text, guide, width=geometry.content_width_in, size=size)
     _text(
         slide,
         guide,
@@ -477,11 +499,11 @@ def _lead(slide: Slide, guide: DesignGuide, text: str, *, top: float) -> float:
         left=geometry.margin_in,
         top=top,
         width=geometry.content_width_in,
-        height=_LEAD_HEIGHT,
-        size=guide.type_scale.body,
+        height=height,
+        size=size,
         color=guide.colors.ink,
     )
-    return top + _LEAD_HEIGHT
+    return top + height
 
 
 def _note(slide: Slide, guide: DesignGuide, *lines: str) -> None:
@@ -1380,6 +1402,10 @@ def _build_measure(
     assert spec.measure is not None
     entry: MeasureEntry = sections.measures[spec.measure]
     top = _title(slide, guide, measure_slide_title(entry))
+    # **결론도 줄 수를 세어 자리를 잡는다** (39세션 7절). 0.4in 로 못박아 두어
+    # 두 줄짜리 결론이 아래 지표 라벨과 겹쳤다 — 경제성DR 장이 그랬다.
+    size = guide.type_scale.body
+    lead = _wrapped_height(entry.conclusion, guide, width=geometry.content_width_in, size=size)
     _text(
         slide,
         guide,
@@ -1387,12 +1413,12 @@ def _build_measure(
         left=geometry.margin_in,
         top=top,
         width=geometry.content_width_in,
-        height=0.4,
-        size=guide.type_scale.body,
+        height=lead,
+        size=size,
         color=colors.ink,
         bold=True,
     )
-    stats_top = top + 0.52
+    stats_top = top + lead
     bottom = _stats(
         slide,
         guide,
@@ -1588,7 +1614,10 @@ def _build_combination(
 #: 36세션까지는 넘친 줄을 잘라 내고 「자리가 모자라 뺐다」 고 적었는데, 그러면
 #: 선택요금 전환 하나만 실리고 **나머지 여섯이 통째로 빠졌다.** 분석한 자료를
 #: 감출 이유가 없다 — 장을 늘린다.
-APPENDIX_ROW_LIMIT = 12
+#:
+#: **열둘에서 열로 줄였다** (39세션 7절). 표 줄 높이는 PowerPoint 에서 최소값일
+#: 뿐이라 실제로는 더 벌어진다 — 열둘을 넣으면 마지막 줄이 각주에 닿았다.
+APPENDIX_ROW_LIMIT = 10
 
 
 @dataclass(frozen=True)
