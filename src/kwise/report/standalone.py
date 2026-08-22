@@ -14,6 +14,10 @@ Word 는 :func:`kwise.report.document.measure_entries` 가 따로 만든다.
 **모든 금액과 수량은 12개월 환산이다** (28세션 3절). 한 칸이라도 기간 값이면
 같은 열에서 기준이 갈라지는데, 표에는 그 사실을 적을 자리가 없다 — 잉여 상계
 수익이 그랬다. 환산은 :func:`standalone_rows` 가 ``base_fee_months`` 로 한다.
+
+**7.7 잉여 활용 줄은 41세션에 빠졌다.** 잉여는 개선안이 아니라 태양광의 결과라
+개선안이 여섯이 됐다 (:mod:`kwise.measures.catalog`). ``surplus`` 인자는 남겨
+두되 표에는 줄을 세우지 않는다 — 부르는 쪽을 한꺼번에 고치지 않아도 되게 한다.
 """
 
 from __future__ import annotations
@@ -24,7 +28,6 @@ import pandas as pd
 
 from kwise import money
 from kwise.measures import (
-    OFFSET_SCENARIO,
     Certainty,
     ContractAdjustment,
     DemandResponseResult,
@@ -34,7 +37,6 @@ from kwise.measures import (
     SolarPoint,
     SurplusResult,
     TariffSwitchResult,
-    annualize,
     measure_kind,
 )
 from kwise.report.columns import option_label
@@ -117,11 +119,13 @@ def standalone_rows(
     """켠 수단을 **7장 순서 그대로** 한 줄씩. 계산하지 않고 옮기기만 한다.
 
     Args:
-        base_fee_months: 기간을 12개월로 환산하는 데 쓴다 (28세션 3절). **잉여를
-            넣으면 필수다** — 상계 수익만 기간 값이라 이것 없이는 다른 줄과 기준이
-            갈라진다. 기본값을 두지 않는 것은 ``contract_floor_ratio`` 와 같은
-            이유다 (5세션) — 지어낸 가정으로 만든 금액을 누군가 근거로 쓴다.
+        surplus: **41세션부터 쓰이지 않는다.** 잉여는 개선안이 아니라 태양광의
+            결과라 표에서 줄이 빠졌다. 부르는 쪽이 그대로 넘겨도 되게 남겨 둔다.
+        base_fee_months: 기간을 12개월로 환산하는 데 쓴다 (28세션 3절). 기본값을
+            두지 않는 것은 ``contract_floor_ratio`` 와 같은 이유다 (5세션) —
+            지어낸 가정으로 만든 금액을 누군가 근거로 쓴다.
     """
+    del surplus, base_fee_months  # 41세션에 잉여 줄이 빠지면서 함께 쓰이지 않는다
     rows: list[StandaloneRow] = []
 
     if switch is not None:
@@ -201,34 +205,8 @@ def standalone_rows(
                 certainty=ess.certainty,
             )
         )
-    if surplus is not None:
-        if base_fee_months is None:
-            raise ValueError(
-                "잉여 상계 수익은 기간 값입니다. 12개월로 환산하려면 "
-                "base_fee_months 를 주십시오 (28세션 3절)."
-            )
-        offset = surplus.scenario(OFFSET_SCENARIO)
-        # **기간 값을 12개월로 환산한다** (28세션 3절). 26세션이 남긴 미해결이다 —
-        # 이 한 칸만 기간 기준이라 열 이름(「연간 절감액」)이 거짓말을 하고 있었다.
-        # 수량(MWh)도 같은 이유로 함께 환산한다.
-        rows.append(
-            StandaloneRow(
-                kind=measure_kind("surplus"),
-                # 발전·잉여 에너지는 MWh 로 적는다 (26세션 3-3). kWh 는 자릿수가 크다.
-                reduction=(
-                    f"{annualize(surplus.total_kwh, base_fee_months) / 1000.0:,.1f} MWh 상계"
-                ),
-                annual_saving_won=(
-                    None
-                    if offset.revenue_won is None
-                    else annualize(offset.revenue_won, base_fee_months)
-                ),
-                investment_won=0.0,
-                payback_years=0.0 if offset.is_priced else None,
-                certainty=Certainty.MEDIUM_LOW,
-                saving_reason=offset.basis,
-            )
-        )
+    # **7.7 잉여 활용을 41세션에 뺐다.** 개선안이 아니라 태양광의 결과다 —
+    # 상계 수익은 태양광 카드 안에서 낸다 (:mod:`kwise.measures.surplus`).
     return tuple(rows)
 
 

@@ -1512,20 +1512,24 @@ def test_비교_화면은_요약이_먼저다(compare_app: AppTest) -> None:
 # ======================================================== 14세션 · 2단계 독립 평가
 
 
-def test_잉여_활용_카드는_태양광이_없어도_열린다() -> None:
-    """**다른 카드 때문에 비활성이 되는 카드는 없다** (14세션 2-3).
+def test_잉여_활용_카드가_없고_개선안이_여섯이다() -> None:
+    """**41세션에 7.7 을 없앴다.** 잉여는 개선안이 아니라 태양광의 결과다.
 
-    태양광을 켜지 않으면 잉여가 0 인 것이지 검토할 수 없는 것이 아니다.
-    잠그면 "쓸 수 없는 수단" 으로 읽힌다.
+    14세션 2-3 의 「다른 카드 때문에 비활성이 되지 않는다」 는 그대로다 — 다만
+    잉여는 이제 카드가 아니므로 잠글 카드도 없다. 태양광 카드가 잉여가 0 이라는
+    사실을 「잉여 없는 최대 용량」 으로 낸다 (:func:`_surplus_verdict`).
     """
-    screen = _running(nav_page="2단계 · 개선 수단", measure_on_surplus=True)
+    from kwise.measures import MEASURE_CATALOG
+    from kwise.ui.spec import MEASURES
+
+    assert len(MEASURE_CATALOG) == 6
+    assert "surplus" not in [item.key for item in MEASURE_CATALOG]
+    assert "surplus" not in [item.key for item in MEASURES]
+
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_solar=True)
     assert not screen.exception, screen.exception
-    body = " ".join(str(item.value) for item in screen.markdown)
-    assert "태양광을 켜지 않아 잉여가 0 입니다." in body
-    # 입력이 잠기지 않는다 — 단가는 그대로 받는다.
-    assert any("잉여 판매 단가" in str(item.label) for item in screen.number_input)
-    # **잉여량 지표는 7.5 로 옮겼다** (26세션 3-2). 같은 사실을 두 카드에 두지 않는다.
-    assert not [item for item in screen.metric if str(item.label) == "잉여 전력량"]
+    headings = [str(item.value) for item in screen.markdown]
+    assert not any("잉여 활용" in line for line in headings), headings
 
 
 def test_카드_개요가_결과_위에_나온다() -> None:
@@ -2730,14 +2734,13 @@ def test_잉여_판정이_태양광_카드에_있다() -> None:
     화면이 무엇을 내는지는 소스로, 값이 맞는지는 순수 함수 시험으로 나눠 본다.
     """
     source = (VIEWS / "measures.py").read_text(encoding="utf-8")
-    body = source[source.index("def _surplus_verdict(") : source.index("def _share(")]
+    body = source[source.index("def _surplus_verdict(") : source.index("def _surplus_handling(")]
     for label in ("연간 잉여", "평일 잉여", "토·일·공휴일 잉여", "잉여 없는 최대 용량"):
         assert f'"{label}"' in body, label
-    # 잉여 활용 카드에는 같은 지표가 없다 — 한 곳에만 둔다.
-    start = source.index("def _surplus(")
-    surplus_card = source[start : source.index("# ------", start)]
-    for banned in ('"잉여 전력량"', '"발전량 대비"', '"주말 비중"'):
-        assert banned not in surplus_card, banned
+    # **처리 선택은 그 아래 접힘이다** (41세션 2-2·2-5). 지표를 되풀이하지 않는다.
+    handling = source[source.index("def _surplus_handling(") : source.index("def _surplus_carry(")]
+    for banned in ('"잉여 전력량"', '"발전량 대비"', '"주말 비중"', '"연간 잉여"'):
+        assert banned not in handling, banned
 
 
 def test_잉여가_나지_않는_최대_용량() -> None:
@@ -2862,8 +2865,11 @@ def test_절_번호는_화면에서만_순번이_된다() -> None:
     from kwise.measures import measure_kind
     from kwise.ui.labels import measure_title
 
-    assert measure_kind("surplus").title == "7.7 잉여 활용"
-    assert measure_title("7.7 잉여 활용") == "7. 잉여 활용"
+    # **7.7 은 41세션에 없어졌다** — 마지막 수단이 7.6 ESS 다.
+    with pytest.raises(KeyError):
+        measure_kind("surplus")
+    assert measure_kind("ess").title == "7.6 ESS"
+    assert measure_title("7.6 ESS") == "6. ESS"
     assert measure_title("7.1 선택요금 전환") == "1. 선택요금 전환"
     # 절 번호가 없는 이름은 건드리지 않는다.
     assert measure_title("확실성 등급") == "확실성 등급"
@@ -3228,38 +3234,61 @@ def test_차익거래_잠재값은_화면에_그대로_남는다() -> None:
     assert "이쪽이 상한입니다" in body, body
 
 
-def test_잉여_활용이_0일_때도_지표를_낸다() -> None:
-    """**계약전력 조정과 같은 원칙이다** (31세션 6절).
+def test_잉여가_0이면_처리_선택지가_안_나온다() -> None:
+    """**고를 것이 없는 자리에 선택지를 세우지 않는다** (41세션 2-2).
 
-    태양광을 켜지 않으면 잉여가 0 인데, 27세션까지는 글만 남아 이 카드에 큰 글자
-    숫자가 하나도 없었다 — 「할 일이 없다」 와 「값을 알 수 없다」 는 다르다.
+    31세션은 「할 일이 없다」 와 「값을 알 수 없다」 를 갈라 7.7 카드에 0 지표를
+    세웠다. 41세션에 그 카드가 없어지고 잉여가 태양광 카드로 들어오면서 답이
+    한 자리에 모였다 — 「잉여 없는 최대 용량」 이 「생기려면 얼마가 필요한가」 에
+    답하므로, 0 인데 처리 방식까지 묻는 것은 없는 결정을 만드는 일이다.
     """
-    screen = _running(nav_page="2단계 · 개선 수단", measure_on_surplus=True)
-    assert not screen.exception, screen.exception
-    labels = [label for label, _ in _stage2_metrics(screen)]
-    assert "연간 잉여" in labels, labels
-    value = next(item.value for item in screen.metric if item.label == "연간 잉여")
-    assert str(value).startswith("0.0 MWh"), value
-    body = " ".join(str(item.value) for item in screen.markdown)
-    assert "태양광을 켜지 않아 잉여가 0 입니다." in body
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    handling = source[source.index("def _surplus_handling(") : source.index("def _surplus_carry(")]
+    # 잉여가 0 이면 **아무것도 그리지 않고 돌아간다.**
+    assert "if surplus.total_kwh <= 0:\n        return" in handling, handling
+    # 그 판정이 라디오보다 먼저 온다.
+    assert handling.index("total_kwh <= 0") < handling.index("st.radio"), handling
+    # 0 일 때의 답은 태양광 지표가 낸다.
+    verdict = source[source.index("def _surplus_verdict(") : source.index("def _surplus_handling(")]
+    assert '"잉여 없는 최대 용량"' in verdict
 
 
-def test_잉여_시나리오가_둘이다() -> None:
-    """**버림은 언제나 0원이라 고를 것이 없다** (27세션 7-3)."""
-    from kwise.measures import EXTERNAL_SCENARIO, OFFSET_SCENARIO
+def test_잉여_처리가_셋이고_기본값이_없다() -> None:
+    """**41세션에 「버리기」 를 되살렸다** (2-2).
 
-    assert (OFFSET_SCENARIO, EXTERNAL_SCENARIO) == ("상계거래(한전)", "외부 판매")
-    source = (Path("src") / "kwise" / "measures" / "surplus.py").read_text(encoding="utf-8")
-    assert '"버림"' not in source
-    assert "외부 신재생에너지 구매 연계" not in source
+    27세션은 표에서 뺐다 — 언제나 0원인 줄이라 견주는 데 보탬이 없었다. 41세션에
+    표가 아니라 **고르는 자리**가 되면서 뜻이 달라졌다: 「아무것도 하지 않는다」
+    를 고를 수 없으면 셋 중 하나를 강요하게 된다.
+    """
+    from kwise.measures import (
+        DISCARD_SCENARIO,
+        EXTERNAL_SCENARIO,
+        OFFSET_SCENARIO,
+        surplus_options,
+    )
+
+    assert (OFFSET_SCENARIO, EXTERNAL_SCENARIO, DISCARD_SCENARIO) == (
+        "상계거래(한전)",
+        "외부 판매",
+        "버리기",
+    )
+    assert surplus_options(500.0) == (OFFSET_SCENARIO, EXTERNAL_SCENARIO, DISCARD_SCENARIO)
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    handling = source[source.index("def _surplus_handling(") : source.index("def _surplus_carry(")]
+    # **기본값을 정하지 않는다.** 미리 고르면 그것이 권고로 읽힌다.
+    assert "index=None" in handling, handling
 
 
 def test_잉여_단가_이름이_하나다() -> None:
-    """입력칸과 표가 같은 이름을 쓴다 (27세션 7-2)."""
-    screen = _running(nav_page="2단계 · 개선 수단", measure_on_surplus=True)
-    assert not screen.exception, screen.exception
-    labels = [str(item.label) for item in screen.number_input]
-    assert any("잉여 판매 단가" in label for label in labels), labels
+    """입력칸과 표가 같은 이름을 쓴다 (27세션 7-2).
+
+    **자리는 41세션에 태양광 카드 안으로 옮겼다** — 기본 상태에서는 라디오를
+    고르기 전이라 입력칸이 그려지지 않으므로 소스로 본다.
+    """
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    handling = source[source.index("def _surplus_handling(") : source.index("def _surplus_carry(")]
+    assert '"잉여 판매 단가 (원/kWh) — 0 이면 미산출"' in handling, handling
+    assert '"SMP 단가 (원/kWh) — 0 이면 미산출"' in handling, handling
     from kwise.report.notices import UNPRICED_REASONS
 
     assert "잉여 판매 단가" in UNPRICED_REASONS["external_price"]
@@ -3380,14 +3409,13 @@ def test_투자가_없는_조합은_즉시다() -> None:
 def test_3단계_금액_열이_모두_12개월_환산이다() -> None:
     """**한 칸이라도 기간 값이면 열 이름이 거짓말을 한다** (28세션 3절).
 
-    잉여 상계 수익만 기간 값이었다. 샘플은 정확히 12.00개월이라 환산 계수가
-    1.0 이지만, 짧은 기간 자료에서는 값이 달라진다 — 여기서 그것을 잰다.
+    잉여 상계 수익만 기간 값이었고 28세션이 환산으로 막았다. **41세션에 그 줄
+    자체가 빠졌다** — 잉여는 개선안이 아니라 태양광의 결과라 3단계 표에 서지
+    않는다. 그러므로 이제 잴 것은 「기간 값을 쓰는 줄이 하나도 남지 않았는가」 다.
     """
-    import dataclasses
-
     import pandas as pd
 
-    from kwise.measures import Certainty, SurplusResult, SurplusScenario
+    from kwise.measures import SurplusResult, SurplusScenario
     from kwise.measures.surplus import OFFSET_SCENARIO
     from kwise.report import standalone_rows
 
@@ -3401,20 +3429,15 @@ def test_3단계_금액_열이_모두_12개월_환산이다() -> None:
         holiday_kwh=100.0,
         scenarios=(SurplusScenario(OFFSET_SCENARIO, 600_000.0, "근거", "행정"),),
     )
-    full = standalone_rows(surplus=surplus, base_fee_months=12.0)[0]
-    half = standalone_rows(surplus=surplus, base_fee_months=6.0)[0]
-    assert full.annual_saving_won == pytest.approx(600_000.0)
-    assert half.annual_saving_won == pytest.approx(1_200_000.0), "환산이 걸리지 않았습니다."
-    assert "2.4 MWh 상계" in half.reduction
-    assert full.certainty is Certainty.MEDIUM_LOW
-    # **기준을 모르면 만들지 않는다.** 기본값을 두면 지어낸 가정이 금액이 된다.
-    with pytest.raises(ValueError, match="base_fee_months"):
-        standalone_rows(surplus=surplus)
-    # 다른 수단은 이미 12개월 환산이다 — 기간 값을 쓰는 줄이 남아 있지 않다.
+    # 넘겨도 줄이 서지 않는다 — 부르는 쪽을 한꺼번에 고치지 않아도 되게 남겨 뒀다.
+    assert standalone_rows(surplus=surplus, base_fee_months=12.0) == ()
+    assert standalone_rows(surplus=surplus) == ()
+
+    # 기간 값을 쓰는 줄이 남아 있지 않다.
     source = (Path("src") / "kwise" / "report" / "standalone.py").read_text(encoding="utf-8")
     body = source[source.index("def standalone_rows(") : source.index("def simple_sum_won(")]
     assert "period_" not in body, "기간 값을 쓰는 줄이 있습니다."
-    assert dataclasses.is_dataclass(surplus)
+    assert "annualize(" not in body, "환산이 필요한 줄이 남아 있습니다."
 
 
 def test_확실성이_화면에_없다(screen_lines: tuple[object, ...]) -> None:
@@ -3440,14 +3463,15 @@ def test_조합_차트가_색으로_등급을_나누지_않는다() -> None:
 def test_28세션_중복_셋이_사라졌다() -> None:
     """25세션 도구로 다시 세어 골라낸 셋이다 (28세션 6절)."""
     from kwise.measures import ELIGIBILITY_NOTICE
-    from kwise.ui.spec import measure
+    from kwise.ui.spec import MEASURES
 
     compare_source = (VIEWS / "compare.py").read_text(encoding="utf-8")
     # ② 조합 구성 캡션 — 바로 아래 「합산효과에 넣지 않은 수단」 이 이름까지 적는다.
     assert compare_source.count("요금이 아니라 별도 정산") == 1
-    # ③ 잉여 카드 개요 — 같은 문장이 아래 자격요건 안내에 있다.
-    overview = measure("surplus").overview
-    assert "자격요건" not in overview, overview
+    # ③ 잉여 개요 — 같은 문장이 아래 자격요건 안내에 있었다. **41세션에 7.7
+    # 카드가 없어지면서 개요 자체가 사라졌다** — 중복이 구조로 풀린 경우다.
+    assert "surplus" not in {item.key for item in MEASURES}
+    assert all("자격요건" not in item.overview for item in MEASURES)
     assert "자격요건" in ELIGIBILITY_NOTICE
     # ① 감도 목록 두 줄 (「절감액」 과 「12개월 환산 절감액」) — 목록이 사라졌다.
     assert 'st.expander("지표별 감도 범위"' not in compare_source

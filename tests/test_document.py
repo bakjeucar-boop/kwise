@@ -547,6 +547,8 @@ def test_화면과_보고서가_같은_수단_목록을_본다() -> None:
     from kwise.ui.spec import MEASURES
 
     assert [item.kind for item in MEASURES] == list(MEASURE_CATALOG)
+    # **7.7 잉여 활용은 41세션에 빠졌다** — 개선안이 아니라 태양광의 결과다.
+    # 번호는 밀지 않는다 (:mod:`kwise.measures.catalog`).
     assert [item.number for item in MEASURE_CATALOG] == [
         "7.1",
         "7.2",
@@ -554,7 +556,6 @@ def test_화면과_보고서가_같은_수단_목록을_본다() -> None:
         "7.4",
         "7.5",
         "7.6",
-        "7.7",
     ]
 
 

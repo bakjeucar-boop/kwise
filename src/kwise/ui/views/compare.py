@@ -660,6 +660,7 @@ class _MeasureResults:
             power_factor=self.power_factor,
             ess=self.ess,
             solar=self.solar,
+            surplus=self.surplus,
         )
 
     def shown_facts(self) -> frozenset[str]:
@@ -848,10 +849,10 @@ def _measure_results(
             measure_float("ess", "per_kwh_cost"),
         )
 
-    # 7.7 — **태양광이 없으면 잉여도 없다.** 카드는 그 사실만 적고 열려 있으므로
-    # (14세션 2-3) 여기서도 계산할 것이 없다.
+    # **잉여는 태양광의 결과다** (41세션 2절). 7.7 개선안이 없어졌으므로 켜짐
+    # 여부도 태양광을 따른다 — 태양광이 없으면 잉여도 없다.
     surplus = None
-    if "surplus" in enabled and inputs is not None and unit_profile is not None:
+    if "solar" in enabled and inputs is not None and unit_profile is not None:
         capacity = inputs.resolved_capacity_kwp()
         if capacity > 0:
             surplus = cached_surplus(
@@ -861,8 +862,9 @@ def _measure_results(
                 token,
                 form,
                 capacity,
-                measure_float("surplus", "price"),
+                measure_float("solar", "surplus_price"),
                 stamp,
+                measure_float("solar", "smp_price"),
             )
 
     # 보고서 차트 재료. **화면과 같은 대표일·같은 프로파일을 넘긴다** (15세션 2절).

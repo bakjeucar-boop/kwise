@@ -28,17 +28,21 @@ from kwise.diagnose import Diagnosis, default_margin_ratio, margin_range
 from kwise.diagnose.dr import dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData
 from kwise.measures import (
-    ELIGIBILITY_NOTICE,
+    EXTERNAL_SCENARIO,
+    OFFSET_SCENARIO,
     SolarPoint,
+    SurplusResult,
     annualize,
     apply_generation,
     default_target_pct,
     evaluate_demand_response,
     high_rate_discharge_hours,
     load_ess_cost_model,
+    offset_settles_cash,
     power_factor_floor_pct,
     refine_targets,
     surplus_free_capacity_kwp,
+    surplus_options,
 )
 from kwise.measures.demand_response import DemandResponseResult
 from kwise.notices import Notice, basis, tooltip
@@ -198,7 +202,6 @@ _ICONS: dict[str, str] = {
     "power_factor": "🔌",
     "solar": "☀",
     "ess": "🔋",
-    "surplus": "♻",
 }
 
 
@@ -970,7 +973,8 @@ def _solar(
     # **판단의 갈림길은 잉여다** (26세션 3절). 회수기간 최소만으로는 정할 수 없다 —
     # 잉여를 내면 상계거래 계약과 역송 계량기가 따라오므로, 「잉여 없이 어디까지」 와
     # 「지금 용량이면 얼마나 남는가」 를 나란히 둔다.
-    _surplus_verdict(usage, table, form, unit_profile, point, months, presets)
+    surplus = _surplus_verdict(usage, table, form, unit_profile, point, months, presets)
+    _surplus_handling(usage, table, form, unit_profile, point, months, surplus)
 
     # **대표 지점을 표로** (17세션 3-3). 곡선 그래프는 26세션에 걷어냈다 —
     # 절감액 세 계열이 단조롭게 늘기만 해 읽을 것이 없었고, 판단은 위의 잉여
@@ -1043,7 +1047,7 @@ def _surplus_verdict(
     point: SolarPoint,
     months: float,
     presets: PvPresets,
-) -> None:
+) -> SurplusResult:
     """**잉여를 낼 것인가** — 태양광 규모를 가르는 물음 (26세션 3-2).
 
     셋을 나란히 낸다.
@@ -1052,9 +1056,9 @@ def _surplus_verdict(
         언제 남는가               평일 / 토·일·공휴일
         잉여 없이 지을 수 있는 최대  용량과 그때의 면적
 
-    **잉여량은 7.7 잉여 활용 카드와 겹치지 않는다** (26세션 3-2). 여기서는
-    「얼마나 남는가」 를, 그쪽에서는 「남는 것으로 무엇을 하나」 를 낸다 — 7.7 의
-    잉여량·비중 지표 셋은 이 자리로 옮겨 왔다. 계산은 같은 캐시를 탄다.
+    **41세션에 7.7 카드가 없어졌다.** 「남는 것으로 무엇을 하나」 도 이 카드로
+    들어와 바로 아래 :func:`_surplus_handling` 이 낸다 — 잉여는 태양광을 얼마나
+    크게 지을지에 따라 나오는 결과이지 따로 고르는 수단이 아니기 때문이다.
     """
     surplus = cached_surplus(
         usage,
@@ -1063,8 +1067,9 @@ def _surplus_verdict(
         usage_token(usage),
         form,
         point.capacity_kwp,
-        measure_float("surplus", "price"),
+        measure_float("solar", "surplus_price"),
         rules_stamp(),
+        measure_float("solar", "smp_price"),
     )
     density = presets.density(
         (get_solar_inputs() or SolarInputs(region_key="")).density_key or presets.default.key
@@ -1101,6 +1106,124 @@ def _surplus_verdict(
         delta_color="off",
         help=fmt.tip("surplus_free"),
     )
+    return surplus
+
+
+def _surplus_handling(
+    usage: UsageData,
+    table: TariffTable,
+    form: ContractForm,
+    unit_profile: pd.Series,
+    point: SolarPoint,
+    months: float,
+    surplus: SurplusResult,
+) -> None:
+    """남는 것으로 무엇을 하나 — **잉여가 있을 때만 묻는다** (41세션 2-2).
+
+    잉여가 0 이면 아무것도 그리지 않는다. 위 지표가 이미 「잉여 없는 최대 용량」
+    으로 「생기려면 얼마가 필요한가」 에 답하고 있으므로, 고를 것이 없는 자리에
+    선택지를 세우면 없는 결정을 만든다.
+
+    **접힘 안에 둔다** (41세션 2-5). 태양광 카드는 이미 지표 여덟·표 하나·
+    그림 셋을 지고 있어 본문 예산이 빠듯하다 — 잉여 처리는 용량을 정한 **뒤**에
+    보는 것이라 접어도 순서를 해치지 않는다.
+
+    **기본값을 정하지 않는다.** 상계와 외부 판매는 계약도 정산도 다른 길이라
+    어느 쪽을 미리 골라 두면 그것이 권고로 읽힌다.
+    """
+    if surplus.total_kwh <= 0:
+        return
+    options = surplus_options(point.capacity_kwp)
+    with st.expander("잉여 처리"):
+        choice = st.radio(
+            "남는 전기를 어떻게 하나",
+            options,
+            index=None,
+            key=input_key("solar", "surplus_use"),
+            horizontal=True,
+            help=manual_tip("measure-surplus"),
+        )
+        if choice is None:
+            return
+        external = smp = None
+        if choice == EXTERNAL_SCENARIO:
+            external = st.number_input(
+                "잉여 판매 단가 (원/kWh) — 0 이면 미산출",
+                min_value=0.0,
+                value=0.0,
+                step=1.0,
+                key=input_key("solar", "surplus_price"),
+                help="우리가 파는 쪽의 단가입니다. 넣지 않으면 금액을 산출하지 않습니다.",
+            )
+        elif choice == OFFSET_SCENARIO and offset_settles_cash(point.capacity_kwp):
+            smp = st.number_input(
+                "SMP 단가 (원/kWh) — 0 이면 미산출",
+                min_value=0.0,
+                value=0.0,
+                step=1.0,
+                key=input_key("solar", "smp_price"),
+                help="당월 차감하고 남은 몫을 정산하는 단가입니다. 넣지 않으면 "
+                "잔여량만 냅니다.",
+            )
+        result = cached_surplus(
+            usage,
+            table,
+            unit_profile,
+            usage_token(usage),
+            form,
+            point.capacity_kwp,
+            external or None,
+            rules_stamp(),
+            smp or None,
+        )
+        scenario = result.scenario(choice)
+        revenue = scenario.revenue_won
+        columns = st.columns(4)
+        columns[0].metric(
+            "연간 수익",
+            fmt.per_year(fmt.won_short(annualize(revenue, months)))
+            if revenue is not None
+            else fmt.DASH,
+            delta_color="off",
+        )
+        # 금액을 못 내면 **사유를 적는다** — 빈칸이나 0원으로 두지 않는다 (7.5).
+        st.caption(
+            fmt.markdown_safe(scenario.basis)
+            if revenue is not None
+            else fmt.won(revenue, reason=scenario.basis)
+        )
+        # **잉여가 주말에 몰리는지**가 보여야 한다 (15세션 2-6). 7.7 카드가 지고
+        # 있던 그림인데, 41세션에 카드를 없애면서 여기로 옮겼다 — 무엇을 팔지
+        # 정하는 자리라 오히려 제자리다. 접힘 안이므로 본문 예산에 들지 않는다.
+        surplus_kw = apply_generation(usage, unit_profile * point.capacity_kwp).surplus_kw
+        st.altair_chart(charts.surplus_daily_chart(usage, surplus_kw), width="stretch")
+        st.caption("날짜별 잉여", help=fmt.chart_tip("chart.surplus_daily"))
+        _surplus_carry(result)
+        _notices(result.notices)
+
+
+def _surplus_carry(result: SurplusResult) -> None:
+    """이월이 생긴 달만 낸다. **없으면 표시하지 않는다** (41세션 2-3).
+
+    부하가 큰 건물에서는 거의 생기지 않는데, 늘 「이월 없음」 을 적으면 없는
+    항목이 자리를 차지한다.
+    """
+    settlement = result.offset
+    if settlement is None:
+        return
+    carried = settlement.carried
+    if not carried:
+        return
+    st.dataframe(
+        {
+            "월": [item.month for item in carried],
+            "차감": [fmt.kwh(item.deducted_kwh) for item in carried],
+            "다음 달로 이월": [fmt.kwh(item.carried_out_kwh) for item in carried],
+        },
+        hide_index=True,
+        width="stretch",
+    )
+    st.caption("그 달 그 계시 사용량을 넘어 차감하지 못한 몫입니다.")
 
 
 def _share(part: float, total: float) -> str:
@@ -1468,108 +1591,6 @@ def _ess_cost_inputs() -> tuple[float, float | None, float | None]:
 # --------------------------------------------------------------------- 7.7
 
 
-def _surplus_metric(annual_kwh: float, *, share: float | None = None) -> None:
-    """잉여 총량 지표 — **0 이라도 낸다** (31세션 6절).
-
-    다른 카드의 지표와 같은 크기로 보이도록 4열의 첫 칸에 세운다. 한 칸만 쓰는
-    것은 이 카드가 자기 것으로 낼 수 있는 값이 이 하나이기 때문이다 — 나머지
-    잉여 지표는 태양광 카드가 용량을 고르는 자리에서 낸다 (26세션 3-2).
-    """
-    columns = st.columns(4)
-    columns[0].metric(
-        "연간 잉여",
-        fmt.per_year(fmt.mwh(annual_kwh)),
-        f"발전량의 {fmt.ratio_pct(share)}" if share is not None else None,
-        delta_color="off",
-        help=fmt.markdown_safe(
-            "자가소비하고 남아 계통으로 되돌아가는 양입니다.\n\n"
-            "아래 시나리오의 수익이 모두 이 양에서 나옵니다 — 0 이면 팔 것이 없습니다."
-        ),
-    )
-
-
-def _surplus(
-    spec: MeasureSpec,
-    usage: UsageData,
-    table: TariffTable,
-    form: ContractForm,
-    diagnosis: Diagnosis,
-    quality: QualityReport,
-    baseline: object,
-    day: RepresentativeDay | None,
-    building: BuildingInfo | None,
-) -> None:
-    """**다른 카드 때문에 비활성이 되지 않는다** (14세션 2-3).
-
-    태양광이 없으면 잉여가 0 인 것이지 이 수단을 검토할 수 없는 것이 아니다.
-    카드를 잠그면 "쓸 수 없는 수단" 으로 읽히므로, 열어 두고 **잉여가 0 이라는
-    사실만** 적는다.
-    """
-    price = st.number_input(
-        "잉여 판매 단가 (원/kWh) — 0 이면 미산출",
-        min_value=0.0,
-        value=0.0,
-        step=1.0,
-        key=input_key("surplus", "price"),
-        help="우리가 파는 쪽의 단가입니다. 넣지 않으면 외부 판매 금액을 산출하지 않습니다.",
-    )
-    # **표의 사유 문구도 이 이름을 쓴다** (27세션 7-2 · :mod:`kwise.measures.surplus`).
-    _overview(spec)
-
-    inputs = get_solar_inputs()
-    presets = load_pv_presets()
-    capacity = inputs.resolved_capacity_kwp(presets) if inputs is not None else 0.0
-    if inputs is None or capacity <= 0:
-        # **0 이라도 지표를 낸다** (31세션 6절 · 2절과 같은 원칙). 글만 남기면 이
-        # 카드에는 큰 글자 숫자가 하나도 없어 다른 개선안과 나란히 훑을 수가 없다 —
-        # 「할 일이 없다」 와 「값을 알 수 없다」 는 다르다.
-        _surplus_metric(0.0)
-        st.write("태양광을 켜지 않아 잉여가 0 입니다.")
-        st.caption(
-            "태양광을 켜고 계산하면 잉여량과 활용 시나리오가 여기에 나옵니다. "
-            + fmt.markdown_safe(ELIGIBILITY_NOTICE)
-        )
-        return
-
-    try:
-        unit_profile, _source = cached_unit_pv(usage, usage_token(usage), inputs, rules_stamp())
-    except Exception as exc:
-        _blocked(f"기상 자료를 얻지 못했습니다. {exc}")
-        return
-    result = cached_surplus(
-        usage, table, unit_profile, usage_token(usage), form, capacity, price or None, rules_stamp()
-    )
-    # **잉여량 지표 셋을 7.5 로 옮겼다** (26세션 3-2). 「얼마나 남는가」 는 용량을
-    # 정하는 물음이라 태양광 카드의 일이고, 이 카드는 **남는 것으로 무엇을 하나**를
-    # 낸다.
-    #
-    # **다만 총량 하나는 여기에도 둔다** (31세션 6절). 셋을 되돌리는 것이 아니라
-    # **이 카드가 무엇을 팔지 정하는 밑값**을 세우는 것이다 — 아래 시나리오 수익이
-    # 전부 이 한 값에서 나오는데, 그 값이 화면에 없으면 수익이 어디서 왔는지 알
-    # 수 없다. 태양광 카드의 잉여 넷은 **용량을 고르는** 자리라 그대로 둔다.
-    months = getattr(baseline, "base_fee_months", 12.0)
-    _surplus_metric(annualize(result.total_kwh, months), share=result.share_of_generation)
-
-    # **잉여가 주말에 몰리는지**가 보여야 한다 (15세션 2-6).
-    if result.total_kwh > 0:
-        surplus_kw = apply_generation(usage, unit_profile * capacity).surplus_kw
-        st.altair_chart(charts.surplus_daily_chart(usage, surplus_kw), width="stretch")
-        st.caption("날짜별 잉여", help=fmt.chart_tip("chart.surplus_daily"))
-    else:
-        st.write("잉여가 0 이라 그릴 것이 없습니다 — 발전량을 모두 자가소비합니다.")
-    st.dataframe(
-        {
-            "시나리오": [item.name for item in result.scenarios],
-            "수익": [fmt.won(item.revenue_won, reason=item.basis) for item in result.scenarios],
-            "행정 부담": [item.admin_burden for item in result.scenarios],
-        },
-        hide_index=True,
-        width="stretch",
-    )
-    _hint(ELIGIBILITY_NOTICE)
-    _notices(result.notices)
-
-
 # --------------------------------------------------------------------- 공통
 
 
@@ -1621,5 +1642,4 @@ _HANDLERS = {
     "power_factor": _power_factor,
     "solar": _solar,
     "ess": _ess,
-    "surplus": _surplus,
 }

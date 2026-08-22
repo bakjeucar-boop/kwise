@@ -6,7 +6,11 @@
     evaluate_power_factor()         7.4 역률 개선
     solar_curve()                   7.5 태양광 용량 곡선
     evaluate_ess()                  7.6 ESS 목표 피크 역산
-    evaluate_surplus()              7.7 잉여 활용
+
+**7.7 잉여 활용은 41세션에 개선안에서 빠졌다.** 잉여는 태양광을 얼마나 크게
+지을지에 따라 나오는 결과이지 따로 고르는 수단이 아니다 —
+:func:`~kwise.measures.surplus.evaluate_surplus` 는 그대로 남아 태양광 카드가
+부른다.
 
 **모두 독립 평가다** (14세션 2절). 기준선은 언제나 현행 요금제·현행 사용량이며,
 한 수단의 결과가 다른 수단의 입력이 되지 않는다. 상호작용은
@@ -121,12 +125,19 @@ from kwise.measures.solar import (
     unit_generation_kw,
 )
 from kwise.measures.surplus import (
+    DISCARD_SCENARIO,
     ELIGIBILITY_NOTICE,
     EXTERNAL_SCENARIO,
     OFFSET_SCENARIO,
+    OffsetMonth,
+    OffsetSettlement,
     SurplusResult,
     SurplusScenario,
     evaluate_surplus,
+    offset_carry_only_max_kw,
+    offset_max_kw,
+    offset_settles_cash,
+    surplus_options,
 )
 from kwise.measures.tariff_switch import (
     OptionQuote,
@@ -138,6 +149,7 @@ __all__ = [
     "DEFAULT_MODULE_DENSITY_KWP_PER_M2",
     "DEFAULT_STEPS",
     "DEFAULT_USABLE_RATIO",
+    "DISCARD_SCENARIO",
     "DR_ADVISORY",
     "ELIGIBILITY_NOTICE",
     "EXTERNAL_SCENARIO",
@@ -173,6 +185,8 @@ __all__ = [
     "Feasibility",
     "MeasureKind",
     "NetLoad",
+    "OffsetMonth",
+    "OffsetSettlement",
     "OptionQuote",
     "PeakExcess",
     "PowerFactorResult",
@@ -214,6 +228,9 @@ __all__ = [
     "lowest_certainty",
     "measure_kind",
     "measure_numbers",
+    "offset_carry_only_max_kw",
+    "offset_max_kw",
+    "offset_settles_cash",
     "payback_years",
     "peak_days_by_season",
     "power_factor_after_pct",
@@ -231,6 +248,7 @@ __all__ = [
     "solar_point",
     "surplus_free_capacity_kwp",
     "surplus_heavy_share",
+    "surplus_options",
     "surplus_share_capacity_kwp",
     "unit_generation_kw",
     "with_load",

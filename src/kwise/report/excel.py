@@ -30,6 +30,7 @@ from kwise.io import UsageData
 from kwise.magnitude import magnitude
 from kwise.measures import (
     DR_ADVISORY,
+    OFFSET_SCENARIO,
     Certainty,
     ContractAdjustment,
     DemandResponseResult,
@@ -37,6 +38,7 @@ from kwise.measures import (
     PowerFactorResult,
     SolarCurve,
     SolarPoint,
+    SurplusResult,
     TariffSwitchResult,
 )
 from kwise.notices import Notice, dedupe
@@ -284,11 +286,15 @@ def measure_summary_frame(
     power_factor: PowerFactorResult | None = None,
     ess: EssResult | None = None,
     solar: SolarPoint | None = None,
+    surplus: SurplusResult | None = None,
 ) -> pd.DataFrame:
     """수단별 결과 시트 (요구사항서 7장).
 
-    **7장 번호 순(7.1~7.7)으로 배치한다** — 선택요금 → 계약전력 → 경제성DR →
+    **7장 번호 순(7.1~7.6)으로 배치한다** — 선택요금 → 계약전력 → 경제성DR →
     역률 → 태양광 → ESS.
+
+    **잉여는 태양광 아래 딸린 줄이다** (41세션 2-1·2-6). 7.7 개선안이 없어졌으므로
+    독립된 줄을 세우지 않는다 — ESS 아래 차익거래와 같은 자리다.
 
     각 행은 **독립 평가**다 (14세션 2절). 현행 요금제·현행 사용량을 기준선으로
     "이 수단만 도입하면 얼마" 를 낸 값이며, 조합 상호작용은 3단계 합산효과에서만
@@ -395,6 +401,35 @@ def measure_summary_frame(
                 ),
             }
         )
+        if surplus is not None and surplus.total_kwh > 0:
+            # 잉여 처리는 **별도 줄**이다. 태양광 절감액에 이미 들어 있는 것은
+            # 자가소비분이고, 이 줄은 역송분을 어떻게 하느냐다.
+            offset = surplus.offset
+            for scenario in surplus.scenarios:
+                is_offset = scenario.name == OFFSET_SCENARIO
+                rows.append(
+                    {
+                        "수단": f"└ 잉여 {scenario.name}",
+                        "투자비(원)": format_won(None, reason="—"),
+                        "절감액(원)": format_won(
+                            scenario.revenue_won, reason=scenario.basis
+                        ),
+                        "12개월 환산(원)": format_won(None, reason="—"),
+                        "회수기간": "—",
+                        "확실성": str(Certainty.MEDIUM_LOW),
+                        "비고": (
+                            f"연간 잉여 {surplus.total_kwh / 1000:,.1f} MWh · "
+                            + (
+                                f"차감 {offset.deducted_kwh:,.0f} kWh · "
+                                f"잔여 {offset.remaining_kwh:,.0f} kWh · "
+                                "기본요금은 바뀌지 않습니다 — 전력량요금만 다시 "
+                                "계산했습니다."
+                                if is_offset and offset is not None
+                                else scenario.admin_burden
+                            )
+                        ),
+                    }
+                )
     if ess is not None:
         rows.append(
             {

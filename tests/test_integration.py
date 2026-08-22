@@ -40,7 +40,6 @@ ALL_MEASURES = (
     "power_factor",
     "solar",
     "ess",
-    "surplus",
 )
 # 요금에 영향을 주는 수단만. 태양광은 「계산」 단추를 눌러야 도는 별도 경로다.
 BILLED_MEASURES = ("tariff_switch", "contract", "power_factor", "ess")
@@ -150,9 +149,10 @@ def test_모든_수단을_켜도_2단계가_돈다() -> None:
     app = _app(**_on(*ALL_MEASURES))
     assert not app.exception, app.exception
     body = _text(app)
-    # 태양광은 계산 전이라 안내만, 잉여는 0 이라 사실만 적는다.
+    # 태양광은 계산 전이라 안내만. **잉여 처리는 태양광 안에 있으므로** 계산
+    # 전에는 나올 자리가 없다 (41세션 2-2).
     assert "「태양광 계산」 을 누르십시오" in body
-    assert "태양광을 켜지 않아 잉여가 0 입니다." in body
+    assert "잉여 처리" not in body, body
 
 
 def test_수단을_켜고_끄기를_반복해도_상태가_꼬이지_않는다() -> None:
@@ -460,12 +460,20 @@ def test_계약_정보가_없으면_금액을_내지_않는다() -> None:
     assert "계약 정보를 확정하기 전까지는" in _text(app)
 
 
-def test_잉여가_0_이어도_카드는_활성이다() -> None:
-    """**독립 평가 원칙** — 다른 카드 때문에 비활성이 되지 않는다 (14세션 2-3)."""
-    app = _app(**_on("surplus"))
+def test_잉여_활용_카드가_없다() -> None:
+    """**41세션에 7.7 을 없앴다.** 잉여는 개선안이 아니라 태양광의 결과다.
+
+    14세션 2-3 의 독립 평가 원칙은 그대로다 — 남은 여섯 카드는 서로 때문에
+    비활성이 되지 않는다. 잉여는 카드가 아니므로 잠글 카드도 없고, 켤 수단
+    목록에도 없다.
+    """
+    from kwise.measures import MEASURE_CATALOG
+
+    assert "surplus" not in [item.key for item in MEASURE_CATALOG]
+    app = _app(**_on(*MEASURES))
     assert not app.exception, app.exception
-    assert "태양광을 켜지 않아 잉여가 0 입니다." in _text(app)
-    assert any("잉여 판매 단가" in str(item.label) for item in app.number_input)
+    body = _text(app)
+    assert "잉여 활용" not in body, body
 
 
 def test_하향_여지가_없으면_여유율_입력을_감춘다() -> None:

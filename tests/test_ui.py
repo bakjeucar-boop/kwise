@@ -124,7 +124,6 @@ def test_수단_순서가_요구사항서_7장과_같다() -> None:
         "7.4",
         "7.5",
         "7.6",
-        "7.7",
     ]
     assert [item.key for item in MEASURES] == [
         "tariff_switch",
@@ -133,7 +132,6 @@ def test_수단_순서가_요구사항서_7장과_같다() -> None:
         "power_factor",
         "solar",
         "ess",
-        "surplus",
     ]
 
 
@@ -142,7 +140,11 @@ def test_투자_0원_수단이_셋이다() -> None:
 
 
 def test_카드가_7장_번호_순이다() -> None:
-    """**7.1~7.7 원래 순서다** (14세션 2-1). 투자비로 다시 늘어놓지 않는다."""
+    """**7.1~7.6 원래 순서다** (14세션 2-1). 투자비로 다시 늘어놓지 않는다.
+
+    **7.7 잉여 활용은 41세션에 빠졌다** — 개선안이 아니라 태양광의 결과다.
+    번호는 밀지 않는다 (:mod:`kwise.measures.catalog`).
+    """
     assert [item.number for item in MEASURES] == [
         "7.1",
         "7.2",
@@ -150,7 +152,6 @@ def test_카드가_7장_번호_순이다() -> None:
         "7.4",
         "7.5",
         "7.6",
-        "7.7",
     ]
     assert [item.key for item in MEASURES] == [
         "tariff_switch",
@@ -159,7 +160,6 @@ def test_카드가_7장_번호_순이다() -> None:
         "power_factor",
         "solar",
         "ess",
-        "surplus",
     ]
 
 
@@ -554,7 +554,7 @@ def test_실제_항목_전부에_원문_확인처가_붙는다() -> None:
     items = describe_items()
     rows = build_rows(items, expiry_warnings(include_weather=False))
     # 항목이 조용히 사라지는 것을 막는 잣대다. 늘리는 것은 정상, 줄면 확인한다.
-    assert len(rows) == len(items) == 70  # rules_kr 31 + assumptions 39
+    assert len(rows) == len(items) == 72  # rules_kr 31 + assumptions 41
     assert all(row.link.startswith(("한국", "국가", "에너지", "Open", "기술서")) for row in rows)
     # **바깥에 원문이 없는 값도 있다** (22세션). 화면 예산은 우리가 정한 규약이라
     # 확인처가 기술서다 — 그래도 따라갈 데는 있어야 한다.

@@ -10,12 +10,14 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData, load_usage
 from kwise.measures import (
+    DISCARD_SCENARIO,
     EXTERNAL_SCENARIO,
     OFFSET_SCENARIO,
     PV_UNPRICED_REASON,
@@ -27,6 +29,7 @@ from kwise.measures import (
     PvCostInput,
     SolarCurve,
     SolarPoint,
+    SurplusResult,
     TariffSwitchResult,
     analyze_peak_excess,
     apply_generation,
@@ -37,9 +40,13 @@ from kwise.measures import (
     evaluate_tariff_switch,
     excess_table,
     light_band_mask,
+    offset_carry_only_max_kw,
+    offset_max_kw,
+    offset_settles_cash,
     roof_capacity_limit_kwp,
     size_for_target,
     solar_curve,
+    surplus_options,
     unit_generation_kw,
     with_load,
 )
@@ -578,7 +585,10 @@ def test_undersized_battery_warns(
     assert any("지키지 못한" in message for message in texts(result.notices))
 
 
-# --------------------------------------------------------------------- 7.5 잉여 활용
+# ------------------------------------------------------------------ 잉여 (태양광의 결과)
+#
+# **41세션에 개선안에서 뺐다.** 잉여는 태양광을 얼마나 크게 지을지에 따라 나오는
+# 결과이지 따로 고르는 수단이 아니다 — 계산 모듈은 그대로 남아 태양광 카드가 부른다.
 
 
 @dataclass(frozen=True, eq=False)
@@ -587,6 +597,7 @@ class SurplusCase:
 
     usage: UsageData
     net: NetLoad
+    capacity_kwp: float = 1_000.0
 
 
 @pytest.fixture(scope="module")
@@ -601,6 +612,20 @@ def surplus_case(tmp_path_factory: pytest.TempPathFactory) -> SurplusCase:
     return SurplusCase(usage=usage, net=apply_generation(usage, unit * 1_000.0))
 
 
+def _surplus(case: SurplusCase, tariff: TariffTable, **kwargs: object) -> SurplusResult:
+    """``evaluate_surplus`` 를 케이스 인자로 부른다 — 시험마다 되풀이하지 않는다."""
+    return evaluate_surplus(
+        case.usage,
+        tariff,
+        CURRENT,
+        case.net.surplus_kw,
+        generation_kwh=case.net.generated_kwh,
+        net_usage=case.net.usage,
+        capacity_kwp=kwargs.pop("capacity_kwp", case.capacity_kwp),  # type: ignore[arg-type]
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+
 def test_surplus_is_split_from_self_consumption(surplus_case: SurplusCase) -> None:
     net = surplus_case.net
     assert net.generated_kwh > 0
@@ -611,32 +636,33 @@ def test_surplus_is_split_from_self_consumption(surplus_case: SurplusCase) -> No
 
 
 def test_surplus_scenarios(surplus_case: SurplusCase, tariff: TariffTable) -> None:
-    usage, net = surplus_case.usage, surplus_case.net
-    result = evaluate_surplus(
-        usage,
-        tariff,
-        CURRENT,
-        net.surplus_kw,
-        generation_kwh=net.generated_kwh,
-        external_price_won_per_kwh=90.0,
+    result = _surplus(
+        surplus_case, tariff, external_price_won_per_kwh=90.0, smp_price_won_per_kwh=130.0
     )
-    assert result.total_kwh == pytest.approx(net.surplus_kwh)
-    # **시나리오는 둘이다** (27세션 7-3). 「버림」 은 언제나 0원이라 고를 것이 없다.
-    assert [item.name for item in result.scenarios] == [OFFSET_SCENARIO, EXTERNAL_SCENARIO]
+    assert result.total_kwh == pytest.approx(surplus_case.net.surplus_kwh)
+    # **셋이다** (41세션 2-2). 27세션은 「버림」 이 언제나 0원인 줄이라 표에서
+    # 뺐는데, 41세션에 표가 아니라 **고르는 자리**가 되면서 뜻이 달라졌다 —
+    # 「아무것도 하지 않는다」 를 고를 수 없으면 셋 중 하나를 강요하게 된다.
+    assert [item.name for item in result.scenarios] == [
+        OFFSET_SCENARIO,
+        EXTERNAL_SCENARIO,
+        DISCARD_SCENARIO,
+    ]
     offset = result.scenario(OFFSET_SCENARIO)
     assert offset.revenue_won is not None
     assert offset.revenue_won > 0
     # 상계 단가는 요금표에서 나온다. 경부하(92.8)~최대부하(227.8) 사이여야 한다
-    assert 92.8 <= offset.revenue_won / result.total_kwh <= 227.8
+    settlement = result.offset
+    assert settlement is not None
+    assert settlement.deducted_kwh > 0
+    assert 92.8 <= settlement.deducted_won / settlement.deducted_kwh <= 227.8
     external = result.scenario(EXTERNAL_SCENARIO)
     assert external.revenue_won == pytest.approx(result.total_kwh * 90.0)
+    assert result.scenario(DISCARD_SCENARIO).revenue_won == 0.0
 
 
 def test_external_price_is_not_invented(surplus_case: SurplusCase, tariff: TariffTable) -> None:
-    usage, net = surplus_case.usage, surplus_case.net
-    result = evaluate_surplus(
-        usage, tariff, CURRENT, net.surplus_kw, generation_kwh=net.generated_kwh
-    )
+    result = _surplus(surplus_case, tariff)
     external = result.scenario(EXTERNAL_SCENARIO)
     assert external.revenue_won is None
     assert not external.is_priced
@@ -647,21 +673,207 @@ def test_external_price_is_not_invented(surplus_case: SurplusCase, tariff: Tarif
 
 def test_eligibility_is_not_judged(surplus_case: SurplusCase, tariff: TariffTable) -> None:
     """자격요건은 판정하지 않는다. 금액만 제시하고 확인 필요를 명시한다."""
-    usage, net = surplus_case.usage, surplus_case.net
-    result = evaluate_surplus(
-        usage, tariff, CURRENT, net.surplus_kw, generation_kwh=net.generated_kwh
-    )
+    result = _surplus(surplus_case, tariff)
     assert any("자격요건" in note for note in texts(result.notices))
     assert all(scenario.admin_burden for scenario in result.scenarios)
+
+
+def test_offset_deducts_by_the_real_tou_band(
+    tmp_path_factory: pytest.TempPathFactory, tariff: TariffTable
+) -> None:
+    """**낮 시간을 일괄로 중간부하에 넣지 않는다** (41세션 2-3).
+
+    여름 15~21시는 **최대부하**이고 태양광이 그 시간에도 발전한다. 그 창의 앞쪽
+    두 시간에만 발전하는 합성 자료와 09~11시(중간부하)에만 발전하는 자료를
+    나란히 넣으면, 차감 실효 단가가 최대부하 쪽에서 더 높아야 한다 — 낮을
+    일괄로 중간부하에 넣었다면 둘이 같은 값이 된다.
+
+    **창을 다 덮지 않는 것이 요령이다.** 발전이 부하를 넘는 슬롯은 사용량이 0 이
+    되어 차감할 자리가 없어진다 — 같은 계시의 남은 시간이 그 자리를 준다.
+
+    토요일(최대→중간)·일요일(전량 경부하)은 요금 엔진 규칙대로 섞이므로 실효
+    단가는 최대부하 단가보다 낮게 나온다. **그래도 중간부하 단가는 넘는다.**
+    """
+    path = write_month(tmp_path_factory.mktemp("band") / "flat.csv", 2023, 7, kwh=25.0)
+    usage = load_usage(path)  # 100 kW 균일 부하
+    index = pd.DatetimeIndex(usage.kw.index)
+    hour = index.hour + index.minute / 60.0
+    rates = tariff.rates(CURRENT)
+    mid_rate = rates.rate("summer", "mid")
+    peak_rate = rates.rate("summer", "peak")
+    assert mid_rate < peak_rate
+
+    def effective(window: pd.Series) -> float:
+        # 구간 끝 라벨이라 15:15 슬롯이 15:00~15:15 를 뜻한다.
+        generation = pd.Series(np.where(window, 150.0, 0.0), index=index, name="kw")
+        net = apply_generation(usage, generation)
+        assert net.surplus_kwh > 0
+        result = evaluate_surplus(
+            usage,
+            tariff,
+            CURRENT,
+            net.surplus_kw,
+            generation_kwh=net.generated_kwh,
+            net_usage=net.usage,
+            capacity_kwp=500.0,
+        )
+        settlement = result.offset
+        assert settlement is not None
+        assert settlement.deducted_kwh > 0
+        return settlement.deducted_won / settlement.deducted_kwh
+
+    peak_window = effective((hour > 15.0) & (hour <= 17.0))
+    mid_window = effective((hour > 9.0) & (hour <= 11.0))
+    assert peak_window > mid_window, (peak_window, mid_window)
+    assert peak_window > mid_rate, (peak_window, mid_rate)
+    assert mid_window <= mid_rate, (mid_window, mid_rate)
+
+
+def test_offset_never_goes_negative_and_carries_in_the_same_band(
+    surplus_case: SurplusCase, tariff: TariffTable
+) -> None:
+    """차감은 그 달 그 계시 사용량까지만. 넘으면 0 에서 멈추고 이월한다."""
+    result = _surplus(surplus_case, tariff, smp_price_won_per_kwh=130.0)
+    settlement = result.offset
+    assert settlement is not None
+    # 100 kW 균일 부하에 1,000 kWp — 다 차감할 수 없다.
+    assert settlement.deducted_kwh < result.total_kwh
+    assert settlement.remaining_kwh > 0
+    assert settlement.deducted_kwh + settlement.remaining_kwh == pytest.approx(
+        result.total_kwh
+    )
+    for month in settlement.months:
+        assert month.deducted_kwh >= 0.0
+        assert month.carried_out_kwh >= 0.0
+
+
+def test_carry_is_not_shown_when_there_is_none(
+    tmp_path_factory: pytest.TempPathFactory, tariff: TariffTable
+) -> None:
+    """**이월이 없으면 표시하지 않는다** (41세션 2-3).
+
+    부하가 큰 건물에서는 거의 안 생긴다 — 잉여가 그 달 사용량에 다 잠기기
+    때문이다. 늘 「이월 없음」 을 적으면 없는 항목이 자리를 차지한다.
+    """
+    path = write_month(tmp_path_factory.mktemp("nocarry") / "big.csv", 2023, 7, kwh=2_500.0)
+    usage = load_usage(path)  # 10,000 kW 균일 부하
+    weather = clearsky_weather(start="2023-06-30", end="2023-08-01")
+    config = PvSystemConfig(
+        37.5, 127.0, arrays=(ArrayConfig.roof("지붕", 1_000.0),), altitude_m=50.0
+    )
+    unit = unit_generation_kw(usage, weather, config)
+    net = apply_generation(usage, unit * 1_000.0)
+    # 부하가 커서 잉여 자체가 없다 — 그래도 이월은 빈 값이어야 한다.
+    result = evaluate_surplus(
+        usage,
+        tariff,
+        CURRENT,
+        net.surplus_kw,
+        generation_kwh=net.generated_kwh,
+        net_usage=net.usage,
+        capacity_kwp=1_000.0,
+    )
+    settlement = result.offset
+    assert settlement is not None
+    assert settlement.carried == ()
+    assert settlement.remaining_kwh == pytest.approx(0.0)
+
+
+def test_offset_is_dropped_above_the_cap(surplus_case: SurplusCase, tariff: TariffTable) -> None:
+    """**1,000 kW 를 넘으면 상계거래가 목록에 없다** (41세션 2-3)."""
+    cap = offset_max_kw()
+    assert surplus_options(cap) == (OFFSET_SCENARIO, EXTERNAL_SCENARIO, DISCARD_SCENARIO)
+    assert surplus_options(cap + 1.0) == (EXTERNAL_SCENARIO, DISCARD_SCENARIO)
+
+    result = _surplus(surplus_case, tariff, capacity_kwp=cap + 1.0)
+    assert OFFSET_SCENARIO not in [item.name for item in result.scenarios]
+    with pytest.raises(KeyError):
+        result.scenario(OFFSET_SCENARIO)
+
+
+def test_small_systems_carry_only(surplus_case: SurplusCase, tariff: TariffTable) -> None:
+    """**10 kW 이하는 이월만 되고 현금 정산이 없다** (41세션 2-3)."""
+    small = offset_carry_only_max_kw()
+    assert not offset_settles_cash(small)
+    assert offset_settles_cash(small + 1.0)
+
+    result = _surplus(surplus_case, tariff, capacity_kwp=small, smp_price_won_per_kwh=130.0)
+    settlement = result.offset
+    assert settlement is not None
+    assert not settlement.settles_cash
+    assert settlement.smp_won is None
+    assert settlement.smp_price_won_per_kwh is None  # 넣어도 쓰지 않는다
+    # 금액은 나온다 — 차감분은 확정이고 잔여만 정산이 없을 뿐이다.
+    assert settlement.revenue_won == pytest.approx(settlement.deducted_won)
+    assert "현금 정산이 없습니다" in result.scenario(OFFSET_SCENARIO).basis
+
+
+def test_smp_price_is_not_invented(surplus_case: SurplusCase, tariff: TariffTable) -> None:
+    """**미입력이면 잔여 kWh 만 내고 금액은 미산출** (41세션 2-3)."""
+    result = _surplus(surplus_case, tariff)
+    settlement = result.offset
+    assert settlement is not None
+    assert settlement.settles_cash
+    assert settlement.remaining_kwh > 0
+    assert settlement.smp_won is None
+    assert not settlement.is_priced
+    offset = result.scenario(OFFSET_SCENARIO)
+    assert offset.revenue_won is None
+    assert not offset.is_priced
+    assert "SMP 단가 미입력" in offset.basis
+    assert f"{settlement.remaining_kwh:,.0f} kWh" in offset.basis
+
+
+def test_offset_says_nothing_about_when_it_settles(
+    surplus_case: SurplusCase, tariff: TariffTable
+) -> None:
+    """**정산 시점이나 기간에 관한 단서를 달지 않는다** (41세션 2-3).
+
+    「해당 연도 평균 SMP」·「13개월째도 같은 단가」 같은 문구를 어디에도 두지
+    않는다. 단가는 하나로 적용하고 기간 길이를 구분하지 않는다.
+    """
+    import re
+
+    from kwise.measures import surplus as module
+
+    said: list[str] = [module.__doc__ or ""]
+    for smp in (None, 130.0):
+        result = _surplus(surplus_case, tariff, smp_price_won_per_kwh=smp)
+        said.extend(item.basis for item in result.scenarios)
+        said.extend(item.text for item in result.notices)
+    banned = re.compile(
+        r"해당\s*연도|연도\s*평균|평균\s*SMP|\d+\s*개월째|말일|정산\s*시점|정산\s*주기"
+        r"|익월|매월\s*말|연\s*단위|기간\s*말\s*시점"
+    )
+    for line in said:
+        assert not banned.search(line), line
+
+
+def test_offset_does_not_touch_the_base_fee(
+    surplus_case: SurplusCase, tariff: TariffTable
+) -> None:
+    """**기본요금은 바뀌지 않는다** (41세션 2-3).
+
+    잉여는 부하가 낮은 시각에 나므로 요금적용전력과 무관하고, 태양광이 피크를
+    낮춘 효과는 이미 태양광 계산에 들어 있다 — 여기 금액은 전부 전력량요금이다.
+    """
+    from kwise.tariff import calculate_bill
+
+    case = surplus_case
+    after = calculate_bill(case.net.usage, tariff, CURRENT)
+    result = _surplus(case, tariff, smp_price_won_per_kwh=130.0)
+    settlement = result.offset
+    assert settlement is not None
+    # 차감액이 태양광 적용 후 전력량요금을 넘지 않는다 — 넘으면 기본요금까지
+    # 먹은 것이다.
+    assert 0 < settlement.deducted_won <= after.total_energy_won
+    assert any("기본요금은 바뀌지 않습니다" in note for note in texts(result.notices))
 
 
 def test_surplus_hour_distribution_is_midday(
     surplus_case: SurplusCase, tariff: TariffTable
 ) -> None:
-    usage, net = surplus_case.usage, surplus_case.net
-    result = evaluate_surplus(
-        usage, tariff, CURRENT, net.surplus_kw, generation_kwh=net.generated_kwh
-    )
+    result = _surplus(surplus_case, tariff)
     distribution = result.hour_distribution
     assert int(distribution.idxmax()) in range(11, 15)
     assert distribution.loc[3] == 0.0  # 새벽에는 잉여가 없다

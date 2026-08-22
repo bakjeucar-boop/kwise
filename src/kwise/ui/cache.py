@@ -622,6 +622,7 @@ def cached_surplus(
     capacity_kwp: float,
     external_price_won_per_kwh: float | None,
     stamp: str,
+    smp_price_won_per_kwh: float | None = None,
 ) -> SurplusResult:
     net = apply_generation(_usage, _unit * capacity_kwp)
     return evaluate_surplus(
@@ -630,7 +631,12 @@ def cached_surplus(
         form.selection,
         net.surplus_kw,
         generation_kwh=net.generated_kwh,
+        # **차감 한도는 자가소비를 뺀 뒤의 부하다** (41세션 2-3). 원부하로 재면
+        # 태양광이 이미 지운 사용량까지 상계 여지로 세게 된다.
+        net_usage=net.usage,
+        capacity_kwp=capacity_kwp,
         external_price_won_per_kwh=external_price_won_per_kwh,
+        smp_price_won_per_kwh=smp_price_won_per_kwh,
         options=form.billing_options(),
     )
 

@@ -1,4 +1,4 @@
-"""개선 수단 목록 (요구사항서 7장). **7장 번호 순(7.1~7.7)이다.**
+"""개선 수단 목록 (요구사항서 7장). **7장 번호 순(7.1~7.6)이다.**
 
 번호와 순서를 여기 한 곳에 둔다. 화면(:mod:`kwise.ui.spec`)과 보고서
 (:mod:`kwise.report.document`)가 각자 목록을 들고 있으면 **한쪽만 고쳤을 때
@@ -50,8 +50,14 @@ MEASURE_CATALOG: tuple[MeasureKind, ...] = (
     MeasureKind("power_factor", "7.4", "역률 개선", TIER_LOW),
     MeasureKind("solar", "7.5", "태양광", TIER_INVESTMENT),
     MeasureKind("ess", "7.6", "ESS", TIER_INVESTMENT),
-    MeasureKind("surplus", "7.7", "잉여 활용", TIER_INVESTMENT),
 )
+# **7.7 잉여 활용을 41세션에 뺐다.** 잉여는 태양광을 얼마나 크게 지을지에 따라
+# 나오는 **결과**이지 따로 고르는 수단이 아니다 — 처리 방식(상계·외부 판매·버리기)
+# 선택을 태양광 카드 안으로 옮기고 개선안을 여섯으로 줄였다. 계산 모듈
+# (:mod:`kwise.measures.surplus`)은 그대로 남는다.
+#
+# **번호는 밀지 않는다** — 7.1~7.6 은 그대로다. 위 도크스트링이 말한 대로 번호가
+# 밀리면 코드 주석과 문서 참조가 줄줄이 어긋난다.
 
 _BY_KEY: dict[str, MeasureKind] = {item.key: item for item in MEASURE_CATALOG}
 

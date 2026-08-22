@@ -49,6 +49,7 @@ from kwise.measures import (
     TariffSwitchResult,
     measure_kind,
 )
+from kwise.measures import surplus as surplus_module
 from kwise.notices import Notice, Severity, report_appendix, report_body, texts
 from kwise.report import figures, narrative
 from kwise.report.appendix import APPENDIX_TITLES, AppendixData, known_limits, reference_rows
@@ -526,6 +527,34 @@ def measure_entries(
         ]
         if solar.investment_won is None and solar_unpriced_reason:
             cautions.append(solar_unpriced_reason)
+        # **잉여를 여기로 녹였다** (41세션 2-1·2-6). 7.7 은 개선안이 아니라
+        # 태양광의 결과다 — 장을 따로 세우면 같은 발전량 이야기를 두 번 한다.
+        #
+        # **잉여가 0 이면 아무것도 붙이지 않는다** (39세션 4-2). 팔 것이 없는데
+        # 파는 절차를 조심하라는 말이 결론보다 길어진다.
+        surplus_facts: tuple[tuple[str, str], ...] = ()
+        surplus_note = ""
+        if surplus is not None and surplus.total_kwh > 0:
+            # **파는 길만 적는다** — 「버리기」 에는 자격요건이 없고, 상계거래는
+            # 1,000 kW 를 넘으면 아예 선택지에 없다 (41세션 2-3).
+            sellable = " · ".join(
+                item.name
+                for item in surplus.scenarios
+                if item.name != surplus_module.DISCARD_SCENARIO
+            )
+            cautions.append(
+                f"{sellable}의 **자격요건은 판정하지 않았습니다.** 금액만 참고하십시오."
+            )
+            surplus_facts = (
+                ("자가소비", f"{(surplus.generation_kwh - surplus.total_kwh) / 1000:,.1f} MWh"),
+                ("잉여", f"{surplus.total_kwh / 1000:,.1f} MWh"),
+            )
+            # **시나리오는 표가 아니라 한 줄이다** (39세션 4-3). 금액이 갈리는
+            # 것은 「어디에 파느냐」 하나뿐이다.
+            surplus_note = " · ".join(
+                f"{item.name} {_won(item.revenue_won) if item.is_priced else _UNPRICED}"
+                for item in surplus.scenarios
+            )
         entries["solar"] = MeasureEntry(
             kind=measure_kind("solar"),
             conclusion=_solar_conclusion(solar, surplus_free_kwp, area_m2),
@@ -542,13 +571,22 @@ def measure_entries(
             if solar_certainty is not None
             else str(Certainty.MEDIUM),
             cautions=tuple(cautions),
-            notices=solar_notices,
+            notices=(*solar_notices, *(surplus.notices if surplus is not None else ())),
             figure=solar_day,
             figure_caption=_SOLAR_DAY_CAPTION,
             figures=_pair(
                 (solar_annual, _SOLAR_ANNUAL_CAPTION),
                 (solar_day, _SOLAR_DAY_CAPTION),
             ),
+            facts=(
+                *(
+                    (("잉여 없는 최대 용량", f"{surplus_free_kwp:,.0f} kWp"),)
+                    if surplus_free_kwp
+                    else ()
+                ),
+                *surplus_facts,
+            ),
+            slide_note=surplus_note,
         )
 
     if ess is not None:
@@ -595,63 +633,6 @@ def measure_entries(
             figures=_pair(
                 (ess_payback, _ESS_PAYBACK_CAPTION),
                 (ess_day, _ESS_DAY_CAPTION),
-            ),
-        )
-
-    if surplus is not None:
-        priced = [item for item in surplus.scenarios if item.is_priced]
-        richest = max(priced, key=lambda item: item.revenue_won or 0.0) if priced else None
-        entries["surplus"] = MeasureEntry(
-            kind=measure_kind("surplus"),
-            conclusion=narrative.surplus_lead(
-                total_kwh=surplus.total_kwh,
-                generation_kwh=surplus.generation_kwh,
-                self_consumed_kwh=surplus.generation_kwh - surplus.total_kwh,
-                surplus_free_kwp=surplus_free_kwp,
-            ),
-            saving=(
-                f"{richest.name} {_won(richest.revenue_won)}"
-                if richest is not None
-                else f"{_UNPRICED} — 잉여 판매 단가 미입력"
-            ),
-            investment=f"{_UNPRICED} — 계통 연계·설비 조건에 따름",
-            payback=f"{_UNPRICED} — 투자비 미입력",
-            certainty=str(Certainty.MEDIUM_LOW),
-            figure=(
-                _safe_figure(
-                    lambda: figures.surplus_daily_png(usage, surplus_kw, size=MEASURE_FULL_FIGURE)
-                )
-                if usage is not None and surplus_kw is not None and surplus.total_kwh > 0
-                else None
-            ),
-            figure_caption="일별 잉여량 — 주말에 몰리면 자가소비가 어렵습니다.",
-            cautions=(
-                "상계거래·외부 구매의 **자격요건은 판정하지 않았습니다.** 금액만 참고하십시오.",
-                *body_lines(surplus.notices),
-            ),
-            notices=surplus.notices,
-            # **잉여가 0 이면 자격요건 주의를 달지 않는다** (39세션 4-2). 팔 것이
-            # 없는데 파는 절차를 조심하라는 말이 결론보다 길어진다.
-            actionable=surplus.total_kwh > 0,
-            # **시나리오는 표가 아니라 한 줄이다** (39세션 4-3). 금액이 갈리는
-            # 것은 「어디에 파느냐」 하나뿐이라 두 줄짜리 표를 세울 것이 없고,
-            # 잉여가 0 이면 두 값이 모두 0 이라 결론 줄을 되풀이할 뿐이다.
-            slide_note=" · ".join(
-                f"{item.name} {_won(item.revenue_won) if item.is_priced else _UNPRICED}"
-                for item in surplus.scenarios
-            ),
-            has_saving=richest is not None and bool(richest.revenue_won),
-            facts=(
-                ("연간 발전량", f"{surplus.generation_kwh / 1000:,.1f} MWh"),
-                (
-                    "자가소비",
-                    f"{(surplus.generation_kwh - surplus.total_kwh) / 1000:,.1f} MWh",
-                ),
-                ("잉여", f"{surplus.total_kwh / 1000:,.1f} MWh"),
-                (
-                    "잉여 없는 최대 용량",
-                    f"{surplus_free_kwp:,.0f} kWp" if surplus_free_kwp else _UNPRICED,
-                ),
             ),
         )
 

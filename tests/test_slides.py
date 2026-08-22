@@ -57,7 +57,7 @@ from kwise.report.slides import (
     slides_path,
     split_reason,
 )
-from kwise.tariff import BillingResult
+from kwise.tariff import BillingResult, TariffTable
 
 #: DrawingML 이름공간. 글꼴 지정이 이 안에 있다.
 _A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
@@ -148,10 +148,10 @@ def _deck_text(deck: object) -> str:
     return "\n".join(_slide_text(slide) for slide in deck.slides)  # type: ignore[attr-defined]
 
 
-def _seven_measures(sections: DocumentSections) -> tuple[MeasureEntry, ...]:
-    """일곱 수단을 **모두 켠** 항목 목록.
+def _all_measures(sections: DocumentSections) -> tuple[MeasureEntry, ...]:
+    """수단을 **모두 켠** 항목 목록. 41세션부터 여섯이다.
 
-    실제로 일곱을 계산하면 시험이 몇 분 늘어난다. 여기서 보는 것은 **장 수가
+    실제로 여섯을 계산하면 시험이 몇 분 늘어난다. 여기서 보는 것은 **장 수가
     수단 수를 따라가는가** 하나이므로 항목만 채워 만든다 — 카탈로그 차례를
     그대로 쓰므로 실제 경로와 같은 순서다.
     """
@@ -247,8 +247,8 @@ def test_목차_항목이_한_줄을_넘지_않는다(full_sections: DocumentSec
 
     guide = load_design_guide()
     span = guide.slide.content_width_in - 0.8
-    seven = replace(full_sections, measures=_seven_measures(full_sections))
-    for sections in (full_sections, seven, diagnosis_only_of(full_sections)):
+    every = replace(full_sections, measures=_all_measures(full_sections))
+    for sections in (full_sections, every, diagnosis_only_of(full_sections)):
         for line in agenda_items(sections):
             width = _text_width_in(line, guide.type_scale.card_title)
             assert width <= span, (
@@ -673,7 +673,10 @@ def test_다음_단계_문구가_앞뒤로_겹치지_않는다(loaded_sections: 
 def test_장수가_수단_개수를_따라간다(
     full_sections: DocumentSections, diagnosis_only: DocumentSections
 ) -> None:
-    """뼈대 열한 장 + 켠 수단 수 (37세션). 수단 0개면 11장, 일곱이면 18장이다."""
+    """뼈대 열한 장 + 켠 수단 수 (37세션). 수단 0개면 11장, 여섯이면 17장이다.
+
+    **41세션에 수단이 여섯이 됐다** — 7.7 잉여 활용을 태양광 안으로 넣었다.
+    """
     from dataclasses import replace
 
     # 뼈대 = 표지·목차·진단 다섯·요약·조합·마무리 + **부록 장 수** (39세션 5절).
@@ -683,9 +686,9 @@ def test_장수가_수단_개수를_따라간다(
         frame + len(full_sections.measures) + len(appendix_pages(full_sections))
     )
 
-    seven = replace(full_sections, measures=_seven_measures(full_sections))
-    assert len(seven.measures) == 7
-    assert len(slide_specs(seven)) == frame + 7 + len(appendix_pages(seven))
+    every = replace(full_sections, measures=_all_measures(full_sections))
+    assert len(every.measures) == 6
+    assert len(slide_specs(every)) == frame + 6 + len(appendix_pages(every))
 
 
 # ===================================================================== 39세션 · 해석과 문구
@@ -1252,3 +1255,103 @@ def test_월별_요금_png_의_달_축이_한국식이다(sample_diagnosis: Diag
     structure = sample_diagnosis.structure
     assert structure is not None
     assert figures.monthly_charge_png(structure)[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+# ==================================================== 41세션 · 잉여를 태양광 안으로
+
+
+def test_ppt_에_잉여_장이_없고_태양광_장이_진다(
+    sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult
+) -> None:
+    """**7.7 장을 없애고 7.5 에 녹였다** (41세션 2-1·2-6).
+
+    잉여는 태양광을 얼마나 크게 지을지에 따라 나오는 결과이지 개선안이 아니다.
+    장을 따로 세우면 같은 발전량 이야기를 두 번 한다 — 그래서 **장이 하나 준다.**
+
+    일별 잉여 그림은 슬라이드로 오지 않는다. 수단 장은 그림 둘까지이고(38세션
+    3절) 태양광 장은 연간 발전량과 대표일 곡선이 그 둘을 이미 쓴다. 그림은
+    화면(잉여 처리 접힘)에 남겼다.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from kwise.measures import apply_generation, solar_point
+    from kwise.measures.surplus import evaluate_surplus
+    from kwise.report.document import measure_entries
+    from kwise.tariff import TariffSelection
+
+    selection = TariffSelection("general_b", "high_a", "I")
+    index = pd.DatetimeIndex(sample_usage.kw.index)
+    hours = index.hour + index.minute / 60.0
+    unit = pd.Series(
+        np.clip(np.sin(np.pi * (hours - 7.0) / 12.0), 0.0, None) * 0.8,
+        index=index,
+        name="kw",
+    )
+    capacity = 4_000.0
+    point = solar_point(
+        sample_usage, tariff, selection, unit, capacity, baseline=sample_bill
+    )
+    net = apply_generation(sample_usage, unit * capacity)
+    surplus = evaluate_surplus(
+        sample_usage,
+        tariff,
+        selection,
+        net.surplus_kw,
+        generation_kwh=net.generated_kwh,
+        net_usage=net.usage,
+        capacity_kwp=capacity,
+    )
+    assert surplus.total_kwh > 0
+
+    entries = measure_entries(solar=point, surplus=surplus, surplus_free_kwp=2_048.0)
+    # **잉여 장이 없다.** 태양광 하나뿐이다.
+    assert [entry.kind.key for entry in entries] == ["solar"]
+
+    solar = next(entry for entry in entries if entry.kind.key == "solar")
+    facts = dict(solar.facts)
+    assert facts["잉여"].endswith("MWh"), facts
+    assert facts["자가소비"].endswith("MWh"), facts
+    assert facts["잉여 없는 최대 용량"] == "2,048 kWp", facts
+    # 시나리오는 표가 아니라 각주 한 줄이다 (39세션 4-3).
+    assert "외부 판매" in solar.slide_note, solar.slide_note
+    assert any("자격요건은 판정하지 않았습니다" in line for line in solar.cautions)
+    # 그림은 여전히 둘이다 — 셋을 넣으면 축 눈금이 뭉개진다 (38세션 3절).
+    assert len(solar.slide_figures) <= 2
+
+
+def test_잉여가_0이면_태양광_장이_늘지_않는다(
+    sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult
+) -> None:
+    """**팔 것이 없는데 파는 절차를 조심하라고 적지 않는다** (39세션 4-2)."""
+    import pandas as pd
+
+    from kwise.measures import apply_generation, solar_point
+    from kwise.measures.surplus import evaluate_surplus
+    from kwise.report.document import measure_entries
+    from kwise.tariff import TariffSelection
+
+    selection = TariffSelection("general_b", "high_a", "I")
+    index = pd.DatetimeIndex(sample_usage.kw.index)
+    unit = pd.Series(0.0, index=index, name="kw")
+    point = solar_point(sample_usage, tariff, selection, unit, 100.0, baseline=sample_bill)
+    net = apply_generation(sample_usage, unit * 100.0)
+    surplus = evaluate_surplus(
+        sample_usage,
+        tariff,
+        selection,
+        net.surplus_kw,
+        generation_kwh=net.generated_kwh,
+        net_usage=net.usage,
+        capacity_kwp=100.0,
+    )
+    assert surplus.total_kwh == 0.0
+
+    solar = next(
+        entry
+        for entry in measure_entries(solar=point, surplus=surplus)
+        if entry.kind.key == "solar"
+    )
+    assert "잉여" not in dict(solar.facts)
+    assert solar.slide_note == ""
+    assert not any("자격요건" in line for line in solar.cautions), solar.cautions
