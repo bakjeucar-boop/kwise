@@ -42,7 +42,7 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 | 다음 작업 | **사용자 화면 확인** (아래 「다음 — 사용자가 화면을 확인한다」 절에 볼 것 다섯). 그 뒤 PPT 수정(두 세션) → 캡처 → 매뉴얼 완성. 잉여를 3단계로 옮기려던 계획은 41세션에 폐기했다 — 태양광 안으로 넣었다 |
 | 공휴일 판정 | **라이브러리 + 사람.** 근로자의 날은 2026년부터 자동, 임시공휴일은 DR 판정에서 사용자가 뺀다 (29세션) |
 | 배포 | **동작 중** — github.com/bakjeucar-boop/kwise → Streamlit Cloud. 건물명부터 보고서 내려받기까지 확인 |
-| 테스트 상태 | pytest **1,358 passed** / ruff pass / **`mypy src`** pass (strict, 107 files) |
+| 테스트 상태 | pytest **1,358 passed** / ruff pass / **`mypy src`** pass (strict, 107 files). **전체 한 번은 약 28분** — 위 「pytest 분할 실행」의 갈래 넷으로 나눠 돌린다 |
 | 화면 감사 | `tools\screen_audit.py` — 실주행 문구 **922건**(태양광 포함) 수집. 41세션 **−27** — 7.7 잉여 활용 카드가 통째로 빠지고 잉여 처리가 태양광 접힘으로 훨씬 짧게 들어갔다. **예산은 전 자리 한도 안이다** (태양광 본문 1 · 확인 0 · 캡션 4). 규칙 위반 **0건** |
 | 화면 번호 | **화면은 1~6, 문서·산출물은 7.1~7.6** (41세션에 7.7 이 빠졌다). 낼 때만 `ui.labels.measure_title` 이 바꾼다 |
 | 확실성·감도 | **화면에 없다** (28세션). 계산·Excel·Word·매뉴얼에는 그대로. PPT 는 수단 장에 확실성만 싣는다 |
@@ -64,6 +64,75 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 **화면 실행** — `.venv\Scripts\streamlit.exe run streamlit_app.py` (**뿌리 진입점 하나로 통일**)
 **문서 생성** — `.venv\Scripts\python.exe tools\build_docs.py`
+
+---
+
+## pytest 분할 실행
+
+**나눠 돌리는 것이 기본이다** (`CLAUDE.md` 「백그라운드 실행」 7). 전체 한 번은
+**약 28분**이다 — "9분" 은 낡은 값이다.
+
+### 기준 — 개수가 아니라 실측 소요로 가른다
+
+42세션에 30개 시험 파일을 하나씩 재 봤다. **건수와 소요는 거의 무관하다.**
+`test_docsite.py` 는 37건에 4.5초인데 `test_casestudy.py` 는 19건에 83.7초다.
+건수로 나누면 한쪽만 끝없이 돈다.
+
+**앱/엔진 2분할은 답이 아니다.** 소요가 두 파일에 몰려 있는데 그 둘이 양쪽에
+하나씩 있다 — `test_ui_screen.py`(앱) 600초 초과, `test_integration.py`(엔진) 587초.
+어느 쪽으로 갈라도 두 갈래 다 10분을 넘는다. **그래서 그 둘을 각각 떼어낸다.**
+
+### 갈래 넷
+
+| 갈래 | 대상 | 건수 | 소요 |
+|---|---|---|---|
+| **① 엔진** | 아래 23파일 | 858 | **4.7분** |
+| **② 산출물** | `test_casestudy` `test_slides` `test_document` `test_report` | 159 | **3.7분** |
+| **③ 통합** | `test_integration` | 57 | **9.8분** |
+| **④ 화면** | `test_ui_screen` `test_ui` | 284 | **10분 초과** |
+
+    # ① 엔진 — 평소엔 이것만 돌린다. 코드 고치면 여기서 먼저 깨진다
+    .venv\Scripts\python.exe -m pytest tests --ignore=tests\test_ui_screen.py --ignore=tests\test_ui.py --ignore=tests\test_integration.py --ignore=tests\test_casestudy.py --ignore=tests\test_slides.py --ignore=tests\test_document.py --ignore=tests\test_report.py
+
+    # ② 산출물 (보고서·문서·슬라이드·케이스)
+    .venv\Scripts\python.exe -m pytest tests\test_casestudy.py tests\test_slides.py tests\test_document.py tests\test_report.py
+
+    # ③ 통합
+    .venv\Scripts\python.exe -m pytest tests\test_integration.py
+
+    # ④ 화면
+    .venv\Scripts\python.exe -m pytest tests\test_ui_screen.py tests\test_ui.py
+
+**①→②→③→④ 순으로 돌린다.** ① 이 5분 안에 끝나 대부분의 실수를 잡고,
+중간에 끊겨도 어디까지 됐는지 안다. 커밋 전에는 ①②를, 세션 종료 전에는 넷 다 돈다.
+
+### 파일별 실측 (42세션, 2번 PC · 파일마다 따로 실행)
+
+| 파일 | 건수 | 초 | 파일 | 건수 | 초 |
+|---|---:|---:|---|---:|---:|
+| test_ui_screen | 207 | **600 초과** | test_compare | 25 | 11.9 |
+| test_integration | 57 | **586.9** | test_pv_input | 33 | 9.0 |
+| test_casestudy | 19 | 83.7 | test_diagnose | 36 | 7.1 |
+| test_slides | 66 | 70.2 | test_io_columns | 25 | 6.9 |
+| test_ess_cost | 62 | 58.0 | test_dr | 46 | 6.8 |
+| test_document | 36 | 39.8 | test_tariff_source | 31 | 6.6 |
+| test_progress | 35 | 37.8 | test_money | 14 | 6.0 |
+| test_measures | 62 | 35.8 | test_rules | 36 | 5.7 |
+| test_report | 38 | 26.8 | test_deployment | 16 | 5.4 |
+| test_notices | 51 | 20.7 | test_quality | 32 | 5.1 |
+| test_power_factor | 47 | 20.2 | test_pv | 49 | 5.0 |
+| test_ui | 77 | 14.9 | test_pv_archive | 27 | 4.5 |
+| test_tariff_engine | 43 | 11.8 | test_docsite | 37 | 4.5 |
+| test_tariff_tou | 41 | 3.7 | test_io_usage | 46 | 3.6 |
+| test_tariff_data | 55 | 3.0 | test_magnitude | 9 | 2.7 |
+
+파일마다 따로 띄웠으므로 기동 비용(파일당 약 2초)이 30번 붙어 있다. 갈래로 묶어
+한 프로세스에서 돌리면 각 갈래가 그만큼 짧아진다.
+
+**잰 방법** — 재려면 `tools\run_benchmark.py` 가 아니라 파일별 실행 시간이 필요하다.
+42세션은 임시 스크립트로 쟀고 저장소에 남기지 않았다. 다시 잴 일이 생기면
+`subprocess.run([python, "-m", "pytest", 파일, "-q"], timeout=600)` 을 파일마다 돌리고
+`time.perf_counter()` 차를 적으면 된다.
 
 ---
 
@@ -6434,6 +6503,7 @@ ESS 단가 재설계도 오늘 안에 들어갔다.
 | 1 | `tests\` mypy 38건 (아래 「도구·형 정리」) | 계산 코드의 결함이 아니다. `mypy src` 로 판단한다 |
 | 2 | `pyproject.files` 와 `ENVIRONMENT.md` 6.1 의 어긋남 | 위 1번을 끝낸 뒤 한 번에 맞춘다 |
 | 3 | **ESS 차익거래의 예지 없는 운전 전략** (41세션에 올렸다) | 아래 참조. 막지 않는다 |
+| 4 | **`test_ui_screen` · `test_integration` 이 왜 그렇게 느린가** (42세션에 올렸다) | 건당 2.9초·10.3초다. 시험마다 파이프라인을 다시 도는 것으로 보인다. 세션 범위 픽스처로 줄 수 있는지 봐야 한다. 막지 않는다 |
 
 **③ ESS 차익거래를 반영하려면 — 운전 전략을 먼저 정해야 한다 (41세션).**
 
