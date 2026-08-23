@@ -40,6 +40,7 @@ from kwise.measures import (
     Certainty,
     ContractAdjustment,
     DemandResponseResult,
+    EssOptimum,
     EssResult,
     EssTargetCurve,
     MeasureKind,
@@ -51,7 +52,7 @@ from kwise.measures import (
 )
 from kwise.measures import surplus as surplus_module
 from kwise.notices import Notice, Severity, report_appendix, report_body, texts
-from kwise.report import figures, narrative
+from kwise.report import figures, frames, narrative
 from kwise.report.appendix import APPENDIX_TITLES, AppendixData, known_limits, reference_rows
 from kwise.report.days import RepresentativeDay
 from kwise.report.notices import (
@@ -172,6 +173,14 @@ class MeasureEntry:
 
     Word 는 :attr:`saving` 을 그대로 쓴다. 문서는 관측 기간 값과 환산값을 나란히
     두고 대조하는 자리라 두 값이 함께 있어야 한다."""
+    spec_table: tuple[tuple[str, ...], ...] = field(default=())
+    """산출물에 **폭 전체로** 놓을 표. 머리글이 첫 줄이다 (44세션).
+
+    ESS 가 쓴다 — 회수기간 곡선을 목표별 사양 표로 바꾸면서 생겼다. PPT 는
+    **반 칸에 놓지 않는다**: 열이 아홉이라 좌우로 나누면 글자가 읽히지 않는다.
+    표가 있으면 그림은 표 아래로 내려간다. Word 는 절 안에 그대로 쌓는다."""
+    spec_caption: str = ""
+    """표 아래 한 줄. 화면 캡션과 **같은 문장이다.**"""
 
     @property
     def slide_saving(self) -> str:
@@ -224,9 +233,6 @@ _PF_TRIANGLE_CAPTION = "전력삼각형 — 각이 좁아질수록 역률이 좋
 _PF_DAY_CAPTION = "대표일 부하 — 주황 점이 역률을 판정하는 주간 구간입니다."
 _SOLAR_ANNUAL_CAPTION = "일별 발전량 — 여름에 높고 겨울에 낮습니다."
 _SOLAR_DAY_CAPTION = "대표일의 부하 — 두 선 사이가 태양광으로 줄어든 몫입니다."
-_ESS_PAYBACK_CAPTION = (
-    "용량별 회수기간 — 곡선은 개략 산정이고, 표식은 요금을 다시 계산해 고른 실제 최적 지점입니다."
-)
 _ESS_DAY_CAPTION = "대표일의 부하 — 두 선 사이가 ESS 로 깎은 몫입니다."
 
 
@@ -354,6 +360,7 @@ def measure_entries(
     solar_unpriced_reason: str = "",
     ess: EssResult | None = None,
     ess_curve: EssTargetCurve | None = None,
+    ess_optimum: EssOptimum | None = None,
     surplus: SurplusResult | None = None,
     usage: UsageData | None = None,
     day: RepresentativeDay | None = None,
@@ -592,17 +599,18 @@ def measure_entries(
     if ess is not None:
         # **목표가 어디서 나왔는지 답하는 그림이 빠져 있었다** (38세션 3-3).
         # 카드가 낸 목표는 이 U곡선의 최소 지점이다.
-        ess_payback = (
-            _safe_figure(
-                lambda: figures.ess_payback_png(
-                    ess_curve,
-                    marker_target_kw=ess.excess.target_kw,
-                    size=MEASURE_PAIR_FIGURE,
+        # **회수기간 곡선을 뺐다** (44세션). 개략 산정이라 값이 카드와 달라
+        # 한 산출물에 두 숫자가 남았다. 자리에 목표별 사양 표가 들어간다 —
+        # 전부 카드 기준 참값이고 정밀화가 이미 잰 점이라 추가 계산이 없다.
+        ess_table: tuple[tuple[str, ...], ...] = ()
+        if ess_optimum is not None and ess_curve is not None:
+            ess_table = frames.ess_spec_rows(
+                frames.ess_spec_frame(
+                    ess_optimum,
+                    baseline_demand_kw=ess_curve.baseline_demand_kw,
+                    market_minimum_kwh=ess_curve.market_minimum_kwh,
                 )
             )
-            if ess_curve is not None
-            else None
-        )
         ess_day = (
             _safe_figure(
                 lambda: figures.ess_day_png(usage, ess.dispatch, day, size=MEASURE_PAIR_FIGURE)
@@ -630,10 +638,9 @@ def measure_entries(
             notices=ess.notices,
             figure=ess_day,
             figure_caption=_ESS_DAY_CAPTION,
-            figures=_pair(
-                (ess_payback, _ESS_PAYBACK_CAPTION),
-                (ess_day, _ESS_DAY_CAPTION),
-            ),
+            figures=_pair((ess_day, _ESS_DAY_CAPTION)),
+            spec_table=ess_table,
+            spec_caption=frames.ESS_SPEC_CAPTION,
         )
 
     return tuple(entries[kind.key] for kind in MEASURE_CATALOG if kind.key in entries)
@@ -1055,6 +1062,12 @@ def _chapter_measures(document: DocumentType, sections: DocumentSections, number
                 ["확실성", entry.certainty],
             ],
         )
+        # **표가 있으면 그림보다 먼저다** (44세션). ESS 의 목표별 사양 표가
+        # 「이 목표는 어디서 나왔나」 에 답하므로 그림보다 앞에 와야 한다.
+        if entry.spec_table:
+            _add_table(document, [list(row) for row in entry.spec_table])
+            if entry.spec_caption:
+                _para(document, entry.spec_caption)
         if entry.figure is not None:
             _add_figure(document, entry.figure, f"그림 {number}-{index}. {entry.figure_caption}")
         if entry.cautions:

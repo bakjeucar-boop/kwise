@@ -1632,27 +1632,29 @@ def test_ESS_목표_슬라이더가_없다(ess_screen: AppTest) -> None:
     assert 'input_key("ess", "unit_cost")' not in source, "kW당 단가 입력이 남아 있습니다."
 
 
-def test_ESS_는_그림_하나로_고른다(ess_screen: AppTest) -> None:
-    """**곡선 하나뿐이다** (26세션 1절).
+def test_ESS_는_표_하나로_고른다(ess_screen: AppTest) -> None:
+    """**곡선을 표로 바꿨다** (44세션).
 
-    23세션까지는 곡선 아래에 대표 지점 표와 U자 설명 세 줄이 함께 있었다. 그림
-    하나로 고르는 자리에 읽을 것을 셋이나 두니 정작 최소 지점이 묻혔다. 오해를
-    푸는 설명(「목표를 낮추면 용량이 더 빨리 는다」)은 툴팁으로 내렸다.
+    곡선은 개략 산정이라 값이 카드와 달라 한 화면에 두 숫자(26.0년·30.8년)가
+    남아 있었다. 비율을 곱해 올리는 방법은 자료 일곱에서 1.10~3.18 로 갈려
+    쓸 수 없었다. **표는 전부 카드 기준 참값이다.**
+
+    26세션이 없앤 「대표 지점 표」와 다르다 — 그때는 곡선 아래 표까지 두어
+    읽을 것이 둘이었고, 지금은 표 하나뿐이다.
     """
     assert not ess_screen.exception, ess_screen.exception
-    assert len(ess_screen.get("vega_lite_chart")) >= 1, "회수기간 곡선이 없습니다."
+    tables = [item.value for item in ess_screen.dataframe]
+    spec = [item for item in tables if "정격 용량" in list(item.columns)]
+    assert spec, "목표별 사양 표가 없습니다."
+    columns = list(spec[0].columns)
+    for name in ("목표", "저감량", "출력", "정격 용량", "방전시간", "투자비", "회수기간"):
+        assert name in columns, name
     body = " ".join(str(item.value) for item in ess_screen.caption)
-    # **곡선과 표식이 다른 것을 잰다는 사실이 캡션에 있다** (40세션 2-2).
-    assert "개략 산정" in body and "요금을 다시 계산해 고른" in body
-    for banned in ("가장 유리한 목표는", "조달", "왼쪽은 최소 규모", "표의 출력·정격 용량"):
-        assert banned not in body, banned
-    # 목표 선택 표가 없다 — 사양은 아래 지표 카드가 낸다.
-    frames = [item.value for item in ess_screen.dataframe]
-    picked = [item for item in frames if "목표(kW)" in list(item.columns)]
-    assert not picked, "목표 선택 표가 남아 있습니다."
-    # 오해를 푸는 설명은 툴팁에 있다.
-    tip = text.chart_tip("chart.ess_target")
-    assert "필요 용량이 훨씬 빠르게" in tip and "균형점" in tip
+    assert "목표를 낮추면" in body and "회수기간이 나빠집니다" in body
+    # **「개략」 이 화면에서 사라졌다** — 두 숫자가 없으므로 밝힐 것도 없다.
+    assert "개략" not in body
+    tip = text.tip("table.ess_spec")
+    assert "요금을 다시 계산한" in tip and "균형점" in tip
 
 
 def test_ESS_최소점_표식이_검산값과_맞는다() -> None:
@@ -2257,7 +2259,6 @@ def _chart_specs() -> dict[str, object]:
     from kwise.diagnose import ContractInfo, diagnose
     from kwise.measures import (
         EssCostInput,
-        ess_target_curve,
         evaluate_ess,
         evaluate_power_factor,
         evaluate_tariff_switch,
@@ -2288,12 +2289,6 @@ def _chart_specs() -> dict[str, object]:
         baseline=bill,
         quality=quality,
     )
-    curve = ess_target_curve(
-        usage.kw,
-        usage.meta.interval_minutes,
-        baseline_demand_kw=bill.billing_demand_kw,
-        base_fee_won_per_kw=bill.base_rate_won_per_kw,
-    )
     day = representative_days(usage)[0]
     generation = pd.Series(1.0, index=usage.kw.index)
     assert diagnosis.dr is not None and diagnosis.structure is not None
@@ -2312,7 +2307,6 @@ def _chart_specs() -> dict[str, object]:
         ),
         "chart.solar_annual": charts.solar_annual_chart(usage, generation),
         "chart.solar_day": charts.solar_day_chart(usage, generation, day, zoom=True),
-        "chart.ess_target": charts.ess_target_chart(curve),
         "chart.ess_day": charts.ess_day_chart(usage, ess.dispatch, day),
         "chart.surplus_daily": charts.surplus_daily_chart(
             usage, pd.Series(0.5, index=usage.kw.index)

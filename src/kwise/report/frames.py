@@ -23,8 +23,8 @@ from kwise.io import UsageData, slot_start
 from kwise.measures import (
     CapacityVerdict,
     DispatchResult,
-    EssTargetCurve,
-    EssTargetPoint,
+    EssOptimum,
+    EssOptimumPoint,
     PowerFactorResult,
     SolarCurve,
     SolarPoint,
@@ -33,6 +33,7 @@ from kwise.measures import (
 )
 from kwise.report.columns import option_label
 from kwise.report.days import day_profile
+from kwise.report.notices import format_won
 from kwise.tariff import day_window, option_sort_key
 
 __all__ = [
@@ -40,9 +41,10 @@ __all__ = [
     "BAND_LABELS",
     "CAPACITY_COLUMNS",
     "CAPACITY_ROWS",
-    "CAPACITY_WINDOW",
     "DAY_TYPE_LABELS",
-    "ESS_PAYBACK_AXIS",
+    "ESS_SPEC_CAPTION",
+    "ESS_SPEC_HEADER",
+    "ESS_SPEC_ROWS",
     "MONTHLY_CHARGE_PARTS",
     "TARIFF_PARTS",
     "band_frame",
@@ -51,9 +53,9 @@ __all__ = [
     "daily_usage_frame",
     "dr_daily_frame",
     "ess_day_frame",
-    "ess_marker_point",
-    "ess_target_caption",
-    "ess_target_frame",
+    "ess_spec_frame",
+    "ess_spec_rows",
+    "ess_spec_targets",
     "hourly_profile_frame",
     "month_labels",
     "monthly_charge_frame",
@@ -357,87 +359,125 @@ def solar_capacity_table(
 
 #: 회수기간 곡선에서 **최적의 몇 배까지 보일지** (26세션 1-2).
 #:
-#: 40~20,000 kWh 를 다 그리면 최적 둘레의 변화가 뭉개진다 — 사용자가 "3,700 kW
-#: 로 낮추는 게 낫지 않나" 라고 물은 것이 그 구간을 못 읽어서였다. 최적 용량을
-#: 가운데 두고 **작은 쪽 절반부터 큰 쪽 세 배까지** 남긴다. 왼쪽은 시장 최소
-#: 규모에 눌려 금방 평평해지고, 오른쪽은 세 배쯤에서 회수기간이 두 배가 되어
-#: 더 그려도 같은 말을 되풀이한다.
-CAPACITY_WINDOW: tuple[float, float] = (0.5, 3.0)
+#: 목표별 사양 표에 세울 줄 수 (44세션). **대여섯 줄이다** — 21점을 다 세우면
+#: 읽을 것이 너무 많고, 셋이면 「목표를 낮추면 나빠진다」 가 안 읽힌다.
+ESS_SPEC_ROWS = 5
 
 
-def ess_target_frame(curve: EssTargetCurve) -> pd.DataFrame:
-    """ESS 회수기간 곡선 — **정격 용량 축** (26세션 1-1).
+def ess_spec_targets(points: Sequence[EssOptimumPoint], best_target_kw: float) -> tuple[int, ...]:
+    """표에 세울 지점의 자리 번호 — **최적을 가운데 두고 양쪽으로 벌린다.**
 
-    x 를 목표 요금적용전력에서 **정격 용량(kWh)** 으로 바꿨다. 사용자가 정하는
-    것은 목표가 아니라 사야 할 배터리이고, 목표를 낮출수록 용량이 급증한다는
-    사실이 축 자체로 읽혀야 하기 때문이다. 용량은 목표에 대해 단조 감소라
-    U자 모양은 그대로다.
-
-    보조 축을 두지 않는다 — 회수기간 한 줄만 남긴다.
+    창의 양 끝과 최적은 반드시 넣는다. 끝을 빼면 「목표를 낮추면 회수가
+    나빠진다」 가 안 보이고, 최적을 빼면 표식을 찍을 줄이 없다. 남은 자리는
+    **가장 넓은 틈부터** 반으로 갈라 채운다 — 한쪽에만 몰리지 않는다.
     """
-    frame = curve.frame()
-    priced = frame[frame["회수기간(년)"].notna()].reset_index(drop=True)
-    return _capacity_window(priced, curve)
+    ordered = sorted(range(len(points)), key=lambda i: -points[i].target_kw)
+    if not ordered:
+        return ()
+    best = next(
+        (rank for rank, i in enumerate(ordered) if points[i].target_kw == best_target_kw), 0
+    )
+    chosen = sorted({0, best, len(ordered) - 1})
+    while len(chosen) < min(ESS_SPEC_ROWS, len(ordered)):
+        gaps = [(chosen[i + 1] - chosen[i], i) for i in range(len(chosen) - 1)]
+        width, at = max(gaps)
+        if width < 2:
+            break
+        chosen = sorted({*chosen, chosen[at] + width // 2})
+    return tuple(ordered[rank] for rank in chosen)
 
 
-#: 회수기간 곡선의 y축 이름 (40세션 2-3). **화면과 PPT 가 같은 이름을 쓴다** —
-#: 곡선 값이 개략치라는 사실을 축이 먼저 말해야 하고, 두 산출물이 다른 이름을
-#: 달면 나란히 놓았을 때 다른 값을 그린 줄 알게 된다.
-ESS_PAYBACK_AXIS = "회수기간 (개략, 년)"
+def ess_spec_frame(
+    optimum: EssOptimum, *, baseline_demand_kw: float, market_minimum_kwh: float | None = None
+) -> pd.DataFrame:
+    """목표별 사양 표 — **곡선을 대신한다** (44세션).
 
+    23~43세션은 회수기간 곡선을 그렸다. 곡선은 개략 산정이라 값이 카드와 달랐고
+    (샘플 26.0년 대 30.8년), 한 화면에 두 숫자가 남았다. 비율을 곱해 올리는
+    방법을 재 봤더니 자료마다 1.10~3.18 로 갈려 한 곱수로는 못 옮긴다.
 
-def ess_marker_point(
-    curve: EssTargetCurve, marker_target_kw: float | None
-) -> EssTargetPoint | None:
-    """표식을 찍을 점 (40세션 2-1).
+    **표는 전부 카드 기준 참값이다.** 정밀화가 이미 잰 점을 그대로 쓰므로 추가
+    계산이 없다. 열 구성과 「표식」 규약은 **태양광 용량 표와 같다.**
 
-    **곡선의 최소가 아니라 요금을 다시 계산해 고른 목표다.** 둘이 다른 자료가
-    있고(C3·C5) 그것이 사실이므로 숨기지 않는다. 정밀화 격자가 곡선 격자와 같아
-    그 목표는 언제나 곡선 위에 있다 — 표식이 선 밖에 뜨지 않는다.
+    26세션이 없앤 「대표 지점 표」와 다르다 — 그때는 곡선 **아래** 표까지 두어
+    읽을 것이 둘이었다. 지금은 표 하나뿐이다.
+
+    Args:
+        market_minimum_kwh: 주면 하한에 걸린 줄에 「최소 규모」 표식을 단다.
+            그 줄들은 용량이 달라도 투자비가 같아, 밝히지 않으면 표가 틀린 것처럼
+            읽힌다.
     """
-    if marker_target_kw is None:
-        return curve.best
-    return next(
-        (point for point in curve.points if point.target_kw == marker_target_kw), curve.best
+    picks = ess_spec_targets(optimum.points, optimum.target_kw)
+    rows = [optimum.points[i] for i in picks]
+
+    def mark(point: EssOptimumPoint) -> str:
+        labels = ["최적"] if point.target_kw == optimum.target_kw else []
+        if market_minimum_kwh is not None and point.nameplate_capacity_kwh < market_minimum_kwh:
+            labels.append("최소 규모")
+        return " · ".join(labels)
+
+    return pd.DataFrame(
+        {
+            "목표 요금적용전력(kW)": [point.target_kw for point in rows],
+            "저감량(kW)": [max(0.0, baseline_demand_kw - point.target_kw) for point in rows],
+            "필요 출력(kW)": [point.power_kw for point in rows],
+            "정격 용량(kWh)": [point.nameplate_capacity_kwh for point in rows],
+            "방전시간(h)": [point.discharge_hours for point in rows],
+            "투자비(원)": [point.investment_won for point in rows],
+            "연간 절감액(원)": [point.annual_saving_won for point in rows],
+            "회수기간(년)": [point.payback_years for point in rows],
+            "표식": [mark(point) for point in rows],
+        }
     )
 
 
-def ess_target_caption(curve: EssTargetCurve, optimum: object = None) -> str:
-    """곡선 아래 한 줄 (40세션 2-2).
+ESS_SPEC_HEADER: tuple[str, ...] = (
+    "목표",
+    "저감량",
+    "출력",
+    "정격 용량",
+    "방전시간",
+    "투자비",
+    "연간 절감액",
+    "회수기간",
+    "표식",
+)
+"""목표별 사양 표의 머리글 (44세션). **화면·PPT·Word 가 같은 열을 쓴다.**"""
 
-    **곡선과 표식이 다른 것을 재는 값이라는 사실을 적는다.** 곡선은 목표를
-    고르는 개략 산정이고, 표식은 그 목표에서 요금을 다시 계산해 고른 실제
-    최적이다. 둘이 다른 자리에 있으면 그 사실까지 적는다 — 그림이 자기모순으로
-    보이는 편보다 낫다.
+
+def ess_spec_rows(frame: pd.DataFrame) -> tuple[tuple[str, ...], ...]:
+    """사양 표를 **사람이 읽는 문자열로** 굳힌다 — 머리글이 첫 줄이다.
+
+    **한 곳에서 만든다** (44세션). 화면·PPT·Word 가 각자 서식을 잡으면 같은 표가
+    산출물마다 다르게 읽힌다 — 17세션 3-3 이 태양광 용량 표에서 겪은 일이다.
     """
-    head = "곡선은 개략 산정이고, 표식은 요금을 다시 계산해 고른 실제 최적 지점입니다."
-    moved = bool(getattr(optimum, "moved", False))
-    if not moved or curve.best is None:
-        return head
-    shift = float(getattr(optimum, "shift_kw", 0.0))
-    direction = "높은" if shift > 0 else "낮은"
-    return (
-        f"{head} 개략 최소는 {curve.best.target_kw:,.0f} kW 이지만 실제 최적은 "
-        f"{abs(shift):,.0f} kW {direction} 쪽입니다."
-    )
+    rows: list[tuple[str, ...]] = [ESS_SPEC_HEADER]
+    for _, row in frame.iterrows():
+        years = row["회수기간(년)"]
+        rows.append(
+            (
+                f"{row['목표 요금적용전력(kW)']:,.0f} kW",
+                f"{row['저감량(kW)']:,.0f} kW",
+                f"{row['필요 출력(kW)']:,.0f} kW",
+                f"{row['정격 용량(kWh)']:,.0f} kWh",
+                f"{row['방전시간(h)']:,.2f}h",
+                format_won(float(row["투자비(원)"]), reason="—"),
+                format_won(float(row["연간 절감액(원)"]), reason="—"),
+                "—" if years is None or years != years else f"{float(years):,.1f}년",
+                str(row["표식"]),
+            )
+        )
+    return tuple(rows)
 
 
-def _capacity_window(frame: pd.DataFrame, curve: EssTargetCurve) -> pd.DataFrame:
-    """최적 용량 둘레만 남긴다. 최적이 없으면 그대로 돌려준다."""
-    if frame.empty or curve.best is None:
-        return frame
-    center = curve.best.nameplate_capacity_kwh
-    if center <= 0:
-        return frame
-    low, high = CAPACITY_WINDOW
-    capacity = frame["정격 용량(kWh)"]
-    window = frame[(capacity >= center * low) & (capacity <= center * high)]
-    return window.reset_index(drop=True) if len(window) >= 2 else frame
+#: 목표별 사양 표 위 한 줄 (44세션). 곡선 캡션이 하던 일이다 — 왜 U자인지를
+#: 적는다. **곡선이 없어졌으므로 「개략」 을 밝힐 필요도 없어졌다.**
+ESS_SPEC_CAPTION = "목표를 낮추면 저감량은 늘지만 필요 용량이 더 빠르게 늘어 회수기간이 나빠집니다."
 
 
-# **목표 선택 표를 없앴다** (26세션 1-3). 곡선 아래에 대표 지점 대여섯 줄을
-# 두었는데, 그림 하나로 고르는 자리에 표까지 두니 읽을 것이 둘이 되었다.
-# 최적 지점의 사양은 아래 지표 카드가 낸다 — 같은 값을 두 번 적지 않는다.
+# **26세션이 없앴던 표가 44세션에 돌아왔다.** 그때는 곡선 **아래** 대표 지점
+# 표까지 두어 읽을 것이 둘이었다 — 지금은 곡선이 없고 표 하나뿐이다.
+# 곡선을 남길 수 없었던 까닭은 값이 개략이라 카드와 갈라졌기 때문이다.
 
 
 def combination_frame(comparison: ComparisonResult) -> pd.DataFrame:

@@ -45,10 +45,10 @@ from kwise.measures import (
     surplus_options,
 )
 from kwise.measures.demand_response import DemandResponseResult
-from kwise.notices import Notice, basis, tooltip
+from kwise.notices import Notice, tooltip
 from kwise.pv import PvPresets, area_from_capacity_m2, capacity_preview, load_pv_presets
 from kwise.quality import QualityReport
-from kwise.report import CONTRACT_CHANGE_WARNING
+from kwise.report import CONTRACT_CHANGE_WARNING, frames
 from kwise.report.days import RepresentativeDay, find_day, representative_days
 from kwise.report.worksheet import (
     Worksheet,
@@ -1230,6 +1230,34 @@ def _share(part: float, total: float) -> str:
     return fmt.ratio_pct(part / total) if total > 0 else fmt.DASH
 
 
+def _ess_spec_view(frame: pd.DataFrame) -> pd.DataFrame:
+    """목표별 사양 표를 **사람이 읽는 문자열로** 굳힌다 (44세션).
+
+    태양광 용량 표(:func:`_capacity_view`)와 같은 방식이다 — 두 표가 한 화면에
+    있으므로 서식이 갈리면 다른 것을 재는 표처럼 보인다.
+    """
+    if frame.empty:
+        return frame
+    return pd.DataFrame(
+        {
+            "목표": [fmt.kw(value, decimals=0) for value in frame["목표 요금적용전력(kW)"]],
+            "저감량": [fmt.kw(value, decimals=0) for value in frame["저감량(kW)"]],
+            "출력": [fmt.kw(value, decimals=0) for value in frame["필요 출력(kW)"]],
+            "정격 용량": [fmt.kwh(value) for value in frame["정격 용량(kWh)"]],
+            "방전시간": [fmt.hours(value) for value in frame["방전시간(h)"]],
+            "투자비": [fmt.won_short(value, reason="—") for value in frame["투자비(원)"]],
+            "연간 절감액": [fmt.won_year(value) for value in frame["연간 절감액(원)"]],
+            "회수기간": [
+                fmt.payback(years, investment_won=investment)
+                for years, investment in zip(
+                    frame["회수기간(년)"], frame["투자비(원)"], strict=True
+                )
+            ],
+            "표식": frame["표식"],
+        }
+    )
+
+
 def _capacity_view(frame: pd.DataFrame) -> pd.DataFrame:
     """용량 표를 **사람이 읽는 문자열로** 굳힌다 (17세션 3-3)."""
     if frame.empty:
@@ -1407,13 +1435,25 @@ def _ess(
             report,
         )
 
-    # **그림 하나로 고른다** (26세션 1절). 곡선 아래 대표 지점 표를 없앴고
-    # (같은 사양을 아래 지표 카드가 낸다), 오해를 푸는 설명은 툴팁으로 내렸다 —
-    # 본문에 줄을 늘리지 않는다.
-    st.altair_chart(
-        charts.ess_target_chart(curve, marker_target_kw=optimum.target_kw), width="stretch"
+    # **곡선을 표로 바꿨다** (44세션). 곡선은 개략 산정이라 값이 카드와 달라
+    # 한 화면에 두 숫자(26.0년·30.8년)가 남아 있었다. 비율을 곱해 올리는 방법을
+    # 자료 일곱 121점에서 재 봤더니 1.10~3.18 로 갈려 한 곱수로는 못 옮긴다.
+    #
+    # **표는 전부 카드 기준 참값이고 추가 계산이 없다** — 위 정밀화가 이미 잰
+    # 점을 그대로 쓴다. 26세션이 없앤 「대표 지점 표」와 다르다: 그때는 곡선
+    # 아래 표까지 두어 읽을 것이 둘이었고, 지금은 표 하나뿐이다.
+    st.dataframe(
+        _ess_spec_view(
+            frames.ess_spec_frame(
+                optimum,
+                baseline_demand_kw=curve.baseline_demand_kw,
+                market_minimum_kwh=curve.market_minimum_kwh,
+            )
+        ),
+        hide_index=True,
+        width="stretch",
     )
-    st.caption(charts.ess_target_caption(curve, optimum), help=fmt.chart_tip("chart.ess_target"))
+    st.caption(frames.ESS_SPEC_CAPTION, help=fmt.tip("table.ess_spec"))
 
     # 목표는 정밀화가 정한다. 세션에는 남겨 3단계가 같은 값을 읽게 한다.
     target = optimum.target_kw
@@ -1518,32 +1558,10 @@ def _ess(
     # 20세션에 화면이 다시 쓰던 넉 줄을 지웠다. 계산 쪽이 같은 사실을 이미
     # 근거로 내고 있어(``ess.quote_breakdown`` · ``ess.cost_model_formula`` ·
     # ``ess.feasibility``) 사실 ID 로 견주니 전부 중복이었다.
-    _notices((*result.notices, *optimum.notices, _ess_basis_note(base_fee)))
+    # **두 기준의 차이를 적던 확인사항을 뺐다** (44세션). 곡선이 없어져
+    # 설명할 차이가 없다 — 표가 전부 카드 기준 참값이다.
+    _notices((*result.notices, *optimum.notices))
     _worksheet(ess_worksheet(result))
-
-
-def _ess_basis_note(base_fee_won_per_kw: float) -> Notice:
-    """두 기준의 차이 **두 줄** (18세션 1절 · 39세션 조사 · 40세션 3절).
-
-    **앞 문구는 방향이 거꾸로였다.** 「기본요금 절감만 본 개략치」 라고만 적으면
-    카드가 기본요금 + 전력량요금이므로 더 커야 하는데, 실제로는 카드가 더 작다.
-    곡선의 **기본요금 절감 자체가 과대**하기 때문이다 — 요금적용전력이 직전
-    12개월 최대라 관측 첫머리 몇 달은 깎을 몫이 없거나 적은데, 곡선은 저감폭을
-    12개월 내내 얻는다고 본다. 샘플에서 차이의 72%가 여기서 나왔다.
-
-    **편차 크기는 자료 창이 정한다.** 연간 피크가 관측 첫 달에 있으면 거의
-    사라지고 끝에 있으면 커진다 — 그래서 폭을 숫자로 적지 않는다.
-    """
-    return basis(
-        "목표 선택 곡선은 개략 산정입니다 — 전력량요금과 차익거래를 빼고, "
-        "저감폭을 12개월 내내 얻는다고 보며(현행 기본요금단가 "
-        f"{fmt.count(base_fee_won_per_kw, ' 원/kW')} × 12개월), 투자비를 정격이 아닌 "
-        "내보낼 에너지로 매깁니다.\n\n"
-        "위 결과는 요금을 다시 계산한 값입니다. **요금적용전력이 직전 12개월 최대라 "
-        "관측 첫머리 몇 달은 깎을 몫이 적어** 곡선보다 회수기간이 깁니다 — 그 폭은 "
-        "연간 피크가 관측 기간의 어디에 있느냐에 따라 달라집니다.",
-        fact="ess.curve_vs_card",
-    )
 
 
 def _ess_cost_inputs() -> tuple[float, float | None, float | None]:

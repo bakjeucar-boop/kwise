@@ -228,7 +228,7 @@ def slide_specs(sections: DocumentSections) -> tuple[SlideSpec, ...]:
         SlideSpec(
             f"measure_{entry.kind.key}",
             measure_slide_title(entry),
-            "chart_pair" if len(entry.slide_figures) > 1 else "stat_chart",
+            _measure_layout(entry),
             measure=index,
         )
         for index, entry in enumerate(sections.measures)
@@ -1356,6 +1356,18 @@ def _measure_note(entry: MeasureEntry) -> str:
     return " · ".join(parts)
 
 
+def _measure_layout(entry: MeasureEntry) -> str:
+    """수단 장의 형태. **자리표가 쥐고 있어야 시험이 셀 수 있다** (38세션 3절).
+
+    44세션에 ``stat_table_chart`` 가 붙었다 — ESS 가 회수기간 곡선 대신 목표별
+    사양 표를 싣는다. 열이 아홉이라 반 칸에 못 넣으므로 **표가 폭 전체로 위,
+    그림이 아래**다.
+    """
+    if entry.spec_table:
+        return "stat_table_chart"
+    return "chart_pair" if len(entry.slide_figures) > 1 else "stat_chart"
+
+
 def _measure_pictures(
     slide: Slide,
     guide: DesignGuide,
@@ -1435,8 +1447,40 @@ def _build_measure(
     note = _measure_note(entry)
     body = bottom + geometry.block_gap_in
     height = _body_bottom(guide, note=bool(note)) - body - 0.32
+    if entry.spec_table:
+        # **표가 먼저다** (44세션). 「이 목표는 어디서 나왔나」 에 답하는 자리라
+        # 그림보다 위에 온다. 줄 수가 적어 높이를 적게 먹는다 — 남는 만큼이
+        # 아래 그림 몫이다.
+        spec_rows = len(entry.spec_table)
+        # 줄당 0.4in — 부록 표(1,735행)와 같은 눈금이다.
+        table_height = min(height * 0.55, 0.4 * spec_rows)
+        _table(
+            slide,
+            guide,
+            entry.spec_table,
+            left=geometry.margin_in,
+            top=body,
+            width=geometry.content_width_in,
+            height=table_height,
+        )
+        used = table_height * (1.0 + geometry.text_slack)
+        if entry.spec_caption:
+            _text(
+                slide,
+                guide,
+                [entry.spec_caption],
+                left=geometry.margin_in,
+                top=body + used,
+                width=geometry.content_width_in,
+                height=0.24,
+                size=guide.type_scale.caption,
+                color=colors.muted,
+            )
+            used += 0.24
+        body += used + geometry.block_gap_in
+        height -= used + geometry.block_gap_in
     drawings = entry.slide_figures
-    if drawings:
+    if drawings and height > 0.6:
         _measure_pictures(slide, guide, drawings, top=body, height=height)
         _note(slide, guide, note)
         return

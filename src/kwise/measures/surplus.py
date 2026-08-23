@@ -370,8 +370,7 @@ def evaluate_surplus(
         money[str(band)] += value * rates.rate(str(season), str(band)) * (1.0 - float(discount))
     price_by_band = {
         month: {
-            band: (won_by_band[month][band] / kwh if kwh > 0 else 0.0)
-            for band, kwh in room.items()
+            band: (won_by_band[month][band] / kwh if kwh > 0 else 0.0) for band, kwh in room.items()
         }
         for month, room in usage_by_band.items()
     }

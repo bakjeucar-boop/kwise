@@ -1195,13 +1195,23 @@ def refine_max_widen() -> int:
 
 @dataclass(frozen=True)
 class EssOptimumPoint:
-    """정밀화에서 잰 한 점 — **카드와 같은 산식이다.**"""
+    """정밀화에서 잰 한 점 — **카드와 같은 산식이다.**
+
+    화면의 목표별 사양 표가 이 값들을 그대로 낸다 (44세션). 표에 필요한 것이
+    모두 여기 있어야 다시 계산할 일이 없다.
+    """
 
     target_kw: float
     nameplate_capacity_kwh: float
     investment_won: float
     annual_saving_won: float
     payback_years: float | None
+    power_kw: float = 0.0
+
+    @property
+    def discharge_hours(self) -> float:
+        """정격 용량 ÷ 출력. **카드와 같은 정의다** (43세션)."""
+        return self.nameplate_capacity_kwh / self.power_kw if self.power_kw > 0 else 0.0
 
 
 @dataclass(frozen=True)
@@ -1334,7 +1344,7 @@ def refine_ess_target(
         excess = analyze_peak_excess(usage.kw, target_kw, interval)
         power, capacity = size_for_target(excess, dod=dod, round_trip=round_trip)
         if power <= 0:
-            point = EssOptimumPoint(target_kw, capacity, 0.0, 0.0, None)
+            point = EssOptimumPoint(target_kw, capacity, 0.0, 0.0, None, power_kw=power)
         else:
             dispatch = dispatch_peak_shaving(
                 usage.kw,
@@ -1356,7 +1366,12 @@ def refine_ess_target(
             saving = annualize(base_bill.total_won - after.total_won, base_bill.base_fee_months)
             investment = cost_model.quote(capacity, indoor=indoor).total_won
             point = EssOptimumPoint(
-                target_kw, capacity, investment, saving, payback_years(investment, saving)
+                target_kw,
+                capacity,
+                investment,
+                saving,
+                payback_years(investment, saving),
+                power_kw=power,
             )
         scored[target_kw] = point
         return point

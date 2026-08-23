@@ -964,7 +964,6 @@ SCREEN_TO_DECK: dict[str, str] = {
     "power_factor_day_chart": "power_factor_day_png",
     "solar_annual_chart": "solar_annual_png",
     "solar_day_chart": "solar_day_png",
-    "ess_target_chart": "ess_payback_png",
     "ess_day_chart": "ess_day_png",
     "surplus_daily_chart": "surplus_daily_png",
 }
@@ -1289,9 +1288,7 @@ def test_ppt_에_잉여_장이_없고_태양광_장이_진다(
         name="kw",
     )
     capacity = 4_000.0
-    point = solar_point(
-        sample_usage, tariff, selection, unit, capacity, baseline=sample_bill
-    )
+    point = solar_point(sample_usage, tariff, selection, unit, capacity, baseline=sample_bill)
     net = apply_generation(sample_usage, unit * capacity)
     surplus = evaluate_surplus(
         sample_usage,

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -42,7 +43,6 @@ from kwise.measures.ess_cost import load_ess_cost_model, reference_data_path
 from kwise.notices import texts
 from kwise.quality import QualityReport
 from kwise.report import frames
-from kwise.report.frames import CAPACITY_WINDOW, ess_target_frame
 from kwise.tariff import BillingResult, TariffSelection, TariffTable
 
 from .conftest import SAMPLE_SELECTION
@@ -723,26 +723,6 @@ def test_대표_지점이_최소_지점을_품는다(target_curve: EssTargetCurv
     assert not hasattr(frames, "ess_target_table"), "목표 선택 표가 되살아났습니다."
 
 
-def test_회수기간_곡선이_최적_둘레로_좁혀진다(target_curve: EssTargetCurve) -> None:
-    """**x 범위를 좁힌다** (26세션 1-2).
-
-    40~20,000 kWh 를 다 그리면 최적 둘레의 변화가 뭉개져 "목표를 더 낮추는 게
-    낫지 않나" 라는 오해가 생긴다. 최적 용량의 0.5~3배만 남긴다.
-    """
-    best = target_curve.best
-    assert best is not None
-    frame = ess_target_frame(target_curve)
-    low, high = CAPACITY_WINDOW
-    center = best.nameplate_capacity_kwh
-    capacity = frame["정격 용량(kWh)"]
-    assert float(capacity.min()) >= center * low
-    assert float(capacity.max()) <= center * high
-    # 최적 지점은 언제나 창 안에 있다 — 표식을 찍을 자리다.
-    assert bool((capacity == center).any())
-    # 회수기간이 빈 지점은 그리지 않는다.
-    assert frame["회수기간(년)"].notna().all()
-
-
 def test_표의_최적_행이_카드_요약과_같다(
     target_curve: EssTargetCurve,
     sample_usage: UsageData,
@@ -1126,52 +1106,121 @@ def test_절감액이_없으면_곡선의_선택을_그대로_쓴다(
     assert replace(target_curve, best=None).best is None
 
 
-def test_표식이_카드_기준_최적점에_찍힌다(target_curve: EssTargetCurve) -> None:
-    """**곡선의 최소가 아닌 자리에 찍힐 수 있다. 그것이 사실이다** (40세션 2-1)."""
-    from kwise.report.frames import ess_marker_point
+def test_사양_표가_최적을_가운데_두고_양쪽으로_벌린다(
+    sample_usage: UsageData,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_report: QualityReport,
+    target_curve: EssTargetCurve,
+) -> None:
+    """**「목표를 낮추면 나빠진다」 가 표로 읽혀야 한다** (44세션).
 
-    other = next(point for point in target_curve.points if point.target_kw == 5_180.0)
-    assert ess_marker_point(target_curve, 5_180.0) is other
-    # 목표를 주지 않으면 곡선의 선택으로 물러선다 (옛 동작).
-    assert ess_marker_point(target_curve, None) is target_curve.best
+    창의 양 끝과 최적을 반드시 넣는다. 끝을 빼면 U 가 안 보이고, 최적을 빼면
+    표식을 찍을 줄이 없다.
+    """
+    from kwise.report.frames import ESS_SPEC_ROWS, ess_spec_frame
 
-
-def test_캡션이_곡선과_표식의_차이를_적는다(target_curve: EssTargetCurve) -> None:
-    """**그림이 자기모순으로 보이면 안 된다** (40세션 2-2)."""
-    from kwise.report.frames import ess_target_caption
-
-    assert target_curve.best is not None
-    moved = EssOptimum(
-        target_kw=target_curve.best.target_kw + 20.0,
-        payback_years=30.0,
-        curve_target_kw=target_curve.best.target_kw,
-        window_kw=100.0,
-        widened=0,
-        at_edge=False,
+    optimum = refine_ess_target(
+        sample_usage,
+        tariff,
+        SAMPLE_SELECTION,
+        curve=target_curve,
+        baseline=sample_bill,
+        quality=sample_report,
     )
-    text = ess_target_caption(target_curve, moved)
-    assert "개략" in text and "다시 계산" in text
-    assert f"{target_curve.best.target_kw:,.0f} kW" in text
-    assert "20 kW" in text
+    frame = ess_spec_frame(
+        optimum,
+        baseline_demand_kw=target_curve.baseline_demand_kw,
+        market_minimum_kwh=target_curve.market_minimum_kwh,
+    )
+    assert len(frame) == ESS_SPEC_ROWS
+    targets = list(frame["목표 요금적용전력(kW)"])
+    assert targets == sorted(targets, reverse=True), "목표가 높은 쪽부터다"
+    assert targets[0] == max(point.target_kw for point in optimum.points)
+    assert targets[-1] == min(point.target_kw for point in optimum.points)
+    assert optimum.target_kw in targets
 
-    same = replace_optimum(moved, target_kw=target_curve.best.target_kw)
-    plain = ess_target_caption(target_curve, same)
-    assert "개략" in plain
-    assert "이지만 실제 최적은" not in plain
+    # **U 가 읽힌다** — 최적 줄이 양 끝보다 짧다.
+    payback = list(frame["회수기간(년)"])
+    best_at = targets.index(optimum.target_kw)
+    assert payback[best_at] == min(value for value in payback if value is not None)
+    assert payback[0] > payback[best_at]
+    assert payback[-1] > payback[best_at]
+
+    marks = list(frame["표식"])
+    assert "최적" in marks[best_at]
+    # 최소 규모에 걸린 줄은 그 사실을 적는다 — 용량이 달라도 투자비가 같아진다.
+    assert any("최소 규모" in mark for mark in marks)
 
 
-def replace_optimum(optimum: EssOptimum, **changes: object) -> EssOptimum:
-    from dataclasses import replace
+def test_사양_표는_모두_카드_기준_참값이다(
+    sample_usage: UsageData,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_report: QualityReport,
+    target_curve: EssTargetCurve,
+) -> None:
+    """**두 숫자 문제가 사라졌다** (44세션).
 
-    return replace(optimum, **changes)  # type: ignore[arg-type]
+    43세션까지 화면에는 곡선 최소 26.0년과 카드 30.8년이 함께 있었다. 표의
+    최적 줄은 ``evaluate_ess`` 가 내는 값과 **같아야** 한다.
+    """
+    from kwise.report.frames import ess_spec_frame
+
+    optimum = refine_ess_target(
+        sample_usage,
+        tariff,
+        SAMPLE_SELECTION,
+        curve=target_curve,
+        baseline=sample_bill,
+        quality=sample_report,
+    )
+    frame = ess_spec_frame(optimum, baseline_demand_kw=target_curve.baseline_demand_kw)
+    row = frame[frame["목표 요금적용전력(kW)"] == optimum.target_kw].iloc[0]
+    card = evaluate_ess(
+        sample_usage,
+        tariff,
+        SAMPLE_SELECTION,
+        target_kw=optimum.target_kw,
+        cost=EssCostInput.unpriced(),
+        baseline=sample_bill,
+        quality=sample_report,
+        charge_mask=light_band_mask(sample_usage, tariff, selection=SAMPLE_SELECTION),
+    )
+    assert float(row["필요 출력(kW)"]) == pytest.approx(card.power_kw)
+    assert float(row["정격 용량(kWh)"]) == pytest.approx(card.capacity_kwh)
+    assert float(row["방전시간(h)"]) == pytest.approx(card.discharge_hours)
+    assert float(row["투자비(원)"]) == pytest.approx(card.investment_won)
+    assert float(row["회수기간(년)"]) == pytest.approx(card.payback_years, rel=1e-9)
 
 
-def test_축_이름이_개략임을_밝힌다() -> None:
-    """**축이 먼저 말한다** (40세션 2-3). 화면과 PPT 가 같은 이름을 쓴다."""
-    from kwise.report.frames import ESS_PAYBACK_AXIS
-    from kwise.ui.charts import ESS_PAYBACK_AXIS as SCREEN_AXIS
+def test_화면과_산출물이_같은_사양_표를_쓴다(
+    sample_usage: UsageData,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_report: QualityReport,
+    target_curve: EssTargetCurve,
+) -> None:
+    """서식을 한 곳에서 만든다 — **「개략」 은 어디에도 없다** (44세션)."""
+    from kwise.report.frames import ESS_SPEC_CAPTION, ESS_SPEC_HEADER, ess_spec_frame, ess_spec_rows
 
-    assert "개략" in ESS_PAYBACK_AXIS
-    assert SCREEN_AXIS is ESS_PAYBACK_AXIS
-    source = (PROJECT_ROOT / "src" / "kwise" / "report" / "figures.py").read_text(encoding="utf-8")
-    assert "ESS_PAYBACK_AXIS" in source, "PPT 도 같은 축 이름을 써야 한다."
+    optimum = refine_ess_target(
+        sample_usage,
+        tariff,
+        SAMPLE_SELECTION,
+        curve=target_curve,
+        baseline=sample_bill,
+        quality=sample_report,
+    )
+    rows = ess_spec_rows(
+        ess_spec_frame(optimum, baseline_demand_kw=target_curve.baseline_demand_kw)
+    )
+    assert rows[0] == ESS_SPEC_HEADER
+    assert all(len(row) == len(ESS_SPEC_HEADER) for row in rows)
+    joined = "\n".join(" ".join(row) for row in rows) + ESS_SPEC_CAPTION
+    assert "개략" not in joined
+    # 곡선을 그리던 이름은 지웠다 — 남아 있으면 「개략」 이 되살아난다.
+    for module in ("kwise.report.frames", "kwise.ui.charts", "kwise.report.figures"):
+        __import__(module)
+        gone = ("ess_target_chart", "ess_target_frame", "ESS_PAYBACK_AXIS", "ess_payback_png")
+        assert not [name for name in gone if hasattr(sys.modules[module], name)]

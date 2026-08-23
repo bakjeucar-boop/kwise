@@ -38,6 +38,7 @@ from kwise.measures import (
     Certainty,
     ContractAdjustment,
     DemandResponseResult,
+    EssOptimum,
     EssResult,
     EssTargetCurve,
     PowerFactorResult,
@@ -585,6 +586,24 @@ def _ess_target(
     saved = measure_float("ess", "target")
     if saved is not None:
         return saved
+    optimum = _ess_optimum(usage, table, form, diagnosis, baseline, quality)
+    return optimum.target_kw if optimum is not None else None
+
+
+def _ess_optimum(
+    usage: UsageData,
+    table: TariffTable,
+    form: ContractForm,
+    diagnosis: Diagnosis,
+    baseline: BillingResult,
+    quality: QualityReport,
+) -> EssOptimum | None:
+    """정밀화 결과 한 벌. **목표별 사양 표가 이 점들을 그대로 쓴다** (44세션).
+
+    2단계 카드가 이미 부른 것이라 세션 기억에 걸린다 — 계산이 한 번 더 도는 것이
+    아니다. 옆단에서 3단계로 바로 뛰면 그때 한 번 돈다 (:func:`_ess_target` 과
+    같은 자리다).
+    """
     curve = _ess_curve(usage, table, form, diagnosis)
     if curve is None or curve.best is None:
         return None
@@ -599,7 +618,7 @@ def _ess_target(
         measure_float("ess", "fixed_cost"),
         measure_float("ess", "per_kwh_cost"),
         rules_stamp(),
-    ).target_kw
+    )
 
 
 def _ess_curve(
@@ -642,6 +661,7 @@ class _MeasureResults:
     solar_unpriced_reason: str = ""
     ess: EssResult | None = None
     ess_curve: EssTargetCurve | None = None
+    ess_optimum: EssOptimum | None = None
     """회수기간 U곡선 (38세션 3-3). **PPT 가 「목표가 어디서 나왔나」 를 이것으로 답한다.**"""
     surplus_free_kwp: float | None = None
     """잉여 없는 최대 용량 (39세션 3-1·4-3). **용량을 정한 근거**이자, 잉여가 0인
@@ -743,6 +763,7 @@ class _MeasureResults:
             solar_notices=self.solar_curve.notices if self.solar_curve is not None else (),
             ess=self.ess,
             ess_curve=self.ess_curve,
+            ess_optimum=self.ess_optimum,
             surplus=self.surplus,
             usage=self.usage,
             day=self.day,
@@ -829,12 +850,15 @@ def _measure_results(
 
     ess = None
     ess_curve = None
+    ess_optimum = None
     # **켜지 않았으면 목표도 찾지 않는다.** 정밀화는 한 점당 요금을 다시 계산해
     # 한 번에 약 11초다 (40세션). 위 `render` 는 이미 이렇게 부르고 있었는데
     # 여기만 문지기 밖에 있어, 파일만 올려도 그 11초를 물었다 (43세션).
-    ess_target = (
-        _ess_target(usage, table, form, diagnosis, baseline, quality) if "ess" in enabled else None
-    )
+    ess_target = None
+    if "ess" in enabled:
+        # 목표별 사양 표가 이 점들을 쓴다 (44세션). 2단계가 이미 돌려 기억에 걸린다.
+        ess_optimum = _ess_optimum(usage, table, form, diagnosis, baseline, quality)
+        ess_target = _ess_target(usage, table, form, diagnosis, baseline, quality)
     if ess_target is not None:
         # **회수기간 곡선을 함께 들고 간다** (38세션 3-3). 2단계 카드가 이미 돌린
         # 것이라 캐시에 걸린다 — 계산이 한 번 더 도는 것이 아니다.
@@ -901,6 +925,7 @@ def _measure_results(
         solar_unpriced_reason=solar_reason,
         ess=ess,
         ess_curve=ess_curve,
+        ess_optimum=ess_optimum,
         surplus=surplus,
         surplus_free_kwp=surplus_free_kwp,
         solar_area_m2=area_m2,

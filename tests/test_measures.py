@@ -739,9 +739,7 @@ def test_offset_never_goes_negative_and_carries_in_the_same_band(
     # 100 kW 균일 부하에 1,000 kWp — 다 차감할 수 없다.
     assert settlement.deducted_kwh < result.total_kwh
     assert settlement.remaining_kwh > 0
-    assert settlement.deducted_kwh + settlement.remaining_kwh == pytest.approx(
-        result.total_kwh
-    )
+    assert settlement.deducted_kwh + settlement.remaining_kwh == pytest.approx(result.total_kwh)
     for month in settlement.months:
         assert month.deducted_kwh >= 0.0
         assert month.carried_out_kwh >= 0.0
@@ -849,9 +847,7 @@ def test_offset_says_nothing_about_when_it_settles(
         assert not banned.search(line), line
 
 
-def test_offset_does_not_touch_the_base_fee(
-    surplus_case: SurplusCase, tariff: TariffTable
-) -> None:
+def test_offset_does_not_touch_the_base_fee(surplus_case: SurplusCase, tariff: TariffTable) -> None:
     """**기본요금은 바뀌지 않는다** (41세션 2-3).
 
     잉여는 부하가 낮은 시각에 나므로 요금적용전력과 무관하고, 태양광이 피크를
