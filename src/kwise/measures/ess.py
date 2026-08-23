@@ -218,9 +218,14 @@ def size_for_target(
 
 
 def required_discharge_hours(excess: PeakExcess) -> float:
-    """**방전시간은 산출값이다. 강제하지 않는다** (요구사항서 7.6).
+    """계통에 **내보낼** 에너지 기준의 시간. 강제 입력이 아니다 (요구사항서 7.6).
 
-        방전시간 = 하루 최대 초과 에너지 ÷ 최대 초과 출력
+        = 하루 최대 초과 에너지 ÷ 최대 초과 출력
+
+    **이 값은 화면에 내지 않는다** (43세션). 표시하는 방전시간은 정격 기준
+    (정격 용량 ÷ 출력)이며 DoD·왕복효율만큼 이 값보다 길다 — 샘플에서 0.82h 대
+    0.97h 다. 같은 이름으로 두 값이 돌아 34세션이 용량만 고치고 방전시간을
+    남겼던 자리다. 사양은 :class:`EssResult` 의 ``discharge_hours`` 하나뿐이다.
 
     목표 피크를 정하면 데이터에서 결정된다. 짧을수록 kW당 단가가 싸므로
     경제성이 좋다 — 조달이 가능하다면 짧은 쪽이 맞다. 다만 0.5h 미만은
@@ -449,17 +454,18 @@ def ess_target_curve(
         investment = equipment + electrical
         reduction = max(0.0, baseline_demand_kw - target)
         annual = reduction * base_fee_won_per_kw * 12.0
+        nameplate = nameplate_capacity_kwh(capacity, round_trip=round_trip, dod=dod)
         points.append(
             EssTargetPoint(
                 target_kw=target,
                 reduction_kw=reduction,
                 power_kw=power,
                 required_capacity_kwh=capacity,
-                nameplate_capacity_kwh=nameplate_capacity_kwh(
-                    capacity, round_trip=round_trip, dod=dod
-                ),
+                nameplate_capacity_kwh=nameplate,
                 billed_capacity_kwh=billed,
-                discharge_hours=capacity / power if power > 0 else 0.0,
+                # 카드와 **같은 정의**여야 한다 (43세션). 표시하는 용량이
+                # 정격이므로 방전시간도 정격 기준이다.
+                discharge_hours=nameplate / power if power > 0 else 0.0,
                 equipment_won=equipment,
                 electrical_won=electrical,
                 investment_won=investment,
@@ -707,8 +713,8 @@ class EssResult:
     """ESS 평가. 출력과 에너지를 분리해 담는다.
 
     Attributes:
-        discharge_hours: **산출된** 방전시간 (하루 최대 초과 에너지 ÷ 최대 초과 출력).
-            강제 입력이 아니다.
+        discharge_hours: 방전시간 = **정격 용량 ÷ 출력**. 강제 입력이 아니라
+            목표에서 산출된다. 화면·Excel·PPT 가 모두 이 값을 쓴다 (43세션).
         breakeven_unit_cost_won_per_kw: 목표 회수기간을 맞추는 kW당 단가.
             입력 단가와 같은 단위라 그대로 견줄 수 있다.
         arbitrage: 차익거래 **잠재** 수익. 절감액에 더하지 않았다 (예비 규칙 미정).
@@ -810,8 +816,11 @@ def evaluate_ess(
     )
     power = sized_power if power_kw is None else power_kw
     capacity = sized_capacity if capacity_kwh is None else capacity_kwh
-    # 방전시간은 데이터가 정한다. 사양으로 강제하지 않는다 (7.6).
-    discharge_hours = required_discharge_hours(excess)
+    # **방전시간은 정격 용량 ÷ 출력이다** (43세션). 34세션에 용량을 정격으로
+    # 고쳤는데 방전시간만 계통 전달분 기준으로 남아, 한 카드 안에서 사양 셋이
+    # 서로 안 맞았다 — 119.6 kWh ÷ 123.4 kW 는 0.82h 가 아니라 0.97h 다.
+    # **사용자가 조달하는 것은 정격이므로 정격으로 맞춘다.**
+    discharge_hours = capacity / power if power > 0 else 0.0
 
     mask = (
         charge_mask
@@ -928,9 +937,8 @@ def evaluate_ess(
             )
         )
     # **성립 조건** — 고정 문구 대신 계산에서 판정이 나온다 (13세션).
-    rated_hours = capacity / power if power > 0 else 0.0
     feasibility = cost_model.feasibility(
-        discharge_hours=rated_hours,
+        discharge_hours=discharge_hours,
         base_fee_won_per_kw=_base_fee_won_per_kw(table, selection),
         target_years=payback_target_years,
         actual_reduction_kw=base_bill.billing_demand_kw - bill.billing_demand_kw,
@@ -964,8 +972,8 @@ def evaluate_ess(
         # 산식은 지표 툴팁이 낸다 (25세션 3-3 · L). 여기는 값과 그 뜻만 적는다.
         basis(
             f"방전시간 {discharge_hours:.2f}h ({c_rate(discharge_hours):.1f}C) 는 입력이 "
-            "아니라 **산출값**입니다. 짧을수록 kW당 단가가 싸므로, 구할 수 있다면 "
-            "짧은 쪽이 맞습니다.",
+            "아니라 **정격 용량 ÷ 출력**으로 나온 값입니다. 짧을수록 kW당 단가가 "
+            "싸므로, 구할 수 있다면 짧은 쪽이 맞습니다.",
             fact="ess.discharge_hours",
         ),
         basis(

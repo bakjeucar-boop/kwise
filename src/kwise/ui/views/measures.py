@@ -1162,8 +1162,7 @@ def _surplus_handling(
                 value=0.0,
                 step=1.0,
                 key=input_key("solar", "smp_price"),
-                help="당월 차감하고 남은 몫을 정산하는 단가입니다. 넣지 않으면 "
-                "잔여량만 냅니다.",
+                help="당월 차감하고 남은 몫을 정산하는 단가입니다. 넣지 않으면 잔여량만 냅니다.",
             )
         result = cached_surplus(
             usage,
@@ -1439,7 +1438,9 @@ def _ess(
     columns[0].metric(
         "출력 / 용량",
         f"{fmt.kw(result.power_kw, decimals=0)} / {fmt.kwh(result.capacity_kwh)}",
-        f"방전 {fmt.hours(result.discharge_hours, decimals=1)}",
+        # **근거·Excel 과 같은 자릿수로 낸다** (43세션). 0.8 과 0.97 이 한 화면에
+        # 있으면 다른 값으로 읽힌다.
+        f"방전 {fmt.hours(result.discharge_hours)}",
         help=fmt.tip("discharge_hours"),
     )
     # **무엇의 합인지가 아니라 왜 그렇게 나뉘는지를 밝힌다** (31세션 5-3 · 32세션 3절).

@@ -411,9 +411,7 @@ def measure_summary_frame(
                     {
                         "수단": f"└ 잉여 {scenario.name}",
                         "투자비(원)": format_won(None, reason="—"),
-                        "절감액(원)": format_won(
-                            scenario.revenue_won, reason=scenario.basis
-                        ),
+                        "절감액(원)": format_won(scenario.revenue_won, reason=scenario.basis),
                         "12개월 환산(원)": format_won(None, reason="—"),
                         "회수기간": "—",
                         "확실성": str(Certainty.MEDIUM_LOW),
@@ -447,7 +445,7 @@ def measure_summary_frame(
                 ),
                 "확실성": str(ess.certainty),
                 "비고": (
-                    f"방전시간 {ess.discharge_hours:.2f}h ({ess.c_rate:.1f}C, 산출값) · "
+                    f"방전시간 {ess.discharge_hours:.2f}h ({ess.c_rate:.1f}C, 정격 용량 ÷ 출력) · "
                     f"손익분기 단가 "
                     f"{format_won(ess.breakeven_unit_cost_won_per_kw)} 원/kW "
                     f"(회수 {ess.payback_target_years:.0f}년 기준) · "

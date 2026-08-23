@@ -1599,6 +1599,26 @@ def ess_screen() -> AppTest:
     return _running(nav_page="2단계 · 개선 수단", measure_on_ess=True)
 
 
+def test_화면의_방전시간이_한_값이다(ess_screen: AppTest) -> None:
+    """**한 카드 안에서 같은 이름이 다른 값을 가리키면 안 된다** (43세션).
+
+    43세션 전에는 카드 「방전 0.8시간」 · 성립 조건 「방전 0.97시간」 · 계산 근거
+    「방전시간 0.82h」 로 셋이었다. 0.8 과 0.82 는 자릿수 차이지만 0.97 은 다른
+    양이다 — 34세션에 용량만 정격으로 고치고 방전시간을 두고 간 자리다.
+
+    임계값을 적는 문구(「0.5시간 미만은 …」)는 사양이 아니므로 세지 않는다.
+    """
+    assert not ess_screen.exception, ess_screen.exception
+    shown = "\n".join(
+        [str(item.value) for group in (ess_screen.markdown, ess_screen.warning) for item in group]
+        # **증감 자리도 본다** — 카드의 방전시간이 거기 있다 (14세션 3-5).
+        + [f"{item.label} {item.value} {item.delta or ''}" for item in ess_screen.metric]
+    )
+    found = set(re.findall(r"방전(?:시간)?이? ?([0-9]+\.[0-9]+) ?(?:시간|h)", shown))
+    assert found, shown[:400]
+    assert len(found) == 1, f"방전시간이 {sorted(found)} 로 갈라졌습니다."
+
+
 def test_ESS_목표_슬라이더가_없다(ess_screen: AppTest) -> None:
     """**목표를 사용자가 찍게 두면 대개 틀린 자리를 찍는다** (14세션 3-2).
 

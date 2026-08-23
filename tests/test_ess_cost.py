@@ -202,11 +202,46 @@ def test_total_investment_path_wins(
 
 
 def test_discharge_hours_is_calculated_not_forced(sample_usage: UsageData) -> None:
-    """방전시간 = 하루 최대 초과 에너지 ÷ 최대 초과 출력."""
+    """계통 전달 기준 시간 = 하루 최대 초과 에너지 ÷ 최대 초과 출력.
+
+    **화면에 내는 값이 아니다** (43세션). 표시하는 방전시간은 정격 기준이며
+    아래 :func:`test_방전시간은_정격_용량_나누기_출력이다` 가 지킨다.
+    """
     excess = analyze_peak_excess(sample_usage.kw, TARGET_KW, sample_usage.meta.interval_minutes)
     hours = required_discharge_hours(excess)
     assert hours == pytest.approx(excess.max_daily_excess_kwh / excess.max_excess_kw)
     assert 0.3 < hours < 0.5  # 샘플은 짧다
+
+
+def test_방전시간은_정격_용량_나누기_출력이다(sample_ess: EssResult) -> None:
+    """**사양 셋이 서로 맞아야 한다** (43세션).
+
+    34세션에 용량을 정격으로 고치면서 방전시간이 함께 옮겨지지 않아, 한 카드
+    안에서 출력·정격 용량·방전시간이 서로 안 맞았다 — 119.6 kWh ÷ 123.4 kW 는
+    0.82h 가 아니라 0.97h 인데 0.82h 를 적고 있었다. **사용자가 조달하는 것은
+    정격이다.** 반올림 오차도 허용하지 않는다.
+    """
+    assert sample_ess.discharge_hours == sample_ess.capacity_kwh / sample_ess.power_kw
+    # 계통 전달 기준과는 **다르다** — 같아지면 정격 환산이 빠진 것이다.
+    assert sample_ess.discharge_hours > required_discharge_hours(sample_ess.excess)
+
+
+def test_카드와_경고와_근거가_같은_방전시간을_적는다(sample_ess: EssResult) -> None:
+    """세 자리가 한 값을 쓴다 (43세션).
+
+    43세션 전에는 카드 0.8시간 · 성립 조건 0.97시간 · 계산 근거 0.82h 로
+    **한 카드 안에서 세 값**이었다. 자릿수까지 맞춰야 한 화면에서 같게 읽힌다.
+    """
+    shown = f"{sample_ess.discharge_hours:.2f}"
+    assert sample_ess.feasibility is not None
+    assert shown in sample_ess.feasibility.message()
+    basis_lines = [
+        message
+        for message in texts(sample_ess.notices)
+        if "방전시간" in message and "C)" in message
+    ]
+    assert basis_lines, texts(sample_ess.notices)
+    assert all(shown in line for line in basis_lines), basis_lines
 
 
 def test_c_rate_warning_below_half_an_hour(sample_ess: EssResult) -> None:
@@ -308,9 +343,7 @@ def test_overlap_ratio_is_gone_from_the_notices(sample_ess: EssResult) -> None:
     근거가 바뀌었으므로 그 숫자가 설 자리가 없다. 산출 근거는
     ``docs\TECHNICAL.md`` 6.6 과 :mod:`kwise.measures.arbitrage` 도크스트링에 있다.
     """
-    upper = next(
-        note for note in texts(sample_ess.notices) if "이쪽이 상한입니다" in note
-    )
+    upper = next(note for note in texts(sample_ess.notices) if "이쪽이 상한입니다" in note)
     assert "가정 사이클의" not in upper, upper
     assert "돌리고 있어" not in upper, upper
     assert "매 평일 한 사이클을 온전히 돌리는 운전을 전제한 값입니다" in upper, upper
