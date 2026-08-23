@@ -641,7 +641,8 @@ def test_최적_목표를_자동으로_찾는다(target_curve: EssTargetCurve) -
     best = target_curve.best
     assert best is not None
     assert best.target_kw == pytest.approx(5_170.0)
-    assert best.payback_years == pytest.approx(24.6, abs=0.2)
+    # 44세션에 최소 규모를 정격에 걸면서 24.6 → 26.0 이 됐다.
+    assert best.payback_years == pytest.approx(26.0, abs=0.2)
     # 최소 지점이 실제로 최소다.
     others = [
         item.payback_years
@@ -656,8 +657,8 @@ def test_격자가_성기면_최소_지점을_놓친다(
 ) -> None:
     """**곡선이 격자에 민감하다** (14세션 3-1).
 
-    50 kW 간격이면 5,150 kW 에서 26.7년으로 멈추고, 10 kW 간격이라야
-    5,170 kW 24.6년을 찾는다. 기본 격자를 10 kW 이하로 두는 이유다.
+    50 kW 간격이면 5,150 kW 에서 29.4년으로 멈추고, 10 kW 간격이라야
+    5,170 kW 26.0년을 찾는다. 기본 격자를 10 kW 이하로 두는 이유다.
     """
     assert target_curve.step_kw <= 10.0
     coarse = ess_target_curve(
@@ -669,18 +670,19 @@ def test_격자가_성기면_최소_지점을_놓친다(
     )
     assert coarse.best is not None and target_curve.best is not None
     assert coarse.best.target_kw == pytest.approx(5_150.0)
-    assert coarse.best.payback_years == pytest.approx(26.7, abs=0.3)
+    assert coarse.best.payback_years == pytest.approx(29.4, abs=0.3)
     assert (coarse.best.payback_years or 0.0) > (target_curve.best.payback_years or 0.0)
 
 
 def test_검산값과_일치한다(target_curve: EssTargetCurve) -> None:
     """14세션 3-2 의 검산값 (관측 최대수요 기준 개략치)."""
     frame = target_curve.frame().set_index("목표 요금적용전력(kW)")
+    # 과금 용량과 회수기간은 44세션에 바뀌었다 — 최소 규모를 **정격**에 건다.
     expected = {
-        5_200.0: (93.0, 35.0, 100.0, 32.3),
-        5_180.0: (113.0, 72.0, 100.0, 26.6),
-        5_170.0: (123.0, 101.0, 101.0, 24.6),
-        5_150.0: (143.0, 183.0, 183.0, 26.7),
+        5_200.0: (93.0, 35.0, 100.0, 32.4),
+        5_180.0: (113.0, 72.0, 100.0, 26.7),
+        5_170.0: (123.0, 101.0, 119.6, 26.0),
+        5_150.0: (143.0, 183.0, 216.2, 29.4),
     }
     for target, (reduction, capacity, billed, payback) in expected.items():
         row = frame.loc[target]
@@ -972,12 +974,17 @@ def test_브래킷이_참_최소를_담는다(tariff: TariffTable) -> None:
 
 
 @pytest.mark.parametrize("key", ["C3", "C5"])
-def test_최소가_옮겨_가는_케이스(key: str, tariff: TariffTable) -> None:
-    """**곡선이 다른 자리를 고르는 자료가 실제로 있다** (39세션 조사).
+def test_곡선과_정밀화가_같은_자리를_고른다(key: str, tariff: TariffTable) -> None:
+    """**44세션에 투자비 기준을 맞추자 개략 곡선이 카드 쪽으로 옮겨 붙었다.**
 
-    회수기간 손해는 2.4%·1.1%로 작지만 **사양 손해가 크다** — C3 는 정격이
-    60% 크고 투자비가 8,751만원 더 든다. 고객이 사는 것은 배터리이지 회수기간이
-    아니다.
+    39세션 조사에서는 C3 가 3,000 kW, C5 가 5,940 kW 로 카드 기준 최적과 어긋났다.
+    원인은 최소 규모 100 kWh 를 곡선은 전달 용량에, 카드는 정격 용량에 걸어
+    **투자비가 최대 1.14배까지 갈라진 것**이었다. 정격으로 맞추자 투자비가
+    똑같아지고 두 선택이 일치했다.
+
+    **정밀화를 지운 것이 아니다** — 고르는 자리는 같아졌어도 **값은 여전히
+    다르다** (샘플 26.0년 대 30.8년). 절감액을 어림하느냐 요금을 다시 계산하느냐의
+    차이는 그대로다. 자료가 늘면 다시 갈라질 수 있으므로 창 검증도 남는다.
     """
     from kwise.report.casestudy import build_case_definitions
 
@@ -997,12 +1004,40 @@ def test_최소가_옮겨_가는_케이스(key: str, tariff: TariffTable) -> Non
         quality=quality,  # type: ignore[arg-type]
     )
     assert optimum.target_kw == CARD_BASIS_OPTIMUM[key]
-    assert optimum.moved, "이 케이스는 곡선과 다른 자리를 골라야 한다."
-    assert optimum.curve_target_kw != optimum.target_kw
+    assert not optimum.moved
+    # **값은 다르다.** 같아지면 정밀화가 요금을 다시 계산하지 않고 있는 것이다.
+    assert curve.best is not None
+    assert optimum.payback_years != curve.best.payback_years
+
+
+def test_곡선과_카드가_같은_용량에_최소_규모를_건다(
+    sample_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**같은 규칙을 다른 양에 걸지 않는다** (44세션).
+
+    곡선은 ``billed_capacity_kwh`` 로, 카드는 ``quote`` 로 100 kWh 하한을 거는데
+    한쪽은 전달 용량, 한쪽은 정격 용량이었다. 정격이 1.185배 크므로 경계가
+    어긋나 C5 목표 6,020 kW 에서 곡선만 걸렸다. **투자비가 같아야 맞은 것이다.**
+    """
+    from kwise.measures.ess_cost import load_ess_cost_model
+
+    model = load_ess_cost_model()
+    curve = ess_target_curve(
+        sample_usage.kw,
+        15,
+        baseline_demand_kw=5_293.44,
+        base_fee_won_per_kw=float(tariff.rates(SAMPLE_SELECTION).base_won_per_kw),
+    )
+    for point in curve.points:
+        assert point.billed_capacity_kwh == max(
+            point.nameplate_capacity_kwh, model.market_minimum_kwh
+        )
+        assert point.at_market_minimum == (point.nameplate_capacity_kwh < model.market_minimum_kwh)
+        assert point.investment_won == model.quote(point.nameplate_capacity_kwh).total_won
 
 
 def _c3_material(tariff: TariffTable) -> tuple[object, ...]:
-    """C3 평탄형. **곡선과 실제 최적이 10 kW 어긋나는 자료다.**"""
+    """C3 평탄형. 카드 기준 최소는 3,010 kW 다."""
     from kwise.report.casestudy import build_case_definitions
 
     directory = PROJECT_ROOT / "input" / "cases"
@@ -1012,18 +1047,31 @@ def _c3_material(tariff: TariffTable) -> tuple[object, ...]:
     return (*_case_material(definition.usage_path, definition.selection, tariff), definition)
 
 
+def _anchored_at(curve: EssTargetCurve, target_kw: float) -> EssTargetCurve:
+    """곡선이 ``target_kw`` 를 골랐다고 두고 창 검증을 태운다.
+
+    **44세션 전에는 C3 가 실제로 어긋나 있었다** — 곡선 3,000, 카드 3,010.
+    최소 규모를 정격으로 맞추면서 둘이 같아졌으므로, 창 검증은 어긋난 자리를
+    직접 심어 태운다. **지운 것이 아니라 태울 자료가 없어진 것이다.**
+    """
+    from dataclasses import replace
+
+    anchor = next(point for point in curve.points if point.target_kw == target_kw)
+    return replace(curve, best=anchor)
+
+
 def test_창_가장자리면_넓혀_다시_찾는다(tariff: TariffTable) -> None:
     """**창이 좁으면 조용히 틀린다** (40세션 1-2).
 
-    C3 는 곡선이 3,000 kW 를, 실제는 3,010 kW 를 고르는 자료다. 창을 10 kW 로
-    좁히면 최소가 한쪽 끝(3,010)에서 잡히므로 넓혀 다시 훑어야 한다.
+    곡선이 3,030 kW 를 골랐다고 두면 카드 기준 최소(3,010)가 창 10 kW 밖이다.
+    가장자리에서 잡히므로 넓혀 다시 훑어야 한다.
     """
     usage, quality, bill, curve, definition = _c3_material(tariff)
     narrow = refine_ess_target(
         usage,  # type: ignore[arg-type]
         tariff,
         definition.selection,  # type: ignore[attr-defined]
-        curve=curve,  # type: ignore[arg-type]
+        curve=_anchored_at(curve, 3_030.0),  # type: ignore[arg-type]
         baseline=bill,  # type: ignore[arg-type]
         quality=quality,  # type: ignore[arg-type]
         window_kw=10.0,
@@ -1042,7 +1090,7 @@ def test_넓히고도_가장자리면_경고를_남긴다(tariff: TariffTable) -
         usage,  # type: ignore[arg-type]
         tariff,
         definition.selection,  # type: ignore[attr-defined]
-        curve=curve,  # type: ignore[arg-type]
+        curve=_anchored_at(curve, 3_030.0),  # type: ignore[arg-type]
         baseline=bill,  # type: ignore[arg-type]
         quality=quality,  # type: ignore[arg-type]
         window_kw=10.0,

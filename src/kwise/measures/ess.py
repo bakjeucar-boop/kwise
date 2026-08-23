@@ -259,7 +259,8 @@ class EssTargetPoint:
             내지 않는다 — 화면 용량은 ``nameplate_capacity_kwh`` 다 (18세션 1절).
         nameplate_capacity_kwh: 정격 용량 = 필요 용량 ÷ √왕복효율 ÷ DoD.
             :func:`evaluate_ess` 가 내는 카드 용량과 **같은 값이다.**
-        billed_capacity_kwh: 과금 용량 = ``max(필요 용량, 시장 최소 규모)``.
+        billed_capacity_kwh: 과금 용량 = ``max(정격 용량, 시장 최소 규모)``.
+            **정격에 건다** (44세션) — 카드와 같은 양이어야 경계가 갈라지지 않는다.
         at_market_minimum: 최소 규모에 걸렸는가. 걸린 구간이 U자의 왼쪽 팔이다.
     """
 
@@ -448,13 +449,16 @@ def ess_target_curve(
         power, capacity = _daily_excess(observed, day_codes, target, slot_hours)
         if power <= 0:
             continue
-        billed = cost_model.billed_capacity_kwh(capacity)
+        # **최소 규모는 정격 용량에 건다** (44세션). 카드는 ``quote(정격)`` 으로
+        # 거는데 곡선만 전달 용량에 걸어, 정격이 1.185배 큰 만큼 경계가 어긋나
+        # 있었다 — C5 목표 6,020 kW 에서 곡선은 걸리고 카드는 안 걸렸다.
+        nameplate = nameplate_capacity_kwh(capacity, round_trip=round_trip, dod=dod)
+        billed = cost_model.billed_capacity_kwh(nameplate)
         equipment = cost_model.equipment_won(billed)
         electrical = cost_model.electrical_won(billed, indoor=indoor)
         investment = equipment + electrical
         reduction = max(0.0, baseline_demand_kw - target)
         annual = reduction * base_fee_won_per_kw * 12.0
-        nameplate = nameplate_capacity_kwh(capacity, round_trip=round_trip, dod=dod)
         points.append(
             EssTargetPoint(
                 target_kw=target,
@@ -471,7 +475,7 @@ def ess_target_curve(
                 investment_won=investment,
                 annual_saving_won=annual,
                 payback_years=payback_years(investment, annual),
-                at_market_minimum=capacity < cost_model.market_minimum_kwh,
+                at_market_minimum=nameplate < cost_model.market_minimum_kwh,
             )
         )
 
