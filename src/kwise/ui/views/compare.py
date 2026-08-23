@@ -598,7 +598,7 @@ def _ess_optimum(
     baseline: BillingResult,
     quality: QualityReport,
 ) -> EssOptimum | None:
-    """정밀화 결과 한 벌. **목표별 사양 표가 이 점들을 그대로 쓴다** (44세션).
+    """정밀화 결과 한 벌. **목표별 사양 표가 이 점들을 그대로 쓴다** (46세션).
 
     2단계 카드가 이미 부른 것이라 세션 기억에 걸린다 — 계산이 한 번 더 도는 것이
     아니다. 옆단에서 3단계로 바로 뛰면 그때 한 번 돈다 (:func:`_ess_target` 과
@@ -853,10 +853,10 @@ def _measure_results(
     ess_optimum = None
     # **켜지 않았으면 목표도 찾지 않는다.** 정밀화는 한 점당 요금을 다시 계산해
     # 한 번에 약 11초다 (40세션). 위 `render` 는 이미 이렇게 부르고 있었는데
-    # 여기만 문지기 밖에 있어, 파일만 올려도 그 11초를 물었다 (43세션).
+    # 여기만 문지기 밖에 있어, 파일만 올려도 그 11초를 물었다 (44세션).
     ess_target = None
     if "ess" in enabled:
-        # 목표별 사양 표가 이 점들을 쓴다 (44세션). 2단계가 이미 돌려 기억에 걸린다.
+        # 목표별 사양 표가 이 점들을 쓴다 (46세션). 2단계가 이미 돌려 기억에 걸린다.
         ess_optimum = _ess_optimum(usage, table, form, diagnosis, baseline, quality)
         ess_target = _ess_target(usage, table, form, diagnosis, baseline, quality)
     if ess_target is not None:

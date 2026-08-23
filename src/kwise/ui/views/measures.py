@@ -1231,7 +1231,7 @@ def _share(part: float, total: float) -> str:
 
 
 def _ess_spec_view(frame: pd.DataFrame) -> pd.DataFrame:
-    """목표별 사양 표를 **사람이 읽는 문자열로** 굳힌다 (44세션).
+    """목표별 사양 표를 **사람이 읽는 문자열로** 굳힌다 (46세션).
 
     태양광 용량 표(:func:`_capacity_view`)와 같은 방식이다 — 두 표가 한 화면에
     있으므로 서식이 갈리면 다른 것을 재는 표처럼 보인다.
@@ -1435,7 +1435,7 @@ def _ess(
             report,
         )
 
-    # **곡선을 표로 바꿨다** (44세션). 곡선은 개략 산정이라 값이 카드와 달라
+    # **곡선을 표로 바꿨다** (46세션). 곡선은 개략 산정이라 값이 카드와 달라
     # 한 화면에 두 숫자(26.0년·30.8년)가 남아 있었다. 비율을 곱해 올리는 방법을
     # 자료 일곱 121점에서 재 봤더니 1.10~3.18 로 갈려 한 곱수로는 못 옮긴다.
     #
@@ -1478,7 +1478,7 @@ def _ess(
     columns[0].metric(
         "출력 / 용량",
         f"{fmt.kw(result.power_kw, decimals=0)} / {fmt.kwh(result.capacity_kwh)}",
-        # **근거·Excel 과 같은 자릿수로 낸다** (43세션). 0.8 과 0.97 이 한 화면에
+        # **근거·Excel 과 같은 자릿수로 낸다** (45세션). 0.8 과 0.97 이 한 화면에
         # 있으면 다른 값으로 읽힌다.
         f"방전 {fmt.hours(result.discharge_hours)}",
         help=fmt.tip("discharge_hours"),
@@ -1558,7 +1558,7 @@ def _ess(
     # 20세션에 화면이 다시 쓰던 넉 줄을 지웠다. 계산 쪽이 같은 사실을 이미
     # 근거로 내고 있어(``ess.quote_breakdown`` · ``ess.cost_model_formula`` ·
     # ``ess.feasibility``) 사실 ID 로 견주니 전부 중복이었다.
-    # **두 기준의 차이를 적던 확인사항을 뺐다** (44세션). 곡선이 없어져
+    # **두 기준의 차이를 적던 확인사항을 뺐다** (46세션). 곡선이 없어져
     # 설명할 차이가 없다 — 표가 전부 카드 기준 참값이다.
     _notices((*result.notices, *optimum.notices))
     _worksheet(ess_worksheet(result))

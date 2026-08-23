@@ -174,7 +174,7 @@ class MeasureEntry:
     Word 는 :attr:`saving` 을 그대로 쓴다. 문서는 관측 기간 값과 환산값을 나란히
     두고 대조하는 자리라 두 값이 함께 있어야 한다."""
     spec_table: tuple[tuple[str, ...], ...] = field(default=())
-    """산출물에 **폭 전체로** 놓을 표. 머리글이 첫 줄이다 (44세션).
+    """산출물에 **폭 전체로** 놓을 표. 머리글이 첫 줄이다 (46세션).
 
     ESS 가 쓴다 — 회수기간 곡선을 목표별 사양 표로 바꾸면서 생겼다. PPT 는
     **반 칸에 놓지 않는다**: 열이 아홉이라 좌우로 나누면 글자가 읽히지 않는다.
@@ -599,7 +599,7 @@ def measure_entries(
     if ess is not None:
         # **목표가 어디서 나왔는지 답하는 그림이 빠져 있었다** (38세션 3-3).
         # 카드가 낸 목표는 이 U곡선의 최소 지점이다.
-        # **회수기간 곡선을 뺐다** (44세션). 개략 산정이라 값이 카드와 달라
+        # **회수기간 곡선을 뺐다** (46세션). 개략 산정이라 값이 카드와 달라
         # 한 산출물에 두 숫자가 남았다. 자리에 목표별 사양 표가 들어간다 —
         # 전부 카드 기준 참값이고 정밀화가 이미 잰 점이라 추가 계산이 없다.
         ess_table: tuple[tuple[str, ...], ...] = ()
@@ -1062,7 +1062,7 @@ def _chapter_measures(document: DocumentType, sections: DocumentSections, number
                 ["확실성", entry.certainty],
             ],
         )
-        # **표가 있으면 그림보다 먼저다** (44세션). ESS 의 목표별 사양 표가
+        # **표가 있으면 그림보다 먼저다** (46세션). ESS 의 목표별 사양 표가
         # 「이 목표는 어디서 나왔나」 에 답하므로 그림보다 앞에 와야 한다.
         if entry.spec_table:
             _add_table(document, [list(row) for row in entry.spec_table])

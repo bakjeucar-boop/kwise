@@ -441,7 +441,7 @@ class EssCostModel:
     def billed_capacity_kwh(self, capacity_kwh: float) -> float:
         """과금 용량 = ``max(정격 용량, 시장 최소 규모)``.
 
-        **정격을 넘긴다** (44세션). :meth:`quote` 도 정격을 받으므로 두 경로가
+        **정격을 넘긴다** (46세션). :meth:`quote` 도 정격을 받으므로 두 경로가
         같은 양에 같은 하한을 건다.
         """
         return max(capacity_kwh, self.market_minimum_kwh)

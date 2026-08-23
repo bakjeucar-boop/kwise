@@ -222,7 +222,7 @@ def required_discharge_hours(excess: PeakExcess) -> float:
 
         = 하루 최대 초과 에너지 ÷ 최대 초과 출력
 
-    **이 값은 화면에 내지 않는다** (43세션). 표시하는 방전시간은 정격 기준
+    **이 값은 화면에 내지 않는다** (45세션). 표시하는 방전시간은 정격 기준
     (정격 용량 ÷ 출력)이며 DoD·왕복효율만큼 이 값보다 길다 — 샘플에서 0.82h 대
     0.97h 다. 같은 이름으로 두 값이 돌아 34세션이 용량만 고치고 방전시간을
     남겼던 자리다. 사양은 :class:`EssResult` 의 ``discharge_hours`` 하나뿐이다.
@@ -260,7 +260,7 @@ class EssTargetPoint:
         nameplate_capacity_kwh: 정격 용량 = 필요 용량 ÷ √왕복효율 ÷ DoD.
             :func:`evaluate_ess` 가 내는 카드 용량과 **같은 값이다.**
         billed_capacity_kwh: 과금 용량 = ``max(정격 용량, 시장 최소 규모)``.
-            **정격에 건다** (44세션) — 카드와 같은 양이어야 경계가 갈라지지 않는다.
+            **정격에 건다** (46세션) — 카드와 같은 양이어야 경계가 갈라지지 않는다.
         at_market_minimum: 최소 규모에 걸렸는가. 걸린 구간이 U자의 왼쪽 팔이다.
     """
 
@@ -449,7 +449,7 @@ def ess_target_curve(
         power, capacity = _daily_excess(observed, day_codes, target, slot_hours)
         if power <= 0:
             continue
-        # **최소 규모는 정격 용량에 건다** (44세션). 카드는 ``quote(정격)`` 으로
+        # **최소 규모는 정격 용량에 건다** (46세션). 카드는 ``quote(정격)`` 으로
         # 거는데 곡선만 전달 용량에 걸어, 정격이 1.185배 큰 만큼 경계가 어긋나
         # 있었다 — C5 목표 6,020 kW 에서 곡선은 걸리고 카드는 안 걸렸다.
         nameplate = nameplate_capacity_kwh(capacity, round_trip=round_trip, dod=dod)
@@ -467,7 +467,7 @@ def ess_target_curve(
                 required_capacity_kwh=capacity,
                 nameplate_capacity_kwh=nameplate,
                 billed_capacity_kwh=billed,
-                # 카드와 **같은 정의**여야 한다 (43세션). 표시하는 용량이
+                # 카드와 **같은 정의**여야 한다 (45세션). 표시하는 용량이
                 # 정격이므로 방전시간도 정격 기준이다.
                 discharge_hours=nameplate / power if power > 0 else 0.0,
                 equipment_won=equipment,
@@ -718,7 +718,7 @@ class EssResult:
 
     Attributes:
         discharge_hours: 방전시간 = **정격 용량 ÷ 출력**. 강제 입력이 아니라
-            목표에서 산출된다. 화면·Excel·PPT 가 모두 이 값을 쓴다 (43세션).
+            목표에서 산출된다. 화면·Excel·PPT 가 모두 이 값을 쓴다 (45세션).
         breakeven_unit_cost_won_per_kw: 목표 회수기간을 맞추는 kW당 단가.
             입력 단가와 같은 단위라 그대로 견줄 수 있다.
         arbitrage: 차익거래 **잠재** 수익. 절감액에 더하지 않았다 (예비 규칙 미정).
@@ -820,7 +820,7 @@ def evaluate_ess(
     )
     power = sized_power if power_kw is None else power_kw
     capacity = sized_capacity if capacity_kwh is None else capacity_kwh
-    # **방전시간은 정격 용량 ÷ 출력이다** (43세션). 34세션에 용량을 정격으로
+    # **방전시간은 정격 용량 ÷ 출력이다** (45세션). 34세션에 용량을 정격으로
     # 고쳤는데 방전시간만 계통 전달분 기준으로 남아, 한 카드 안에서 사양 셋이
     # 서로 안 맞았다 — 119.6 kWh ÷ 123.4 kW 는 0.82h 가 아니라 0.97h 다.
     # **사용자가 조달하는 것은 정격이므로 정격으로 맞춘다.**
@@ -1197,7 +1197,7 @@ def refine_max_widen() -> int:
 class EssOptimumPoint:
     """정밀화에서 잰 한 점 — **카드와 같은 산식이다.**
 
-    화면의 목표별 사양 표가 이 값들을 그대로 낸다 (44세션). 표에 필요한 것이
+    화면의 목표별 사양 표가 이 값들을 그대로 낸다 (46세션). 표에 필요한 것이
     모두 여기 있어야 다시 계산할 일이 없다.
     """
 
@@ -1210,7 +1210,7 @@ class EssOptimumPoint:
 
     @property
     def discharge_hours(self) -> float:
-        """정격 용량 ÷ 출력. **카드와 같은 정의다** (43세션)."""
+        """정격 용량 ÷ 출력. **카드와 같은 정의다** (45세션)."""
         return self.nameplate_capacity_kwh / self.power_kw if self.power_kw > 0 else 0.0
 
 

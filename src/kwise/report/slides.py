@@ -1359,7 +1359,7 @@ def _measure_note(entry: MeasureEntry) -> str:
 def _measure_layout(entry: MeasureEntry) -> str:
     """수단 장의 형태. **자리표가 쥐고 있어야 시험이 셀 수 있다** (38세션 3절).
 
-    44세션에 ``stat_table_chart`` 가 붙었다 — ESS 가 회수기간 곡선 대신 목표별
+    46세션에 ``stat_table_chart`` 가 붙었다 — ESS 가 회수기간 곡선 대신 목표별
     사양 표를 싣는다. 열이 아홉이라 반 칸에 못 넣으므로 **표가 폭 전체로 위,
     그림이 아래**다.
     """
@@ -1448,7 +1448,7 @@ def _build_measure(
     body = bottom + geometry.block_gap_in
     height = _body_bottom(guide, note=bool(note)) - body - 0.32
     if entry.spec_table:
-        # **표가 먼저다** (44세션). 「이 목표는 어디서 나왔나」 에 답하는 자리라
+        # **표가 먼저다** (46세션). 「이 목표는 어디서 나왔나」 에 답하는 자리라
         # 그림보다 위에 온다. 줄 수가 적어 높이를 적게 먹는다 — 남는 만큼이
         # 아래 그림 몫이다.
         spec_rows = len(entry.spec_table)

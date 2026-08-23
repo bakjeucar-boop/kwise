@@ -204,7 +204,7 @@ def test_total_investment_path_wins(
 def test_discharge_hours_is_calculated_not_forced(sample_usage: UsageData) -> None:
     """계통 전달 기준 시간 = 하루 최대 초과 에너지 ÷ 최대 초과 출력.
 
-    **화면에 내는 값이 아니다** (43세션). 표시하는 방전시간은 정격 기준이며
+    **화면에 내는 값이 아니다** (45세션). 표시하는 방전시간은 정격 기준이며
     아래 :func:`test_방전시간은_정격_용량_나누기_출력이다` 가 지킨다.
     """
     excess = analyze_peak_excess(sample_usage.kw, TARGET_KW, sample_usage.meta.interval_minutes)
@@ -214,7 +214,7 @@ def test_discharge_hours_is_calculated_not_forced(sample_usage: UsageData) -> No
 
 
 def test_방전시간은_정격_용량_나누기_출력이다(sample_ess: EssResult) -> None:
-    """**사양 셋이 서로 맞아야 한다** (43세션).
+    """**사양 셋이 서로 맞아야 한다** (45세션).
 
     34세션에 용량을 정격으로 고치면서 방전시간이 함께 옮겨지지 않아, 한 카드
     안에서 출력·정격 용량·방전시간이 서로 안 맞았다 — 119.6 kWh ÷ 123.4 kW 는
@@ -227,9 +227,9 @@ def test_방전시간은_정격_용량_나누기_출력이다(sample_ess: EssRes
 
 
 def test_카드와_경고와_근거가_같은_방전시간을_적는다(sample_ess: EssResult) -> None:
-    """세 자리가 한 값을 쓴다 (43세션).
+    """세 자리가 한 값을 쓴다 (45세션).
 
-    43세션 전에는 카드 0.8시간 · 성립 조건 0.97시간 · 계산 근거 0.82h 로
+    45세션 전에는 카드 0.8시간 · 성립 조건 0.97시간 · 계산 근거 0.82h 로
     **한 카드 안에서 세 값**이었다. 자릿수까지 맞춰야 한 화면에서 같게 읽힌다.
     """
     shown = f"{sample_ess.discharge_hours:.2f}"
@@ -641,7 +641,7 @@ def test_최적_목표를_자동으로_찾는다(target_curve: EssTargetCurve) -
     best = target_curve.best
     assert best is not None
     assert best.target_kw == pytest.approx(5_170.0)
-    # 44세션에 최소 규모를 정격에 걸면서 24.6 → 26.0 이 됐다.
+    # 46세션에 최소 규모를 정격에 걸면서 24.6 → 26.0 이 됐다.
     assert best.payback_years == pytest.approx(26.0, abs=0.2)
     # 최소 지점이 실제로 최소다.
     others = [
@@ -677,7 +677,7 @@ def test_격자가_성기면_최소_지점을_놓친다(
 def test_검산값과_일치한다(target_curve: EssTargetCurve) -> None:
     """14세션 3-2 의 검산값 (관측 최대수요 기준 개략치)."""
     frame = target_curve.frame().set_index("목표 요금적용전력(kW)")
-    # 과금 용량과 회수기간은 44세션에 바뀌었다 — 최소 규모를 **정격**에 건다.
+    # 과금 용량과 회수기간은 46세션에 바뀌었다 — 최소 규모를 **정격**에 건다.
     expected = {
         5_200.0: (93.0, 35.0, 100.0, 32.4),
         5_180.0: (113.0, 72.0, 100.0, 26.7),
@@ -955,7 +955,7 @@ def test_브래킷이_참_최소를_담는다(tariff: TariffTable) -> None:
 
 @pytest.mark.parametrize("key", ["C3", "C5"])
 def test_곡선과_정밀화가_같은_자리를_고른다(key: str, tariff: TariffTable) -> None:
-    """**44세션에 투자비 기준을 맞추자 개략 곡선이 카드 쪽으로 옮겨 붙었다.**
+    """**46세션에 투자비 기준을 맞추자 개략 곡선이 카드 쪽으로 옮겨 붙었다.**
 
     39세션 조사에서는 C3 가 3,000 kW, C5 가 5,940 kW 로 카드 기준 최적과 어긋났다.
     원인은 최소 규모 100 kWh 를 곡선은 전달 용량에, 카드는 정격 용량에 걸어
@@ -993,7 +993,7 @@ def test_곡선과_정밀화가_같은_자리를_고른다(key: str, tariff: Tar
 def test_곡선과_카드가_같은_용량에_최소_규모를_건다(
     sample_usage: UsageData, tariff: TariffTable
 ) -> None:
-    """**같은 규칙을 다른 양에 걸지 않는다** (44세션).
+    """**같은 규칙을 다른 양에 걸지 않는다** (46세션).
 
     곡선은 ``billed_capacity_kwh`` 로, 카드는 ``quote`` 로 100 kWh 하한을 거는데
     한쪽은 전달 용량, 한쪽은 정격 용량이었다. 정격이 1.185배 크므로 경계가
@@ -1030,7 +1030,7 @@ def _c3_material(tariff: TariffTable) -> tuple[object, ...]:
 def _anchored_at(curve: EssTargetCurve, target_kw: float) -> EssTargetCurve:
     """곡선이 ``target_kw`` 를 골랐다고 두고 창 검증을 태운다.
 
-    **44세션 전에는 C3 가 실제로 어긋나 있었다** — 곡선 3,000, 카드 3,010.
+    **46세션 전에는 C3 가 실제로 어긋나 있었다** — 곡선 3,000, 카드 3,010.
     최소 규모를 정격으로 맞추면서 둘이 같아졌으므로, 창 검증은 어긋난 자리를
     직접 심어 태운다. **지운 것이 아니라 태울 자료가 없어진 것이다.**
     """
@@ -1113,7 +1113,7 @@ def test_사양_표가_최적을_가운데_두고_양쪽으로_벌린다(
     sample_report: QualityReport,
     target_curve: EssTargetCurve,
 ) -> None:
-    """**「목표를 낮추면 나빠진다」 가 표로 읽혀야 한다** (44세션).
+    """**「목표를 낮추면 나빠진다」 가 표로 읽혀야 한다** (46세션).
 
     창의 양 끝과 최적을 반드시 넣는다. 끝을 빼면 U 가 안 보이고, 최적을 빼면
     표식을 찍을 줄이 없다.
@@ -1160,9 +1160,9 @@ def test_사양_표는_모두_카드_기준_참값이다(
     sample_report: QualityReport,
     target_curve: EssTargetCurve,
 ) -> None:
-    """**두 숫자 문제가 사라졌다** (44세션).
+    """**두 숫자 문제가 사라졌다** (46세션).
 
-    43세션까지 화면에는 곡선 최소 26.0년과 카드 30.8년이 함께 있었다. 표의
+    45세션까지 화면에는 곡선 최소 26.0년과 카드 30.8년이 함께 있었다. 표의
     최적 줄은 ``evaluate_ess`` 가 내는 값과 **같아야** 한다.
     """
     from kwise.report.frames import ess_spec_frame
@@ -1201,7 +1201,7 @@ def test_화면과_산출물이_같은_사양_표를_쓴다(
     sample_report: QualityReport,
     target_curve: EssTargetCurve,
 ) -> None:
-    """서식을 한 곳에서 만든다 — **「개략」 은 어디에도 없다** (44세션)."""
+    """서식을 한 곳에서 만든다 — **「개략」 은 어디에도 없다** (46세션)."""
     from kwise.report.frames import ESS_SPEC_CAPTION, ESS_SPEC_HEADER, ess_spec_frame, ess_spec_rows
 
     optimum = refine_ess_target(

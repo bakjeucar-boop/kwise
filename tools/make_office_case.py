@@ -1,4 +1,4 @@
-r"""소형 사무빌딩 시험 자료 생성 (45세션).
+r"""소형 사무빌딩 시험 자료 생성 (47세션).
 
     .venv\Scripts\python.exe tools\make_office_case.py
 
@@ -167,7 +167,7 @@ def write_case(frame: pd.DataFrame, path: Path) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="소형 사무빌딩 시험 자료 생성 (45세션)")
+    parser = argparse.ArgumentParser(description="소형 사무빌딩 시험 자료 생성 (47세션)")
     parser.add_argument("--source", default=str(DEFAULT_SOURCE))
     parser.add_argument("--target", default=str(DEFAULT_TARGET))
     parser.add_argument("--scale", type=float, default=SCALE)

@@ -897,7 +897,7 @@ def test_ESS_본문에_투자비_상세와_성립_조건이_없다() -> None:
     # **정밀화가 낸 안내도 같은 자리로 간다** (40세션 1-2). 창 가장자리 경고가
     # 여기 실려야 「그 자리가 최적」 으로 읽히지 않는다.
     assert "_notices((*result.notices, *optimum.notices))" in source
-    # **곡선 대비 확인사항은 44세션에 뺐다.** 곡선이 없어져 설명할 차이가 없다.
+    # **곡선 대비 확인사항은 46세션에 뺐다.** 곡선이 없어져 설명할 차이가 없다.
     assert "_ess_basis_note" not in source
     assert "_ess_details" not in source, "화면이 계산 쪽 근거를 다시 적고 있습니다."
 
