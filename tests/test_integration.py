@@ -27,10 +27,10 @@ from streamlit.testing.v1 import AppTest
 
 from kwise.notices import texts
 from kwise.report import SHEET_ORDER
-from kwise.ui.memo import MEMO_KEY
 from kwise.ui.nav import RULES_PAGE, TABS
 from kwise.ui.pipeline import ContractForm
 from kwise.ui.spec import MEASURES
+from tests._appmemo import harvest_ess_memo, seed_ess_memo
 
 APP = (Path("src") / "kwise" / "ui" / "app.py").resolve()
 SAMPLE = Path("input") / "사용량조회_20240429.csv"
@@ -53,36 +53,6 @@ def real_weather(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-# --------------------------------------------------------------- ESS 정밀화 나눠 쓰기
-#
-# ``refine_ess_target`` 은 한 점당 요금을 다시 계산해 **한 번에 약 9초**다 (40세션).
-# 실제 앱은 세션 기억(``ui.memo``)에 담아 두어 사용자가 한 번만 낸다. 그런데
-# ``AppTest`` 는 띄울 때마다 세션이 새로 나므로, 시험은 같은 값을 31번 다시 냈다.
-#
-# **``ess_optimum`` 만 시험들이 나눠 쓴다.** ``refine_ess_target`` 은 기상을 받지
-# 않으므로 ``real_weather`` 표식이 붙은 시험과 섞여도 값이 갈라지지 않는다.
-# ``solar``·``compare`` 는 열쇠에 기상이 안 들어가 있어 **나눠 쓰면 안 된다** —
-# 격리된 기상과 사전 취득분이 같은 열쇠를 쓰게 된다.
-_ESS_MEMO_PREFIX = "ess_optimum|"
-_shared_memo: dict[str, object] = {}
-
-
-def _seed_memo(running: AppTest) -> None:
-    if _shared_memo:
-        running.session_state[MEMO_KEY] = dict(_shared_memo)
-
-
-def _harvest_memo(finished: AppTest) -> AppTest:
-    try:
-        store = finished.session_state[MEMO_KEY]
-    except (KeyError, AttributeError):
-        return finished
-    for key, value in dict(store).items():
-        if key.startswith(_ESS_MEMO_PREFIX):
-            _shared_memo[key] = value
-    return finished
-
-
 def _app(**state: object) -> AppTest:
     running = AppTest.from_file(str(APP), default_timeout=900)
     running.session_state["upload_bytes"] = SAMPLE.read_bytes()
@@ -98,8 +68,7 @@ def _app(**state: object) -> AppTest:
         running.session_state["combination_pick"] = tuple(
             item.key for item in MEASURES if state.get(f"measure_on_{item.key}")
         )
-    _seed_memo(running)
-    return _harvest_memo(running.run())
+    return harvest_ess_memo(seed_ess_memo(running).run())
 
 
 def _blank(**state: object) -> AppTest:

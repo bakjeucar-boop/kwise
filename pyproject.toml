@@ -46,6 +46,10 @@ dev = [
     # batch.py 의 import yaml. 없으면 strict 가 stub 없다고 잡는다.
     # 적어 두지 않으면 PC 마다 있고 없고가 갈린다 — 상한을 박는 것과 같은 이유다.
     "types-PyYAML",
+    # 43세션 — 시험 병렬. 순차 13분이 4워커에서 4분대가 된다.
+    # **판을 못박는다.** 배분 방식(`--dist`)의 동작이 판마다 달라지면
+    # 한 PC 에서만 시험이 갈라진다 — mypy 를 못박은 것과 같은 이유다.
+    "pytest-xdist>=3.8,<4",
 ]
 
 [tool.setuptools]

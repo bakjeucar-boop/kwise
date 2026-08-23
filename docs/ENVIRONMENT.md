@@ -186,10 +186,22 @@ pip install -e ".[dev]"
 ### 6.1 테스트
 
 ```powershell
-pytest
+pytest -n 4 --dist load
 ruff check .
 mypy src
 ```
+
+**`-n 4 --dist load` 로 돈다.** 순차 13분이 5분대가 된다 (43세션 실측).
+갈래를 나눠 돌리는 방법과 근거는 `PROCEED.md` 「pytest 분할 실행」에 있다.
+
+**`--dist loadfile` 은 쓰지 않는다.** 파일 단위로 배분해서 무거운 단일 파일
+(`test_ui_screen.py`)을 못 쪼갠다 — 그 파일이 그대로 남아 이득이 없다.
+
+**`-n auto` 는 이 PC 에서 권하지 않는다.** 6코어라 워커가 6개가 되는데,
+`-n 4` 대비 9%(317초→288초)만 빨라지고 여유 메모리가 0.34 GB 에서
+0.18 GB 로 떨어진다. 워커 하나가 약 400 MB 를 쥔다 — RAM 이 16 GB 이상인
+PC 라면 `-n auto` 가 낫다. **메모리가 모자라면 스왑이 걸려 순차보다 느려지고,
+더 모자라면 워커가 죽어 `worker crashed` 로 끝난다.**
 
 **`mypy src` 다 — 맨 `mypy` 가 아니다.** `pyproject.toml` 의
 `files = ["src", "tests", "tools"]` 는 `tests\` 까지 검사하는데, 여기서 38건이

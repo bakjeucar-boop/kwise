@@ -44,6 +44,7 @@ from kwise.ui.notices import (
 from kwise.ui.pipeline import ContractForm
 from kwise.ui.spec import MEASURES
 from kwise.ui.views.diagnose import missing_lines
+from tests._appmemo import harvest_ess_memo, seed_ess_memo
 
 VIEWS = Path("src") / "kwise" / "ui" / "views"
 APP = Path("src") / "kwise" / "ui" / "app.py"
@@ -533,7 +534,9 @@ def _running(*, option: str = "II", contract_kw: float = 6_000.0, **state: objec
         running.session_state["combination_pick"] = tuple(
             item.key for item in MEASURES if state.get(f"measure_on_{item.key}")
         )
-    return running.run()
+    # **ESS 정밀화는 시험들이 나눠 쓴다** (43세션). 띄울 때마다 다시 내면 한 번에
+    # 11초다 — 여기서만 45회였다. ``solar``·``compare`` 는 나누지 않는다.
+    return harvest_ess_memo(seed_ess_memo(running).run())
 
 
 # **탭 구조라 세 화면이 한 번에 그려진다** (16세션 1절). 지표 목록도 셋이 이어

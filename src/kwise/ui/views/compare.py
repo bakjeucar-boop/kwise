@@ -829,8 +829,13 @@ def _measure_results(
 
     ess = None
     ess_curve = None
-    ess_target = _ess_target(usage, table, form, diagnosis, baseline, quality)
-    if "ess" in enabled and ess_target is not None:
+    # **켜지 않았으면 목표도 찾지 않는다.** 정밀화는 한 점당 요금을 다시 계산해
+    # 한 번에 약 11초다 (40세션). 위 `render` 는 이미 이렇게 부르고 있었는데
+    # 여기만 문지기 밖에 있어, 파일만 올려도 그 11초를 물었다 (43세션).
+    ess_target = (
+        _ess_target(usage, table, form, diagnosis, baseline, quality) if "ess" in enabled else None
+    )
+    if ess_target is not None:
         # **회수기간 곡선을 함께 들고 간다** (38세션 3-3). 2단계 카드가 이미 돌린
         # 것이라 캐시에 걸린다 — 계산이 한 번 더 도는 것이 아니다.
         ess_curve = _ess_curve(usage, table, form, diagnosis)
