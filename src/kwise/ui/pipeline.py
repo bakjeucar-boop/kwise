@@ -27,6 +27,8 @@ from kwise.compare import CombinationSpec
 from kwise.diagnose import ContractInfo, Diagnosis, diagnose
 from kwise.io import UsageData
 from kwise.measures import (
+    SURPLUS_HEAVY,
+    SURPLUS_ONSET,
     PvCostInput,
     SolarCurve,
     SolarPoint,
@@ -517,8 +519,12 @@ def solar_result(
 
 #: 용량 비교 표에 세우는 잉여 지점 둘의 표식 (31세션 4-1). **표식과 계산을 한
 #: 자리에 묶는다** — 이름을 화면에서 따로 붙이면 어느 줄이 어느 값인지 어긋난다.
-SURPLUS_ONSET_LABEL = "잉여 시작"
-SURPLUS_HEAVY_LABEL = "잉여 다량"
+#:
+#: **이름 자체는 :mod:`kwise.measures.base` 에 있다** (51세션 1절). 표식 어휘가
+#: 세 파일에 흩어져 있어 「권장」 이 「선정 용량」 에 먹히는 것을 아무도 못 잡았다 —
+#: 각주와 표가 다른 출처를 읽고 있었다. 여기서는 그 이름을 계산에 묶기만 한다.
+SURPLUS_ONSET_LABEL = SURPLUS_ONSET
+SURPLUS_HEAVY_LABEL = SURPLUS_HEAVY
 
 
 def surplus_capacity_points(

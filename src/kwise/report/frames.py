@@ -21,9 +21,12 @@ from kwise.diagnose import ChargeStructure, PeakProfile
 from kwise.diagnose.dr import DrProfile
 from kwise.io import UsageData, slot_start
 from kwise.measures import (
+    AREA_EXCEEDED,
     RECOMMENDED,
+    SELECTED_CAPACITY,
     SHORTEST_PAYBACK,
     SPEC_TABLE_ROWS,
+    TIED_PAYBACK,
     CapacityVerdict,
     DispatchResult,
     EssCostModel,
@@ -35,6 +38,7 @@ from kwise.measures import (
     TariffSwitchResult,
     annualize,
     payback_text,
+    payback_tie_ratio,
 )
 from kwise.report.columns import option_label
 from kwise.report.days import day_profile
@@ -263,12 +267,60 @@ CAPACITY_COLUMNS: tuple[str, ...] = (
     "필요 면적(m²)",
     "연간 발전량(kWh)",
     "자가소비율",
-    "기본요금 절감(원)",
-    "전력량요금 절감(원)",
+    "절감액(원)",
     "투자비(원)",
     "회수기간(년)",
     "표식",
 )
+"""**절감 열은 하나다** (51세션 2절).
+
+50세션까지는 「기본요금 절감」·「전력량요금 절감」 둘로 갈라 두었다. 그런데 이
+표에서 줄을 **가르는 것은 합계**다 — 회수기간이 용량과 거의 무관해 세 줄이 같은
+값을 내는데(16세션), 절감액은 세 배 차이 난다. 두 수를 사람이 더하게 두면 그
+차이가 한눈에 안 들어온다.
+
+**가른 값이 사라진 것은 아니다** — 카드의 절감액 툴팁·계산 근거 표·Excel
+「태양광 용량 곡선」 시트가 그대로 낸다. 열이 하나 줄어 표가 가벼워졌다.
+"""
+
+
+def _capacity_rows(
+    picked: dict[float, SolarPoint], marks: dict[float, list[str]], rows: int
+) -> list[SolarPoint]:
+    """표에 세울 줄을 고른다 — **표식이 붙은 줄은 절대 버리지 않는다** (51세션 4절).
+
+    50세션까지는 지점을 오름차순으로 늘어놓고 앞에서 ``rows`` 개만 잘랐다.
+    권장 용량이 면적 상한과 다르면 지점이 여섯이 되는데, **오름차순이라 가장 큰
+    것 — 곧 「선정 용량」 — 이 버려졌다.** 카드가 낸 용량이 비교 표에 없는 것이라
+    매뉴얼의 「면적 상한과 「권장」 줄은 항상 들어간다」 와도 어긋났다.
+
+    버릴 것은 **표식 없는 줄**뿐이고, 그중에서도 **옆 줄과 가장 가까운 것**부터
+    버린다 — 곡선 모양을 가장 적게 해친다. 소형 자료에서 56 kWp 가 40.2 kWh 에서
+    16 kWp 밖에 안 떨어져 먼저 빠지고, 104 kWp 가 남아 아래쪽 모양을 지킨다.
+    """
+    ordered = sorted(picked.values(), key=lambda point: point.capacity_kwp)
+    limit_rows = max(rows, len(marks))
+    keep = list(ordered)
+    while len(keep) > limit_rows:
+        loose = [
+            index
+            for index, point in enumerate(keep)
+            if not marks.get(point.capacity_kwp)
+        ]
+        if not loose:
+            break  # 표식뿐이면 자르지 않는다 — 표식이 곧 세울 이유다
+
+        def nearest_gap(index: int) -> float:
+            here = keep[index].capacity_kwp
+            gaps = [
+                abs(keep[other].capacity_kwp - here)
+                for other in (index - 1, index + 1)
+                if 0 <= other < len(keep)
+            ]
+            return min(gaps) if gaps else float("inf")
+
+        keep.pop(min(loose, key=nearest_gap))
+    return keep
 
 
 def solar_capacity_table(
@@ -312,11 +364,16 @@ def solar_capacity_table(
     limit = usable[-1]
     best = verdict.best if verdict is not None else None
 
-    marks: dict[float, list[str]] = {limit.capacity_kwp: ["선정 용량"]}
-    if best is not None and best.capacity_kwp != limit.capacity_kwp:
+    marks: dict[float, list[str]] = {limit.capacity_kwp: [SELECTED_CAPACITY]}
+    if best is not None:
         # **「최적」 도 「최단 회수기간」 도 아니다** (49·50세션). 태양광은 동률
         # 처리를 거쳐 고르므로 「권장」 이다 — 판정 근거는 표 아래 한 줄이 적는다
         # (:func:`~kwise.measures.payback_tie_note`).
+        #
+        # **선정 용량과 같아도 찍는다** (51세션 1절). 50세션은 둘이 다를 때만
+        # 찍었는데, 대형 자료는 권장이 곧 면적 상한이라 **각주가 말하는 「권장」 이
+        # 표에 없었다.** 둘은 다른 사실이다 — 「지을 수 있는 가장 큰 것」 과
+        # 「권하는 것」 이 같다는 것도 적을 값어치가 있다.
         marks.setdefault(best.capacity_kwp, []).append(
             verdict.pick_label if verdict is not None else RECOMMENDED
         )
@@ -338,7 +395,25 @@ def solar_capacity_table(
         picked.setdefault(point.capacity_kwp, point)
         marks.setdefault(point.capacity_kwp, []).append(label)
 
-    ordered = sorted(picked.values(), key=lambda point: point.capacity_kwp)[: max(rows, len(marks))]
+    # **회수기간이 사실상 같은 줄을 묶는다** (51세션 2절). kWp당 단가면 투자비와
+    # 절감액이 함께 용량에 비례해 회수기간이 용량과 거의 무관해진다 (16세션) —
+    # 대형 자료에서 56·104·160 kWp 가 모두 6.2~6.3년이다. 표가 그대로 보이면
+    # 「어느 것을 골라도 같다」 로 읽히는데 **절감액은 세 배 차이 난다.**
+    #
+    # **폭은 고른 자리가 아니라 곡선의 최소에서 잰다** — `capacity_verdict` 와
+    # 똑같은 식이라야 한다. 고른 자리에서 재면 밴드가 한 번 더 넓어져, 규칙이
+    # 동률로 보지 않은 줄에 「동률」 이 붙는다 (소형에서 56 kWp 가 그랬다).
+    priced = [point.payback_years for point in usable if point.payback_years is not None]
+    if best is not None and priced:
+        ceiling = min(priced) * (1.0 + payback_tie_ratio())
+        for point in picked.values():
+            years = point.payback_years
+            if years is None or point.capacity_kwp == best.capacity_kwp:
+                continue
+            if years <= ceiling:
+                marks.setdefault(point.capacity_kwp, []).append(TIED_PAYBACK)
+
+    ordered = _capacity_rows(picked, marks, rows)
 
     def area(capacity_kwp: float) -> float | None:
         if gcr is None or area_per_kwp_m2 is None or gcr <= 0:
@@ -349,7 +424,7 @@ def solar_capacity_table(
         labels = list(marks.get(point.capacity_kwp, ()))
         needed = area(point.capacity_kwp)
         if area_limit_m2 is not None and needed is not None and needed > area_limit_m2 + 1e-6:
-            labels.append("면적 초과")
+            labels.append(AREA_EXCEEDED)
         return " · ".join(labels)
 
     return pd.DataFrame(
@@ -358,10 +433,8 @@ def solar_capacity_table(
             "필요 면적(m²)": [area(point.capacity_kwp) for point in ordered],
             "연간 발전량(kWh)": [annualize(point.generation_kwh, months) for point in ordered],
             "자가소비율": [point.self_consumption_ratio for point in ordered],
-            "기본요금 절감(원)": [annualize(point.base_saving_won, months) for point in ordered],
-            "전력량요금 절감(원)": [
-                annualize(point.energy_saving_won, months) for point in ordered
-            ],
+            # **합계 하나로 낸다** (51세션 2절). 줄을 가르는 것이 이 값이다.
+            "절감액(원)": [annualize(point.total_saving_won, months) for point in ordered],
             "투자비(원)": [point.investment_won for point in ordered],
             "회수기간(년)": [point.payback_years for point in ordered],
             "표식": [mark(point) for point in ordered],

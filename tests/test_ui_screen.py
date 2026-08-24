@@ -3797,8 +3797,176 @@ def test_태양광_표식이_권장이고_판정_근거가_붙는다() -> None:
     note = payback_tie_note()
     assert f"{payback_tie_ratio():.0%}" in note
     assert RECOMMENDED in note
+    # **각주는 규칙이 실제로 쓰일 때만 붙는다** (51세션 1절). 단가를 넣지 않으면
+    # 동률 폭이 쓰이지 않으므로 없는 규칙을 설명하지 않는다.
+    assert priced.tie_note == note
+    assert unpriced.tie_note == ""
     source = (VIEWS / "measures.py").read_text(encoding="utf-8")
-    assert "payback_tie_note()" in source, "판정 근거 각주가 화면에서 빠졌다"
+    assert "verdict.tie_note" in source, "판정 근거 각주가 화면에서 빠졌다"
+
+
+def _flat_curve(
+    *, limit_kwp: float, best_kwp: float | None = None
+) -> tuple[object, object]:
+    """**회수기간이 거의 평평한** 용량 곡선을 손으로 짓는다 (51세션 1·2·4절).
+
+    16세션이 실측에서 본 모양이다 — kWp당 단가면 투자비와 절감액이 함께 용량에
+    비례해 회수기간이 용량과 거의 무관해진다. 실주행 대신 이 모양을 직접 세우는
+    까닭은 **표식 규칙을 재는 것이지 발전량을 재는 것이 아니기 때문**이다.
+
+    Args:
+        best_kwp: 주면 그 용량에서 회수기간이 눈에 띄게 꺾여 **권장이 면적
+            상한과 달라진다** — 지점이 여섯이 되는 4절의 자리다.
+    """
+    from kwise.measures.pv_cost import PvCostInput
+    from kwise.measures.solar import SolarCurve, SolarPoint, capacity_verdict
+    from kwise.tariff import TariffSelection
+
+    points: list[SolarPoint] = []
+    for step in range(21):
+        capacity = limit_kwp * step / 20.0
+        investment = capacity * 1_200_000.0
+        # 용량에 비례하되 아주 조금씩 나빠진다 — 실측의 8.060 → 8.114 와 같은 꼴.
+        payback = 6.10 + 0.0016 * capacity
+        if best_kwp is not None and capacity > best_kwp + 1e-9:
+            payback += 0.02 * (capacity - best_kwp)  # 잉여가 생겨 실제로 꺾인다
+        saving = investment / payback if capacity > 0 else 0.0
+        points.append(
+            SolarPoint(
+                capacity_kwp=capacity,
+                generation_kwh=capacity * 1_200.0,
+                self_consumed_kwh=capacity * 1_200.0,
+                surplus_kwh=0.0,
+                self_consumption_ratio=1.0,
+                billing_demand_kw=5_000.0,
+                base_saving_won=saving * 0.15,
+                energy_saving_won=saving * 0.85,
+                total_saving_won=saving,
+                annual_saving_won=saving,
+                investment_won=investment,
+                payback_years=payback if capacity > 0 else None,
+                power_factor_after_pct=92.0,
+                power_factor_extra_won=0.0,
+            )
+        )
+    curve = SolarCurve(
+        points=tuple(points),
+        selection=TariffSelection("general_b", "high_a", "I"),
+        baseline_total_won=3_300_000_000.0,
+        baseline_base_won=520_000_000.0,
+        baseline_energy_won=2_780_000_000.0,
+        sharpness=1.0,
+        max_capacity_kwp=limit_kwp,
+        cost=PvCostInput.of_unit_cost(1_200_000.0),
+        base_fee_months=12.0,
+    )
+    return curve, capacity_verdict(curve)
+
+
+def test_표식_이름이_한_곳에서_온다() -> None:
+    """**각주와 표가 다른 출처를 읽으면 또 어긋난다** (51세션 1절).
+
+    50세션은 이름 셋을 ``measures.base`` 에 뒀는데 **나머지 표식은 문자열로
+    흩어져** 있었다 (`report.frames` 둘 · `ui.pipeline` 둘). 그래서 「권장」 이
+    「선정 용량」 에 먹히는 것을 아무도 못 잡았다.
+    """
+    from kwise.measures import base
+    from kwise.ui.pipeline import SURPLUS_HEAVY_LABEL, SURPLUS_ONSET_LABEL
+
+    vocabulary = {
+        base.SELECTED_CAPACITY: "선정 용량",
+        base.RECOMMENDED: "권장",
+        base.LARGEST_SAVING: "최대 절감액",
+        base.SHORTEST_PAYBACK: "최단 회수기간",
+        base.TIED_PAYBACK: "동률",
+        base.AREA_EXCEEDED: "면적 초과",
+        base.SURPLUS_ONSET: "잉여 시작",
+        base.SURPLUS_HEAVY: "잉여 다량",
+    }
+    for value, expected in vocabulary.items():
+        assert value == expected
+    assert len(set(vocabulary)) == len(vocabulary), "표식 이름이 겹치면 표가 뭉갠다"
+    # 화면 쪽은 그 이름을 **계산에 묶기만** 한다 — 따로 적지 않는다.
+    assert SURPLUS_ONSET_LABEL is base.SURPLUS_ONSET
+    assert SURPLUS_HEAVY_LABEL is base.SURPLUS_HEAVY
+
+    # **표를 만드는 자리에 날문자열이 남아 있으면 안 된다.**
+    body = (Path("src") / "kwise" / "report" / "frames.py").read_text(encoding="utf-8")
+    table = body[body.index("def solar_capacity_table") : body.index("ESS_SPEC_ROWS")]
+    for literal in vocabulary.values():
+        assert f'"{literal}"' not in table, literal
+
+
+def test_권장이_면적_상한과_같아도_표식을_찍는다() -> None:
+    """**둘은 다른 사실이다** (51세션 1절).
+
+    대형 자료는 권장 용량이 곧 면적 상한(160 kWp)이라, 50세션의 「둘이 다를
+    때만 찍는다」 규칙에서 **각주가 말하는 「권장」 이 표에 없었다.**
+    """
+    from kwise.measures import RECOMMENDED, SELECTED_CAPACITY
+    from kwise.report.frames import solar_capacity_table
+
+    curve, verdict = _flat_curve(limit_kwp=160.0)
+    frame = solar_capacity_table(curve, verdict=verdict)
+    marks = dict(zip(frame["용량(kWp)"], frame["표식"], strict=True))
+    assert verdict.best is not None and verdict.at_limit
+    top = marks[160.0]
+    assert SELECTED_CAPACITY in top and RECOMMENDED in top, top
+
+
+def test_회수기간이_같은_줄에_동률을_찍는다() -> None:
+    """**「어느 것을 골라도 같다」 로 읽히면 안 된다** (51세션 2절).
+
+    kWp당 단가면 회수기간이 용량과 거의 무관해진다 (16세션). 표가 그것을 그대로
+    보이면 판단이 안 서는데, 실제로는 절감액이 세 배 차이 난다.
+    """
+    from kwise.measures import TIED_PAYBACK, payback_tie_ratio
+    from kwise.report.frames import solar_capacity_table
+
+    curve, verdict = _flat_curve(limit_kwp=160.0)
+    frame = solar_capacity_table(curve, verdict=verdict)
+    marks = dict(zip(frame["용량(kWp)"], frame["표식"], strict=True))
+    tied = [capacity for capacity, mark in marks.items() if TIED_PAYBACK in str(mark)]
+    assert tied, marks
+
+    # **폭은 곡선의 최소에서 잰다** — 고른 자리에서 재면 밴드가 한 번 더 넓어진다.
+    shortest = min(p.payback_years or 0.0 for p in curve.points if p.capacity_kwp > 0)
+    ceiling = shortest * (1.0 + payback_tie_ratio())
+    by_capacity = {point.capacity_kwp: point for point in curve.points}
+    for capacity in tied:
+        assert (by_capacity[capacity].payback_years or 0.0) <= ceiling + 1e-9
+    # 고른 자리에는 「동률」 을 찍지 않는다 — 거기 붙는 이름은 「권장」 이다.
+    assert verdict.best is not None
+    assert TIED_PAYBACK not in str(marks[verdict.best.capacity_kwp])
+    # **절감액 열 하나가 그 줄들을 가른다.**
+    savings = [frame.loc[frame["용량(kWp)"] == capacity, "절감액(원)"].iloc[0] for capacity in tied]
+    assert len(set(savings)) == len(savings), "동률 줄의 절감액이 같으면 가를 것이 없다"
+
+
+def test_표식이_붙은_줄은_버리지_않는다() -> None:
+    """**카드가 낸 용량이 비교 표에 없었다** (51세션 4절).
+
+    권장이 면적 상한과 다르면 지점이 여섯이 되는데, 오름차순으로 잘라 **가장 큰
+    것 — 곧 「선정 용량」 — 이 버려졌다.** 매뉴얼의 「면적 상한과 「권장」 줄은
+    항상 들어간다」 와도 어긋났다.
+    """
+    from kwise.measures import RECOMMENDED, SELECTED_CAPACITY, SURPLUS_HEAVY, SURPLUS_ONSET
+    from kwise.report.frames import CAPACITY_ROWS, solar_capacity_table
+
+    curve, verdict = _flat_curve(limit_kwp=160.0, best_kwp=40.0)
+    onset = next(point for point in curve.points if point.capacity_kwp == 40.0)
+    heavy = next(point for point in curve.points if point.capacity_kwp == 144.0)
+    frame = solar_capacity_table(
+        curve,
+        verdict=verdict,
+        surplus_points=((SURPLUS_ONSET, onset), (SURPLUS_HEAVY, heavy)),
+    )
+    marks = " ".join(str(value) for value in frame["표식"])
+    assert len(frame) == CAPACITY_ROWS
+    for label in (SELECTED_CAPACITY, RECOMMENDED, SURPLUS_ONSET, SURPLUS_HEAVY):
+        assert label in marks, f"{label} 이 잘려 나갔다: {marks}"
+    # 버려진 것은 **표식 없는 줄**이다.
+    assert 160.0 in set(frame["용량(kWp)"]), "선정 용량이 표에 없다"
 
 
 def test_ESS_표식에는_동률_처리가_없다() -> None:

@@ -406,6 +406,17 @@ class CapacityVerdict:
         """
         return RECOMMENDED if self.basis == "회수기간" else LARGEST_SAVING
 
+    @property
+    def tie_note(self) -> str:
+        """**동률 처리를 실제로 거쳤을 때만** 판정 근거를 낸다 (51세션 1절).
+
+        단가를 넣지 않으면 절감액 최대를 그대로 고르므로 동률 폭이 쓰이지 않는다.
+        그런데 50세션은 각주를 조건 없이 달아, 표에는 「최대 절감액」 이 붙은 화면에
+        **각주만 「권장」 을 말하고** 있었다 — 표식이 「선정 용량」 에 먹히던 것과
+        같은 어긋남이다. 없는 규칙을 설명하지 않는다.
+        """
+        return payback_tie_note() if self.basis == "회수기간" else ""
+
     def sentence(self) -> str:
         """화면·보고서가 같이 쓰는 한 줄."""
         if self.best is None or self.limit is None:

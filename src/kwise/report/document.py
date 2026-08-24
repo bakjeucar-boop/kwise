@@ -357,6 +357,12 @@ def _solar_conclusion(
     **용량을 정한 근거가 함께 있어야 한다** — 얼마나 넓은 자리가 드는지,
     어디서부터 잉여가 생기는지가 그 근거다 (31세션 4-1 이 화면에 세운 값이다).
     「올리면」 은 우리끼리 쓰는 말이라 「설치하면」 으로 적는다.
+
+    **한계를 넘겨 권할 때는 남는 양을 적는다** (51세션 3절). 소형 사무빌딩에서
+    자가소비 한계가 40 kWp 인데 160 kWp 를 권하고 있었다 — **네 배다.** 그런데
+    문장은 「40 kWp 까지는 전량 자가소비」 라고만 적어, 잉여가 생긴다는 사실도
+    얼마나 생기는지도 말하지 않았다. **얼마가 남는지가 용량을 정하는 판단
+    재료다.** 자리는 그대로 쓰고 말만 바꾼다 — 문구를 늘리지 않는다.
     """
     head = (
         f"태양광 {solar.capacity_kwp:,.0f} kWp 를 설치하면 연 "
@@ -367,7 +373,11 @@ def _solar_conclusion(
     if area_m2:
         tail.append(f"설치 면적 {area_m2:,.0f} m²")
     if surplus_free_kwp is not None and surplus_free_kwp > 0:
-        tail.append(f"{surplus_free_kwp:,.0f} kWp 까지는 전량 자가소비")
+        if solar.capacity_kwp > surplus_free_kwp + 1e-9:
+            tail.append(f"자가소비 한계 {surplus_free_kwp:,.0f} kWp")
+            tail.append(f"잉여 {solar.surplus_kwh:,.0f} kWh")
+        else:
+            tail.append(f"{surplus_free_kwp:,.0f} kWp 까지는 전량 자가소비")
     return f"{head} ({' · '.join(tail)})" if tail else head
 
 

@@ -30,9 +30,14 @@ from kwise.measures.arbitrage import (
     peak_days_by_season,
 )
 from kwise.measures.base import (
+    AREA_EXCEEDED,
     LARGEST_SAVING,
     RECOMMENDED,
+    SELECTED_CAPACITY,
     SHORTEST_PAYBACK,
+    SURPLUS_HEAVY,
+    SURPLUS_ONSET,
+    TIED_PAYBACK,
     Certainty,
     annualize,
     lowest_certainty,
@@ -142,6 +147,7 @@ from kwise.measures.solar import (
     SolarPoint,
     capacity_verdict,
     payback_tie_note,
+    payback_tie_ratio,
     power_factor_after_pct,
     power_factor_floor_pct,
     roof_capacity_limit_kwp,
@@ -175,6 +181,7 @@ from kwise.measures.tariff_switch import (
 )
 
 __all__ = [
+    "AREA_EXCEEDED",
     "BASE_FEE_UNCHANGED",
     "BELOW_MINIMUM_CONCLUSION",
     "DEFAULT_MODULE_DENSITY_KWP_PER_M2",
@@ -197,8 +204,12 @@ __all__ = [
     "PV_UNPRICED_REASON",
     "RECOMMENDED",
     "SCALE_ECONOMY_NOTE",
+    "SELECTED_CAPACITY",
     "SHORTEST_PAYBACK",
     "SPEC_TABLE_ROWS",
+    "SURPLUS_HEAVY",
+    "SURPLUS_ONSET",
+    "TIED_PAYBACK",
     "TIER_INVESTMENT",
     "TIER_LOW",
     "TIER_NONE",
@@ -277,6 +288,7 @@ __all__ = [
     "payback_display_cap_years",
     "payback_text",
     "payback_tie_note",
+    "payback_tie_ratio",
     "payback_years",
     "peak_days_by_season",
     "power_factor_after_pct",

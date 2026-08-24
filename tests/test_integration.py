@@ -802,6 +802,14 @@ def test_태양광_용량_표가_잉여_지점을_세운다() -> None:
     **잉여 지점 둘이 표에 있어야 한다.** 26세션에 판단을 잉여로 옮겼는데 표는
     선정 용량 아래에서만 뽑아, 정작 「어디서부터 잉여가 생기나」 가 없었다.
     """
+    from kwise.measures import (
+        AREA_EXCEEDED,
+        LARGEST_SAVING,
+        RECOMMENDED,
+        SELECTED_CAPACITY,
+        SURPLUS_HEAVY,
+        SURPLUS_ONSET,
+    )
     from kwise.ui.charts import CAPACITY_ROWS
 
     app = _app(**_on("solar"))
@@ -814,17 +822,29 @@ def test_태양광_용량_표가_잉여_지점을_세운다() -> None:
         "필요 면적",  # 31세션 4-1 — 면적이 판단 기준이다
         "발전량",  # 26세션 3-3 — MWh/년 로 낸다
         "자가소비율",
-        "기본요금 절감",
-        "전력량요금 절감",
+        "절감액",  # 51세션 2절 — 절감 열은 하나다. 줄을 가르는 것이 이 값이다
         "투자비",
         "회수기간",
     }
+    # **가른 열 둘은 사라졌다** (51세션 2절). 분해는 카드 툴팁·계산 근거·Excel 에 있다.
+    assert "기본요금 절감" not in frame.columns
+    assert "전력량요금 절감" not in frame.columns
     marks = " ".join(str(value) for value in frame["표식"])
-    assert "선정 용량" in marks
-    assert "잉여 시작" in marks
-    assert "잉여 다량" in marks
+    assert SELECTED_CAPACITY in marks
+    assert SURPLUS_ONSET in marks
+    assert SURPLUS_HEAVY in marks
     # 설치 가능 면적을 넘는 지점은 값을 지우지 않고 **그 사실만** 적는다.
-    assert "면적 초과" in marks
+    assert AREA_EXCEEDED in marks
+    # **각주가 말하는 표식이 표에 있어야 한다** (51세션 1절). 50세션은 권장이
+    # 면적 상한과 같으면 「선정 용량」 에 먹혀 「권장」 이 화면에서 사라졌고,
+    # 각주는 조건 없이 붙어 「최대 절감액」 인 화면에서도 「권장」 을 말했다.
+    #
+    # **이 시험은 단가를 넣지 않는다** — 그래서 고른 자리의 이름은 「최대 절감액」
+    # 이고 동률 각주는 나오지 않아야 한다.
+    assert LARGEST_SAVING in marks, marks
+    assert RECOMMENDED not in marks, marks
+    caption = " ".join(str(item.value) for item in app.caption)
+    assert RECOMMENDED not in caption, "쓰이지 않은 규칙을 각주로 적으면 안 된다"
 
 
 def test_태양광_연간_차트가_발전량만_그린다() -> None:

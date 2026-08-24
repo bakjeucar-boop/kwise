@@ -41,7 +41,6 @@ from kwise.measures import (
     evaluate_demand_response,
     high_rate_discharge_hours,
     offset_settles_cash,
-    payback_tie_note,
     power_factor_floor_pct,
     refine_targets,
     surplus_free_capacity_kwp,
@@ -1052,11 +1051,15 @@ def _solar(
     # 두고 11.1년 줄에 표식이 붙는데, 그 규칙을 모르면 표가 틀린 것으로 읽힌다.
     # 「용량 판정」 캡션에 있던 같은 뜻의 문장을 여기로 옮겼다 — 문구를 늘리지
     # 않으려면 한 자리를 비워야 하고, 판정 근거는 표식 옆에서 읽혀야 한다.
+    # **각주는 규칙이 실제로 쓰일 때만 붙는다** (51세션 1절). 단가를 넣지 않으면
+    # 절감액 최대를 그대로 고르므로 동률 폭이 쓰이지 않는데, 50세션은 조건 없이
+    # 달아 표식이 「최대 절감액」 인 화면에서 각주만 「권장」 을 말하고 있었다.
+    tie_note = verdict.tie_note
     st.caption(
         "잉여가 생기기 시작하는 용량과 많이 생기는 용량을 함께 세웠습니다 — "
         "설치 가능 면적을 넘는 줄은 「면적 초과」 로 적습니다. "
-        + payback_tie_note()
-        + " 20단계 상세는 Excel 「태양광 용량 곡선」 시트에 있습니다."
+        + (tie_note + " " if tie_note else "")
+        + "20단계 상세는 Excel 「태양광 용량 곡선」 시트에 있습니다."
     )
 
     generation = unit_profile * point.capacity_kwp
@@ -1363,8 +1366,10 @@ def _capacity_view(frame: pd.DataFrame) -> pd.DataFrame:
             # 발전량은 MWh 로 낸다 (26세션 3-3). 12개월 환산값이라 /년 을 붙인다.
             "발전량": [fmt.per_year(fmt.mwh(value)) for value in frame["연간 발전량(kWh)"]],
             "자가소비율": [fmt.ratio_pct(value) for value in frame["자가소비율"]],
-            "기본요금 절감": [fmt.won_year(value) for value in frame["기본요금 절감(원)"]],
-            "전력량요금 절감": [fmt.won_year(value) for value in frame["전력량요금 절감(원)"]],
+            # **절감 열은 하나다** (51세션 2절). 회수기간이 용량과 거의 무관해
+            # 세 줄이 같은 값을 내는데(16세션) 줄을 가르는 것은 이 합계다 —
+            # 두 수를 사람이 더하게 두면 세 배 차이가 한눈에 안 들어온다.
+            "절감액": [fmt.won_year(value) for value in frame["절감액(원)"]],
             "투자비": [
                 fmt.won_short(value, reason="미산출 — 단가 미입력") for value in frame["투자비(원)"]
             ],
