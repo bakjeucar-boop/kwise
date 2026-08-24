@@ -31,6 +31,7 @@ from kwise.measures.arbitrage import (
 )
 from kwise.measures.base import (
     AREA_EXCEEDED,
+    CAPACITY_MARKS,
     LARGEST_SAVING,
     RECOMMENDED,
     SELECTED_CAPACITY,
@@ -39,8 +40,10 @@ from kwise.measures.base import (
     SURPLUS_ONSET,
     TIED_PAYBACK,
     Certainty,
+    Mark,
     annualize,
     lowest_certainty,
+    mark_meaning,
     payback_years,
 )
 from kwise.measures.catalog import (
@@ -184,6 +187,7 @@ __all__ = [
     "AREA_EXCEEDED",
     "BASE_FEE_UNCHANGED",
     "BELOW_MINIMUM_CONCLUSION",
+    "CAPACITY_MARKS",
     "DEFAULT_MODULE_DENSITY_KWP_PER_M2",
     "DEFAULT_STEPS",
     "DEFAULT_USABLE_RATIO",
@@ -235,6 +239,7 @@ __all__ = [
     "EssTargetPoint",
     "EssTechnologyCost",
     "Feasibility",
+    "Mark",
     "MeasureKind",
     "NetLoad",
     "OffsetMonth",
@@ -279,6 +284,7 @@ __all__ = [
     "load_ess_cost_reference",
     "load_ess_spec_grid",
     "lowest_certainty",
+    "mark_meaning",
     "measure_kind",
     "measure_numbers",
     "min_pcs_power_kw",

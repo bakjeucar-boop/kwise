@@ -9,10 +9,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from enum import StrEnum
 
 __all__ = [
     "AREA_EXCEEDED",
+    "CAPACITY_MARKS",
     "LARGEST_SAVING",
     "RECOMMENDED",
     "SELECTED_CAPACITY",
@@ -21,8 +23,10 @@ __all__ = [
     "SURPLUS_ONSET",
     "TIED_PAYBACK",
     "Certainty",
+    "Mark",
     "annualize",
     "lowest_certainty",
+    "mark_meaning",
     "payback_years",
 ]
 
@@ -99,6 +103,51 @@ SURPLUS_ONSET = "잉여 시작"
 
 SURPLUS_HEAVY = "잉여 다량"
 """잉여가 발전량의 :func:`~kwise.measures.solar.surplus_heavy_share` 를 넘는 용량."""
+
+
+@dataclass(frozen=True)
+class Mark:
+    """용량 표 표식 하나 — **이름과 뜻을 함께 든다** (52세션 1-3).
+
+    51세션이 이름을 한 곳에 모았는데 **뜻은 여전히 도크스트링에만** 있었다.
+    그래서 판정 문구가 「권장」 을 계산에 쓴 값처럼 말하고, 잉여 한계를 「권장」
+    자리에 적는 일이 남았다 — 문구를 쓰는 자리에서 뜻을 읽을 수 없었기 때문이다.
+
+    **문구는 이 뜻을 따른다.** :meth:`~kwise.measures.solar.CapacityVerdict.headline`
+    과 :meth:`~kwise.measures.solar.CapacityVerdict.reference_note` 가 여기서 읽는다.
+    """
+
+    label: str
+    means: str
+    """한 줄 뜻. 매뉴얼·기술서가 같은 글을 싣는다."""
+
+    def __str__(self) -> str:
+        return self.label
+
+
+CAPACITY_MARKS: tuple[Mark, ...] = (
+    Mark(SELECTED_CAPACITY, "입력(면적)에서 나온 값. **카드가 이 값으로 계산한다**"),
+    Mark(RECOMMENDED, "동률 폭 안에서 절감액이 가장 큰 줄. **판정 규칙의 결과다**"),
+    Mark(SURPLUS_ONSET, "여기부터 잉여가 난다"),
+    Mark(SURPLUS_HEAVY, "잉여가 많이 난다"),
+)
+"""용량 표 표식 넷의 **뜻** (52세션 1-3).
+
+**「권장」 을 「잉여 없는 최대」 로 바꾸지 않는다 — 다른 사실이다.** 대형 자료의
+잉여 없는 최대는 2,038 kWp 인데 「권장」 은 160 kWp 에 붙는다. 잉여 한계는
+「잉여 시작」 이 이미 표현한다.
+
+「동률」·「면적 초과」 는 이 넷에 들지 않는다 — **줄을 고르는 사실이 아니라 그
+줄을 읽는 데 붙는 단서**이고, 문구가 그 둘을 인용하는 자리는 없다.
+"""
+
+
+def mark_meaning(label: str) -> str:
+    """표식의 뜻 한 줄. 매뉴얼·기술서·시험이 같은 글을 읽는다."""
+    for mark in CAPACITY_MARKS:
+        if mark.label == label:
+            return mark.means
+    raise KeyError(f"뜻이 정의되지 않은 표식입니다: {label!r}")
 
 
 class Certainty(StrEnum):

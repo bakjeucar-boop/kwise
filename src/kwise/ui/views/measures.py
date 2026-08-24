@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import math
 
 import pandas as pd
 import streamlit as st
@@ -1000,11 +1001,21 @@ def _solar(
     # **투자비를 모르면 빈칸이나 0원이 아니라 사유다** (7.5).
     st.caption("투자비 — " + fmt.won(point.investment_won, reason=curve.cost.reason))
 
-    # **한 줄 판정에 근거를 붙인다** (17세션 3-2). 숫자만 내면 "왜 하필 그
-    # 용량인가" 를 알 수 없다.
+    # **두 조각으로 나눠 쓴다** (52세션 1-4). ① 무엇을 계산했나 ② 참고.
+    #
+    # 51세션까지는 「**용량 판정** — …」 뒤에 판정을 붙이고 그 아래 근거를 한 줄
+    # 더 달았다. **두 자료에서 다 어긋났다** — 대형은 「회수기간 기준 가장
+    # 유리」 가 거짓이었고(56 kWp 가 더 짧다), 소형은 참고값인 권장이 계산에
+    # 쓰인 값처럼 읽혔다. 배지(**설치 가능 면적 상한**)가 문장 중간에 박혀
+    # 읽기도 어려웠다.
+    #
+    # **라벨과 줄표를 뗐다.** 문장이 스스로 무엇인지 말하므로 「용량 판정 —」 이
+    # 필요 없고, 그 줄표 때문에 본문이 빈 줄표로 시작하는 것처럼 보였다.
     verdict = curve.verdict()
-    st.markdown(f"**용량 판정** — {verdict.sentence()}")
-    st.caption(fmt.markdown_safe(verdict.basis_sentence()))
+    st.markdown(fmt.markdown_safe(verdict.headline(inputs.area_m2 or None)))
+    reference = verdict.reference_note(surplus_free_capacity_kwp(usage, unit_profile))
+    if reference:
+        st.caption(fmt.markdown_safe(reference))
 
     # **판단의 갈림길은 잉여다** (26세션 3절). 회수기간 최소만으로는 정할 수 없다 —
     # 잉여를 내면 상계거래 계약과 역송 계량기가 따라오므로, 「잉여 없이 어디까지」 와
@@ -1350,6 +1361,19 @@ def _ess_spec_view(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _self_consumption(ratio: float | None) -> str:
+    """자가소비율 — **100.0% 는 잉여가 정확히 0 일 때만** (52세션 1-5).
+
+    반올림하면 잉여가 조금 있는 줄도 100.0% 가 된다. 그 표에는 바로 아래에
+    「잉여 시작」 표식이 붙어 있어 **표가 스스로 어긋나 보였다.** 내림으로 자르면
+    「100.0% ⟺ 잉여 없음」 이 표 안에서 맞는다.
+    """
+    if ratio is None or pd.isna(ratio):
+        return fmt.DASH
+    value = float(ratio)
+    return fmt.ratio_pct(value if value >= 1.0 else math.floor(value * 1_000.0) / 1_000.0)
+
+
 def _capacity_view(frame: pd.DataFrame) -> pd.DataFrame:
     """용량 표를 **사람이 읽는 문자열로** 굳힌다 (17세션 3-3)."""
     if frame.empty:
@@ -1365,7 +1389,11 @@ def _capacity_view(frame: pd.DataFrame) -> pd.DataFrame:
             ],
             # 발전량은 MWh 로 낸다 (26세션 3-3). 12개월 환산값이라 /년 을 붙인다.
             "발전량": [fmt.per_year(fmt.mwh(value)) for value in frame["연간 발전량(kWh)"]],
-            "자가소비율": [fmt.ratio_pct(value) for value in frame["자가소비율"]],
+            # **100.0% 는 잉여가 정확히 0 일 때만 나온다** (52세션 1-5). 곡선 격자
+            # 한 칸 위에서 잉여가 수십 kWh 뿐이라(48 kWp 에서 33.7 kWh · 발전량의
+            # 0.06%) 반올림하면 100.0% 로 찍혔다 — 그 줄 아래에 「잉여 시작」 이
+            # 붙어 있어 표가 스스로 어긋나 보였다. **내림으로 자른다.**
+            "자가소비율": [_self_consumption(value) for value in frame["자가소비율"]],
             # **절감 열은 하나다** (51세션 2절). 회수기간이 용량과 거의 무관해
             # 세 줄이 같은 값을 내는데(16세션) 줄을 가르는 것은 이 합계다 —
             # 두 수를 사람이 더하게 두면 세 배 차이가 한눈에 안 들어온다.

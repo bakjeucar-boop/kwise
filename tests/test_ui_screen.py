@@ -3897,6 +3897,100 @@ def test_표식_이름이_한_곳에서_온다() -> None:
         assert f'"{literal}"' not in table, literal
 
 
+def test_표식_넷의_뜻이_한_곳에_있다() -> None:
+    """**문구가 뜻을 따르게 한다** (52세션 1-3).
+
+    51세션이 이름을 한 곳에 모았지만 **뜻은 도크스트링에만** 있었다. 그래서
+    판정 문구가 「권장」 을 계산에 쓴 값처럼 말하고, 잉여 한계를 「권장」 자리에
+    적는 일이 남았다.
+    """
+    from kwise.measures import (
+        RECOMMENDED,
+        SELECTED_CAPACITY,
+        SURPLUS_HEAVY,
+        SURPLUS_ONSET,
+        mark_meaning,
+    )
+    from kwise.measures.base import CAPACITY_MARKS
+
+    assert [mark.label for mark in CAPACITY_MARKS] == [
+        SELECTED_CAPACITY,
+        RECOMMENDED,
+        SURPLUS_ONSET,
+        SURPLUS_HEAVY,
+    ]
+    assert all(mark.means for mark in CAPACITY_MARKS), "뜻이 빈 표식이 있다"
+    # **카드가 쓰는 값은 「선정 용량」 이다** — 문구가 이 사실을 적는다.
+    assert "카드가 이 값으로 계산한다" in mark_meaning(SELECTED_CAPACITY)
+    # **「권장」 은 판정 규칙의 결과이지 잉여 한계가 아니다.**
+    assert "판정 규칙의 결과" in mark_meaning(RECOMMENDED)
+    assert "잉여" not in mark_meaning(RECOMMENDED)
+    assert "잉여" in mark_meaning(SURPLUS_ONSET)
+
+
+def test_판정_문구가_계산한_값을_적는다() -> None:
+    """**① 무엇을 계산했나** (52세션 1-1·1-4).
+
+    51세션 문구는 두 자료에서 다 어긋났다 — 대형은 「회수기간 기준 가장 유리」 가
+    거짓이었고(더 작은 용량이 짧다), 소형은 참고값을 계산값처럼 말했다.
+    """
+    _curve, verdict = _flat_curve(limit_kwp=160.0)
+    head = verdict.headline(2_000.0)
+    assert head == "설치 가능 면적 2,000 m² 를 다 쓴 160 kWp 로 계산했습니다."
+    # **카드가 쓰는 값은 선정 용량이다** — 권장이 아니다.
+    assert verdict.limit is not None
+    assert f"{verdict.limit.capacity_kwp:,.0f} kWp" in head
+    for banned in ("가장 유리", "가장 짧은", "멈춘 것은"):
+        assert banned not in head, banned
+    # 면적을 모르면 면적을 말하지 않는다.
+    assert "면적" in verdict.headline(None)
+    assert "m²" not in verdict.headline(None)
+
+
+def test_참고는_다를_때만_적고_잉여_한계에서_읽는다() -> None:
+    """**② 참고** (52세션 1-4·1-5).
+
+    51세션은 「권장 48 kWp — **그 이상은** 잉여가 발생」 이라 적었는데 잉여는
+    **40 kWp 부터** 난다. 둘은 다른 사실인데 한 숫자로 뭉뚱그리고 있었다.
+    """
+    from kwise.measures import RECOMMENDED
+
+    # 대형 — 권장이 곧 면적 상한이고 잉여도 안 난다. **적을 것이 없다.**
+    _curve, at_limit = _flat_curve(limit_kwp=160.0)
+    assert at_limit.at_limit
+    assert at_limit.reference_note(2_038.0) == ""
+
+    # 소형 — 둘 다 갈린다. **잉여 한계는 잉여 한계에서 읽는다.**
+    _small, split = _flat_curve(limit_kwp=160.0, best_kwp=48.0)
+    assert split.best is not None
+    pick = f"{split.best.capacity_kwp:,.0f} kWp"
+    note = split.reference_note(40.0)
+    assert note.startswith("참고 —")
+    assert RECOMMENDED in note and pick in note
+    assert "40 kWp 를 넘으면 잉여가 생깁니다" in note
+    # **권장을 잉여 한계로 쓰지 않는다.**
+    assert f"{pick} 를 넘으면" not in note
+
+    # 권장과 잉여 한계가 같은 수로 보이면 한 번만 적는다.
+    _same, tight = _flat_curve(limit_kwp=160.0, best_kwp=40.0)
+    once = tight.reference_note(40.2)
+    assert once.count("40 kWp") == 1, once
+
+
+def test_자가소비율_100은_잉여가_0일_때만이다() -> None:
+    """**표가 스스로 어긋나 보였다** (52세션 1-5).
+
+    곡선 격자 한 칸 위에서 잉여가 수십 kWh 뿐이라 반올림하면 100.0% 로 찍히는데,
+    그 줄 아래에 「잉여 시작」 표식이 붙어 있었다.
+    """
+    from kwise.ui.views.measures import _self_consumption
+
+    assert _self_consumption(1.0) == "100.0%"
+    assert _self_consumption(0.999432) == "99.9%", "잉여가 있는데 100.0% 로 찍힌다"
+    assert _self_consumption(0.9999) == "99.9%"
+    assert _self_consumption(0.882) == "88.2%"
+
+
 def test_권장이_면적_상한과_같아도_표식을_찍는다() -> None:
     """**둘은 다른 사실이다** (51세션 1절).
 

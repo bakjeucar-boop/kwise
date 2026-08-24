@@ -307,14 +307,22 @@ def test_입력을_바꾸면_묵은_결과라고_적는다() -> None:
 
 
 @pytest.mark.usefixtures("real_weather")
-def test_최적이_면적_상한이면_곡선을_감춘다() -> None:
-    """**한 줄 판정으로 충분하다** (15세션 1-3). 곡선은 접어 둔다."""
+def test_계산한_용량을_먼저_적는다() -> None:
+    """**① 무엇을 계산했나** (15세션 1-3 · 52세션 1-4). 곡선은 접어 둔다.
+
+    51세션까지는 「**용량 판정** — 설치 가능 면적 전체(160 kWp)를 쓰는 것이
+    회수기간 기준 가장 유리합니다」 였다. **거짓이었다** — 회수기간은 더 작은
+    용량이 짧고, 동률 처리로 절감액이 큰 줄을 골랐을 뿐이다.
+    """
     app = _app(**_on("solar"))
     app.button(key="solar_run").click().run(timeout=900)
     assert not app.exception, app.exception
     body = _text(app)
-    assert "용량 판정" in body
-    assert "설치 가능 면적 전체" in body
+    assert "로 계산했습니다" in body, body[:400]
+    # **거짓 주장이 사라졌다.**
+    assert "가장 유리합니다" not in body
+    # **라벨과 줄표를 뗐다** — 본문이 빈 줄표로 시작하는 것처럼 보였다.
+    assert "**용량 판정** —" not in body
     assert "20단계 상세는 Excel" in body
 
 
@@ -778,21 +786,27 @@ def test_전력삼각형에_각도와_역률을_직접_적는다() -> None:
 
 
 @pytest.mark.usefixtures("real_weather")
-def test_태양광_판정_근거를_적는다() -> None:
-    """**왜 하필 그 용량인가** (17세션 3-2)."""
+def test_참고는_선정_용량과_다를_때만_적는다() -> None:
+    """**② 참고** (17세션 3-2 → 52세션 1-4).
+
+    이 자료는 권장이 곧 면적 상한이고 잉여도 나지 않는다 — **적을 참고가 없다.**
+    51세션까지는 그 자리에 「회수기간을 기준으로 고른 용량입니다. 그 용량에서
+    멈춘 것은 **설치 가능 면적 상한** 입니다」 를 늘 적었고, 배지가 문장 중간에
+    박혀 읽기 어려웠다.
+    """
+    from kwise.measures import RECOMMENDED
+
     app = _app(**_on("solar"))
     app.button(key="solar_run").click().run(timeout=900)
     assert not app.exception, app.exception
     body = _text(app)
-    # **「가장 짧은」 이 아니다** (50세션). 동률 처리를 거쳐 고르므로 최소점이
-    # 아닐 수 있다 — 규칙은 용량표 아래 각주가 적는다.
-    assert "회수기간을 기준으로 고른 용량입니다" in body or "절감액이 가장 큰" in body
-    assert "회수기간이 가장 짧은 용량입니다" not in body
-    # **「최적을 정한 것은」 이 아니다** (49세션). 고른 자리를 최적이라 부르지 않는다.
-    assert "그 용량에서 멈춘 것은" in body
+    assert "참고 —" not in body, body[:400]
+    # **배지가 문장 중간에 박히지 않는다.**
+    assert "그 용량에서 멈춘 것은" not in body
+    assert "회수기간을 기준으로 고른 용량입니다" not in body
     assert "최적" not in body, "개선안 맥락의 「최적」 이 화면에 남아 있다"
-    limiters = ("설치 가능 면적 상한", "잉여 발생", "기본요금 절감 포화")
-    assert any(word in body for word in limiters), body
+    # 권장은 표의 표식이 낸다 — 단가를 안 넣은 자료라 「최대 절감액」 이다.
+    assert RECOMMENDED not in body
 
 
 @pytest.mark.usefixtures("real_weather")

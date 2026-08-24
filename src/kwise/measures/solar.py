@@ -417,17 +417,75 @@ class CapacityVerdict:
         """
         return payback_tie_note() if self.basis == "회수기간" else ""
 
-    def sentence(self) -> str:
-        """화면·보고서가 같이 쓰는 한 줄."""
-        if self.best is None or self.limit is None:
+    def headline(self, area_m2: float | None = None) -> str:
+        """① **무엇을 계산했나** — 선정 용량과 그 값이 나온 까닭 (52세션 1-4).
+
+        **카드가 쓰는 값은 언제나 「선정 용량」 이다** — 면적이 입력이고 그 면적을
+        다 쓴 용량이 결과다 (:data:`~kwise.measures.base.CAPACITY_MARKS`).
+
+        51세션까지는 이 자리에 판정을 적었고 **두 자료에서 다 어긋났다.**
+
+            대형   「설치 가능 면적 전체(160 kWp)를 쓰는 것이 회수기간 기준 가장
+                  유리합니다」 — 회수기간은 56 kWp 가 더 짧다. **거짓이다**
+            소형   「권장 용량은 48 kWp 입니다」 — 카드는 160 kWp 로 계산하는데
+                  참고값이 계산에 쓰인 값처럼 읽힌다
+
+        **계산한 것을 적는다.** 권장·잉여 한계는 참고이므로
+        :meth:`reference_note` 로 내린다.
+        """
+        if self.limit is None:
             return "용량 곡선을 산출하지 못했습니다."
-        if self.at_limit:
+        capacity = f"{self.limit.capacity_kwp:,.0f} kWp"
+        if area_m2:
+            return f"설치 가능 면적 {area_m2:,.0f} m² 를 다 쓴 {capacity} 로 계산했습니다."
+        return f"설치 가능 면적이 허용하는 {capacity} 로 계산했습니다."
+
+    def reference_note(self, surplus_free_kwp: float | None = None) -> str:
+        """② **참고** — 선정 용량과 다를 때만 적는다 (52세션 1-4).
+
+        대형은 권장이 선정과 같고 잉여도 나지 않아 **아무것도 적지 않는다.**
+        소형은 둘 다 갈리므로 한 줄로 함께 적는다.
+
+        **잉여 한계는 「권장」 이 아니라 잉여 한계에서 읽는다** (52세션 1-5).
+        51세션까지는 「권장 48 kWp — 그 이상은 잉여가 발생」 이라 적었는데,
+        잉여는 **40 kWp 부터** 난다. 둘은 다른 사실인데 한 숫자로 뭉뚱그리고
+        있었다 — 「잉여 시작」 표식이 붙는 그 값을 그대로 인용한다.
+        """
+        if self.best is None or self.limit is None:
+            return ""
+        pick = (
+            f"{self.pick_label} 용량은 {self.best.capacity_kwp:,.0f} kWp"
+            if abs(self.best.capacity_kwp - self.limit.capacity_kwp) > 1e-9
+            else ""
+        )
+        onset = (
+            f"{surplus_free_kwp:,.0f} kWp 를 넘으면 잉여가 생깁니다"
+            if surplus_free_kwp and surplus_free_kwp < self.limit.capacity_kwp - 1e-9
+            else ""
+        )
+        # **같은 값이면 한 번만 적는다.** 권장이 곧 잉여 한계인 자료가 있는데
+        # (소형 사무빌딩), 「40 kWp 이고, 40 kWp 를 넘으면」 은 같은 수를 두 번
+        # 읽히게 한다. 화면에 나가는 자릿수로 견준다 — 40.0 과 40.2 는 사용자
+        # 눈에 같은 값이다.
+        same = (
+            pick
+            and onset
+            and f"{self.best.capacity_kwp:,.0f}" == f"{surplus_free_kwp or 0.0:,.0f}"
+        )
+        if same:
             return (
-                f"설치 가능 면적 전체({self.limit.capacity_kwp:,.0f} kWp)를 쓰는 것이 "
-                f"{self.basis} 기준 가장 유리합니다."
+                f"참고 — {self.pick_label} 용량 {self.best.capacity_kwp:,.0f} kWp 를 "
+                "넘으면 잉여가 생깁니다."
             )
-        tail = f" 그 이상은 {LIMITERS[self.limiter_key][1]}." if self.limiter_key else ""
-        return f"{self.pick_label} 용량은 {self.best.capacity_kwp:,.0f} kWp 입니다.{tail}"
+        if pick and onset:
+            return f"참고 — {pick} 이고, {onset}."
+        if pick:
+            return f"참고 — {pick} 입니다."
+        return f"참고 — {onset}." if onset else ""
+
+    def sentence(self) -> str:
+        """화면·보고서가 같이 쓰는 한 줄. **:meth:`headline` 로 갈음한다.**"""
+        return self.headline()
 
     @property
     def limiter(self) -> str:
