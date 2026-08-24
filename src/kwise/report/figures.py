@@ -83,6 +83,7 @@ __all__ = [
     "daily_temperature_png",
     "daily_usage_png",
     "date_axis",
+    "delta_label_place",
     "dr_daily_png",
     "ess_day_png",
     "hourly_profile_png",
@@ -432,6 +433,20 @@ def combination_png(comparison: ComparisonResult) -> bytes:
 # 같은 이름의 차트가 서로 다른 수를 그리게 되고, 그 어긋남은 눈으로 잡히지 않는다.
 
 
+def delta_label_place(value: float, pad: float) -> tuple[float, str]:
+    """차액 라벨의 자리 — **0 선 반대쪽** (53세션 5절).
+
+    막대 끝에 붙여 두면 파란 막대 위에 검은 글씨가 얹혀 읽히지 않는다.
+    0 선 건너편은 어느 자료에서도 비어 있으므로 겹칠 일이 없다.
+
+    Returns:
+        (y 좌표, ``va``). 줄어드는 쪽(음수)이면 선 위, 늘어나는 쪽이면 선 아래다.
+    """
+    if value <= 0:
+        return pad * 0.35, "bottom"
+    return -pad * 0.35, "top"
+
+
 def tariff_option_png(
     switch: TariffSwitchResult, *, size: tuple[float, float] | None = None
 ) -> bytes:
@@ -480,15 +495,27 @@ def tariff_option_png(
         marks.saving if value < 0 else (marks.neutral if value == 0 else marks.increase)
         for value in delta["현행 대비(원)"]
     ]
-    lower.bar(positions, delta["현행 대비(원)"] / 1e8, width=0.5, color=colors)
+    amounts = [float(value) for value in delta["현행 대비(원)"]]
+    scaled = [value / 1e8 for value in amounts]
+    lower.bar(positions, scaled, width=0.5, color=colors)
     lower.axhline(0.0, color=chart_palette().text, linewidth=1.0)
-    for index, value in enumerate(delta["현행 대비(원)"]):
+    # **차액 라벨을 0 선 반대쪽에 둔다** (53세션 5절). 막대 끝에 붙여 두면 파란
+    # 막대 위에 검은 글씨가 얹혀 읽히지 않았다 — 「-0.54억」 이 그랬다.
+    # 0 선 건너편은 언제나 비어 있으므로 어느 자료에서도 겹치지 않는다.
+    reach = max((abs(value) for value in scaled), default=0.0) or 1.0
+    pad = reach * 0.10
+    lower.set_ylim(
+        min(min(scaled, default=0.0), 0.0) - pad,
+        max(max(scaled, default=0.0), 0.0) + pad * 2.4,
+    )
+    for index, (amount, value) in enumerate(zip(amounts, scaled, strict=True)):
+        offset, align = delta_label_place(value, pad)
         lower.text(
             index,
-            value / 1e8,
-            "현행" if abs(value) < 1 else f"{value / 1e8:,.2f}억",
+            offset,
+            "현행" if abs(amount) < 1 else f"{value:,.2f}억",
             ha="center",
-            va="top" if value < 0 else "bottom",
+            va=align,
             fontsize=8,
         )
     lower.set_ylabel("현행 대비 (억원)")

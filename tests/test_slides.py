@@ -2010,3 +2010,24 @@ def test_DR_문장이_날_수로_세_갈래다(sample_diagnosis: Diagnosis) -> N
     days = tuple(range(profile.eligible_days))
     assert "전부가 부하가 쉬는 날" in dr_lead(replace(profile, low_load_days=days))  # type: ignore[arg-type]
     assert "일만 부하가 쉬는 날" in dr_lead(replace(profile, low_load_days=days[:2]))  # type: ignore[arg-type]
+
+
+# ===================================================================== 53세션 · 5절 차액 라벨
+
+
+def test_차액_라벨이_0선_반대쪽에_선다() -> None:
+    """**막대 안쪽에 있어 읽히지 않았다** (53세션 5절).
+
+    「-0.54억」 이 파란 막대 위에 얹혀 있었다. 0 선 건너편은 어느 자료에서도
+    비어 있으므로 그쪽에 두면 겹칠 일이 없다.
+    """
+    from kwise.report.figures import delta_label_place
+
+    pad = 0.05
+    down, down_align = delta_label_place(-0.54, pad)
+    assert down > 0 and down_align == "bottom", (down, down_align)
+    up, up_align = delta_label_place(0.31, pad)
+    assert up < 0 and up_align == "top", (up, up_align)
+    # 「현행」(0) 은 줄어드는 쪽과 같은 자리에 선다 — 겹칠 막대가 없다.
+    zero, zero_align = delta_label_place(0.0, pad)
+    assert zero > 0 and zero_align == "bottom"
