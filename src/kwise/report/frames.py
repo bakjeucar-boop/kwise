@@ -21,6 +21,7 @@ from kwise.diagnose import ChargeStructure, PeakProfile
 from kwise.diagnose.dr import DrProfile
 from kwise.io import UsageData, slot_start
 from kwise.measures import (
+    RECOMMENDED,
     SHORTEST_PAYBACK,
     SPEC_TABLE_ROWS,
     CapacityVerdict,
@@ -309,9 +310,11 @@ def solar_capacity_table(
 
     marks: dict[float, list[str]] = {limit.capacity_kwp: ["선정 용량"]}
     if best is not None and best.capacity_kwp != limit.capacity_kwp:
-        # **「최적」 이 아니다** (49세션). 무엇으로 골랐는지가 곧 표식이다.
+        # **「최적」 도 「최단 회수기간」 도 아니다** (49·50세션). 태양광은 동률
+        # 처리를 거쳐 고르므로 「권장」 이다 — 판정 근거는 표 아래 한 줄이 적는다
+        # (:func:`~kwise.measures.payback_tie_note`).
         marks.setdefault(best.capacity_kwp, []).append(
-            verdict.pick_label if verdict is not None else SHORTEST_PAYBACK
+            verdict.pick_label if verdict is not None else RECOMMENDED
         )
     picked: dict[float, SolarPoint] = {limit.capacity_kwp: limit}
     if best is not None:

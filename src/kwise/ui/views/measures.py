@@ -42,6 +42,7 @@ from kwise.measures import (
     high_rate_discharge_hours,
     load_ess_cost_model,
     offset_settles_cash,
+    payback_tie_note,
     power_factor_floor_pct,
     refine_targets,
     surplus_free_capacity_kwp,
@@ -1047,10 +1048,15 @@ def _solar(
         hide_index=True,
         width="stretch",
     )
+    # **표식의 판정 근거를 표 바로 아래 적는다** (50세션). 회수기간 11.0년 줄을
+    # 두고 11.1년 줄에 표식이 붙는데, 그 규칙을 모르면 표가 틀린 것으로 읽힌다.
+    # 「용량 판정」 캡션에 있던 같은 뜻의 문장을 여기로 옮겼다 — 문구를 늘리지
+    # 않으려면 한 자리를 비워야 하고, 판정 근거는 표식 옆에서 읽혀야 한다.
     st.caption(
         "잉여가 생기기 시작하는 용량과 많이 생기는 용량을 함께 세웠습니다 — "
-        "설치 가능 면적을 넘는 줄은 「면적 초과」 로 적습니다. 20단계 상세는 "
-        "Excel 「태양광 용량 곡선」 시트에 있습니다."
+        "설치 가능 면적을 넘는 줄은 「면적 초과」 로 적습니다. "
+        + payback_tie_note()
+        + " 20단계 상세는 Excel 「태양광 용량 곡선」 시트에 있습니다."
     )
 
     generation = unit_profile * point.capacity_kwp

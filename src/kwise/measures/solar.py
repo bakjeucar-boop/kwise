@@ -24,7 +24,7 @@ from kwise import money
 from kwise.io import UsageData, slot_start
 from kwise.measures.base import (
     LARGEST_SAVING,
-    SHORTEST_PAYBACK,
+    RECOMMENDED,
     Certainty,
     annualize,
     payback_years,
@@ -61,6 +61,7 @@ __all__ = [
     "SolarPoint",
     "capacity_verdict",
     "day_window_mask",
+    "payback_tie_note",
     "payback_tie_ratio",
     "power_factor_after_pct",
     "power_factor_floor_pct",
@@ -360,8 +361,8 @@ LIMITERS: dict[str, tuple[str, str]] = {
 class CapacityVerdict:
     """용량 한 줄 판정 (15세션 1-3).
 
-    **``best`` 는 화면에서 「최단 회수기간」(또는 「최대 절감액」)으로 부른다**
-    (49세션 — :attr:`pick_label`). 코드 식별자는 그대로 둔다.
+    **``best`` 는 화면에서 「권장」(또는 「최대 절감액」)으로 부른다**
+    (50세션 — :attr:`pick_label`). 코드 식별자는 그대로 둔다.
 
     **표를 나열하지 않는다.** 면적이 정해지면 용량이 정해지므로, 잉여가 없고
     기본요금 절감이 포화하지 않는 한 곡선은 단조롭게 좋아지기만 한다. 그런
@@ -392,13 +393,18 @@ class CapacityVerdict:
 
     @property
     def pick_label(self) -> str:
-        """고른 자리를 부르는 이름 (49세션). **「최적」 이라 부르지 않는다.**
+        """고른 자리를 부르는 이름. **「최적」 도 「최단 회수기간」 도 아니다.**
 
-        무엇으로 골랐는지가 곧 이름이다 — 단가를 넣었으면 회수기간, 안 넣었으면
-        절감액이다. 판단이 들어간 말을 쓰면 「그것을 하라」 로 읽힌다
-        (:data:`~kwise.measures.base.SHORTEST_PAYBACK`).
+        49세션이 「최적」 을 「최단 회수기간」 으로 좁혔는데, 그 이름이 **16세션의
+        동률 처리와 어긋났다** (50세션) — 11.0년짜리를 두고 11.1년짜리에
+        「최단 회수기간」 이 붙었다. 계산이 아니라 이름이 틀린 것이다.
+
+        단가를 넣었으면 동률 처리를 거치므로 :data:`~kwise.measures.base.RECOMMENDED`,
+        안 넣었으면 절감액 최대를 그대로 고르므로
+        :data:`~kwise.measures.base.LARGEST_SAVING` 이다 — 뒤쪽은 동률 처리가
+        없어 이름이 사실과 어긋나지 않는다.
         """
-        return SHORTEST_PAYBACK if self.basis == "회수기간" else LARGEST_SAVING
+        return RECOMMENDED if self.basis == "회수기간" else LARGEST_SAVING
 
     def sentence(self) -> str:
         """화면·보고서가 같이 쓰는 한 줄."""
@@ -434,10 +440,12 @@ class CapacityVerdict:
         if self.best is None:
             return ""
         if self.basis == "회수기간":
-            head = (
-                "회수기간이 가장 짧은 용량입니다. 회수기간 차이가 예측 오차 안이면 "
-                "절감액이 큰 쪽을 고릅니다."
-            )
+            # **「가장 짧은」 이라 적지 않는다** (50세션). 동률 처리를 거치므로
+            # 고른 자리가 최소점이 아닐 수 있다 — 11.0년을 두고 11.1년을 고른다.
+            # 동률 규칙은 표식이 붙는 자리 바로 아래로 옮겼다
+            # (:func:`payback_tie_note`). 판정 근거는 표식 옆에서 읽혀야 하고,
+            # 문구를 늘리지 않으려면 한 자리를 비워야 한다.
+            head = "회수기간을 기준으로 고른 용량입니다."
         else:
             head = "설치 단가를 넣지 않아 **절감액이 가장 큰** 용량을 골랐습니다."
         limiter = self.limiter
@@ -465,6 +473,21 @@ def _limiting_reason(curve: SolarCurve, best: SolarPoint, limit: SolarPoint) -> 
 def payback_tie_ratio() -> float:
     """회수기간이 **사실상 같다**고 볼 폭 (16세션 0-4). 기준 데이터에서 읽는다."""
     return float(assumption("pv.payback_tie_ratio"))
+
+
+def payback_tie_note() -> str:
+    """「권장」 표식의 **판정 근거** 한 줄 (50세션).
+
+    **출처 표기가 아니다.** 「도입 사례 4건 기준」 같은 것은 신뢰의 문제라
+    매뉴얼로 보내지만, 이 문장이 없으면 11.0년 줄을 두고 11.1년 줄에 표식이
+    붙은 표를 **틀린 표로 읽는다.** 결과를 읽는 데 드는 설명이므로 화면에 남긴다.
+
+    **비율은 기준 데이터에서 읽는다** — 숫자를 문장에 박지 않는다.
+    """
+    return (
+        f"회수기간 차이가 {payback_tie_ratio():.0%} 안이면 절감액이 큰 쪽을 "
+        f"「{RECOMMENDED}」 으로 적습니다."
+    )
 
 
 def surplus_heavy_share() -> float:

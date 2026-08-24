@@ -3703,14 +3703,51 @@ def test_개선안_맥락에_최적을_쓰지_않는다() -> None:
     assert offenders == [], offenders
 
 
-def test_고른_자리를_최단_회수기간으로_부른다() -> None:
-    """**ESS 와 태양광이 같은 이름을 쓴다** (49세션 1-1)."""
-    from kwise.measures import LARGEST_SAVING, SHORTEST_PAYBACK
+def test_이름_셋이_규칙_셋을_가리킨다() -> None:
+    """**같은 말이 두 규칙을 가리키면 안 된다** (50세션 1-3).
 
-    assert SHORTEST_PAYBACK == "최단 회수기간"
+    49세션은 ESS 와 태양광에 같은 이름을 붙였는데, 태양광에만 동률 처리가 있어
+    「최단 회수기간」 이 사실과 어긋났다 — 11.0년 줄을 두고 11.1년 줄에 표식이
+    붙는다.
+    """
+    from kwise.measures import LARGEST_SAVING, RECOMMENDED, SHORTEST_PAYBACK
+
+    assert SHORTEST_PAYBACK == "최단 회수기간"  # ESS — 후보 가운데 최소를 그대로
+    assert RECOMMENDED == "권장"  # 태양광 — 동률 처리를 거친다
     # 단가를 안 넣으면 절감액으로 고른다 — 그 자리에 「최단 회수기간」 을 적으면
     # **없는 사실을 적는 것**이다.
     assert LARGEST_SAVING == "최대 절감액"
+    assert len({SHORTEST_PAYBACK, RECOMMENDED, LARGEST_SAVING}) == 3
+
+
+def test_태양광_표식이_권장이고_판정_근거가_붙는다() -> None:
+    """**표식 이름과 판정 규칙이 어긋나지 않는다** (50세션 1-1·1-2)."""
+    from kwise.measures import RECOMMENDED, payback_tie_note
+    from kwise.measures.solar import CapacityVerdict, payback_tie_ratio
+
+    priced = CapacityVerdict(best=None, limit=None, at_limit=False, basis="회수기간")
+    assert priced.pick_label == RECOMMENDED
+    unpriced = CapacityVerdict(best=None, limit=None, at_limit=False, basis="절감액")
+    assert unpriced.pick_label != RECOMMENDED
+
+    # **각주는 기준 데이터를 읽는다** — 숫자를 문장에 박지 않는다.
+    note = payback_tie_note()
+    assert f"{payback_tie_ratio():.0%}" in note
+    assert RECOMMENDED in note
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    assert "payback_tie_note()" in source, "판정 근거 각주가 화면에서 빠졌다"
+
+
+def test_ESS_표식에는_동률_처리가_없다() -> None:
+    """**있지도 않은 규칙을 각주로 적지 않는다** (50세션 1-3).
+
+    ESS 정밀화는 후보 가운데 회수기간 최소를 그대로 고른다. 동률 폭을 두지
+    않으므로 「최단 회수기간」 이 사실이고, 태양광의 「권장」 과 갈라 둔다.
+    """
+    source = (Path("src") / "kwise" / "measures" / "ess.py").read_text(encoding="utf-8")
+    body = source[source.index("def refine_ess_target") :]
+    assert "tie_ratio" not in body, "ESS 에 동률 처리가 생겼다면 이름도 함께 정해야 한다"
+    assert "best = min(eligible, key=lambda item: item.payback_years or math.inf)" in body
 
 
 def test_ESS_소제목이_최단_회수기간이다() -> None:

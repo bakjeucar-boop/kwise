@@ -31,6 +31,7 @@ from kwise.measures.arbitrage import (
 )
 from kwise.measures.base import (
     LARGEST_SAVING,
+    RECOMMENDED,
     SHORTEST_PAYBACK,
     Certainty,
     annualize,
@@ -129,6 +130,7 @@ from kwise.measures.solar import (
     SolarCurve,
     SolarPoint,
     capacity_verdict,
+    payback_tie_note,
     power_factor_after_pct,
     power_factor_floor_pct,
     roof_capacity_limit_kwp,
@@ -178,6 +180,7 @@ __all__ = [
     "PV_COST_BASIS_NOTE",
     "PV_REFERENCE_NOTE",
     "PV_UNPRICED_REASON",
+    "RECOMMENDED",
     "SCALE_ECONOMY_NOTE",
     "SHORTEST_PAYBACK",
     "SPEC_TABLE_ROWS",
@@ -252,6 +255,7 @@ __all__ = [
     "offset_carry_only_max_kw",
     "offset_max_kw",
     "offset_settles_cash",
+    "payback_tie_note",
     "payback_years",
     "peak_days_by_season",
     "power_factor_after_pct",

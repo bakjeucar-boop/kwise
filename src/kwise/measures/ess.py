@@ -1358,6 +1358,12 @@ class EssOptimum:
     「최적」 은 「그것을 하라」 로 읽히는데 회수기간이 578년인 자리도 있다 —
     :data:`~kwise.measures.base.SHORTEST_PAYBACK` 참조. 코드 식별자는 그대로다.
 
+    **태양광과 달리 동률 처리가 없다** (50세션). 여기서는 후보 가운데 회수기간
+    최소를 그대로 고르므로 「최단 회수기간」 이 사실과 어긋나지 않는다. 태양광은
+    ``pv.payback_tie_ratio`` 안에 든 점 가운데 절감액이 큰 쪽을 고르므로
+    :data:`~kwise.measures.base.RECOMMENDED` 를 쓴다 — **같은 말이 두 규칙을
+    가리키지 않게** 이름을 갈라 둔다.
+
     Attributes:
         target_kw: 고른 목표. **화면·산출물이 쓰는 값이다.**
         curve_target_kw: 개략 곡선이 고른 목표. 둘이 다르면 그림이 그 사실을 낸다.

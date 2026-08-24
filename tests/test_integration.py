@@ -784,7 +784,10 @@ def test_태양광_판정_근거를_적는다() -> None:
     app.button(key="solar_run").click().run(timeout=900)
     assert not app.exception, app.exception
     body = _text(app)
-    assert "회수기간이 가장 짧은 용량입니다" in body or "절감액이 가장 큰" in body
+    # **「가장 짧은」 이 아니다** (50세션). 동률 처리를 거쳐 고르므로 최소점이
+    # 아닐 수 있다 — 규칙은 용량표 아래 각주가 적는다.
+    assert "회수기간을 기준으로 고른 용량입니다" in body or "절감액이 가장 큰" in body
+    assert "회수기간이 가장 짧은 용량입니다" not in body
     # **「최적을 정한 것은」 이 아니다** (49세션). 고른 자리를 최적이라 부르지 않는다.
     assert "그 용량에서 멈춘 것은" in body
     assert "최적" not in body, "개선안 맥락의 「최적」 이 화면에 남아 있다"
