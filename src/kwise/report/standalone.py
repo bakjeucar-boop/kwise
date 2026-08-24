@@ -39,6 +39,7 @@ from kwise.measures import (
     SurplusResult,
     TariffSwitchResult,
     measure_kind,
+    payback_text,
 )
 from kwise.report.columns import option_label
 from kwise.report.notices import UNPRICED_REASONS
@@ -282,8 +283,9 @@ def standalone_frame(rows: tuple[StandaloneRow, ...]) -> pd.DataFrame:
 
 
 def _payback(row: StandaloneRow) -> str:
+    """**표시 상한을 넘으면 「>50년」 이다** (50세션 3-7)."""
     if row.payback_years is None:
         return "미산출"
     if row.payback_years <= 0:
         return "즉시"
-    return f"{row.payback_years:,.1f}년"
+    return payback_text(row.payback_years)

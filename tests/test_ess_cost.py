@@ -11,6 +11,7 @@ import json
 import sys
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -1536,6 +1537,31 @@ def test_성립하는_점이_없으면_목표를_고르지_않는다(
     # **다섯 점이 네 사양으로 뭉쳤다** (50세션 3-6). 줄 수는 사양 수를 넘지 않는다.
     assert 0 < len(frame) <= SPEC_TABLE_ROWS
     assert SHORTEST_PAYBACK not in " ".join(frame["표식"])
+
+
+def test_회수기간_50년_초과는_상한으로_적는다() -> None:
+    """**500년·3,000년 같은 값은 근거로 읽히지 않는다** (50세션 3-7).
+
+    자르는 것은 표시뿐이고 계산은 그대로 둔다 — 상한은 기준 데이터에 있다.
+    화면·Excel·Word·PPT 가 같은 함수를 쓴다.
+    """
+    from kwise.measures import payback_display_cap_years, payback_text
+    from kwise.report.standalone import _payback
+    from kwise.ui import text as ui_text
+
+    cap = payback_display_cap_years()
+    assert cap == 50.0
+    assert payback_text(cap) == "50.0년", "상한 자체는 자르지 않는다"
+    assert payback_text(cap + 0.1) == ">50년"
+    assert payback_text(578.2) == ">50년"
+    assert payback_text(31.7) == "31.7년"
+    assert payback_text(None) == "—"
+    # 화면 서식기도 같은 자리에서 자른다.
+    assert ui_text.payback(578.2) == ">50년"
+    assert ui_text.payback(31.7) == "31.7년"
+    # 3단계 개선안별 요약도 마찬가지다.
+    row = SimpleNamespace(payback_years=578.2)
+    assert _payback(row) == ">50년"
 
 
 def test_참고_지점은_곡선_전체에_벌려_잡는다(target_curve: EssTargetCurve) -> None:

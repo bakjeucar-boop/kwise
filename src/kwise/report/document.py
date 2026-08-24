@@ -51,6 +51,7 @@ from kwise.measures import (
     SurplusResult,
     TariffSwitchResult,
     measure_kind,
+    payback_text,
 )
 from kwise.measures import surplus as surplus_module
 from kwise.notices import Notice, Severity, report_appendix, report_body, texts
@@ -290,11 +291,12 @@ def _won(value: float | None, *, reason: str | None = None) -> str:
 
 
 def _payback_text(years: float | None, investment_won: float | None) -> str:
+    """회수기간 한 줄. **표시 상한을 넘으면 「>50년」 이다** (50세션 3-7)."""
     if investment_won is None:
         return f"{_UNPRICED} — 투자비 미입력"
     if not investment_won:
         return "즉시 (투자 없음)"
-    return f"{years:,.1f}년" if years is not None else f"{_UNPRICED} — 절감액 없음"
+    return payback_text(years) if years is not None else f"{_UNPRICED} — 절감액 없음"
 
 
 def _measure_saving(annual_won: float | None, period_won: float | None) -> str:
