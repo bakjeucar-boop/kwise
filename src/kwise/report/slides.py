@@ -46,6 +46,7 @@ from pptx.util import Emu, Inches, Pt
 
 from kwise import money
 from kwise.diagnose import ChargeStructure
+from kwise.measures import BASE_FEE_UNCHANGED
 from kwise.report import figures, narrative
 from kwise.report.design import DesignGuide, load_design_guide
 from kwise.report.document import DocumentSections, MeasureEntry, MeasureFigure
@@ -120,6 +121,8 @@ SLIDE_TITLES: dict[str, str] = {
 #:     stat_chart   통계 강조형 — 지표 + 차트
 #:     chart_pair   같은 크기의 그림 둘을 좌우로
 #:     split        좌우가 서로 다른 것을 담는다 (지표+차트 | 격자)
+#:     stat_table_chart  지표 + 폭 전체 표 + 그 아래 그림 (46세션. ESS)
+#:     fact_stat_chart   **근거 지표**가 먼저, 결과 지표가 뒤 (53세션. 계약전력)
 #:     compare      비교형 — 좌우 2단에 중앙 얇은 구분선
 #:     closing      마무리 — 표지와 짝이 되는 다크 배경 밴드 (37세션)
 LAYOUTS: tuple[str, ...] = (
@@ -132,6 +135,8 @@ LAYOUTS: tuple[str, ...] = (
     "split",
     "compare",
     "closing",
+    "stat_table_chart",
+    "fact_stat_chart",
 )
 
 _UNPRICED = "미산출"
@@ -156,6 +161,14 @@ def mark_note(line: str) -> str:
 _REASON_MARK = " — "
 
 
+#: 「값 — 사유」 꼴로 나오는 머리말들 (39세션 2-1 · 53세션 6절).
+#:
+#: 「기본요금 변화없음」 이 53세션에 붙었다 — 48세션이 「0원」 대신 이 말을
+#: 세우면서 사유가 통째로 큰 글씨 자리에 들어와, 계약전력 장의 지표 칸 하나가
+#: **두 줄로 흘러** 옆 셋과 위계가 어긋났다.
+_REASON_HEADS: tuple[str, ...] = (_UNPRICED, BASE_FEE_UNCHANGED)
+
+
 def split_reason(value: str) -> tuple[str, str]:
     """「미산출 — 투자비 미입력」 을 (「미산출」, 「투자비 미입력」) 로 가른다 (39세션 2-1).
 
@@ -163,9 +176,9 @@ def split_reason(value: str) -> tuple[str, str]:
     넷을 나란히 놓았을 때 하나만 길어 위계가 무너진다. 사유는 각주가 받는다 —
     무엇을 넣으면 값이 나오는지가 고객에게 필요한 정보이므로 지우지는 않는다.
 
-    미산출이 아닌 값은 그대로 돌려준다.
+    :data:`_REASON_HEADS` 로 시작하지 않는 값은 그대로 돌려준다.
     """
-    if not value.startswith(_UNPRICED) or _REASON_MARK not in value:
+    if _REASON_MARK not in value or not value.startswith(_REASON_HEADS):
         return value, ""
     head, _, reason = value.partition(_REASON_MARK)
     return head.strip(), reason.strip()
@@ -1466,6 +1479,8 @@ def _measure_layout(entry: MeasureEntry) -> str:
     """
     if entry.spec_table:
         return "stat_table_chart"
+    if entry.facts_first and entry.facts:
+        return "fact_stat_chart"
     return "chart_pair" if len(entry.slide_figures) > 1 else "stat_chart"
 
 
@@ -1675,6 +1690,20 @@ def _build_measure(
         bold=True,
     )
     stats_top = top + lead
+    # **근거가 결과보다 먼저 오는 장이 있다** (53세션 6-1). 계약전력 조정이
+    # 그렇다 — 여유가 얼마나 있는지를 보고 나서야 「얼마로 낮출까」 를 읽는다.
+    if entry.facts_first and entry.facts:
+        stats_top = (
+            _stats(
+                slide,
+                guide,
+                list(entry.facts),
+                left=geometry.margin_in,
+                top=stats_top,
+                width=geometry.content_width_in,
+            )
+            + geometry.block_gap_in * 0.5
+        )
     bottom = _stats(
         slide,
         guide,
@@ -1709,7 +1738,7 @@ def _build_measure(
     if crowded:
         _note(slide, guide, note)
         return
-    if not entry.actionable and entry.facts:
+    if not entry.actionable and entry.facts and not entry.facts_first:
         _stats(
             slide,
             guide,

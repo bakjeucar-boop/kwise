@@ -38,6 +38,7 @@ from kwise.diagnose import ChargeStructure, PeakProfile
 from kwise.diagnose.dr import DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
+    ContractAdjustment,
     DispatchResult,
     PowerFactorResult,
     TariffSwitchResult,
@@ -50,6 +51,7 @@ from kwise.report.frames import (
     PEAK_ZOOM_HOURS,
     band_frame,
     combination_frame,
+    contract_headroom_frame,
     daily_temperature_frame,
     daily_usage_frame,
     dr_daily_frame,
@@ -80,6 +82,7 @@ __all__ = [
     "band_donut_grid_png",
     "chart_palette",
     "combination_png",
+    "contract_headroom_png",
     "daily_temperature_png",
     "daily_usage_png",
     "date_axis",
@@ -431,6 +434,56 @@ def combination_png(comparison: ComparisonResult) -> bytes:
 #
 # 화면(altair)과 **같은 프레임**을 본다 (:mod:`kwise.report.frames`). 각자 만들면
 # 같은 이름의 차트가 서로 다른 수를 그리게 되고, 그 어긋남은 눈으로 잡히지 않는다.
+
+
+def contract_headroom_png(
+    contract: ContractAdjustment, *, size: tuple[float, float] | None = None
+) -> bytes:
+    """계약전력과 요금적용전력의 **틈** (53세션 6-3).
+
+    **가로 누적 막대 하나에 기준선을 얹는다.** 견줄 것이 두 값(계약전력·
+    요금적용전력)뿐이라 막대를 여럿 세울 까닭이 없고, 하나를 쌓으면 「얼마나
+    남았나」 가 길이 그대로 읽힌다. 세로로 세우면 kW 값 라벨이 막대 폭보다 길어
+    겹친다 — 가로가 자리를 준다.
+
+    **월별로 그리지 않는다.** 그 그림은 5장(월별 최대수요)이 이미 낸다 — 같은
+    이야기를 두 번 하면 어느 쪽을 보아야 하는지 알 수 없어진다 (36세션 5절).
+
+    권장 계약전력이 계약전력과 다를 때만 그 기준선을 긋는다 — 겹쳐 그으면
+    「둘이 같다」 를 두 선으로 말하게 된다.
+    """
+    apply_style()
+    marks = chart_palette()
+    frame = contract_headroom_frame(contract)
+    demand = float(frame["요금적용전력(kW)"].iloc[0])
+    room = float(frame["여유(kW)"].iloc[0])
+    contracted = float(frame["계약전력(kW)"].iloc[0])
+    suggested = float(frame["권장 계약전력(kW)"].iloc[0])
+
+    figure, axes = plt.subplots(figsize=size or (_SIZE[0], _SIZE[1] * 0.6))
+    axes.barh([0], [demand], height=0.4, color=_series()[0], label="요금적용전력")
+    if room > 0:
+        axes.barh(
+            [0], [room], left=[demand], height=0.4, color=marks.fill, alpha=0.45, label="여유"
+        )
+    axes.axvline(contracted, color=marks.increase, linewidth=1.6, label="계약전력")
+    if abs(suggested - contracted) > 0.5:
+        axes.axvline(
+            suggested,
+            color=marks.saving,
+            linewidth=1.4,
+            linestyle="--",
+            label="권장 계약전력",
+        )
+    axes.set_yticks([])
+    axes.set_xlabel("kW")
+    axes.set_xlim(0.0, max(contracted, demand) * 1.12)
+    # **막대를 띠로 만든다.** 기본 y 범위에서는 높이 0.4 짜리 막대가 칸의 8할을
+    # 채워 「가로 막대」 가 아니라 색칠한 사각형으로 보인다.
+    axes.set_ylim(-0.9, 0.9)
+    axes.grid(axis="y", visible=False)
+    add_legend(axes)
+    return render_png(figure)
 
 
 def delta_label_place(value: float, pad: float) -> tuple[float, str]:

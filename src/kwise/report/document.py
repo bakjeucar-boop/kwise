@@ -175,6 +175,13 @@ class MeasureEntry:
     (31세션 2절·6절)."""
     actionable: bool = True
     """실행할 것이 있는가. **거짓이면 슬라이드가 주의사항을 싣지 않는다** (4-2)."""
+    facts_first: bool = False
+    """지표를 **결과보다 먼저** 세우는가 (53세션 6-1).
+
+    계약전력 조정이 그렇다 — 「6,000 kW 를 5,823 kW 로」 는 **여유가 얼마나
+    있는지를 보고 나서야** 판단할 수 있는 값인데, 절감액·투자비·회수기간이
+    위에 서 있어 근거가 결과 뒤로 밀려 있었다. 참이면 :attr:`facts` 가 결론
+    바로 아래에 서고 결과 지표가 그 아래로 내려간다."""
     has_saving: bool = True
     """절감액이 **0도 미산출도 아닌가.** 금액 문자열을 되파싱하지 않으려고
     숫자를 아는 자리에서 정해 둔다 — 부록이 실을 수단을 이것으로 고른다
@@ -329,6 +336,23 @@ def _power_factor_conclusion(result: PowerFactorResult) -> str:
             f"{_won(result.saving_won)} 줄어듭니다."
         )
     return f"지상역률을 {current} → {target} 로 올리면 {_won(result.saving_won)} 줄어듭니다."
+
+
+#: 계약전력 그림의 캡션 (53세션 6-3).
+_CONTRACT_HEADROOM_CAPTION = (
+    "계약전력과 요금적용전력의 틈 — 붉은 선이 현재 계약전력, 점선이 권장입니다."
+)
+
+
+def _headroom_share(contract: ContractAdjustment) -> str:
+    """여유율 — **화면과 같은 산식이다** (53세션 6-2).
+
+    (계약전력 − 요금적용전력) ÷ 계약전력. 확보할 여유율과 같은 잣대라야
+    「낮출 자리가 있나」 를 그 자리에서 판단할 수 있다.
+    """
+    if not contract.contract_kw:
+        return "—"
+    return f"{contract.headroom_kw / contract.contract_kw * 100:,.1f}%"
 
 
 def _contract_conclusion(contract: ContractAdjustment) -> str:
@@ -706,12 +730,21 @@ def measure_entries(
             # **여지가 없으면 왜 없는지 보인다** (39세션 4-2). 화면이 31세션에
             # 세운 지표 넷과 같은 값이다.
             actionable=contract.is_over_contracted,
+            # **근거가 결과보다 먼저다** (53세션 6-1).
+            facts_first=True,
             facts=(
                 ("현재 계약전력", f"{contract.contract_kw:,.0f} kW"),
                 ("요금적용전력", f"{contract.billing_demand_kw:,.0f} kW"),
-                ("여유", f"{contract.headroom_kw:,.0f} kW"),
+                # **여유는 %다** (53세션 6-2). 화면이 그렇게 낸다 —
+                # (계약전력 − 요금적용전력) ÷ 계약전력. kW 로 적으면 그 값이
+                # 확보할 여유율과 견줄 수 있는 수인지 알 수 없다.
+                ("여유", _headroom_share(contract)),
                 ("하향 여지", f"{contract.reduction_kw:,.0f} kW"),
             ),
+            figure=_safe_figure(
+                lambda: figures.contract_headroom_png(contract, size=MEASURE_STRIP_FIGURE)
+            ),
+            figure_caption=_CONTRACT_HEADROOM_CAPTION,
         )
 
     if demand_response is not None:

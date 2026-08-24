@@ -2031,3 +2031,59 @@ def test_차액_라벨이_0선_반대쪽에_선다() -> None:
     # 「현행」(0) 은 줄어드는 쪽과 같은 자리에 선다 — 겹칠 막대가 없다.
     zero, zero_align = delta_label_place(0.0, pad)
     assert zero > 0 and zero_align == "bottom"
+
+
+# ===================================================================== 53세션 · 6절 계약전력
+
+
+def test_계약전력_장이_근거를_먼저_세운다(
+    sample_usage: UsageData, sample_bill: BillingResult, full_sections: DocumentSections
+) -> None:
+    """**근거가 결과보다 먼저다** (53세션 6-1·6-2·6-3).
+
+    「6,000 kW 를 5,823 kW 로」 는 여유가 얼마나 있는지를 보고 나서야 판단할 수
+    있는 값인데, 절감액·투자비·회수기간이 위에 서 있었다.
+    """
+    import dataclasses
+
+    from pptx.util import Emu
+
+    from kwise.measures import evaluate_contract_adjustment
+    from kwise.report.document import measure_entries
+
+    contract = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=6_000.0)
+    entry = next(
+        item for item in measure_entries(contract=contract) if item.kind.key == "contract"
+    )
+    assert entry.facts_first
+    labels = [name for name, _value in entry.facts]
+    assert labels == ["현재 계약전력", "요금적용전력", "여유", "하향 여지"]
+    # **여유는 %다** — 화면과 같은 산식이다.
+    assert dict(entry.facts)["여유"].endswith("%"), entry.facts
+    # **그림이 생겼다.**
+    assert entry.figure is not None
+    assert "계약전력과 요금적용전력의 틈" in entry.figure_caption
+
+    sections = dataclasses.replace(full_sections, measures=(entry,))
+    slide = _slide_by_key(build_slides(sections), sections, "measure_contract")
+    tops = {
+        shape.text_frame.text: Emu(shape.top).inches
+        for shape in slide.shapes  # type: ignore[attr-defined]
+        if shape.has_text_frame
+    }
+    assert tops["현재 계약전력"] < tops["절감액"], tops
+    assert tops["하향 여지"] < tops["회수기간"], tops
+
+
+def test_기본요금_변화없음도_사유를_각주로_내린다() -> None:
+    """**큰 글씨 자리에 사유가 들어가 두 줄로 흘렀다** (53세션 6절).
+
+    48세션이 「0원」 대신 이 말을 세우면서 사유가 통째로 지표 칸에 들어왔다.
+    """
+    from kwise.measures import BASE_FEE_UNCHANGED
+
+    head, reason = split_reason(f"{BASE_FEE_UNCHANGED} — 요금적용전력 하한 30% 적용")
+    assert head == BASE_FEE_UNCHANGED
+    assert reason == "요금적용전력 하한 30% 적용"
+    # 관계없는 값은 그대로 둔다.
+    assert split_reason("53,575,000원") == ("53,575,000원", "")
