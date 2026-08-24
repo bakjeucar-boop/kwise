@@ -568,17 +568,31 @@ def test_슬라이드당_큰_타이틀은_하나다(full_sections: DocumentSecti
         assert len(big) <= 1, f"큰 타이틀이 {len(big)}개입니다: {[run.text for run in big]}"
 
 
-def test_본문은_좌측_정렬이다(full_sections: DocumentSections) -> None:
-    """**본문은 항상 좌측 정렬이다** (36세션 3-3)."""
+def test_본문은_좌측_정렬이고_그림_캡션만_가운데다(full_sections: DocumentSections) -> None:
+    """**본문은 좌측 정렬이다** (36세션 3-3). **그림 캡션만 가운데다** (53세션 1-2).
+
+    그림은 칸 가운데 앉는데(``_picture_block``) 캡션만 칸 왼쪽 귀퉁이에 붙어
+    있어 그림 아래가 아니라 그림 옆에 매달린 것처럼 보였다.
+    """
     from pptx.enum.text import PP_ALIGN
 
+    guide = load_design_guide()
     deck = build_slides(full_sections)
+    centered = 0
     for slide in deck.slides:
         for shape in slide.shapes:
             if not shape.has_text_frame:
                 continue
             for paragraph in shape.text_frame.paragraphs:
+                if paragraph.alignment is PP_ALIGN.CENTER:
+                    centered += 1
+                    sizes = {run.font.size.pt for run in paragraph.runs if run.font.size}
+                    assert sizes == {guide.type_scale.caption}, (
+                        f"캡션이 아닌 글이 가운데 정렬입니다: {paragraph.text}"
+                    )
+                    continue
                 assert paragraph.alignment in (None, PP_ALIGN.LEFT)
+    assert centered, "가운데 정렬된 캡션이 하나도 없습니다."
 
 
 def test_슬라이드_밖으로_나가는_것이_없다(full_sections: DocumentSections) -> None:
@@ -1352,3 +1366,95 @@ def test_잉여가_0이면_태양광_장이_늘지_않는다(
     assert "잉여" not in dict(solar.facts)
     assert solar.slide_note == ""
     assert not any("자격요건" in line for line in solar.cautions), solar.cautions
+
+
+# ===================================================================== 53세션 · 공통 규약
+
+
+def _note_lines(slide: object, guide: object) -> list[str]:
+    """슬라이드 아래쪽 작은 회색 글씨. **캡션과 각주가 여기 든다.**"""
+    size = guide.type_scale.caption  # type: ignore[attr-defined]
+    lines: list[str] = []
+    for shape in slide.shapes:  # type: ignore[attr-defined]
+        if not shape.has_text_frame:
+            continue
+        for paragraph in shape.text_frame.paragraphs:
+            sizes = {run.font.size.pt for run in paragraph.runs if run.font.size}
+            if sizes == {size} and paragraph.text.strip():
+                lines.append(paragraph.text.strip())
+    return lines
+
+
+def test_참고용_작은_글씨에_표식이_붙는다(full_sections: DocumentSections) -> None:
+    """**※ 하나가 참고와 본문을 가른다** (53세션 1-1).
+
+    작은 회색 글씨라는 것만으로는 본문의 끝인지 참고인지 갈리지 않는다.
+    **그림 캡션은 제외한다** — 캡션은 그림의 이름이지 참고가 아니다.
+    """
+    from kwise.report.slides import NOTE_MARK, mark_note
+
+    guide = load_design_guide()
+    deck = build_slides(full_sections)
+    captions = {figure.caption for entry in full_sections.measures for figure in entry.figures}
+    marked = 0
+    for slide in deck.slides:
+        for line in _note_lines(slide, guide):
+            if line.startswith(NOTE_MARK.strip()):
+                marked += 1
+                continue
+            assert line in captions or "—" in line or "습니다" not in line, (
+                f"※ 없는 참고 줄: {line}"
+            )
+    assert marked >= 5, f"※ 가 붙은 줄이 {marked}개뿐입니다."
+    # 두 번 붙지 않는다.
+    assert mark_note(mark_note("가나다")) == "※ 가나다"
+
+
+def test_각주가_산식을_쉼표로_가른다() -> None:
+    """**「·」 가 산식 자리에서 수식 기호로 읽힌다** (53세션 1-3)."""
+    from kwise.report.narrative import GLOSSARY_KEYS, glossary_note
+
+    note = glossary_note(GLOSSARY_KEYS["usage_pattern"])
+    assert "÷" in note
+    assert " · " not in note, note
+    assert note.count(", ") == 2, note
+
+
+def test_투자가_없으면_줄표와_즉시로_적는다(full_sections: DocumentSections) -> None:
+    """**「0 원」 은 값이 아니라 없음이다** (53세션 1-5)."""
+    from kwise.report.slides import IMMEDIATE, NO_INVESTMENT, slide_investment, slide_payback
+
+    assert slide_investment("0원") == NO_INVESTMENT
+    assert slide_investment("261,893,000원") == "261,893,000원"
+    assert slide_payback("즉시 (투자 없음)") == IMMEDIATE
+    assert slide_payback("31.7년") == "31.7년"
+    assert slide_payback("미산출 — 투자비 미입력") == "미산출"
+
+    text = _deck_text(build_slides(full_sections))
+    assert "즉시 (투자 없음)" not in text
+    # **투자비 칸에만 걸린다.** 절감액이 실제로 0원인 수단은 그대로 0원이다 —
+    # 계산해 보니 0 인 값과 애초에 살 것이 없는 값은 다른 사실이다.
+    investments = {
+        row.cells[2].text
+        for slide in build_slides(full_sections).slides
+        for shape in slide.shapes
+        if shape.has_table and shape.table.rows[0].cells[0].text == "개선 수단"
+        for row in list(shape.table.rows)[1:]
+    }
+    assert "0원" not in investments, investments
+
+
+def test_부록에_해석_문구가_없다(full_sections: DocumentSections) -> None:
+    """**부록은 근거를 펼치는 자리다** (53세션 1-6). 읽는 법을 일러 주지 않는다."""
+    from kwise.report.narrative import APPENDIX_LEAD
+
+    deck = build_slides(full_sections)
+    slide = _slide_by_key(deck, full_sections, "appendix")
+    assert APPENDIX_LEAD not in _slide_text(slide)
+    assert APPENDIX_LEAD not in _deck_text(deck)
+
+
+def test_확실성이_슬라이드에_없다(full_sections: DocumentSections) -> None:
+    """**등급을 산출물에서 뺐다** (53세션 1-4). 계산은 그대로다."""
+    assert "확실성" not in _deck_text(build_slides(full_sections))
+    assert all(entry.certainty for entry in full_sections.measures), "계산값은 남는다"

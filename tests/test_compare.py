@@ -158,9 +158,21 @@ def test_combination_certainty_follows_the_lowest_component(
     assert grades[f"+ ESS 목표 {ESS_TARGET:,.0f} kW"] is Certainty.MEDIUM_LOW
 
 
-def test_certainty_reaches_the_comparison_table(sample_comparison: ComparisonResult) -> None:
+def test_확실성은_계산에만_남는다(sample_comparison: ComparisonResult) -> None:
+    """**등급을 산출물에서 뺐다** (53세션 1-4). 계산은 그대로다.
+
+    28세션에 화면에서 뺀 뒤로 Excel·Word 에만 남아 있었다 — 무엇에 대한
+    등급인지 이름에 없어 「높음」 이 어느 정도인지 알 수 없는 값이다.
+    **되살릴 수 있게 계산과 데이터는 남긴다.**
+    """
     frame = sample_comparison.frame()
-    assert list(frame["확실성"]) == ["높음", "높음", "중간", "중간~낮음"]
+    assert "확실성" not in frame.columns
+    assert [str(item.certainty) for item in sample_comparison.combinations] == [
+        "높음",
+        "높음",
+        "중간",
+        "중간~낮음",
+    ]
 
 
 # --------------------------------------------------------------------- ESS 야간 피크
@@ -291,9 +303,9 @@ def test_default_set_skips_measures_that_are_off() -> None:
 def test_comparison_frame_has_the_required_columns(
     sample_comparison: ComparisonResult,
 ) -> None:
-    """요구사항서 8장 표 — 조합 | 절감액 | 투자비 | 회수기간 | 확실성."""
+    """요구사항서 8장 표 — 조합 | 절감액 | 투자비 | 회수기간 (53세션에 확실성을 뺐다)."""
     frame = sample_comparison.frame()
-    for column in ("절감액(원)", "투자비(원)", "회수기간(년)", "확실성"):
+    for column in ("절감액(원)", "투자비(원)", "회수기간(년)"):
         assert column in frame.columns
     assert frame.index.name == "조합"
     assert len(frame) == 4

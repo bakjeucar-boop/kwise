@@ -671,8 +671,8 @@ def combination_chart(comparison: ComparisonResult) -> alt.Chart:
 
     **확실성으로 색을 나누던 것을 걷어냈다** (28세션 4절). 등급이 무엇에 대한
     것인지 이름에 없어 색이 무엇을 가리키는지도 알 수 없었다. 이 그림이 말하는
-    것은 하나다 — **수단을 쌓을수록 절감액이 어떻게 늘어나는가.** 등급은
-    Excel·Word 에 남는다.
+    것은 하나다 — **수단을 쌓을수록 절감액이 어떻게 늘어나는가.** 53세션에
+    Excel·Word 에서도 등급을 뺐다.
     """
     frame = combination_frame(comparison)
     return (

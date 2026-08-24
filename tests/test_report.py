@@ -341,7 +341,9 @@ def test_excel_dates_are_iso_not_english(sample_sections: ReportSections, tmp_pa
 def test_summary_carries_the_recalculation_note(summary_text: str) -> None:
     """조합 절감액은 합이 아니라는 것을 산출물에 적는다 (8장)."""
     assert "수단별 절감액의 단순 합이 아니라" in summary_text  # 33세션 6절
-    assert "확실성 등급은 가장 낮은 구성 요소를 따릅니다" in summary_text
+    # **확실성 규칙 줄을 없앴다** (53세션 1-4). 등급을 어느 산출물에도 싣지
+    # 않으므로 그 규칙이 가리킬 대상이 없다.
+    assert "확실성 등급은 가장 낮은 구성 요소를 따릅니다" not in summary_text
 
 
 def test_summary_carries_the_quality_warnings(summary_text: str) -> None:
@@ -463,25 +465,18 @@ def test_baseline_row_has_no_saving(sample_sheets: dict[str, pd.DataFrame]) -> N
 # --------------------------------------------------------------------- 확실성은 최저 등급을 따른다
 
 
-def test_certainty_in_the_sheet_follows_the_lowest_component(
+def test_확실성_열이_시트에_없다(
     sample_sheets: dict[str, pd.DataFrame],
-) -> None:
-    """요금제만 '높음', 태양광이 끼면 '중간', ESS 가 끼면 '중간~낮음'."""
-    certainty = sample_sheets["조합 비교"]["확실성"]
-    assert certainty["기준선 (현행)"] == str(Certainty.HIGH)
-    assert certainty["선택요금 전환"] == str(Certainty.HIGH)
-    assert certainty["+ 태양광 500 kWp"] == str(Certainty.MEDIUM)
-    # PV + ESS 조합이다. 더 낮은 ESS 등급을 따른다.
-    assert certainty["+ ESS 목표 5,000 kW"] == str(Certainty.MEDIUM_LOW)
-
-
-def test_measure_sheet_grades_each_measure_on_its_own(
     sample_measure_rows: pd.DataFrame,
 ) -> None:
-    """수단별 결과는 조합이 아니므로 각자의 등급을 그대로 쓴다."""
-    grades = sample_measure_rows["확실성"]
-    assert grades.iloc[0] == str(Certainty.HIGH)  # 선택요금 전환
-    assert grades.iloc[-1] == str(Certainty.MEDIUM_LOW)  # ESS
+    """**Excel 에서도 등급을 뺐다** (53세션 1-4).
+
+    28세션에 화면에서 뺀 값이 산출물에만 남아 있었다. 계산(:class:`Certainty`)은
+    그대로라 열만 되돌리면 되살아난다.
+    """
+    assert "확실성" not in sample_sheets["조합 비교"].columns
+    assert "확실성" not in sample_measure_rows.columns
+    assert str(Certainty.MEDIUM_LOW) == "중간~낮음"
 
 
 # --------------------------------------------------------------------- CLI 배치

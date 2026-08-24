@@ -134,7 +134,10 @@ class MeasureFigure:
 class MeasureEntry:
     """3장의 수단 하나. **모든 수단을 같은 틀로 적는다.**
 
-    결론 → 절감액 → 투자비 → 회수기간 → 확실성 → 주의사항.
+    결론 → 절감액 → 투자비 → 회수기간 → 주의사항.
+
+    **확실성은 적지 않는다** (53세션 1-4). :attr:`certainty` 는 계산이 낸 값이라
+    남겨 두되 어느 산출물도 싣지 않는다.
 
     금액 칸은 **문자열**이다. 산출하지 못한 항목에 빈칸이나 0원을 넣지 않고
     사유를 적기 위해서다 (7.5·7.6).
@@ -954,16 +957,12 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
         rows.append(["총 절감액", _won(best.saving_won)])
         rows.append(["투자비", _won(best.investment_won)])
         rows.append(["회수기간", _payback_text(best.payback_years, best.investment_won)])
-        rows.append(["확실성", str(best.certainty)])
     _add_table(document, rows)
 
-    # 확실성 등급과 주의사항 한 줄.
-    caution = (
-        f"확실성 {best.certainty} — 조합의 등급은 **가장 낮은 구성 요소**를 따릅니다. "
-        if best is not None
-        else ""
-    )
-    _para(document, caution + NOT_INCLUDED_NOTICE + " 자세한 한계는 마지막 장에 있습니다.")
+    # **확실성 등급 줄을 뺐다** (53세션 1-4). 화면에서 28세션에 걷어낸 것이
+    # 산출물에만 남아 있었다 — 무엇에 대한 등급인지 이름에 없어 읽는 사람이
+    # 되물을 수밖에 없는 값이다.
+    _para(document, NOT_INCLUDED_NOTICE + " 자세한 한계는 마지막 장에 있습니다.")
     # 금액은 천 원 단위로 절사해 적는다 (14세션 1절). 항목 합과 합계가 어긋날 수 있다.
     _para(document, TRUNCATION_FOOTNOTE)
     document.add_page_break()
@@ -1143,7 +1142,6 @@ def _chapter_measures(document: DocumentType, sections: DocumentSections, number
                 ["절감액", entry.saving],
                 ["투자비", entry.investment],
                 ["회수기간", entry.payback],
-                ["확실성", entry.certainty],
             ],
         )
         # **표가 있으면 그림보다 먼저다** (46세션). ESS 의 목표별 사양 표가
@@ -1171,7 +1169,7 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
         f"투자비는 {_won(best.investment_won)}, 회수기간은 "
         f"{_payback_text(best.payback_years, best.investment_won)} 입니다.",
     )
-    rows = [["조합", "절감액", "투자비", "회수기간", "확실성"]]
+    rows = [["조합", "절감액", "투자비", "회수기간"]]
     for item in comparison.combinations:
         rows.append(
             [
@@ -1179,7 +1177,6 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
                 _won(item.saving_won),
                 _won(item.investment_won),
                 _payback_text(item.payback_years, item.investment_won),
-                str(item.certainty),
             ]
         )
     _add_table(document, rows)

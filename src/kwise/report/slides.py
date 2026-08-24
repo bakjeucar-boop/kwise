@@ -63,10 +63,13 @@ __all__ = [
     "FULL_FIGURE",
     "HALF_FIGURE",
     "HALF_FIGURE_WITH_LEGEND",
+    "IMMEDIATE",
     "LAYOUTS",
     "MEASURE_AGENDA_ITEM",
     "NEXT_STEPS",
     "NEXT_STEPS_HEADLINE",
+    "NOTE_MARK",
+    "NO_INVESTMENT",
     "SLIDE_TITLES",
     "AppendixPage",
     "SlideSpec",
@@ -74,9 +77,12 @@ __all__ = [
     "appendix_pages",
     "build_slides",
     "export_slides",
+    "mark_note",
     "measure_slide_title",
     "plain_text",
     "season_pairs",
+    "slide_investment",
+    "slide_payback",
     "slide_specs",
     "slides_bytes",
     "slides_path",
@@ -127,6 +133,22 @@ LAYOUTS: tuple[str, ...] = (
 )
 
 _UNPRICED = "미산출"
+
+#: **참고용 작은 글씨 앞에 붙이는 표식** (53세션 1-1).
+#:
+#: 툴팁에서 옮긴 용어 풀이, 전제·한계 각주, 표 아래 참고 한 줄이 전부 이것을
+#: 단다. **그림 캡션은 제외한다** — 캡션은 그림이 무엇인지 말하는 이름이지
+#: 참고가 아니다.
+NOTE_MARK = "※ "
+
+
+def mark_note(line: str) -> str:
+    """참고 한 줄에 :data:`NOTE_MARK` 를 붙인다. **이미 붙었으면 그대로 둔다.**"""
+    text = line.strip()
+    if not text or text.startswith(NOTE_MARK.strip()):
+        return text
+    return f"{NOTE_MARK}{text}"
+
 
 #: 「미산출 — 사유」 를 가르는 표식.
 _REASON_MARK = " — "
@@ -514,8 +536,11 @@ def _note(slide: Slide, guide: DesignGuide, *lines: str) -> None:
 
     줄을 여럿 주면 위에서부터 쌓는다. **용어 풀이가 먼저다** — 표를 읽는 데
     바로 쓰이고, 제도 각주는 그 아래에서 받는다.
+
+    **앞에 :data:`NOTE_MARK` 를 붙인다** (53세션 1-1). 작은 회색 글씨라는 것만으로는
+    본문의 끝인지 참고인지 갈리지 않는다 — 표식 하나가 그 자리를 정한다.
     """
-    kept = [line for line in lines if line]
+    kept = [mark_note(line) for line in lines if line]
     if not kept:
         return
     geometry = guide.slide
@@ -540,8 +565,22 @@ def _body_bottom(guide: DesignGuide, *, note: bool) -> float:
 
 
 def _caption(
-    slide: Slide, guide: DesignGuide, text: str, *, left: float, top: float, width: float
+    slide: Slide,
+    guide: DesignGuide,
+    text: str,
+    *,
+    left: float,
+    top: float,
+    width: float,
+    align: PP_ALIGN = PP_ALIGN.LEFT,
 ) -> None:
+    """작은 회색 한 줄. **그림 캡션은 가운데다** (53세션 1-2).
+
+    왼쪽에 붙여 두면 캡션이 그림 아래가 아니라 칸의 왼쪽 귀퉁이에 매달린 것처럼
+    보인다 — 그림이 칸 가운데 앉기 때문이다(:func:`_picture_block`). 부르는 쪽이
+    정렬을 고르되 **기본은 왼쪽**이다: 부록 각주처럼 그림과 무관한 줄도 이 함수를
+    쓴다.
+    """
     _text(
         slide,
         guide,
@@ -552,6 +591,7 @@ def _caption(
         height=0.22,
         size=guide.type_scale.caption,
         color=guide.colors.muted,
+        align=align,
     )
 
 
@@ -666,7 +706,15 @@ def _picture_block(
     )
     # **캡션은 칸의 밑변에 붙인다.** 그림 바로 밑에 두면 좌우로 나란한 두 그림의
     # 캡션이 서로 다른 높이에 앉는다 — 그림 높이가 범례 유무로 갈리기 때문이다.
-    _caption(slide, guide, caption, left=left, top=top + height - _CAPTION_HEIGHT, width=width)
+    _caption(
+        slide,
+        guide,
+        caption,
+        left=left,
+        top=top + height - _CAPTION_HEIGHT,
+        width=width,
+        align=PP_ALIGN.CENTER,
+    )
 
 
 #: 표에 쓸 스타일 — **테두리도 띠도 없는 것** (36세션 3-4). 줄은 우리가 긋는다.
@@ -829,12 +877,40 @@ def _payback(years: float | None, investment_won: float | None) -> str:
     if investment_won is None:
         return _UNPRICED
     if not investment_won:
-        return "즉시"
+        return IMMEDIATE
     return f"{years:,.1f}년" if years is not None else _UNPRICED
 
 
 def _pct(value: float | None) -> str:
     return f"{value * 100:,.1f}%" if value is not None else "—"
+
+
+#: 투자가 없는 수단의 투자비 칸 (53세션 1-5).
+#:
+#: **「0 원」 은 값이 아니라 없음이다.** 큰 글씨 자리에 0 이 서면 「계산해 보니
+#: 0 원」 으로 읽히는데, 요금제 전환·계약전력 조정은 애초에 살 물건이 없다.
+NO_INVESTMENT = "—"
+
+#: 투자가 없는 수단의 회수기간 칸. **괄호를 뗀다** — 투자비 칸이 이미 없다고
+#: 말하므로 「(투자 없음)」 이 같은 말을 한 번 더 한다.
+IMMEDIATE = "즉시"
+
+
+def _is_zero_won(text: str) -> bool:
+    """「0원」 인가. **숫자를 되파싱하지 않는다** — 0 하나만 본다."""
+    return text.replace(",", "").rstrip("원").strip() == "0"
+
+
+def slide_investment(value: str) -> str:
+    """슬라이드 투자비 칸 (53세션 1-5). 0 이면 :data:`NO_INVESTMENT` 다."""
+    head = split_reason(value)[0]
+    return NO_INVESTMENT if _is_zero_won(head) else head
+
+
+def slide_payback(value: str) -> str:
+    """슬라이드 회수기간 칸 (53세션 1-5). 투자가 없으면 :data:`IMMEDIATE` 다."""
+    head = split_reason(value)[0]
+    return IMMEDIATE if head.startswith(IMMEDIATE) else head
 
 
 # ===================================================================== 장별
@@ -1274,21 +1350,23 @@ def _build_measure_summary(
             )
             + geometry.block_gap_in
         )
-    rows = [["개선 수단", "절감액", "투자비", "회수기간", "확실성"]]
+    # **확실성 열을 뺐다** (53세션 1-4). 무엇에 대한 등급인지 이름에 없어
+    # 화면에서 28세션에 걷어냈는데 산출물에만 남아 있었다. 계산은 그대로다 —
+    # :class:`~kwise.measures.Certainty` 도 :attr:`MeasureEntry.certainty` 도 산다.
+    rows = [["개선 수단", "절감액", "투자비", "회수기간"]]
     # **절 번호를 뗀다** (38세션 1-3). 장 제목과 같은 이름이어야 표에서 고른
     # 줄을 뒤에서 찾을 수 있다.
     rows.extend(
         [
             measure_slide_title(entry),
             split_reason(entry.slide_saving)[0],
-            split_reason(entry.investment)[0],
-            split_reason(entry.payback)[0],
-            entry.certainty,
+            slide_investment(entry.investment),
+            slide_payback(entry.payback),
         ]
         for entry in sections.measures
     )
     if len(rows) == 1:
-        rows.append(["검토한 수단이 없습니다", "—", "—", "—", "—"])
+        rows.append(["검토한 수단이 없습니다", "—", "—", "—"])
     _table(
         slide,
         guide,
@@ -1297,7 +1375,7 @@ def _build_measure_summary(
         top=top,
         width=geometry.content_width_in,
         height=min(_table_room(guide, top=top, footnote=True) - 0.3, 0.5 * len(rows)),
-        widths=(0.22, 0.28, 0.2, 0.15, 0.15),
+        widths=(0.26, 0.34, 0.24, 0.16),
     )
     _note(
         slide,
@@ -1350,7 +1428,10 @@ def _measure_note(entry: MeasureEntry) -> str:
     ):
         reason = split_reason(value)[1]
         if reason:
-            parts.append(f"{label} {_UNPRICED} — {reason}")
+            # **「미산출」 이 두 번 나오지 않게 한다** (53세션). 태양광 투자비 사유가
+            # 「미산출 — 태양광 설치 단가 미입력」 꼴이라, 앞에 라벨을 붙이면
+            # 「투자비 미산출 — 미산출 — 태양광 …」 이 됐다.
+            parts.append(f"{label} {_UNPRICED} — {split_reason(reason)[1] or reason}")
     if entry.slide_note:
         parts.append(entry.slide_note)
     return " · ".join(parts)
@@ -1436,9 +1517,8 @@ def _build_measure(
         guide,
         [
             ("절감액", split_reason(entry.slide_saving)[0]),
-            ("투자비", split_reason(entry.investment)[0]),
-            ("회수기간", split_reason(entry.payback)[0]),
-            ("확실성", entry.certainty),
+            ("투자비", slide_investment(entry.investment)),
+            ("회수기간", slide_payback(entry.payback)),
         ],
         left=geometry.margin_in,
         top=stats_top,
@@ -1468,7 +1548,7 @@ def _build_measure(
             _text(
                 slide,
                 guide,
-                [entry.spec_caption],
+                [mark_note(entry.spec_caption)],
                 left=geometry.margin_in,
                 top=body + used,
                 width=geometry.content_width_in,
@@ -1633,7 +1713,7 @@ def _build_combination(
         guide,
         [
             ("총 절감액", _won(best.saving_won)),
-            ("투자비", _won(best.investment_won)),
+            ("투자비", slide_investment(_won(best.investment_won))),
             ("회수기간", _payback(best.payback_years, best.investment_won)),
         ],
         left=right_left,
@@ -1716,10 +1796,13 @@ def _build_appendix(
 
     **절감액이 없는 수단은 빼고, 뺐다는 사실을 각주가 적는다** — 조용히 빼면
     「검토하지 않았다」 로 읽힌다.
+
+    **해석 한 줄을 두지 않는다** (53세션 1-6). 부록은 근거를 그대로 펼치는
+    자리이지 읽는 법을 일러 주는 자리가 아니다 — 같은 문장이 부록 장마다
+    되풀이돼 표가 밀려 내려가고 있었다. 무엇의 근거인지는 **제목이 적는다.**
     """
     geometry = guide.slide
     top = _title(slide, guide, spec.title)
-    top = _lead(slide, guide, narrative.APPENDIX_LEAD, top=top)
     pages = appendix_pages(sections)
     page = pages[spec.page or 0]
     rows: list[list[str]] = [list(COLUMNS)]
@@ -1739,7 +1822,7 @@ def _build_appendix(
     _caption(
         slide,
         guide,
-        _appendix_note(sections),
+        mark_note(_appendix_note(sections)),
         left=geometry.margin_in,
         top=geometry.height_in - geometry.margin_in - 0.3,
         width=geometry.content_width_in,

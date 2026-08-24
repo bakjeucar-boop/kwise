@@ -32,7 +32,6 @@ from kwise.measures import (
     BASE_FEE_UNCHANGED,
     DR_ADVISORY,
     OFFSET_SCENARIO,
-    Certainty,
     ContractAdjustment,
     DemandResponseResult,
     EssResult,
@@ -89,9 +88,11 @@ MEASURE_SHEET_COLUMNS: tuple[str, ...] = (
     "절감액(원)",
     "12개월 환산(원)",
     "회수기간",
-    "확실성",
     "비고",
 )
+# **확실성 열을 뺐다** (53세션 1-4). 화면은 28세션에 걷어냈는데 산출물에만 남아
+# 있었다. 계산은 그대로다 — :class:`~kwise.measures.Certainty` 가 살아 있어
+# 되살릴 때 열만 되돌리면 된다.
 
 DEFAULT_OUTPUT_DIR = Path("output")
 SHEET_ORDER: tuple[str, ...] = (
@@ -315,7 +316,6 @@ def measure_summary_frame(
                 "절감액(원)": format_won(switch.saving_won),
                 "12개월 환산(원)": format_won(switch.annual_saving_won),
                 "회수기간": "즉시",
-                "확실성": str(switch.certainty),
                 "비고": "설비 도입과 무관합니다. 감도를 적용하지 않습니다.",
             }
         )
@@ -332,7 +332,6 @@ def measure_summary_frame(
                     contract.annual_saving_won, reason=UNPRICED_REASONS["contract"]
                 ),
                 "회수기간": "즉시" if contract.saving_won else "—",
-                "확실성": str(contract.certainty),
                 # **0 이 결론인 줄이라는 것을 비고가 말한다** (48세션). 시트의
                 # 금액 칸은 숫자 자리라 0 을 그대로 두되, 그것이 「덜 계산된 0」
                 # 이 아니라는 것은 적어야 한다.
@@ -351,7 +350,6 @@ def measure_summary_frame(
                 "절감액(원)": demand_response.settlement_label,
                 "12개월 환산(원)": demand_response.settlement_label,
                 "회수기간": "즉시" if demand_response.is_priced else UNPRICED_REASONS["no_saving"],
-                "확실성": str(demand_response.certainty),
                 "비고": (
                     f"거래 가능일 {demand_response.eligible_days}일 중 저부하 평일 "
                     f"{demand_response.low_load_days}일. 연간 감축 가능량 "
@@ -381,7 +379,6 @@ def measure_summary_frame(
                     if power_factor.payback_years is not None
                     else UNPRICED_REASONS["no_saving"]
                 ),
-                "확실성": str(power_factor.certainty),
                 "비고": (
                     f"주간(08~22시) 지상역률 기준 92%, 매 1%당 기본요금의 0.2% "
                     f"(한전 기본공급약관 제43조). 현재 역률요금 "
@@ -403,7 +400,6 @@ def measure_summary_frame(
                     if solar.payback_years is not None
                     else UNPRICED_REASONS["no_saving"]
                 ),
-                "확실성": str(Certainty.MEDIUM),
                 "비고": (
                     f"자가소비율 {solar.self_consumption_ratio:.0%}, "
                     f"도입 후 역률 {solar.power_factor_after_pct:.1f}%"
@@ -434,7 +430,6 @@ def measure_summary_frame(
                         reason=scenario.basis,
                     ),
                     "회수기간": "—",
-                    "확실성": str(Certainty.MEDIUM_LOW),
                     "비고": (
                         f"연간 잉여 {surplus.total_kwh / 1000:,.1f} MWh · "
                         + (
@@ -464,7 +459,6 @@ def measure_summary_frame(
                     if ess.payback_years is not None
                     else UNPRICED_REASONS["no_saving"]
                 ),
-                "확실성": str(ess.certainty),
                 "비고": (
                     f"방전시간 {ess.discharge_hours:.2f}h ({ess.c_rate:.1f}C, 규격 용량 ÷ 출력) · "
                     f"필요 사양 {ess.required_power_kw:,.1f} kW / "
@@ -495,7 +489,6 @@ def measure_summary_frame(
                         if arbitrage.standalone_payback_years is not None
                         else UNPRICED_REASONS["no_saving"]
                     ),
-                    "확실성": str(ess.certainty),
                     "비고": (
                         f"연 {arbitrage.won_per_kwh_year:,.0f} 원/kWh · "
                         f"평일 {arbitrage.cycles_per_day:g} 사이클 · 계시별 단가는 요금표에서 "

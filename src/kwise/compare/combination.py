@@ -6,7 +6,8 @@
 
     부하 → apply_generation(PV) → dispatch_peak_shaving(ESS) → calculate_bill()
 
-**확실성 등급을 반드시 표시한다.** 조합의 등급은 가장 낮은 구성 요소를 따른다.
+**확실성 등급은 계산에 남되 산출물에 적지 않는다** (53세션 1-4). 조합의 등급은
+가장 낮은 구성 요소를 따른다 — :meth:`CombinationResult.certainty` 가 그 규칙이다.
 요금제 전환만이면 '높음', 태양광이 끼면 '중간', ESS 가 끼면 '중간~낮음'이다.
 
 ESS 충전이 새 피크를 만드는지도 확인한다. 경부하 시간대 충전이 기저부하 위에
@@ -218,7 +219,7 @@ class ComparisonResult:
     notices: tuple[Notice, ...] = field(default=())
 
     def frame(self) -> pd.DataFrame:
-        """조합 | 절감액 | 투자비 | 회수기간 | 확실성."""
+        """조합 | 절감액 | 투자비 | 회수기간. **확실성 열은 없다** (53세션 1-4)."""
         rows = [
             {
                 "조합": item.name,
@@ -229,7 +230,6 @@ class ComparisonResult:
                 "투자비(원)": item.investment_won,
                 "회수기간(년)": item.payback_years,
                 "요금적용전력(kW)": item.billing_demand_kw,
-                "확실성": str(item.certainty),
             }
             for item in self.combinations
         ]
@@ -563,7 +563,6 @@ def compare_combinations(
             "재구성하여 처음부터 다시 산출한 값입니다.",
             fact="combination.not_additive",
         ),
-        basis("확실성 등급은 가장 낮은 구성 요소를 따릅니다.", fact="combination.certainty_rule"),
     )
     return ComparisonResult(
         baseline=results[0],

@@ -125,10 +125,13 @@ from kwise.ui.views.measures import chosen_surplus_revenue
 
 __all__ = ["render"]
 
-#: 화면에서 내리는 사실 (28세션 4절). **화면에 없는 것을 설명하지 않는다** —
-#: 확실성 등급을 화면에서 뺐으므로 「조합의 등급은 가장 낮은 구성 요소를 따른다」
-#: 는 규칙도 가리킬 대상이 없다. Excel·Word 에는 그대로 실린다.
-_HIDDEN_FACTS: frozenset[str] = frozenset({"combination.certainty_rule"})
+#: 화면에서 내리는 사실 (28세션 4절). **화면에 없는 것을 설명하지 않는다.**
+#:
+#: **지금은 비어 있다** (53세션 1-4). 확실성 등급이 산출물에서도 빠지면서
+#: 「조합의 등급은 가장 낮은 구성 요소를 따른다」 는 근거 줄 자체를 없앴다 —
+#: 화면에서만 가리던 것을 만드는 자리에서 지웠다. 장치는 남긴다: 화면에 없는
+#: 사실을 계산이 또 낼 수 있다.
+_HIDDEN_FACTS: frozenset[str] = frozenset()
 
 
 def render(
@@ -394,7 +397,7 @@ def _standalone_block(rows: tuple[StandaloneRow, ...]) -> None:
         frame,
         hide_index=True,
         width="stretch",
-        # 확실성 열은 28세션에 뺐다 (4절). Excel·Word 에는 그대로 있다.
+        # 확실성 열은 28세션에 뺐다 (4절). 53세션에 Excel·Word·PPT 에서도 뺐다.
         column_config={
             "회수기간": st.column_config.TextColumn("회수기간", help=manual_tip("payback")),
         },

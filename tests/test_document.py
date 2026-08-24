@@ -284,7 +284,7 @@ def test_표_머리글이_굵다(full_document: DocumentType) -> None:
 
 
 def test_조합_비교가_표로_나온다(full_document: DocumentType) -> None:
-    table = _table_with_header(full_document, "조합", "절감액", "투자비", "회수기간", "확실성")
+    table = _table_with_header(full_document, "조합", "절감액", "투자비", "회수기간")
     assert len(table.rows) >= 2  # type: ignore[attr-defined]
     body = [cell.text for cell in table.rows[1].cells]  # type: ignore[attr-defined]
     assert body[0]

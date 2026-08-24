@@ -3537,8 +3537,8 @@ def test_3단계_금액_열이_모두_12개월_환산이다() -> None:
     assert "annualize(" not in body, "환산이 필요한 줄이 남아 있습니다."
 
 
-def test_확실성이_화면에_없다(screen_lines: tuple[object, ...]) -> None:
-    """**등급을 화면에서 뺐다** (28세션 4절). Excel·Word 에는 그대로 있다."""
+def test_확실성이_화면에도_산출물에도_없다(screen_lines: tuple[object, ...]) -> None:
+    """**등급을 화면에서 뺐고**(28세션 4절) **산출물에서도 뺐다**(53세션 1-4)."""
     offenders = [
         f"[{item.slot}] {item.where} :: {item.text[:60]}"
         for item in screen_lines
@@ -3547,7 +3547,7 @@ def test_확실성이_화면에_없다(screen_lines: tuple[object, ...]) -> None
     assert offenders == [], offenders
     from kwise.report.excel import measure_summary_frame
 
-    assert "확실성" in list(measure_summary_frame().columns)
+    assert "확실성" not in list(measure_summary_frame().columns)
 
 
 def test_조합_차트가_색으로_등급을_나누지_않는다() -> None:

@@ -255,7 +255,8 @@ ANCHORS: tuple[ManualAnchor, ...] = (
     ),
     # **확실성 등급과 감도 앵커를 뺐다** (28세션 4·5절). 둘 다 화면에서 없앴으므로
     # 가리킬 자리가 없다 — 놀고 있는 앵커를 두지 않는다 (22세션 5절). 매뉴얼의
-    # 두 절(`#certainty`·`#sensitivity`)은 그대로다. Excel·Word 에는 확실성 등급과
+    # 두 절(`#certainty`·`#sensitivity`)은 그대로다. **53세션에 산출물에서도 뺐다.**
+    # Excel·Word 에는 확실성 등급과
     # 감도 표가 남아 있고, 그것을 읽는 사람이 갈 자리이기 때문이다.
     ManualAnchor(
         "payback",

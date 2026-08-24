@@ -35,6 +35,7 @@ from kwise.quality import DEFAULT_NIGHT_HOURS, DEFAULT_OPERATING_HOURS, LoadPatt
 from kwise.rules import assumption
 
 __all__ = [
+    "FORMULA_SEPARATOR",
     "GLOSSARY_KEYS",
     "Term",
     "base_fee_share_high",
@@ -218,16 +219,24 @@ GLOSSARY_KEYS: dict[str, tuple[str, ...]] = {
     "peak_summary": ("billing_demand", "midday_share", "weekend_slot_share"),
     "peak_detail": (),
     "structure": ("base_fee", "energy_fee", "band"),
-    "measure_summary": ("payback", "certainty"),
+    "measure_summary": ("payback",),
     "combination": (),
     "appendix": (),
 }
 
 
+#: 각주에서 **산식을 가르는 기호** (53세션 1-3).
+#:
+#: 「·」 를 쓰면 산식이 나열되는 자리에서 **수식 기호로 읽힌다** — 「부하율 =
+#: 평균 수요 ÷ 최대 수요 · 기저부하 비율 = …」 은 나눗셈 뒤에 곱셈이 붙은
+#: 것처럼 보인다. 산식이 아닌 자리의 「·」 는 그대로 둔다.
+FORMULA_SEPARATOR = ", "
+
+
 def glossary_note(keys: tuple[str, ...], pattern: LoadPattern | None = None) -> str:
     """슬라이드 아래 작은 글씨 한 줄. 없으면 빈 문자열이다."""
     table = terms(pattern)
-    return " · ".join(table[key].line for key in keys if key in table)
+    return FORMULA_SEPARATOR.join(table[key].line for key in keys if key in table)
 
 
 # ===================================================================== 해석 한 줄
@@ -360,7 +369,11 @@ def combination_lead() -> str:
     return COMBINATION_LEAD
 
 
-#: 17장 — 고정 문장.
+#: 부록 — **슬라이드에는 쓰지 않는다** (53세션 1-6).
+#:
+#: 39세션에 부록마다 이 한 줄을 깔았는데, 부록이 수단마다 한 장 이상으로
+#: 늘면서 **같은 문장이 예닐곱 번 되풀이**됐다. 부록은 근거를 펼치는 자리이지
+#: 읽는 법을 일러 주는 자리가 아니다. Word 가 쓰면 그때 되살린다.
 APPENDIX_LEAD = "각 수단의 절감액이 어떤 산식과 어떤 값에서 나왔는지 그대로 실었습니다."
 
 

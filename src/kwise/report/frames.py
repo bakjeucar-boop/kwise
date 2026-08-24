@@ -644,17 +644,19 @@ def capacity_band_frame(model: EssCostModel) -> pd.DataFrame:
 
 
 def combination_frame(comparison: ComparisonResult) -> pd.DataFrame:
-    """조합별 절감액·투자비·확실성.
+    """조합별 절감액·투자비.
 
     **투자비를 모르면 ``None`` 이다.** 0 으로 채우면 막대가 바닥에 붙어
     "공짜" 로 읽힌다 (7.5).
+
+    **확실성 열을 뺐다** (53세션 1-4). 28세션에 그림에서 색을 걷어낸 뒤로 아무도
+    읽지 않던 열이고, 산출물에서도 등급을 빼기로 했다.
     """
     return pd.DataFrame(
         {
             "조합": [item.name for item in comparison.combinations],
             "절감액(원)": [item.saving_won for item in comparison.combinations],
             "투자비(원)": [item.investment_won for item in comparison.combinations],
-            "확실성": [str(item.certainty) for item in comparison.combinations],
         }
     )
 

@@ -330,7 +330,7 @@ def _tariff_switch(
     columns = st.columns(3)
     columns[0].metric("현행", option_label(result.current.selection.option))
     columns[1].metric("가장 유리한 요금제", option_label(result.best.selection.option))
-    # **확실성 등급은 화면에 없다** (28세션 4절). Excel·Word 에는 그대로 남는다.
+    # **확실성 등급은 어디에도 없다** (28세션 4절 · 53세션 1-4). 계산만 남는다.
     columns[2].metric("절감액", fmt.won_year(result.annual_saving_won))
     if result.switch_needed:
         st.write(

@@ -176,7 +176,6 @@ def sensitivity_comparison(
                 "12개월 환산 절감액(원)": result.annual_saving_won,
                 "투자비(원)": result.investment_won,
                 "회수기간(년)": result.payback_years,
-                "확실성": str(result.certainty),
             }
         )
     return pd.DataFrame(rows).set_index("시나리오")
