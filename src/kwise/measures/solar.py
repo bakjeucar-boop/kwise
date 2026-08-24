@@ -22,7 +22,13 @@ import pandas as pd
 
 from kwise import money
 from kwise.io import UsageData, slot_start
-from kwise.measures.base import Certainty, annualize, payback_years
+from kwise.measures.base import (
+    LARGEST_SAVING,
+    SHORTEST_PAYBACK,
+    Certainty,
+    annualize,
+    payback_years,
+)
 from kwise.measures.netload import apply_generation
 from kwise.measures.pv_cost import (
     PV_COST_BASIS_NOTE,
@@ -354,6 +360,9 @@ LIMITERS: dict[str, tuple[str, str]] = {
 class CapacityVerdict:
     """용량 한 줄 판정 (15세션 1-3).
 
+    **``best`` 는 화면에서 「최단 회수기간」(또는 「최대 절감액」)으로 부른다**
+    (49세션 — :attr:`pick_label`). 코드 식별자는 그대로 둔다.
+
     **표를 나열하지 않는다.** 면적이 정해지면 용량이 정해지므로, 잉여가 없고
     기본요금 절감이 포화하지 않는 한 곡선은 단조롭게 좋아지기만 한다. 그런
     경우 20단계 표는 아무것도 알려주지 않는다 — 한 줄이면 된다.
@@ -378,8 +387,18 @@ class CapacityVerdict:
 
     @property
     def show_curve(self) -> bool:
-        """곡선을 펼칠지. **최적이 상한보다 작을 때만** 펼친다 (15세션 1-3)."""
+        """곡선을 펼칠지. **고른 자리가 상한보다 작을 때만** 펼친다 (15세션 1-3)."""
         return self.best is not None and not self.at_limit
+
+    @property
+    def pick_label(self) -> str:
+        """고른 자리를 부르는 이름 (49세션). **「최적」 이라 부르지 않는다.**
+
+        무엇으로 골랐는지가 곧 이름이다 — 단가를 넣었으면 회수기간, 안 넣었으면
+        절감액이다. 판단이 들어간 말을 쓰면 「그것을 하라」 로 읽힌다
+        (:data:`~kwise.measures.base.SHORTEST_PAYBACK`).
+        """
+        return SHORTEST_PAYBACK if self.basis == "회수기간" else LARGEST_SAVING
 
     def sentence(self) -> str:
         """화면·보고서가 같이 쓰는 한 줄."""
@@ -391,11 +410,11 @@ class CapacityVerdict:
                 f"{self.basis} 기준 가장 유리합니다."
             )
         tail = f" 그 이상은 {LIMITERS[self.limiter_key][1]}." if self.limiter_key else ""
-        return f"{self.basis} 기준 최적은 {self.best.capacity_kwp:,.0f} kWp 입니다.{tail}"
+        return f"{self.pick_label} 용량은 {self.best.capacity_kwp:,.0f} kWp 입니다.{tail}"
 
     @property
     def limiter(self) -> str:
-        """**무엇이 최적을 정했는가** (17세션 3-2).
+        """**무엇이 그 용량에서 멈춰 세웠는가** (17세션 3-2).
 
         셋 중 하나다 — 더 지을 자리가 없거나, 더 지어도 남아돌거나, 더 지어도
         기본요금이 더는 줄지 않거나.
@@ -422,11 +441,13 @@ class CapacityVerdict:
         else:
             head = "설치 단가를 넣지 않아 **절감액이 가장 큰** 용량을 골랐습니다."
         limiter = self.limiter
-        return f"{head} 최적을 정한 것은 **{limiter}** 입니다." if limiter else head
+        # **「최적을 정한 것은」 이 아니다** (49세션). 고른 자리를 최적이라 부르지
+        # 않으므로 무엇이 거기서 멈춰 세웠는지로 적는다.
+        return f"{head} 그 용량에서 멈춘 것은 **{limiter}** 입니다." if limiter else head
 
 
 def _limiting_reason(curve: SolarCurve, best: SolarPoint, limit: SolarPoint) -> str:
-    """최적이 상한보다 작은 이유의 **ID**. 둘 중 무엇인지 판별해서 적는다."""
+    """고른 자리가 상한보다 작은 이유의 **ID**. 둘 중 무엇인지 판별해서 적는다."""
     beyond = [point for point in curve.points if point.capacity_kwp > best.capacity_kwp]
     if not beyond:
         return ""

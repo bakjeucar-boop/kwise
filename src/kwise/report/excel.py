@@ -534,7 +534,7 @@ def solar_curve_sheet(curve: SolarCurve) -> pd.DataFrame:
             "회수기간(년)": point.payback_years,
             "도입 후 역률(%)": point.power_factor_after_pct,
             "판정": (
-                "◀ " + verdict.basis + " 최적"
+                "◀ " + verdict.pick_label
                 if best is not None and abs(point.capacity_kwp - best) < 1e-9
                 else ""
             ),

@@ -650,7 +650,7 @@ def solar_curve_chart(
             {
                 "용량(kWp)": [best.capacity_kwp],
                 "원": [best.total_saving_won],
-                "설명": [f"{verdict.basis} 최적 {best.capacity_kwp:,.0f} kWp"],
+                "설명": [f"{verdict.pick_label} {best.capacity_kwp:,.0f} kWp"],
             }
         )
         layers.append(

@@ -3635,3 +3635,105 @@ def test_지역을_고르지_않은_상태가_있다() -> None:
     assert "옆단에서 지역을 고르면 일평균 기온을 함께 그립니다." in captions
     warnings = [str(item.value) for item in screen.markdown]
     assert any("옆단에서 지역(시도·시군구)을 고르십시오" in text for text in warnings), warnings
+
+
+# ============================================================ 49세션 · 「최적」 을 쓰지 않는다
+#
+# **「최적」 은 판단이 들어간 말이라 「그것을 하라」 로 읽힌다.** 소형 사무빌딩에서
+# 회수기간 578년짜리가 「최적 목표」 로 나왔다 — 성립 조건을 늘려 지우는 것이 아니라
+# 이름을 고치는 것이 답이다 (`CLAUDE.md` 「화면 문구」 절).
+#
+# **성격이 다른 「최적」 은 그대로 둔다.** 세 갈래다.
+#
+#     선택요금 전환   금액이 가장 적은 요금제. 투자가 없어 「최적」 이 사실과 안 어긋난다
+#     최적 운전      ESS 디스패치 한계를 적는 말. MILP 최적제어를 가리킨다
+#     참고문헌 제목   에너지경제연구원 「…최적믹스…」. 고유명사다
+
+#: 개선안 맥락 밖의 「최적」 — 그대로 두기로 한 **문구** (49세션 1-2).
+_OPTIMUM_PHRASES = (
+    "현행이 최적",  # 선택요금 판정 (diagnose/summary.py)
+    "최적 선택요금",  # 조합 안내 (report/document.py)
+    "최적 운전",  # ESS 디스패치 한계 — MILP 최적제어 (measures/ess.py · report/notices.py)
+    "최적믹스",  # 참고문헌 제목 (report/notices.py)
+)
+
+#: 그대로 두기로 한 **문자열 전체.** 셋 다 선택요금 전환이다 — 요금제 표식과
+#: 계산 근거 표의 줄 이름이라 문구가 아니라 값 자체가 「최적」 이다.
+_OPTIMUM_EXACT = frozenset({"최적", "최적 ", "현행 합계 − 최적 합계"})
+
+
+def test_개선안_맥락에_최적을_쓰지_않는다() -> None:
+    """**나가는 문자열만 본다** — 코드 주석과 독스트링은 우리끼리 쓰는 말이다.
+
+    :func:`test_견주다를_화면에_쓰지_않는다` 와 같은 방식이다. 코드 식별자
+    (``EssOptimum``·``refine_ess_target``)는 대상이 아니다 — 화면에 안 나간다.
+    """
+    import ast
+
+    offenders: list[str] = []
+    for path in sorted((Path("src") / "kwise").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        docs = {
+            id(node.body[0].value)
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.body
+            and isinstance(node.body[0], ast.Expr)
+            and isinstance(node.body[0].value, ast.Constant)
+        }
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and id(node) not in docs
+                and "최적" in node.value
+            ):
+                continue
+            if node.value in _OPTIMUM_EXACT:
+                continue
+            # 모듈 레벨 상수 설명(``"""…"""``)은 독스트링 판정에 안 걸린다 —
+            # 여러 줄이면 설명문이므로 화면 문구가 아니다.
+            if chr(10) in node.value:
+                continue
+            text = node.value
+            for phrase in _OPTIMUM_PHRASES:
+                text = text.replace(phrase, "")
+            if "최적" in text:
+                offenders.append(f"{path.name}:{node.lineno} {node.value[:60]}")
+    assert offenders == [], offenders
+
+
+def test_고른_자리를_최단_회수기간으로_부른다() -> None:
+    """**ESS 와 태양광이 같은 이름을 쓴다** (49세션 1-1)."""
+    from kwise.measures import LARGEST_SAVING, SHORTEST_PAYBACK
+
+    assert SHORTEST_PAYBACK == "최단 회수기간"
+    # 단가를 안 넣으면 절감액으로 고른다 — 그 자리에 「최단 회수기간」 을 적으면
+    # **없는 사실을 적는 것**이다.
+    assert LARGEST_SAVING == "최대 절감액"
+
+
+def test_ESS_소제목이_최단_회수기간이다() -> None:
+    """소제목·표식·진행 문구 어디에도 「최적」 이 없다."""
+    from kwise.measures import SHORTEST_PAYBACK
+
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    assert 'st.subheader(f"{SHORTEST_PAYBACK} 목표' in source
+    assert '"ESS 목표를 고르는 중…"' in source
+    assert SHORTEST_PAYBACK == "최단 회수기간"
+
+
+def test_선택요금_전환은_최적_그대로다() -> None:
+    """**성격이 다르다** (49세션 1-2).
+
+    회수기간이 아니라 **금액이 가장 적은 요금제**이고 투자가 없다. 「최적」 이
+    「그것을 하라」 로 읽혀도 사실과 어긋나지 않는다.
+    """
+    from kwise.report import frames
+
+    source = (Path("src") / "kwise" / "report" / "frames.py").read_text(encoding="utf-8")
+    body = source[
+        source.index("def tariff_option_frame") : source.index("def tariff_option_long_frame")
+    ]
+    assert '"최적"' in body, "선택요금 표식이 사라졌다"
+    assert hasattr(frames, "tariff_option_frame")

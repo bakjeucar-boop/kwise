@@ -11,7 +11,33 @@ from __future__ import annotations
 from collections.abc import Iterable
 from enum import StrEnum
 
-__all__ = ["Certainty", "annualize", "lowest_certainty", "payback_years"]
+__all__ = [
+    "LARGEST_SAVING",
+    "SHORTEST_PAYBACK",
+    "Certainty",
+    "annualize",
+    "lowest_certainty",
+    "payback_years",
+]
+
+SHORTEST_PAYBACK = "최단 회수기간"
+"""곡선·표에서 고른 지점을 부르는 이름 (49세션). **「최적」 이라 부르지 않는다.**
+
+「최적」 은 판단이 들어간 말이라 **「그것을 하라」 로 읽힌다.** 소형 사무빌딩에서
+회수기간 578년짜리가 「최적 목표」 로 나왔다 — 성립 조건을 늘려 지우는 것이 아니라
+이름을 고치는 것이 답이다. 「최단 회수기간」 은 사실만 말하므로 578년이어도 거짓이
+아니고, 수명을 넘는다는 판단은 ``ess.payback_over_warranty`` 경고가 따로 한다.
+
+**선택요금 전환의 「최적 요금제」 는 그대로 둔다** — 그쪽은 회수기간이 아니라
+금액이 가장 적은 요금제이고, 투자가 없어 「최적」 이 사실과 어긋나지 않는다.
+"""
+
+LARGEST_SAVING = "최대 절감액"
+"""설치 단가를 넣지 않아 **절감액**으로 고른 경우의 이름 (49세션).
+
+태양광은 단가를 안 넣으면 회수기간을 못 내므로 절감액이 가장 큰 용량을 고른다.
+그 자리에 「최단 회수기간」 을 적으면 **없는 사실을 적는 것**이라 갈라 둔다.
+"""
 
 
 class Certainty(StrEnum):

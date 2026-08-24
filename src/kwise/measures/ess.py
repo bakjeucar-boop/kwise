@@ -27,7 +27,7 @@ from kwise.measures.arbitrage import (
     c_rate,
     default_cycles_per_day,
 )
-from kwise.measures.base import Certainty, annualize, payback_years
+from kwise.measures.base import SHORTEST_PAYBACK, Certainty, annualize, payback_years
 from kwise.measures.ess_cost import (
     EssCostInput,
     EssCostModel,
@@ -1281,8 +1281,8 @@ NOT_VIABLE_CONCLUSION = (
 )
 """성립하는 목표가 하나도 없을 때의 **결론** (48세션).
 
-목표를 제시하는 대신 이것을 낸다. 「최적 230 kW · 154.5년」 처럼 적으면 성립하지
-않는 자리를 권한 것으로 읽힌다 — 소형 사무빌딩 자료에서 실제로 그랬다.
+목표를 제시하는 대신 이것을 낸다. 마진이 음수인 자리는 규모를 어떻게 잡아도
+회수되지 않으므로 「최단 회수기간」 조차 뜻이 없다 — 고를 것이 아예 없다.
 """
 
 #: 목표별 사양 표에 세울 줄 수. :data:`~kwise.report.frames.ESS_SPEC_ROWS` 가
@@ -1309,6 +1309,9 @@ def refine_max_widen() -> int:
 @dataclass(frozen=True)
 class EssOptimumPoint:
     """정밀화에서 잰 한 점 — **카드와 같은 산식이다.**
+
+    **이름은 ``Optimum`` 이지만 화면에서는 「최단 회수기간」 으로 부른다** (49세션).
+    코드 식별자는 그대로 둔다 — 화면에 나가지 않고, 바꾸면 범위가 커진다.
 
     화면의 목표별 사양 표가 이 값들을 그대로 낸다 (46세션). 표에 필요한 것이
     모두 여기 있어야 다시 계산할 일이 없다.
@@ -1349,7 +1352,11 @@ class EssOptimumPoint:
 
 @dataclass(frozen=True)
 class EssOptimum:
-    """카드 기준으로 다시 고른 최적 목표 (40세션).
+    """카드 기준으로 다시 고른 목표 (40세션).
+
+    **이름은 ``Optimum`` 이지만 화면에서는 「최단 회수기간」 으로 부른다** (49세션).
+    「최적」 은 「그것을 하라」 로 읽히는데 회수기간이 578년인 자리도 있다 —
+    :data:`~kwise.measures.base.SHORTEST_PAYBACK` 참조. 코드 식별자는 그대로다.
 
     Attributes:
         target_kw: 고른 목표. **화면·산출물이 쓰는 값이다.**
@@ -1445,7 +1452,9 @@ def refine_ess_target(
     max_widen: int | None = None,
     progress: ProgressReporter | None = None,
 ) -> EssOptimum:
-    """곡선이 고른 목표 둘레를 **카드 기준으로 다시 훑어** 최적을 고른다.
+    """곡선이 고른 목표 둘레를 **카드 기준으로 다시 훑어** 회수기간 최소를 고른다.
+
+    **함수 이름의 ``optimum`` 은 화면에서 「최단 회수기간」 이다** (49세션).
 
     카드 기준이란 :func:`evaluate_ess` 와 같은 산식이다 — 디스패치를 돌려 요금을
     처음부터 다시 계산하고, 투자비는 왕복효율·DoD 를 반영한 **정격 용량**으로
@@ -1589,7 +1598,7 @@ def refine_ess_target(
         )
         for index, target in enumerate(window_targets, start=1):
             measure(target)
-            report.step(index, f"ESS 최적 목표 {index}/{len(window_targets)}")
+            report.step(index, f"ESS 목표 {index}/{len(window_targets)}")
         # **후보는 값이 매겨지고 목표를 지키고 마진이 있는 점뿐이다** (48세션).
         eligible = [scored[target] for target in window_targets if scored[target].eligible]
         if not eligible:
@@ -1630,7 +1639,8 @@ def refine_ess_target(
     if at_edge:
         notices.append(
             warn(
-                f"최적 목표가 정밀화 구간의 가장자리({best.target_kw:,.0f} kW)에서 잡혔습니다. "
+                f"{SHORTEST_PAYBACK} 목표가 정밀화 구간의 "
+                f"가장자리({best.target_kw:,.0f} kW)에서 잡혔습니다. "
                 f"구간을 {widened}번 넓혔는데도 그대로여서, 더 나은 목표가 구간 밖에 "
                 "있을 수 있습니다.",
                 fact="ess.refine_at_edge",

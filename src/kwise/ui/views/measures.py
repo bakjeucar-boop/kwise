@@ -32,6 +32,7 @@ from kwise.measures import (
     BASE_FEE_UNCHANGED,
     EXTERNAL_SCENARIO,
     OFFSET_SCENARIO,
+    SHORTEST_PAYBACK,
     SolarPoint,
     SurplusResult,
     annualize,
@@ -1499,7 +1500,7 @@ def _ess(
     #
     # **한 점당 요금을 다시 계산하므로 21점에 약 8초다.** 진행을 보인다 —
     # 아무 말 없이 멈추면 사용자는 화면이 죽은 줄 안다 (13세션과 같은 이유).
-    panel, runner = progress_panel("ESS 최적 목표를 고르는 중…")
+    panel, runner = progress_panel("ESS 목표를 고르는 중…")
     with panel, runner.running("measures", total_steps=len(refine_targets(curve))) as report:
         optimum = cached_ess_optimum(
             usage,
@@ -1561,7 +1562,7 @@ def _ess(
         fixed_won,
         per_kwh_won,
     )
-    st.subheader(f"최적 목표 {fmt.kw(target, decimals=0)} 기준")
+    st.subheader(f"{SHORTEST_PAYBACK} 목표 {fmt.kw(target, decimals=0)} 기준")
     columns = st.columns(4)
     # **잘리지 않게 방전시간까지 한 칸에 담는다** (14세션 3-5).
     columns[0].metric(

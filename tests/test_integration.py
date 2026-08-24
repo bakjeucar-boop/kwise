@@ -785,7 +785,9 @@ def test_태양광_판정_근거를_적는다() -> None:
     assert not app.exception, app.exception
     body = _text(app)
     assert "회수기간이 가장 짧은 용량입니다" in body or "절감액이 가장 큰" in body
-    assert "최적을 정한 것은" in body
+    # **「최적을 정한 것은」 이 아니다** (49세션). 고른 자리를 최적이라 부르지 않는다.
+    assert "그 용량에서 멈춘 것은" in body
+    assert "최적" not in body, "개선안 맥락의 「최적」 이 화면에 남아 있다"
     limiters = ("설치 가능 면적 상한", "잉여 발생", "기본요금 절감 포화")
     assert any(word in body for word in limiters), body
 

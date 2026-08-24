@@ -21,6 +21,7 @@ from kwise.diagnose import ChargeStructure, PeakProfile
 from kwise.diagnose.dr import DrProfile
 from kwise.io import UsageData, slot_start
 from kwise.measures import (
+    SHORTEST_PAYBACK,
     SPEC_TABLE_ROWS,
     CapacityVerdict,
     DispatchResult,
@@ -308,7 +309,10 @@ def solar_capacity_table(
 
     marks: dict[float, list[str]] = {limit.capacity_kwp: ["선정 용량"]}
     if best is not None and best.capacity_kwp != limit.capacity_kwp:
-        marks.setdefault(best.capacity_kwp, []).append("최적")
+        # **「최적」 이 아니다** (49세션). 무엇으로 골랐는지가 곧 표식이다.
+        marks.setdefault(best.capacity_kwp, []).append(
+            verdict.pick_label if verdict is not None else SHORTEST_PAYBACK
+        )
     picked: dict[float, SolarPoint] = {limit.capacity_kwp: limit}
     if best is not None:
         picked.setdefault(best.capacity_kwp, best)
@@ -415,8 +419,11 @@ def ess_spec_frame(
     rows = [optimum.points[i] for i in picks]
 
     def mark(point: EssOptimumPoint) -> str:
-        # **성립하는 목표가 없으면 「최적」 을 찍지 않는다** (48세션).
-        labels = ["최적"] if optimum.viable and point.target_kw == optimum.target_kw else []
+        # **성립하는 목표가 없으면 표식을 찍지 않는다** (48세션).
+        # **「최적」 이라 부르지 않는다** (49세션) — 578년짜리도 최단 회수기간이다.
+        labels = (
+            [SHORTEST_PAYBACK] if optimum.viable and point.target_kw == optimum.target_kw else []
+        )
         # **표가 사실과 달라지는 자리다** (48세션). 목표를 못 지킨 줄에 목표만
         # 적어 두면 「210 kW · 저감 55 kW」 라 읽히는데 실제 요금적용전력은
         # 264 kW 다. 실제 값을 표식에 적어 그 어긋남을 표 안에서 닫는다.

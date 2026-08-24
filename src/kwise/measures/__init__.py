@@ -29,7 +29,14 @@ from kwise.measures.arbitrage import (
     default_cycles_per_day,
     peak_days_by_season,
 )
-from kwise.measures.base import Certainty, annualize, lowest_certainty, payback_years
+from kwise.measures.base import (
+    LARGEST_SAVING,
+    SHORTEST_PAYBACK,
+    Certainty,
+    annualize,
+    lowest_certainty,
+    payback_years,
+)
 from kwise.measures.catalog import (
     MEASURE_CATALOG,
     TIER_INVESTMENT,
@@ -163,6 +170,7 @@ __all__ = [
     "DR_ADVISORY",
     "ELIGIBILITY_NOTICE",
     "EXTERNAL_SCENARIO",
+    "LARGEST_SAVING",
     "MARGIN_NOTICE",
     "MEASURE_CATALOG",
     "NOT_VIABLE_CONCLUSION",
@@ -171,6 +179,7 @@ __all__ = [
     "PV_REFERENCE_NOTE",
     "PV_UNPRICED_REASON",
     "SCALE_ECONOMY_NOTE",
+    "SHORTEST_PAYBACK",
     "SPEC_TABLE_ROWS",
     "TIER_INVESTMENT",
     "TIER_LOW",

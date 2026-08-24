@@ -18,6 +18,7 @@ import pytest
 from kwise.io import UsageData
 from kwise.measures import (
     NOT_VIABLE_CONCLUSION,
+    SHORTEST_PAYBACK,
     SPEC_TABLE_ROWS,
     EssCostInput,
     EssCostReferenceError,
@@ -1163,7 +1164,7 @@ def test_사양_표가_최적을_가운데_두고_양쪽으로_벌린다(
     assert payback[-1] > payback[best_at]
 
     marks = list(frame["표식"])
-    assert "최적" in marks[best_at]
+    assert SHORTEST_PAYBACK in marks[best_at]
     # 최소 규모에 걸린 줄은 그 사실을 적는다 — 용량이 달라도 투자비가 같아진다.
     assert any("최소 규모" in mark for mark in marks)
 
@@ -1352,7 +1353,7 @@ def test_사양_표가_미달을_밝힌다() -> None:
     frame = frames.ess_spec_frame(optimum, baseline_demand_kw=264.68, market_minimum_kwh=100.0)
     marks = dict(zip(frame["목표 요금적용전력(kW)"], frame["표식"], strict=True))
     assert "목표 미달 (실제 264 kW)" in marks[210.0]
-    assert marks[230.0] == "최적"
+    assert marks[230.0] == SHORTEST_PAYBACK
     assert "마진 미달" in marks[250.0]
     assert "최소 규모" in marks[250.0]
 
@@ -1390,7 +1391,7 @@ def test_성립하는_점이_없으면_목표를_고르지_않는다(
         market_minimum_kwh=curve.market_minimum_kwh,
     )
     assert len(frame) == SPEC_TABLE_ROWS
-    assert "최적" not in " ".join(frame["표식"])
+    assert SHORTEST_PAYBACK not in " ".join(frame["표식"])
 
 
 def test_참고_지점은_곡선_전체에_벌려_잡는다(target_curve: EssTargetCurve) -> None:
