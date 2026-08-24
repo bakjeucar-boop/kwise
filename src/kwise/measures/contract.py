@@ -34,7 +34,7 @@ __all__ = [
     "evaluate_contract_adjustment",
 ]
 
-BASE_FEE_UNCHANGED = "기본요금 무변화"
+BASE_FEE_UNCHANGED = "기본요금 변화없음"
 """절감액 자리에 **0원 대신** 적는 결론 (48세션).
 
 「하향 여지 8 kW」 옆에 「0원」 이 서면 계산이 덜 된 것처럼 읽힌다. 둘은 다른
@@ -106,7 +106,7 @@ class ContractAdjustment:
 
         참이면 절감액 자리에 0원 대신 :data:`BASE_FEE_UNCHANGED` 를 적는다.
         하한 규정을 모르는 경우(``UNKNOWN``)는 여기 들지 않는다 — 그쪽은
-        「무변화」 가 아니라 「미산출」 이다.
+        「변화없음」 이 아니라 「미산출」 이다.
         """
         return (
             self.status is ContractStatus.CONFIRMED

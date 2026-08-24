@@ -242,7 +242,7 @@ def _contract_saving(contract: ContractAdjustment, value: float | None) -> str:
     """계약전력 조정의 절감액 칸 — **셋으로 갈린다** (48세션).
 
     미산출        하한 규정을 모른다
-    기본요금 무변화  하향 여지는 있는데 하한에 걸리지 않는다
+    기본요금 변화없음  하향 여지는 있는데 하한에 걸리지 않는다
     금액          실제로 준다
     """
     if value is None:

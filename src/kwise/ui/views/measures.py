@@ -441,7 +441,7 @@ def _contract(
     columns[0].metric("현행 계약전력", fmt.kw(result.contract_kw))
     columns[1].metric("권장", fmt.kw(result.suggested_contract_kw))
     columns[2].metric("하향 여지", fmt.kw(result.reduction_kw))
-    # **「0원」 이 아니라 「기본요금 무변화」 다** (48세션). 여지 8 kW 옆의 0원은
+    # **「0원」 이 아니라 「기본요금 변화없음」 이다** (48세션). 여지 8 kW 옆의 0원은
     # 계산이 덜 된 것처럼 읽힌다 — 둘은 다른 물음이고, 왜 안 바뀌는지는 아래
     # 근거(`contract.floor_not_binding`)가 이미 낸다. 문구를 새로 만들지 않았다.
     columns[3].metric(
