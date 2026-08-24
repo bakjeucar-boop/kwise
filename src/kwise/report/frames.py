@@ -22,10 +22,12 @@ from kwise.diagnose.dr import DrProfile
 from kwise.io import UsageData, slot_start
 from kwise.measures import (
     AREA_EXCEEDED,
+    MARGIN_SHORT,
     RECOMMENDED,
     SELECTED_CAPACITY,
     SHORTEST_PAYBACK,
     SPEC_TABLE_ROWS,
+    TARGET_MISSED,
     TIED_PAYBACK,
     CapacityVerdict,
     DispatchResult,
@@ -544,9 +546,9 @@ def ess_spec_frame(optimum: EssOptimum, *, baseline_demand_kw: float) -> pd.Data
         # 적어 두면 「210 kW · 저감 55 kW」 라 읽히는데 실제 요금적용전력은
         # 264 kW 다. 실제 값을 표식에 적어 그 어긋남을 표 안에서 닫는다.
         if not point.target_met:
-            labels.append(f"목표 미달 (실제 {point.achieved_demand_kw:,.0f} kW)")
+            labels.append(f"{TARGET_MISSED} (실제 {point.achieved_demand_kw:,.0f} kW)")
         elif not point.viable:
-            labels.append("마진 미달")
+            labels.append(MARGIN_SHORT)
         return " · ".join(labels)
 
     def span(bounds: tuple[float, float]) -> str:

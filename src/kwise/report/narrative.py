@@ -33,12 +33,17 @@ from kwise.diagnose.dr import DrProfile
 from kwise.diagnose.summary import PvPotential
 from kwise.quality import DEFAULT_NIGHT_HOURS, DEFAULT_OPERATING_HOURS, LoadPattern, QualityReport
 from kwise.rules import assumption
+from kwise.tariff import TariffTable
+from kwise.tariff.labels import season_label
 
 __all__ = [
+    "COMBINATION_LEAD",
     "FORMULA_SEPARATOR",
     "GLOSSARY_KEYS",
+    "SINGLE_MEASURE_LEAD",
     "Term",
     "base_fee_share_high",
+    "base_fee_share_low",
     "base_load_high",
     "building_lead",
     "combination_lead",
@@ -48,6 +53,8 @@ __all__ = [
     "measure_summary_lead",
     "pattern_lead",
     "peak_detail_lead",
+    "peak_month_close",
+    "peak_month_lead",
     "peak_summary_lead",
     "structure_lead",
     "surplus_lead",
@@ -80,6 +87,16 @@ def base_load_high() -> float:
 def base_fee_share_high() -> float:
     """이 위면 **기본요금 비중이 크다**고 본다. 피크 저감의 값어치가 크다."""
     return float(assumption("narrative.base_fee_share_high"))
+
+
+def base_fee_share_low() -> float:
+    """이 아래면 **기본요금 비중이 작다**고 본다 (53세션 4-6). 전력량요금을 먼저 본다."""
+    return float(assumption("narrative.base_fee_share_low"))
+
+
+def peak_month_close() -> float:
+    """으뜸 달과 다음 달의 차이가 이 안이면 **한 달이 아니라 계절**로 적는다."""
+    return float(assumption("narrative.peak_month_close"))
 
 
 def surplus_off_day_high() -> float:
@@ -267,22 +284,36 @@ def building_lead(quality: QualityReport | None) -> str:
     """
     if quality is None:
         return "업로드한 15분 실측 사용량으로 계산했습니다. 결측 구간은 보간하지 않았습니다."
-    worst = max(
-        (month for month in quality.monthly if month.missing_slots),
-        key=lambda month: month.ratio,
-        default=None,
-    )
     head = (
         f"결측 {_pct(quality.missing_ratio)}를 보간하지 않고 계산에서 뺐습니다."
         if quality.missing_slots
         else "결측이 없어 관측 전 구간으로 계산했습니다."
     )
-    if worst is not None and worst.ratio >= quality.missing_ratio * 2:
-        head += (
-            f" {worst.month} 은 {_pct(worst.ratio)}가 비어 그 달의 최대수요는 "
+    # **결측이 없으면 뒷문장이 없다.** 「그 달의 최대수요를 못 믿는다」 는 말은
+    # 실제로 빈 달이 있을 때만 적을 말이다.
+    heavy = sorted(
+        (
+            month
+            for month in quality.monthly
+            if month.missing_slots and month.ratio >= quality.missing_ratio * 2
+        ),
+        key=lambda month: month.ratio,
+        reverse=True,
+    )
+    if not heavy:
+        return head
+    worst = heavy[0]
+    if len(heavy) == 1:
+        return (
+            f"{head} {worst.month} 은 {_pct(worst.ratio)}가 비어 그 달의 최대수요는 "
             "낮게 잡혔을 수 있습니다."
         )
-    return head
+    # **여러 달이 높으면 달마다 적지 않는다** (53세션 4-1). 이름을 다 이어 붙이면
+    # 해석 한 줄이 세 줄로 흐른다 — 가장 심한 달과 개수만 적는다.
+    return (
+        f"{head} {worst.month} 등 {len(heavy)}개 달이 크게 비어 그 달들의 "
+        "최대수요는 낮게 잡혔을 수 있습니다."
+    )
 
 
 def pattern_lead(pattern: LoadPattern) -> str:
@@ -321,64 +352,234 @@ _PV_LEAD: dict[PvPotential, str] = {
 
 
 def peak_summary_lead(diagnosis: Diagnosis) -> str:
-    """5장 — **진단이 이미 내린 판정을 문장으로 바꾼다** (39세션 1-1).
+    """**53세션에 6장으로 옮겼다** — :func:`peak_detail_lead` 를 보라.
 
-    화면 「개선 여지 요약」 의 「태양광 피크 기여 가능성 높음/보통/낮음」 이
-    그것이고, 근거 숫자가 바로 아래 지표의 정오 비중이다.
+    39세션은 이 문장을 5장에 두었는데, 5장 그림은 **월별 최대수요**이고 문장은
+    **정오 비중**을 말해 둘이 어긋났다. 판정이 근거로 삼는 그림(상위 구간 시각
+    분포)은 6장에 있다. 자리를 옮기고 5장은 :func:`peak_month_lead` 가 받는다.
+
+    부르는 자리가 남아 있을 수 있어 함수는 둔다.
     """
     summary = diagnosis.summary
     share = f"{summary.pv_midday_share * 100:,.0f}%"
     return _PV_LEAD[summary.pv_potential].format(share=share)
 
 
-#: 6장 — **상위 구간을 왜 보는지.** 화면 그래프 툴팁에 있던 문장이다
+#: 계절 이름에 달 범위를 붙일 때 쓰는 꼴 — 「여름(6~8월)」.
+_SEASON_SPAN = "{label}({span}월)"
+
+
+def _season_span(table: TariffTable, season: str) -> str:
+    """계절 하나를 「여름(6~8월)」 로 (53세션 4-3③).
+
+    **달 목록을 여기서 짓지 않는다** — 요금표의 계절 정의를 그대로 읽는다
+    (``요금 데이터 하드코딩 금지``). 이어진 달이면 범위로, 끊기면 나열한다.
+    """
+    months = {month for month, key in table.month_seasons.items() if key == season}
+    if not months:
+        return season_label(season)
+    # **한 해를 넘어가는 계절이 있다.** 겨울은 11·12·1·2월이라 그냥 정렬하면
+    # 「1·2·11·12월」 이 된다 — 사람은 「11~2월」 로 읽고 쓴다.
+    starts = [month for month in months if _previous_month(month) not in months]
+    if len(starts) == 1:
+        start = starts[0]
+        walk = [start]
+        while len(walk) < len(months):
+            walk.append(_next_month(walk[-1]))
+        span = f"{walk[0]}~{walk[-1]}" if set(walk) == months else ""
+    else:
+        span = ""
+    if not span:
+        span = "·".join(str(month) for month in sorted(months))
+    return _SEASON_SPAN.format(label=season_label(season), span=span)
+
+
+def _previous_month(month: int) -> int:
+    return 12 if month == 1 else month - 1
+
+
+def _next_month(month: int) -> int:
+    return 1 if month == 12 else month + 1
+
+
+def peak_month_lead(
+    diagnosis: Diagnosis,
+    quality: QualityReport | None = None,
+    table: TariffTable | None = None,
+) -> str:
+    """5장 — **월별 최대수요 그림이 말하는 것** (53세션 4-3).
+
+    39세션은 이 자리에 정오 비중 판정을 적었는데 **그림은 월별 최대수요**였다.
+    그림과 문장이 다른 것을 말하면 읽는 사람이 둘을 잇지 못한다.
+
+    **세 가지로 갈린다.** 어느 것도 이 건물 값에 맞춘 고정 문장이 아니다.
+
+        ② 신뢰 제한   으뜸 달의 결측이 많으면 **그 달을 근거로 쓰지 않는다.**
+                     사실을 밝히고 결측이 적은 달 가운데 으뜸을 함께 적는다
+        ① 비대상월    3~6·10~11월 피크는 다음 달로 이월되지 않는다. 그러면
+                     요금적용전력을 **실제로 정한 달**을 함께 적는다
+        ③ 계절       다음 달과 차이가 :func:`peak_month_close` 안이면 한 달을
+                     짚지 않는다 — 「여름(6~8월)」 처럼 계절로 적는다
+
+    셋 다 아니면 기본 문장이다. 차례는 **먼저 걸리는 것이 이긴다** — 못 믿을 달을
+    두고 계절 이야기를 하는 것은 앞뒤가 바뀐 것이다.
+    """
+    peak = diagnosis.peak
+    demands = peak.monthly["max_demand_kw"].dropna().sort_values(ascending=False)
+    if demands.empty:
+        return "월별 최대수요를 산출하지 못했습니다."
+    top = demands.index[0]
+    tail = "이 시기에 요금적용전력이 결정됩니다."
+
+    # ② 신뢰 제한 — **못 믿을 달을 근거로 세우지 않는다.**
+    flagged = {month.month for month in quality.flagged_months} if quality is not None else set()
+    if top in flagged:
+        clean = [month for month in demands.index if month not in flagged]
+        head = f"{top.month}월에 최대수요가 가장 높으나 그 달은 결측이 많아 신뢰가 제한됩니다."
+        if not clean:
+            return f"{head} 다른 달도 사정이 같습니다."
+        return f"{head} 결측이 적은 달 가운데는 {clean[0].month}월이 가장 높습니다."
+
+    # ① 대상월이 아니면 그 피크는 이월되지 않는다.
+    if top.month not in peak.demand_months:
+        basis = peak.monthly["demand_basis_kw"]
+        carried = [month for month in basis.index if month.month in peak.demand_months]
+        if carried:
+            decider = max(carried, key=lambda month: float(basis[month]))
+            return (
+                f"{top.month}월에 최대수요가 가장 높으나 그 달의 피크는 다음 달로 "
+                f"이월되지 않아, 요금적용전력은 {decider.month}월 값으로 결정됩니다."
+            )
+        return (
+            f"{top.month}월에 최대수요가 가장 높으나 그 달의 피크는 다음 달로 "
+            "이월되지 않아, 요금적용전력은 그 달에만 적용됩니다."
+        )
+
+    # ③ 다음 달과 차이가 작으면 한 달을 짚지 않는다.
+    if table is not None and len(demands) > 1:
+        second = demands.index[1]
+        gap = (float(demands.iloc[0]) - float(demands.iloc[1])) / float(demands.iloc[0] or 1.0)
+        season = table.season_of(top.month)
+        if gap <= peak_month_close() and table.season_of(second.month) == season:
+            return f"{_season_span(table, season)}에 최대수요가 높고, {tail}"
+    return f"{top.month}월에 최대수요가 가장 높고, {tail}"
+
+
+#: 6장 앞문장 — **상위 구간을 왜 보는지.** 화면 그래프 툴팁에 있던 문장이다
 #: (``chart.top_hour``). 슬라이드에는 물음표를 달 자리가 없어 본문으로 낸다.
 PEAK_DETAIL_LEAD = (
-    "최대수요 상위 구간이 하루 중 언제 발생했는지 봅니다. "
-    "낮에 몰리면 태양광이, 밤에 몰리면 ESS 가 피크를 낮춥니다."
+    "최대수요 상위 구간은 낮에 몰리면 태양광이, 밤에 몰리면 ESS 가 피크를 낮춥니다."
 )
 
 
 def peak_detail_lead(diagnosis: Diagnosis) -> str:
-    """6장 — 고정 문장에 **구간 수만** 채운다."""
-    return PEAK_DETAIL_LEAD.replace("상위 구간", f"상위 {diagnosis.peak.top_n}구간", 1)
+    """6장 — **설명 뒤에 판정이 온다** (53세션 4-4).
+
+    39세션까지는 「무엇을 보는 그림인가」 만 적고 **이 건물이 어느 쪽인지는 적지
+    않았다.** 그림 둘을 보고 읽는 사람이 스스로 세어야 했다.
+
+    뒷문장은 **진단이 이미 내린 판정**을 옮긴다 — 화면 「개선 여지 요약」 의
+    「태양광 피크 기여 가능성 높음/보통/낮음」 이고, 39세션이 5장에 두었던
+    바로 그 문장이다. 그림(상위 구간 시각 분포)이 여기 있으므로 판정도 여기
+    온다. **PPT 가 제 문구를 따로 적지 않는다.**
+    """
+    head = PEAK_DETAIL_LEAD.replace("상위 구간", f"상위 {diagnosis.peak.top_n}구간", 1)
+    return f"{head} {peak_summary_lead(diagnosis)}"
 
 
 def structure_lead(structure: ChargeStructure) -> str:
-    """7장 — **기본요금 비중으로 갈린다.** 피크 저감의 값어치가 여기서 정해진다."""
+    """7장 — **기본요금 비중으로 세 갈래** (53세션 4-6).
+
+    39세션은 둘로만 갈랐다 — 「크다」 아니면 「작다」. 그런데 스물몇 퍼센트인
+    건물은 어느 쪽도 아니고, 둘 중 하나를 고르게 하면 **가운데 자료에서 한쪽을
+    권하는 문장이 나온다.** 가운데를 가운데라고 적는 갈래를 뒀다.
+
+        낮음   :func:`base_fee_share_low` 미만 — 전력량요금 쪽을 먼저
+        가운데  그 사이 — 둘을 같이
+        높음   :func:`base_fee_share_high` 초과 — 최대수요를 먼저
+    """
     base_won = structure.base_won + structure.bill.total_power_factor_won
     total = structure.total_won
     if not total:
         return "요금 구성을 산출하지 못했습니다."
     share = base_won / total
-    if share >= base_fee_share_high():
-        return f"요금의 {_pct(share)}가 기본요금이라 피크를 낮추는 수단의 값어치가 큽니다."
+    if share > base_fee_share_high():
+        return (
+            f"기본요금이 {_pct(share)}로 큽니다 — "
+            "최대수요를 낮추는 방안을 먼저 검토합니다."
+        )
+    if share >= base_fee_share_low():
+        return (
+            f"기본요금 {_pct(share)}와 전력량요금이 함께 큽니다 — "
+            "피크 저감과 사용량 절감을 같이 검토합니다."
+        )
     return (
-        f"요금의 {_pct(share)}만 기본요금이고 나머지는 쓴 양에 붙습니다 — "
-        "단가가 낮은 시간대로 옮기거나 사용량을 줄이는 쪽을 먼저 봅니다."
+        f"전체 요금 중 기본요금은 {_pct(share)}이며 나머지는 전력량요금입니다 — "
+        "단가가 낮은 시간대로 부하를 옮기거나 사용량을 줄이는 방안을 먼저 검토합니다."
     )
+
+
+#: 투자 없이 되는 수단의 이름. **금액이 붙는 것만 근거로 든다** (53세션 4-7).
+_FREE_MEASURE_LABELS: tuple[tuple[str, str], ...] = (
+    ("tariff_switch_saving_won", "요금제 전환"),
+    ("contract_saving_won", "계약전력 조정"),
+)
 
 
 def measure_summary_lead(diagnosis: Diagnosis, saving_text: str) -> str:
     """8장 — **투자 없이 가능한 절감액이 먼저다** (39세션 6-1).
 
-    화면 1단계 맨 위에 있는 숫자인데 슬라이드에 없었다. 고객이 가장 먼저 보고
-    싶은 값이고, 개선 수단이 처음 나오는 이 장이 그 자리다.
+    **근거로 드는 수단이 사실과 같아야 한다** (53세션 4-7). 39세션은 「요금제와
+    계약전력 조정입니다」 를 고정으로 적었는데, 대형 자료의 계약전력 조정은
+    **0원**이다 — 5,358만원을 낸 것은 요금제 하나뿐인데 둘이 낸 것처럼 읽혔다.
+
+    **0 이거나 미산출인 수단은 근거에서 뺀다.** 여럿이면 절감액 순으로 둘까지만
+    적는다 — 셋을 이어 적으면 해석 한 줄이 두 줄로 흐른다.
     """
     summary = diagnosis.summary
-    if summary.no_investment_saving_won > 0:
-        return f"설비 투자 없이 {saving_text}을 줄일 수 있습니다 — 요금제와 계약전력 조정입니다."
-    return "설비 투자 없이 줄일 수 있는 몫은 없습니다 — 현행 요금제와 계약전력이 이미 적정합니다."
+    priced = sorted(
+        (
+            (float(getattr(summary, field) or 0.0), label)
+            for field, label in _FREE_MEASURE_LABELS
+            if (getattr(summary, field) or 0.0) > 0
+        ),
+        reverse=True,
+    )
+    if not priced:
+        # **투자 없는 수단이 하나도 절감을 못 내면 문장이 달라야 한다.**
+        return (
+            "설비 투자 없이 줄일 수 있는 몫은 없습니다 — "
+            "현행 요금제와 계약전력이 이미 적정합니다."
+        )
+    names = " · ".join(label for _won, label in priced[:2])
+    return f"설비 투자 없이 {saving_text}을 줄일 수 있습니다 — {names}입니다."
 
 
-#: 16장 — **조합은 다시 계산한다.** 캡션에 있던 사실을 해석 줄로 올렸다.
+#: 조합 장 — **조합은 다시 계산한다.** 캡션에 있던 사실을 해석 줄로 올렸다.
 COMBINATION_LEAD = (
     "조합마다 요금을 처음부터 다시 계산했습니다. "
     "수단을 함께 쓰면 효과가 겹치므로 개별 절감액의 단순 합이 아닙니다."
 )
 
+#: 수단이 하나뿐일 때 (53세션 4-14). **겹칠 것이 없다.**
+#:
+#: 「수단을 함께 쓰면 효과가 겹치므로」 는 조건절이라 거짓은 아니지만, 겹칠
+#: 것이 하나도 없는 덱에서 **겹침을 설명하는 것은 없는 이야기를 하는 것**이다.
+SINGLE_MEASURE_LEAD = (
+    "켠 수단이 하나라 겹치는 효과가 없습니다. "
+    "그래도 요금은 처음부터 다시 계산했습니다."
+)
 
-def combination_lead() -> str:
+
+def combination_lead(comparison: object | None = None) -> str:
+    """조합 장 해석 한 줄. **수단 수로 갈린다** (53세션 4-14).
+
+    ``comparison`` 을 주지 않으면 여러 수단을 전제한 문장을 낸다 — 옛 부름을
+    깨지 않으려는 것이고, 슬라이드는 언제나 넘긴다.
+    """
+    combinations = getattr(comparison, "combinations", None)
+    if combinations is not None and len(combinations) <= 2:
+        return SINGLE_MEASURE_LEAD
     return COMBINATION_LEAD
 
 
@@ -406,6 +607,14 @@ def dr_lead(profile: DrProfile | None) -> str:
         return (
             f"거래 가능일 {profile.eligible_days:,}일 가운데 부하가 쉬는 날 수준까지 "
             "내려오는 평일이 없어 추가로 줄일 여지가 없습니다."
+        )
+    # **「245일 가운데 245일만」 은 성립하지 않는다** (53세션 4-10). 평탄한 부하
+    # (C3)에서는 거래 가능일이 전부 저부하로 잡힌다 — 「만」 은 적다는 뜻이라
+    # 사실과 반대로 읽힌다.
+    if len(profile.low_load_days) >= profile.eligible_days:
+        return (
+            f"거래 가능일 {profile.eligible_days:,}일 전부가 부하가 쉬는 날 수준까지 "
+            "내려옵니다 — 어느 날에도 감축을 입찰할 수 있습니다."
         )
     return (
         f"거래 가능일 {profile.eligible_days:,}일 가운데 "

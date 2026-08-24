@@ -1191,16 +1191,23 @@ def _build_peak_summary(
 ) -> None:
     """피크특성 (1/2) — **지표 셋과 월별 최대수요** (38세션 2-2).
 
-    **정오 비중이 태양광 판정의 근거다.** 36세션의 덱에는 이 숫자가 없어 상위
-    구간 그래프만 덩그러니 서 있었다 — 그림이 무엇을 말하는지 읽는 사람이
-    스스로 세어야 했다.
+    **해석 한 줄이 그림과 같은 것을 말한다** (53세션 4-3). 39세션은 여기에 정오
+    비중 판정을 적었는데 그림은 월별 최대수요였다 — 문장과 그림이 다른 것을
+    말하면 읽는 사람이 둘을 잇지 못한다. 판정은 그 근거 그림이 있는 6장으로
+    옮겼다.
     """
     geometry = guide.slide
     top = _title(slide, guide, spec.title)
     diagnosis = sections.diagnosis
     if diagnosis is None:  # pragma: no cover
         return
-    top = _lead(slide, guide, narrative.peak_summary_lead(diagnosis), top=top)
+    quality = diagnosis.quality
+    top = _lead(
+        slide,
+        guide,
+        narrative.peak_month_lead(diagnosis, quality, sections.tariff_table),
+        top=top,
+    )
     bottom = _stats(
         slide,
         guide,
@@ -1242,15 +1249,18 @@ def _build_peak_detail(
     gap = geometry.block_gap_in
     half = (geometry.content_width_in - gap) / 2
     height = _body_bottom(guide, note=False) - top
+    # **문장이 말하는 그림이 왼쪽이다** (53세션 4-5). 해석 한 줄이 「상위 ○○구간」
+    # 을 말하는데 그 그림이 오른쪽에 있어, 읽는 눈이 문장에서 오른쪽으로 건너뛴
+    # 뒤 다시 왼쪽으로 돌아와야 했다.
     for index, (png, caption) in enumerate(
         (
             (
-                figures.hourly_profile_png(peak, size=HALF_FIGURE),
-                "하루 24시간의 평균 부하 모양",
-            ),
-            (
                 figures.top_hour_png(peak, size=HALF_FIGURE_WITH_LEGEND),
                 f"최대수요 상위 {peak.top_n}구간이 발생한 시각",
+            ),
+            (
+                figures.hourly_profile_png(peak, size=HALF_FIGURE),
+                "하루 24시간의 평균 부하 모양",
             ),
         )
     ):
@@ -1504,7 +1514,7 @@ _SPEC_ROW_HEIGHT = 0.28
 #: 비우면 표가 그 자리를 받아 마지막 줄이 캡션에 닿지 않는다.
 _MIN_FIGURE_BLOCK = 1.02
 
-#: 사양 표 아래 참고 한 줄이 먹는 높이 (in).
+#: 사양 표 아래 참고 **한 줄**이 먹는 높이 (in). 줄 수만큼 곱한다.
 _SPEC_CAPTION_HEIGHT = 0.24
 
 #: 수단 장 본문 아래에 남기는 숨 (in) (53세션 2절).
@@ -1584,7 +1594,11 @@ def _spec_block(
     """
     geometry = guide.slide
     gap = geometry.block_gap_in
-    caption_height = _SPEC_CAPTION_HEIGHT if entry.spec_caption else 0.0
+    # **표식의 뜻도 표 바로 아래가 자리다** (53세션 4-13). 슬라이드 맨 아래
+    # 각주로 내리면 :func:`_body_bottom` 이 0.58in 을 통째로 예약해 **그림이
+    # 자리를 잃는다** — 표를 읽는 데 바로 쓰이는 글이라 표에 붙인다.
+    lines = [mark_note(line) for line in (entry.spec_caption, entry.spec_note) if line]
+    caption_height = _SPEC_CAPTION_HEIGHT * len(lines)
     wanted = _SPEC_ROW_HEIGHT * _spec_lines(
         entry.spec_table,
         width=geometry.content_width_in,
@@ -1592,7 +1606,7 @@ def _spec_block(
     )
     # **그림이 들어갈 자리가 남는가**로 갈린다. 남지 않으면 그림을 빼고 표가
     # 남은 높이를 다 쓴다 — 상한은 그 자리다.
-    gap = gap / 2 if entry.spec_caption else gap
+    gap = gap / 2 if lines else gap
     room = height - wanted - caption_height - gap
     if room < _MIN_FIGURE_BLOCK:
         drawings = ()
@@ -1610,17 +1624,18 @@ def _spec_block(
         widths=_spec_widths(len(entry.spec_table[0])),
     )
     used = wanted
-    if entry.spec_caption:
+    if lines:
         _text(
             slide,
             guide,
-            [mark_note(entry.spec_caption)],
+            lines,
             left=geometry.margin_in,
             top=top + used,
             width=geometry.content_width_in,
             height=caption_height,
             size=guide.type_scale.caption,
             color=guide.colors.muted,
+            spacing=1.0,
         )
         used += caption_height
     # **표와 그림 사이는 반 칸이다.** 참고 한 줄이 이미 둘을 가르므로 온 칸을
@@ -1676,16 +1691,24 @@ def _build_measure(
     body = bottom + geometry.block_gap_in
     height = _body_bottom(guide, note=bool(note)) - body - _BODY_TAIL
     drawings = entry.slide_figures
+    crowded = False
     if entry.spec_table:
         body, height, drawings = _spec_block(
             slide, guide, entry, drawings, top=body, height=height
         )
+        # **표가 자리를 다 썼으면 그것으로 끝이다** (53세션 2절·4-13). 남은
+        # 틈에 주의사항 표를 밀어 넣으면 결론이 이미 한 말을 되풀이하면서
+        # 줄이 눌린다 — ESS 가 그랬다.
+        crowded = bool(entry.slide_figures) and not drawings
     if drawings and height > _MIN_FIGURE_BLOCK:
         _measure_pictures(slide, guide, drawings, top=body, height=height)
         _note(slide, guide, note)
         return
     # **여지가 없는 수단은 그 사실을 숫자로 보인다** (39세션 4-2·4-3). 실행
     # 주의사항 대신 「왜 없는지」 를 세우는 자리다.
+    if crowded:
+        _note(slide, guide, note)
+        return
     if not entry.actionable and entry.facts:
         _stats(
             slide,
@@ -1785,8 +1808,8 @@ def _build_combination(
     colors = guide.colors
     scale = guide.type_scale
     top = _title(slide, guide, spec.title)
-    top = _lead(slide, guide, narrative.combination_lead(), top=top)
     comparison = sections.comparison
+    top = _lead(slide, guide, narrative.combination_lead(comparison), top=top)
     gap = geometry.block_gap_in
     half = (geometry.content_width_in - gap) / 2
     right_left = geometry.margin_in + half + gap

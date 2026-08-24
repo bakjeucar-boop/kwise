@@ -53,6 +53,7 @@ from kwise.measures import (
     TariffSwitchResult,
     measure_kind,
     payback_text,
+    spec_mark_note,
 )
 from kwise.measures import surplus as surplus_module
 from kwise.notices import Notice, Severity, report_appendix, report_body, texts
@@ -69,6 +70,7 @@ from kwise.report.notices import (
 )
 from kwise.report.worksheet import COLUMNS, Worksheet
 from kwise.tariff import BillingResult, TariffTable
+from kwise.tariff.power_factor import lagging_standard_pct
 
 __all__ = [
     "CHAPTER_COMPARISON",
@@ -194,6 +196,12 @@ class MeasureEntry:
     표가 있으면 그림은 표 아래로 내려간다. Word 는 절 안에 그대로 쌓는다."""
     spec_caption: str = ""
     """표 아래 한 줄. 화면 캡션과 **같은 문장이다.**"""
+    spec_note: str = ""
+    """표에 붙은 **표식의 뜻** 한 줄 (53세션 4-13).
+
+    대형 자료의 사양 표에 「마진 미달」 이 셋인데 덱 어디에도 그 뜻이 없었다.
+    :func:`~kwise.measures.spec_mark_note` 가 **표에 실제로 붙은 표식만** 골라
+    적는다 — 셋을 늘 깔면 없는 표식을 설명하게 된다."""
 
     @property
     def slide_saving(self) -> str:
@@ -269,6 +277,85 @@ def _contract_saving(contract: ContractAdjustment, value: float | None) -> str:
     if contract.base_fee_unchanged:
         return f"{BASE_FEE_UNCHANGED} — {contract.saving_basis}"
     return _won(value)
+
+
+#: ESS 결론의 앞부분. **「회수기간이 가장 짧은 지점」 은 그대로 둔다** —
+#: 자료 여덟에서 확인했다 (52세션 2절).
+_ESS_TARGET_SENTENCE = "회수기간이 가장 짧은 지점을 목표로 잡았습니다."
+
+
+def _ess_conclusion(ess: EssResult) -> str:
+    """ESS 결론 — **성립하지 않으면 그 말을 붙인다** (53세션 4-13).
+
+    「회수기간이 가장 짧은 지점을 목표로 잡았습니다」 는 맞다. 그런데 대형
+    자료의 31.7년은 **배터리 보증 수명의 세 배**이고, 그 사실이 결론 어디에도
+    없었다 — 「가장 짧다」 만 읽으면 성립하는 안으로 보인다.
+
+    **문장을 새로 짓지 않는다.** 계산이 이미 낸 경고
+    (``ess.payback_over_warranty``)를 그대로 옮긴다 — 수명 값도 판정도 거기
+    하나가 쥔다. 슬라이드는 주의사항 표를 그리지 않으므로(그림이 그 자리를
+    쓴다) 이 경고가 덱에서 통째로 빠지고 있었다.
+    """
+    head = (
+        f"피크를 {ess.excess.target_kw:,.0f} kW 까지 낮추려면 ESS "
+        f"{ess.power_kw:,.0f} kW / {ess.capacity_kwh:,.0f} kWh 가 필요합니다. "
+        f"{_ESS_TARGET_SENTENCE}"
+    )
+    warranty = _notice_text(ess.notices, "ess.payback_over_warranty")
+    return f"{head} {warranty}" if warranty else head
+
+
+def _power_factor_conclusion(result: PowerFactorResult) -> str:
+    """역률 결론 — **세 갈래다** (53세션 4-11).
+
+    39세션까지는 「올리면 ○○원 줄어듭니다」 하나였다. 그런데 **현재 역률이
+    기준에 못 미치면 그것은 감액이 아니라 추가요금 회피**다 — 이미 나가고 있는
+    돈을 안 나가게 하는 것이라 성격이 다르다. 계산은 그 사실을 알고 있었다
+    (:attr:`~kwise.measures.PowerFactorResult.is_penalty_removal`).
+
+        추가요금   기준 미달. 없애는 쪽이 감액보다 금액이 크다
+        감액       기준 이상에서 더 올린다
+        여지 없음  목표가 현재보다 높지 않다 (이미 상한이거나 내리는 쪽)
+    """
+    current = f"{result.current_pct:,.0f}%"
+    target = f"{result.target_pct:,.0f}%"
+    if result.improvement_pct <= 0:
+        return f"지상역률 {current} 에서 목표 {target} 로 올릴 여지가 없습니다."
+    if result.is_penalty_removal:
+        standard = f"{lagging_standard_pct():,.0f}%"
+        return (
+            f"지상역률 {current} 는 기준 {standard} 에 못 미쳐 기본요금에 추가요금이 "
+            f"붙습니다. {target} 로 올리면 추가요금이 없어지고 감액을 받아 "
+            f"{_won(result.saving_won)} 줄어듭니다."
+        )
+    return f"지상역률을 {current} → {target} 로 올리면 {_won(result.saving_won)} 줄어듭니다."
+
+
+def _contract_conclusion(contract: ContractAdjustment) -> str:
+    """계약전력 결론 — **세 갈래다** (53세션 4-9).
+
+    39세션까지는 둘이었다 — 「하향 여지 있음」 과 「적정」. 그런데 **계약전력을
+    넘긴 자료**에서는 둘 다 거짓이다: 하향할 여지도 없고 적정하지도 않다.
+    계산은 그 사실을 이미 알고 있었다 (``contract.over_limit`` 경고) — 결론
+    문장만 그것을 안 읽고 있었다.
+
+        초과 위약   계약전력을 넘은 구간이 있다. **상향을 검토할 자리다**
+        하향 여지   요금적용전력에 여유가 있다
+        적정        여유가 하한 규정 안이라 낮출 것이 없다
+    """
+    if contract.over_contract_slots:
+        return (
+            f"계약전력 {contract.contract_kw:,.0f} kW 를 넘은 구간이 "
+            f"{contract.over_contract_slots:,}건 있어 초과 위약 검토 대상입니다. "
+            "하향이 아니라 상향을 검토해야 합니다."
+        )
+    if contract.is_over_contracted:
+        return (
+            f"계약전력을 {contract.contract_kw:,.0f} → "
+            f"{contract.suggested_contract_kw:,.0f} kW 로 낮출 여지가 "
+            f"{contract.reduction_kw:,.0f} kW 있습니다."
+        )
+    return f"계약전력 {contract.contract_kw:,.0f} kW 는 적정합니다. 하향 여지가 없습니다."
 
 
 def _shortest_discharge_hours(curve: EssTargetCurve) -> float:
@@ -368,7 +455,11 @@ def _dr_conclusion(result: DemandResponseResult, profile: DrProfile | None) -> s
 
 
 def _solar_conclusion(
-    solar: SolarPoint, surplus_free_kwp: float | None, area_m2: float | None
+    solar: SolarPoint,
+    surplus_free_kwp: float | None,
+    area_m2: float | None,
+    *,
+    surplus_page_follows: bool = False,
 ) -> str:
     """태양광 결론 한 줄 (39세션 3-1).
 
@@ -382,21 +473,29 @@ def _solar_conclusion(
     얼마나 생기는지도 말하지 않았다. **얼마가 남는지가 용량을 정하는 판단
     재료다.** 자리는 그대로 쓰고 말만 바꾼다 — 문구를 늘리지 않는다.
     """
-    head = (
+    parts = [
         f"태양광 {solar.capacity_kwp:,.0f} kWp 를 설치하면 연 "
         f"{solar.generation_kwh:,.0f} kWh 를 발전해 "
         f"{_won(solar.total_saving_won)} 줄어듭니다."
-    )
-    tail: list[str] = []
+    ]
+    # **면적 상한과 자가소비 한계를 같은 층위로 나열하지 않는다** (53세션 4-12).
+    # 51세션까지는 「(설치 면적 2,000 m² · 2,038 kWp 까지는 전량 자가소비)」 였는데,
+    # **2,038 kWp 를 지을 수 있는 것처럼 읽힌다** — 지을 수 있는 것은 160 kWp 다.
+    # 하나는 실제 상한이고 하나는 참고값이므로 문장을 나눈다.
     if area_m2:
-        tail.append(f"설치 면적 {area_m2:,.0f} m²")
+        parts.append(f"설치 가능 면적 {area_m2:,.0f} m² 가 허용하는 상한입니다.")
     if surplus_free_kwp is not None and surplus_free_kwp > 0:
         if solar.capacity_kwp > surplus_free_kwp + 1e-9:
-            tail.append(f"자가소비 한계 {surplus_free_kwp:,.0f} kWp")
-            tail.append(f"잉여 {solar.surplus_kwh:,.0f} kWh")
+            tail = f"잉여 없이 지을 수 있는 것은 {surplus_free_kwp:,.0f} kWp 까지입니다."
+            # **잉여량은 다음 장이 다룬다** (53세션 3절·4-12). 잉여 활용 장이
+            # 생기지 않는 경우에만 여기서 얼마가 남는지 적는다 — 그 수는
+            # 용량을 정하는 판단 재료라 어디엔가는 있어야 한다 (51세션 3절).
+            if not surplus_page_follows:
+                tail += f" 이 용량에서는 {solar.surplus_kwh:,.0f} kWh 가 남습니다."
+            parts.append(tail)
         else:
-            tail.append(f"{surplus_free_kwp:,.0f} kWp 까지는 전량 자가소비")
-    return f"{head} ({' · '.join(tail)})" if tail else head
+            parts.append("이 용량에서는 발전량이 전부 자가소비됩니다.")
+    return " ".join(parts)
 
 
 # ===================================================================== 잉여 활용 한 장
@@ -592,13 +691,7 @@ def measure_entries(
     if contract is not None:
         entries["contract"] = MeasureEntry(
             kind=measure_kind("contract"),
-            conclusion=(
-                f"계약전력을 {contract.contract_kw:,.0f} → "
-                f"{contract.suggested_contract_kw:,.0f} kW 로 낮출 여지가 "
-                f"{contract.reduction_kw:,.0f} kW 있습니다."
-                if contract.is_over_contracted
-                else f"계약전력 {contract.contract_kw:,.0f} kW 는 적정합니다. 하향 여지가 없습니다."
-            ),
+            conclusion=_contract_conclusion(contract),
             # **0원이 아니라 결론이다** (48세션). 하향 여지가 있는데 기본요금이
             # 안 바뀌는 자리는 「0원」 이 계산이 덜 된 것처럼 읽힌다 — 화면과
             # 같은 말을 쓴다.
@@ -670,11 +763,7 @@ def measure_entries(
         )
         entries["power_factor"] = MeasureEntry(
             kind=measure_kind("power_factor"),
-            conclusion=(
-                f"지상역률을 {power_factor.current_pct:,.0f}% → "
-                f"{power_factor.target_pct:,.0f}% 로 올리면 "
-                f"{_won(power_factor.saving_won)} 줄어듭니다."
-            ),
+            conclusion=_power_factor_conclusion(power_factor),
             saving=_measure_saving(power_factor.annual_saving_won, power_factor.saving_won),
             saving_annual=_annual_saving(power_factor.annual_saving_won, power_factor.saving_won),
             has_saving=bool(power_factor.saving_won),
@@ -741,7 +830,13 @@ def measure_entries(
             surplus_note = ""
         entries["solar"] = MeasureEntry(
             kind=measure_kind("solar"),
-            conclusion=_solar_conclusion(solar, surplus_free_kwp, area_m2),
+            conclusion=_solar_conclusion(
+                solar,
+                surplus_free_kwp,
+                area_m2,
+                # 잉여가 나면 **「잉여 활용」 장이 뒤따른다** (53세션 3-1).
+                surplus_page_follows=surplus is not None and surplus.total_kwh > 0,
+            ),
             saving=_measure_saving(solar.annual_saving_won, solar.total_saving_won),
             saving_annual=_annual_saving(solar.annual_saving_won, solar.total_saving_won),
             has_saving=bool(solar.total_saving_won),
@@ -798,11 +893,7 @@ def measure_entries(
         )
         entries["ess"] = MeasureEntry(
             kind=measure_kind("ess"),
-            conclusion=(
-                f"피크를 {ess.excess.target_kw:,.0f} kW 까지 낮추려면 ESS "
-                f"{ess.power_kw:,.0f} kW / {ess.capacity_kwh:,.0f} kWh 가 필요합니다. "
-                "회수기간이 가장 짧은 지점을 목표로 잡았습니다."
-            ),
+            conclusion=_ess_conclusion(ess),
             saving=_measure_saving(ess.annual_saving_won, ess.total_saving_won),
             saving_annual=_annual_saving(ess.annual_saving_won, ess.total_saving_won),
             has_saving=bool(ess.total_saving_won),
@@ -819,6 +910,7 @@ def measure_entries(
             figures=_pair((ess_day, _ESS_DAY_CAPTION)),
             spec_table=ess_table,
             spec_caption=frames.ESS_SPEC_CAPTION,
+            spec_note=spec_mark_note(row[-1] for row in ess_table[1:]),
         )
     elif ess_optimum is not None and ess_optimum.below_minimum and ess_curve is not None:
         # **최소 규격에 못 미치면 사양 표를 싣지 않는다** (50세션 3-3). 회수기간도

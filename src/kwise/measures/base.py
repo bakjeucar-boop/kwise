@@ -16,11 +16,14 @@ __all__ = [
     "AREA_EXCEEDED",
     "CAPACITY_MARKS",
     "LARGEST_SAVING",
+    "MARGIN_SHORT",
     "RECOMMENDED",
     "SELECTED_CAPACITY",
     "SHORTEST_PAYBACK",
+    "SPEC_MARKS",
     "SURPLUS_HEAVY",
     "SURPLUS_ONSET",
+    "TARGET_MISSED",
     "TIED_PAYBACK",
     "Certainty",
     "Mark",
@@ -28,6 +31,8 @@ __all__ = [
     "lowest_certainty",
     "mark_meaning",
     "payback_years",
+    "spec_mark_meaning",
+    "spec_mark_note",
 ]
 
 SHORTEST_PAYBACK = "최단 회수기간"
@@ -140,6 +145,63 @@ CAPACITY_MARKS: tuple[Mark, ...] = (
 「동률」·「면적 초과」 는 이 넷에 들지 않는다 — **줄을 고르는 사실이 아니라 그
 줄을 읽는 데 붙는 단서**이고, 문구가 그 둘을 인용하는 자리는 없다.
 """
+
+
+TARGET_MISSED = "목표 미달"
+"""디스패치가 목표를 못 지킨 줄 (48세션). **표식에 실제 값을 함께 적는다.**"""
+
+MARGIN_SHORT = "마진 미달"
+"""kW당 배터리비가 목표연수 절감액을 넘는 줄 (48세션).
+
+규모를 어떻게 잡아도 회수되지 않는다 — :func:`~kwise.measures.ess.viable_discharge_hours`.
+"""
+
+SPEC_MARKS: tuple[Mark, ...] = (
+    Mark(SHORTEST_PAYBACK, "회수기간이 가장 짧은 줄"),
+    Mark(TARGET_MISSED, "디스패치가 목표를 못 지킨 줄 — 실제 요금적용전력을 함께 적었습니다"),
+    Mark(
+        MARGIN_SHORT,
+        "어떤 규모로도 보증 수명 안에 회수되지 않는 줄",
+    ),
+)
+"""ESS **목표별 사양 표** 표식 셋의 뜻 (53세션 4-13).
+
+용량 표(:data:`CAPACITY_MARKS`)와 **같은 규약이다** — 이름 옆에 뜻을 둔다.
+52세션이 태양광에서 배운 것을 ESS 에도 적용한 것이다: 뜻이 도크스트링에만
+있으면 문구를 쓰는 자리에서 읽을 수 없다. 대형 자료의 표에 「마진 미달」 이
+셋인데 **덱 어디에도 그 뜻이 없었다.**
+
+**「목표 미달」 은 접두사로 맞춘다** — 표식이 「목표 미달 (실제 5,264 kW)」 처럼
+값을 달고 나오기 때문이다.
+"""
+
+
+def spec_mark_meaning(label: str) -> str:
+    """ESS 표식의 뜻 한 줄. **값이 붙은 표식도 알아본다.**"""
+    for mark in SPEC_MARKS:
+        if label == mark.label or label.startswith(f"{mark.label} "):
+            return mark.means
+    raise KeyError(f"뜻이 정의되지 않은 표식입니다: {label!r}")
+
+
+def spec_mark_note(labels: Iterable[str]) -> str:
+    """표에 **실제로 붙은** 표식만 골라 각주 한 줄로 (53세션 4-13).
+
+    셋을 늘 깔면 없는 표식을 설명하게 된다 — 39세션이 용어 풀이에서 세운
+    규약과 같다 (「그 장에 나오는 것만 고른다」).
+    """
+    seen: dict[str, str] = {}
+    for label in labels:
+        text = label.strip()
+        if not text:
+            continue
+        for mark in SPEC_MARKS:
+            if text == mark.label or text.startswith(f"{mark.label} "):
+                seen.setdefault(mark.label, mark.means)
+    if not seen:
+        return ""
+    body = " · ".join(f"{name}: {means}" for name, means in seen.items())
+    return f"표식 — {body}"
 
 
 def mark_meaning(label: str) -> str:

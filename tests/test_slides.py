@@ -805,11 +805,46 @@ def test_용어_각주가_그_장의_용어만_깐다(full_sections: DocumentSec
         assert not loose, f"「{key}」 장에 그 장의 용어가 아닌 풀이가 있습니다: {loose}"
 
 
-def test_상위_구간을_왜_보는지_적는다(full_sections: DocumentSections) -> None:
-    """화면 그래프 툴팁에 있던 문장이다 (39세션 1-3). 슬라이드에는 본문으로 낸다."""
-    text = _slide_text(_slide_by_key(build_slides(full_sections), full_sections, "peak_detail"))
-    assert "언제 발생했는지" in text
+def test_상위_구간을_왜_보는지_적고_판정까지_한다(full_sections: DocumentSections) -> None:
+    """화면 툴팁 문장 뒤에 **판정이 온다** (39세션 1-3 · 53세션 4-4).
+
+    39세션까지는 「무엇을 보는 그림인가」 만 적고 이 건물이 어느 쪽인지는
+    적지 않았다 — 그림 둘을 보고 읽는 사람이 스스로 세어야 했다.
+    """
+    from kwise.report import narrative
+
+    deck = build_slides(full_sections)
+    text = _slide_text(_slide_by_key(deck, full_sections, "peak_detail"))
     assert "낮에 몰리면 태양광이" in text
+    assert full_sections.diagnosis is not None
+    assert narrative.peak_summary_lead(full_sections.diagnosis) in text
+    # **5장은 그 판정을 더 이상 적지 않는다** — 그림이 월별 최대수요다.
+    summary = _slide_text(_slide_by_key(deck, full_sections, "peak_summary"))
+    assert "낮 시간에 발생해" not in summary, summary
+    assert "최대수요가" in summary
+
+
+def test_6장_그림이_문장_차례와_같다(full_sections: DocumentSections) -> None:
+    """**문장이 말하는 그림이 왼쪽이다** (53세션 4-5)."""
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    from pptx.util import Emu
+
+    slide = _slide_by_key(build_slides(full_sections), full_sections, "peak_detail")
+    captions = sorted(
+
+            (Emu(shape.left).inches, shape.text_frame.text)
+            for shape in slide.shapes  # type: ignore[attr-defined]
+            if (shape.has_text_frame and "구간이 발생한 시각" in shape.text_frame.text)
+            or (shape.has_text_frame and "평균 부하 모양" in shape.text_frame.text)
+
+    )
+    assert next(text for _left, text in captions).startswith("최대수요 상위")
+    pictures = sorted(
+        Emu(shape.left).inches
+        for shape in slide.shapes  # type: ignore[attr-defined]
+        if shape.shape_type is MSO_SHAPE_TYPE.PICTURE
+    )
+    assert len(pictures) == 2
 
 
 # ===================================================================== 39세션 2절 · 어투
@@ -1673,3 +1708,305 @@ def test_잉여_장에_버리기가_없다(full_sections: DocumentSections) -> N
     assert "버리기" not in text
     assert "상계거래는 계약 변경과 역송 계량기가 필요합니다" in text
     assert "자격요건은 판정하지 않았습니다" in text
+
+
+# ===================================================================== 53세션 · 4절 갈래
+
+
+def test_결측_갈래가_셋이다(sample_report: object) -> None:
+    """**결측이 없으면 뒷문장이 없다** (53세션 4-1).
+
+    39세션은 「가장 심한 달」 하나만 짚었다. 여러 달이 높으면 이름을 다 이어
+    붙이는 대신 개수로 적는다 — 해석 한 줄이 세 줄로 흐르지 않게.
+    """
+    from dataclasses import replace
+
+    from kwise.report.narrative import building_lead
+
+    assert "결측" in building_lead(None)
+    clean = replace(sample_report, missing_slots=0, missing_ratio=0.0, monthly=())  # type: ignore[type-var]
+    text = building_lead(clean)
+    assert "결측이 없어" in text
+    assert "낮게 잡혔을" not in text, text
+
+    one = building_lead(sample_report)  # type: ignore[arg-type]
+    assert "낮게 잡혔을 수 있습니다" in one, one
+    assert "개 달이" not in one, one
+
+    heavy = replace(
+        sample_report,  # type: ignore[type-var]
+        monthly=tuple(
+            replace(month, ratio=0.4, missing_slots=100)
+            for month in sample_report.monthly  # type: ignore[attr-defined]
+        ),
+    )
+    many = building_lead(heavy)
+    assert "개 달이 크게 비어" in many, many
+
+
+def test_부하패턴_문장_둘이_각각_갈린다(sample_diagnosis: Diagnosis) -> None:
+    """**조합이 넷이다** (53세션 4-2). 부하율이 높으면 「짧은 피크」 가 아니다."""
+    from dataclasses import replace
+
+    from kwise.report.narrative import base_load_high, load_factor_flat, pattern_lead
+
+    flat = load_factor_flat() + 0.05
+    peaky = load_factor_flat() - 0.05
+    high = base_load_high() + 0.05
+    low = base_load_high() - 0.05
+    base = replace(sample_diagnosis.pattern, load_factor=peaky, base_load_ratio=high)
+    assert "짧은 피크" in pattern_lead(base)
+    assert "충전 여력은 좁습니다" in pattern_lead(base)
+    both = pattern_lead(replace(base, load_factor=flat, base_load_ratio=low))
+    assert "하루 내내 고르게" in both
+    assert "충전 여력이 있습니다" in both
+    # 값이 없으면 그 문장이 통째로 빠진다.
+    assert "기저부하" not in pattern_lead(replace(base, base_load_ratio=None))
+    assert "산출하지 못했습니다" in pattern_lead(
+        replace(base, load_factor=None, base_load_ratio=None)
+    )
+
+
+def test_요금구조가_세_갈래다() -> None:
+    """**가운데를 가운데라고 적는다** (53세션 4-6)."""
+    from types import SimpleNamespace
+
+    from kwise.report.narrative import base_fee_share_high, base_fee_share_low, structure_lead
+
+    def lead(share: float) -> str:
+        return structure_lead(
+            SimpleNamespace(  # type: ignore[arg-type]
+                base_won=share * 100.0,
+                energy_won=(1 - share) * 100.0,
+                total_won=100.0,
+                bill=SimpleNamespace(total_power_factor_won=0.0),
+            )
+        )
+
+    assert "나머지는 전력량요금입니다" in lead(base_fee_share_low() - 0.05)
+    assert "함께 큽니다" in lead((base_fee_share_low() + base_fee_share_high()) / 2)
+    assert "최대수요를 낮추는 방안을 먼저" in lead(base_fee_share_high() + 0.05)
+    assert "산출하지 못했습니다" in structure_lead(
+        SimpleNamespace(  # type: ignore[arg-type]
+            base_won=0.0,
+            energy_won=0.0,
+            total_won=0.0,
+            bill=SimpleNamespace(total_power_factor_won=0.0),
+        )
+    )
+
+
+def test_요약_근거에_0원인_수단이_안_든다() -> None:
+    """**계약전력 조정은 0원인데 근거로 들고 있었다** (53세션 4-7)."""
+    from types import SimpleNamespace
+
+    from kwise.report.narrative import measure_summary_lead
+
+    def lead(switch: float | None, contract: float | None) -> str:
+        summary = SimpleNamespace(
+            tariff_switch_saving_won=switch,
+            contract_saving_won=contract,
+            no_investment_saving_won=(switch or 0.0) + (contract or 0.0),
+        )
+        return measure_summary_lead(SimpleNamespace(summary=summary), "5,358만원")  # type: ignore[arg-type]
+
+    only = lead(53_575_000.0, 0.0)
+    assert "요금제 전환입니다" in only, only
+    assert "계약전력" not in only, only
+    assert "계약전력 조정" in lead(53_575_000.0, 1_000_000.0)
+    assert "미산출" not in lead(53_575_000.0, None)
+    assert "줄일 수 있는 몫은 없습니다" in lead(0.0, 0.0)
+
+
+def test_계약전력이_세_갈래다(sample_usage: UsageData, sample_bill: BillingResult) -> None:
+    """**초과 위약 갈래가 없었다** (53세션 4-9). 계산은 이미 알고 있었다."""
+    from kwise.measures import evaluate_contract_adjustment
+    from kwise.report.document import measure_entries
+
+    def conclusion(contract_kw: float) -> str:
+        contract = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=contract_kw)
+        entry = next(
+            item for item in measure_entries(contract=contract) if item.kind.key == "contract"
+        )
+        return entry.conclusion
+
+    # 계약전력이 실측 최대보다 낮으면 초과 위약이다.
+    over = conclusion(3_000.0)
+    assert "초과 위약 검토 대상입니다" in over, over
+    assert "상향을 검토해야 합니다" in over
+    assert "낮출 여지가" in conclusion(6_500.0)
+
+
+def test_역률이_세_갈래다(
+    sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult
+) -> None:
+    """**기준 미달이면 감액이 아니라 추가요금 회피다** (53세션 4-11)."""
+    from kwise.measures import evaluate_power_factor
+    from kwise.report.document import measure_entries
+    from kwise.tariff import TariffSelection
+
+    selection = TariffSelection("general_b", "high_a", "I")
+
+    def conclusion(current: float, target: float) -> str:
+        result = evaluate_power_factor(
+            sample_usage,
+            tariff,
+            selection,
+            current_pct=current,
+            target_pct=target,
+            baseline=sample_bill,
+        )
+        entry = next(
+            item
+            for item in measure_entries(power_factor=result)
+            if item.kind.key == "power_factor"
+        )
+        return entry.conclusion
+
+    penalty = conclusion(85.0, 97.0)
+    assert "추가요금이 붙습니다" in penalty, penalty
+    assert "추가요금이 없어지고 감액을 받아" in penalty
+    assert "올리면" in conclusion(92.0, 97.0)
+    assert "올릴 여지가 없습니다" in conclusion(97.0, 97.0)
+
+
+def test_태양광_괄호가_면적과_한계를_나란히_놓지_않는다() -> None:
+    """**2,038 kWp 를 지을 수 있는 것처럼 읽혔다** (53세션 4-12)."""
+    from kwise.report.document import _solar_conclusion
+
+    class _Point:
+        capacity_kwp = 160.0
+        generation_kwh = 194_078.0
+        total_saving_won = 30_647_000.0
+        surplus_kwh = 23_416.0
+
+    point = _Point()
+    ample = _solar_conclusion(point, 2_038.0, 2_000.0)  # type: ignore[arg-type]
+    assert "설치 가능 면적 2,000 m² 가 허용하는 상한입니다" in ample
+    assert "전부 자가소비됩니다" in ample
+    assert "2,038" not in ample, "참고값을 실제 상한과 나란히 놓지 않는다"
+
+    tight = _solar_conclusion(point, 40.0, 2_000.0)  # type: ignore[arg-type]
+    assert "잉여 없이 지을 수 있는 것은 40 kWp 까지입니다" in tight
+    assert "23,416 kWh 가 남습니다" in tight
+    # 잉여 장이 뒤따르면 그 수는 다음 장이 맡는다.
+    follows = _solar_conclusion(point, 40.0, 2_000.0, surplus_page_follows=True)  # type: ignore[arg-type]
+    assert "23,416" not in follows, follows
+
+
+def test_ESS_표식의_뜻이_표_아래에_있다() -> None:
+    """**대형 표에 「마진 미달」 이 셋인데 뜻이 어디에도 없었다** (53세션 4-13)."""
+    from kwise.measures import MARGIN_SHORT, SHORTEST_PAYBACK, TARGET_MISSED, spec_mark_note
+
+    note = spec_mark_note([SHORTEST_PAYBACK, MARGIN_SHORT, MARGIN_SHORT, ""])
+    assert note.startswith("표식 — ")
+    assert SHORTEST_PAYBACK in note and MARGIN_SHORT in note
+    # **표에 없는 표식은 설명하지 않는다.**
+    assert TARGET_MISSED not in note, note
+    # 값이 붙은 표식도 알아본다.
+    assert TARGET_MISSED in spec_mark_note([f"{TARGET_MISSED} (실제 5,264 kW)"])
+    assert spec_mark_note([]) == ""
+
+
+def test_조합_문장이_수단_수로_갈린다() -> None:
+    """**겹칠 것이 없으면 겹침을 설명하지 않는다** (53세션 4-14)."""
+    from types import SimpleNamespace
+
+    from kwise.report.narrative import COMBINATION_LEAD, SINGLE_MEASURE_LEAD, combination_lead
+
+    assert combination_lead(None) == COMBINATION_LEAD
+    assert combination_lead(SimpleNamespace(combinations=(1, 2))) == SINGLE_MEASURE_LEAD
+    assert combination_lead(SimpleNamespace(combinations=(1, 2, 3))) == COMBINATION_LEAD
+
+
+def _peak_stub(
+    values: dict[str, float], *, demand_months: tuple[int, ...] = (7, 8, 9, 12, 1, 2)
+) -> object:
+    """월별 최대수요만 채운 진단 대역. **갈래 시험은 계산이 아니라 문장을 본다.**"""
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    index = pd.PeriodIndex(list(values), freq="M")
+    frame = pd.DataFrame(
+        {"max_demand_kw": list(values.values()), "demand_basis_kw": list(values.values())},
+        index=index,
+    )
+    return SimpleNamespace(
+        peak=SimpleNamespace(monthly=frame, demand_months=demand_months, top_n=100)
+    )
+
+
+def _quality_stub(flagged: tuple[str, ...]) -> object:
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    return SimpleNamespace(
+        flagged_months=tuple(
+            SimpleNamespace(month=pd.Period(month, freq="M")) for month in flagged
+        )
+    )
+
+
+def test_5장이_그림과_같은_것을_말하고_세_갈래를_탄다(tariff: TariffTable) -> None:
+    """**문장이 월별 최대수요를 말한다** (53세션 4-3).
+
+    39세션은 여기에 정오 비중 판정을 적었는데 그림은 월별 최대수요였다.
+    """
+    from kwise.report.narrative import peak_month_lead
+
+    # 기본 — 대상월이고 다음 달과 벌어져 있다.
+    alone = peak_month_lead(
+        _peak_stub({"2023-08": 5_300.0, "2023-07": 4_000.0}), None, tariff
+    )
+    assert alone == "8월에 최대수요가 가장 높고, 이 시기에 요금적용전력이 결정됩니다."
+
+    # ③ 다음 달과 차이가 작으면 계절로 적는다.
+    season = peak_month_lead(
+        _peak_stub({"2023-08": 5_300.0, "2023-07": 5_290.0}), None, tariff
+    )
+    assert season.startswith("여름(6~8월)에 최대수요가 높고"), season
+    # **한 해를 넘어가는 계절도 사람이 읽는 대로 적는다.**
+    winter = peak_month_lead(
+        _peak_stub({"2023-12": 6_100.0, "2024-01": 6_090.0}), None, tariff
+    )
+    assert winter.startswith("겨울(11~2월)"), winter
+
+    # ① 대상월이 아니면 이월되지 않는다 — 실제로 정한 달을 함께 적는다.
+    spring = peak_month_lead(
+        _peak_stub({"2023-05": 5_300.0, "2023-08": 4_000.0}), None, tariff
+    )
+    assert "5월에 최대수요가 가장 높으나" in spring
+    assert "요금적용전력은 8월 값으로 결정됩니다" in spring, spring
+
+    # ② 신뢰 제한 달은 근거로 쓰지 않는다.
+    limited = peak_month_lead(
+        _peak_stub({"2023-08": 5_300.0, "2023-07": 4_000.0}),
+        _quality_stub(("2023-08",)),
+        tariff,
+    )
+    assert "결측이 많아 신뢰가 제한됩니다" in limited
+    assert "결측이 적은 달 가운데는 7월이 가장 높습니다" in limited, limited
+
+    # 값이 없으면 지어내지 않는다.
+    assert "산출하지 못했습니다" in peak_month_lead(_peak_stub({}), None, tariff)
+
+
+def test_DR_문장이_날_수로_세_갈래다(sample_diagnosis: Diagnosis) -> None:
+    """**「245일 가운데 245일만」 은 성립하지 않는다** (53세션 4-10).
+
+    C3 평탄형에서 거래 가능일이 전부 저부하로 잡힌다 — 「만」 은 적다는 뜻이라
+    사실과 반대로 읽혔다.
+    """
+    from dataclasses import replace
+
+    from kwise.report.narrative import dr_lead
+
+    profile = sample_diagnosis.dr
+    assert profile is not None
+    assert dr_lead(None) == ""
+    assert "내려오는 평일이 없어" in dr_lead(replace(profile, low_load_days=()))
+    days = tuple(range(profile.eligible_days))
+    assert "전부가 부하가 쉬는 날" in dr_lead(replace(profile, low_load_days=days))  # type: ignore[arg-type]
+    assert "일만 부하가 쉬는 날" in dr_lead(replace(profile, low_load_days=days[:2]))  # type: ignore[arg-type]
