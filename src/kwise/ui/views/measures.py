@@ -1455,6 +1455,15 @@ def _ess(
     )
     st.caption(frames.ESS_SPEC_CAPTION, help=fmt.tip("table.ess_spec"))
 
+    # **고를 수 있는 목표가 없으면 목표를 제시하지 않는다** (48세션). 지금까지는
+    # 「최적 230 kW · 154.5년」 처럼 적었는데, 그 사양은 kW당 배터리비가 10년
+    # 절감액의 8.7배라 어떤 규모로도 회수되지 않는 자리였다. **표는 참고로
+    # 남긴다** — 왜 안 되는지가 표에 있다.
+    if not optimum.viable:
+        st.session_state[input_key("ess", "target")] = 0.0
+        _notices(optimum.notices)
+        return
+
     # 목표는 정밀화가 정한다. 세션에는 남겨 3단계가 같은 값을 읽게 한다.
     target = optimum.target_kw
     st.session_state[input_key("ess", "target")] = target

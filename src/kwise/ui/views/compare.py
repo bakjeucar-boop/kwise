@@ -582,12 +582,20 @@ def _ess_target(
 
     **개략 곡선이 아니라 정밀화가 정한다** (40세션 1절). 2단계 카드와 같은
     함수를 부르므로 두 화면이 같은 목표를 쓴다.
+
+    **성립하는 목표가 없으면 ``None`` 이다** (48세션). 2단계가 목표를 제시하지
+    않았는데 3단계만 조합을 쌓으면 「검토하지 않은 것」 이 「검토했더니 이만큼」
+    으로 둔갑한다 (:mod:`kwise.ui.pipeline` 도크스트링 ②와 같은 병이다).
     """
+    # ``measure_float`` 는 0 을 ``None`` 으로 돌려준다 — 성립하지 않을 때 2단계가
+    # 세션에 넣는 0.0 이 그대로 「목표 없음」 이 된다.
     saved = measure_float("ess", "target")
     if saved is not None:
         return saved
     optimum = _ess_optimum(usage, table, form, diagnosis, baseline, quality)
-    return optimum.target_kw if optimum is not None else None
+    if optimum is None or not optimum.viable:
+        return None
+    return optimum.target_kw
 
 
 def _ess_optimum(

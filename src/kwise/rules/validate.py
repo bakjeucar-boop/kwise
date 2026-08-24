@@ -154,10 +154,10 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "ess.round_trip": _ratio,
     "ess.dod": _ratio,
     "ess.payback_target_years": _positive,
-    "ess.target_step_kw": _positive,
+    "ess.target_step_ratio": _ratio,
     "ess.target_search_ratio": _ratio,
     # 최적 목표 정밀화 (40세션). **계산 시간을 정하는 값이라 기준 데이터가 쥔다.**
-    "ess.refine_window_kw": _positive,
+    "ess.refine_window_ratio": _ratio,
     "ess.refine_max_widen": _positive,
     "pv.area_per_kwp_m2": _positive,
     "pv.surplus_heavy_share": _ratio,

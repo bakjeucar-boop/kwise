@@ -37,6 +37,7 @@ from kwise.diagnose.dr import DR_OFF_DAYS_FACT, DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
     MEASURE_CATALOG,
+    NOT_VIABLE_CONCLUSION,
     Certainty,
     ContractAdjustment,
     DemandResponseResult,
@@ -234,6 +235,11 @@ _PF_DAY_CAPTION = "대표일 부하 — 주황 점이 역률을 판정하는 주
 _SOLAR_ANNUAL_CAPTION = "일별 발전량 — 여름에 높고 겨울에 낮습니다."
 _SOLAR_DAY_CAPTION = "대표일의 부하 — 두 선 사이가 태양광으로 줄어든 몫입니다."
 _ESS_DAY_CAPTION = "대표일의 부하 — 두 선 사이가 ESS 로 깎은 몫입니다."
+
+
+def _shortest_discharge_hours(curve: EssTargetCurve) -> float:
+    """곡선에서 가장 짧은 방전시간. 성립 한계와 나란히 놓아 격차를 보인다."""
+    return min((item.discharge_hours for item in curve.points), default=0.0)
 
 
 def _pair(*items: tuple[bytes | None, str]) -> tuple[MeasureFigure, ...]:
@@ -640,6 +646,36 @@ def measure_entries(
             figure_caption=_ESS_DAY_CAPTION,
             figures=_pair((ess_day, _ESS_DAY_CAPTION)),
             spec_table=ess_table,
+            spec_caption=frames.ESS_SPEC_CAPTION,
+        )
+    elif ess_optimum is not None and not ess_optimum.viable and ess_curve is not None:
+        # **켠 수단이 산출물에서 사라지면 안 된다** (48세션). 성립하는 목표가
+        # 없어 카드가 목표를 제시하지 않은 경우인데, 장을 통째로 빼면 「검토하지
+        # 않았다」 와 구분되지 않는다. 계약전력 「하향 여지 없음」·잉여 0 과 같은
+        # 틀로 적는다 — 결론과 **왜 없는지 보이는 지표**, 실행 주의사항은 없다.
+        entries["ess"] = MeasureEntry(
+            kind=measure_kind("ess"),
+            conclusion=NOT_VIABLE_CONCLUSION,
+            saving=f"{_UNPRICED} — 성립하는 목표가 없어 사양을 정하지 않았습니다.",
+            saving_annual=f"{_UNPRICED} — 성립하는 목표가 없어 사양을 정하지 않았습니다.",
+            has_saving=False,
+            investment=f"{_UNPRICED} — 사양 미정",
+            payback=_UNPRICED,
+            certainty=str(Certainty.HIGH),
+            notices=ess_optimum.notices,
+            actionable=False,
+            facts=(
+                ("요금적용전력", f"{ess_curve.baseline_demand_kw:,.0f} kW"),
+                ("성립 한계 방전시간", f"{ess_curve.viable_limit_hours:,.2f}h"),
+                ("가장 짧은 방전시간", f"{_shortest_discharge_hours(ess_curve):,.2f}h"),
+            ),
+            spec_table=frames.ess_spec_rows(
+                frames.ess_spec_frame(
+                    ess_optimum,
+                    baseline_demand_kw=ess_curve.baseline_demand_kw,
+                    market_minimum_kwh=ess_curve.market_minimum_kwh,
+                )
+            ),
             spec_caption=frames.ESS_SPEC_CAPTION,
         )
 

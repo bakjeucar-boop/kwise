@@ -53,6 +53,8 @@ from kwise.tariff import (
 )
 
 __all__ = [
+    "NOT_VIABLE_CONCLUSION",
+    "SPEC_TABLE_ROWS",
     "U_SHAPE_REASON",
     "DispatchResult",
     "EssOptimum",
@@ -67,7 +69,7 @@ __all__ = [
     "default_payback_target_years",
     "default_round_trip",
     "default_target_search_ratio",
-    "default_target_step_kw",
+    "default_target_step_ratio",
     "dispatch_peak_shaving",
     "ess_payback_curve",
     "ess_target_curve",
@@ -76,12 +78,17 @@ __all__ = [
     "high_rate_discharge_hours",
     "light_band_mask",
     "nameplate_capacity_kwh",
+    "reference_targets",
     "refine_ess_target",
     "refine_max_widen",
     "refine_targets",
     "refine_window_kw",
+    "refine_window_ratio",
     "required_discharge_hours",
     "size_for_target",
+    "snap_step_kw",
+    "target_step_kw",
+    "viable_discharge_hours",
 ]
 
 # 값은 ``datassumptions.json`` 에 있다 (요구사항서 12장). 판단값이다.
@@ -104,9 +111,35 @@ def high_rate_discharge_hours() -> float:
     return float(assumption("ess.high_rate_discharge_hours"))
 
 
-def default_target_step_kw() -> float:
-    """최적 목표를 훑는 격자 (14세션 3-1). **곡선이 격자에 민감하다.**"""
-    return float(assumption("ess.target_step_kw"))
+def default_target_step_ratio() -> float:
+    """최적 목표를 훑는 격자 (14세션 3-1). **곡선이 격자에 민감하다.**
+
+    **요금적용전력에 대한 비율이다** (48세션). 절대 kW 로 두면 5,293 kW 짜리
+    건물에서 0.19% 씩 훑던 격자가 265 kW 짜리에서는 3.8% 가 되어 20배 성겨진다 —
+    소형 사무빌딩 자료의 곡선이 8점밖에 안 나왔던 까닭이다.
+    """
+    return float(assumption("ess.target_step_ratio"))
+
+
+def snap_step_kw(raw_kw: float) -> float:
+    """격자를 **1·2·5 눈금**에 맞춘다 (48세션).
+
+    비율을 그대로 쓰면 10.587 kW 같은 격자가 나와 목표가 ``5,283.44 kW`` 로
+    적힌다 — :func:`ess_target_curve` 가 격자를 눈금에 맞추는 것과 같은 이유다.
+    경계는 기하 중점이다 (5 와 10 사이는 7.07).
+    """
+    if raw_kw <= 0:
+        raise ValueError(f"격자는 양수여야 합니다: {raw_kw}")
+    base = 10.0 ** math.floor(math.log10(raw_kw))
+    for low, high in ((1.0, 2.0), (2.0, 5.0), (5.0, 10.0)):
+        if low * base <= raw_kw < high * base:
+            return low * base if raw_kw < math.sqrt(low * high) * base else high * base
+    return base
+
+
+def target_step_kw(baseline_demand_kw: float) -> float:
+    """이 건물에서 쓸 격자 (kW). 비율을 씌우고 눈금에 맞춘다."""
+    return snap_step_kw(baseline_demand_kw * default_target_step_ratio())
 
 
 def default_target_search_ratio() -> float:
@@ -262,6 +295,9 @@ class EssTargetPoint:
         billed_capacity_kwh: 과금 용량 = ``max(정격 용량, 시장 최소 규모)``.
             **정격에 건다** (46세션) — 카드와 같은 양이어야 경계가 갈라지지 않는다.
         at_market_minimum: 최소 규모에 걸렸는가. 걸린 구간이 U자의 왼쪽 팔이다.
+        viable: **마진 조건**을 넘는가 (48세션). ``kW당 배터리비 < 목표연수
+            기본요금 절감/kW`` 다. 넘지 못하면 규모를 어떻게 잡아도 회수되지
+            않으므로 최적 후보에서 뺀다 — :func:`viable_discharge_hours` 참조.
     """
 
     target_kw: float
@@ -277,6 +313,7 @@ class EssTargetPoint:
     annual_saving_won: float
     payback_years: float | None
     at_market_minimum: bool
+    viable: bool = True
 
     @property
     def spec_label(self) -> str:
@@ -313,6 +350,22 @@ class EssTargetCurve:
     step_kw: float
     round_trip: float
     dod: float
+    viable_limit_hours: float = 0.0
+    """이 방전시간 미만이라야 마진 조건을 넘는다 (48세션). 0 이면 안 쟀다는 뜻이다."""
+    viable_best: EssTargetPoint | None = None
+    """**마진 조건을 넘는 점 가운데** 회수기간 최소 (48세션).
+
+    :attr:`best` 와 갈라 둔다 — :attr:`best` 는 「곡선이 값만 보고 고른 점」 이고
+    이쪽은 「고를 수 있는 점」 이다. 정밀화는 이쪽을 기준점으로 삼는다. 둘이
+    다르면 곡선의 최소가 성립하지 않는 구간에 있다는 뜻이다.
+
+    **성질이 아니라 값이다** — 창 검증 시험이 ``replace`` 로 기준점을 심는다.
+    """
+
+    @property
+    def any_viable(self) -> bool:
+        """마진 조건을 넘는 목표가 하나라도 있는가. 없으면 ESS 가 성립하지 않는다."""
+        return self.viable_best is not None
 
     @property
     def u_shape_reason(self) -> str:
@@ -335,6 +388,7 @@ class EssTargetCurve:
                 "연간 절감액(원)": [item.annual_saving_won for item in self.points],
                 "회수기간(년)": [item.payback_years for item in self.points],
                 "최소 규모 적용": [item.at_market_minimum for item in self.points],
+                "마진 조건": [item.viable for item in self.points],
             }
         )
 
@@ -372,6 +426,29 @@ def _daily_excess(
         return 0.0, 0.0
     daily = (excess * slot_hours).groupby(day_codes).sum()
     return power, float(daily.max())
+
+
+def viable_discharge_hours(
+    base_fee_won_per_kw: float,
+    *,
+    model: EssCostModel | None = None,
+    target_years: float | None = None,
+) -> float:
+    """**마진 조건의 경계 방전시간** (48세션).
+
+        kW당 배터리비 = 용량단가 × 방전시간
+        목표연수 절감/kW = 기본요금단가 × 12 × 목표연수
+
+    둘이 같아지는 방전시간이다. 이보다 길면 kW 를 하나 더 깎을 때마다 배터리비가
+    그 kW 의 절감액보다 더 붙으므로 **규모를 어떻게 잡아도 회수되지 않는다.**
+    :class:`~kwise.measures.ess_cost.Feasibility` 의 마진 항과 같은 식이다 —
+    그쪽은 고정비까지 덮는지(규모 조건)를 함께 보고, 여기서는 마진 부호만 본다.
+    """
+    cost_model = model if model is not None else load_ess_cost_model()
+    years = default_payback_target_years() if target_years is None else target_years
+    if cost_model.per_kwh_won <= 0:
+        return math.inf
+    return base_fee_won_per_kw * 12.0 * years / cost_model.per_kwh_won
 
 
 def ess_target_curve(
@@ -417,7 +494,7 @@ def ess_target_curve(
     if baseline_demand_kw <= 0:
         raise ValueError(f"현행 요금적용전력은 양수여야 합니다: {baseline_demand_kw}")
     cost_model = model if model is not None else load_ess_cost_model()
-    step = default_target_step_kw() if step_kw is None else step_kw
+    step = target_step_kw(baseline_demand_kw) if step_kw is None else step_kw
     ratio = default_target_search_ratio() if search_ratio is None else search_ratio
     round_trip = default_round_trip() if round_trip is None else round_trip
     dod = default_dod() if dod is None else dod
@@ -444,6 +521,10 @@ def ess_target_curve(
     count = math.floor((first - lowest) / step) + 1
     targets = [first - step * index for index in range(max(count, 0))]
 
+    # **마진 조건의 경계** (48세션). 곡선이 이미 방전시간을 내고 있으므로 판정에
+    # 드는 비용이 0 이다 — 요금 재계산 없이 「고를 수 있는 점」 을 가려낸다.
+    viable_limit = viable_discharge_hours(base_fee_won_per_kw, model=cost_model)
+
     points: list[EssTargetPoint] = []
     for target in targets:
         power, capacity = _daily_excess(observed, day_codes, target, slot_hours)
@@ -459,6 +540,7 @@ def ess_target_curve(
         investment = equipment + electrical
         reduction = max(0.0, baseline_demand_kw - target)
         annual = reduction * base_fee_won_per_kw * 12.0
+        hours = nameplate / power if power > 0 else 0.0
         points.append(
             EssTargetPoint(
                 target_kw=target,
@@ -469,21 +551,25 @@ def ess_target_curve(
                 billed_capacity_kwh=billed,
                 # 카드와 **같은 정의**여야 한다 (45세션). 표시하는 용량이
                 # 정격이므로 방전시간도 정격 기준이다.
-                discharge_hours=nameplate / power if power > 0 else 0.0,
+                discharge_hours=hours,
                 equipment_won=equipment,
                 electrical_won=electrical,
                 investment_won=investment,
                 annual_saving_won=annual,
                 payback_years=payback_years(investment, annual),
                 at_market_minimum=nameplate < cost_model.market_minimum_kwh,
+                viable=0.0 < hours < viable_limit,
             )
         )
 
     priced = [item for item in points if item.payback_years is not None]
     best = min(priced, key=lambda item: item.payback_years or math.inf) if priced else None
+    viable = [item for item in priced if item.viable]
+    viable_best = min(viable, key=lambda item: item.payback_years or math.inf) if viable else None
     return EssTargetCurve(
         points=tuple(points),
         best=best,
+        viable_best=viable_best,
         baseline_demand_kw=baseline_demand_kw,
         observed_peak_kw=float(observed.max()),
         base_fee_won_per_kw=base_fee_won_per_kw,
@@ -491,6 +577,7 @@ def ess_target_curve(
         step_kw=step,
         round_trip=round_trip,
         dod=dod,
+        viable_limit_hours=viable_limit,
     )
 
 
@@ -1174,18 +1261,44 @@ def ess_payback_curve(
 # 0.76년인데 용량은 3배다 (200.6 kWh 3.47억 vs 619.1 kWh 7.68억). 삼분 탐색과
 # 성긴 격자는 둘 다 엉뚱한 골짜기로 빨려 들어갔다. **균일 격자로 훑는다.**
 #
-# **격자는 곡선과 같은 10 kW 다** (:func:`default_target_step_kw`). 따로 두지
-# 않는 이유가 셋이다.
+# **격자는 곡선과 같다** (:func:`target_step_kw`). 따로 두지 않는 이유가 셋이다.
 #
 #     ① 표식이 곡선 위에 찍혀야 한다 — 곡선에 없는 자리를 고르면 선 밖에 뜬다
 #     ② 목표는 계약·설정에 적는 값이라 눈금에 맞아야 한다 (14세션 3-1)
 #     ③ 1 kW 격자는 201점 84초다. 샘플에서 5,175 kW·30.35년(−0.40년·정격 −15%)을
 #        더 찾지만 그 값을 위해 곡선 전체를 다시 그려야 한다
+#
+# **48세션에 두 가지가 붙었다.**
+#
+#     ① 목표를 못 지킨 점은 후보에서 뺀다 — 디스패치가 이미 그 사실을 내고 있었다
+#     ② 창을 요금적용전력의 비율로 잡는다 — 절대 ±100 kW 는 265 kW 짜리 건물에서
+#        곡선 전체(폭 79 kW)를 덮어 가장자리 검사가 늘 공집합이었다
 
 
-def refine_window_kw() -> float:
-    """정밀화 창의 한쪽 폭 (40세션). **기준 데이터에서 읽는다.**"""
-    return float(assumption("ess.refine_window_kw"))
+NOT_VIABLE_CONCLUSION = (
+    "이 건물의 부하 모양에서는 어떤 목표에서도 kW당 배터리비가 10년 기본요금 "
+    "절감액을 넘습니다. 피크저감 목적의 ESS 는 성립하지 않습니다."
+)
+"""성립하는 목표가 하나도 없을 때의 **결론** (48세션).
+
+목표를 제시하는 대신 이것을 낸다. 「최적 230 kW · 154.5년」 처럼 적으면 성립하지
+않는 자리를 권한 것으로 읽힌다 — 소형 사무빌딩 자료에서 실제로 그랬다.
+"""
+
+#: 목표별 사양 표에 세울 줄 수. :data:`~kwise.report.frames.ESS_SPEC_ROWS` 가
+#: 이 값을 쓴다 — 성립하는 점이 없을 때 잴 점 수와 표의 줄 수가 같아야 표에
+#: 빈 줄이나 버리는 계산이 생기지 않는다.
+SPEC_TABLE_ROWS = 5
+
+
+def refine_window_ratio() -> float:
+    """정밀화 창의 한쪽 폭 — **요금적용전력에 대한 비율이다** (48세션)."""
+    return float(assumption("ess.refine_window_ratio"))
+
+
+def refine_window_kw(baseline_demand_kw: float) -> float:
+    """이 건물에서 쓸 정밀화 창의 한쪽 폭 (kW)."""
+    return baseline_demand_kw * refine_window_ratio()
 
 
 def refine_max_widen() -> int:
@@ -1199,6 +1312,13 @@ class EssOptimumPoint:
 
     화면의 목표별 사양 표가 이 값들을 그대로 낸다 (46세션). 표에 필요한 것이
     모두 여기 있어야 다시 계산할 일이 없다.
+
+    Attributes:
+        unmet_kwh: 목표를 지키지 못한 에너지 (48세션). 0 이 아니면 **그 목표의
+            ESS 가 아니다** — 후보에서 빠지고 표에 「목표 미달」 표식이 붙는다.
+        achieved_demand_kw: ESS 를 넣은 뒤 실제로 나온 요금적용전력. 미달일 때
+            목표와 얼마나 벌어졌는지가 여기서 읽힌다.
+        viable: 마진 조건을 넘는가 (:func:`viable_discharge_hours`).
     """
 
     target_kw: float
@@ -1207,11 +1327,24 @@ class EssOptimumPoint:
     annual_saving_won: float
     payback_years: float | None
     power_kw: float = 0.0
+    unmet_kwh: float = 0.0
+    achieved_demand_kw: float = 0.0
+    viable: bool = True
 
     @property
     def discharge_hours(self) -> float:
         """정격 용량 ÷ 출력. **카드와 같은 정의다** (45세션)."""
         return self.nameplate_capacity_kwh / self.power_kw if self.power_kw > 0 else 0.0
+
+    @property
+    def target_met(self) -> bool:
+        """디스패치가 목표를 지켰는가 (48세션)."""
+        return self.unmet_kwh <= 1e-9
+
+    @property
+    def eligible(self) -> bool:
+        """최적 후보가 될 수 있는가 — 값이 매겨지고, 목표를 지키고, 마진이 있다."""
+        return bool(self.payback_years) and self.target_met and self.viable
 
 
 @dataclass(frozen=True)
@@ -1225,6 +1358,9 @@ class EssOptimum:
         widened: 창을 넓힌 횟수.
         at_edge: 넓힌 뒤에도 최소가 창 가장자리에 있는가. **참이면 경고다** —
             더 나은 목표가 창 밖에 있을 수 있다.
+        viable: 고를 수 있는 목표가 하나라도 있었는가 (48세션). 거짓이면
+            :attr:`target_kw` 가 0 이고 **화면은 목표를 제시하지 않는다** —
+            :data:`NOT_VIABLE_CONCLUSION` 을 결론으로 낸다. 표는 참고로 남는다.
     """
 
     target_kw: float
@@ -1235,6 +1371,7 @@ class EssOptimum:
     at_edge: bool
     points: tuple[EssOptimumPoint, ...] = field(default=())
     notices: tuple[Notice, ...] = field(default=())
+    viable: bool = True
 
     @property
     def moved(self) -> bool:
@@ -1246,16 +1383,38 @@ class EssOptimum:
         return self.target_kw - self.curve_target_kw
 
 
+def reference_targets(curve: EssTargetCurve, rows: int) -> tuple[float, ...]:
+    """성립하는 목표가 없을 때 **표에 세울 목표만** 고른다 (48세션).
+
+    창을 훑을 까닭이 없다 — 고를 목표가 없으므로 잴 것은 「왜 안 되는가」 뿐이다.
+    곡선 전체에 고르게 벌려 잡으면 얕은 쪽(마진은 있으나 저감량이 없다)과 깊은
+    쪽(저감량은 크나 방전시간이 길다)이 한 표에 함께 선다.
+    """
+    priced = [point for point in curve.points if point.payback_years is not None]
+    if not priced or rows <= 0:
+        return ()
+    ordered = sorted(priced, key=lambda item: -item.target_kw)
+    if len(ordered) <= rows:
+        return tuple(item.target_kw for item in ordered)
+    last = len(ordered) - 1
+    picks = sorted({round(last * index / (rows - 1)) for index in range(rows)})
+    return tuple(ordered[index].target_kw for index in picks)
+
+
 def refine_targets(curve: EssTargetCurve, window_kw: float | None = None) -> tuple[float, ...]:
     """정밀화에서 훑을 목표들. **진행 막대 길이를 미리 알려 준다.**
 
     창을 넓히기 전의 첫 바퀴다 — 넓히는 일은 드물고, 막대가 한 번 길어지는 것이
     「멈춘 줄 알았다」 보다 낫다.
+
+    **기준점은 곡선의 「고를 수 있는」 최소다** (48세션 — :attr:`EssTargetCurve.viable_best`).
+    성립하는 점이 하나도 없으면 창을 훑지 않고 표에 세울 몇 점만 잰다.
     """
-    if curve.best is None:
-        return ()
-    window = refine_window_kw() if window_kw is None else window_kw
-    anchor = curve.best.target_kw
+    anchor_point = curve.viable_best
+    if anchor_point is None:
+        return tuple(sorted(reference_targets(curve, SPEC_TABLE_ROWS), reverse=True))
+    window = refine_window_kw(curve.baseline_demand_kw) if window_kw is None else window_kw
+    anchor = anchor_point.target_kw
     return tuple(
         sorted(
             (
@@ -1293,20 +1452,32 @@ def refine_ess_target(
     매긴다. 차익거래·전망단가는 회수기간에 들어가지 않으므로 여기서도 뺀다
     (한 점당 419 ms 중 48 ms 를 차지한다).
 
-    **창을 검증한다** (40세션 1-2). ±100 kW 라는 폭은 자료 일곱에서 나온 값이라
-    벗어나는 자료가 있을 수 있다. 최소가 창 가장자리에서 잡히면 두 배로 넓혀
-    다시 훑고, 정해진 횟수를 넘어서도 가장자리면 **그 사실을 경고로 남긴다** —
-    조용히 자르면 「그 자리가 최적」 으로 읽힌다.
+    **창을 검증한다** (40세션 1-2). 폭은 자료 일곱에서 나온 값이라 벗어나는
+    자료가 있을 수 있다. 최소가 창 가장자리에서 잡히면 두 배로 넓혀 다시 훑고,
+    정해진 횟수를 넘어서도 가장자리면 **그 사실을 경고로 남긴다** — 조용히
+    자르면 「그 자리가 최적」 으로 읽힌다.
+
+    **후보에서 빼는 것이 둘이다** (48세션).
+
+        목표 미달   디스패치가 목표를 못 지킨 점. 「목표 210 kW」 라 적어 놓고
+                    실제 요금적용전력이 264 kW 면 그 목표의 ESS 가 아니다
+        마진 미달   kW당 배터리비가 목표연수 절감액을 넘는 점. 규모를 어떻게
+                    잡아도 회수되지 않는다 (:func:`viable_discharge_hours`)
+
+    **둘은 한 뿌리다.** 방전시간이 경부하 충전 창보다 길어지면 배터리를 하룻밤에
+    되채우지 못해 목표를 놓치고, 같은 방전시간이 kW당 배터리비도 밀어 올린다.
+    마진 조건이 훨씬 빡빡하므로 실무에서는 그쪽이 먼저 걸린다.
 
     Returns:
-        :class:`EssOptimum`. 곡선에 가격이 매겨진 점이 하나도 없으면 곡선의
-        선택을 그대로 돌려준다 (야간 피크형처럼 절감액이 0인 자료다).
+        :class:`EssOptimum`. 고를 수 있는 점이 하나도 없으면
+        ``viable=False`` 와 :data:`NOT_VIABLE_CONCLUSION` 을 돌려준다 —
+        ``points`` 에는 곡선 전체에 벌려 잡은 참고 지점이 담긴다.
     """
     opts = options if options is not None else BillingOptions()
     round_trip = default_round_trip() if round_trip is None else round_trip
     dod = default_dod() if dod is None else dod
     cost_model = model if model is not None else load_ess_cost_model()
-    window = refine_window_kw() if window_kw is None else window_kw
+    window = refine_window_kw(curve.baseline_demand_kw) if window_kw is None else window_kw
     widen_limit = refine_max_widen() if max_widen is None else max_widen
     if window <= 0:
         raise ValueError(f"정밀화 창은 양수여야 합니다: {window}")
@@ -1321,8 +1492,13 @@ def refine_ess_target(
             at_edge=False,
         )
 
-    anchor = curve.best.target_kw
+    # **기준점은 「고를 수 있는」 최소다** (48세션). 곡선의 최소가 마진 조건 밖에
+    # 있으면 그 둘레를 아무리 정밀하게 훑어도 고를 수 없는 점만 나온다 —
+    # 소형 사무빌딩 자료에서 곡선 최소는 190 kW(방전 11.9h)였다.
+    viable_anchor = curve.viable_best
+    anchor = (viable_anchor or curve.best).target_kw
     by_target = {point.target_kw: point for point in curve.points}
+    viable_targets = {point.target_kw for point in curve.points if point.viable}
     base_bill = (
         baseline
         if baseline is not None
@@ -1343,8 +1519,11 @@ def refine_ess_target(
             return scored[target_kw]
         excess = analyze_peak_excess(usage.kw, target_kw, interval)
         power, capacity = size_for_target(excess, dod=dod, round_trip=round_trip)
+        viable = target_kw in viable_targets
         if power <= 0:
-            point = EssOptimumPoint(target_kw, capacity, 0.0, 0.0, None, power_kw=power)
+            point = EssOptimumPoint(
+                target_kw, capacity, 0.0, 0.0, None, power_kw=power, viable=viable
+            )
         else:
             dispatch = dispatch_peak_shaving(
                 usage.kw,
@@ -1372,9 +1551,33 @@ def refine_ess_target(
                 saving,
                 payback_years(investment, saving),
                 power_kw=power,
+                # **디스패치가 이미 쥐고 있던 사실이다** (48세션). 버리면 표가
+                # 「목표 210 kW」 라 적고 실제 요금적용전력은 264 kW 가 된다.
+                unmet_kwh=dispatch.unmet_kwh,
+                achieved_demand_kw=after.billing_demand_kw,
+                viable=viable,
             )
         scored[target_kw] = point
         return point
+
+    # **성립하는 점이 없으면 창을 훑지 않는다** (48세션). 고를 목표가 없으므로
+    # 잴 것은 「왜 안 되는가」 뿐이고, 그것은 곡선 전체에 벌려 잡은 몇 점이 낸다.
+    if viable_anchor is None:
+        picks = reference_targets(curve, SPEC_TABLE_ROWS)
+        for index, target in enumerate(picks, start=1):
+            measure(target)
+            report.step(index, f"ESS 참고 지점 {index}/{len(picks)}")
+        return EssOptimum(
+            target_kw=0.0,
+            payback_years=None,
+            curve_target_kw=anchor,
+            window_kw=window,
+            widened=0,
+            at_edge=False,
+            viable=False,
+            points=tuple(scored[target] for target in sorted(scored)),
+            notices=(warn(NOT_VIABLE_CONCLUSION, fact="ess.not_viable"),),
+        )
 
     widened = 0
     at_edge = False
@@ -1387,10 +1590,15 @@ def refine_ess_target(
         for index, target in enumerate(window_targets, start=1):
             measure(target)
             report.step(index, f"ESS 최적 목표 {index}/{len(window_targets)}")
-        priced = [scored[target] for target in window_targets if scored[target].payback_years]
-        if not priced:
-            break
-        best = min(priced, key=lambda item: item.payback_years or math.inf)
+        # **후보는 값이 매겨지고 목표를 지키고 마진이 있는 점뿐이다** (48세션).
+        eligible = [scored[target] for target in window_targets if scored[target].eligible]
+        if not eligible:
+            if widened >= widen_limit:
+                break
+            window *= 2.0
+            widened += 1
+            continue
+        best = min(eligible, key=lambda item: item.payback_years or math.inf)
         # **가장자리면 창이 좁았다는 뜻이다.** 곡선 자체의 끝이면 넓힐 곳이 없다.
         edges = {window_targets[0], window_targets[-1]}
         curve_ends = {max(by_target), min(by_target)}

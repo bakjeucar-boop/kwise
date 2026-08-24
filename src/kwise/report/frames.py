@@ -21,6 +21,7 @@ from kwise.diagnose import ChargeStructure, PeakProfile
 from kwise.diagnose.dr import DrProfile
 from kwise.io import UsageData, slot_start
 from kwise.measures import (
+    SPEC_TABLE_ROWS,
     CapacityVerdict,
     DispatchResult,
     EssOptimum,
@@ -361,7 +362,10 @@ def solar_capacity_table(
 #:
 #: 목표별 사양 표에 세울 줄 수 (46세션). **대여섯 줄이다** — 21점을 다 세우면
 #: 읽을 것이 너무 많고, 셋이면 「목표를 낮추면 나빠진다」 가 안 읽힌다.
-ESS_SPEC_ROWS = 5
+#:
+#: **값은 :data:`~kwise.measures.ess.SPEC_TABLE_ROWS` 하나다** (48세션). 성립하는
+#: 목표가 없을 때 정밀화가 재는 참고 지점 수와 같아야 표에 빈 줄이 생기지 않는다.
+ESS_SPEC_ROWS = SPEC_TABLE_ROWS
 
 
 def ess_spec_targets(points: Sequence[EssOptimumPoint], best_target_kw: float) -> tuple[int, ...]:
@@ -411,7 +415,15 @@ def ess_spec_frame(
     rows = [optimum.points[i] for i in picks]
 
     def mark(point: EssOptimumPoint) -> str:
-        labels = ["최적"] if point.target_kw == optimum.target_kw else []
+        # **성립하는 목표가 없으면 「최적」 을 찍지 않는다** (48세션).
+        labels = ["최적"] if optimum.viable and point.target_kw == optimum.target_kw else []
+        # **표가 사실과 달라지는 자리다** (48세션). 목표를 못 지킨 줄에 목표만
+        # 적어 두면 「210 kW · 저감 55 kW」 라 읽히는데 실제 요금적용전력은
+        # 264 kW 다. 실제 값을 표식에 적어 그 어긋남을 표 안에서 닫는다.
+        if not point.target_met:
+            labels.append(f"목표 미달 (실제 {point.achieved_demand_kw:,.0f} kW)")
+        elif not point.viable:
+            labels.append("마진 미달")
         if market_minimum_kwh is not None and point.nameplate_capacity_kwh < market_minimum_kwh:
             labels.append("최소 규모")
         return " · ".join(labels)

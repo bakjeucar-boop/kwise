@@ -17,6 +17,8 @@ import pytest
 
 from kwise.io import UsageData
 from kwise.measures import (
+    NOT_VIABLE_CONCLUSION,
+    SPEC_TABLE_ROWS,
     EssCostInput,
     EssCostReferenceError,
     EssOptimum,
@@ -34,11 +36,16 @@ from kwise.measures import (
     load_ess_cost_reference,
     peak_days_by_season,
     reference_table,
+    reference_targets,
     refine_ess_target,
     refine_targets,
     refine_window_kw,
     required_discharge_hours,
+    snap_step_kw,
+    target_step_kw,
+    viable_discharge_hours,
 )
+from kwise.measures.ess import EssOptimumPoint
 from kwise.measures.ess_cost import load_ess_cost_model, reference_data_path
 from kwise.notices import texts
 from kwise.quality import QualityReport
@@ -821,7 +828,10 @@ CARD_BASIS_OPTIMUM: dict[str, float] = {
     "샘플": 5_170.0,
     "C1": 5_170.0,
     "C2": 5_170.0,
-    "C3": 3_010.0,  # 곡선 3,000 → 정격 +88.9 kWh (+60%) · 투자 +8,751만원
+    # **48세션에 3,010 → 3,035 로 옮겼다.** 둘이 겹쳤다 — 격자가 요금적용전력의
+    # 0.2% 가 되어 C3(3,052 kW)에서 10 → 5 kW 로 촘촘해졌고, 마진 조건이 3,010 kW
+    # (방전 3.50h)를 후보에서 뺐다. 성립 한계는 1.031h 다.
+    "C3": 3_035.0,
     "C4": 5_170.0,
     "C5": 5_960.0,  # 곡선 5,940 → 정격 +35.0 kWh (+17%) · 투자 +4,158만원
 }
@@ -944,11 +954,11 @@ def test_브래킷이_참_최소를_담는다(tariff: TariffTable) -> None:
         _usage, _quality, _bill, curve = _case_material(
             definition.usage_path, definition.selection, tariff
         )
-        assert curve.best is not None
-        window = refine_window_kw()
-        assert abs(truth - curve.best.target_kw) <= window, (
+        assert curve.viable_best is not None
+        window = refine_window_kw(curve.baseline_demand_kw)
+        assert abs(truth - curve.viable_best.target_kw) <= window, (
             f"{definition.key}: 참 최소 {truth:,.0f} kW 가 개략 최적 "
-            f"{curve.best.target_kw:,.0f} kW 의 ±{window:,.0f} kW 밖입니다."
+            f"{curve.viable_best.target_kw:,.0f} kW 의 ±{window:,.0f} kW 밖입니다."
         )
         assert truth in refine_targets(curve)
 
@@ -1033,25 +1043,30 @@ def _anchored_at(curve: EssTargetCurve, target_kw: float) -> EssTargetCurve:
     **46세션 전에는 C3 가 실제로 어긋나 있었다** — 곡선 3,000, 카드 3,010.
     최소 규모를 정격으로 맞추면서 둘이 같아졌으므로, 창 검증은 어긋난 자리를
     직접 심어 태운다. **지운 것이 아니라 태울 자료가 없어진 것이다.**
+
+    심는 자리는 **3,045 kW** 다 (48세션). 격자가 5 kW 로 촘촘해져 3,030 kW 에
+    ±10 kW 를 걸면 참 최소(3,035)가 창 안에 들어와 버린다.
     """
     from dataclasses import replace
 
     anchor = next(point for point in curve.points if point.target_kw == target_kw)
-    return replace(curve, best=anchor)
+    # **정밀화의 기준점은 ``viable_best`` 다** (48세션). ``best`` 만 바꾸면 심은
+    # 자리가 쓰이지 않는다 — 둘 다 옮겨야 창 검증이 그 자리에서 시작한다.
+    return replace(curve, best=anchor, viable_best=anchor)
 
 
 def test_창_가장자리면_넓혀_다시_찾는다(tariff: TariffTable) -> None:
     """**창이 좁으면 조용히 틀린다** (40세션 1-2).
 
-    곡선이 3,030 kW 를 골랐다고 두면 카드 기준 최소(3,010)가 창 10 kW 밖이다.
-    가장자리에서 잡히므로 넓혀 다시 훑어야 한다.
+    곡선이 3,045 kW 를 골랐다고 두면 카드 기준 최소(3,035)가 창 10 kW 의
+    **가장자리**에 놓인다. 가장자리에서 잡히므로 넓혀 다시 훑어야 한다.
     """
     usage, quality, bill, curve, definition = _c3_material(tariff)
     narrow = refine_ess_target(
         usage,  # type: ignore[arg-type]
         tariff,
         definition.selection,  # type: ignore[attr-defined]
-        curve=_anchored_at(curve, 3_030.0),  # type: ignore[arg-type]
+        curve=_anchored_at(curve, 3_045.0),  # type: ignore[arg-type]
         baseline=bill,  # type: ignore[arg-type]
         quality=quality,  # type: ignore[arg-type]
         window_kw=10.0,
@@ -1070,7 +1085,7 @@ def test_넓히고도_가장자리면_경고를_남긴다(tariff: TariffTable) -
         usage,  # type: ignore[arg-type]
         tariff,
         definition.selection,  # type: ignore[attr-defined]
-        curve=_anchored_at(curve, 3_030.0),  # type: ignore[arg-type]
+        curve=_anchored_at(curve, 3_045.0),  # type: ignore[arg-type]
         baseline=bill,  # type: ignore[arg-type]
         quality=quality,  # type: ignore[arg-type]
         window_kw=10.0,
@@ -1224,3 +1239,201 @@ def test_화면과_산출물이_같은_사양_표를_쓴다(
         __import__(module)
         gone = ("ess_target_chart", "ess_target_frame", "ESS_PAYBACK_AXIS", "ess_payback_png")
         assert not [name for name in gone if hasattr(sys.modules[module], name)]
+
+
+# ===================================================================== 48세션 · 후보 걸러내기
+#
+# **두 가지를 후보에서 뺀다.**
+#
+#     목표 미달   디스패치가 목표를 못 지킨 점. 「210 kW」 라 적고 실제
+#                 요금적용전력은 264 kW 인 표가 나오던 자리다
+#     마진 미달   kW당 배터리비가 10년 기본요금 절감액을 넘는 점. 소형 사무빌딩
+#                 자료에서 방전 8.95h·회수 154.5년 짜리를 「최적」 으로 골랐다
+#
+# 그리고 격자·창을 **요금적용전력의 비율**로 잡는다. 절대 kW 는 265 kW 짜리
+# 건물에서 곡선을 8점으로 만들고 창이 곡선 전체를 덮었다.
+
+_OFFICE_CASE = PROJECT_ROOT / "input" / "사용량조회_소형사무빌딩.csv"
+
+
+def test_격자를_눈금에_맞춘다() -> None:
+    """**비율을 그대로 쓰면 10.587 kW 같은 격자가 나온다.** 1·2·5 눈금에 맞춘다."""
+    assert snap_step_kw(10.587) == 10.0  # 샘플 5,293.44 × 0.2%
+    assert snap_step_kw(0.529) == 0.5  # 소형 사무빌딩 264.68 × 0.2%
+    assert snap_step_kw(6.104) == 5.0  # C3 3,052.3 × 0.2% — 기하 중점 7.07 아래
+    assert snap_step_kw(7.56) == 10.0  # C6 3,780 × 0.2% — 기하 중점 위
+    assert snap_step_kw(12.35) == 10.0  # C5 6,174.7 × 0.2%
+    with pytest.raises(ValueError):
+        snap_step_kw(0.0)
+
+
+def test_샘플_격자와_창이_전과_같다() -> None:
+    """**비율로 바꿔도 회귀값이 흔들리면 안 된다** (48세션).
+
+    5,293.44 kW 에서 격자는 10 kW 그대로이고, 창은 ±100 → ±105.9 kW 로 커지되
+    10 kW 격자에서 담는 점이 21개로 같다.
+    """
+    assert target_step_kw(5_293.44) == 10.0
+    assert refine_window_kw(5_293.44) == pytest.approx(105.87, abs=0.01)
+    # 5,170 ± 105.87 → 5,070 ~ 5,270. 옛 ±100 과 같은 21점이다.
+    assert len(range(5_070, 5_280, 10)) == 21
+
+
+def test_창이_곡선_전체를_덮지_않는다(target_curve: EssTargetCurve) -> None:
+    """**덮으면 가장자리 검사가 늘 공집합이다** (48세션).
+
+    ``at_edge`` 는 「창의 끝이되 곡선의 끝은 아닌」 자리에서만 참이다. 창이
+    곡선을 다 덮으면 두 집합이 같아져 차집합이 비고, 경고가 구조적으로 못 뜬다.
+    """
+    span = target_curve.points[0].target_kw - target_curve.points[-1].target_kw
+    assert refine_window_kw(target_curve.baseline_demand_kw) * 2 < span
+
+
+def test_마진_조건의_경계_방전시간(tariff: TariffTable) -> None:
+    """``기본요금단가 × 12 × 10년 ÷ 용량단가``. 이보다 길면 규모를 키워도 안 된다."""
+    fee = float(tariff.rates(SAMPLE_SELECTION).base_won_per_kw)
+    model = load_ess_cost_model()
+    limit = viable_discharge_hours(fee, model=model)
+    assert limit == pytest.approx(fee * 12 * 10 / model.per_kwh_won)
+    assert limit == pytest.approx(1.031, abs=0.001)
+
+
+def test_곡선이_마진_조건을_판정한다(target_curve: EssTargetCurve) -> None:
+    """**요금 재계산 없이 가려낸다.** 곡선이 이미 방전시간을 내고 있다."""
+    limit = target_curve.viable_limit_hours
+    assert limit > 0
+    for point in target_curve.points:
+        assert point.viable == (0.0 < point.discharge_hours < limit)
+    assert target_curve.any_viable
+    # 샘플은 곡선 최소가 마진 조건 안에 있다 — 기준점이 옮겨 가지 않는다.
+    assert target_curve.viable_best is target_curve.best
+
+
+def test_샘플_최적이_5170_그대로다(sample_optimum: EssOptimum) -> None:
+    """**48세션의 두 필터가 샘플을 건드리지 않는다.**
+
+    5,170 kW 는 방전 0.969h 로 성립 한계 1.031h 바로 아래의 마지막 성립 점이고,
+    정밀화 21점 어디에도 목표 미달이 없다.
+    """
+    assert sample_optimum.viable
+    assert sample_optimum.target_kw == 5_170.0
+    best = next(item for item in sample_optimum.points if item.target_kw == 5_170.0)
+    assert best.discharge_hours == pytest.approx(0.969, abs=0.001)
+    assert best.target_met and best.viable
+    assert all(item.target_met for item in sample_optimum.points)
+
+
+def test_미달_점은_후보에서_빠진다() -> None:
+    """**디스패치가 이미 쥐고 있던 사실이다.** 버리면 표가 사실과 달라진다."""
+    met = EssOptimumPoint(230.0, 310.0, 4.7e8, 3.1e6, 154.5, power_kw=34.7)
+    unmet = replace(met, target_kw=210.0, unmet_kwh=805.9, achieved_demand_kw=264.4)
+    assert met.target_met and met.eligible
+    assert not unmet.target_met and not unmet.eligible
+    # 마진이 없으면 목표를 지켜도 후보가 아니다.
+    assert not replace(met, viable=False).eligible
+    # 값이 안 매겨진 점도 후보가 아니다.
+    assert not replace(met, payback_years=None).eligible
+
+
+def test_사양_표가_미달을_밝힌다() -> None:
+    """**「210 kW · 저감 55 kW」 옆에 실제 264 kW 를 적는다** (48세션).
+
+    적지 않으면 표가 사실과 다르다 — 그 사양으로는 요금적용전력이 그만큼
+    내려가지 않는다.
+    """
+    points = (
+        EssOptimumPoint(
+            210.0, 583.0, 7.4e8, 1.5e6, 490.7, 54.7, unmet_kwh=805.9, achieved_demand_kw=264.4
+        ),
+        EssOptimumPoint(230.0, 310.0, 4.7e8, 3.1e6, 154.5, power_kw=34.7),
+        EssOptimumPoint(250.0, 62.0, 2.6e8, 1.1e6, 229.3, power_kw=14.7, viable=False),
+    )
+    optimum = EssOptimum(230.0, 154.5, 230.0, 100.0, 0, False, points=points)
+    frame = frames.ess_spec_frame(optimum, baseline_demand_kw=264.68, market_minimum_kwh=100.0)
+    marks = dict(zip(frame["목표 요금적용전력(kW)"], frame["표식"], strict=True))
+    assert "목표 미달 (실제 264 kW)" in marks[210.0]
+    assert marks[230.0] == "최적"
+    assert "마진 미달" in marks[250.0]
+    assert "최소 규모" in marks[250.0]
+
+
+def test_성립하는_점이_없으면_목표를_고르지_않는다(
+    sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult
+) -> None:
+    """**결론을 낸다** (48세션).
+
+    기본요금단가를 낮추면 마진 조건 경계가 내려가 어떤 방전시간도 넘지 못한다 —
+    C6 야간 피크형이 실제 자료로 이 자리에 있다. 목표를 제시하는 대신
+    :data:`NOT_VIABLE_CONCLUSION` 을 내고 표는 참고로 남긴다.
+    """
+    curve = ess_target_curve(
+        sample_usage.kw,
+        15,
+        baseline_demand_kw=5_293.44,
+        # 성립 한계를 0.01h 로 끌어내린다. 곡선의 가장 짧은 방전시간이 0.296h 다.
+        base_fee_won_per_kw=70.0,
+    )
+    assert curve.best is not None
+    assert not curve.any_viable and curve.viable_best is None
+    optimum = refine_ess_target(
+        sample_usage, tariff, SAMPLE_SELECTION, curve=curve, baseline=sample_bill
+    )
+    assert not optimum.viable
+    assert optimum.target_kw == 0.0
+    assert optimum.payback_years is None
+    assert texts(optimum.notices) == (NOT_VIABLE_CONCLUSION,)
+    # **창을 훑지 않는다.** 표에 세울 만큼만 잰다 — 21점이 아니라 다섯이다.
+    assert len(optimum.points) == SPEC_TABLE_ROWS
+    frame = frames.ess_spec_frame(
+        optimum,
+        baseline_demand_kw=curve.baseline_demand_kw,
+        market_minimum_kwh=curve.market_minimum_kwh,
+    )
+    assert len(frame) == SPEC_TABLE_ROWS
+    assert "최적" not in " ".join(frame["표식"])
+
+
+def test_참고_지점은_곡선_전체에_벌려_잡는다(target_curve: EssTargetCurve) -> None:
+    """얕은 쪽과 깊은 쪽이 한 표에 함께 서야 「왜 안 되는가」 가 읽힌다."""
+    picks = reference_targets(target_curve, SPEC_TABLE_ROWS)
+    assert len(picks) == SPEC_TABLE_ROWS
+    assert picks[0] == target_curve.points[0].target_kw
+    assert picks[-1] == target_curve.points[-1].target_kw
+    assert list(picks) == sorted(picks, reverse=True)
+
+
+@pytest.mark.skipif(not _OFFICE_CASE.is_file(), reason="소형 사무빌딩 자료가 없습니다")
+def test_소형_사무빌딩에서_성립하지_않는_사양을_고르지_않는다(tariff: TariffTable) -> None:
+    """**48세션 조사가 시작된 자리다.**
+
+    47세션 자료에서 정밀화가 목표 230 kW · 방전 8.95h · 회수 154.5년을 골랐다.
+    kW당 배터리비가 10년 기본요금 절감액의 8.7배라 어떤 규모로도 회수되지 않고,
+    배터리를 하룻밤에 되채우지 못해 220 kW 아래로는 목표 자체를 놓치고 있었다.
+    """
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.io import load_usage
+    from kwise.quality import check_quality
+
+    usage = load_usage(_OFFICE_CASE)
+    quality = check_quality(usage, contract_kw=300.0)
+    selection = TariffSelection("general_b", "high_a", "I")
+    diag = diagnose(usage, tariff, ContractInfo(selection, contract_kw=300.0), quality=quality)
+    assert diag.structure is not None
+    curve = ess_target_curve(
+        usage.kw,
+        usage.meta.interval_minutes,
+        baseline_demand_kw=diag.peak.billing_demand_kw,
+        base_fee_won_per_kw=float(tariff.rates(selection).base_won_per_kw),
+    )
+    # **격자가 0.5 kW 다** — 265 kW 짜리 건물이 5,293 kW 짜리와 같은 해상도를 얻는다.
+    assert curve.step_kw == 0.5
+    assert len(curve.points) == 159
+    optimum = refine_ess_target(
+        usage, tariff, selection, curve=curve, baseline=diag.structure.bill, quality=quality
+    )
+    assert optimum.viable
+    best = next(item for item in optimum.points if item.target_kw == optimum.target_kw)
+    assert best.target_met, "목표를 못 지키는 사양을 고르면 안 된다."
+    assert best.discharge_hours < curve.viable_limit_hours
+    # 8.95h 짜리는 이제 고르지 않는다.
+    assert best.discharge_hours < 1.0
