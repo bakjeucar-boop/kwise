@@ -112,6 +112,7 @@ from kwise.ui.session import build_report_bytes
 from kwise.ui.spec import ReviewScope, measure, review_scope
 from kwise.ui.state import (
     enabled_measures,
+    ess_pricing,
     get_combination_pick,
     get_solar_inputs,
     input_key,
@@ -661,10 +662,19 @@ def _ess_optimum(
         curve,
         usage_token(usage),
         form,
-        measure_float("ess", "fixed_cost"),
-        measure_float("ess", "per_kwh_cost"),
+        *_ess_pricing_args(),
         rules_stamp(),
     )
+
+
+def _ess_pricing_args() -> tuple[float | None, float | None, str]:
+    """ESS 단가 인자 셋 — **2단계 카드와 같은 순서로 넘긴다** (50세션).
+
+    단가 자리를 기준 데이터 화면으로 옮기면서 경로가 하나 늘었다. 두 자리가
+    같은 인자를 넘겨야 캐시에 걸려 계산이 한 번만 돈다.
+    """
+    path, fixed, per_kwh = ess_pricing()
+    return fixed, per_kwh, path
 
 
 def _ess_curve(
@@ -679,8 +689,7 @@ def _ess_curve(
         usage_token(usage),
         float(peak),
         float(table.rates(form.selection).base_won_per_kw),
-        measure_float("ess", "fixed_cost"),
-        measure_float("ess", "per_kwh_cost"),
+        *_ess_pricing_args(),
         rules_stamp(),
     )
 

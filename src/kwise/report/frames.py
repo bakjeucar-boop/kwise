@@ -26,6 +26,7 @@ from kwise.measures import (
     SPEC_TABLE_ROWS,
     CapacityVerdict,
     DispatchResult,
+    EssCostModel,
     EssOptimum,
     EssOptimumPoint,
     PowerFactorResult,
@@ -33,6 +34,7 @@ from kwise.measures import (
     SolarPoint,
     TariffSwitchResult,
     annualize,
+    payback_text,
 )
 from kwise.report.columns import option_label
 from kwise.report.days import day_profile
@@ -51,12 +53,14 @@ __all__ = [
     "MONTHLY_CHARGE_PARTS",
     "TARIFF_PARTS",
     "band_frame",
+    "capacity_band_frame",
     "combination_frame",
     "daily_temperature_frame",
     "daily_usage_frame",
     "dr_daily_frame",
     "ess_day_frame",
     "ess_spec_frame",
+    "ess_spec_groups",
     "ess_spec_rows",
     "ess_spec_targets",
     "hourly_profile_frame",
@@ -375,14 +379,49 @@ def solar_capacity_table(
 ESS_SPEC_ROWS = SPEC_TABLE_ROWS
 
 
-def ess_spec_targets(points: Sequence[EssOptimumPoint], best_target_kw: float) -> tuple[int, ...]:
-    """표에 세울 지점의 자리 번호 — **최적을 가운데 두고 양쪽으로 벌린다.**
+def ess_spec_groups(
+    points: Sequence[EssOptimumPoint],
+) -> tuple[tuple[EssOptimumPoint, tuple[float, float]], ...]:
+    """**같은 설비로 덮이는 목표를 묶는다** (50세션 3-6).
 
-    창의 양 끝과 최적은 반드시 넣는다. 끝을 빼면 「목표를 낮추면 회수가
-    나빠진다」 가 안 보이고, 최적을 빼면 표식을 찍을 줄이 없다. 남은 자리는
-    **가장 넓은 틈부터** 반으로 갈라 채운다 — 한쪽에만 몰리지 않는다.
+    격자를 쓰면 목표 여럿이 한 사양으로 뭉친다. 그것이 정보다 — 「이 목표 범위는
+    같은 설비로 덮인다」. 대형 샘플에서 21점이 15사양으로 줄었다.
+
+    **대표는 그 사양이 버티는 가장 깊은 목표다.** 같은 설비를 샀으면 그것이
+    견디는 가장 낮은 목표로 돌리는 것이 맞다 — 저감량·절감액이 가장 크고
+    회수기간이 가장 짧은 줄이 자동으로 대표가 된다. 굳이 얕게 돌릴 까닭이 없다.
+
+    Returns:
+        ``(대표 점, (목표 하한, 목표 상한))`` 을 목표 내림차순으로.
+        **최소 규격에 못 미치는 점은 뺀다** (50세션 3-3) — 살 물건이 없다.
     """
-    ordered = sorted(range(len(points)), key=lambda i: -points[i].target_kw)
+    usable = [point for point in points if not point.below_min_power]
+    groups: dict[tuple[float, float], list[EssOptimumPoint]] = {}
+    for point in usable:
+        groups.setdefault(point.spec_key, []).append(point)
+    rows = [
+        (
+            min(members, key=lambda item: item.target_kw),
+            (
+                min(item.target_kw for item in members),
+                max(item.target_kw for item in members),
+            ),
+        )
+        for members in groups.values()
+    ]
+    return tuple(sorted(rows, key=lambda row: -row[0].target_kw))
+
+
+def ess_spec_targets(points: Sequence[EssOptimumPoint], best_target_kw: float) -> tuple[int, ...]:
+    """표에 세울 **사양**의 자리 번호 — 고른 자리를 가운데 두고 양쪽으로 벌린다.
+
+    창의 양 끝과 고른 자리는 반드시 넣는다. 끝을 빼면 「목표를 낮추면 회수가
+    나빠진다」 가 안 보이고, 고른 자리를 빼면 표식을 찍을 줄이 없다. 남은 자리는
+    **가장 넓은 틈부터** 반으로 갈라 채운다 — 한쪽에만 몰리지 않는다.
+
+    **50세션부터 자리 번호는 사양 묶음의 것이다** (:func:`ess_spec_groups`).
+    """
+    ordered = list(range(len(points)))
     if not ordered:
         return ()
     best = next(
@@ -398,9 +437,7 @@ def ess_spec_targets(points: Sequence[EssOptimumPoint], best_target_kw: float) -
     return tuple(ordered[rank] for rank in chosen)
 
 
-def ess_spec_frame(
-    optimum: EssOptimum, *, baseline_demand_kw: float, market_minimum_kwh: float | None = None
-) -> pd.DataFrame:
+def ess_spec_frame(optimum: EssOptimum, *, baseline_demand_kw: float) -> pd.DataFrame:
     """목표별 사양 표 — **곡선을 대신한다** (46세션).
 
     23~45세션은 회수기간 곡선을 그렸다. 곡선은 개략 산정이라 값이 카드와 달랐고
@@ -413,13 +450,16 @@ def ess_spec_frame(
     26세션이 없앤 「대표 지점 표」와 다르다 — 그때는 곡선 **아래** 표까지 두어
     읽을 것이 둘이었다. 지금은 표 하나뿐이다.
 
-    Args:
-        market_minimum_kwh: 주면 하한에 걸린 줄에 「최소 규모」 표식을 단다.
-            그 줄들은 용량이 달라도 투자비가 같아, 밝히지 않으면 표가 틀린 것처럼
-            읽힌다.
+    **뭉친 줄을 합친다** (50세션 3-6). 격자를 쓰면 목표 여럿이 한 사양으로 묶이고,
+    그 범위가 곧 정보다 — 「이 목표 범위는 같은 설비로 덮인다」.
+
+    **「최소 규모」 표식이 없어졌다** (50세션 3-4). 다섯 줄에 모두 붙어 구별하는
+    힘이 없었다 — 격자와 최소 규격을 쓰면 살 수 있는 최소 구성이 자연히 하한이
+    되므로 그 표식이 필요 없다.
     """
-    picks = ess_spec_targets(optimum.points, optimum.target_kw)
-    rows = [optimum.points[i] for i in picks]
+    groups = ess_spec_groups(optimum.points)
+    picks = ess_spec_targets([point for point, _ in groups], optimum.target_kw)
+    rows = [groups[i] for i in picks]
 
     def mark(point: EssOptimumPoint) -> str:
         # **성립하는 목표가 없으면 표식을 찍지 않는다** (48세션).
@@ -434,21 +474,23 @@ def ess_spec_frame(
             labels.append(f"목표 미달 (실제 {point.achieved_demand_kw:,.0f} kW)")
         elif not point.viable:
             labels.append("마진 미달")
-        if market_minimum_kwh is not None and point.nameplate_capacity_kwh < market_minimum_kwh:
-            labels.append("최소 규모")
         return " · ".join(labels)
+
+    def span(bounds: tuple[float, float]) -> str:
+        low, high = bounds
+        return f"{low:,.0f}" if abs(high - low) < 0.5 else f"{low:,.0f}~{high:,.0f}"
 
     return pd.DataFrame(
         {
-            "목표 요금적용전력(kW)": [point.target_kw for point in rows],
-            "저감량(kW)": [max(0.0, baseline_demand_kw - point.target_kw) for point in rows],
-            "필요 출력(kW)": [point.power_kw for point in rows],
-            "정격 용량(kWh)": [point.nameplate_capacity_kwh for point in rows],
-            "방전시간(h)": [point.discharge_hours for point in rows],
-            "투자비(원)": [point.investment_won for point in rows],
-            "연간 절감액(원)": [point.annual_saving_won for point in rows],
-            "회수기간(년)": [point.payback_years for point in rows],
-            "표식": [mark(point) for point in rows],
+            "목표 요금적용전력(kW)": [span(bounds) for _, bounds in rows],
+            "저감량(kW)": [max(0.0, baseline_demand_kw - point.target_kw) for point, _ in rows],
+            "출력(kW)": [point.grid_power_kw for point, _ in rows],
+            "용량(kWh)": [point.grid_capacity_kwh for point, _ in rows],
+            "방전시간(h)": [point.discharge_hours for point, _ in rows],
+            "투자비(원)": [point.investment_won for point, _ in rows],
+            "연간 절감액(원)": [point.annual_saving_won for point, _ in rows],
+            "회수기간(년)": [point.payback_years for point, _ in rows],
+            "표식": [mark(point) for point, _ in rows],
         }
     )
 
@@ -457,7 +499,7 @@ ESS_SPEC_HEADER: tuple[str, ...] = (
     "목표",
     "저감량",
     "출력",
-    "정격 용량",
+    "용량",
     "방전시간",
     "투자비",
     "연간 절감액",
@@ -478,14 +520,16 @@ def ess_spec_rows(frame: pd.DataFrame) -> tuple[tuple[str, ...], ...]:
         years = row["회수기간(년)"]
         rows.append(
             (
-                f"{row['목표 요금적용전력(kW)']:,.0f} kW",
+                f"{row['목표 요금적용전력(kW)']} kW",
                 f"{row['저감량(kW)']:,.0f} kW",
-                f"{row['필요 출력(kW)']:,.0f} kW",
-                f"{row['정격 용량(kWh)']:,.0f} kWh",
+                f"{row['출력(kW)']:,.0f} kW",
+                f"{row['용량(kWh)']:,.0f} kWh",
                 f"{row['방전시간(h)']:,.2f}h",
                 format_won(float(row["투자비(원)"]), reason="—"),
                 format_won(float(row["연간 절감액(원)"]), reason="—"),
-                "—" if years is None or years != years else f"{float(years):,.1f}년",
+                # **표시 상한을 넘으면 「>50년」 이다** (50세션 3-7).
+                # 500년·3,000년 같은 값은 근거로 읽히지 않는다.
+                payback_text(None if years is None or years != years else float(years)),
                 str(row["표식"]),
             )
         )
@@ -495,6 +539,30 @@ def ess_spec_rows(frame: pd.DataFrame) -> tuple[tuple[str, ...], ...]:
 #: 목표별 사양 표 위 한 줄 (46세션). 곡선 캡션이 하던 일이다 — 왜 U자인지를
 #: 적는다. **곡선이 없어졌으므로 「개략」 을 밝힐 필요도 없어졌다.**
 ESS_SPEC_CAPTION = "목표를 낮추면 저감량은 늘지만 필요 용량이 더 빠르게 늘어 회수기간이 나빠집니다."
+
+
+def capacity_band_frame(model: EssCostModel) -> pd.DataFrame:
+    """kWh 구간 단가 표 (50세션 3-5 ②). **기준 데이터 화면이 그린다.**
+
+    기본값은 2항식을 구간 중앙에서 환산한 값이다 — ``tools\fit_ess_cost.py`` 가
+    계수에서 다시 채운다. **비활성 구간도 목록에 남긴다**: 규격 격자의 최소
+    배터리 미만이라 조달되지 않지만, 향후 상업용 소용량 제품이 나오면 살릴
+    자리다. 지우면 그런 구간이 있었다는 사실까지 사라진다.
+    """
+    rows = [
+        {
+            "구간": band.label,
+            "단가": (
+                format_won(band.won_per_kwh, reason="—") + "/kWh"
+                if band.won_per_kwh is not None
+                else "—"
+            ),
+            "쓰임": "쓴다" if band.active else "비활성 — 최소 규격 미만",
+            "2항식 환산 기준": f"{band.midpoint_kwh:,.0f} kWh",
+        }
+        for band in model.capacity_bands
+    ]
+    return pd.DataFrame(rows)
 
 
 # **26세션이 없앴던 표가 46세션에 돌아왔다.** 그때는 곡선 **아래** 대표 지점

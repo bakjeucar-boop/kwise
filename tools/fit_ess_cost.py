@@ -38,7 +38,28 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 CASES_PATH = PROJECT_ROOT / "data" / "ess_cost_cases.json"
 MODEL_PATH = PROJECT_ROOT / "data" / "ess_cost_model.json"
+GRID_PATH = PROJECT_ROOT / "data" / "ess_spec_grid.json"
 SMALL_BAND_MAX_KWH = 200.0
+
+CAPACITY_BAND_EDGES_KWH: tuple[tuple[float, float], ...] = (
+    (0.0, 50.0),
+    (50.0, 100.0),
+    (100.0, 200.0),
+    (200.0, 400.0),
+    (400.0, 1000.0),
+)
+"""kWh 구간 단가의 경계 (50세션 3-5 ②).
+
+**kW 가 아니라 kWh 로 가른다.** 사례에 100 kW 가 둘인데 156.4 kWh 는 2.35억,
+400 kWh 는 4.43억으로 kW당 단가가 1.9배 차이난다 — 가격을 정하는 것은 용량이다.
+
+첫 구간(0~50 kWh)은 **비활성**이다. 규격 격자의 가장 작은 배터리가 50 kWh 라
+그 아래로는 조달되지 않는다. 목록에 남겨 두는 것은 향후 상업용 소용량 제품이
+나오면 살릴 자리이기 때문이다.
+
+마지막 구간의 상한 1,000 kWh 는 **단가를 뽑기 위한 명목값**이다. 사례 최대가
+400 kWh 이므로 그 위는 이 구간 값을 그대로 쓰고 「사례 범위 초과」 를 표시한다.
+"""
 COEFFICIENT_UNIT_WON = 1_000
 """계수를 반올림할 단위 (14세션 1절).
 
@@ -161,8 +182,55 @@ def rounding_check(
     ]
 
 
+def capacity_bands(fixed: float, per_kwh: float, grid_step_kwh: float) -> list[dict[str, Any]]:
+    """kWh 구간 단가를 **2항식에서 환산해** 채운다 (50세션 3-5 ②).
+
+    구간 **중앙**에서 2항식이 내는 설비비를 그 용량으로 나눈다. 단가가 하나뿐인
+    구간에서 어느 한쪽 끝을 쓰면 반대쪽이 통째로 어긋나므로 중앙을 쓴다.
+
+        0~50 kWh    비활성 (규격 격자의 가장 작은 배터리가 50 kWh 다)
+        50~100      중앙 75  → (고정비 + 용량단가×75)  ÷ 75
+        100~200     중앙 150 → (고정비 + 용량단가×150) ÷ 150
+        200~400     중앙 300 → (고정비 + 용량단가×300) ÷ 300
+        400 초과    중앙 700 → (고정비 + 용량단가×700) ÷ 700
+
+    **경계는 상한 포함이다** (``용량 ≤ 상한``). 전기공사 구간과 같은 규약이고,
+    구간 저변에서 투자비를 비싸게 잡아 회수기간이 길어지는 안전한 방향이다.
+
+    **전기공사비는 들어 있지 않다.** 2항식과 같은 층위(설비비)라야 두 경로를
+    같은 자리에서 견줄 수 있다.
+    """
+    bands: list[dict[str, Any]] = []
+    for low, high in CAPACITY_BAND_EDGES_KWH:
+        active = high > grid_step_kwh - 1e-9 and low >= grid_step_kwh - 1e-9
+        middle = (low + high) / 2.0
+        price = round_coefficient((fixed + per_kwh * middle) / middle) if middle > 0 else 0.0
+        bands.append(
+            {
+                "min_kwh": low,
+                "max_kwh": high,
+                "active": active,
+                "won_per_kwh": price if active else None,
+                "midpoint_kwh": middle,
+                "note": (
+                    ""
+                    if active
+                    else f"규격 격자의 최소 배터리 {grid_step_kwh:,.0f} kWh 미만이라 조달되지 않는다."
+                ),
+            }
+        )
+    return bands
+
+
+def grid_step(path: Path = GRID_PATH) -> float:
+    """규격 격자의 배터리 단위. **구간 단가의 비활성 경계가 여기서 나온다.**"""
+    payload: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return float(payload["battery"]["step_kwh"])
+
+
 def build_model(cases: list[Case], vat_rate: float) -> dict[str, Any]:
     regression = [case for case in cases if case.category == "regression"]
+    grid_step_kwh = grid_step()
     points = [(case.capacity_kwh, case.equipment_won) for case in regression]
     raw_intercept, raw_slope, r2 = fit(points)
     # **천 원 단위로 반올림해 저장한다** (14세션 1절). 적합값을 원 단위로 두면
@@ -239,12 +307,16 @@ def build_model(cases: list[Case], vat_rate: float) -> dict[str, Any]:
                 "비율을 곱하는데 근거가 한 건뿐이라 참고값이다."
             ),
         },
+        "capacity_bands": capacity_bands(intercept, slope, grid_step_kwh),
         "applicable_range": {
-            "min_kwh": min(case.capacity_kwh for case in regression),
+            "min_kwh": grid_step_kwh,
             "max_kwh": max(case.capacity_kwh for case in regression),
             "note": (
-                "이 구간 밖은 사례가 없다. 아래는 하한 용량으로 올려 산정하고, "
-                "위는 참고값으로 표시한다."
+                "하한은 규격 격자의 가장 작은 배터리다 (ess_spec_grid.json). "
+                "회귀에 쓴 사례는 100~400 kWh 이므로 그 아래는 외삽이고, 위는 "
+                "참고값으로 표시한다. 50세션까지는 하한 100 kWh 로 올려 산정했는데, "
+                "격자를 쓰면 살 수 있는 최소 구성이 자연히 하한이 되어 그 규칙이 "
+                "필요 없어졌다."
             ),
         },
         "holdout": [
@@ -289,6 +361,18 @@ def show(model: dict[str, Any]) -> None:
                 f"{row['error_ratio']:+.2%}",
             )
         console.print(table)
+    table = Table(title="kWh 구간 단가 — 2항식을 구간 중앙에서 환산한 값")
+    for column in ("구간(kWh)", "중앙", "단가(원/kWh)", "쓰임"):
+        table.add_column(column, justify="right")
+    for band in model["capacity_bands"]:
+        price = band["won_per_kwh"]
+        table.add_row(
+            f"{band['min_kwh']:,.0f}~{band['max_kwh']:,.0f}",
+            f"{band['midpoint_kwh']:,.0f}",
+            "—" if price is None else f"{price:,.0f}",
+            "활성" if band["active"] else "비활성",
+        )
+    console.print(table)
     for band in model["electrical_work"]["bands"]:
         console.print(
             f"전기공사 ≤ {band['max_kwh']:,.0f} kWh — "

@@ -29,13 +29,17 @@ from kwise.measures.arbitrage import (
 )
 from kwise.measures.base import SHORTEST_PAYBACK, Certainty, annualize, payback_years
 from kwise.measures.ess_cost import (
+    PRICING_FORMULA,
+    PRICING_QUOTED,
     EssCostInput,
     EssCostModel,
     EssCostReference,
     EssQuote,
+    EssSpecGrid,
     Feasibility,
     load_ess_cost_model,
     load_ess_cost_reference,
+    load_ess_spec_grid,
 )
 from kwise.measures.netload import with_load
 from kwise.notices import Notice, basis, info, warn
@@ -53,6 +57,7 @@ from kwise.tariff import (
 )
 
 __all__ = [
+    "BELOW_MINIMUM_CONCLUSION",
     "NOT_VIABLE_CONCLUSION",
     "SPEC_TABLE_ROWS",
     "U_SHAPE_REASON",
@@ -77,7 +82,10 @@ __all__ = [
     "excess_slots_by_day",
     "high_rate_discharge_hours",
     "light_band_mask",
+    "min_pcs_power_kw",
     "nameplate_capacity_kwh",
+    "payback_display_cap_years",
+    "payback_text",
     "reference_targets",
     "refine_ess_target",
     "refine_max_widen",
@@ -86,6 +94,7 @@ __all__ = [
     "refine_window_ratio",
     "required_discharge_hours",
     "size_for_target",
+    "snap_spec",
     "snap_step_kw",
     "target_step_kw",
     "viable_discharge_hours",
@@ -104,6 +113,51 @@ def default_dod() -> float:
 
 def default_payback_target_years() -> float:
     return float(assumption("ess.payback_target_years"))
+
+
+def min_pcs_power_kw() -> float:
+    """**상업용 ESS 최소 PCS 출력** (50세션 3-3). 기준 데이터에서 읽는다.
+
+    이보다 작은 출력에는 상업용 제품을 찾기 어려워 **산출하지 않는다.** 5~20 kWh
+    일체형은 주택용·비상전원용이고 220V 단상이라 고압 수전 건물에 쓸 수 없다 —
+    그 근거는 매뉴얼에 적는다. 향후 소용량 제품이 나오면 이 값만 낮추면 된다.
+    """
+    return float(assumption("ess.min_pcs_power_kw"))
+
+
+def payback_display_cap_years() -> float:
+    """회수기간 **표시** 상한 (50세션 3-7). 계산값은 자르지 않는다."""
+    return float(assumption("ess.payback_display_cap_years"))
+
+
+def payback_text(years: float | None, *, cap_years: float | None = None) -> str:
+    """회수기간을 사람이 읽는 글로. **상한을 넘으면 「>50년」 이다** (50세션 3-7).
+
+    500년·3,000년 같은 값은 근거로 읽히지 않는다. 자르는 것은 표시뿐이고 계산은
+    그대로 둔다 — 상한은 기준 데이터에 있다.
+    """
+    if years is None:
+        return "—"
+    cap = payback_display_cap_years() if cap_years is None else cap_years
+    return f">{cap:,.0f}년" if years > cap else f"{years:,.1f}년"
+
+
+def snap_spec(
+    power_kw: float, capacity_kwh: float, *, grid: EssSpecGrid | None = None
+) -> tuple[float, float]:
+    """필요 사양을 **살 수 있는 규격으로 올린다** (50세션 3-2).
+
+        필요 출력 123 kW  → 150 kW      (100 kW 초과는 병렬 50 kW 단위)
+        필요 용량 120 kWh → 150 kWh     (랙 100 kWh · 반 랙 50 kWh)
+
+    **내려 잡지 않는다.** 내리면 목표를 못 지킨다. 올리면 투자비가 늘어
+    회수기간이 길어지는데 그것이 정직한 방향이다.
+
+    격자는 :func:`~kwise.measures.ess_cost.load_ess_spec_grid` 가 데이터에서
+    읽는다 — 코드에 박지 않는다.
+    """
+    spec = load_ess_spec_grid() if grid is None else grid
+    return spec.snap_power_kw(power_kw), spec.snap_capacity_kwh(capacity_kwh)
 
 
 def high_rate_discharge_hours() -> float:
@@ -270,13 +324,16 @@ def required_discharge_hours(excess: PeakExcess) -> float:
 
 
 U_SHAPE_REASON = (
-    "왼쪽은 최소 규모 {minimum:,.0f} kWh 를 다 못 쓰는 구간이고, 오른쪽은 용량이 "
-    "급증해 투자비가 늘어나는 구간입니다."
+    "왼쪽은 고정비가 지배해 용량을 줄여도 투자비가 그만큼 줄지 않는 구간이고, "
+    "오른쪽은 용량이 급증해 투자비가 늘어나는 구간입니다."
 )
-"""회수기간 곡선이 U자인 이유 (14세션 3-2).
+"""회수기간 곡선이 U자인 이유 (14세션 3-2 · 50세션에 왼쪽 팔의 설명을 고쳤다).
 
-**물리적 최적이 아니라 조달 규격의 산물이다.** 시장 최소 규모가 없으면 목표를
-올릴수록 회수기간이 계속 좋아지기만 한다.
+**물리적 최적이 아니라 조달 구조의 산물이다.** 49세션까지는 「시장 최소 규모
+100 kWh」 를 왼쪽 팔의 이유로 적었는데, 50세션에 그 하한을 규격 격자로 바꾸면서
+살 수 있는 최소 배터리가 50 kWh 로 내려갔다. 그래도 U자는 그대로다 — 왼쪽 팔을
+만드는 것은 **1억을 넘는 고정비**(PCS·컨테이너·소방·공조)와 전기공사비이고,
+그것은 용량을 줄여도 줄지 않는다.
 """
 
 
@@ -292,9 +349,13 @@ class EssTargetPoint:
             내지 않는다 — 화면 용량은 ``nameplate_capacity_kwh`` 다 (18세션 1절).
         nameplate_capacity_kwh: 정격 용량 = 필요 용량 ÷ √왕복효율 ÷ DoD.
             :func:`evaluate_ess` 가 내는 카드 용량과 **같은 값이다.**
-        billed_capacity_kwh: 과금 용량 = ``max(정격 용량, 시장 최소 규모)``.
-            **정격에 건다** (46세션) — 카드와 같은 양이어야 경계가 갈라지지 않는다.
-        at_market_minimum: 최소 규모에 걸렸는가. 걸린 구간이 U자의 왼쪽 팔이다.
+        grid_capacity_kwh: **살 수 있는 배터리로 올려 잡은** 용량 (50세션 3-2).
+            투자비는 이 값으로 낸다. 46~49세션의 「과금 용량」(시장 최소 규모로
+            올려 잡던 값)이 있던 자리다 — 격자가 그 규칙을 대신한다.
+        grid_power_kw: 살 수 있는 PCS 로 올려 잡은 출력.
+        below_min_power: 필요 출력이 상업용 최소 규격에 못 미치는가 (50세션 3-3).
+            참이면 **그 목표는 산출하지 않는다** — 이 규모에 맞는 상업용 제품을
+            찾기 어렵다.
         viable: **마진 조건**을 넘는가 (48세션). ``kW당 배터리비 < 목표연수
             기본요금 절감/kW`` 다. 넘지 못하면 규모를 어떻게 잡아도 회수되지
             않으므로 최적 후보에서 뺀다 — :func:`viable_discharge_hours` 참조.
@@ -305,15 +366,26 @@ class EssTargetPoint:
     power_kw: float
     required_capacity_kwh: float
     nameplate_capacity_kwh: float
-    billed_capacity_kwh: float
+    grid_capacity_kwh: float
     discharge_hours: float
     equipment_won: float
     electrical_won: float
     investment_won: float
     annual_saving_won: float
     payback_years: float | None
-    at_market_minimum: bool
+    grid_power_kw: float = 0.0
+    below_min_power: bool = False
     viable: bool = True
+
+    @property
+    def grid_discharge_hours(self) -> float:
+        """**규격 용량 ÷ 규격 출력** (50세션). 실제로 사는 물건의 방전시간이다.
+
+        :attr:`discharge_hours` 와 갈라 둔다 — 그쪽은 **마진 조건이 보는 값**이라
+        격자에 올려 잡기 전의 정격 기준이다. 「이 부하 모양이 애초에 회수될 수
+        있는가」 를 묻는 판정이므로 조달 규격이 끼면 경계가 목표에 따라 오르내린다.
+        """
+        return self.grid_capacity_kwh / self.grid_power_kw if self.grid_power_kw > 0 else 0.0
 
     @property
     def spec_label(self) -> str:
@@ -325,7 +397,7 @@ class EssTargetPoint:
         """
         return (
             f"{self.target_kw:,.0f} kW · 저감 {self.reduction_kw:,.0f} kW · "
-            f"{self.power_kw:,.0f} kW / {self.nameplate_capacity_kwh:,.0f} kWh"
+            f"{self.grid_power_kw:,.0f} kW / {self.grid_capacity_kwh:,.0f} kWh"
         )
 
 
@@ -334,8 +406,8 @@ class EssTargetCurve:
     """목표별 회수기간 곡선. **U자다** (14세션 3-2).
 
     목표를 낮출수록 저감량이 커져 절감액이 늘지만 필요 용량이 급증해 투자비가 더
-    빨리 오른다. 반대로 목표를 높이면 필요 용량이 시장 최소 규모 아래로 내려가
-    투자비가 더 줄지 않는데 절감액만 준다. 그 사이에 최소 지점이 생긴다.
+    빨리 오른다. 반대로 목표를 높이면 용량이 줄어도 **고정비가 그대로 남아**
+    투자비가 그만큼 줄지 않는데 절감액만 준다. 그 사이에 최소 지점이 생긴다.
 
     **절감액은 기본요금만 본 개략치다.** 목표를 고르는 데 쓰고, 고른 뒤의 금액은
     :func:`evaluate_ess` 가 요금을 다시 계산해 낸다.
@@ -346,7 +418,8 @@ class EssTargetCurve:
     baseline_demand_kw: float
     observed_peak_kw: float
     base_fee_won_per_kw: float
-    market_minimum_kwh: float
+    min_power_kw: float
+    """상업용 ESS 최소 PCS 출력 (50세션). 이 아래 목표는 고를 수 없다."""
     step_kw: float
     round_trip: float
     dod: float
@@ -368,8 +441,25 @@ class EssTargetCurve:
         return self.viable_best is not None
 
     @property
+    def below_minimum_best(self) -> EssTargetPoint | None:
+        """**마진은 넘는데 최소 규격에 못 미치는** 점 가운데 회수기간 최소 (50세션).
+
+        「어떤 규모로도 회수되지 않는다」 와 「이 규모의 제품을 못 찾았다」 는
+        다른 사실이다. 소형 사무빌딩이 뒤쪽인데, 앞쪽 문구를 내면 확인되지 않은
+        판정을 적는 것이 된다.
+        """
+        candidates = [
+            item
+            for item in self.points
+            if item.viable and item.below_min_power and item.payback_years is not None
+        ]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda item: item.payback_years or math.inf)
+
+    @property
     def u_shape_reason(self) -> str:
-        return U_SHAPE_REASON.format(minimum=self.market_minimum_kwh)
+        return U_SHAPE_REASON
 
     def frame(self) -> pd.DataFrame:
         """곡선 전체. 차트가 그대로 그린다."""
@@ -382,12 +472,16 @@ class EssTargetCurve:
                 # 화면에 내는 용량은 **정격**이다. 위 「필요 용량」 은 내보낼
                 # 에너지라 카드와 다르다 — 곡선 내부 계산에만 쓴다 (18세션 1절).
                 "정격 용량(kWh)": [item.nameplate_capacity_kwh for item in self.points],
-                "과금 용량(kWh)": [item.billed_capacity_kwh for item in self.points],
-                "방전시간(h)": [item.discharge_hours for item in self.points],
+                # 살 수 있는 규격으로 올려 잡은 값. **투자비는 이것으로 낸다** (50세션).
+                "규격 출력(kW)": [item.grid_power_kw for item in self.points],
+                "규격 용량(kWh)": [item.grid_capacity_kwh for item in self.points],
+                "방전시간(h)": [item.grid_discharge_hours for item in self.points],
+                # 마진 조건이 보는 값. 격자에 올려 잡기 **전**의 정격 기준이다.
+                "마진 기준 방전시간(h)": [item.discharge_hours for item in self.points],
                 "투자비(원)": [item.investment_won for item in self.points],
                 "연간 절감액(원)": [item.annual_saving_won for item in self.points],
                 "회수기간(년)": [item.payback_years for item in self.points],
-                "최소 규모 적용": [item.at_market_minimum for item in self.points],
+                "최소 규격 미달": [item.below_min_power for item in self.points],
                 "마진 조건": [item.viable for item in self.points],
             }
         )
@@ -458,6 +552,8 @@ def ess_target_curve(
     baseline_demand_kw: float,
     base_fee_won_per_kw: float,
     model: EssCostModel | None = None,
+    grid: EssSpecGrid | None = None,
+    min_power_kw: float | None = None,
     step_kw: float | None = None,
     search_ratio: float | None = None,
     indoor: bool = False,
@@ -470,9 +566,9 @@ def ess_target_curve(
 
         필요 출력 = 초과분 최대값 (kW)
         필요 용량 = 하루치 초과 에너지 합의 연중 최대값 (kWh)
-        정격 용량 = 필요 용량 ÷ √왕복효율 ÷ DoD          ← 화면에 내는 용량
-        과금 용량 = max(필요 용량, 시장 최소 규모)
-        투자비   = 고정비 + 용량단가 × 과금 용량 + 전기공사
+        정격 용량 = 필요 용량 ÷ √왕복효율 ÷ DoD
+        규격 사양 = 정격을 살 수 있는 규격으로 올림           ← 화면에 내는 사양
+        투자비   = 고정비 + 용량단가 × 규격 용량 + 전기공사
         절감액   = 저감량(kW) × 기본요금단가 × 12
         회수기간 = 투자비 ÷ 절감액
 
@@ -490,6 +586,9 @@ def ess_target_curve(
         search_ratio: 탐색 하한 비율. 기본은 현행 요금적용전력의 0.7배까지.
         round_trip, dod: 정격 용량 환산 계수. **투자비 산정에는 쓰지 않는다** —
             쓰면 최소 지점이 옮겨 가 카드 값이 통째로 달라진다.
+        grid: 규격 격자. 주지 않으면 기준 데이터에서 읽는다 (50세션 3-1).
+        min_power_kw: 상업용 최소 PCS 출력. 주지 않으면 기준 데이터에서 읽는다.
+            **0 을 주면 문지기를 끈다** — 창 검증 시험이 그렇게 쓴다.
     """
     if baseline_demand_kw <= 0:
         raise ValueError(f"현행 요금적용전력은 양수여야 합니다: {baseline_demand_kw}")
@@ -525,21 +624,26 @@ def ess_target_curve(
     # 드는 비용이 0 이다 — 요금 재계산 없이 「고를 수 있는 점」 을 가려낸다.
     viable_limit = viable_discharge_hours(base_fee_won_per_kw, model=cost_model)
 
+    minimum_kw = min_pcs_power_kw() if min_power_kw is None else min_power_kw
     points: list[EssTargetPoint] = []
     for target in targets:
         power, capacity = _daily_excess(observed, day_codes, target, slot_hours)
         if power <= 0:
             continue
-        # **최소 규모는 정격 용량에 건다** (46세션). 카드는 ``quote(정격)`` 으로
-        # 거는데 곡선만 전달 용량에 걸어, 정격이 1.185배 큰 만큼 경계가 어긋나
-        # 있었다 — C5 목표 6,020 kW 에서 곡선은 걸리고 카드는 안 걸렸다.
         nameplate = nameplate_capacity_kwh(capacity, round_trip=round_trip, dod=dod)
-        billed = cost_model.billed_capacity_kwh(nameplate)
-        equipment = cost_model.equipment_won(billed)
-        electrical = cost_model.electrical_won(billed, indoor=indoor)
+        # **살 수 있는 규격으로 올려 잡는다** (50세션 3-2). 46~49세션은 여기서
+        # 「시장 최소 규모 100 kWh」 로만 올렸는데, 그 규칙은 사양 표 다섯 줄을
+        # 전부 같은 투자비로 만들어 구별하는 힘이 없었다.
+        grid_power, grid_capacity = snap_spec(power, nameplate, grid=grid)
+        equipment = cost_model.equipment_won(grid_capacity)
+        electrical = cost_model.electrical_won(grid_capacity, indoor=indoor)
         investment = equipment + electrical
         reduction = max(0.0, baseline_demand_kw - target)
         annual = reduction * base_fee_won_per_kw * 12.0
+        # **마진 조건은 필요 사양으로 잰다** (48세션 · 50세션에 확인했다).
+        # 「이 부하 모양이 애초에 회수될 수 있는가」 를 묻는 것이므로 격자로 올려
+        # 잡기 전의 값을 쓴다 — 격자를 씌우면 얕은 목표의 방전시간이 튀어
+        # 판정 경계가 목표에 따라 오르내린다.
         hours = nameplate / power if power > 0 else 0.0
         points.append(
             EssTargetPoint(
@@ -548,7 +652,7 @@ def ess_target_curve(
                 power_kw=power,
                 required_capacity_kwh=capacity,
                 nameplate_capacity_kwh=nameplate,
-                billed_capacity_kwh=billed,
+                grid_capacity_kwh=grid_capacity,
                 # 카드와 **같은 정의**여야 한다 (45세션). 표시하는 용량이
                 # 정격이므로 방전시간도 정격 기준이다.
                 discharge_hours=hours,
@@ -557,14 +661,16 @@ def ess_target_curve(
                 investment_won=investment,
                 annual_saving_won=annual,
                 payback_years=payback_years(investment, annual),
-                at_market_minimum=nameplate < cost_model.market_minimum_kwh,
+                grid_power_kw=grid_power,
+                below_min_power=power < minimum_kw,
                 viable=0.0 < hours < viable_limit,
             )
         )
 
     priced = [item for item in points if item.payback_years is not None]
     best = min(priced, key=lambda item: item.payback_years or math.inf) if priced else None
-    viable = [item for item in priced if item.viable]
+    # **최소 규격에 못 미치는 목표는 고를 수 없다** (50세션 3-3).
+    viable = [item for item in priced if item.viable and not item.below_min_power]
     viable_best = min(viable, key=lambda item: item.payback_years or math.inf) if viable else None
     return EssTargetCurve(
         points=tuple(points),
@@ -573,7 +679,7 @@ def ess_target_curve(
         baseline_demand_kw=baseline_demand_kw,
         observed_peak_kw=float(observed.max()),
         base_fee_won_per_kw=base_fee_won_per_kw,
-        market_minimum_kwh=cost_model.market_minimum_kwh,
+        min_power_kw=minimum_kw,
         step_kw=step,
         round_trip=round_trip,
         dod=dod,
@@ -840,6 +946,17 @@ class EssResult:
     quote: EssQuote | None = None
     feasibility: Feasibility | None = None
     certainty: Certainty = Certainty.MEDIUM_LOW
+    pricing_path: str = PRICING_FORMULA
+    """**어느 단가 경로로 냈는가** (50세션 3-5). 결과에 한 줄로 적는다.
+
+    경로가 셋이라(2항식 · kWh 구간 단가 · 견적 총액) 금액만 내면 어느 단가로
+    나온 값인지 알 수 없다. 사용자가 총액을 넣었으면 그쪽이고, 아니면 모델이
+    쓴 경로다 — :attr:`quote` 의 것과 다를 수 있는 자리가 여기다.
+    """
+    required_power_kw: float = 0.0
+    """규격 격자에 올려 잡기 **전**의 필요 출력 (50세션). 계산 근거가 둘을 나란히 낸다."""
+    required_capacity_kwh: float = 0.0
+    """올려 잡기 전의 정격 용량."""
     notices: tuple[Notice, ...] = field(default=())
 
     @property
@@ -886,7 +1003,8 @@ def evaluate_ess(
     Args:
         cost: 단가 입력. **kW당 단가 하나** 또는 **총액**이다 (:class:`EssCostInput`).
             방전시간은 kW당 단가에 이미 들어 있으므로 이중으로 곱하지 않는다.
-        power_kw, capacity_kwh: 주지 않으면 목표에서 역산한다.
+        power_kw, capacity_kwh: 주지 않으면 목표에서 역산하고 **규격 격자에 올려
+            잡는다** (50세션 3-2). 주면 그 값을 그대로 쓴다 — 견적을 받은 사양이다.
         payback_target_years: 손익분기 단가를 역산할 회수기간 (기본 10년).
         cycles_per_day: 차익거래 평일 사이클 수 (기본 1).
         model: 조달 사례 투자비 모델. 단가·총액을 넣지 않으면 **이 모델로 산정**한다.
@@ -905,12 +1023,17 @@ def evaluate_ess(
     sized_power, sized_capacity = size_for_target(
         excess, dod=dod, round_trip=round_trip, basis=sizing_basis
     )
-    power = sized_power if power_kw is None else power_kw
-    capacity = sized_capacity if capacity_kwh is None else capacity_kwh
-    # **방전시간은 정격 용량 ÷ 출력이다** (45세션). 34세션에 용량을 정격으로
-    # 고쳤는데 방전시간만 계통 전달분 기준으로 남아, 한 카드 안에서 사양 셋이
-    # 서로 안 맞았다 — 119.6 kWh ÷ 123.4 kW 는 0.82h 가 아니라 0.97h 다.
-    # **사용자가 조달하는 것은 정격이므로 정격으로 맞춘다.**
+    # **살 수 있는 규격으로 올려 잡는다** (50세션 3-2). 123 kW / 120 kWh 처럼
+    # 기성품에 없는 값으로 산출하면 설득력이 없다. 사용자가 사양을 직접 주면
+    # 그쪽이 이긴다 — 견적을 받은 값이라 격자에 맞출 이유가 없다.
+    grid_power, grid_capacity = snap_spec(sized_power, sized_capacity)
+    required_power, required_capacity = sized_power, sized_capacity
+    power = grid_power if power_kw is None else power_kw
+    capacity = grid_capacity if capacity_kwh is None else capacity_kwh
+    # **방전시간은 용량 ÷ 출력이다** (45세션 · 50세션에 규격 기준으로 옮겼다).
+    # 34세션에 용량을 정격으로 고쳤는데 방전시간만 계통 전달분 기준으로 남아,
+    # 한 카드 안에서 사양 셋이 서로 안 맞았다. 격자를 쓰면 **사용자가 조달하는
+    # 것은 규격**이므로 방전시간도 규격 기준이어야 셋이 맞는다.
     discharge_hours = capacity / power if power > 0 else 0.0
 
     mask = (
@@ -943,6 +1066,8 @@ def evaluate_ess(
     # 산정하고, 사용자가 단가나 총액을 넣었으면 그쪽이 이긴다.
     cost_model = model if model is not None else load_ess_cost_model()
     quote = cost_model.quote(capacity, indoor=indoor)
+    # **사용자가 넣은 총액이 이긴다** — 그때는 경로가 「견적 총액」 이다 (50세션).
+    pricing_path = quote.pricing_path if cost.is_unpriced else PRICING_QUOTED
     if cost.is_unpriced:
         cost = EssCostInput.of_total(
             quote.total_won,
@@ -1073,6 +1198,10 @@ def evaluate_ess(
             fact="ess.investment_basis",
         ),
         basis(cost_model.formula + " — 도입 사례 회귀입니다.", fact="ess.cost_model_formula"),
+        # **출처는 화면에 두지 않는다** (50세션 4절). 「사례 4건 기준·적합일·R²」 는
+        # 「이 값을 믿을 만한가」 를 따지는 글이라 매뉴얼과 보고서 부록의 몫이다.
+        # 참고 등급이라 툴팁에는 안 뜨고 부록에는 그대로 실린다.
+        info(f"ESS 투자비 계수 — {cost_model.provenance}.", fact="ess.cost_model_source"),
         basis(
             f"투자비 = 설비 {money.won(quote.equipment_won, reason='—')} + 전기공사 "
             f"{money.won(quote.electrical_won, reason='—')} (옥외 기준 "
@@ -1145,6 +1274,9 @@ def evaluate_ess(
         outlook_label=ref.outlook.label,
         quote=quote,
         feasibility=feasibility,
+        pricing_path=pricing_path,
+        required_power_kw=required_power,
+        required_capacity_kwh=required_capacity,
         notices=tuple(notices),
     )
 
@@ -1285,6 +1417,21 @@ NOT_VIABLE_CONCLUSION = (
 회수되지 않으므로 「최단 회수기간」 조차 뜻이 없다 — 고를 것이 아예 없다.
 """
 
+BELOW_MINIMUM_CONCLUSION = (
+    "필요 출력 {power:,.0f} kW 는 상업용 ESS 최소 규격({minimum:,.0f} kW)에 "
+    "못 미칩니다. 이 규모에 맞는 상업용 제품을 찾기 어려워 산출하지 않았습니다."
+)
+"""필요 출력이 최소 규격에 못 미칠 때의 **결론** (50세션 3-3).
+
+**확인되지 않은 판정을 적지 않는다.** 제품을 못 찾은 것이지 회수되지 않는다고
+확인한 것이 아니다. 회수기간과 목표별 사양 표를 싣지 않고, **필요 출력·용량·방전시간은
+낸다.** 그것은 이 건물의 사실이다.
+
+주택용·비상전원용 소용량기(5~20 kWh 일체형)를 왜 쓸 수 없는지는 **매뉴얼에
+적는다** — 220V 단상이라 고압 수전 건물에는 피크 제어·계통 연계·대관 절차가
+모두 다르다. 화면에 두지 않는다.
+"""
+
 #: 목표별 사양 표에 세울 줄 수. :data:`~kwise.report.frames.ESS_SPEC_ROWS` 가
 #: 이 값을 쓴다 — 성립하는 점이 없을 때 잴 점 수와 표의 줄 수가 같아야 표에
 #: 빈 줄이나 버리는 계산이 생기지 않는다.
@@ -1333,11 +1480,27 @@ class EssOptimumPoint:
     unmet_kwh: float = 0.0
     achieved_demand_kw: float = 0.0
     viable: bool = True
+    grid_power_kw: float = 0.0
+    """살 수 있는 PCS 로 올려 잡은 출력 (50세션). **표에 내는 값이다.**"""
+    grid_capacity_kwh: float = 0.0
+    """살 수 있는 배터리로 올려 잡은 용량 (50세션). **투자비가 이 값으로 난다.**"""
+    below_min_power: bool = False
+    """필요 출력이 상업용 최소 규격에 못 미치는가 (50세션 3-3)."""
 
     @property
     def discharge_hours(self) -> float:
-        """정격 용량 ÷ 출력. **카드와 같은 정의다** (45세션)."""
-        return self.nameplate_capacity_kwh / self.power_kw if self.power_kw > 0 else 0.0
+        """**규격 용량 ÷ 규격 출력** (50세션). 사용자가 조달하는 것이 그것이다.
+
+        45세션에 「정격 ÷ 출력」 으로 못박은 정의를 격자 위로 옮겼다. 격자를 쓰면
+        사는 것은 정격이 아니라 규격이므로, 사양 셋(출력·용량·방전시간)이 서로
+        맞으려면 방전시간도 규격 기준이어야 한다.
+        """
+        return self.grid_capacity_kwh / self.grid_power_kw if self.grid_power_kw > 0 else 0.0
+
+    @property
+    def spec_key(self) -> tuple[float, float]:
+        """같은 설비로 덮이는 목표를 묶는 열쇠 (50세션 3-6)."""
+        return (self.grid_power_kw, self.grid_capacity_kwh)
 
     @property
     def target_met(self) -> bool:
@@ -1346,8 +1509,14 @@ class EssOptimumPoint:
 
     @property
     def eligible(self) -> bool:
-        """최적 후보가 될 수 있는가 — 값이 매겨지고, 목표를 지키고, 마진이 있다."""
-        return bool(self.payback_years) and self.target_met and self.viable
+        """후보가 될 수 있는가 — 값이 매겨지고, 목표를 지키고, 마진이 있고,
+        **최소 규격을 넘는다** (50세션 3-3)."""
+        return (
+            bool(self.payback_years)
+            and self.target_met
+            and self.viable
+            and not self.below_min_power
+        )
 
 
 @dataclass(frozen=True)
@@ -1385,6 +1554,18 @@ class EssOptimum:
     points: tuple[EssOptimumPoint, ...] = field(default=())
     notices: tuple[Notice, ...] = field(default=())
     viable: bool = True
+    below_minimum: bool = False
+    """필요 출력이 상업용 최소 규격에 못 미쳐 산출하지 않았는가 (50세션 3-3).
+
+    **``viable=False`` 와 이유가 다르다.** 그쪽은 「어떤 규모로도 회수되지
+    않는다」 이고 이쪽은 「이 규모의 제품을 못 찾았다」 다. 이쪽에서는 사양 표를
+    싣지 않고 필요 출력·용량·방전시간만 낸다.
+    """
+    required_power_kw: float = 0.0
+    """최소 규격에 걸렸을 때 이 건물이 필요로 하던 출력 (50세션). 사실이므로 낸다."""
+    required_capacity_kwh: float = 0.0
+    required_discharge_hours: float = 0.0
+    minimum_power_kw: float = 0.0
 
     @property
     def moved(self) -> bool:
@@ -1451,6 +1632,7 @@ def refine_ess_target(
     quality: QualityReport | None = None,
     options: BillingOptions | None = None,
     model: EssCostModel | None = None,
+    min_power_kw: float | None = None,
     indoor: bool = False,
     round_trip: float | None = None,
     dod: float | None = None,
@@ -1492,6 +1674,8 @@ def refine_ess_target(
     round_trip = default_round_trip() if round_trip is None else round_trip
     dod = default_dod() if dod is None else dod
     cost_model = model if model is not None else load_ess_cost_model()
+    spec_grid = load_ess_spec_grid()
+    minimum_kw = min_pcs_power_kw() if min_power_kw is None else min_power_kw
     window = refine_window_kw(curve.baseline_demand_kw) if window_kw is None else window_kw
     widen_limit = refine_max_widen() if max_widen is None else max_widen
     if window <= 0:
@@ -1534,7 +1718,11 @@ def refine_ess_target(
             return scored[target_kw]
         excess = analyze_peak_excess(usage.kw, target_kw, interval)
         power, capacity = size_for_target(excess, dod=dod, round_trip=round_trip)
+        # **살 수 있는 규격으로 올려 잡는다** (50세션 3-2). 디스패치도 이 사양으로
+        # 돌린다 — 실제로 사는 것이 그것이고, 크게 사면 목표를 더 잘 지킨다.
+        grid_power, grid_capacity = snap_spec(power, capacity, grid=spec_grid)
         viable = target_kw in viable_targets
+        below_min = 0.0 < power < minimum_kw
         if power <= 0:
             point = EssOptimumPoint(
                 target_kw, capacity, 0.0, 0.0, None, power_kw=power, viable=viable
@@ -1543,8 +1731,8 @@ def refine_ess_target(
             dispatch = dispatch_peak_shaving(
                 usage.kw,
                 target_kw=target_kw,
-                power_kw=power,
-                capacity_kwh=capacity,
+                power_kw=grid_power,
+                capacity_kwh=grid_capacity,
                 charge_mask=mask,
                 interval_minutes=interval,
                 round_trip=round_trip,
@@ -1558,7 +1746,7 @@ def refine_ess_target(
                 quality=quality,
             )
             saving = annualize(base_bill.total_won - after.total_won, base_bill.base_fee_months)
-            investment = cost_model.quote(capacity, indoor=indoor).total_won
+            investment = cost_model.quote(grid_capacity, indoor=indoor).total_won
             point = EssOptimumPoint(
                 target_kw,
                 capacity,
@@ -1571,9 +1759,41 @@ def refine_ess_target(
                 unmet_kwh=dispatch.unmet_kwh,
                 achieved_demand_kw=after.billing_demand_kw,
                 viable=viable,
+                grid_power_kw=grid_power,
+                grid_capacity_kwh=grid_capacity,
+                below_min_power=below_min,
             )
         scored[target_kw] = point
         return point
+
+    # **최소 규격에 못 미치면 아무것도 재지 않는다** (50세션 3-3). 마진은 넘는데
+    # 필요 출력이 상업용 최소 규격 아래라면 「왜 안 되는가」 는 이미 답이 나와
+    # 있다 — 살 물건이 없다. 회수기간도 사양 표도 싣지 않고, 이 건물의 사실인
+    # 필요 출력·용량·방전시간만 낸다.
+    if viable_anchor is None and curve.below_minimum_best is not None:
+        short = curve.below_minimum_best
+        return EssOptimum(
+            target_kw=0.0,
+            payback_years=None,
+            curve_target_kw=short.target_kw,
+            window_kw=window,
+            widened=0,
+            at_edge=False,
+            viable=False,
+            below_minimum=True,
+            required_power_kw=short.power_kw,
+            required_capacity_kwh=short.nameplate_capacity_kwh,
+            required_discharge_hours=short.discharge_hours,
+            minimum_power_kw=minimum_kw,
+            notices=(
+                warn(
+                    BELOW_MINIMUM_CONCLUSION.format(
+                        power=short.power_kw, minimum=minimum_kw
+                    ),
+                    fact="ess.below_market_minimum",
+                ),
+            ),
+        )
 
     # **성립하는 점이 없으면 창을 훑지 않는다** (48세션). 고를 목표가 없으므로
     # 잴 것은 「왜 안 되는가」 뿐이고, 그것은 곡선 전체에 벌려 잡은 몇 점이 낸다.

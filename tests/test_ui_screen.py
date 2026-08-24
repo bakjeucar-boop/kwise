@@ -1655,17 +1655,22 @@ def test_ESS_는_표_하나로_고른다(ess_screen: AppTest) -> None:
     """
     assert not ess_screen.exception, ess_screen.exception
     tables = [item.value for item in ess_screen.dataframe]
-    spec = [item for item in tables if "정격 용량" in list(item.columns)]
+    spec = [item for item in tables if "방전시간" in list(item.columns)]
     assert spec, "목표별 사양 표가 없습니다."
     columns = list(spec[0].columns)
-    for name in ("목표", "저감량", "출력", "정격 용량", "방전시간", "투자비", "회수기간"):
+    # **「정격 용량」 이 「용량」 이 됐다** (50세션 3-2). 표에 내는 것은 살 수 있는
+    # 규격이고, 정격은 격자에 올려 잡기 전의 중간값이라 화면에 나가지 않는다.
+    for name in ("목표", "저감량", "출력", "용량", "방전시간", "투자비", "회수기간"):
         assert name in columns, name
+    assert "정격 용량" not in columns
     body = " ".join(str(item.value) for item in ess_screen.caption)
     assert "목표를 낮추면" in body and "회수기간이 나빠집니다" in body
     # **「개략」 이 화면에서 사라졌다** — 두 숫자가 없으므로 밝힐 것도 없다.
     assert "개략" not in body
     tip = text.tip("table.ess_spec")
     assert "요금을 다시 계산한" in tip and "균형점" in tip
+    # **「최소 규모」 가 툴팁에서도 사라졌다** (50세션 3-4).
+    assert "최소 규모" not in tip
 
 
 def test_ESS_최소점_표식이_검산값과_맞는다() -> None:
@@ -1688,20 +1693,54 @@ def test_ESS_최소점_표식이_검산값과_맞는다() -> None:
     )
     assert curve.best is not None
     label = curve.best.spec_label
-    assert label.startswith("5,170 kW · 저감 123 kW")
-    assert "120 kWh" in label, label  # 정격 용량 — 카드와 같은 값
+    # **50세션에 규격 격자를 씌우면서 자리와 사양이 함께 바뀌었다.**
+    assert label.startswith("5,180 kW · 저감 113 kW")
+    assert "150 kW / 100 kWh" in label, label  # 살 수 있는 규격 — 카드와 같은 값
     assert "년" not in label, label  # 회수기간은 카드만 낸다
 
 
-def test_ESS_계수를_둘로_받는다(ess_screen: AppTest) -> None:
-    """**kW당 단가로는 표현할 수 없다** (14세션 3-4)."""
+def test_ESS_카드에는_견적_총액만_남는다(ess_screen: AppTest) -> None:
+    """**단가는 성격상 설정이다** (50세션 3-5).
+
+    49세션까지는 카드의 접힘 안에 고정비·용량단가·총액 셋이 있었다. 접어 두면
+    관심 있는 사람도 못 보고, 펼쳐 두면 모르는 사람에게 어렵다. 두 계수와 kWh
+    구간 단가는 **기준 데이터 화면**으로 옮겼고, 카드에는 견적을 받은 사람이 그
+    금액을 그대로 넣는 자리 하나만 남는다.
+    """
     assert not ess_screen.exception, ess_screen.exception
     labels = [str(item.label) for item in ess_screen.number_input]
+    assert any("견적 총액 직접 입력" in item for item in labels), labels
+    assert not [item for item in labels if "고정비 (원)" in item], labels
+    assert not [item for item in labels if "용량단가 (원/kWh)" in item], labels
+    # **어느 경로로 계산했는지 결과에 한 줄로 적는다** (3-5).
+    card = next(item for item in ess_screen.metric if item.label == "투자비")
+    assert "단가 —" in str(card.delta)
+
+
+def test_ESS_단가는_기준_데이터_화면에_있다() -> None:
+    """**계수 둘과 kWh 구간 단가가 한자리에 선다** (50세션 3-5 ①②).
+
+    kW당 단가로는 표현할 수 없다 (14세션 3-4) — 같은 100 kW 인데 용량이
+    156.4 kWh 면 2.35억, 400 kWh 면 4.43억이다. 구간을 **kWh** 로 가르는 까닭이
+    그것이다.
+    """
+    screen = _running(nav_page="기준 데이터")
+    assert not screen.exception, screen.exception
+    labels = [str(item.label) for item in screen.number_input]
     assert any("고정비 (원)" in item for item in labels), labels
     assert any("용량단가 (원/kWh)" in item for item in labels), labels
-    assert any("견적 총액 직접 입력" in item for item in labels), labels
-    body = " ".join(str(item.value) for item in ess_screen.caption)
-    assert "도입 사례 4건 기준" in body and "적합" in body
+    paths = [str(item.label) for item in screen.radio]
+    assert any("단가 경로" in item for item in paths), paths
+    bands = [
+        item.value
+        for item in screen.dataframe
+        if "구간" in list(item.value.columns) and "쓰임" in list(item.value.columns)
+    ]
+    assert bands, "kWh 구간 단가 표가 없습니다."
+    frame = bands[0]
+    # **비활성 구간도 목록에 둔다** — 향후 상업용 소용량 제품이 나오면 살릴 자리다.
+    assert any("비활성" in str(value) for value in frame["쓰임"])
+    assert any(str(value) == "50~100 kWh" for value in frame["구간"])
 
 
 def test_ESS_출력과_용량이_잘리지_않는다(ess_screen: AppTest) -> None:
@@ -2647,10 +2686,15 @@ EDGE_VALUES: tuple[tuple[str, float], ...] = (
     ("measure_power_factor_investment", 0.0),
     ("measure_contract_margin", 0.0),  # 여유율 하한
     ("measure_contract_margin", 0.3),  # 여유율 상한
-    ("measure_ess_fixed_cost", 0.0),
-    ("measure_ess_per_kwh_cost", 0.0),  # 두 계수가 함께 0 이 된다
     ("measure_ess_total_cost", 1_000_000_000.0),
     ("measure_surplus_price", 0.0),
+)
+
+#: **기준 데이터 화면으로 옮겨 간 끝값** (50세션 3-5). ESS 단가 계수 둘은 이제
+#: 수단 카드에 없다 — 자리가 갈렸어도 끝값은 그대로 훑어야 한다.
+RULES_EDGE_VALUES: tuple[tuple[str, float], ...] = (
+    ("measure_ess_fixed_cost", 0.0),
+    ("measure_ess_per_kwh_cost", 0.0),  # 두 계수가 함께 0 이 된다
 )
 
 
@@ -2677,6 +2721,23 @@ def test_입력_끝값을_훑어도_화면이_죽지_않는다() -> None:
         screen = widget.set_value(value).run(timeout=900)
         touched += 1
         assert not screen.exception, f"{key} = {value}: {screen.exception}"
+    assert touched >= 5, f"끝값을 넣은 입력이 {touched}개뿐입니다. 키가 바뀌었습니다."
+
+    # **ESS 단가 계수는 기준 데이터 화면에 있다** (50세션 3-5). 거기서 0 을 넣고
+    # 수단 화면으로 돌아와 카드가 죽지 않는지 본다 — 자리가 갈렸을 뿐 값은
+    # 같은 세션 키를 타고 계산으로 들어간다.
+    rules = _running(nav_page="기준 데이터", **{f"measure_on_{key}": True for key in keys})
+    assert not rules.exception, rules.exception
+    for key, value in RULES_EDGE_VALUES:
+        rules = rules.number_input(key=key).set_value(value).run(timeout=900)
+        touched += 1
+        assert not rules.exception, f"{key} = {value}: {rules.exception}"
+    back = _running(
+        **{f"measure_on_{key}": True for key in keys},
+        measure_ess_fixed_cost=0.0,
+        measure_ess_per_kwh_cost=0.0,
+    )
+    assert not back.exception, back.exception
     assert touched >= 7, f"끝값을 넣은 입력이 {touched}개뿐입니다. 키가 바뀌었습니다."
 
 
@@ -2881,10 +2942,12 @@ def test_화면에_절_번호가_없다(screen_lines: tuple[object, ...]) -> Non
     사용자에게는 뜻이 없고 화면 어디에도 7장이 없다. 순번 1~7 로만 적는다.
     코드 주석·문서·산출물의 7.x 는 그대로 둔다 — 거기서는 맞물려 있어야 한다.
     """
+    # **앞뒤로 숫자가 붙으면 절 번호가 아니다** (50세션). 「27.5년」·「37.3년」 이
+    # 걸렸다 — 회수기간이 우연히 그 자리에 든 것이지 요구사항서 절이 아니다.
     offenders = [
         f"[{item.slot}] {item.where} :: {item.text[:60]}"
         for item in screen_lines
-        if re.search(r"7\.[1-7]", str(item.text))
+        if re.search(r"(?<![\d.,])7\.[1-7](?![\d])", str(item.text))
     ]
     assert offenders == [], offenders
     labels = [str(item.text) for item in screen_lines if item.slot == "라벨"]
@@ -3175,7 +3238,7 @@ def test_ESS_절감액_툴팁이_구성을_밝힌다() -> None:
     tips = [item.help for item in screen.metric if item.label == "절감액"]
     ess_tip = next(str(item) for item in tips if item and "기본요금 절감" in str(item))
     # 샘플은 99.8% 가 기본요금이다 — 비중이 그 사실을 낸다 (33세션 4절에 굵게).
-    assert "거의 전부 기본요금 절감입니다** (99.8%)" in ess_tip, ess_tip
+    assert "거의 전부 기본요금 절감입니다** (99.9%)" in ess_tip, ess_tip
     # 전력량요금이 왜 줄어드는지가 적힌다 (옮겨 담기 ↔ 왕복효율 손실).
     assert "싼 시간으로" in ess_tip
     assert "왕복효율 손실" in ess_tip

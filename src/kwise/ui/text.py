@@ -24,6 +24,7 @@ import re
 from collections.abc import Iterable
 
 from kwise import money
+from kwise.measures import payback_text
 from kwise.money import ROUNDING_FOOTNOTE, TRUNCATION_FOOTNOTE
 from kwise.report.notices import format_won
 
@@ -80,9 +81,11 @@ TIPS: dict[str, str] = {
     "table.ess_spec": (
         "목표마다 사야 할 배터리와 그때의 회수기간입니다. **모두 요금을 다시 계산한 "
         "값이라 아래 카드와 같은 기준입니다.**\n\n"
-        "**「최소 규모」 줄은 시장 최소 규모를 다 못 쓰는 구간입니다** — 용량을 줄여도 "
-        "투자비가 그만큼 줄지 않아 회수기간이 나빠집니다. 표식이 붙은 줄이 그 균형점입니다 — "
-        "더 큰 배터리가 더 나은 것이 아닙니다."
+        "**출력과 용량은 실제로 조달되는 규격으로 올려 잡습니다.** 그래서 목표 여럿이 "
+        "한 사양으로 묶이고, 묶인 줄의 목표는 범위로 적습니다 — 그 범위는 같은 설비로 "
+        "덮인다는 뜻입니다.\n\n"
+        "용량을 줄여도 고정비가 그만큼 줄지 않아 얕은 목표에서 회수기간이 다시 나빠집니다. "
+        "표식이 붙은 줄이 그 균형점입니다 — 더 큰 배터리가 더 나은 것이 아닙니다."
     ),
     "surplus_free": "\n\n".join(
         (
@@ -436,6 +439,10 @@ def payback(years: float | None, *, investment_won: float | None = None) -> str:
     """회수기간. **투자비를 모르면 0년이 아니라 사유**다.
 
     투자비가 0원인 무투자 수단만 '즉시' 로 적는다.
+
+    **표시 상한을 넘으면 「>50년」 이다** (50세션 3-7). 500년·3,000년 같은 값은
+    근거로 읽히지 않는다 — 자르는 것은 표시뿐이고 계산은 그대로 둔다. 상한은
+    기준 데이터(``ess.payback_display_cap_years``)에 있다.
     """
     if years is None:
         if investment_won is None:
@@ -443,7 +450,7 @@ def payback(years: float | None, *, investment_won: float | None = None) -> str:
         return DASH
     if years <= 0:
         return "즉시"
-    return f"{years:,.1f}년"
+    return payback_text(years)
 
 
 # **확실성 뱃지를 지웠다** (28세션 4절). 화면에서 등급을 빼기로 했으므로 이

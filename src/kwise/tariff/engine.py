@@ -573,8 +573,12 @@ def calculate_bill(
         )
     if not table.verified:
         # 요금표의 **출처·검증 상태**다. 근거이지 경고가 아니다.
+        #
+        # **화면에서 뺐다** (50세션 4절). 출처는 신뢰의 문제라 매뉴얼과 보고서
+        # 부록의 몫이고, 고칠 수 있는 자리인 **기준 데이터 화면**이 같은 사실을
+        # 제 말로 이미 적는다 (12세션). 참고 등급이라 부록에는 그대로 실린다.
         notices.append(
-            basis(
+            info(
                 f"요금표 {table.effective_date} 는 공표 자료 그대로이며 아직 실제 "
                 "청구서와 대조하지 않았습니다.",
                 fact="tariff.unverified_table",

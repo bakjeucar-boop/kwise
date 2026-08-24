@@ -14,15 +14,18 @@ import uuid
 import streamlit as st
 
 from kwise.io import UsageData
+from kwise.measures import PRICING_FORMULA
 from kwise.report.days import MAX_DEMAND_KEY, RepresentativeDay, find_day
 from kwise.ui.pipeline import ContractForm, SolarInputs
 from kwise.ui.spec import MEASURES
 
 __all__ = [
+    "ESS_PRICING_PATH",
     "SESSION_ID",
     "carry_inputs",
     "clear_upload",
     "enabled_measures",
+    "ess_pricing",
     "get_combination_pick",
     "get_form",
     "get_solar_inputs",
@@ -188,3 +191,26 @@ def set_solar_inputs(inputs: SolarInputs) -> None:
 def get_solar_inputs() -> SolarInputs | None:
     value = st.session_state.get(_SOLAR)
     return value if isinstance(value, SolarInputs) else None
+
+
+# ===================================================================== ESS 단가 (50세션)
+#
+# **단가는 성격상 설정이다.** 49세션까지는 ESS 카드의 접힘 안에 있었는데, 접어
+# 두면 관심 있는 사람도 못 보고 펼쳐 두면 모르는 사람에게 어렵다. 자리를
+# 「기준 데이터」 화면으로 옮기고, 카드에는 **견적 총액**만 남겼다.
+#
+# 세션 키는 그대로 ``input_key("ess", ...)`` 를 쓴다 — 값을 읽는 자리(2단계
+# 카드·3단계 조합)가 달라지지 않았기 때문이다.
+
+ESS_PRICING_PATH = "pricing_path"
+"""단가 경로 세션 필드. :data:`~kwise.measures.PRICING_FORMULA` 가 기본이다."""
+
+
+def ess_pricing() -> tuple[str, float | None, float | None]:
+    """고른 단가 경로와 두 계수 (50세션 3-5).
+
+    **아직 고르지 않았으면 2항식이고 계수는 출고값이다** — ``None`` 을 돌려주면
+    :func:`~kwise.ui.cache.ess_cost_model` 이 모델의 값을 그대로 쓴다.
+    """
+    path = str(st.session_state.get(input_key("ess", ESS_PRICING_PATH)) or PRICING_FORMULA)
+    return path, measure_float("ess", "fixed_cost"), measure_float("ess", "per_kwh_cost")

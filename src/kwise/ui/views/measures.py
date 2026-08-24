@@ -40,7 +40,6 @@ from kwise.measures import (
     default_target_pct,
     evaluate_demand_response,
     high_rate_discharge_hours,
-    load_ess_cost_model,
     offset_settles_cash,
     payback_tie_note,
     power_factor_floor_pct,
@@ -90,6 +89,7 @@ from kwise.ui.pipeline import ContractForm, SolarInputs
 from kwise.ui.progress import progress_panel
 from kwise.ui.spec import MEASURES, MeasureSpec
 from kwise.ui.state import (
+    ess_pricing,
     get_solar_inputs,
     input_key,
     measure_float,
@@ -1327,10 +1327,12 @@ def _ess_spec_view(frame: pd.DataFrame) -> pd.DataFrame:
         return frame
     return pd.DataFrame(
         {
-            "목표": [fmt.kw(value, decimals=0) for value in frame["목표 요금적용전력(kW)"]],
+            # **목표는 범위다** (50세션 3-6). 격자를 쓰면 목표 여럿이 한 사양으로
+            # 뭉치고, 그 범위가 곧 「이 목표 범위는 같은 설비로 덮인다」 는 사실이다.
+            "목표": [f"{value} kW" for value in frame["목표 요금적용전력(kW)"]],
             "저감량": [fmt.kw(value, decimals=0) for value in frame["저감량(kW)"]],
-            "출력": [fmt.kw(value, decimals=0) for value in frame["필요 출력(kW)"]],
-            "정격 용량": [fmt.kwh(value) for value in frame["정격 용량(kWh)"]],
+            "출력": [fmt.kw(value, decimals=0) for value in frame["출력(kW)"]],
+            "용량": [fmt.kwh(value) for value in frame["용량(kWh)"]],
             "방전시간": [fmt.hours(value) for value in frame["방전시간(h)"]],
             "투자비": [fmt.won_short(value, reason="—") for value in frame["투자비(원)"]],
             "연간 절감액": [fmt.won_year(value) for value in frame["연간 절감액(원)"]],
@@ -1483,7 +1485,7 @@ def _ess(
     # 단가를 쓰면 ESS 절감액이 선택요금 전환에 딸려 움직여 독립 평가가 깨진다.
     base_fee = float(table.rates(form.selection).base_won_per_kw)
 
-    total_cost, fixed_won, per_kwh_won = _ess_cost_inputs()
+    total_cost, pricing_path, fixed_won, per_kwh_won = _ess_cost_inputs()
     _overview(spec)
 
     curve = cached_ess_targets(
@@ -1493,6 +1495,7 @@ def _ess(
         base_fee,
         fixed_won,
         per_kwh_won,
+        pricing_path,
         rules_stamp(),
     )
     best = curve.best
@@ -1518,6 +1521,7 @@ def _ess(
             form,
             fixed_won,
             per_kwh_won,
+            pricing_path,
             rules_stamp(),
             report,
         )
@@ -1529,13 +1533,26 @@ def _ess(
     # **표는 전부 카드 기준 참값이고 추가 계산이 없다** — 위 정밀화가 이미 잰
     # 점을 그대로 쓴다. 26세션이 없앤 「대표 지점 표」와 다르다: 그때는 곡선
     # 아래 표까지 두어 읽을 것이 둘이었고, 지금은 표 하나뿐이다.
+    # **최소 규격에 못 미치면 표를 싣지 않는다** (50세션 3-3). 회수기간도 목표별
+    # 사양도 낼 것이 없다 — 살 물건이 없기 때문이다. 대신 이 건물의 사실인
+    # 필요 출력·용량·방전시간은 낸다. **확인되지 않은 판정을 적지 않는다** —
+    # 제품을 못 찾은 것이지 회수되지 않는다고 확인한 것이 아니다.
+    if optimum.below_minimum:
+        st.session_state[input_key("ess", "target")] = 0.0
+        columns = st.columns(3)
+        columns[0].metric("필요 출력", fmt.kw(optimum.required_power_kw))
+        columns[1].metric("필요 용량", fmt.kwh(optimum.required_capacity_kwh))
+        columns[2].metric(
+            "방전시간",
+            fmt.hours(optimum.required_discharge_hours),
+            help=fmt.tip("discharge_hours"),
+        )
+        _notices(optimum.notices)
+        return
+
     st.dataframe(
         _ess_spec_view(
-            frames.ess_spec_frame(
-                optimum,
-                baseline_demand_kw=curve.baseline_demand_kw,
-                market_minimum_kwh=curve.market_minimum_kwh,
-            )
+            frames.ess_spec_frame(optimum, baseline_demand_kw=curve.baseline_demand_kw)
         ),
         hide_index=True,
         width="stretch",
@@ -1567,6 +1584,7 @@ def _ess(
         rules_stamp(),
         fixed_won,
         per_kwh_won,
+        pricing_path,
     )
     st.subheader(f"{SHORTEST_PAYBACK} 목표 {fmt.kw(target, decimals=0)} 기준")
     columns = st.columns(4)
@@ -1612,7 +1630,14 @@ def _ess(
             "확인사항에 잠재값으로 따로 적습니다."
         ),
     )
-    columns[2].metric("투자비", fmt.won_short(result.investment_won))
+    columns[2].metric(
+        "투자비",
+        fmt.won_short(result.investment_won),
+        # **어느 경로로 계산했는지 결과에 한 줄로 적는다** (50세션 3-5).
+        # 경로가 셋이므로 금액만 내면 어느 단가로 나온 값인지 알 수 없다.
+        f"단가 — {result.pricing_path}",
+        delta_color="off",
+    )
     columns[3].metric(
         "회수기간", fmt.payback(result.payback_years, investment_won=result.investment_won)
     )
@@ -1660,47 +1685,28 @@ def _ess(
     _worksheet(ess_worksheet(result))
 
 
-def _ess_cost_inputs() -> tuple[float, float | None, float | None]:
-    """단가 입력 — **2계수 방식이다** (14세션 3-4).
+def _ess_cost_inputs() -> tuple[float, str, float | None, float | None]:
+    """단가 입력 — **카드에는 견적 총액만 남는다** (50세션 3-5 ③).
 
-    kW당 단가로는 표현할 수 없다. 같은 100 kW 인데 용량이 156.4 kWh 면 2.35억,
-    400 kWh 면 4.43억이다 — kW 가 설명 변수가 아니다. 기본은 자동 산출이고,
-    확장 패널에서 **고정비와 용량단가 둘만** 조정한다.
+    49세션까지는 접힘 안에 고정비·용량단가·총액 셋이 있었다. **단가는 성격상
+    설정이다** — 접어 두면 관심 있는 사람도 못 보고, 펼쳐 두면 모르는 사람에게
+    어렵다. 두 계수와 kWh 구간 단가는 **「기준 데이터」 화면**으로 옮겼고, 여기
+    남는 것은 견적을 받은 사람이 그 금액을 그대로 넣는 자리 하나다.
+
+    Returns:
+        ``(견적 총액, 단가 경로, 고정비, 용량단가)``. 뒤 셋은 기준 데이터
+        화면에서 고른 값을 세션에서 읽은 것이다.
     """
-    model = load_ess_cost_model()
-    with st.expander("단가 조정", expanded=False):
-        st.caption(
-            f"기본값은 자동 산출입니다 — {model.coefficient_source}. "
-            "단가가 변하면 아래 두 값만 갱신하면 됩니다."
-        )
-        left, right = st.columns(2)
-        with left:
-            fixed = st.number_input(
-                "고정비 (원) — PCS·PMS·컨테이너·소방·공조·UPS·변압기",
-                min_value=0.0,
-                value=float(model.fixed_won),
-                step=1_000_000.0,
-                key=input_key("ess", "fixed_cost"),
-                help=manual_tip("ess-cost-reference"),
-            )
-        with right:
-            per_kwh = st.number_input(
-                "용량단가 (원/kWh) — 배터리",
-                min_value=0.0,
-                value=float(model.per_kwh_won),
-                step=10_000.0,
-                key=input_key("ess", "per_kwh_cost"),
-            )
-        total = st.number_input(
-            "견적 총액 직접 입력 (원) — 0 이면 위 계수로 산정",
-            min_value=0.0,
-            value=0.0,
-            step=1_000_000.0,
-            key=input_key("ess", "total_cost"),
-        )
-        if fixed != model.fixed_won or per_kwh != model.per_kwh_won:
-            _caution("계수 조정됨 — 자동 산출값이 아닙니다.")
-    return float(total), float(fixed), float(per_kwh)
+    total = st.number_input(
+        "견적 총액 직접 입력 (원) — 0 이면 기준 데이터의 단가로 산정",
+        min_value=0.0,
+        value=0.0,
+        step=1_000_000.0,
+        key=input_key("ess", "total_cost"),
+        help=manual_tip("ess-cost-reference"),
+    )
+    path, fixed, per_kwh = ess_pricing()
+    return float(total), path, fixed, per_kwh
 
 
 # --------------------------------------------------------------------- 7.7

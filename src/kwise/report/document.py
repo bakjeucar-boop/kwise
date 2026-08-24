@@ -627,9 +627,7 @@ def measure_entries(
         if ess_optimum is not None and ess_curve is not None:
             ess_table = frames.ess_spec_rows(
                 frames.ess_spec_frame(
-                    ess_optimum,
-                    baseline_demand_kw=ess_curve.baseline_demand_kw,
-                    market_minimum_kwh=ess_curve.market_minimum_kwh,
+                    ess_optimum, baseline_demand_kw=ess_curve.baseline_demand_kw
                 )
             )
         ess_day = (
@@ -663,6 +661,31 @@ def measure_entries(
             spec_table=ess_table,
             spec_caption=frames.ESS_SPEC_CAPTION,
         )
+    elif ess_optimum is not None and ess_optimum.below_minimum and ess_curve is not None:
+        # **최소 규격에 못 미치면 사양 표를 싣지 않는다** (50세션 3-3). 회수기간도
+        # 목표별 사양도 낼 것이 없다 — 살 물건이 없기 때문이다. 대신 이 건물의
+        # 사실인 필요 출력·용량·방전시간은 낸다. **확인되지 않은 판정을 적지 않는다.**
+        entries["ess"] = MeasureEntry(
+            kind=measure_kind("ess"),
+            conclusion=body_lines(ess_optimum.notices)[0]
+            if ess_optimum.notices
+            else NOT_VIABLE_CONCLUSION,
+            saving=f"{_UNPRICED} — 최소 규격에 못 미쳐 사양을 정하지 않았습니다.",
+            saving_annual=f"{_UNPRICED} — 최소 규격에 못 미쳐 사양을 정하지 않았습니다.",
+            has_saving=False,
+            investment=f"{_UNPRICED} — 사양 미정",
+            payback=_UNPRICED,
+            certainty=str(Certainty.HIGH),
+            notices=ess_optimum.notices,
+            actionable=False,
+            facts=(
+                ("요금적용전력", f"{ess_curve.baseline_demand_kw:,.0f} kW"),
+                ("필요 출력", f"{ess_optimum.required_power_kw:,.1f} kW"),
+                ("필요 용량", f"{ess_optimum.required_capacity_kwh:,.1f} kWh"),
+                ("방전시간", f"{ess_optimum.required_discharge_hours:,.2f}h"),
+                ("상업용 최소 규격", f"{ess_optimum.minimum_power_kw:,.0f} kW"),
+            ),
+        )
     elif ess_optimum is not None and not ess_optimum.viable and ess_curve is not None:
         # **켠 수단이 산출물에서 사라지면 안 된다** (48세션). 성립하는 목표가
         # 없어 카드가 목표를 제시하지 않은 경우인데, 장을 통째로 빼면 「검토하지
@@ -686,9 +709,7 @@ def measure_entries(
             ),
             spec_table=frames.ess_spec_rows(
                 frames.ess_spec_frame(
-                    ess_optimum,
-                    baseline_demand_kw=ess_curve.baseline_demand_kw,
-                    market_minimum_kwh=ess_curve.market_minimum_kwh,
+                    ess_optimum, baseline_demand_kw=ess_curve.baseline_demand_kw
                 )
             ),
             spec_caption=frames.ESS_SPEC_CAPTION,

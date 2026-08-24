@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1",
-  "fitted_on": "2026-08-12",
+  "fitted_on": "2026-08-24",
   "source_file": "ess_cost_cases.json",
   "vat_rate": 0.1,
   "equipment": {
@@ -60,10 +60,52 @@
     "indoor_basis": "탄광박물관 턴키 1건",
     "note": "옥외 컨테이너 기준이다. 구간 사이는 선형 보간한다. 실내 설치는 비율을 곱하는데 근거가 한 건뿐이라 참고값이다."
   },
+  "capacity_bands": [
+    {
+      "min_kwh": 0.0,
+      "max_kwh": 50.0,
+      "active": false,
+      "won_per_kwh": null,
+      "midpoint_kwh": 25.0,
+      "note": "규격 격자의 최소 배터리 50 kWh 미만이라 조달되지 않는다."
+    },
+    {
+      "min_kwh": 50.0,
+      "max_kwh": 100.0,
+      "active": true,
+      "won_per_kwh": 2266000.0,
+      "midpoint_kwh": 75.0,
+      "note": ""
+    },
+    {
+      "min_kwh": 100.0,
+      "max_kwh": 200.0,
+      "active": true,
+      "won_per_kwh": 1553000.0,
+      "midpoint_kwh": 150.0,
+      "note": ""
+    },
+    {
+      "min_kwh": 200.0,
+      "max_kwh": 400.0,
+      "active": true,
+      "won_per_kwh": 1196000.0,
+      "midpoint_kwh": 300.0,
+      "note": ""
+    },
+    {
+      "min_kwh": 400.0,
+      "max_kwh": 1000.0,
+      "active": true,
+      "won_per_kwh": 993000.0,
+      "midpoint_kwh": 700.0,
+      "note": ""
+    }
+  ],
   "applicable_range": {
-    "min_kwh": 100.0,
+    "min_kwh": 50.0,
     "max_kwh": 400.0,
-    "note": "이 구간 밖은 사례가 없다. 아래는 하한 용량으로 올려 산정하고, 위는 참고값으로 표시한다."
+    "note": "하한은 규격 격자의 가장 작은 배터리다 (ess_spec_grid.json). 회귀에 쓴 사례는 100~400 kWh 이므로 그 아래는 외삽이고, 위는 참고값으로 표시한다. 50세션까지는 하한 100 kWh 로 올려 산정했는데, 격자를 쓰면 살 수 있는 최소 구성이 자연히 하한이 되어 그 규칙이 필요 없어졌다."
   },
   "holdout": [
     {

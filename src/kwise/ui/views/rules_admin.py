@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import streamlit as st
 
+from kwise.measures import PRICING_BANDS, PRICING_FORMULA, load_ess_cost_model
 from kwise.pv.archive import archive_status
+from kwise.report.frames import capacity_band_frame
 from kwise.rules import (
     EditResult,
     RuleOrigin,
@@ -44,6 +46,7 @@ from kwise.ui.rules_view import (
     header_text,
     weather_panel,
 )
+from kwise.ui.state import ESS_PRICING_PATH, input_key
 from kwise.ui.text import bullet_list, markdown_safe
 
 __all__ = ["render", "render_alerts"]
@@ -87,6 +90,7 @@ def render() -> None:
     st.markdown(f"### {header_text(counts)}")
 
     _tariff_block()
+    _ess_cost_block()
     _restore_block()
     st.divider()
 
@@ -117,6 +121,67 @@ def _tariff_block() -> None:
                 "아직 실제 청구서와 대조하지 않았습니다. 단가는 공표 자료 그대로이며, "
                 "청구서로 한 번 맞춰 보면 확신이 올라갑니다."
             )
+
+
+# --------------------------------------------------------------------- ESS 단가
+
+
+def _ess_cost_block() -> None:
+    """ESS 투자비 단가 — **경로 셋 가운데 둘이 여기 있다** (50세션 3-5).
+
+        ① 2항식          고정비 + 용량단가 × 용량. **기본이고 계산에 쓰인다**
+        ② kWh 구간 단가   구간마다 kWh당 단가 하나. 기본값은 ①에서 환산해 채운다
+        ③ 견적 총액       견적을 받은 경우. **ESS 카드에 남아 있다**
+
+    **왜 여기인가.** 49세션까지 ①은 ESS 카드의 접힘 안에 있었다. 접어 두면 관심
+    있는 사람도 못 보고, 펼쳐 두면 모르는 사람에게 어렵다 — **단가는 성격상
+    설정이다.** 요금표와 같은 자리에 두어 「무엇을 근거로 얼마인가」 를 한 화면에서
+    본다. ③만 카드에 남는데, 그것은 설정이 아니라 이 건물의 입력이다.
+
+    **구간을 kW 가 아니라 kWh 로 가른다.** 사례에 100 kW 가 둘인데 156.4 kWh 는
+    2.35억, 400 kWh 는 4.43억으로 kW당 단가가 1.9배 차이난다.
+    """
+    model = load_ess_cost_model()
+    with st.container(border=True):
+        st.markdown(f"**ESS 투자비 단가** — {model.formula}")
+        # **출처는 여기에 남는다** (50세션 4절). 화면에서 뺀 것은 결과 화면이고,
+        # 이 화면은 **근거를 값 옆에 두는 것이 존재 이유**다 — 요금표 줄과 같다.
+        st.caption(model.provenance)
+        path = st.radio(
+            "단가 경로",
+            (PRICING_FORMULA, PRICING_BANDS),
+            horizontal=True,
+            key=input_key("ess", ESS_PRICING_PATH),
+            help=manual_tip("ess-cost-reference"),
+        )
+        left, right = st.columns(2)
+        with left:
+            fixed = st.number_input(
+                "고정비 (원) — PCS·PMS·컨테이너·소방·공조·UPS·변압기",
+                min_value=0.0,
+                value=float(model.fixed_won),
+                step=1_000_000.0,
+                key=input_key("ess", "fixed_cost"),
+            )
+        with right:
+            per_kwh = st.number_input(
+                "용량단가 (원/kWh) — 배터리",
+                min_value=0.0,
+                value=float(model.per_kwh_won),
+                step=10_000.0,
+                key=input_key("ess", "per_kwh_cost"),
+            )
+        if fixed != model.fixed_won or per_kwh != model.per_kwh_won:
+            callout.caution("계수 조정됨 — 자동 산출값이 아닙니다.")
+        # **비활성 구간도 목록에 둔다** (50세션 3-5). 향후 상업용 소용량 제품이
+        # 나오면 살릴 자리다 — 지우면 그런 구간이 있었다는 사실까지 사라진다.
+        st.dataframe(
+            capacity_band_frame(model.with_coefficients(fixed_won=fixed, per_kwh_won=per_kwh)),
+            hide_index=True,
+            width="stretch",
+        )
+        if path == PRICING_BANDS:
+            st.caption("구간 단가로 산정합니다. 구간 안에서는 kWh당 단가가 일정합니다.")
 
 
 # --------------------------------------------------------------------- 항목 한 줄

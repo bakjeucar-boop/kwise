@@ -507,10 +507,18 @@ def cached_power_factor(
 
 
 def ess_cost_model(
-    fixed_won: float | None = None, per_kwh_won: float | None = None
+    fixed_won: float | None = None,
+    per_kwh_won: float | None = None,
+    pricing_path: str | None = None,
 ) -> EssCostModel:
-    """조달 사례 모델. **두 계수만 갈아 끼울 수 있다** (14세션 3-4)."""
+    """조달 사례 모델. **두 계수와 단가 경로를 갈아 끼울 수 있다** (14세션 3-4 · 50세션).
+
+    경로는 둘이다 — 2항식(기본)과 kWh 구간 단가. **기준 데이터 화면에서 고른다**
+    (50세션 3-5). 견적 총액은 세 번째 경로인데 그쪽은 모델을 거치지 않는다.
+    """
     model = load_ess_cost_model()
+    if pricing_path is not None and pricing_path != model.pricing_path:
+        model = model.with_pricing_path(pricing_path)
     if fixed_won is None and per_kwh_won is None:
         return model
     return model.with_coefficients(
@@ -527,6 +535,7 @@ def cached_ess_targets(
     base_fee_won_per_kw: float,
     fixed_won: float | None,
     per_kwh_won: float | None,
+    pricing_path: str,
     stamp: str,
 ) -> EssTargetCurve:
     """목표별 회수기간 곡선. **기본요금단가는 현행 요금제 기준으로 받는다.**"""
@@ -535,7 +544,7 @@ def cached_ess_targets(
         _usage.meta.interval_minutes,
         baseline_demand_kw=baseline_demand_kw,
         base_fee_won_per_kw=base_fee_won_per_kw,
-        model=ess_cost_model(fixed_won, per_kwh_won),
+        model=ess_cost_model(fixed_won, per_kwh_won, pricing_path),
     )
 
 
@@ -549,6 +558,7 @@ def cached_ess_optimum(
     form: ContractForm,
     fixed_won: float | None,
     per_kwh_won: float | None,
+    pricing_path: str,
     stamp: str,
     _progress: ProgressReporter | None = None,
 ) -> EssOptimum:
@@ -561,7 +571,10 @@ def cached_ess_optimum(
     한 점당 요금을 다시 계산하므로 **21점에 약 8초**다. 입력이 바뀌지 않으면
     다시 돌지 않는다.
     """
-    key = f"ess_optimum|{token}|{form_token(form)}|{fixed_won}|{per_kwh_won}|{stamp}"
+    key = (
+        f"ess_optimum|{token}|{form_token(form)}|{fixed_won}|{per_kwh_won}"
+        f"|{pricing_path}|{stamp}"
+    )
     return session_memo(
         key,
         lambda: refine_ess_target(
@@ -572,7 +585,7 @@ def cached_ess_optimum(
             baseline=_baseline,
             quality=_quality,
             options=form.billing_options(),
-            model=ess_cost_model(fixed_won, per_kwh_won),
+            model=ess_cost_model(fixed_won, per_kwh_won, pricing_path),
             progress=_progress,
         ),
     )
@@ -591,6 +604,7 @@ def cached_ess(
     stamp: str,
     fixed_won: float | None = None,
     per_kwh_won: float | None = None,
+    pricing_path: str | None = None,
 ) -> EssResult:
     # 견적 총액을 넣었으면 그쪽이 이긴다. 아니면 **조달 사례 모델**이 산정한다.
     # 0 원으로 때우지 않는다 — 0 원이면 회수기간이 "즉시 회수" 로 읽힌다.
@@ -605,7 +619,7 @@ def cached_ess(
         form.selection,
         target_kw=target_kw,
         cost=cost,
-        model=ess_cost_model(fixed_won, per_kwh_won),
+        model=ess_cost_model(fixed_won, per_kwh_won, pricing_path),
         baseline=_baseline,
         quality=_quality,
         options=form.billing_options(),

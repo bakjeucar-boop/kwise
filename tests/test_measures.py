@@ -532,9 +532,17 @@ def test_missing_slots_are_left_alone(sample_usage: UsageData, tariff: TariffTab
 
 
 def test_ess_economics(sample_ess: EssResult) -> None:
+    """**50세션부터 사양은 규격 격자 위의 값이다** (3-2).
+
+    필요 93.4 kW / 41.1 kWh 는 기성품에 없다. 살 수 있는 것은 100 kW / 50 kWh 이고
+    투자비도 그 출력으로 낸다 — 더 산 만큼 회수기간이 길어지는데 그것이 정직한
+    방향이다. 필요 사양은 ``required_*`` 에 그대로 남는다.
+    """
     result = sample_ess
-    assert result.power_kw == pytest.approx(93.4, abs=0.1)
-    assert result.capacity_kwh == pytest.approx(41.1, abs=0.5)
+    assert result.power_kw == 100.0
+    assert result.capacity_kwh == 50.0
+    assert result.required_power_kw == pytest.approx(93.4, abs=0.1)
+    assert result.required_capacity_kwh == pytest.approx(41.1, abs=0.5)
     # 투자비 = **출력 × kW당 단가**. 방전시간은 단가에 들어 있어 다시 곱하지 않는다.
     assert result.investment_won == pytest.approx(result.power_kw * ESS_COST_WON_PER_KW)
     assert result.total_saving_won > 0

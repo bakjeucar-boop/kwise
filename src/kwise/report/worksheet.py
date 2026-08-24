@@ -26,7 +26,7 @@ import pandas as pd
 from kwise import money
 from kwise.measures.contract import ContractAdjustment
 from kwise.measures.demand_response import DemandResponseResult
-from kwise.measures.ess import EssResult
+from kwise.measures.ess import EssResult, payback_text
 from kwise.measures.power_factor import PowerFactorResult
 from kwise.measures.solar import SolarCurve, SolarPoint
 from kwise.measures.tariff_switch import TariffSwitchResult
@@ -330,10 +330,18 @@ def ess_worksheet(result: EssResult) -> Worksheet:
             _kwh(excess.max_daily_excess_kwh, decimals=1),
         ),
         WorkRow("최대 초과 출력", "", _kw(excess.max_excess_kw)),
-        WorkRow("필요 출력", "", _kw(result.power_kw)),
+        # **필요 사양과 규격 사양을 나란히 낸다** (50세션 3-2). 표에 나가는 것은
+        # 규격이고, 그것이 왜 그 값인지는 필요 사양과 견주어야 읽힌다.
+        WorkRow("필요 출력", "", _kw(result.required_power_kw or result.power_kw)),
         WorkRow(
             "필요 용량",
-            f"방전시간 {result.discharge_hours:,.2f}h",
+            "정격 = 내보낼 에너지 ÷ √왕복효율 ÷ DoD",
+            _kwh(result.required_capacity_kwh or result.capacity_kwh, decimals=1),
+        ),
+        WorkRow("규격 출력", "살 수 있는 PCS 로 올림", _kw(result.power_kw)),
+        WorkRow(
+            "규격 용량",
+            f"살 수 있는 배터리로 올림 · 방전시간 {result.discharge_hours:,.2f}h",
             _kwh(result.capacity_kwh, decimals=1),
         ),
     ]
@@ -346,7 +354,12 @@ def ess_worksheet(result: EssResult) -> Worksheet:
                     _won(quote.equipment_won),
                 ),
                 WorkRow("전기공사", "옥외 기준 구간의 대표값", _won(quote.electrical_won)),
-                WorkRow("투자비", "설비 + 전기공사", _won(quote.total_won), total=True),
+                WorkRow(
+                    "투자비",
+                    f"설비 + 전기공사 · 단가 {result.pricing_path}",
+                    _won(quote.total_won),
+                    total=True,
+                ),
             ]
         )
     elif result.investment_won is not None:
@@ -360,7 +373,11 @@ def ess_worksheet(result: EssResult) -> Worksheet:
     )
     if result.payback_years is not None:
         rows.append(
-            WorkRow("회수기간", "투자비 ÷ 12개월 환산 절감액", f"{result.payback_years:,.1f}년")
+            WorkRow(
+                "회수기간",
+                "투자비 ÷ 12개월 환산 절감액",
+                payback_text(result.payback_years),
+            )
         )
     return Worksheet("ess", "ESS 계산 근거", tuple(rows))
 

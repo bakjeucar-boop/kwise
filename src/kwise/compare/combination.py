@@ -39,7 +39,7 @@ from kwise.measures import (
 from kwise.measures.contract import ContractAdjustment, evaluate_contract_adjustment
 from kwise.measures.ess import analyze_peak_excess
 from kwise.measures.pv_cost import PV_UNPRICED_REASON, PvCostInput
-from kwise.notices import Notice, basis, block, prefixed, warn
+from kwise.notices import Notice, basis, block, info, prefixed, warn
 from kwise.progress import ProgressReporter, record
 from kwise.pv import sharpen
 from kwise.quality import QualityReport
@@ -411,6 +411,10 @@ def evaluate_combination(
                     model.formula + " — 도입 사례 회귀로 ESS 투자비를 산정했습니다.",
                     fact="ess.cost_model_formula",
                 )
+            )
+            # 출처는 참고 등급이다 — 화면에 없고 보고서 부록에 실린다 (50세션 4절).
+            notices.append(
+                info(f"ESS 투자비 계수 — {model.provenance}.", fact="ess.cost_model_source")
             )
         if investment is not None and ess_investment is not None:
             investment += ess_investment

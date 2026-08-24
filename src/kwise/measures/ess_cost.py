@@ -30,6 +30,7 @@ LCOS 참고단가(``data\\ess_cost_reference.json``)는 차익거래 에너지 �
 from __future__ import annotations
 
 import json
+import math
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
@@ -40,27 +41,45 @@ from typing import Any
 import pandas as pd
 
 from kwise import money
-from kwise.notices import Notice, basis, warn
+from kwise.notices import Notice, warn
 
 __all__ = [
+    "GRID_FILENAME",
     "MODEL_FILENAME",
+    "PRICING_BANDS",
+    "PRICING_FORMULA",
+    "PRICING_QUOTED",
     "REFERENCE_FILENAME",
+    "CapacityBand",
     "ElectricalBand",
     "EssCostInput",
     "EssCostModel",
     "EssCostReference",
     "EssCostReferenceError",
     "EssQuote",
+    "EssSpecGrid",
     "EssTechnologyCost",
     "Feasibility",
     "load_ess_cost_model",
     "load_ess_cost_reference",
+    "load_ess_spec_grid",
     "model_data_path",
     "reference_data_path",
     "reference_table",
+    "spec_grid_data_path",
 ]
 
 REFERENCE_FILENAME = "ess_cost_reference.json"
+GRID_FILENAME = "ess_spec_grid.json"
+
+PRICING_FORMULA = "2항식"
+"""설비비 = 고정비 + 용량단가 × 용량. **기본 경로이며 계산에 쓰인다** (50세션)."""
+
+PRICING_BANDS = "kWh 구간 단가"
+"""용량 구간마다 kWh당 단가 하나. **기준 데이터 화면에서 고른다** (50세션)."""
+
+PRICING_QUOTED = "견적 총액"
+"""사용자가 받은 견적을 그대로 넣은 경우. **ESS 카드에 남는 유일한 단가 입력이다.**"""
 
 
 class EssCostReferenceError(ValueError):
@@ -131,6 +150,84 @@ class EssCostReference:
     @property
     def lower_bound_note(self) -> str:
         return str(self.character.get("why", ""))
+
+
+@dataclass(frozen=True)
+class EssSpecGrid:
+    """실제로 조달되는 **규격 격자** (50세션 3-1).
+
+    123 kW / 120 kWh 처럼 기성품에 없는 값으로 산출하면 설득력이 없다. 도입 사례
+    여섯 건에서 관찰한 규격을 격자로 옮겨, 산출값을 **올려 잡는다**.
+
+        PCS      50 · 75 · 100 kW, 100 kW 를 넘으면 병렬 50 kW 단위
+        배터리   50 kWh 단위 (랙 100 kWh · 반 랙 50 kWh)
+
+    **내려 잡지 않는다.** 내리면 목표를 못 지킨다. 올리면 투자비가 늘어 회수기간이
+    길어지는데 그것이 정직한 방향이다.
+
+    값은 ``data\\ess_spec_grid.json`` 에 있다 — **코드에 박지 않는다.** 사례가
+    늘면 그 파일을 갱신한다.
+    """
+
+    unit_kw: tuple[float, ...]
+    parallel_step_kw: float
+    battery_step_kwh: float
+    source: dict[str, Any] = field(default_factory=dict)
+
+    def snap_power_kw(self, power_kw: float) -> float:
+        """필요 출력을 살 수 있는 PCS 로 올린다. 123 kW → 150 kW."""
+        if power_kw <= 0:
+            return 0.0
+        for unit in self.unit_kw:
+            if power_kw <= unit + 1e-9:
+                return unit
+        step = self.parallel_step_kw
+        return float(math.ceil(power_kw / step - 1e-9) * step)
+
+    def snap_capacity_kwh(self, capacity_kwh: float) -> float:
+        """필요 용량을 살 수 있는 배터리로 올린다. 120 kWh → 150 kWh.
+
+        **0 보다 크면 최소 한 단위를 산다** — 6 kWh 짜리 배터리는 없다.
+        """
+        if capacity_kwh <= 0:
+            return 0.0
+        step = self.battery_step_kwh
+        return float(max(step, math.ceil(capacity_kwh / step - 1e-9) * step))
+
+    @property
+    def minimum_capacity_kwh(self) -> float:
+        """살 수 있는 가장 작은 배터리. 구간 단가의 비활성 경계가 여기서 나온다."""
+        return self.battery_step_kwh
+
+
+def spec_grid_data_path() -> Path:
+    """규격 격자 파일. 요금표·사례와 같은 ``data\\`` 폴더에 둔다."""
+    override = os.environ.get("KWISE_TARIFF_DIR")
+    base = Path(override) if override else Path(__file__).resolve().parents[3] / "data"
+    return base / GRID_FILENAME
+
+
+@lru_cache(maxsize=1)
+def load_ess_spec_grid(path: str | None = None) -> EssSpecGrid:
+    """규격 격자를 읽는다. **코드에 값을 두지 않는다.**"""
+    target = Path(path) if path is not None else spec_grid_data_path()
+    if not target.is_file():
+        raise EssCostReferenceError(f"ESS 규격 격자 파일이 없습니다: {target}")
+    payload: dict[str, Any] = json.loads(target.read_text(encoding="utf-8"))
+    pcs = payload["pcs"]
+    units = tuple(sorted(float(value) for value in pcs["unit_kw"]))
+    if not units:
+        raise EssCostReferenceError(f"PCS 규격이 비어 있습니다: {target}")
+    step = float(pcs["parallel_step_kw"])
+    battery = float(payload["battery"]["step_kwh"])
+    if step <= 0 or battery <= 0:
+        raise EssCostReferenceError(f"격자 단위는 양수여야 합니다: {target}")
+    return EssSpecGrid(
+        unit_kw=units,
+        parallel_step_kw=step,
+        battery_step_kwh=battery,
+        source=dict(payload.get("source", {})),
+    )
 
 
 def reference_data_path() -> Path:
@@ -295,6 +392,33 @@ def model_data_path() -> Path:
 
 
 @dataclass(frozen=True)
+class CapacityBand:
+    """kWh 구간 단가 한 줄 (50세션 3-5 ②).
+
+    **kW 가 아니라 kWh 로 가른다.** 사례에 100 kW 가 둘인데 156.4 kWh 는 2.35억,
+    400 kWh 는 4.43억으로 kW당 단가가 1.9배 차이난다 — 값을 정하는 것은 용량이다.
+
+    기본값은 2항식을 **구간 중앙**에서 환산해 채운다 (``tools\fit_ess_cost.py``).
+    설비비만이며 전기공사비는 들어 있지 않다 — 2항식과 같은 층위라야 견줄 수 있다.
+
+    Attributes:
+        active: 조달되는 구간인가. 규격 격자의 최소 배터리 미만 구간은 **비활성**
+            으로 목록에 남긴다 — 향후 상업용 소용량 제품이 나오면 살릴 자리다.
+    """
+
+    min_kwh: float
+    max_kwh: float
+    active: bool
+    won_per_kwh: float | None
+    midpoint_kwh: float = 0.0
+    note: str = ""
+
+    @property
+    def label(self) -> str:
+        return f"{self.min_kwh:,.0f}~{self.max_kwh:,.0f} kWh"
+
+
+@dataclass(frozen=True)
 class ElectricalBand:
     """전기공사비 구간. **점이 아니라 범위다** — 사례가 흩어져 있다."""
 
@@ -310,7 +434,8 @@ class EssQuote:
     """용량 하나에 대한 조달 사례 기준 견적.
 
     Attributes:
-        applied_kwh: 실제로 산정에 쓴 용량. 적용 구간 아래면 하한으로 올린다.
+        applied_kwh: 실제로 산정에 쓴 용량. **50세션부터 산출 용량과 같다** —
+            하한으로 올리는 일은 규격 격자가 앞에서 한다.
         in_range: 적용 구간 안인가. 밖이면 화면에 참고값이라고 적는다.
     """
 
@@ -321,6 +446,8 @@ class EssQuote:
     electrical_low_won: float
     electrical_high_won: float
     in_range: bool
+    pricing_path: str = PRICING_FORMULA
+    """어느 단가 경로로 냈는가 (50세션). **결과에 한 줄로 표시한다.**"""
     notices: tuple[Notice, ...] = field(default=())
 
     @property
@@ -403,6 +530,9 @@ class EssCostModel:
     min_kwh: float
     max_kwh: float
     fitted_on: str
+    capacity_bands: tuple[CapacityBand, ...] = field(default=())
+    pricing_path: str = PRICING_FORMULA
+    """어느 단가 경로로 산정하는가 (50세션). 기본은 2항식이다."""
     holdout: tuple[Mapping[str, float], ...] = field(default=())
     rounding: tuple[Mapping[str, float], ...] = field(default=())
     cases: tuple[Mapping[str, Any], ...] = field(default=())
@@ -428,23 +558,35 @@ class EssCostModel:
             adjusted=self.adjusted or changed,
         )
 
-    @property
-    def market_minimum_kwh(self) -> float:
-        """**시장 최소 규모.** 이보다 작게는 조달되지 않아 과금 용량의 하한이다.
+    # **「시장 최소 규모」 를 뺐다** (50세션 3-3·3-4). 100 kWh 로 올려 잡던 규칙이
+    # 사양 표 다섯 줄에 모두 「최소 규모」 표식을 달아 구별하는 힘이 없었고,
+    # 투자비도 다섯 줄이 같았다. **규격 격자가 그 자리를 대신한다** — 살 수 있는
+    # 최소 구성(50 kWh)이 자연히 하한이 되므로 따로 하한을 걸 것이 없다.
+    # 조달되지 않는 규모는 최소 PCS 출력(``ess.min_pcs_power_kw``)이 가른다.
 
-        회수기간 U곡선의 왼쪽 팔이 여기서 나온다 — 목표를 높여 필요 용량이 줄어도
-        이 하한 아래로는 투자비가 내려가지 않으므로 회수기간이 다시 나빠진다.
-        **물리적 최적이 아니라 조달 규격의 산물이다.**
+    def with_pricing_path(self, path: str) -> EssCostModel:
+        """단가 경로를 갈아 끼운다 (50세션 3-5). **기준 데이터 화면에서 고른다.**"""
+        if path not in (PRICING_FORMULA, PRICING_BANDS):
+            raise ValueError(f"알 수 없는 단가 경로입니다: {path!r}")
+        return replace(self, pricing_path=path)
+
+    def capacity_band(self, capacity_kwh: float) -> CapacityBand | None:
+        """용량이 드는 구간. **상한 포함**(``용량 ≤ 상한``)으로 가른다.
+
+        전기공사 구간과 같은 규약이다. 구간 저변에서 투자비를 비싸게 잡아
+        회수기간이 길게 나오므로 안전한 방향이기도 하다.
+
+        **사례 최대(400 kWh)를 넘으면 마지막 구간 값을 그대로 쓴다** — kWh당
+        단가는 용량이 커질수록 내려가므로 과대 추정이지만, 그 역시 안전한
+        방향이다. 대신 :meth:`quote` 가 「사례 범위 초과」 를 표시한다.
         """
-        return self.min_kwh
-
-    def billed_capacity_kwh(self, capacity_kwh: float) -> float:
-        """과금 용량 = ``max(정격 용량, 시장 최소 규모)``.
-
-        **정격을 넘긴다** (46세션). :meth:`quote` 도 정격을 받으므로 두 경로가
-        같은 양에 같은 하한을 건다.
-        """
-        return max(capacity_kwh, self.market_minimum_kwh)
+        active = [band for band in self.capacity_bands if band.active]
+        if not active:
+            return None
+        for band in active:
+            if capacity_kwh <= band.max_kwh + 1e-9:
+                return band
+        return active[-1]
 
     @property
     def coefficient_source(self) -> str:
@@ -461,6 +603,15 @@ class EssCostModel:
     # ------------------------------------------------------------- 설비·공사
 
     def equipment_won(self, capacity_kwh: float) -> float:
+        """설비비. **고른 단가 경로를 따른다** (50세션 3-5).
+
+        기본은 2항식이다 — 도입 사례 넷을 1.4% 이내로 재현한다. 구간 단가를
+        고르면 그 구간의 kWh당 단가를 곱한다.
+        """
+        if self.pricing_path == PRICING_BANDS:
+            band = self.capacity_band(capacity_kwh)
+            if band is not None and band.won_per_kwh is not None:
+                return band.won_per_kwh * capacity_kwh
         return self.fixed_won + self.per_kwh_won * capacity_kwh
 
     def electrical_band(self, capacity_kwh: float) -> ElectricalBand:
@@ -488,25 +639,17 @@ class EssCostModel:
         return low.typical_won + (high.typical_won - low.typical_won) * ratio
 
     def quote(self, capacity_kwh: float, *, indoor: bool = False) -> EssQuote:
-        """용량 하나의 견적. **적용 구간을 벗어나면 그 사실을 적는다.**"""
+        """용량 하나의 견적. **적용 구간을 벗어나면 그 사실을 적는다.**
+
+        **하한으로 올려 잡지 않는다** (50세션 3-3). 그 일은 규격 격자가 이미
+        했다 — 여기 들어오는 용량은 살 수 있는 값이다.
+        """
         if capacity_kwh < 0:
             raise ValueError(f"용량은 음수일 수 없습니다: {capacity_kwh}")
         notices: list[Notice] = []
         applied = capacity_kwh
         in_range = True
-        if capacity_kwh < self.min_kwh:
-            applied = self.min_kwh
-            in_range = False
-            # **근거** — 투자비가 왜 그 값인지 설명한다.
-            notices.append(
-                basis(
-                    f"산출 용량 {capacity_kwh:,.1f} kWh — 시장 최소 "
-                    f"{self.market_minimum_kwh:,.0f} kWh 기준으로 산정했습니다. 고정비가 "
-                    "지배적이라 더 작게 만들어도 투자비가 그만큼 줄지 않습니다.",
-                    fact="ess.market_minimum",
-                )
-            )
-        elif capacity_kwh > self.max_kwh:
+        if capacity_kwh > self.max_kwh:
             in_range = False
             # **주의** — 회귀 범위 밖이라 투자비 신뢰도가 떨어진다.
             notices.append(
@@ -526,6 +669,7 @@ class EssCostModel:
             electrical_low_won=band.low_won * scale,
             electrical_high_won=band.high_won * scale,
             in_range=in_range,
+            pricing_path=self.pricing_path,
             notices=tuple(notices),
         )
 
@@ -585,12 +729,27 @@ class EssCostModel:
 
     @property
     def formula(self) -> str:
+        """**산식만** 적는다 (50세션 4절).
+
+        49세션까지는 「(도입 사례 4건 기준, 2026-08-12 적합, R² 0.9996)」 가 이
+        문장에 붙어 화면 툴팁까지 따라 나갔다. **출처는 신뢰의 문제이고 산식은
+        결과를 읽는 문제다** — 갈라서 앞의 것은 :attr:`provenance` 로 보냈다.
+        """
         adjusted = " · **계수 조정됨**" if self.adjusted else ""
         return (
             f"설비비 = {money.won(self.fixed_won, reason='—')} + "
-            f"{self.per_kwh_won:,.0f}원/kWh × 용량(kWh) "
-            f"({self.coefficient_source}, R² {self.r2:.4f}){adjusted}"
+            f"{self.per_kwh_won:,.0f}원/kWh × 용량(kWh){adjusted}"
         )
+
+    @property
+    def provenance(self) -> str:
+        """계수의 **출처와 적합 품질** (50세션 4절).
+
+        화면에는 두지 않는다. 매뉴얼·보고서 부록·기준 데이터 화면이 쓴다 —
+        앞의 둘은 「이 값을 믿을 만한가」 를 따지는 자리이고, 기준 데이터 화면은
+        **근거를 값 옆에 두는 것이 존재 이유**인 자리다.
+        """
+        return f"{self.coefficient_source}, R² {self.r2:.4f}"
 
 
 @lru_cache(maxsize=1)
@@ -618,6 +777,19 @@ def load_ess_cost_model(path: str | None = None) -> EssCostModel:
         raise EssCostReferenceError(f"전기공사 구간이 비어 있습니다: {target}")
     scope = payload.get("applicable_range", {})
     indoor = work.get("indoor_ratio")
+    capacity_bands = tuple(
+        CapacityBand(
+            min_kwh=float(item["min_kwh"]),
+            max_kwh=float(item["max_kwh"]),
+            active=bool(item.get("active", True)),
+            won_per_kwh=(
+                None if item.get("won_per_kwh") is None else float(item["won_per_kwh"])
+            ),
+            midpoint_kwh=float(item.get("midpoint_kwh", 0.0)),
+            note=str(item.get("note", "")),
+        )
+        for item in payload.get("capacity_bands", ())
+    )
     return EssCostModel(
         fixed_won=float(equipment["fixed_won"]),
         per_kwh_won=float(equipment["per_kwh_won"]),
@@ -628,6 +800,7 @@ def load_ess_cost_model(path: str | None = None) -> EssCostModel:
         min_kwh=float(scope.get("min_kwh", bands[0].max_kwh)),
         max_kwh=float(scope.get("max_kwh", bands[-1].max_kwh)),
         fitted_on=str(payload.get("fitted_on", "")),
+        capacity_bands=capacity_bands,
         holdout=tuple(payload.get("holdout", ())),
         rounding=tuple(payload.get("rounding", ())),
         cases=tuple(payload.get("cases", ())),
