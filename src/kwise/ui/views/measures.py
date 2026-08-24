@@ -24,6 +24,7 @@ import datetime as dt
 import pandas as pd
 import streamlit as st
 
+from kwise import money
 from kwise.diagnose import Diagnosis, default_margin_ratio, margin_range
 from kwise.diagnose.dr import dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData
@@ -43,6 +44,7 @@ from kwise.measures import (
     refine_targets,
     surplus_free_capacity_kwp,
     surplus_options,
+    with_surplus_revenue,
 )
 from kwise.measures.demand_response import DemandResponseResult
 from kwise.notices import Notice, tooltip
@@ -92,7 +94,14 @@ from kwise.ui.state import (
     toggle_key,
 )
 
-__all__ = ["WEATHER_SOURCE_LABELS", "dr_off_days", "render", "weather_source_label"]
+__all__ = [
+    "WEATHER_SOURCE_LABELS",
+    "chosen_surplus_revenue",
+    "dr_off_days",
+    "render",
+    "solar_surplus_scenario",
+    "weather_source_label",
+]
 
 
 #: 기상 출처의 **표시 이름** (31세션 4-2).
@@ -953,11 +962,26 @@ def _solar(
         st.caption("**묵은 결과** — 지금 화면의 입력이 아니라 마지막 계산의 입력 기준입니다.")
     _overview(spec)
     months = curve.base_fee_months
+    # **고른 잉여 처리를 절감액에 싣는다** (48세션). 41세션이 잉여를 태양광 안으로
+    # 옮기면서 금액 합치기를 하지 않아, 화면에 **더해지지 않는 두 수**가 남아
+    # 있었다 — 절감액 2,543만원과 잉여 수익 241만원. 회수기간은 앞의 것만 봤다.
+    # 아무것도 고르지 않았으면 더하지 않는다 (`기본값 없음` 을 지킨다).
+    surplus = _surplus_result(usage, table, form, unit_profile, point)
+    scenario, revenue = chosen_surplus_revenue(surplus)
+    point = with_surplus_revenue(
+        point, revenue_won=revenue, scenario=scenario, base_fee_months=months
+    )
     columns = st.columns(4)
     columns[0].metric("용량", fmt.kwp(point.capacity_kwp))
     # **발전량은 MWh 다** (26세션 3-3). kWh 는 백만 자리라 눈으로 읽히지 않는다.
     columns[1].metric("발전량", fmt.per_year(fmt.mwh(annualize(point.generation_kwh, months))))
-    columns[2].metric("절감액", fmt.won_year(point.annual_saving_won))
+    # **지표를 늘리지 않는다** (48세션). 자가소비분과 잉여 수익을 두 칸에 세우면
+    # 어느 쪽이 결론인지 흐려진다 — 한 칸에 합쳐 내고 툴팁이 가른다.
+    columns[2].metric(
+        "절감액",
+        fmt.won_year(point.annual_saving_won),
+        help=_solar_saving_tip(point, months),
+    )
     columns[3].metric(
         "회수기간", fmt.payback(point.payback_years, investment_won=point.investment_won)
     )
@@ -973,7 +997,7 @@ def _solar(
     # **판단의 갈림길은 잉여다** (26세션 3절). 회수기간 최소만으로는 정할 수 없다 —
     # 잉여를 내면 상계거래 계약과 역송 계량기가 따라오므로, 「잉여 없이 어디까지」 와
     # 「지금 용량이면 얼마나 남는가」 를 나란히 둔다.
-    surplus = _surplus_verdict(usage, table, form, unit_profile, point, months, presets)
+    _surplus_verdict(surplus, unit_profile, usage, point, months, presets)
     _surplus_handling(usage, table, form, unit_profile, point, months, surplus)
 
     # **대표 지점을 표로** (17세션 3-3). 곡선 그래프는 26세션에 걷어냈다 —
@@ -1039,15 +1063,78 @@ def _solar(
     _worksheet(solar_worksheet(curve, point))
 
 
-def _surplus_verdict(
+def solar_surplus_scenario() -> str:
+    """고른 잉여 처리 방식. **안 골랐으면 빈 문자열이다** (48세션).
+
+    41세션이 「기본값 없음」 으로 둔 라디오다 — 상계와 외부 판매는 계약 상대도
+    정산 절차도 다른 길이라 미리 골라 두면 그것이 권고로 읽힌다. 그래서 **고른
+    경우에만** 수익을 절감액에 더한다.
+
+    ``dr_off_days`` 와 같은 방식이다 — 고르는 자리는 태양광 카드의 접힘 안인데
+    쓰는 자리가 그 위 지표와 3단계다. Streamlit 이 위젯 값을 세션에 먼저 넣고
+    스크립트를 다시 돌리므로 고른 그 실행에서 바로 반영된다.
+    """
+    return str(st.session_state.get(input_key("solar", "surplus_use")) or "")
+
+
+def chosen_surplus_revenue(result: SurplusResult | None) -> tuple[str, float | None]:
+    """(고른 시나리오 이름, 관측 기간 수익). 안 골랐으면 ``("", None)``.
+
+    금액을 못 내는 경우(단가 미입력)에는 이름만 돌려준다 — 지어낸 0원을 절감액에
+    더하지 않는다.
+    """
+    scenario = solar_surplus_scenario()
+    if not scenario or result is None:
+        return "", None
+    try:
+        return scenario, result.scenario(scenario).revenue_won
+    except KeyError:
+        # 용량이 상계 상한을 넘어 선택지에서 빠진 경우다. 고른 적이 없는 것으로 본다.
+        return "", None
+
+
+def _solar_saving_tip(point: SolarPoint, months: float) -> str:
+    """절감액이 무엇으로 갈리는지 한 줄 (48세션). 안 골랐으면 붙이지 않는다."""
+    if not point.surplus_scenario:
+        return ""
+    self_consumed = money.won(annualize(point.self_consumption_saving_won, months), reason="—")
+    added = money.won(annualize(point.surplus_revenue_won, months), reason="—")
+    return fmt.markdown_safe(
+        f"자가소비로 줄인 요금 {self_consumed} + 잉여 {point.surplus_scenario} {added}.\n\n"
+        "역송분은 요금 계산에서 빠져 있고, 상계 차감은 그 뒤에 남은 순부하 사용량을 "
+        "한도로 잽니다 — 겹쳐 세지 않았습니다."
+    )
+
+
+def _surplus_result(
     usage: UsageData,
     table: TariffTable,
     form: ContractForm,
     unit_profile: pd.Series,
     point: SolarPoint,
+) -> SurplusResult:
+    """잉여 계산 한 벌. **세 자리가 같은 인자로 부른다** — 기억에 걸린다."""
+    return cached_surplus(
+        usage,
+        table,
+        unit_profile,
+        usage_token(usage),
+        form,
+        point.capacity_kwp,
+        measure_float("solar", "surplus_price"),
+        rules_stamp(),
+        measure_float("solar", "smp_price"),
+    )
+
+
+def _surplus_verdict(
+    surplus: SurplusResult,
+    unit_profile: pd.Series,
+    usage: UsageData,
+    point: SolarPoint,
     months: float,
     presets: PvPresets,
-) -> SurplusResult:
+) -> None:
     """**잉여를 낼 것인가** — 태양광 규모를 가르는 물음 (26세션 3-2).
 
     셋을 나란히 낸다.
@@ -1060,17 +1147,6 @@ def _surplus_verdict(
     들어와 바로 아래 :func:`_surplus_handling` 이 낸다 — 잉여는 태양광을 얼마나
     크게 지을지에 따라 나오는 결과이지 따로 고르는 수단이 아니기 때문이다.
     """
-    surplus = cached_surplus(
-        usage,
-        table,
-        unit_profile,
-        usage_token(usage),
-        form,
-        point.capacity_kwp,
-        measure_float("solar", "surplus_price"),
-        rules_stamp(),
-        measure_float("solar", "smp_price"),
-    )
     density = presets.density(
         (get_solar_inputs() or SolarInputs(region_key="")).density_key or presets.default.key
     )
@@ -1106,7 +1182,6 @@ def _surplus_verdict(
         delta_color="off",
         help=fmt.tip("surplus_free"),
     )
-    return surplus
 
 
 def _surplus_handling(
@@ -1145,9 +1220,11 @@ def _surplus_handling(
         )
         if choice is None:
             return
-        external = smp = None
+        # **단가는 위젯 키에만 둔다** (48세션). :func:`_surplus_result` 가 세션에서
+        # 읽으므로 여기서 값을 받아 넘기지 않는다 — 옮겨 적으면 카드 위 절감액과
+        # 이 접힘 안의 수익이 한 실행 어긋난다 (`_off_day_picker` 와 같은 이유).
         if choice == EXTERNAL_SCENARIO:
-            external = st.number_input(
+            st.number_input(
                 "잉여 판매 단가 (원/kWh) — 0 이면 미산출",
                 min_value=0.0,
                 value=0.0,
@@ -1156,7 +1233,7 @@ def _surplus_handling(
                 help="우리가 파는 쪽의 단가입니다. 넣지 않으면 금액을 산출하지 않습니다.",
             )
         elif choice == OFFSET_SCENARIO and offset_settles_cash(point.capacity_kwp):
-            smp = st.number_input(
+            st.number_input(
                 "SMP 단가 (원/kWh) — 0 이면 미산출",
                 min_value=0.0,
                 value=0.0,
@@ -1164,17 +1241,7 @@ def _surplus_handling(
                 key=input_key("solar", "smp_price"),
                 help="당월 차감하고 남은 몫을 정산하는 단가입니다. 넣지 않으면 잔여량만 냅니다.",
             )
-        result = cached_surplus(
-            usage,
-            table,
-            unit_profile,
-            usage_token(usage),
-            form,
-            point.capacity_kwp,
-            external or None,
-            rules_stamp(),
-            smp or None,
-        )
+        result = _surplus_result(usage, table, form, unit_profile, point)
         scenario = result.scenario(choice)
         revenue = scenario.revenue_won
         columns = st.columns(4)
@@ -1183,6 +1250,8 @@ def _surplus_handling(
             fmt.per_year(fmt.won_short(annualize(revenue, months)))
             if revenue is not None
             else fmt.DASH,
+            # **위 절감액에 이미 들어 있다** (48세션). 고른 뒤에 보는 자리라
+            # 여기서는 그 몫이 얼마인지만 낸다.
             delta_color="off",
         )
         # 금액을 못 내면 **사유를 적는다** — 빈칸이나 0원으로 두지 않는다 (7.5).

@@ -40,6 +40,7 @@ from kwise.measures import (
     SolarPoint,
     SurplusResult,
     TariffSwitchResult,
+    annualize,
 )
 from kwise.notices import Notice, dedupe
 from kwise.report.appendix import basis_data_frame, known_limits, worksheet_frame
@@ -287,6 +288,7 @@ def measure_summary_frame(
     ess: EssResult | None = None,
     solar: SolarPoint | None = None,
     surplus: SurplusResult | None = None,
+    base_fee_months: float | None = None,
 ) -> pd.DataFrame:
     """수단별 결과 시트 (요구사항서 7장).
 
@@ -401,33 +403,42 @@ def measure_summary_frame(
                 ),
             }
         )
-        if surplus is not None and surplus.total_kwh > 0:
-            # 잉여 처리는 **별도 줄**이다. 태양광 절감액에 이미 들어 있는 것은
-            # 자가소비분이고, 이 줄은 역송분을 어떻게 하느냐다.
+        if surplus is not None and surplus.total_kwh > 0 and solar.surplus_scenario:
+            # **고른 시나리오 하나만 낸다** (48세션). 셋을 다 세우면 화면(고른
+            # 하나)과 산출물이 다른 것을 말한다. 위 태양광 줄의 절감액에 이 몫이
+            # 이미 들어 있고, 이 줄은 그중 얼마가 역송분인지를 밝힌다.
             offset = surplus.offset
-            for scenario in surplus.scenarios:
-                is_offset = scenario.name == OFFSET_SCENARIO
-                rows.append(
-                    {
-                        "수단": f"└ 잉여 {scenario.name}",
-                        "투자비(원)": format_won(None, reason="—"),
-                        "절감액(원)": format_won(scenario.revenue_won, reason=scenario.basis),
-                        "12개월 환산(원)": format_won(None, reason="—"),
-                        "회수기간": "—",
-                        "확실성": str(Certainty.MEDIUM_LOW),
-                        "비고": (
-                            f"연간 잉여 {surplus.total_kwh / 1000:,.1f} MWh · "
-                            + (
-                                f"차감 {offset.deducted_kwh:,.0f} kWh · "
-                                f"잔여 {offset.remaining_kwh:,.0f} kWh · "
-                                "기본요금은 바뀌지 않습니다 — 전력량요금만 다시 "
-                                "계산했습니다."
-                                if is_offset and offset is not None
-                                else scenario.admin_burden
-                            )
-                        ),
-                    }
-                )
+            scenario = surplus.scenario(solar.surplus_scenario)
+            is_offset = scenario.name == OFFSET_SCENARIO
+            rows.append(
+                {
+                    "수단": f"└ 잉여 {scenario.name}",
+                    "투자비(원)": format_won(None, reason="—"),
+                    "절감액(원)": format_won(scenario.revenue_won, reason=scenario.basis),
+                    # **12개월 환산을 낸다** (48세션). 다른 줄은 모두 환산값인데
+                    # 이 칸만 「—」 였다 — 28세션이 `standalone_rows` 에서 고친
+                    # 것과 같은 병이고, 41세션에 자리가 옮겨 오며 되살아났다.
+                    "12개월 환산(원)": format_won(
+                        annualize(scenario.revenue_won, base_fee_months)
+                        if scenario.revenue_won is not None and base_fee_months
+                        else None,
+                        reason=scenario.basis,
+                    ),
+                    "회수기간": "—",
+                    "확실성": str(Certainty.MEDIUM_LOW),
+                    "비고": (
+                        f"연간 잉여 {surplus.total_kwh / 1000:,.1f} MWh · "
+                        + (
+                            f"차감 {offset.deducted_kwh:,.0f} kWh · "
+                            f"잔여 {offset.remaining_kwh:,.0f} kWh · "
+                            "기본요금은 바뀌지 않습니다 — 전력량요금만 다시 "
+                            "계산했습니다."
+                            if is_offset and offset is not None
+                            else scenario.admin_burden
+                        )
+                    ),
+                }
+            )
     if ess is not None:
         rows.append(
             {

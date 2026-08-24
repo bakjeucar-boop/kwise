@@ -20,6 +20,7 @@ from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
+from kwise import money
 from kwise.io import UsageData
 from kwise.measures import (
     AppliedMeasure,
@@ -85,6 +86,18 @@ class CombinationSpec:
     """도입 후 지상역률 (7.4). **조합에 넣어야 상충이 보인다** — 역률 감액은
     기본요금에 비례하므로 태양광·ESS 가 기본요금을 낮추면 감액도 함께 준다."""
     power_factor_investment_won: float | None = None
+    surplus_revenue_won: float | None = None
+    """**고른** 잉여 처리의 수익 (관측 기간, 원) — 48세션.
+
+    태양광을 켠 조합에만 붙는다. 14세션은 잉여 활용이 **독립 개선안**이라 조합
+    부하에 얹을 수 없다며 합산효과에서 뺐는데, 41세션에 잉여가 태양광의 결과가
+    되면서 그 전제가 사라졌다 — 용량이 정해지면 남는 양도 정해진다.
+
+    **차익거래는 계속 뺀다.** 그쪽은 「그날 피크에 쓸 몫을 남기는 운전 규칙이
+    없다」 는 이유가 살아 있다 (:mod:`kwise.measures.arbitrage`).
+    """
+    surplus_scenario: str = ""
+    """고른 시나리오 이름. 추적성 문구가 쓴다."""
 
     @property
     def pv_cost(self) -> PvCostInput:
@@ -173,6 +186,8 @@ class CombinationResult:
     surplus_kwh: float
     self_consumption_ratio: float | None
     dispatch: DispatchResult | None = None
+    surplus_revenue_won: float = 0.0
+    """절감액에 더한 잉여 처리 수익 (관측 기간, 원) — 48세션. 안 골랐으면 0 이다."""
     contract_saving_won: float | None = None
     contract_adjustment: ContractAdjustment | None = None
     """조합 부하 기준의 계약전력 조정. **추가 하향 여지가 여기서 나온다** (14세션 5-2)."""
@@ -184,7 +199,12 @@ class CombinationResult:
 
     @property
     def total_won(self) -> float:
-        return self.bill.total_won - (self.contract_saving_won or 0.0)
+        """조합 적용 후 실질 부담. **절감액과 더해서 기준선이 나와야 한다.**
+
+        계약전력 조정과 잉여 수익은 요금 계산 밖에서 붙는 몫이라 여기서 뺀다 —
+        빼지 않으면 표의 「요금」 과 「절감액」 이 기준선으로 되돌아가지 않는다.
+        """
+        return self.bill.total_won - (self.contract_saving_won or 0.0) - self.surplus_revenue_won
 
 
 @dataclass(frozen=True, eq=False)
@@ -395,12 +415,25 @@ def evaluate_combination(
         if investment is not None and ess_investment is not None:
             investment += ess_investment
 
-    saving = baseline_bill.total_won - bill.total_won + (contract_saving or 0.0)
+    # **고른 잉여 처리를 더한다** (48세션). 태양광을 켠 조합에만 붙고, 아무것도
+    # 고르지 않았으면 0 이다. 역송분은 요금 계산에서 이미 빠져 있어 겹치지 않는다.
+    surplus_revenue = (spec.surplus_revenue_won or 0.0) if spec.has_pv else 0.0
+    if surplus_revenue:
+        notices.append(
+            basis(
+                f"잉여 {spec.surplus_scenario} 수익 "
+                f"{money.won(surplus_revenue, reason='—')} 을 절감액에 더했습니다. "
+                "역송분은 요금 계산에서 빠져 있어 자가소비 절감액과 겹치지 않습니다.",
+                fact="combination.surplus_revenue",
+            )
+        )
+    saving = baseline_bill.total_won - bill.total_won + (contract_saving or 0.0) + surplus_revenue
     annual = annualize(saving, baseline_bill.base_fee_months)
     return CombinationResult(
         spec=spec,
         bill=bill,
         saving_won=saving,
+        surplus_revenue_won=surplus_revenue,
         annual_saving_won=annual,
         investment_won=investment,
         payback_years=payback_years(investment, annual) if investment is not None else None,

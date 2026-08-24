@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import pairwise
 
 import pandas as pd
@@ -65,6 +65,7 @@ __all__ = [
     "surplus_heavy_share",
     "surplus_share_capacity_kwp",
     "unit_generation_kw",
+    "with_surplus_revenue",
 ]
 
 DEFAULT_USABLE_RATIO = 0.6  # 옥상 가용 비율 (요구사항서 3.3)
@@ -272,11 +273,25 @@ class SolarPoint:
     power_factor_after_pct: float
     power_factor_extra_won: float
     """도입 후 역률로 늘어나는 역률요금 (원). 감액이면 음수다 (약관 제43조)."""
+    surplus_revenue_won: float = 0.0
+    """**고른** 잉여 처리의 수익 (관측 기간, 원) — 48세션.
+
+    :func:`with_surplus_revenue` 로만 채워진다. 곡선 계산 자체는 자가소비분만
+    보므로 기본값이 0 이다 — 잉여를 무엇으로 할지는 사용자가 고르는 것이지
+    계산이 정하는 것이 아니다.
+    """
+    surplus_scenario: str = ""
+    """고른 시나리오 이름. 비어 있으면 **아직 고르지 않았다.**"""
 
     @property
     def saving_after_power_factor_won(self) -> float:
         """역률 악화분을 뺀 절감액. **이것이 실제로 남는 돈이다.**"""
         return self.total_saving_won - self.power_factor_extra_won
+
+    @property
+    def self_consumption_saving_won(self) -> float:
+        """자가소비분만의 절감액 (관측 기간). 잉여 수익을 더하기 **전** 값이다."""
+        return self.total_saving_won - self.surplus_revenue_won
 
     @property
     def surplus_ratio(self) -> float | None:
@@ -586,6 +601,49 @@ def solar_point(
         quality=quality,
         options=opts,
         power_factor_pct=power_factor_pct,
+    )
+
+
+def with_surplus_revenue(
+    point: SolarPoint,
+    *,
+    revenue_won: float | None,
+    scenario: str,
+    base_fee_months: float,
+    cost: PvCostInput | None = None,
+) -> SolarPoint:
+    """**고른** 잉여 처리의 수익을 절감액·회수기간에 더한다 (48세션).
+
+    41세션에 잉여 활용을 개선안에서 빼고 태양광 카드 안으로 옮겼는데, 금액을
+    합치는 일을 하지 않았다. 그래서 화면에 **더해지지 않는 두 수**가 남았다 —
+    소형 사무빌딩 자료에서 절감액 2,543만원과 잉여 수익 241만원이다. 회수기간
+    12.6년은 앞의 것만 본 값이었다.
+
+    **이중 계상이 아니다.** :func:`~kwise.measures.apply_generation` 이 순부하를
+    0 에서 자른다 — 역송분은 요금 계산에서 아예 빠져 있고, 상계 차감은 그 뒤에
+    남은 **순부하** 사용량을 한도로 계산한다. 겹치는 몫이 없다.
+
+    Args:
+        revenue_won: 고른 시나리오의 수익 (**관측 기간** 값). ``None`` 이면
+            금액을 못 낸 것이므로 더하지 않고 시나리오 이름만 남긴다.
+        scenario: 고른 시나리오 이름. 비면 아직 고르지 않은 것이라 그대로 둔다.
+        cost: 회수기간을 다시 내는 데 쓸 단가. 없으면 원래 투자비를 쓴다.
+    """
+    if not scenario:
+        return point
+    added = float(revenue_won or 0.0)
+    total = point.total_saving_won + added
+    annual = annualize(total, base_fee_months)
+    investment = (
+        cost.investment_won(point.capacity_kwp) if cost is not None else point.investment_won
+    )
+    return replace(
+        point,
+        total_saving_won=total,
+        annual_saving_won=annual,
+        payback_years=(payback_years(investment, annual) if investment is not None else None),
+        surplus_revenue_won=added,
+        surplus_scenario=scenario,
     )
 
 

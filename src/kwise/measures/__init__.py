@@ -130,6 +130,7 @@ from kwise.measures.solar import (
     surplus_heavy_share,
     surplus_share_capacity_kwp,
     unit_generation_kw,
+    with_surplus_revenue,
 )
 from kwise.measures.surplus import (
     DISCARD_SCENARIO,
@@ -266,4 +267,5 @@ __all__ = [
     "unit_generation_kw",
     "viable_discharge_hours",
     "with_load",
+    "with_surplus_revenue",
 ]

@@ -590,6 +590,8 @@ def combination_specs(
     power_factor_investment_won: float | None = None,
     contract_floor_ratio: float | None = None,
     sharpness: float = 1.0,
+    surplus_revenue_won: float | None = None,
+    surplus_scenario: str = "",
 ) -> tuple[CombinationSpec, ...]:
     """켠 수단만으로 조합을 쌓는다. **7장 번호 순(7.1~7.7)으로 누적한다.**
 
@@ -640,12 +642,15 @@ def combination_specs(
         )
         specs.append(cursor)
 
-    # 7.5
+    # 7.5 — **고른 잉여 처리가 태양광에 딸려 온다** (48세션). 잉여는 태양광의
+    # 결과라 용량이 정해져야 남는 양이 정해진다 (41세션 2절).
     if "solar" in chosen and pv_capacity_kwp > 0:
         cursor = replace(
             cursor,
             name=f"{_plus(specs)}태양광 {pv_capacity_kwp:,.0f} kWp",
             pv_capacity_kwp=pv_capacity_kwp,
+            surplus_revenue_won=surplus_revenue_won,
+            surplus_scenario=surplus_scenario,
         )
         specs.append(cursor)
 

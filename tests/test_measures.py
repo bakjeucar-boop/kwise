@@ -7,13 +7,14 @@ from __future__ import annotations
 
 import inspect
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from kwise.compare import CombinationSpec, evaluate_combination
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData, load_usage
 from kwise.measures import (
@@ -46,9 +47,11 @@ from kwise.measures import (
     roof_capacity_limit_kwp,
     size_for_target,
     solar_curve,
+    solar_point,
     surplus_options,
     unit_generation_kw,
     with_load,
+    with_surplus_revenue,
 )
 from kwise.notices import texts
 from kwise.pv import ArrayConfig, PvSystemConfig
@@ -597,6 +600,7 @@ class SurplusCase:
 
     usage: UsageData
     net: NetLoad
+    unit: pd.Series
     capacity_kwp: float = 1_000.0
 
 
@@ -609,7 +613,7 @@ def surplus_case(tmp_path_factory: pytest.TempPathFactory) -> SurplusCase:
         37.5, 127.0, arrays=(ArrayConfig.roof("지붕", 1_000.0),), altitude_m=50.0
     )
     unit = unit_generation_kw(usage, weather, config)
-    return SurplusCase(usage=usage, net=apply_generation(usage, unit * 1_000.0))
+    return SurplusCase(usage=usage, net=apply_generation(usage, unit * 1_000.0), unit=unit)
 
 
 def _surplus(case: SurplusCase, tariff: TariffTable, **kwargs: object) -> SurplusResult:
@@ -1086,3 +1090,133 @@ def test_동률_폭은_기준_데이터에서_온다() -> None:
     from kwise.measures.solar import payback_tie_ratio
 
     assert 0.0 < payback_tie_ratio() < 0.5
+
+
+# ===================================================================== 48세션 · 잉여 합산
+#
+# **41세션이 자리만 옮기고 금액을 합치지 않았다.** 잉여 활용(7.7)을 개선안에서
+# 빼고 태양광 카드 안으로 넣었는데, 태양광의 절감액·회수기간은 자가소비분만
+# 보고 있었다 — 화면에 **더해지지 않는 두 수**가 남았다.
+#
+# 14세션의 「경제성DR·잉여 활용은 합산효과에 넣지 않는다」 는 잉여가 **독립
+# 개선안**이던 시절의 결정이다. 41세션에 전제가 사라졌다. **차익거래는 계속
+# 뺀다** — 그쪽은 「그날 피크에 쓸 몫을 남기는 운전 규칙이 없다」 가 살아 있다.
+
+
+def test_잉여_수익은_고른_경우에만_더한다(surplus_case: SurplusCase, tariff: TariffTable) -> None:
+    """**기본값 없음을 지킨다** (41세션 2-2). 안 고르면 아무것도 더하지 않는다."""
+    point = solar_point(
+        surplus_case.usage,
+        tariff,
+        CURRENT,
+        surplus_case.unit,
+        surplus_case.capacity_kwp,
+        cost=PvCostInput.of_unit_cost(2_000_000.0),
+    )
+    assert point.surplus_scenario == ""
+    assert point.surplus_revenue_won == 0.0
+    # 고르지 않은 상태 — 시나리오 이름이 비면 그대로 돌려준다.
+    untouched = with_surplus_revenue(point, revenue_won=1_000.0, scenario="", base_fee_months=1.0)
+    assert untouched is point
+
+
+def test_잉여_수익이_절감액과_회수기간에_실린다(
+    surplus_case: SurplusCase, tariff: TariffTable
+) -> None:
+    """**두 수가 하나가 되어야 한다** (48세션).
+
+    소형 사무빌딩 자료에서 절감액 2,543만원과 잉여 수익 241만원이 따로 놀았고,
+    회수기간 12.6년은 앞의 것만 본 값이었다. 더하면 11.5년이다.
+    """
+    point = solar_point(
+        surplus_case.usage,
+        tariff,
+        CURRENT,
+        surplus_case.unit,
+        surplus_case.capacity_kwp,
+        cost=PvCostInput.of_unit_cost(2_000_000.0),
+    )
+    assert point.payback_years is not None
+    combined = with_surplus_revenue(
+        point, revenue_won=1_000_000.0, scenario=OFFSET_SCENARIO, base_fee_months=1.0
+    )
+    assert combined.surplus_scenario == OFFSET_SCENARIO
+    assert combined.surplus_revenue_won == 1_000_000.0
+    assert combined.total_saving_won == pytest.approx(point.total_saving_won + 1_000_000.0)
+    # **자가소비분은 그대로 꺼낼 수 있다** — 툴팁이 이 값으로 가른다.
+    assert combined.self_consumption_saving_won == pytest.approx(point.total_saving_won)
+    # 더한 만큼 회수기간이 짧아진다.
+    assert combined.payback_years is not None
+    assert combined.payback_years < point.payback_years
+    assert combined.investment_won == point.investment_won
+
+
+def test_금액을_못_내면_더하지_않는다(surplus_case: SurplusCase, tariff: TariffTable) -> None:
+    """단가를 넣지 않은 외부 판매다. **지어낸 0원을 절감액에 넣지 않는다.**"""
+    point = solar_point(
+        surplus_case.usage,
+        tariff,
+        CURRENT,
+        surplus_case.unit,
+        surplus_case.capacity_kwp,
+        cost=PvCostInput.of_unit_cost(2_000_000.0),
+    )
+    combined = with_surplus_revenue(
+        point, revenue_won=None, scenario=EXTERNAL_SCENARIO, base_fee_months=1.0
+    )
+    assert combined.surplus_revenue_won == 0.0
+    assert combined.total_saving_won == point.total_saving_won
+    # 이름은 남는다 — 「고르지 않음」 과 「골랐지만 금액을 못 냄」 은 다르다.
+    assert combined.surplus_scenario == EXTERNAL_SCENARIO
+
+
+def test_합산효과에_잉여를_더한다(surplus_case: SurplusCase, tariff: TariffTable) -> None:
+    """**14세션의 결정을 뒤집는다** (48세션). 전제가 41세션에 사라졌다."""
+    baseline = calculate_bill(surplus_case.usage, tariff, CURRENT)
+    spec = CombinationSpec(
+        name="태양광",
+        selection=CURRENT,
+        pv_capacity_kwp=surplus_case.capacity_kwp,
+        pv_unit_cost_won_per_kwp=2_000_000.0,
+    )
+    plain = evaluate_combination(
+        surplus_case.usage,
+        tariff,
+        spec,
+        baseline_bill=baseline,
+        unit_pv_kw_per_kwp=surplus_case.unit,
+    )
+    with_revenue = evaluate_combination(
+        surplus_case.usage,
+        tariff,
+        replace(spec, surplus_revenue_won=1_000_000.0, surplus_scenario=OFFSET_SCENARIO),
+        baseline_bill=baseline,
+        unit_pv_kw_per_kwp=surplus_case.unit,
+    )
+    assert plain.surplus_revenue_won == 0.0
+    assert with_revenue.surplus_revenue_won == 1_000_000.0
+    assert with_revenue.saving_won == pytest.approx(plain.saving_won + 1_000_000.0)
+    # **표의 「요금」 과 「절감액」 이 기준선으로 되돌아가야 한다.**
+    assert baseline.total_won - with_revenue.total_won == pytest.approx(with_revenue.saving_won)
+    facts = {notice.fact for notice in with_revenue.notices}
+    assert "combination.surplus_revenue" in facts
+
+
+def test_태양광이_없으면_잉여도_더하지_않는다(
+    surplus_case: SurplusCase, tariff: TariffTable
+) -> None:
+    """**잉여는 태양광의 결과다** (41세션 2절). 켜지 않은 수단의 수익은 없다."""
+    baseline = calculate_bill(surplus_case.usage, tariff, CURRENT)
+    result = evaluate_combination(
+        surplus_case.usage,
+        tariff,
+        CombinationSpec(
+            name="현행",
+            selection=CURRENT,
+            surplus_revenue_won=1_000_000.0,
+            surplus_scenario=OFFSET_SCENARIO,
+        ),
+        baseline_bill=baseline,
+    )
+    assert result.surplus_revenue_won == 0.0
+    assert result.saving_won == pytest.approx(0.0)

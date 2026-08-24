@@ -52,6 +52,7 @@ from kwise.measures import (
     evaluate_demand_response,
     load_ess_cost_model,
     surplus_free_capacity_kwp,
+    with_surplus_revenue,
 )
 from kwise.notices import Notice, dedupe_key, dedupe_keys, tooltip
 from kwise.quality import QualityReport
@@ -119,6 +120,7 @@ from kwise.ui.state import (
     session_id,
     set_combination_pick,
 )
+from kwise.ui.views.measures import chosen_surplus_revenue
 
 __all__ = ["render"]
 
@@ -210,6 +212,11 @@ def render(
     ess_target = (
         _ess_target(usage, table, form, diagnosis, baseline, quality) if "ess" in enabled else None
     )
+    # **고른 잉여 처리가 합산효과에 들어간다** (48세션). 14세션은 잉여를 독립
+    # 개선안으로 보아 뺐는데, 41세션에 태양광의 결과가 되면서 전제가 사라졌다.
+    surplus_scenario, surplus_revenue = _chosen_surplus(
+        usage, table, form, unit_profile, capacity if "solar" in enabled else 0.0
+    )
     specs = combination_specs(
         form=form,
         best_selection=(diagnosis.summary.best_selection or form.selection),
@@ -227,6 +234,8 @@ def render(
             else None
         ),
         power_factor_investment_won=measure_float("power_factor", "investment"),
+        surplus_revenue_won=surplus_revenue,
+        surplus_scenario=surplus_scenario,
     )
 
     if len(specs) == 1:
@@ -566,6 +575,35 @@ def _contract_headroom(
     return extra if extra > 0 else None
 
 
+def _chosen_surplus(
+    usage: UsageData,
+    table: TariffTable,
+    form: ContractForm,
+    unit_profile: pd.Series | None,
+    capacity_kwp: float,
+) -> tuple[str, float | None]:
+    """고른 잉여 처리와 그 수익 (관측 기간) — **2단계 카드와 같은 값이다** (48세션).
+
+    같은 인자로 :func:`cached_surplus` 를 부르므로 기억에 걸린다. 고르지 않았거나
+    태양광이 없으면 ``("", None)`` 이라 합산효과가 아무것도 더하지 않는다.
+    """
+    if unit_profile is None or capacity_kwp <= 0:
+        return "", None
+    return chosen_surplus_revenue(
+        cached_surplus(
+            usage,
+            table,
+            unit_profile,
+            usage_token(usage),
+            form,
+            capacity_kwp,
+            measure_float("solar", "surplus_price"),
+            rules_stamp(),
+            measure_float("solar", "smp_price"),
+        )
+    )
+
+
 def _ess_target(
     usage: UsageData,
     table: TariffTable,
@@ -689,6 +727,7 @@ class _MeasureResults:
             ess=self.ess,
             solar=self.solar,
             surplus=self.surplus,
+            base_fee_months=self.base_fee_months,
         )
 
     def shown_facts(self) -> frozenset[str]:
@@ -851,6 +890,15 @@ def _measure_results(
             usage, table, unit_profile, baseline, quality, token, form, inputs, stamp
         )
         solar = curve.points[-1]
+        # **2단계 카드와 같은 값이어야 한다** (48세션). 고른 잉여 처리를 여기서도
+        # 실어야 개선안별 요약·Excel·PPT 가 카드와 같은 절감액·회수기간을 낸다.
+        scenario, revenue = _chosen_surplus(usage, table, form, unit_profile, solar.capacity_kwp)
+        solar = with_surplus_revenue(
+            solar,
+            revenue_won=revenue,
+            scenario=scenario,
+            base_fee_months=curve.base_fee_months,
+        )
         solar_curve = curve
         solar_certainty = curve.certainty
         # 단가를 넣지 않았으면 **투자비 칸에 사유가 들어간다** (7.5).

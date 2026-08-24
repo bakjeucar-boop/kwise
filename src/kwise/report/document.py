@@ -564,8 +564,13 @@ def measure_entries(
             )
             # **시나리오는 표가 아니라 한 줄이다** (39세션 4-3). 금액이 갈리는
             # 것은 「어디에 파느냐」 하나뿐이다.
+            #
+            # **고른 것을 표시한다** (48세션). 위 절감액·회수기간에 그 하나가
+            # 이미 들어 있으므로, 셋을 나란히만 적으면 어느 값이 결론에 반영된
+            # 것인지 알 수 없다.
             surplus_note = " · ".join(
                 f"{item.name} {_won(item.revenue_won) if item.is_priced else _UNPRICED}"
+                + (" (절감액에 반영)" if item.name == solar.surplus_scenario else "")
                 for item in surplus.scenarios
             )
         entries["solar"] = MeasureEntry(
