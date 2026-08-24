@@ -893,3 +893,24 @@ def test_운영_시간대가_운영시간_외_부하_진단에_닿는다(usage: 
     assert nine.pattern.operating_hours == (9, 18)
     assert eight.pattern.operating_hours == (8, 19)
     assert nine.pattern.off_hours_energy_share != eight.pattern.off_hours_energy_share
+
+
+# ===================================================================== 48세션 · 0 이 결론인 자리
+
+
+def test_기본요금_무변화는_0원이_아니다() -> None:
+    """**「하향 여지 8 kW · 0원」 은 계산이 덜 된 것처럼 읽힌다** (48세션).
+
+    둘은 다른 물음이다 — 여지는 「낮출 수 있는가」 이고 절감액은 「낮추면 돈이
+    주는가」 다. 요금적용전력이 하한(계약전력의 30%)보다 훨씬 크면 계약전력을
+    낮춰도 기본요금 기준이 그대로다. **여지를 0 으로 내리지 않는다.**
+    """
+    from kwise.measures import BASE_FEE_UNCHANGED
+    from kwise.ui.text import won_year
+
+    assert won_year(0.0) == "0원/년", "옵트인이 없으면 0 은 그대로 0 이다"
+    assert won_year(0.0, zero_reason=BASE_FEE_UNCHANGED) == BASE_FEE_UNCHANGED
+    # 값이 있으면 결론이 이기지 않는다.
+    assert won_year(1_000_000.0, zero_reason=BASE_FEE_UNCHANGED).endswith("/년")
+    # 미산출은 여전히 사유다 — 「무변화」 와 「모른다」 는 다르다.
+    assert won_year(None, reason="미산출 — 하한 미확인").startswith("미산출")

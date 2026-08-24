@@ -28,6 +28,7 @@ import pandas as pd
 
 from kwise import money
 from kwise.measures import (
+    BASE_FEE_UNCHANGED,
     Certainty,
     ContractAdjustment,
     DemandResponseResult,
@@ -87,6 +88,12 @@ class StandaloneRow:
     payback_years: float | None
     certainty: Certainty
     saving_reason: str = ""
+    zero_reason: str = ""
+    """**0 이 결론인 줄**에 0원 대신 적을 말 (48세션).
+
+    계약전력 조정의 「기본요금 무변화」 가 그것이다 — 2단계 카드가 그렇게 적는데
+    3단계 요약만 「0원」 이라 적으면 두 화면이 다른 말을 한다.
+    """
     investment_reason: str = ""
     notes: tuple[str, ...] = field(default=())
 
@@ -154,6 +161,7 @@ def standalone_rows(
                 payback_years=0.0 if contract.saving_won else None,
                 certainty=contract.certainty,
                 saving_reason=contract.saving_basis,
+                zero_reason=BASE_FEE_UNCHANGED if contract.base_fee_unchanged else "",
             )
         )
     if demand_response is not None:
@@ -243,9 +251,13 @@ def standalone_frame(rows: tuple[StandaloneRow, ...]) -> pd.DataFrame:
         {
             "수단": row.title,
             "개선 방안": row.reduction,
-            "연간 절감액": money.won_short(
-                row.annual_saving_won,
-                reason=row.saving_reason or UNPRICED_REASONS["contract"],
+            "연간 절감액": (
+                row.zero_reason
+                if row.zero_reason and not row.annual_saving_won
+                else money.won_short(
+                    row.annual_saving_won,
+                    reason=row.saving_reason or UNPRICED_REASONS["contract"],
+                )
             ),
             "투자비": money.won_short(
                 row.investment_won, reason=row.investment_reason or "미산출 — 단가 미입력"

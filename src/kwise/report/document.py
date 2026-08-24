@@ -36,6 +36,7 @@ from kwise.diagnose import Diagnosis
 from kwise.diagnose.dr import DR_OFF_DAYS_FACT, DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
+    BASE_FEE_UNCHANGED,
     MEASURE_CATALOG,
     NOT_VIABLE_CONCLUSION,
     Certainty,
@@ -237,6 +238,20 @@ _SOLAR_DAY_CAPTION = "대표일의 부하 — 두 선 사이가 태양광으로 
 _ESS_DAY_CAPTION = "대표일의 부하 — 두 선 사이가 ESS 로 깎은 몫입니다."
 
 
+def _contract_saving(contract: ContractAdjustment, value: float | None) -> str:
+    """계약전력 조정의 절감액 칸 — **셋으로 갈린다** (48세션).
+
+    미산출        하한 규정을 모른다
+    기본요금 무변화  하향 여지는 있는데 하한에 걸리지 않는다
+    금액          실제로 준다
+    """
+    if value is None:
+        return f"{_UNPRICED} — {contract.saving_basis}"
+    if contract.base_fee_unchanged:
+        return f"{BASE_FEE_UNCHANGED} — {contract.saving_basis}"
+    return _won(value)
+
+
 def _shortest_discharge_hours(curve: EssTargetCurve) -> float:
     """곡선에서 가장 짧은 방전시간. 성립 한계와 나란히 놓아 격차를 보인다."""
     return min((item.discharge_hours for item in curve.points), default=0.0)
@@ -422,16 +437,11 @@ def measure_entries(
                 if contract.is_over_contracted
                 else f"계약전력 {contract.contract_kw:,.0f} kW 는 적정합니다. 하향 여지가 없습니다."
             ),
-            saving=(
-                _measure_saving(contract.annual_saving_won, contract.saving_won)
-                if contract.saving_won is not None
-                else f"{_UNPRICED} — {contract.saving_basis}"
-            ),
-            saving_annual=(
-                _annual_saving(contract.annual_saving_won, contract.saving_won)
-                if contract.saving_won is not None
-                else f"{_UNPRICED} — {contract.saving_basis}"
-            ),
+            # **0원이 아니라 결론이다** (48세션). 하향 여지가 있는데 기본요금이
+            # 안 바뀌는 자리는 「0원」 이 계산이 덜 된 것처럼 읽힌다 — 화면과
+            # 같은 말을 쓴다.
+            saving=_contract_saving(contract, contract.saving_won),
+            saving_annual=_contract_saving(contract, contract.annual_saving_won),
             has_saving=bool(contract.saving_won),
             investment=_won(0.0),
             payback=_payback_text(0.0, 0.0),

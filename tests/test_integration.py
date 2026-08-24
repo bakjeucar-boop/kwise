@@ -53,6 +53,12 @@ def real_weather(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
+#: 통합 시험이 쓰는 지역. **48세션 전의 기본값 그대로다** — 지역을 바꾸면
+#: 발전량이 달라져 태양광 값이 통째로 흔들린다.
+TEST_PROVINCE = "강원도"
+TEST_REGION = "강원도/강릉시"
+
+
 def _app(**state: object) -> AppTest:
     running = AppTest.from_file(str(APP), default_timeout=900)
     running.session_state["upload_bytes"] = SAMPLE.read_bytes()
@@ -60,6 +66,11 @@ def _app(**state: object) -> AppTest:
     running.session_state["contract_form"] = ContractForm(
         contract_type="general_b", voltage="high_a", option="I", contract_kw=6_000.0
     )
+    # **지역을 명시한다** (48세션). 48세션 전에는 옆단 드롭다운이 가나다순 첫
+    # 항목을 기본값으로 내고 있어 아무것도 심지 않아도 지역이 잡혔다 — 그 기본값을
+    # 없앴으므로 시험이 무엇을 쓰는지 스스로 밝힌다. 옛 기본값 그대로다.
+    running.session_state["building_province"] = TEST_PROVINCE
+    running.session_state["building_sigungu"] = TEST_REGION
     for key, value in state.items():
         running.session_state[key] = value
     # 3단계는 「합산효과 계산」 을 누른 뒤에 그린다 (33세션 5절). 단추가 하는 일이
@@ -180,7 +191,9 @@ def test_옆단은_건물_정보다() -> None:
     assert set(labels) == {
         "건물명 (선택)",
         "용도 (선택)",
-        "시도",
+        # 48세션에 「선택 안 함」 이 붙어 선택 항목이 됐다 — 가나다순 첫 항목이
+        # 고른 것처럼 보이던 자리다.
+        "시도 (선택)",
         "시군구",
         "연면적 (m², 선택)",
         "준공연도 (선택)",

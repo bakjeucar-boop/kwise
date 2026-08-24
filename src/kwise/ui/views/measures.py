@@ -29,6 +29,7 @@ from kwise.diagnose import Diagnosis, default_margin_ratio, margin_range
 from kwise.diagnose.dr import dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData
 from kwise.measures import (
+    BASE_FEE_UNCHANGED,
     EXTERNAL_SCENARIO,
     OFFSET_SCENARIO,
     SolarPoint,
@@ -439,7 +440,17 @@ def _contract(
     columns[0].metric("현행 계약전력", fmt.kw(result.contract_kw))
     columns[1].metric("권장", fmt.kw(result.suggested_contract_kw))
     columns[2].metric("하향 여지", fmt.kw(result.reduction_kw))
-    columns[3].metric("절감액", fmt.won_year(result.annual_saving_won, reason=result.saving_basis))
+    # **「0원」 이 아니라 「기본요금 무변화」 다** (48세션). 여지 8 kW 옆의 0원은
+    # 계산이 덜 된 것처럼 읽힌다 — 둘은 다른 물음이고, 왜 안 바뀌는지는 아래
+    # 근거(`contract.floor_not_binding`)가 이미 낸다. 문구를 새로 만들지 않았다.
+    columns[3].metric(
+        "절감액",
+        fmt.won_year(
+            result.annual_saving_won,
+            reason=result.saving_basis,
+            zero_reason=BASE_FEE_UNCHANGED if result.base_fee_unchanged else None,
+        ),
+    )
     # **이 숫자는 현재 부하 기준이다** (14세션 2-4). 다른 수단을 켰다고 바뀌지
     # 않으며, 조합 기준의 추가 하향 여지는 3단계에서 따로 낸다.
     st.caption(

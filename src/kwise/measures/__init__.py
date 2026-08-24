@@ -41,6 +41,7 @@ from kwise.measures.catalog import (
     measure_numbers,
 )
 from kwise.measures.contract import (
+    BASE_FEE_UNCHANGED,
     MARGIN_NOTICE,
     ContractAdjustment,
     ContractStatus,
@@ -154,6 +155,7 @@ from kwise.measures.tariff_switch import (
 )
 
 __all__ = [
+    "BASE_FEE_UNCHANGED",
     "DEFAULT_MODULE_DENSITY_KWP_PER_M2",
     "DEFAULT_STEPS",
     "DEFAULT_USABLE_RATIO",

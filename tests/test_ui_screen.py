@@ -28,7 +28,7 @@ from streamlit.testing.v1 import AppTest
 
 from kwise.compare import CombinationSpec
 from kwise.io import load_usage
-from kwise.measures import AppliedMeasure, EssResult, measure_kind
+from kwise.measures import BASE_FEE_UNCHANGED, AppliedMeasure, EssResult, measure_kind
 from kwise.notices import Notice, basis, block, dedupe, info, warn
 from kwise.report.excel import SHEET_ORDER
 from kwise.tariff import TariffSelection, TariffTable, load_tariff
@@ -513,6 +513,12 @@ def test_숫자를_직접_찍지_않는다(name: str) -> None:
 SAMPLE = Path("input") / "사용량조회_20240429.csv"
 
 
+#: 화면 시험이 쓰는 지역. **48세션 전의 기본값 그대로다** — 지역을 바꾸면
+#: 발전량이 달라져 태양광 값이 통째로 흔들린다.
+TEST_PROVINCE = "강원도"
+TEST_REGION = "강원도/강릉시"
+
+
 def _running(*, option: str = "II", contract_kw: float = 6_000.0, **state: object) -> AppTest:
     """실제 파일을 올린 상태로 앱을 띄운다.
 
@@ -525,6 +531,11 @@ def _running(*, option: str = "II", contract_kw: float = 6_000.0, **state: objec
     running.session_state["contract_form"] = ContractForm(
         contract_type="general_b", voltage="high_a", option=option, contract_kw=contract_kw
     )
+    # **지역을 명시한다** (48세션). 48세션 전에는 옆단 드롭다운이 가나다순 첫
+    # 항목을 기본값으로 내고 있어 아무것도 심지 않아도 지역이 잡혔다 — 그 기본값을
+    # 없앴으므로 시험이 무엇을 쓰는지 스스로 밝힌다. 옛 기본값 그대로다.
+    running.session_state["building_province"] = TEST_PROVINCE
+    running.session_state["building_sigungu"] = TEST_REGION
     for key, value in state.items():
         running.session_state[key] = value
     # **3단계는 「합산효과 계산」 을 누른 뒤에 그린다** (33세션 5절). 시험마다
@@ -2734,7 +2745,10 @@ def test_카드_절감액이_3단계_표와_같은_기준이다() -> None:
     savings = [value for label, value in _stage2_metrics(screen) if label == "절감액"]
     assert savings, "카드 절감액을 못 찾았습니다."
     for value in savings:
-        assert value.endswith("/년"), value
+        # **0 이 결론인 자리는 금액이 아니라 결론이다** (48세션). 이 자료는 여유
+        # 11.8% 라 하향 여지가 있는데 요금적용전력이 하한(계약전력의 30%)보다
+        # 훨씬 커서 기본요금이 안 바뀐다 — 「0원/년」 은 계산이 덜 된 것처럼 읽힌다.
+        assert value.endswith("/년") or value == BASE_FEE_UNCHANGED, value
 
     frame = next(item.value for item in screen.dataframe if "수단" in list(item.value.columns))
     rows = {str(row["수단"]): str(row["연간 절감액"]) for _, row in frame.iterrows()}
@@ -3376,7 +3390,10 @@ def test_요약표_금액이_만원_단위다(stage3: AppTest) -> None:
     values = [
         str(row[column]) for _, row in frame.iterrows() for column in ("연간 절감액", "투자비")
     ]
-    shown = [item for item in values if not item.startswith("미산출")]
+    # **0 이 결론인 줄은 금액 자리에 결론이 온다** (48세션 — 계약전력 조정).
+    shown = [
+        item for item in values if not item.startswith("미산출") and item != BASE_FEE_UNCHANGED
+    ]
     assert shown, values
     for item in shown:
         assert item.endswith(("만원", "억원", "원")), item
@@ -3585,3 +3602,36 @@ def test_공휴일_한계를_문서에_남겼다() -> None:
     assert len(gaps) == 1
     assert gaps[0].severity is Severity.INFO
     assert "근로자의 날" in gaps[0].text
+
+
+def test_지역을_고르지_않은_상태가_있다() -> None:
+    """**가나다순 첫 항목이 고른 것처럼 보였다** (48세션).
+
+    계약종별을 틀리면 요금이 틀려 사용자가 알아채지만, **지역은 틀려도 결과가
+    그럴듯하게 나온다** — 일사량 차이가 발전량에 조용히 얹힌다. 용도(선택)와
+    같은 규약으로 「선택 안 함」 을 맨 앞에 둔다.
+
+    고르지 않으면 태양광 카드와 기온 그래프가 **이미 가진 안내**로 물러선다.
+    새 문구를 만들지 않았다 — 죽어 있던 길을 살린 것이다.
+    """
+    running = AppTest.from_file(str(APP.resolve()), default_timeout=600)
+    running.session_state["upload_bytes"] = SAMPLE.read_bytes()
+    running.session_state["upload_name"] = SAMPLE.name
+    running.session_state["contract_form"] = ContractForm(
+        contract_type="general_b", voltage="high_a", option="II", contract_kw=6_000.0
+    )
+    running.session_state["measure_on_solar"] = True
+    running.session_state["combination_pick"] = ()
+    screen = harvest_ess_memo(seed_ess_memo(running).run())
+    assert not screen.exception, screen.exception
+
+    building = screen.session_state["building_info"]
+    assert building.region_key == "", "고르지 않은 상태가 있어야 한다"
+    # **시군구는 시도를 고르기 전에 그리지 않는다.**
+    labels = [str(item.label) for item in screen.selectbox]
+    assert "시도 (선택)" in labels
+    assert "시군구" not in labels
+    captions = [str(item.value) for item in screen.caption]
+    assert "옆단에서 지역을 고르면 일평균 기온을 함께 그립니다." in captions
+    warnings = [str(item.value) for item in screen.markdown]
+    assert any("옆단에서 지역(시도·시군구)을 고르십시오" in text for text in warnings), warnings

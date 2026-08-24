@@ -171,27 +171,40 @@ def render_sidebar() -> BuildingInfo:
         ),
     )
 
+    # **「안 고른 상태」 가 있어야 한다** (48세션). 드롭다운은 언제나 값을 가지므로
+    # 가나다순 첫 항목(강원도/강릉시)이 **고른 것처럼 보였다.** 계약종별을 틀리면
+    # 요금이 틀려 사용자가 알아채지만, **지역은 틀려도 결과가 그럴듯하게 나온다** —
+    # 일사량 차이가 발전량에 조용히 얹힌다.
+    #
+    # 용도(선택)와 **같은 규약**을 쓴다. 고르지 않으면 태양광 카드가 이미 가진
+    # 안내(「옆단에서 지역(시도·시군구)을 고르십시오」)가 뜨고 1단계 기온 그래프도
+    # 사유 한 줄로 갈음한다 — **죽어 있던 길을 살리는 것이라 새 문구가 없다.**
     provinces = list_provinces()
     saved_region = saved.region_key if saved else ""
-    province_default = saved_region.split("/", 1)[0] if saved_region else provinces[0]
+    province_keys = [_UNSET, *provinces]
+    province_default = saved_region.split("/", 1)[0] if saved_region else _UNSET
     province = st.sidebar.selectbox(
-        "시도",
-        provinces,
-        index=provinces.index(province_default) if province_default in provinces else 0,
+        "시도 (선택)",
+        province_keys,
+        index=(province_keys.index(province_default) if province_default in province_keys else 0),
+        format_func=lambda key: _UNSET_LABEL if key == _UNSET else key,
         key="building_province",
+        help="고르지 않으면 태양광과 기온 그래프를 계산하지 않습니다.",
     )
-    regions = list_sigungu(province)
-    region_keys = [item.key for item in regions]
-    region_labels = {item.key: item.name for item in regions}
-    region_default = saved_region if saved_region in region_keys else region_keys[0]
-    region_key = st.sidebar.selectbox(
-        "시군구",
-        region_keys,
-        index=region_keys.index(region_default),
-        format_func=lambda key: region_labels[key],
-        key="building_sigungu",
-        help="태양광 기상 격자를 고릅니다. 격자가 25–31 km 라 같은 격자면 결과가 같습니다.",
-    )
+    region_key = ""
+    if province != _UNSET:
+        regions = list_sigungu(province)
+        region_keys = [item.key for item in regions]
+        region_labels = {item.key: item.name for item in regions}
+        region_default = saved_region if saved_region in region_keys else region_keys[0]
+        region_key = st.sidebar.selectbox(
+            "시군구",
+            region_keys,
+            index=region_keys.index(region_default),
+            format_func=lambda key: region_labels[key],
+            key="building_sigungu",
+            help="태양광 기상 격자를 고릅니다. 격자가 25–31 km 라 같은 격자면 결과가 같습니다.",
+        )
 
     # **9시 출근을 전제하지 않는다** (21세션 4절). 8시에 여는 곳에서는 운영시간 외
     # 부하가 한 시간만큼 부풀고, DR 저부하일 판정도 그만큼 어긋난다.

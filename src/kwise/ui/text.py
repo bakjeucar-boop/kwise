@@ -262,14 +262,23 @@ def per_year(text: str) -> str:
     return f"{text.strip()}{PER_YEAR}" if text.strip() not in ("", DASH) else text
 
 
-def won_year(value: float | None, *, reason: str | None = None) -> str:
+def won_year(
+    value: float | None, *, reason: str | None = None, zero_reason: str | None = None
+) -> str:
     """12개월 환산 금액. ``896만원/년``.
 
     **값이 없으면 사유이고 꼬리표를 붙이지 않는다** — ``미산출 — 단가 미입력/년``
     은 말이 되지 않는다 (7.5 의 빈칸·0원 금지 규약과 같은 자리다).
+
+    Args:
+        zero_reason: **0 이 결론인 자리**에 0원 대신 적을 말 (48세션). 주지 않으면
+            0 은 그대로 ``0원/년`` 이다 — 대개는 그것이 맞다. 옆 지표가 0 과
+            어긋나 보이는 자리에서만 쓴다 (계약전력 「하향 여지 8 kW · 0원」).
     """
     if value is None:
         return won_short(value, reason=reason)
+    if zero_reason and not value:
+        return zero_reason
     return per_year(won_short(value))
 
 

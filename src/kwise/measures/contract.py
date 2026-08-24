@@ -27,11 +27,22 @@ from kwise.notices import Notice, basis, block, warn
 from kwise.tariff import BillingResult
 
 __all__ = [
+    "BASE_FEE_UNCHANGED",
     "MARGIN_NOTICE",
     "ContractAdjustment",
     "ContractStatus",
     "evaluate_contract_adjustment",
 ]
+
+BASE_FEE_UNCHANGED = "기본요금 무변화"
+"""절감액 자리에 **0원 대신** 적는 결론 (48세션).
+
+「하향 여지 8 kW」 옆에 「0원」 이 서면 계산이 덜 된 것처럼 읽힌다. 둘은 다른
+물음이다 — 여지는 「낮출 수 있는가」 이고 절감액은 「낮추면 돈이 주는가」 다.
+요금적용전력이 하한(계약전력의 30%)보다 훨씬 크면 계약전력을 낮춰도 기본요금
+기준이 그대로라 한 푼도 줄지 않는다. **여지를 0 으로 내리지 않는다** — 여지는
+사실이고, 이 문구가 그 사실의 값을 말한다.
+"""
 
 MARGIN_NOTICE = (
     "기본요금은 직전 12개월 중 최대수요로 결정됩니다. 계약전력을 하향할 경우, "
@@ -88,6 +99,20 @@ class ContractAdjustment:
     @property
     def is_over_contracted(self) -> bool:
         return self.reduction_kw > 0
+
+    @property
+    def base_fee_unchanged(self) -> bool:
+        """**하향 여지는 있는데 기본요금이 안 바뀌는가** (48세션).
+
+        참이면 절감액 자리에 0원 대신 :data:`BASE_FEE_UNCHANGED` 를 적는다.
+        하한 규정을 모르는 경우(``UNKNOWN``)는 여기 들지 않는다 — 그쪽은
+        「무변화」 가 아니라 「미산출」 이다.
+        """
+        return (
+            self.status is ContractStatus.CONFIRMED
+            and self.is_over_contracted
+            and not self.saving_won
+        )
 
 
 def _base_fee_won(bill: BillingResult, floor_kw: float) -> float:

@@ -29,6 +29,7 @@ from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
 from kwise.magnitude import magnitude
 from kwise.measures import (
+    BASE_FEE_UNCHANGED,
     DR_ADVISORY,
     OFFSET_SCENARIO,
     Certainty,
@@ -331,7 +332,14 @@ def measure_summary_frame(
                 ),
                 "회수기간": "즉시" if contract.saving_won else "—",
                 "확실성": str(contract.certainty),
-                "비고": f"하향 여지 {contract.reduction_kw:,.0f} kW. {contract.saving_basis}",
+                # **0 이 결론인 줄이라는 것을 비고가 말한다** (48세션). 시트의
+                # 금액 칸은 숫자 자리라 0 을 그대로 두되, 그것이 「덜 계산된 0」
+                # 이 아니라는 것은 적어야 한다.
+                "비고": (
+                    f"하향 여지 {contract.reduction_kw:,.0f} kW. "
+                    + (f"{BASE_FEE_UNCHANGED} — " if contract.base_fee_unchanged else "")
+                    + contract.saving_basis
+                ),
             }
         )
     if demand_response is not None:
