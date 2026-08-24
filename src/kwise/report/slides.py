@@ -105,6 +105,7 @@ SLIDE_TITLES: dict[str, str] = {
     "peak_detail": "피크특성 (2/2)",
     "structure": "현재 요금 구조",
     "measure_summary": "개선안별 요약",
+    "surplus": "잉여 활용",
     "combination": "조합구성 및 합산효과",
     "appendix": APPENDIX_SLIDE_TITLE,
     "closing": CLOSING_SLIDE_TITLE,
@@ -247,15 +248,19 @@ def slide_specs(sections: DocumentSections) -> tuple[SlideSpec, ...]:
     ]
     # **그림이 둘이면 좌우로 나눈다** (38세션 3절). 형태를 자리표가 쥐고 있어야
     # 시험이 「어느 장이 무엇으로 서는가」 를 셀 수 있다.
-    specs.extend(
-        SlideSpec(
-            f"measure_{entry.kind.key}",
-            measure_slide_title(entry),
-            _measure_layout(entry),
-            measure=index,
+    for index, entry in enumerate(sections.measures):
+        specs.append(
+            SlideSpec(
+                f"measure_{entry.kind.key}",
+                measure_slide_title(entry),
+                _measure_layout(entry),
+                measure=index,
+            )
         )
-        for index, entry in enumerate(sections.measures)
-    )
+        # **잉여 활용은 태양광 다음 한 장이다** (53세션 3-1). 개선안이 아니라
+        # 태양광의 결과이므로 그 장 바로 뒤에 붙는다. **잉여가 0 이면 없다.**
+        if entry.kind.key == "solar" and sections.surplus is not None:
+            specs.append(SlideSpec("surplus", SLIDE_TITLES["surplus"], "split"))
     specs.append(SlideSpec("combination", SLIDE_TITLES["combination"], "compare"))
     # **부록은 수단마다 한 장 이상이다** (39세션 5절). 한 장에 눌러 담고 「자리가
     # 모자라 뺐다」 고 적으면 여섯 수단이 통째로 사라진다.
@@ -310,6 +315,10 @@ def agenda_items(sections: DocumentSections) -> tuple[str, ...]:
     ]
     if sections.measures:
         lines.append(MEASURE_AGENDA_ITEM)
+    # **잉여 활용은 수단이 아니라 결과다** (53세션 3-3). 「검토한 수단별 상세」
+    # 안에 넣으면 개선안이 일곱으로 읽힌다 — 41세션이 여섯으로 줄인 그 수다.
+    if sections.surplus is not None:
+        lines.append(SLIDE_TITLES["surplus"])
     lines.append(SLIDE_TITLES["combination"])
     lines.append(SLIDE_TITLES["appendix"])
     lines.append(SLIDE_TITLES["closing"])
@@ -1707,6 +1716,63 @@ def _build_measure(
     _note(slide, guide, note)
 
 
+def _build_surplus(
+    slide: Slide, guide: DesignGuide, sections: DocumentSections, spec: SlideSpec
+) -> None:
+    """잉여 활용 — **좌우로 그림과 표** (53세션 3절).
+
+    41세션에 잉여가 개선안에서 빠지면서 이 장이 사라졌는데, **잉여가 실제로
+    나면 보여 줄 자리가 없어졌다** — 소형 사무빌딩의 연 23,416 kWh 가 태양광
+    장의 각주 한 줄로만 나왔다.
+
+    **잉여가 0 이면 이 장을 만들지 않는다** (:func:`slide_specs`). 대형 샘플은
+    전량 자가소비라 그렇다 — 빈 장에 「없습니다」 라고 적을 자리가 아니다.
+    """
+    geometry = guide.slide
+    page = sections.surplus
+    if page is None:  # pragma: no cover - 자리표가 없으면 부르지 않는다
+        return
+    top = _title(slide, guide, spec.title)
+    top = _lead(slide, guide, page.lead, top=top)
+    top = (
+        _stats(
+            slide,
+            guide,
+            list(page.facts),
+            left=geometry.margin_in,
+            top=top,
+            width=geometry.content_width_in,
+        )
+        + geometry.block_gap_in
+    )
+    gap = geometry.block_gap_in
+    half = (geometry.content_width_in - gap) / 2
+    right_left = geometry.margin_in + half + gap
+    bottom = _body_bottom(guide, note=True)
+    if page.figure is not None:
+        _picture_block(
+            slide,
+            guide,
+            page.figure,
+            page.figure_caption,
+            left=geometry.margin_in,
+            top=top,
+            width=half,
+            height=bottom - top,
+        )
+    _table(
+        slide,
+        guide,
+        page.scenario_rows,
+        left=right_left,
+        top=top,
+        width=half,
+        height=min(bottom - top, 0.46 * len(page.scenario_rows)),
+        widths=(0.34, 0.26, 0.40),
+    )
+    _note(slide, guide, page.note)
+
+
 def _build_combination(
     slide: Slide, guide: DesignGuide, sections: DocumentSections, spec: SlideSpec
 ) -> None:
@@ -2081,6 +2147,7 @@ _BUILDERS: dict[str, Callable[[Slide, DesignGuide, DocumentSections, SlideSpec],
     "peak_detail": _build_peak_detail,
     "structure": _build_structure,
     "measure_summary": _build_measure_summary,
+    "surplus": _build_surplus,
     "combination": _build_combination,
     "closing": _build_closing,
     "appendix": _build_appendix,

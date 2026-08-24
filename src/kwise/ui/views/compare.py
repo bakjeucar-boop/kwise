@@ -62,6 +62,7 @@ from kwise.report import (
     MeasureEntry,
     ReportSections,
     StandaloneRow,
+    SurplusPage,
     measure_entries,
     measure_summary_frame,
     no_pv_sensitivity_frame,
@@ -69,6 +70,7 @@ from kwise.report import (
     slides_bytes,
     standalone_frame,
     standalone_rows,
+    surplus_page,
 )
 from kwise.report.days import RepresentativeDay
 from kwise.report.worksheet import (
@@ -810,6 +812,17 @@ class _MeasureResults:
         """수단이 낸 안내 원본. 부록 C 가 참고 등급을 골라 쓴다."""
         return tuple(entry.notices for entry in self.entries())
 
+    def surplus_page(self) -> SurplusPage | None:
+        """잉여 활용 한 장 (53세션 3절). **잉여가 0 이면 ``None`` 이다.**"""
+        return surplus_page(
+            self.surplus,
+            capacity_kwp=self.solar.capacity_kwp if self.solar is not None else 0.0,
+            surplus_free_kwp=self.surplus_free_kwp,
+            chosen_scenario=self.solar.surplus_scenario if self.solar is not None else "",
+            usage=self.usage,
+            surplus_kw=self.surplus_kw,
+        )
+
     def entries(self) -> tuple[MeasureEntry, ...]:
         return measure_entries(
             switch=self.switch,
@@ -1152,6 +1165,9 @@ def _download_block(
                 comparison=comparison,
                 sensitivity=sensitivity_ranges,
                 measures=results.entries(),
+                # **잉여가 나면 한 장이 붙는다** (53세션 3절). 0 이면 ``None`` 이라
+                # 장이 생기지 않는다 — 대형 샘플이 그렇다.
+                surplus=results.surplus_page(),
                 worksheets=results.worksheets(),
                 tariff_table=table,
                 ess_cases=load_ess_cost_model().case_table(),

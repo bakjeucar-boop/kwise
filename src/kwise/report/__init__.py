@@ -37,11 +37,13 @@ from kwise.report.document import (
     DOCUMENT_TITLE,
     DocumentSections,
     MeasureEntry,
+    SurplusPage,
     build_document,
     document_bytes,
     document_path,
     export_document,
     measure_entries,
+    surplus_page,
 )
 from kwise.report.excel import (
     DEFAULT_OUTPUT_DIR,
@@ -133,6 +135,7 @@ __all__ = [
     "SlideGeometry",
     "SlideSpec",
     "StandaloneRow",
+    "SurplusPage",
     "TypeScale",
     "Typography",
     "agenda_items",
@@ -173,6 +176,7 @@ __all__ = [
     "standalone_rows",
     "strip_timezone",
     "summary_frame",
+    "surplus_page",
     "top_hour_frame",
     "write_workbook",
 ]

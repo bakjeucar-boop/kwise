@@ -1324,9 +1324,18 @@ def test_ppt_에_잉여_장이_없고_태양광_장이_진다(
     assert facts["잉여"].endswith("MWh"), facts
     assert facts["자가소비"].endswith("MWh"), facts
     assert facts["잉여 없는 최대 용량"] == "2,048 kWp", facts
-    # 시나리오는 표가 아니라 각주 한 줄이다 (39세션 4-3).
-    assert "외부 판매" in solar.slide_note, solar.slide_note
+    # **시나리오는 태양광 각주에 없다** (53세션 3절). 잉여가 나면 「잉여 활용」
+    # 장이 다음에 붙어 표로 낸다 — 각주는 「버리기 0원」 까지 이어 적고 있었다.
+    assert solar.slide_note == "", solar.slide_note
     assert any("자격요건은 판정하지 않았습니다" in line for line in solar.cautions)
+
+    from kwise.report.document import surplus_page
+
+    page = surplus_page(surplus, capacity_kwp=capacity, surplus_free_kwp=2_048.0)
+    assert page is not None
+    names = [row[0] for row in page.scenario_rows[1:]]
+    assert "외부 판매" in names
+    assert "버리기" not in names, names
     # 그림은 여전히 둘이다 — 셋을 넣으면 축 눈금이 뭉개진다 (38세션 3절).
     assert len(solar.slide_figures) <= 2
 
@@ -1557,3 +1566,110 @@ def test_사양_표_열이_고르게_나뉘지_않는다() -> None:
     from kwise.report.slides import _fitting_lines
 
     assert _fitting_lines(["5,240~5,260 kW"], span=monkey, size=size) == 2
+
+
+# ===================================================================== 53세션 · 3절 잉여 장
+
+
+def _surplus_result(*, weekday: float, weekend: float, holiday: float) -> object:
+    """잉여 결과를 **값만 채워** 만든다. 갈래 시험은 계산이 아니라 문장을 본다."""
+    import pandas as pd
+
+    from kwise.measures.surplus import (
+        DISCARD_SCENARIO,
+        EXTERNAL_SCENARIO,
+        OFFSET_SCENARIO,
+        SurplusResult,
+        SurplusScenario,
+    )
+
+    total = weekday + weekend + holiday
+    return SurplusResult(
+        total_kwh=total,
+        generation_kwh=total * 8,
+        share_of_generation=0.125 if total else None,
+        hour_distribution=pd.Series(dtype=float),
+        weekday_kwh=weekday,
+        weekend_kwh=weekend,
+        holiday_kwh=holiday,
+        scenarios=(
+            SurplusScenario(OFFSET_SCENARIO, 2_545_000.0, "상계", "계약 변경"),
+            SurplusScenario(EXTERNAL_SCENARIO, None, "단가 미입력", "구매자 발굴"),
+            SurplusScenario(DISCARD_SCENARIO, 0.0, "버린다", "없다"),
+        ),
+    )
+
+
+def test_잉여가_있으면_장이_생기고_0이면_안_생긴다(full_sections: DocumentSections) -> None:
+    """**41세션에 잉여 장이 사라지면서 보여 줄 자리가 없어졌다** (53세션 3-1)."""
+    import dataclasses
+
+    from kwise.report.document import surplus_page
+
+    assert surplus_page(None, capacity_kwp=160.0) is None
+    empty = _surplus_result(weekday=0.0, weekend=0.0, holiday=0.0)
+    assert surplus_page(empty, capacity_kwp=160.0) is None  # type: ignore[arg-type]
+
+    page = surplus_page(
+        _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0),  # type: ignore[arg-type]
+        capacity_kwp=160.0,
+        surplus_free_kwp=40.0,
+    )
+    assert page is not None
+    # 태양광 장이 있어야 그 **다음**이 정해진다 — 수단을 모두 켠 덱으로 본다.
+    base = dataclasses.replace(full_sections, measures=_all_measures(full_sections))
+    with_page = dataclasses.replace(base, surplus=page)
+    without = dataclasses.replace(base, surplus=None)
+    keys = [item.key for item in slide_specs(with_page)]
+    assert keys.count("surplus") == 1
+    assert keys.index("surplus") == keys.index("measure_solar") + 1
+    assert "surplus" not in [item.key for item in slide_specs(without)]
+    assert len(slide_specs(with_page)) == len(slide_specs(without)) + 1
+    # 목차도 한 줄 는다.
+    assert SLIDE_TITLES["surplus"] in agenda_items(with_page)
+    assert SLIDE_TITLES["surplus"] not in agenda_items(without)
+
+
+def test_잉여_문장이_평일_휴일_비중으로_갈린다() -> None:
+    """**이 건물 값에 맞춘 문장을 고정으로 박지 않는다** (53세션 3-2 · 4절 공통).
+
+    소형 사무빌딩은 휴일이 99.6% 지만, 평일 낮에 문을 닫지 않는 건물은 반대다.
+    """
+    from kwise.report.document import surplus_page
+
+    def lead(**parts: float) -> str:
+        page = surplus_page(_surplus_result(**parts), capacity_kwp=160.0)  # type: ignore[arg-type]
+        assert page is not None
+        return page.lead
+
+    assert "대부분 토·일·공휴일에 발생합니다" in lead(
+        weekday=105.0, weekend=20_000.0, holiday=3_311.0
+    )
+    assert "대부분 평일에 발생합니다" in lead(weekday=9_000.0, weekend=500.0, holiday=500.0)
+    assert "고르게 발생합니다" in lead(weekday=5_000.0, weekend=3_000.0, holiday=2_000.0)
+
+
+def test_잉여_장에_버리기가_없다(full_sections: DocumentSections) -> None:
+    """**27세션에 화면에서 뺐다** (53세션 3-2). 「아무것도 안 한다」 는 방안이 아니다."""
+    import dataclasses
+
+    from kwise.report.document import SURPLUS_SCENARIO_HEADER, surplus_page
+
+    page = surplus_page(
+        _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0),  # type: ignore[arg-type]
+        capacity_kwp=160.0,
+        surplus_free_kwp=40.0,
+    )
+    assert page is not None
+    assert page.scenario_rows[0] == SURPLUS_SCENARIO_HEADER
+    assert [row[0] for row in page.scenario_rows[1:]] == ["상계거래(한전)", "외부 판매"]
+    assert len(page.facts) == 4
+
+    sections = dataclasses.replace(
+        full_sections, measures=_all_measures(full_sections), surplus=page
+    )
+    slide = _slide_by_key(build_slides(sections), sections, "surplus")
+    text = _slide_text(slide)
+    assert "버리기" not in text
+    assert "상계거래는 계약 변경과 역송 계량기가 필요합니다" in text
+    assert "자격요건은 판정하지 않았습니다" in text

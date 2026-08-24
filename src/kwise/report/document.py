@@ -49,6 +49,7 @@ from kwise.measures import (
     PowerFactorResult,
     SolarPoint,
     SurplusResult,
+    SurplusScenario,
     TariffSwitchResult,
     measure_kind,
     payback_text,
@@ -79,15 +80,20 @@ __all__ = [
     "DOCUMENT_TITLE",
     "KOREAN_FONT",
     "MEASURE_STRIP_FIGURE",
+    "SURPLUS_CHOSEN_MARK",
+    "SURPLUS_PAGE_NOTE",
+    "SURPLUS_SCENARIO_HEADER",
     "TABLE_STYLE",
     "DocumentSections",
     "MeasureEntry",
     "MeasureFigure",
+    "SurplusPage",
     "build_document",
     "document_bytes",
     "document_path",
     "export_document",
     "measure_entries",
+    "surplus_page",
 ]
 
 DOCUMENT_TITLE = "전력 비용 진단 보고서"
@@ -393,6 +399,138 @@ def _solar_conclusion(
     return f"{head} ({' · '.join(tail)})" if tail else head
 
 
+# ===================================================================== 잉여 활용 한 장
+
+
+#: 잉여 시나리오 표의 머리글 (53세션 3-2).
+SURPLUS_SCENARIO_HEADER: tuple[str, ...] = ("활용 방안", "연 수익", "비고")
+
+#: 잉여 활용 장의 각주. **자격요건을 판정하지 않는다는 것을 밝힌다.**
+SURPLUS_PAGE_NOTE = (
+    "상계거래는 계약 변경과 역송 계량기가 필요합니다. "
+    "외부 판매는 단가를 입력해야 산출됩니다. "
+    "제도별 자격요건은 판정하지 않았습니다 — 금액만 참고하십시오."
+)
+
+#: 절감액에 이미 든 시나리오에 붙이는 꼬리표 (48세션과 같은 어휘).
+SURPLUS_CHOSEN_MARK = "절감액에 반영"
+
+
+@dataclass(frozen=True)
+class SurplusPage:
+    """잉여 활용 한 장의 재료 (53세션 3절).
+
+    41세션에 잉여가 **개선안에서 빠져** 태양광 안으로 들어갔다. 그런데 잉여가
+    실제로 나면 보여 줄 자리가 없어져, 소형 사무빌딩의 연 23,416 kWh 가 태양광
+    장의 **각주 한 줄**로만 나왔다 — 얼마가 언제 남고 그것으로 무엇을 할 수
+    있는지가 판단 재료인데도 그렇다.
+
+    **개선안으로 되돌리는 것이 아니다.** 수단 목록(:data:`MEASURE_CATALOG`)은
+    여섯 그대로이고, 이 장은 태양광 장 **다음에 붙는 결과 한 장**이다.
+    **잉여가 0 이면 만들지 않는다** (:func:`surplus_page` 가 ``None`` 을 낸다).
+    """
+
+    lead: str
+    facts: tuple[tuple[str, str], ...]
+    """지표 넷 — 연간 잉여 · 평일 · 토·일·공휴일 · 잉여 없는 최대 용량."""
+    scenario_rows: tuple[tuple[str, ...], ...]
+    """시나리오 표. 머리글이 첫 줄이다. **「버리기」 는 싣지 않는다** (27세션)."""
+    note: str
+    figure: bytes | None = None
+    figure_caption: str = ""
+
+
+def _share(part: float, whole: float) -> str:
+    return f"{part / whole * 100:,.1f}%" if whole else "—"
+
+
+def surplus_page(
+    surplus: SurplusResult | None,
+    *,
+    capacity_kwp: float,
+    surplus_free_kwp: float | None = None,
+    chosen_scenario: str = "",
+    usage: UsageData | None = None,
+    surplus_kw: pd.Series | None = None,
+) -> SurplusPage | None:
+    """잉여 활용 한 장. **잉여가 없으면 ``None`` 이다** (53세션 3-1).
+
+    대형 샘플은 전량 자가소비라 이 장이 생기지 않는다 — 빈 장을 만들어
+    「없습니다」 라고 적는 것은 슬라이드를 한 장 늘리는 일일 뿐이다. 그 사실은
+    태양광 장의 결론 한 줄이 이미 말한다 (:func:`_solar_conclusion`).
+    """
+    if surplus is None or surplus.total_kwh <= 0:
+        return None
+    off_day_kwh = surplus.weekend_kwh + surplus.holiday_kwh
+    facts: list[tuple[str, str]] = [
+        ("연간 잉여", f"{surplus.total_kwh:,.0f} kWh"),
+        (
+            "평일 잉여",
+            f"{surplus.weekday_kwh:,.0f} kWh ({_share(surplus.weekday_kwh, surplus.total_kwh)})",
+        ),
+        (
+            "토·일·공휴일 잉여",
+            f"{off_day_kwh:,.0f} kWh ({_share(off_day_kwh, surplus.total_kwh)})",
+        ),
+    ]
+    if surplus_free_kwp:
+        facts.append(("잉여 없는 최대 용량", f"{surplus_free_kwp:,.0f} kWp"))
+    rows: list[tuple[str, ...]] = [SURPLUS_SCENARIO_HEADER]
+    for item in surplus.scenarios:
+        # **「버리기」 는 싣지 않는다** (27세션에 화면에서 뺐다). 언제나 0원이고
+        # 「아무것도 하지 않는다」 는 표에 세울 방안이 아니다.
+        if item.name == surplus_module.DISCARD_SCENARIO:
+            continue
+        rows.append(
+            (
+                item.name,
+                _won(item.revenue_won) if item.is_priced else _UNPRICED,
+                _surplus_remark(surplus, item, chosen=item.name == chosen_scenario),
+            )
+        )
+    figure = None
+    if usage is not None and surplus_kw is not None:
+        figure = _safe_figure(
+            lambda: figures.surplus_daily_png(usage, surplus_kw, size=MEASURE_PAIR_FIGURE)
+        )
+    return SurplusPage(
+        lead=narrative.surplus_page_lead(
+            capacity_kwp=capacity_kwp,
+            total_kwh=surplus.total_kwh,
+            off_day_share=surplus.off_day_share,
+        ),
+        facts=tuple(facts),
+        scenario_rows=tuple(rows),
+        note=SURPLUS_PAGE_NOTE,
+        figure=figure,
+        figure_caption=_SURPLUS_DAILY_CAPTION,
+    )
+
+
+#: 잉여 그래프 캡션. **화면 그림과 같은 것을 쓴다** (15세션 2-6).
+_SURPLUS_DAILY_CAPTION = "일별 잉여 — 토요일·일요일을 색으로 갈랐습니다."
+
+
+def _surplus_remark(
+    surplus: SurplusResult, scenario: SurplusScenario, *, chosen: bool
+) -> str:
+    """시나리오 한 줄의 비고. **고른 것에는 그 사실을 적는다** (48세션).
+
+    상계거래는 금액만으로는 무엇이 일어나는지 알 수 없다 — 당월 사용량에서
+    얼마가 차감되는지가 그 방안의 실체다.
+    """
+    parts: list[str] = []
+    if scenario.name == surplus_module.OFFSET_SCENARIO and surplus.offset is not None:
+        parts.append(f"당월 차감 {surplus.offset.deducted_kwh:,.0f} kWh")
+        if surplus.offset.remaining_kwh > 0:
+            parts.append(f"기간 말 잔여 {surplus.offset.remaining_kwh:,.0f} kWh")
+    elif not scenario.is_priced:
+        parts.append("판매 단가를 넣으면 산출됩니다")
+    if chosen:
+        parts.append(SURPLUS_CHOSEN_MARK)
+    return " · ".join(parts)
+
+
 def measure_entries(
     *,
     switch: TariffSwitchResult | None = None,
@@ -596,17 +734,11 @@ def measure_entries(
                 ("자가소비", f"{(surplus.generation_kwh - surplus.total_kwh) / 1000:,.1f} MWh"),
                 ("잉여", f"{surplus.total_kwh / 1000:,.1f} MWh"),
             )
-            # **시나리오는 표가 아니라 한 줄이다** (39세션 4-3). 금액이 갈리는
-            # 것은 「어디에 파느냐」 하나뿐이다.
-            #
-            # **고른 것을 표시한다** (48세션). 위 절감액·회수기간에 그 하나가
-            # 이미 들어 있으므로, 셋을 나란히만 적으면 어느 값이 결론에 반영된
-            # 것인지 알 수 없다.
-            surplus_note = " · ".join(
-                f"{item.name} {_won(item.revenue_won) if item.is_priced else _UNPRICED}"
-                + (" (절감액에 반영)" if item.name == solar.surplus_scenario else "")
-                for item in surplus.scenarios
-            )
+            # **시나리오 줄을 각주에서 뺐다** (53세션 3절). 잉여가 나면
+            # **「잉여 활용」 장이 다음에 붙어** 같은 것을 표로 낸다 — 각주가
+            # 「상계거래 … · 외부 판매 … · **버리기 0원**」 을 이어 적고 있었고,
+            # 「버리기」 는 27세션에 화면에서 뺀 줄이다.
+            surplus_note = ""
         entries["solar"] = MeasureEntry(
             kind=measure_kind("solar"),
             conclusion=_solar_conclusion(solar, surplus_free_kwp, area_m2),
@@ -771,6 +903,8 @@ class DocumentSections:
     """부록 B 의 요금표 줄. 없으면 그 줄만 빠진다."""
     ess_cases: pd.DataFrame | None = None
     """ESS 조달 사례. 17세션에 화면에서 뺀 표가 부록 A 로 간다."""
+    surplus: SurplusPage | None = None
+    """잉여 활용 한 장 (53세션 3절). **잉여가 0 이면 ``None`` 이라 장이 안 생긴다.**"""
     temperature: pd.Series | None = None
     """시간별 기온 (℃). PPT 「전력사용현황 및 부하패턴」이 사용량과 겹쳐 그린다
     (38세션 2-1). **없으면 사용량만 그린다** — 지역은 선택 입력이고, 고른 격자·

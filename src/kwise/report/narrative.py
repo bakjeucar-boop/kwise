@@ -51,6 +51,9 @@ __all__ = [
     "peak_summary_lead",
     "structure_lead",
     "surplus_lead",
+    "surplus_off_day_high",
+    "surplus_off_day_low",
+    "surplus_page_lead",
     "terms",
 ]
 
@@ -77,6 +80,16 @@ def base_load_high() -> float:
 def base_fee_share_high() -> float:
     """이 위면 **기본요금 비중이 크다**고 본다. 피크 저감의 값어치가 크다."""
     return float(assumption("narrative.base_fee_share_high"))
+
+
+def surplus_off_day_high() -> float:
+    """이 위면 잉여가 **토·일·공휴일에 몰렸다**고 본다 (53세션 3절)."""
+    return float(assumption("narrative.surplus_off_day_high"))
+
+
+def surplus_off_day_low() -> float:
+    """이 아래면 잉여가 **평일에 몰렸다**고 본다."""
+    return float(assumption("narrative.surplus_off_day_low"))
 
 
 # ===================================================================== 용어
@@ -399,6 +412,29 @@ def dr_lead(profile: DrProfile | None) -> str:
         f"{len(profile.low_load_days):,}일만 부하가 쉬는 날 수준까지 내려옵니다 — "
         "그 날에만 감축을 입찰할 수 있습니다."
     )
+
+
+def surplus_page_lead(
+    *, capacity_kwp: float, total_kwh: float, off_day_share: float | None
+) -> str:
+    """잉여 활용 장 — **얼마가 언제 남는가** (53세션 3-2).
+
+    뒷문장이 **비중으로 갈린다.** 소형 사무빌딩은 휴일이 99.6% 라 「대부분
+    토·일·공휴일」 이 맞지만, 평일 낮에 문을 닫는 건물이 아니면 반대가 된다.
+    **고정 문장으로 박으면 다른 건물에서 거짓이 된다.**
+
+    갈림값은 :func:`surplus_off_day_high` · :func:`surplus_off_day_low` 다.
+    """
+    head = (
+        f"태양광 {capacity_kwp:,.0f} kWp 에서 연 {total_kwh:,.0f} kWh 가 남습니다."
+    )
+    if off_day_share is None:
+        return head
+    if off_day_share >= surplus_off_day_high():
+        return f"{head} 대부분 토·일·공휴일에 발생합니다."
+    if off_day_share <= surplus_off_day_low():
+        return f"{head} 대부분 평일에 발생합니다."
+    return f"{head} 평일과 토·일·공휴일에 고르게 발생합니다."
 
 
 def surplus_lead(

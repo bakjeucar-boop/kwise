@@ -166,6 +166,9 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "narrative.load_factor_flat": _ratio,
     "narrative.base_load_high": _ratio,
     "narrative.base_fee_share_high": _ratio,
+    # 잉여가 어느 날에 몰렸는지로 문장이 갈린다 (53세션 3절).
+    "narrative.surplus_off_day_high": _ratio,
+    "narrative.surplus_off_day_low": _ratio,
     "contract.margin_ratio": _ratio,
     "contract.margin_range": _ratio_range,
     "dr.bid_restriction_months": _positive,
