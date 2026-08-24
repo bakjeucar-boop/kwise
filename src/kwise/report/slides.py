@@ -71,6 +71,7 @@ __all__ = [
     "NOTE_MARK",
     "NO_INVESTMENT",
     "SLIDE_TITLES",
+    "SPEC_TABLE_WIDTHS",
     "AppendixPage",
     "SlideSpec",
     "agenda_items",
@@ -1480,6 +1481,144 @@ def _measure_pictures(
         )
 
 
+#: 사양 표 한 줄이 실제로 차지하는 높이 (in) — **머리글도 한 줄이다** (53세션 2절).
+#:
+#: 46세션은 「줄당 0.4in」 을 상한으로만 쓰고 실제 배분은 ``height * 0.55`` 로
+#: 잡았다. 50세션에 격자가 붙어 표가 **다섯 줄에서 여섯 줄**이 되자 그 비율이
+#: 그대로 표를 키워, 남은 자리에 그림이 **0.85 × 0.41in** 로 우겨 넣어졌다 —
+#: 손톱만 한 차트다. **비율이 아니라 줄 수로 잡는다.**
+_SPEC_ROW_HEIGHT = 0.28
+
+#: 표 아래 그림에 남겨야 하는 최소 높이 (in). 캡션 0.32 + 그림 0.7 남짓이다.
+#:
+#: **이보다 좁으면 그림을 싣지 않는다.** 뭉갠 차트는 없는 것만 못하고, 자리를
+#: 비우면 표가 그 자리를 받아 마지막 줄이 캡션에 닿지 않는다.
+_MIN_FIGURE_BLOCK = 1.02
+
+#: 사양 표 아래 참고 한 줄이 먹는 높이 (in).
+_SPEC_CAPTION_HEIGHT = 0.24
+
+#: 수단 장 본문 아래에 남기는 숨 (in) (53세션 2절).
+#:
+#: 46세션까지 0.32 였는데 :func:`_picture_block` 이 **이미 캡션 높이를 제 안에서
+#: 빼고 있어** 같은 몫을 두 번 뺐다 — 모든 수단 장이 아래를 0.4in 씩 비워 두고
+#: 그림만 그만큼 눌려 있었다. 6장(피크특성 2/2)은 이 계산을 안 타서 캡션이
+#: 6.68in 에 앉는데 잘리지 않는다 — 그것이 이 값의 상한을 말해 준다.
+_BODY_TAIL = 0.1
+
+#: 사양 표의 열 폭 비율 (53세션 2절). **아홉 열을 고르게 나누지 않는다.**
+#:
+#: 고르게 나누면 한 칸이 1.37in 인데, 「5,220~5,240 kW」 는 11.5pt 로 1.34in 이라
+#: 여백을 빼면 **두 줄로 흐른다.** 그렇게 흐른 줄이 표를 1.5배로 키워 아래 그림
+#: 자리를 먹었다. **긴 칸(목표·표식)에 폭을 몰고 숫자 칸을 좁힌다.**
+#:
+#: 차례는 :data:`~kwise.report.frames.ESS_SPEC_HEADER` 와 같다.
+SPEC_TABLE_WIDTHS: tuple[float, ...] = (
+    0.150,  # 목표
+    0.075,  # 저감량
+    0.075,  # 출력
+    0.085,  # 용량
+    0.095,  # 방전시간
+    0.110,  # 투자비
+    0.115,  # 연간 절감액
+    0.095,  # 회수기간
+    0.200,  # 표식
+)
+
+
+def _spec_lines(rows: Sequence[Sequence[str]], *, width: float, size: float) -> int:
+    """사양 표가 실제로 차지할 **줄 수** (53세션 2절).
+
+    줄 수를 행 수로 세면 안 된다 — 「목표 미달 (실제 264 kW)」 같은 표식이 칸
+    폭을 넘어 **두 줄로 흐른다.** 행 수로만 잡아 두면 그만큼 표가 아래를 덮는다.
+    열 폭은 고르게 나누므로(``_table`` 이 ``widths`` 를 받지 않는다) 한 칸의
+    폭을 한 번만 재면 된다.
+    """
+    if not rows:
+        return 0
+    shares = _spec_widths(len(rows[0]))
+    total = 0
+    for row in rows:
+        total += max(
+            _fitting_lines([value], span=width * share - 0.12, size=size)
+            for value, share in zip(row, shares, strict=True)
+        )
+    return total
+
+
+def _spec_widths(columns: int) -> tuple[float, ...]:
+    """사양 표의 열 폭 비율. **열 수가 다르면 고르게 나눈다.**"""
+    if columns == len(SPEC_TABLE_WIDTHS):
+        return SPEC_TABLE_WIDTHS
+    return tuple(1.0 / columns for _ in range(columns))
+
+
+def _spec_block(
+    slide: Slide,
+    guide: DesignGuide,
+    entry: MeasureEntry,
+    drawings: tuple[MeasureFigure, ...],
+    *,
+    top: float,
+    height: float,
+) -> tuple[float, float, tuple[MeasureFigure, ...]]:
+    """목표별 사양 표와 그 아래 참고 한 줄 (46세션 · 53세션 2절에 배분을 다시 잡았다).
+
+    **표가 먼저다.** 「이 목표는 어디서 나왔나」 에 답하는 자리라 그림보다 위에
+    온다. 표에 줄 수만큼 주고 **남는 것이 그림 몫**이다 — 46세션의 ``height * 0.55``
+    는 줄이 늘어도 같은 비율을 먹어, 격자가 붙은 뒤로 그림을 뭉갰다.
+
+    Returns:
+        (그림이 시작할 y, 그림에 남은 높이, 실을 그림들).
+        **자리가 :data:`_MIN_FIGURE_BLOCK` 에 못 미치면 그림을 뺀다** — 그만큼
+        표가 넓게 앉는다.
+    """
+    geometry = guide.slide
+    gap = geometry.block_gap_in
+    caption_height = _SPEC_CAPTION_HEIGHT if entry.spec_caption else 0.0
+    wanted = _SPEC_ROW_HEIGHT * _spec_lines(
+        entry.spec_table,
+        width=geometry.content_width_in,
+        size=guide.type_scale.caption,
+    )
+    # **그림이 들어갈 자리가 남는가**로 갈린다. 남지 않으면 그림을 빼고 표가
+    # 남은 높이를 다 쓴다 — 상한은 그 자리다.
+    gap = gap / 2 if entry.spec_caption else gap
+    room = height - wanted - caption_height - gap
+    if room < _MIN_FIGURE_BLOCK:
+        drawings = ()
+        wanted = min(wanted, height - caption_height)
+    _table(
+        slide,
+        guide,
+        entry.spec_table,
+        left=geometry.margin_in,
+        top=top,
+        width=geometry.content_width_in,
+        # ``_table`` 이 줄마다 여유를 더하므로 **그만큼 미리 나눠** 넘긴다 —
+        # 그러지 않으면 실제 표가 잡은 자리보다 커져 아래를 덮는다.
+        height=wanted / (1.0 + geometry.text_slack),
+        widths=_spec_widths(len(entry.spec_table[0])),
+    )
+    used = wanted
+    if entry.spec_caption:
+        _text(
+            slide,
+            guide,
+            [mark_note(entry.spec_caption)],
+            left=geometry.margin_in,
+            top=top + used,
+            width=geometry.content_width_in,
+            height=caption_height,
+            size=guide.type_scale.caption,
+            color=guide.colors.muted,
+        )
+        used += caption_height
+    # **표와 그림 사이는 반 칸이다.** 참고 한 줄이 이미 둘을 가르므로 온 칸을
+    # 두면 그만큼 그림이 눌린다.
+    return top + used + gap, height - used - gap, drawings
+
+
 def _build_measure(
     slide: Slide, guide: DesignGuide, sections: DocumentSections, spec: SlideSpec
 ) -> None:
@@ -1526,41 +1665,13 @@ def _build_measure(
     )
     note = _measure_note(entry)
     body = bottom + geometry.block_gap_in
-    height = _body_bottom(guide, note=bool(note)) - body - 0.32
-    if entry.spec_table:
-        # **표가 먼저다** (46세션). 「이 목표는 어디서 나왔나」 에 답하는 자리라
-        # 그림보다 위에 온다. 줄 수가 적어 높이를 적게 먹는다 — 남는 만큼이
-        # 아래 그림 몫이다.
-        spec_rows = len(entry.spec_table)
-        # 줄당 0.4in — 부록 표(1,735행)와 같은 눈금이다.
-        table_height = min(height * 0.55, 0.4 * spec_rows)
-        _table(
-            slide,
-            guide,
-            entry.spec_table,
-            left=geometry.margin_in,
-            top=body,
-            width=geometry.content_width_in,
-            height=table_height,
-        )
-        used = table_height * (1.0 + geometry.text_slack)
-        if entry.spec_caption:
-            _text(
-                slide,
-                guide,
-                [mark_note(entry.spec_caption)],
-                left=geometry.margin_in,
-                top=body + used,
-                width=geometry.content_width_in,
-                height=0.24,
-                size=guide.type_scale.caption,
-                color=colors.muted,
-            )
-            used += 0.24
-        body += used + geometry.block_gap_in
-        height -= used + geometry.block_gap_in
+    height = _body_bottom(guide, note=bool(note)) - body - _BODY_TAIL
     drawings = entry.slide_figures
-    if drawings and height > 0.6:
+    if entry.spec_table:
+        body, height, drawings = _spec_block(
+            slide, guide, entry, drawings, top=body, height=height
+        )
+    if drawings and height > _MIN_FIGURE_BLOCK:
         _measure_pictures(slide, guide, drawings, top=body, height=height)
         _note(slide, guide, note)
         return

@@ -78,6 +78,7 @@ __all__ = [
     "DEFAULT_OUTPUT_DIR",
     "DOCUMENT_TITLE",
     "KOREAN_FONT",
+    "MEASURE_STRIP_FIGURE",
     "TABLE_STYLE",
     "DocumentSections",
     "MeasureEntry",
@@ -231,6 +232,14 @@ MEASURE_FULL_FIGURE = (12.0, 3.5)
 #: 요금제 전환은 **위·아래 두 칸짜리** 한 장이다 (그룹 막대 + 현행 대비 차액).
 #: 세로가 더 필요해 위 값을 그대로 쓸 수 없다.
 TARIFF_FIGURE = (12.0, 4.4)
+
+#: **표 아래로 내려앉는 그림**의 크기 (53세션 2절). ESS 가 쓴다.
+#:
+#: 목표별 사양 표가 위를 차지하고 나면 아래에 1in 남짓만 남는다. 그런데 그림은
+#: ``MEASURE_PAIR_FIGURE`` 비율(6:3.2)로 구워져 **높이가 먼저 차** 폭의 7%만
+#: 쓰고 0.85 × 0.41in 로 앉았다 — 손톱만 한 차트다. 납작하게 구우면 같은 높이로
+#: 폭을 다 쓴다 (4·5장의 :data:`~kwise.report.slides.FULL_FIGURE` 와 같은 이치).
+MEASURE_STRIP_FIGURE = (12.0, 2.2)
 
 #: 그림 캡션. **한 자리에 둔다** — 같은 그림이 :attr:`MeasureEntry.figure` 와
 #: :attr:`MeasureEntry.figures` 두 자리에 실리므로, 문구를 두 벌로 적으면 한쪽만
@@ -645,9 +654,12 @@ def measure_entries(
                     ess_optimum, baseline_demand_kw=ess_curve.baseline_demand_kw
                 )
             )
+        # **표가 위에 서면 그림은 납작하게 굽는다** (53세션 2절). 남는 높이가
+        # 1in 남짓이라 세로가 긴 비율로는 폭을 못 쓴다.
+        ess_size = MEASURE_STRIP_FIGURE if ess_table else MEASURE_PAIR_FIGURE
         ess_day = (
             _safe_figure(
-                lambda: figures.ess_day_png(usage, ess.dispatch, day, size=MEASURE_PAIR_FIGURE)
+                lambda: figures.ess_day_png(usage, ess.dispatch, day, size=ess_size)
             )
             if usage is not None and day is not None
             else None

@@ -1458,3 +1458,102 @@ def test_확실성이_슬라이드에_없다(full_sections: DocumentSections) ->
     """**등급을 산출물에서 뺐다** (53세션 1-4). 계산은 그대로다."""
     assert "확실성" not in _deck_text(build_slides(full_sections))
     assert all(entry.certainty for entry in full_sections.measures), "계산값은 남는다"
+
+
+# ===================================================================== 53세션 · 2절 ESS 배치
+
+
+def _ess_entry_with_spec() -> MeasureEntry:
+    """목표별 사양 표가 달린 ESS 항목. **표 모양만 실물과 같으면 된다.**"""
+    from kwise.measures import measure_kind
+    from kwise.report import figures, frames
+
+    png = figures.chart_palette  # 존재 확인용 — 아래에서 실제 png 를 굽지 않는다
+    assert png is not None
+    rows = [frames.ESS_SPEC_HEADER]
+    rows.extend(
+        (
+            f"{5_240 - 40 * index:,.0f}~{5_260 - 40 * index:,.0f} kW",
+            f"{73 + 40 * index:,.0f} kW",
+            "150 kW",
+            "100 kWh",
+            "0.67h",
+            "261,893,000",
+            "8,264,000",
+            "31.7년",
+            "목표 미달 (실제 5,264 kW)" if index else "최단 회수기간",
+        )
+        for index in range(5)
+    )
+    return MeasureEntry(
+        kind=measure_kind("ess"),
+        conclusion="피크를 5,180 kW 까지 낮추려면 ESS 150 kW / 100 kWh 가 필요합니다.",
+        saving="8,264,000원",
+        investment="261,893,000원",
+        payback="31.7년",
+        certainty="중간~낮음",
+        spec_table=tuple(rows),
+        spec_caption=frames.ESS_SPEC_CAPTION,
+    )
+
+
+def test_사양_표가_아래_그림을_덮지_않는다(full_sections: DocumentSections) -> None:
+    """**두 세션 연속 지적된 자리다** (53세션 2절).
+
+    50세션에 격자가 붙어 표가 여섯 줄이 되자, 46세션의 ``height * 0.55`` 배분이
+    그대로 표를 키워 그림이 **0.85 × 0.41in** 로 우겨 넣어졌다. 줄 수로 잡는다.
+    """
+    import dataclasses
+
+    from pptx.util import Emu
+
+    entry = _ess_entry_with_spec()
+    sections = dataclasses.replace(full_sections, measures=(entry,))
+    slide = _slide_by_key(build_slides(sections), sections, f"measure_{entry.kind.key}")
+    boxes = [
+        (Emu(shape.top).inches, Emu(shape.top + shape.height).inches, shape)
+        for shape in slide.shapes  # type: ignore[attr-defined]
+        if shape.top is not None and shape.height
+    ]
+    from kwise.report.frames import ESS_SPEC_HEADER
+
+    tables = [
+        box
+        for box in boxes
+        if box[2].has_table
+        and tuple(cell.text for cell in box[2].table.rows[0].cells) == ESS_SPEC_HEADER
+    ]
+    assert len(tables) == 1, "사양 표가 하나여야 한다"
+    table_top, table_bottom, shape = tables[0]
+    assert table_bottom < 7.0, f"표가 슬라이드 밖으로 나갑니다: {table_bottom:.2f}in"
+    for start, _end, other in boxes:
+        if other is shape or start < table_top:
+            continue
+        assert start >= table_bottom - 1e-6, (
+            f"표(밑변 {table_bottom:.2f}in) 아래 요소가 {start:.2f}in 에서 시작합니다."
+        )
+
+
+def test_사양_표_열이_고르게_나뉘지_않는다() -> None:
+    """**긴 칸에 폭을 몰아 준다** (53세션 2절).
+
+    아홉 열을 고르게 나누면 「5,220~5,240 kW」 가 두 줄로 흘러 표가 1.5배가 된다.
+    """
+    from kwise.report.design import load_design_guide
+    from kwise.report.frames import ESS_SPEC_HEADER
+    from kwise.report.slides import SPEC_TABLE_WIDTHS, _spec_lines
+
+    assert len(SPEC_TABLE_WIDTHS) == len(ESS_SPEC_HEADER)
+    assert abs(sum(SPEC_TABLE_WIDTHS) - 1.0) < 1e-9
+    guide = load_design_guide()
+    rows = _ess_entry_with_spec().spec_table
+    width = guide.slide.content_width_in
+    size = guide.type_scale.caption
+    # **몰아 준 폭에서는 한 줄에 앉는다.**
+    assert _spec_lines(rows, width=width, size=size) == len(rows)
+    # **고르게 나누면 흐른다** — 이것이 46세션 배치가 무너진 까닭이다.
+    even = tuple(1.0 / len(ESS_SPEC_HEADER) for _ in ESS_SPEC_HEADER)
+    monkey = width * even[0] - 0.12
+    from kwise.report.slides import _fitting_lines
+
+    assert _fitting_lines(["5,240~5,260 kW"], span=monkey, size=size) == 2
