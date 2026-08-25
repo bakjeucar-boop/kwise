@@ -57,6 +57,7 @@ from kwise.tariff import (
 )
 
 __all__ = [
+    "BASE_FEE_ON_CONTRACT_CONCLUSION",
     "BELOW_MINIMUM_CONCLUSION",
     "NOT_VIABLE_CONCLUSION",
     "SPEC_TABLE_ROWS",
@@ -1417,6 +1418,24 @@ NOT_VIABLE_CONCLUSION = (
 회수되지 않으므로 「최단 회수기간」 조차 뜻이 없다 — 고를 것이 아예 없다.
 """
 
+BASE_FEE_ON_CONTRACT_CONCLUSION = (
+    "{label} 은 기본요금을 계약전력으로 매깁니다 (기본공급약관 제68조). "
+    "피크를 낮춰도 기본요금이 줄지 않아 피크저감 목적의 ESS 는 성립하지 않습니다."
+)
+"""**갑 종별의 결론** (55세션).
+
+을 종별은 기본요금이 **요금적용전력**에 붙어 피크를 낮추면 그만큼 준다.
+갑 종별은 **계약전력**에 붙으므로 아무리 깎아도 기본요금이 그대로다 —
+남는 것은 충·방전 단가차뿐인데, 갑Ⅰ·교육용(갑)은 전력량요금이 **단일 단가**라
+그 차이도 0 이고 왕복손실만 남는다. **절감액이 음수**가 된다.
+
+**개략 곡선은 그 사실을 모른다** (:func:`ess_target_curve`). 곡선은
+``저감량 × 기본요금단가 × 개월수`` 로 회수기간을 내므로 갑 종별에서도
+「성립하는 목표」 를 만들어 낸다 — 그 뒤 정밀화가 요금을 다시 계산해 절감액
+0 이하를 만나고, 후보가 비어 창만 상한까지 넓히고 끝난다. 55세션 전에는 그
+자리에서 **없는 목표를 내고 절감액이 −3,000원인 카드**가 나왔다.
+"""
+
 BELOW_MINIMUM_CONCLUSION = (
     "필요 출력 {power:,.0f} kW 는 상업용 ESS 최소 규격({minimum:,.0f} kW)에 "
     "못 미칩니다. 이 규모에 맞는 상업용 제품을 찾기 어려워 산출하지 않았습니다."
@@ -1689,6 +1708,29 @@ def refine_ess_target(
             window_kw=window,
             widened=0,
             at_edge=False,
+        )
+
+    # **갑 종별은 애초에 성립할 수가 없다** (55세션). 기본요금이 계약전력에
+    # 붙어 피크를 낮춰도 줄지 않는다 — 개략 곡선은 그것을 모르고 「성립하는
+    # 목표」 를 만들어 내므로, **훑기 전에** 여기서 끊는다. 정밀화를 돌려도
+    # 결론은 같고(후보가 비어 창만 넓힌다) 21~90점의 요금 재계산을 버린다.
+    if table.contract(selection.contract_type).base_fee_on_contract:
+        return EssOptimum(
+            target_kw=0.0,
+            payback_years=None,
+            curve_target_kw=curve.best.target_kw,
+            window_kw=window,
+            widened=0,
+            at_edge=False,
+            viable=False,
+            notices=(
+                warn(
+                    BASE_FEE_ON_CONTRACT_CONCLUSION.format(
+                        label=table.contract(selection.contract_type).label
+                    ),
+                    fact="ess.base_fee_on_contract",
+                ),
+            ),
         )
 
     # **기준점은 「고를 수 있는」 최소다** (48세션). 곡선의 최소가 마진 조건 밖에

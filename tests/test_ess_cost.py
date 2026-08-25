@@ -1839,3 +1839,160 @@ def test_케이스_스터디가_ESS_를_돌린다() -> None:
         "ESS 절감액이 0 이하인 점에는 회수기간이 없다",
     ):
         assert name in checks, name
+
+
+# ===================================================================== 55세션 · 갑 종별
+#
+# **기본 단가에서도 그 갈래가 열렸다.** 54세션은 단가를 ×0.1 로 낮춰야 열린다고
+# 봤는데, 사용자 실물의 투자비는 기본 단가 그대로였다 — 갈림길은 단가가 아니라
+# **계약종별**이었다.
+#
+#     을 종별   기본요금이 **요금적용전력**에 붙는다 → 피크를 낮추면 그만큼 준다
+#     갑 종별   기본요금이 **계약전력**에 붙는다     → 아무리 깎아도 그대로다
+#
+# 갑Ⅰ·교육용(갑)은 전력량요금까지 **단일 단가**라 충·방전 차익도 0 이고 왕복손실만
+# 남는다 — 절감액이 **음수**가 된다. 개략 곡선은 그것을 모르고 「성립하는 목표」 를
+# 만들어 내므로, 정밀화가 후보를 못 찾아 창만 상한까지 넓히고 끝난다.
+
+_KAP_SELECTION = ("general_a_1", "high_a", "I")
+
+
+def _kap_optimum(tariff: TariffTable, contract_type: str = "general_a_1") -> object:
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.io import load_usage
+    from kwise.quality import check_quality
+    from kwise.tariff import BillingOptions, calculate_bill
+
+    usage = load_usage(PROJECT_ROOT / "input" / "사용량조회_20240429.csv")
+    selection = TariffSelection(contract_type, "high_a", "I")
+    options = BillingOptions(contract_kw=6_000.0)
+    quality = check_quality(usage, contract_kw=6_000.0)
+    diag = diagnose(
+        usage,
+        tariff,
+        ContractInfo(selection, contract_kw=6_000.0),
+        quality=quality,
+        options=options,
+    )
+    baseline = calculate_bill(usage, tariff, selection, options=options, quality=quality)
+    curve = ess_target_curve(
+        usage.kw,
+        usage.meta.interval_minutes,
+        baseline_demand_kw=float(diag.peak.billing_demand_kw),
+        base_fee_won_per_kw=float(tariff.rates(selection).base_won_per_kw),
+    )
+    return refine_ess_target(
+        usage,
+        tariff,
+        selection,
+        curve=curve,
+        baseline=baseline,
+        quality=quality,
+        options=options,
+    )
+
+
+@pytest.mark.parametrize(
+    "contract_type",
+    ["general_a_1", "general_a_2", "industrial_a_1", "industrial_a_2", "education_a"],
+)
+def test_갑_종별은_피크저감으로_기본요금이_줄지_않는다(
+    tariff: TariffTable, contract_type: str
+) -> None:
+    """**기본 단가에서 열리던 갈래다** (55세션 1절).
+
+    갑 종별은 기본요금을 계약전력으로 매긴다 (약관 제68조). 개략 곡선은
+    ``저감량 × 기본요금단가`` 로 회수기간을 내므로 「성립하는 목표」 를 만들어
+    내고, 정밀화가 요금을 다시 계산해 0 이하를 만나 후보가 빈다.
+    """
+    from kwise.measures.ess import BASE_FEE_ON_CONTRACT_CONCLUSION
+
+    optimum = _kap_optimum(tariff, contract_type)
+    assert not optimum.viable, "갑 종별에서 목표를 내면 안 된다"
+    assert optimum.target_kw == 0.0
+    assert optimum.points == (), "잴 것이 없으므로 표도 싣지 않는다"
+    assert any(item.fact == "ess.base_fee_on_contract" for item in optimum.notices)
+    message = texts(optimum.notices)[0]
+    assert tariff.contract(contract_type).label in message
+    assert "계약전력으로 매깁니다" in message
+    assert BASE_FEE_ON_CONTRACT_CONCLUSION.startswith("{label}")
+
+
+def test_을_종별은_그대로다(tariff: TariffTable) -> None:
+    """**회귀값 불변** (55세션). 갑 단락이 을 경로를 건드리지 않는다."""
+    optimum = _kap_optimum(tariff, "general_b")
+    assert optimum.viable
+    assert optimum.target_kw == pytest.approx(5_180.0)
+    assert len(optimum.points) == 21
+
+
+def test_갑_종별_절감액은_왕복손실뿐이다(
+    sample_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**왜 음수인지** (55세션 1절). 사용자 실물의 −3,000원이 이 값이다.
+
+    기본요금은 계약전력에 붙어 안 줄고, 갑Ⅰ 은 전력량요금이 단일 단가라
+    충·방전 차익이 0 이다 — 남는 것은 왕복손실 요금뿐이다.
+    """
+    from kwise.measures import EssCostInput, evaluate_ess
+    from kwise.tariff import BillingOptions, calculate_bill
+
+    selection = TariffSelection(*_KAP_SELECTION)
+    options = BillingOptions(contract_kw=6_000.0)
+    rates = tariff.rates(selection)
+    # 단일 단가 — 계시로 갈리지 않는다.
+    for season in ("summer", "spring_fall", "winter"):
+        assert len({rates.rate(season, band) for band in ("light", "mid", "peak")}) == 1
+    assert tariff.contract(_KAP_SELECTION[0]).base_fee_on_contract
+
+    baseline = calculate_bill(sample_usage, tariff, selection, options=options)
+    result = evaluate_ess(
+        sample_usage,
+        tariff,
+        selection,
+        target_kw=5_180.0,
+        cost=EssCostInput.unpriced(),
+        baseline=baseline,
+        options=options,
+    )
+    # 사양·투자비는 을 종별과 같다 — 갈리는 것은 절감액뿐이다.
+    assert result.power_kw == pytest.approx(150.0)
+    assert result.capacity_kwh == pytest.approx(100.0)
+    assert result.investment_won == pytest.approx(261_893_955.0, abs=1.0)
+    assert result.annual_saving_won < 0, "왕복손실만 남는다"
+    assert result.payback_years is None
+
+
+# ===================================================================== 55세션 · 재현 조건
+
+
+def test_출고층이_현재_항목을_다_갖는다() -> None:
+    """**출고 복원이 항목을 지우면 안 된다** (55세션 3절).
+
+    39·41·50·53·55세션이 판단값을 더하면서 ``data\\defaults`` 에 넣지 않아
+    **11건이 출고층에 없었다.** 그 상태로 「출고값 복원」 을 누르면 그 항목들이
+    사라지고, 다음 실행이 ``assumption(...)`` 에서 멈춘다.
+    """
+    from kwise.rules import RuleOrigin, assumptions, load_defaults, rules
+
+    for origin, current in (
+        (RuleOrigin.STATUTORY, rules()),
+        (RuleOrigin.JUDGEMENT, assumptions()),
+    ):
+        factory = load_defaults(origin)
+        missing = sorted(set(current.item_keys()) - set(factory.item_keys()))
+        extra = sorted(set(factory.item_keys()) - set(current.item_keys()))
+        assert not missing, f"{origin} — 출고층에 없는 항목: {missing}"
+        assert not extra, f"{origin} — 현재에 없는 출고 항목: {extra}"
+
+
+def test_계산_조건이_산출물에_실린다() -> None:
+    """**실물만 보고 재현 조건을 알 수 있어야 한다** (55세션 3절).
+
+    두 세션 연속 실물과 재현이 갈렸다. 계약종별·선택요금은 표지와 건물현황
+    표가 이미 적고 ESS 단가 경로는 부록이 적는다 — 빠진 것은 기준 데이터였다.
+    """
+    from kwise.report.notices import RULES_UNCHANGED, rules_basis_line
+
+    line = rules_basis_line()
+    assert line == RULES_UNCHANGED, f"출고층과 어긋나 있다: {line}"

@@ -13,16 +13,44 @@ __all__ = [
     "DATA_SOURCES",
     "KNOWN_LIMITS",
     "NOT_INCLUDED_NOTICE",
+    "RULES_UNCHANGED",
     "TENTATIVE_BASE_FEE_BASIS_WARNING",
     "TRUNCATION_FOOTNOTE",
     "UNPRICED_REASONS",
     "format_won",
     "plain_text",
+    "rules_basis_line",
 ]
 
 from kwise import money
 from kwise.money import TRUNCATION_FOOTNOTE
+from kwise.rules import diff_from_defaults
 from kwise.tariff import NOT_INCLUDED_NOTICE, TENTATIVE_BASE_FEE_BASIS_WARNING
+
+#: 기준 데이터가 출고값 그대로일 때의 문구.
+RULES_UNCHANGED = "기준 데이터는 출고값 그대로입니다."
+
+#: 한 줄에 이름을 몇 개까지 적을지. 넘으면 개수로 접는다.
+_RULES_NAME_LIMIT = 3
+
+
+def rules_basis_line() -> str:
+    """**어느 기준 데이터로 계산했는가** 한 줄 (55세션 3절).
+
+    실물과 재현이 갈리는 일이 두 세션 연속 났다. 계약종별·선택요금·계약전력은
+    표지와 건물현황 표가 이미 적고, ESS 단가 경로는 부록이 적는다 — **빠진
+    것은 「기준 데이터를 만졌는가」 하나**였다. 사용자가 판단값을 고치면 곡선과
+    판정이 통째로 달라지는데 산출물 어디에도 그 흔적이 없었다.
+
+    **값을 나열하지 않는다.** 전문은 부록 「기준 데이터」 가 항목마다 출고값과
+    함께 싣는다 — 여기는 **다른 것이 있는가**만 한 줄로 말한다.
+    """
+    diffs = diff_from_defaults()
+    if not diffs:
+        return RULES_UNCHANGED
+    names = " · ".join(item.key for item in diffs[:_RULES_NAME_LIMIT])
+    tail = f" 외 {len(diffs) - _RULES_NAME_LIMIT}건" if len(diffs) > _RULES_NAME_LIMIT else ""
+    return f"출고값과 다른 항목 {len(diffs)}건 — {names}{tail}."
 
 # 요구사항서 9.4 — 필수 경고
 CONTRACT_CHANGE_WARNING = (

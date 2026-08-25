@@ -51,7 +51,12 @@ from kwise.report import figures, narrative
 from kwise.report.design import DesignGuide, load_design_guide
 from kwise.report.document import DocumentSections, MeasureEntry, MeasureFigure
 from kwise.report.narrative import GLOSSARY_KEYS
-from kwise.report.notices import NOT_INCLUDED_NOTICE, TRUNCATION_FOOTNOTE, plain_text
+from kwise.report.notices import (
+    NOT_INCLUDED_NOTICE,
+    TRUNCATION_FOOTNOTE,
+    plain_text,
+    rules_basis_line,
+)
 from kwise.report.worksheet import COLUMNS
 from kwise.tariff.labels import SEASON_LABELS
 
@@ -1118,6 +1123,9 @@ def _build_building(
             f"{meta.missing_rows:,}구간 ({meta.missing_ratio:.1%}) — 보간하지 않고 뺐습니다",
         ],
         ["적용 요금표 시행일", f"{bill.effective_date}"],
+        # **어느 기준 데이터로 계산했는가** (55세션 3절). 실물과 재현이 갈릴 때
+        # 이 줄이 조건을 말한다 — 전문은 Excel 부록 「기준 데이터」 에 있다.
+        ["기준 데이터", rules_basis_line()],
         ["작성일", f"{sections.prepared:%Y-%m-%d}"],
     ]
     if quality is not None:

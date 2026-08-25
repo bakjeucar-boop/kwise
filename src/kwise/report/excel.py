@@ -54,6 +54,7 @@ from kwise.report.notices import (
     TRUNCATION_FOOTNOTE,
     UNPRICED_REASONS,
     format_won,
+    rules_basis_line,
 )
 from kwise.report.worksheet import Worksheet
 from kwise.tariff import BillingResult, TariffTable
@@ -259,6 +260,10 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
             # 어느 모집단으로 판정했는지 밝힌다. 부록 B 원값과 섞이지 않게 한다.
             rows.append(("개선 여지", "태양광 판정 모집단", summary.pv_basis))
 
+    # **재현 조건을 한 줄로** (55세션 3절). 계약종별·선택요금·계약전력은 위에
+    # 이미 있고 ESS 단가 경로는 「수단별 결과」 비고가 적는다 — 빠진 것은
+    # 「기준 데이터를 만졌는가」 하나였다. 전문은 부록 B 가 항목마다 싣는다.
+    rows.append(("계산 조건", "기준 데이터", rules_basis_line()))
     rows.append(("미포함 요금요소", "안내", NOT_INCLUDED_NOTICE))  # 5.1
     rows.append(("계약전력 변경 경고", "필수 안내", CONTRACT_CHANGE_WARNING))  # 9.4
     for number, limit in enumerate(KNOWN_LIMITS, start=1):  # 부록 D

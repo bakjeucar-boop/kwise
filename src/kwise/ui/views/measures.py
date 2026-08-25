@@ -1583,6 +1583,14 @@ def _ess(
         _notices(optimum.notices)
         return
 
+    # **잰 점이 없으면 표를 그리지 않는다** (55세션). 갑 종별처럼 훑기 전에
+    # 끊는 자리가 생겼다 — 빈 표를 그리면 그 자리에서 터진다. 「왜 안 되는가」 는
+    # 표가 아니라 결론 한 줄이 말한다 (`below_minimum` 과 같은 규약).
+    if not optimum.points:
+        st.session_state[input_key("ess", "target")] = 0.0
+        _notices(optimum.notices)
+        return
+
     st.dataframe(
         _ess_spec_view(
             frames.ess_spec_frame(optimum, baseline_demand_kw=curve.baseline_demand_kw)
