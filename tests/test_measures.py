@@ -652,7 +652,7 @@ def test_surplus_scenarios(surplus_case: SurplusCase, tariff: TariffTable) -> No
         surplus_case, tariff, external_price_won_per_kwh=90.0, smp_price_won_per_kwh=130.0
     )
     assert result.total_kwh == pytest.approx(surplus_case.net.surplus_kwh)
-    # **셋이다** (41세션 2-2 · 56세션에 「버리기」 를 「출력제어」 로).
+    # **셋이다** (41세션 2-2 · 57세션에 「버리기」 를 「출력제어」 로).
     # 27세션은 언제나 0원인 줄이라 표에서 뺐는데, 41세션에 표가 아니라
     # **고르는 자리**가 되면서 뜻이 달라졌다 — 「아무것도 하지 않는다」 를 고를
     # 수 없으면 셋 중 하나를 강요하게 된다.

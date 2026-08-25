@@ -427,7 +427,7 @@ def cached_comparison(
     _options: BillingOptions | None = None,
     _progress: ProgressReporter | None = None,
 ) -> ComparisonResult:
-    # **잉여 수익을 열쇠에서 뺀다** (56세션). 그 몫은 요금 계산 **밖에서** 붙는
+    # **잉여 수익을 열쇠에서 뺀다** (57세션). 그 몫은 요금 계산 **밖에서** 붙는
     # 덧셈이라 부하도 청구서도 바꾸지 않는데, 조합 명세에 들어 있어 라디오를
     # 누를 때마다 조합 여섯의 요금이 통째로 다시 돌았다 — 값이 이미 손에 있는데
     # 2.3초를 썼다. 게다가 기억이 여덟 칸뿐이라(:mod:`kwise.ui.memo`) 새 항목이

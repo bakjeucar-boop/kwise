@@ -239,7 +239,7 @@ class ComparisonResult:
     def with_surplus_revenue(
         self, revenue_won: float | None, scenario: str
     ) -> ComparisonResult:
-        """고른 잉여 처리를 **이미 계산한 비교에 얹는다** (56세션).
+        """고른 잉여 처리를 **이미 계산한 비교에 얹는다** (57세션).
 
         잉여 수익은 **요금 계산 밖에서 붙는 몫**이라 부하도 청구서도 바꾸지
         않는다 (:meth:`CombinationResult.total_won`). 그런데 조합 명세에 들어
@@ -532,7 +532,7 @@ SURPLUS_REVENUE_FACT = "combination.surplus_revenue"
 
 
 def surplus_notice(revenue_won: float, scenario: str) -> Notice | None:
-    """잉여 수익을 더했다는 **근거 한 줄**. 0 이면 없다 (56세션에 뽑았다).
+    """잉여 수익을 더했다는 **근거 한 줄**. 0 이면 없다 (57세션에 뽑았다).
 
     :meth:`ComparisonResult.with_surplus_revenue` 가 같은 글을 다시 지어야 하므로
     한 자리에 둔다 — 46세션의 「같은 규칙이 두 자리에 있으면」 과 같은 줄기다.
@@ -550,7 +550,7 @@ def surplus_notice(revenue_won: float, scenario: str) -> Notice | None:
 def _with_surplus(
     result: CombinationResult, revenue_won: float, scenario: str, base_fee_months: float
 ) -> CombinationResult:
-    """조합 하나에 잉여 수익을 다시 얹는다 (56세션). **태양광을 켠 조합만이다.**"""
+    """조합 하나에 잉여 수익을 다시 얹는다 (57세션). **태양광을 켠 조합만이다.**"""
     wanted = revenue_won if result.spec.has_pv else 0.0
     if wanted == result.surplus_revenue_won:
         return result
@@ -578,7 +578,7 @@ def _with_surplus(
 
 
 def aggregate_notices(results: Sequence[CombinationResult]) -> tuple[Notice, ...]:
-    """조합 안내를 한 자리에 모은다 — **묶는 규칙은 여기 하나다** (56세션에 뽑았다).
+    """조합 안내를 한 자리에 모은다 — **묶는 규칙은 여기 하나다** (57세션에 뽑았다).
 
     **조합명은 여기서 붙인다** (20세션 4절). 조합이 여럿이라 어느 조합의 말인지
     밝혀야 하는데, 문구에 심어 두면 그 앞말이 지문이 되어 같은 조합의 다른

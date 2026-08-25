@@ -215,7 +215,10 @@ def capacity_bands(fixed: float, per_kwh: float, grid_step_kwh: float) -> list[d
                 "note": (
                     ""
                     if active
-                    else f"규격 격자의 최소 배터리 {grid_step_kwh:,.0f} kWh 미만이라 조달되지 않는다."
+                    else (
+                        f"규격 격자의 최소 배터리 {grid_step_kwh:,.0f} kWh 미만이라 "
+                        "조달되지 않는다."
+                    )
                 ),
             }
         )
