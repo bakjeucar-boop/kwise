@@ -525,11 +525,6 @@ def _wrapped_height(text: str, guide: DesignGuide, *, width: float, size: float)
     return _LINE_HEIGHT * min(lines, 3) + _TEXT_GAP
 
 
-#: 용어 풀이 각주가 차지하는 높이 (in). 본문 높이에서 미리 뺀다.
-#: **두 줄까지 흐른다** — 용어 셋의 산식이 한 줄에 다 앉지 않는 장이 있다.
-_NOTE_HEIGHT = 0.58
-
-
 def _lead(slide: Slide, guide: DesignGuide, text: str, *, top: float) -> float:
     """제목 아래 **해석 한 줄** (39세션 1-1).
 
@@ -609,20 +604,16 @@ def _note_block(guide: DesignGuide, lines: Sequence[str]) -> tuple[list[str], fl
 def _note_top(guide: DesignGuide, *lines: str) -> float:
     """각주 띠가 시작하는 y. **각주가 없으면 본문 바닥이다.**
 
-    :func:`_body_bottom` 을 대신한다 — 그쪽은 각주 높이를 :data:`_NOTE_HEIGHT`
-    로 못박아 두어, 각주가 두 줄을 넘으면 위쪽이 그만큼 침범당했다.
+    **자리를 못박지 않고 줄 수를 센다** (53세션 9절 · 59세션 1절). 53세션까지는
+    ``_body_bottom`` 이 각주 높이를 0.58in 으로 고정해 두었는데, 그것은 두 줄어치다
+    — 세 줄로 흐르면 위쪽 덩어리가 0.24in 을 침범했다. 표는 53세션에 이 함수로
+    옮겼고, **그림 덩어리 넷(4·5·6·7장)이 남아 있어 59세션에 함께 옮겼다.**
     """
     geometry = guide.slide
     _kept, height = _note_block(guide, lines)
     if not height:
         return geometry.height_in - geometry.margin_in
     return geometry.height_in - geometry.margin_in - 0.42 - height + 0.2
-
-
-def _body_bottom(guide: DesignGuide, *, note: bool) -> float:
-    """본문이 끝나야 할 y. **각주가 있으면 그만큼 위에서 끝난다.**"""
-    geometry = guide.slide
-    return geometry.height_in - geometry.margin_in - (_NOTE_HEIGHT if note else 0.0)
 
 
 def _caption(
@@ -1209,7 +1200,7 @@ def _build_usage_pattern(
         left=geometry.margin_in,
         top=body,
         width=geometry.content_width_in,
-        height=_body_bottom(guide, note=bool(note)) - body,
+        height=_note_top(guide, note) - body,
     )
     _note(slide, guide, note)
 
@@ -1311,7 +1302,7 @@ def _build_peak_summary(
         left=geometry.margin_in,
         top=body,
         width=geometry.content_width_in,
-        height=_body_bottom(guide, note=bool(note)) - body,
+        height=_note_top(guide, note) - body,
     )
     _note(slide, guide, note)
 
@@ -1333,7 +1324,7 @@ def _build_peak_detail(
     peak = diagnosis.peak
     gap = geometry.block_gap_in
     half = (geometry.content_width_in - gap) / 2
-    height = _body_bottom(guide, note=False) - top
+    height = _note_top(guide) - top
     # **문장이 말하는 그림이 왼쪽이다** (53세션 4-5). 해석 한 줄이 「상위 ○○구간」
     # 을 말하는데 그 그림이 오른쪽에 있어, 읽는 눈이 문장에서 오른쪽으로 건너뛴
     # 뒤 다시 왼쪽으로 돌아와야 했다.
@@ -1378,7 +1369,7 @@ def _build_structure(
     left_width = geometry.content_width_in * 0.56
     right_width = geometry.content_width_in - left_width - gap
     right_left = geometry.margin_in + left_width + gap
-    bottom_y = _body_bottom(guide, note=bool(note))
+    bottom_y = _note_top(guide, note)
     height = bottom_y - top
 
     base_won = structure.base_won + structure.bill.total_power_factor_won
@@ -1705,7 +1696,7 @@ def _spec_block(
     geometry = guide.slide
     gap = geometry.block_gap_in
     # **표식의 뜻도 표 바로 아래가 자리다** (53세션 4-13). 슬라이드 맨 아래
-    # 각주로 내리면 :func:`_body_bottom` 이 0.58in 을 통째로 예약해 **그림이
+    # 각주로 내리면 :func:`_note_top` 이 그만큼 예약해 **그림이
     # 자리를 잃는다** — 표를 읽는 데 바로 쓰이는 글이라 표에 붙인다.
     lines = [mark_note(line) for line in (entry.spec_caption, entry.spec_note) if line]
     caption_height = _SPEC_CAPTION_HEIGHT * len(lines)

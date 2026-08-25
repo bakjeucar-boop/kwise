@@ -80,7 +80,7 @@ def load_factor_flat() -> float:
 
 
 def base_load_high() -> float:
-    """이 위면 **밤에도 부하가 남는다**고 본다. ESS 충전 여력이 좁다."""
+    """이 위면 **밤에도 부하가 남는다**고 본다. ESS 충전 여력이 제한적이다."""
     return float(assumption("narrative.base_load_high"))
 
 
@@ -163,7 +163,7 @@ def terms(pattern: LoadPattern | None = None) -> dict[str, Term]:
         "base_load_ratio": Term(
             "기저부하 비율",
             f"야간({night_text}) 평균 수요 ÷ 주간 평균 수요.",
-            "높을수록 밤에도 도는 설비가 있어 ESS 충전 여력이 좁습니다.",
+            "높을수록 밤에도 도는 설비가 있어 ESS 충전 여력이 제한적입니다.",
             f"야간({night_short}) 평균 ÷ 주간 평균",
         ),
         "weekend_ratio": Term(
@@ -367,7 +367,7 @@ def pattern_lead(pattern: LoadPattern) -> str:
     if base is None:
         return first
     if base >= base_load_high():
-        second = f"기저부하 비율 {_pct(base)}로 밤에도 설비가 돌아 ESS 충전 여력은 좁습니다."
+        second = f"기저부하 비율 {_pct(base)}로 밤에도 설비가 돌아 ESS 충전 여력이 제한적입니다."
     else:
         second = f"기저부하 비율 {_pct(base)}로 밤 부하가 낮아 ESS 충전 여력이 있습니다."
     return f"{first} {second}"

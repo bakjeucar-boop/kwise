@@ -1806,7 +1806,10 @@ def test_부하패턴_문장_둘이_각각_갈린다(sample_diagnosis: Diagnosis
     low = base_load_high() - 0.05
     base = replace(sample_diagnosis.pattern, load_factor=peaky, base_load_ratio=high)
     assert "짧은 피크" in pattern_lead(base)
-    assert "충전 여력은 좁습니다" in pattern_lead(base)
+    # **「좁습니다」 를 쓰지 않는다** (59세션 6절). 폭이 좁다는 말로 읽혀 무엇이
+    # 좁은지 되묻게 된다 — 뜻은 「여력이 제한적이다」 이다.
+    assert "충전 여력이 제한적입니다" in pattern_lead(base)
+    assert "좁습니다" not in pattern_lead(base)
     both = pattern_lead(replace(base, load_factor=flat, base_load_ratio=low))
     assert "하루 내내 고르게" in both
     assert "충전 여력이 있습니다" in both
@@ -2342,6 +2345,75 @@ def test_표가_아래_글씨를_덮지_않는다(full_sections: DocumentSection
                     f"{index}장 — 표({table[0]:.2f}~{table[1]:.2f}in)가 "
                     f"「{text[:30]}」({top:.2f}in)를 덮습니다."
                 )
+
+
+#: 세 줄로 흐르는 각주. 실제 용어 각주보다 길게 지어 **줄 수가 늘 때**를 만든다.
+_LONG_NOTE = " ".join(
+    [
+        "부하율 = 평균 수요 ÷ 최대 수요",
+        "기저부하 비율 = 야간(22~8시) 평균 ÷ 주간 평균",
+        "운영시간 외 부하 비중 = 운영시간(평일 9~18시) 밖 사용량 ÷ 전체",
+        "요금적용전력 = 직전 12개월 최대수요로 매기는 기본요금의 기준 전력",
+        "계시별 = 경부하·중간부하·최대부하로 단가가 갈리는 구간",
+        "역률 = 유효전력 ÷ 피상전력, 무효전력 = 일을 하지 않고 계통을 오가는 전력",
+    ]
+)
+
+
+def _note_bands(slide: object) -> tuple[float, list[tuple[float, float, str]]]:
+    """각주 띠가 시작하는 y 와, 각주가 아닌 글의 세로 구간들."""
+    from pptx.util import Emu
+
+    from kwise.report.slides import NOTE_MARK
+
+    note_top = float("inf")
+    others: list[tuple[float, float, str]] = []
+    for shape in slide.shapes:  # type: ignore[attr-defined]
+        if shape.top is None or not shape.height:
+            continue
+        top = Emu(shape.top).inches
+        bottom = top + Emu(shape.height).inches
+        text = shape.text_frame.text.strip() if shape.has_text_frame else ""
+        if text.startswith(NOTE_MARK.strip()):
+            note_top = min(note_top, top)
+        else:
+            others.append((top, bottom, text or "그림·표"))
+    return note_top, others
+
+
+def test_각주가_세_줄로_흘러도_위를_덮지_않는다(
+    full_sections: DocumentSections, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**자리를 못박으면 줄이 늘 때 겹친다** (59세션 1절).
+
+    53세션은 표 자리만 실측(:func:`~kwise.report.slides._note_top`)으로 옮기고
+    **그림 덩어리 넷(4·5·6·7장)은 0.58in 고정** 그대로 두었다 — 그것이 두
+    줄어치라, 각주가 세 줄로 흐르면 그림 캡션 위로 0.24in 이 얹혔다.
+
+    실물에서는 지금 자료가 모두 한두 줄이라 보이지 않는다. **줄을 늘려 본다.**
+    """
+    from kwise.report import slides as slides_module
+
+    monkeypatch.setattr(
+        slides_module.narrative,
+        "glossary_note",
+        lambda *args, **kwargs: _LONG_NOTE,
+    )
+
+    guide = load_design_guide()
+    slack = guide.slide.text_slack
+    for index, slide in enumerate(build_slides(full_sections).slides, start=1):
+        note_top, others = _note_bands(slide)
+        if note_top == float("inf"):
+            continue
+        for top, bottom, text in others:
+            # 상자 높이에는 렌더러 여유(slack)가 얹혀 있다. 글이 실제로 차지하는
+            # 자리는 그만큼 위에서 끝난다.
+            real_bottom = top + (bottom - top) / (1.0 + slack)
+            assert real_bottom <= note_top + 0.01, (
+                f"{index}장 — 「{text[:24]}」({real_bottom:.2f}in)가 "
+                f"각주({note_top:.2f}in)를 덮습니다."
+            )
 
 
 def test_슬라이드_안에서_끝난다(full_sections: DocumentSections) -> None:
