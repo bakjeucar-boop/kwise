@@ -77,6 +77,7 @@ __all__ = [
     "AppendixPage",
     "SlideSpec",
     "agenda_items",
+    "appendix_chunks",
     "appendix_pages",
     "build_slides",
     "export_slides",
@@ -1741,9 +1742,12 @@ def _build_measure(
         top=stats_top,
         width=geometry.content_width_in,
     )
+    # **용어 풀이가 먼저다** (39세션 1-2 · 53세션 8-1). 표·지표를 읽는 데 바로
+    # 쓰이고, 미산출 사유는 그 아래에서 받는다.
+    terms_note = narrative.glossary_note(GLOSSARY_KEYS.get(spec.key, ()))
     note = _measure_note(entry)
     body = bottom + geometry.block_gap_in
-    height = _body_bottom(guide, note=bool(note)) - body - _BODY_TAIL
+    height = _body_bottom(guide, note=bool(note or terms_note)) - body - _BODY_TAIL
     drawings = entry.slide_figures
     crowded = False
     if entry.spec_table:
@@ -1756,12 +1760,12 @@ def _build_measure(
         crowded = bool(entry.slide_figures) and not drawings
     if drawings and height > _MIN_FIGURE_BLOCK:
         _measure_pictures(slide, guide, drawings, top=body, height=height)
-        _note(slide, guide, note)
+        _note(slide, guide, terms_note, note)
         return
     # **여지가 없는 수단은 그 사실을 숫자로 보인다** (39세션 4-2·4-3). 실행
     # 주의사항 대신 「왜 없는지」 를 세우는 자리다.
     if crowded:
-        _note(slide, guide, note)
+        _note(slide, guide, terms_note, note)
         return
     if not entry.actionable and entry.facts and not entry.facts_first:
         _stats(
@@ -1772,7 +1776,7 @@ def _build_measure(
             top=body + max(0.0, (height - 0.94) / 2),
             width=geometry.content_width_in,
         )
-        _note(slide, guide, note)
+        _note(slide, guide, terms_note, note)
         return
     rows = [["주의사항"], *[[line] for line in _cautions(entry)]]
     if len(rows) == 1:
@@ -1790,7 +1794,7 @@ def _build_measure(
         width=geometry.content_width_in,
         height=table_height,
     )
-    _note(slide, guide, note)
+    _note(slide, guide, terms_note, note)
 
 
 def _build_surplus(
@@ -1995,7 +1999,16 @@ def _build_combination(
 #:
 #: **열둘에서 열로 줄였다** (39세션 7절). 표 줄 높이는 PowerPoint 에서 최소값일
 #: 뿐이라 실제로는 더 벌어진다 — 열둘을 넣으면 마지막 줄이 각주에 닿았다.
-APPENDIX_ROW_LIMIT = 10
+#:
+#: **53세션에 열셋으로 늘렸다** (8-4). 해석 한 줄이 빠지면서(1-6) 0.5in 이 생겼다.
+#: ESS 부록이 열셋이라 두 장으로 갈려 **뒷장에 세 줄만** 있었다.
+APPENDIX_ROW_LIMIT = 13
+
+#: 부록 한 장이 가져야 할 **최소 줄 수** (53세션 8-4).
+#:
+#: 이보다 적게 남으면 앞장에 붙여 한 장으로 만든다 — 상한을 조금 넘겨도 세 줄
+#: 짜리 장을 만드는 것보다 낫다. **장이 넘칠 때 나누는 규칙의 하한**이다.
+APPENDIX_MIN_ROWS = 4
 
 
 @dataclass(frozen=True)
@@ -2028,15 +2041,51 @@ def appendix_pages(sections: DocumentSections) -> tuple[AppendixPage, ...]:
         records = [
             (str(value[0]), str(value[1]), str(value[2])) for value in sheet.frame().to_numpy()
         ]
-        chunks = [
-            records[start : start + APPENDIX_ROW_LIMIT]
-            for start in range(0, len(records), APPENDIX_ROW_LIMIT)
-        ] or [[]]
+        chunks = appendix_chunks(records)
         name = labels.get(sheet.key, sheet.title)
         for index, chunk in enumerate(chunks, start=1):
             suffix = f" ({index}/{len(chunks)})" if len(chunks) > 1 else ""
             pages.append(AppendixPage(f"{APPENDIX_SLIDE_TITLE} — {name}{suffix}", tuple(chunk)))
     return tuple(pages) or (AppendixPage(APPENDIX_SLIDE_TITLE, ()),)
+
+
+def _is_blank(record: tuple[str, str, str]) -> bool:
+    """빈 줄 — 근거 표에서 **묶음을 가르는 자리**다 (:func:`tariff_switch_worksheet`)."""
+    return not any(value.strip() for value in record)
+
+
+def appendix_chunks(
+    records: Sequence[tuple[str, str, str]],
+) -> list[list[tuple[str, str, str]]]:
+    """부록 줄을 장으로 나눈다 (53세션 8-2·8-4).
+
+    **먼저 묶음으로 가른다.** 선택요금 전환의 근거 표는 「현행 …」 과 「최적 …」
+    사이에 빈 줄을 하나 두는데, 그것을 무시하고 열 줄씩 자르면 **한 장 맨 아래에
+    다음 요금제가 걸쳐** 어디까지가 현행인지 알 수 없어진다.
+
+    그 다음에야 :data:`APPENDIX_ROW_LIMIT` 로 자른다. **자투리는 앞장에 붙인다**
+    — 세 줄짜리 장을 만드느니 상한을 조금 넘기는 편이 낫다
+    (:data:`APPENDIX_MIN_ROWS`).
+    """
+    sections: list[list[tuple[str, str, str]]] = [[]]
+    for record in records:
+        if _is_blank(record):
+            if sections[-1]:
+                sections.append([])
+            continue
+        sections[-1].append(record)
+    chunks: list[list[tuple[str, str, str]]] = []
+    for section in sections:
+        if not section:
+            continue
+        for start in range(0, len(section), APPENDIX_ROW_LIMIT):
+            chunks.append(list(section[start : start + APPENDIX_ROW_LIMIT]))
+        # **꼬리가 짧으면 앞에 붙인다.** 묶음 안에서만 붙인다 — 묶음을 가른
+        # 까닭이 그 경계를 지키기 위해서다.
+        if len(chunks) > 1 and 0 < len(chunks[-1]) < APPENDIX_MIN_ROWS:
+            tail = chunks.pop()
+            chunks[-1].extend(tail)
+    return chunks or [[]]
 
 
 def _build_appendix(

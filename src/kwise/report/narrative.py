@@ -219,6 +219,27 @@ def terms(pattern: LoadPattern | None = None) -> dict[str, Term]:
             "요금표만으로 정해지면 높고, 설비·운영에 달렸으면 낮습니다.",
             "산출 근거가 얼마나 확정적인지",
         ),
+        # 역률 장의 용어 셋 (53세션 8-1). **화면 툴팁에서 왔다** —
+        # ``chart.power_triangle`` 이 유효·무효전력을 설명하고 있었는데,
+        # 슬라이드에는 그 물음표를 달 자리가 없어 각주로 깐다.
+        "lagging_pf": Term(
+            "지상역률",
+            "유효전력 ÷ 피상전력. 무효전력이 뒤진(지상) 상태에서 잰 값입니다.",
+            "기준 92%를 넘으면 감액, 못 미치면 기본요금에 추가요금이 붙습니다.",
+            "유효전력 ÷ 피상전력",
+        ),
+        "reactive_power": Term(
+            "무효전력",
+            "일을 하지 않고 계통과 설비 사이를 오가는 전력 (kVar).",
+            "많을수록 역률이 낮아져 기본요금에 추가요금이 붙습니다.",
+            "일을 하지 않고 계통을 오가는 전력",
+        ),
+        "active_power": Term(
+            "유효전력",
+            "실제로 일을 하는 전력 (kW). 요금을 매기는 것은 이쪽입니다.",
+            "역률은 이 값이 피상전력에서 차지하는 몫입니다.",
+            "실제로 일을 하는 전력",
+        ),
         "payback": Term(
             "회수기간",
             "투자비 ÷ 연간 절감액.",
@@ -252,6 +273,17 @@ GLOSSARY_KEYS: dict[str, tuple[str, ...]] = {
     "measure_summary": ("payback",),
     "combination": (),
     "appendix": (),
+    # **수단 장에도 깐다** (53세션 8-1). 39세션은 진단 장에만 깔아 두어, 역률
+    # 장이 「지상역률」 을 세 번 말하면서 그것이 무엇인지는 어디에도 없었다.
+    #
+    # **없는 장이 셋이다.** 각각 이유가 있다 —
+    #     선택요금 전환   기본요금·전력량요금은 7장이 이미 깐다
+    #     ESS            표식의 뜻이 표 아래 그 자리를 쓴다 (4-13)
+    #     잉여 활용       각주가 이미 제도 요건 세 문장이다
+    "measure_contract": ("billing_demand",),
+    "measure_demand_response": ("low_load_day",),
+    "measure_power_factor": ("lagging_pf", "reactive_power", "active_power"),
+    "measure_solar": ("self_consumption", "surplus"),
 }
 
 

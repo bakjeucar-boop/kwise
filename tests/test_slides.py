@@ -795,8 +795,10 @@ def test_용어_각주가_그_장의_용어만_깐다(full_sections: DocumentSec
 
     deck = build_slides(full_sections)
     table = narrative.terms()
+    present = {spec.key for spec in slide_specs(full_sections)}
     for key, chosen in narrative.GLOSSARY_KEYS.items():
-        if not chosen:
+        # 수단 장은 켠 것만 선다 (53세션 8-1 에 수단 장에도 용어를 깔았다).
+        if not chosen or key not in present:
             continue
         text = _slide_text(_slide_by_key(deck, full_sections, key))
         for term in chosen:
@@ -1154,7 +1156,13 @@ def test_부록이_넘치면_장을_나눈다(full_sections: DocumentSections) -
     pages = appendix_pages(sections)
     assert len(many.frame()) > APPENDIX_ROW_LIMIT
     assert len(pages) > 1, "넘치면 장을 나눈다."
-    assert sum(len(page.rows) for page in pages) == len(many.frame()), "한 줄도 버리지 않는다."
+    # **빈 줄은 묶음을 가르는 자리다** (53세션 8-2) — 내용이 아니라 경계라
+    # 장에는 싣지 않는다. 그 밖의 줄은 한 줄도 버리지 않는다.
+    records = [
+        tuple(str(value) for value in row) for row in many.frame().to_numpy()
+    ]
+    kept = [record for record in records if any(value.strip() for value in record)]
+    assert sum(len(page.rows) for page in pages) == len(kept), "한 줄도 버리지 않는다."
     assert all("(" in page.title for page in pages), "이어지는 장임을 제목이 밝힌다."
     text = _deck_text(build_slides(sections))
     assert "자리가 모자라" not in text, "제작 사정을 고객에게 말하지 않는다."
@@ -2149,3 +2157,94 @@ def test_기온_그림은_범례가_아래다() -> None:
     assert 'bbox_to_anchor=(0.5, -0.28)' in body, "범례가 아래로 내려가 있지 않습니다."
     assert "labelpad=8" in body, "기온 축 이름이 눈금에 붙어 있습니다."
     assert _Path(SRC_ROOT).is_dir()
+
+
+# ===================================================================== 53세션 · 8절 각주와 부록
+
+
+def test_역률_장에_용어_각주가_있다(
+    sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult,
+    full_sections: DocumentSections,
+) -> None:
+    """**「지상역률」 을 세 번 말하면서 그것이 무엇인지는 없었다** (53세션 8-1)."""
+    import dataclasses
+
+    from kwise.measures import evaluate_power_factor
+    from kwise.report.document import measure_entries
+    from kwise.report.narrative import GLOSSARY_KEYS, terms
+    from kwise.tariff import TariffSelection
+
+    result = evaluate_power_factor(
+        sample_usage,
+        tariff,
+        TariffSelection("general_b", "high_a", "I"),
+        current_pct=92.0,
+        target_pct=97.0,
+        baseline=sample_bill,
+    )
+    entry = next(
+        item for item in measure_entries(power_factor=result) if item.kind.key == "power_factor"
+    )
+    sections = dataclasses.replace(full_sections, measures=(entry,))
+    text = _slide_text(
+        _slide_by_key(build_slides(sections), sections, "measure_power_factor")
+    )
+    table = terms()
+    for key in GLOSSARY_KEYS["measure_power_factor"]:
+        assert f"{table[key].name} = " in text, key
+    assert "지상역률" in text and "무효전력" in text and "유효전력" in text
+
+
+def test_용어_각주가_없는_수단_장에는_까닭이_있다() -> None:
+    """**전수 확인** (53세션 8-1). 빠진 셋은 그 자리를 다른 것이 쓰고 있다."""
+    from kwise.measures import MEASURE_CATALOG
+    from kwise.report.narrative import GLOSSARY_KEYS
+
+    covered = {key for key in GLOSSARY_KEYS if key.startswith("measure_")}
+    missing = {f"measure_{kind.key}" for kind in MEASURE_CATALOG} - covered
+    assert missing == {"measure_tariff_switch", "measure_ess"}, missing
+    source = (SRC_ROOT / "report" / "narrative.py").read_text(encoding="utf-8")
+    assert "선택요금 전환   기본요금·전력량요금은 7장이 이미 깐다" in source
+    assert "ESS            표식의 뜻이 표 아래 그 자리를 쓴다" in source
+
+
+def test_부록이_현행과_최적을_장으로_가른다() -> None:
+    """**한 장 맨 아래에 다음 요금제가 걸쳐 있었다** (53세션 8-2)."""
+    from kwise.report.slides import APPENDIX_MIN_ROWS, appendix_chunks
+
+    records = [(f"현행 {index}", "", "") for index in range(6)]
+    records.append(("", "", ""))
+    records += [(f"최적 {index}", "", "") for index in range(6)]
+    chunks = appendix_chunks(records)
+    assert len(chunks) == 2, chunks
+    assert all(row[0].startswith("현행") for row in chunks[0])
+    assert all(row[0].startswith("최적") for row in chunks[1])
+    # **빈 줄은 싣지 않는다** — 묶음을 가르는 자리이지 내용이 아니다.
+    assert not any(not any(v.strip() for v in row) for chunk in chunks for row in chunk)
+
+    # **꼬리가 짧으면 앞장에 붙인다** — 세 줄짜리 장을 만들지 않는다.
+    long = [(f"줄 {index}", "", "") for index in range(APPENDIX_ROW_LIMIT + 2)]
+    merged = appendix_chunks(long)
+    assert len(merged) == 1, [len(chunk) for chunk in merged]
+    assert len(merged[0]) == APPENDIX_ROW_LIMIT + 2
+    assert APPENDIX_MIN_ROWS > 2
+
+
+def test_ESS_부록이_한_장이다(full_sections: DocumentSections) -> None:
+    """**뒷장에 세 줄만 있었다** (53세션 8-4). 1-6 으로 자리가 생겼다."""
+    import dataclasses
+
+    from kwise.report.slides import APPENDIX_ROW_LIMIT, appendix_chunks
+    from kwise.report.worksheet import Worksheet
+
+    assert APPENDIX_ROW_LIMIT >= 13, "ESS 근거는 열셋이다."
+    rows = [(f"줄 {index}", "", "") for index in range(13)]
+    assert len(appendix_chunks(rows)) == 1
+
+    # 제목이 **무엇의 근거인지** 밝힌다 (8-3).
+    sheet = full_sections.worksheets[0]
+    sections = dataclasses.replace(
+        full_sections, worksheets=(Worksheet(sheet.key, sheet.title, sheet.rows),)
+    )
+    titles = [page.title for page in appendix_pages(sections)]
+    assert all(" — " in title for title in titles), titles
