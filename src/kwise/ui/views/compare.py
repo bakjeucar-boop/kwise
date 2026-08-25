@@ -122,6 +122,7 @@ from kwise.ui.state import (
     reference_day,
     session_id,
     set_combination_pick,
+    surplus_prices,
 )
 from kwise.ui.views.measures import chosen_surplus_revenue
 
@@ -595,6 +596,7 @@ def _chosen_surplus(
     """
     if unit_profile is None or capacity_kwp <= 0:
         return "", None
+    external, smp = surplus_prices()
     return chosen_surplus_revenue(
         cached_surplus(
             usage,
@@ -603,9 +605,9 @@ def _chosen_surplus(
             usage_token(usage),
             form,
             capacity_kwp,
-            measure_float("solar", "surplus_price"),
+            external,
             rules_stamp(),
-            measure_float("solar", "smp_price"),
+            smp,
         )
     )
 
@@ -965,6 +967,7 @@ def _measure_results(
     if "solar" in enabled and inputs is not None and unit_profile is not None:
         capacity = inputs.resolved_capacity_kwp()
         if capacity > 0:
+            external, smp = surplus_prices()
             surplus = cached_surplus(
                 usage,
                 table,
@@ -972,9 +975,9 @@ def _measure_results(
                 token,
                 form,
                 capacity,
-                measure_float("solar", "surplus_price"),
+                external,
                 stamp,
-                measure_float("solar", "smp_price"),
+                smp,
             )
 
     # 보고서 차트 재료. **화면과 같은 대표일·같은 프로파일을 넘긴다** (15세션 2절).

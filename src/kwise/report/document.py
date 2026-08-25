@@ -529,9 +529,13 @@ def _solar_conclusion(
 SURPLUS_SCENARIO_HEADER: tuple[str, ...] = ("활용 방안", "연 수익", "비고")
 
 #: 잉여 활용 장의 각주. **자격요건을 판정하지 않는다는 것을 밝힌다.**
+#
+# **「외부 판매는 단가를 입력해야 산출됩니다」 를 뺐다** (58세션). 단가에
+# 기본값이 생겨 그 문장이 늘 참이 아니게 됐고, 비웠을 때는 표의 비고가
+# 「판매 단가를 넣으면 산출됩니다」 로 그 자리에서 말한다. 자리에 들어가는
+# 것은 :meth:`SurplusResult.applied_price_note` — **무슨 단가로 산출했는가**다.
 SURPLUS_PAGE_NOTE = (
     "상계거래는 계약 변경과 역송 계량기가 필요합니다. "
-    "외부 판매는 단가를 입력해야 산출됩니다. "
     "제도별 자격요건은 판정하지 않았습니다 — 금액만 참고하십시오."
 )
 
@@ -627,7 +631,9 @@ def surplus_page(
         ),
         facts=tuple(facts),
         scenario_rows=tuple(rows),
-        note=SURPLUS_PAGE_NOTE,
+        # **적용 단가를 표 아래에 적는다** (58세션). 화면 캡션·Excel 참고사항·
+        # Word 부록이 쓰는 것과 **같은 문장**이다 — 값은 실제 적용 단가에서 온다.
+        note=" ".join(part for part in (SURPLUS_PAGE_NOTE, surplus.applied_price_note) if part),
         figure=figure,
         figure_caption=_SURPLUS_DAILY_CAPTION,
     )

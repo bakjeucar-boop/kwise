@@ -168,6 +168,7 @@ from kwise.measures.solar import (
     with_surplus_revenue,
 )
 from kwise.measures.surplus import (
+    APPLIED_PRICE_TAIL,
     CURTAIL_SCENARIO,
     ELIGIBILITY_NOTICE,
     EXTERNAL_SCENARIO,
@@ -176,6 +177,9 @@ from kwise.measures.surplus import (
     OffsetSettlement,
     SurplusResult,
     SurplusScenario,
+    applied_price_note,
+    default_external_price_won_per_kwh,
+    default_smp_price_won_per_kwh,
     evaluate_surplus,
     offset_carry_only_max_kw,
     offset_max_kw,
@@ -189,6 +193,7 @@ from kwise.measures.tariff_switch import (
 )
 
 __all__ = [
+    "APPLIED_PRICE_TAIL",
     "AREA_EXCEEDED",
     "BASE_FEE_UNCHANGED",
     "BELOW_MINIMUM_CONCLUSION",
@@ -265,6 +270,7 @@ __all__ = [
     "TariffSwitchResult",
     "analyze_peak_excess",
     "annualize",
+    "applied_price_note",
     "apply_generation",
     "arbitrage_value",
     "band_labels",
@@ -272,8 +278,10 @@ __all__ = [
     "capacity_verdict",
     "default_cycles_per_day",
     "default_dod",
+    "default_external_price_won_per_kwh",
     "default_payback_target_years",
     "default_round_trip",
+    "default_smp_price_won_per_kwh",
     "default_target_pct",
     "dispatch_peak_shaving",
     "ess_payback_curve",

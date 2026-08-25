@@ -15,6 +15,10 @@ import streamlit as st
 
 from kwise.io import UsageData
 from kwise.measures import PRICING_FORMULA
+from kwise.measures.surplus import (
+    default_external_price_won_per_kwh,
+    default_smp_price_won_per_kwh,
+)
 from kwise.report.days import MAX_DEMAND_KEY, RepresentativeDay, find_day
 from kwise.ui.pipeline import ContractForm, SolarInputs
 from kwise.ui.spec import MEASURES
@@ -31,12 +35,14 @@ __all__ = [
     "get_solar_inputs",
     "input_key",
     "measure_float",
+    "measure_price",
     "reference_day",
     "session_id",
     "set_combination_pick",
     "set_form",
     "set_solar_inputs",
     "store_upload",
+    "surplus_prices",
     "toggle_key",
     "upload",
 ]
@@ -151,6 +157,36 @@ def measure_float(measure_key: str, field: str) -> float | None:
         return None
     number = float(value)
     return number if number else None
+
+
+def measure_price(measure_key: str, field: str, default: float) -> float | None:
+    """단가 입력 하나. **아직 손대지 않았으면 기준 데이터 기본값이다** (58세션).
+
+    ``measure_float`` 와 갈라지는 자리는 하나다 — **위젯을 아직 그리지 않은
+    상태**. 잉여 처리에서 상계거래를 고르면 외부 판매 단가 칸이 그려지지 않는데,
+    그렇다고 외부 판매를 「미산출」 로 둘 이유가 없다. 시나리오 표는 고르지 않은
+    쪽도 함께 보이는 자리이므로 그 줄이 비면 비교가 안 된다.
+
+    **사용자가 비우면(0) 미산출로 돌아간다** — 세션에 키가 있으면
+    :func:`measure_float` 그대로다. 지어낸 단가로 금액을 내지 않겠다는 규약은
+    바뀌지 않았고, 바뀐 것은 「기본값이 어디서 오는가」 뿐이다.
+    """
+    if input_key(measure_key, field) not in st.session_state:
+        return default
+    return measure_float(measure_key, field)
+
+
+def surplus_prices() -> tuple[float | None, float | None]:
+    """잉여 단가 둘 — ``(외부 판매, 상계 SMP)``.
+
+    **세 자리가 이 함수를 부른다** (58세션) — 태양광 카드·조합 비교·산출물 재료.
+    따로 읽으면 한 자리만 기본값을 갖게 되고, 그러면 화면과 보고서가 다른 금액을
+    말한다.
+    """
+    return (
+        measure_price("solar", "surplus_price", default_external_price_won_per_kwh()),
+        measure_price("solar", "smp_price", default_smp_price_won_per_kwh()),
+    )
 
 
 def reference_day(usage: UsageData) -> RepresentativeDay | None:

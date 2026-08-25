@@ -366,6 +366,14 @@ reference/          기존 pv_peak_cut 코드. **읽기 전용**</code></pre></d
 <p><strong>3단계 합산효과에도 들어간다</strong> (<code>CombinationSpec.surplus_revenue_won</code>). 14세션은 「경제성DR·잉여 활용은 합산효과에 넣지 않는다」 고 정했는데, 그것은 잉여가 <strong>독립 개선안(7.7)</strong> 이던 시절의 결정이다 — 41세션에 전제가 사라졌다. <strong>차익거래는 계속 뺀다</strong>: 그날 피크에 쓸 몫을 남기는 운전 규칙이 없어 매 평일 한 사이클은 상한이지 예상값이 아니다.</p>
 <p><strong>기본요금은 바뀌지 않는다.</strong> 잉여는 부하가 낮은 시각에 나므로 요금적용전력과 무관하고, 태양광이 피크를 낮춘 효과는 이미 7.5 의 절감액에 들어 있다. 전력량요금만 다시 계산한다.</p>
 <p><strong>단가를 지어내지 않는다.</strong> SMP 단가가 없으면 잔여 kWh 만 내고 금액은 「미산출」, 잉여 판매 단가가 없으면 외부 판매 금액을 내지 않는다. SMP 단가는 하나로 적용하며 기간 길이를 구분하지 않는다. <strong>자격요건은 판정하지 않는다.</strong></p>
+<p><strong>단가에 기본값이 있다</strong> (58세션 · <code>assumptions.json</code>).</p>
+<p>surplus.offset.smp_price_won_per_kwh     120.0   판단값 surplus.external.price_won_per_kwh       140.0   판단값</p>
+<p><strong>법령 유래가 아니므로 <code>rules_kr.json</code> 에 두지 않는다.</strong> 시장 통용 수준의 참고값이고, 기준 데이터 화면에서 [판단] 배지로 고친다 — 화면에 손으로 배선한 칸이 아니라 <code>describe_items()</code> 가 내는 줄이다. <strong>출고층(<code>data\defaults</code>)에도 함께 넣는다</strong> (57세션에 판단값 11건이 빠져 「출고값 복원」 이 앱을 죽인 자리다).</p>
+<p>읽는 자리는 하나다 — <code>ui.state.surplus_prices()</code>. 태양광 카드·조합 비교·산출물 재료가 이 함수를 부른다. 세션에 위젯 값이 <strong>없으면</strong> 기준 데이터 기본값이고, <strong>있으면</strong> <code>measure_float</code> 그대로다 (0 → <code>None</code> → 미산출). 위젯을 아직 그리지 않은 상태를 가르는 것이 <code>measure_price</code> 의 존재 이유다 — 상계거래를 고르면 외부 판매 단가 칸이 안 그려지는데 그렇다고 그 시나리오를 미산출로 둘 이유가 없다.</p>
+<p><strong>적용 단가를 산출물에 적는다.</strong> <code>SurplusResult.applied_price_note</code> 하나가 문장을 짓고 넷이 그것을 쓴다.</p>
+<div class="table-wrap"><table><thead><tr><th>자리</th><th>어떻게</th></tr></thead><tbody><tr><td>화면</td><td>잉여 처리 절의 캡션 (툴팁에서는 뺀다 — 같은 문장이 한 절에 두 번 서지 않게)</td></tr><tr><td>PPT</td><td><code>SurplusPage.note</code> 에 이어 붙는다. <code>slides.py</code> 는 고치지 않았다</td></tr><tr><td>Excel</td><td>「수단별 결과」 의 <code>└ 잉여</code> 줄 비고</td></tr><tr><td>Word</td><td>부록 A 태양광 계산 근거 (<code>basis</code> 등급 안내 <code>surplus.applied_price</code>)</td></tr></tbody></table></div>
+<p><strong>적용하지 않은 단가는 문장에서 빠진다.</strong> 현금 정산 구간이 아니면 SMP 단가가 <code>None</code> 이라 그 조각이 서지 않고, <strong>잉여가 0 이면 문장 자체가 없다.</strong></p>
+<p><code>SURPLUS_PAGE_NOTE</code> 에서 「외부 판매는 단가를 입력해야 산출됩니다」 를 뺐다 — 기본값이 생겨 늘 참이 아니고, 비웠을 때는 시나리오 표의 비고가 그 자리에서 말한다.</p>
 <p><strong>일별 잉여 그림은 화면에만 있다</strong> (41세션). 수단 장은 그림 둘까지이고(38세션 3절 — 셋을 넣으면 축 눈금이 뭉개진다) 태양광 장은 연간 발전량과 대표일 곡선이 그 둘을 이미 쓴다. 보고서에는 잉여량·자가소비량과 시나리오 한 줄이 7.5 장에 녹아 들어간다.</p>
 <h3 id="tech-combination">4.4 조합 재계산 — 왜 단순 합이 아닌가</h3>
 <p><strong>수단별 절감액을 더하면 틀린다.</strong> 수단이 서로의 전제를 바꾸기 때문이다.</p>

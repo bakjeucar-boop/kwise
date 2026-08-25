@@ -1718,6 +1718,48 @@ def test_잉여_장에_기준선이_없다(full_sections: DocumentSections) -> N
     assert "자격요건은 판정하지 않았습니다" in text
 
 
+def test_잉여_장이_적용_단가를_밝힌다(full_sections: DocumentSections) -> None:
+    """**표 아래에 무슨 단가로 산출했는지 적는다** (58세션 2절).
+
+    단가에 기본값이 생겨 「미산출」 이 사라졌다. 금액이 늘 나오면 어느 단가로
+    나온 것인지를 함께 적지 않고는 읽는 사람이 참고값을 확정값으로 본다.
+    **숫자를 박지 않는다** — 사용자가 고친 값이 그대로 실린다.
+    """
+    import dataclasses
+
+    from kwise.measures.surplus import (
+        EXTERNAL_SCENARIO,
+        OFFSET_SCENARIO,
+        SurplusScenario,
+    )
+    from kwise.report.document import surplus_page
+
+    base = _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0)
+    priced = dataclasses.replace(
+        base,  # type: ignore[type-var]
+        external_price_won_per_kwh=140.0,
+        scenarios=(
+            SurplusScenario(OFFSET_SCENARIO, 2_545_000.0, "상계", "계약 변경"),
+            SurplusScenario(EXTERNAL_SCENARIO, 3_267_824.0, "외부", "구매자 발굴"),
+            base.scenarios[2],  # type: ignore[attr-defined]
+        ),
+    )
+    page = surplus_page(priced, capacity_kwp=160.0, surplus_free_kwp=40.0)
+    assert page is not None
+    assert "외부 판매 140원/kWh" in page.note
+    assert "참고용입니다" in page.note
+    # **단가가 없으면 그 문장도 없다** — 지어낸 단가를 밝히지 않는다.
+    plain = surplus_page(base, capacity_kwp=160.0, surplus_free_kwp=40.0)  # type: ignore[arg-type]
+    assert plain is not None
+    assert "원/kWh" not in plain.note
+
+    sections = dataclasses.replace(
+        full_sections, measures=_all_measures(full_sections), surplus=page
+    )
+    text = _slide_text(_slide_by_key(build_slides(sections), sections, "surplus"))
+    assert "외부 판매 140원/kWh" in text
+
+
 # ===================================================================== 53세션 · 4절 갈래
 
 

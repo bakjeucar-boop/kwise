@@ -39,6 +39,8 @@ from kwise.measures import (
     SurplusResult,
     annualize,
     apply_generation,
+    default_external_price_won_per_kwh,
+    default_smp_price_won_per_kwh,
     default_target_pct,
     evaluate_demand_response,
     high_rate_discharge_hours,
@@ -93,8 +95,8 @@ from kwise.ui.state import (
     ess_pricing,
     get_solar_inputs,
     input_key,
-    measure_float,
     set_solar_inputs,
+    surplus_prices,
     toggle_key,
 )
 
@@ -1160,6 +1162,7 @@ def _surplus_result(
     point: SolarPoint,
 ) -> SurplusResult:
     """잉여 계산 한 벌. **세 자리가 같은 인자로 부른다** — 기억에 걸린다."""
+    external, smp = surplus_prices()
     return cached_surplus(
         usage,
         table,
@@ -1167,9 +1170,9 @@ def _surplus_result(
         usage_token(usage),
         form,
         point.capacity_kwp,
-        measure_float("solar", "surplus_price"),
+        external,
         rules_stamp(),
-        measure_float("solar", "smp_price"),
+        smp,
     )
 
 
@@ -1275,23 +1278,24 @@ def _surplus_handling(
         # **단가는 위젯 키에만 둔다** (48세션). :func:`_surplus_result` 가 세션에서
         # 읽으므로 여기서 값을 받아 넘기지 않는다 — 옮겨 적으면 카드 위 절감액과
         # 이 접힘 안의 수익이 한 실행 어긋난다 (`_off_day_picker` 와 같은 이유).
+        # **기본값은 기준 데이터에서 온다** (58세션). 비우면 「미산출」 로 돌아간다.
         if choice == EXTERNAL_SCENARIO:
             st.number_input(
                 "잉여 판매 단가 (원/kWh) — 0 이면 미산출",
                 min_value=0.0,
-                value=0.0,
+                value=default_external_price_won_per_kwh(),
                 step=1.0,
                 key=input_key("solar", "surplus_price"),
-                help="우리가 파는 쪽의 단가입니다. 넣지 않으면 금액을 산출하지 않습니다.",
+                help="우리가 파는 쪽의 단가입니다. 비우면 금액을 산출하지 않습니다.",
             )
         elif choice == OFFSET_SCENARIO and offset_settles_cash(point.capacity_kwp):
             st.number_input(
                 "SMP 단가 (원/kWh) — 0 이면 미산출",
                 min_value=0.0,
-                value=0.0,
+                value=default_smp_price_won_per_kwh(),
                 step=1.0,
                 key=input_key("solar", "smp_price"),
-                help="당월 차감하고 남은 몫을 정산하는 단가입니다. 넣지 않으면 잔여량만 냅니다.",
+                help="당월 차감하고 남은 몫을 정산하는 단가입니다. 비우면 잔여량만 냅니다.",
             )
         result = _surplus_result(usage, table, form, unit_profile, point)
         scenario = result.scenario(choice)
@@ -1312,6 +1316,12 @@ def _surplus_handling(
             if revenue is not None
             else fmt.won(revenue, reason=scenario.basis)
         )
+        # **어느 단가로 나온 금액인가** (58세션). 기본값이 생겨 「미산출」 이
+        # 사라졌으므로 이 줄이 없으면 참고값이 확정값으로 읽힌다. 문구는
+        # :meth:`SurplusResult.applied_price_note` 하나이고 PPT·Excel·Word 가
+        # 같은 것을 쓴다.
+        if result.applied_price_note:
+            st.caption(fmt.markdown_safe(result.applied_price_note))
         # **잉여가 주말에 몰리는지**가 보여야 한다 (15세션 2-6). 7.7 카드가 지고
         # 있던 그림인데, 41세션에 카드를 없애면서 여기로 옮겼다 — 무엇을 팔지
         # 정하는 자리라 오히려 제자리다. 접힘 안이므로 본문 예산에 들지 않는다.
@@ -1319,7 +1329,9 @@ def _surplus_handling(
         st.altair_chart(charts.surplus_daily_chart(usage, surplus_kw), width="stretch")
         st.caption("날짜별 잉여", help=fmt.chart_tip("chart.surplus_daily"))
         _surplus_carry(result)
-        _notices(result.notices)
+        # **적용 단가는 바로 위 캡션이 이미 냈다.** 툴팁에도 넣으면 같은 문장이
+        # 한 절에 두 번 선다 — 20세션이 사실 ID 로 접기 시작한 그 병이다.
+        _notices(tuple(item for item in result.notices if item.fact != "surplus.applied_price"))
 
 
 def _surplus_carry(result: SurplusResult) -> None:

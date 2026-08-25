@@ -56,6 +56,7 @@ from kwise.tariff import (
 )
 
 __all__ = [
+    "APPLIED_PRICE_TAIL",
     "CURTAIL_SCENARIO",
     "ELIGIBILITY_NOTICE",
     "EXTERNAL_SCENARIO",
@@ -64,6 +65,9 @@ __all__ = [
     "OffsetSettlement",
     "SurplusResult",
     "SurplusScenario",
+    "applied_price_note",
+    "default_external_price_won_per_kwh",
+    "default_smp_price_won_per_kwh",
     "evaluate_surplus",
     "offset_carry_only_max_kw",
     "offset_max_kw",
@@ -99,6 +103,52 @@ _ADMIN_NOTES = {
     EXTERNAL_SCENARIO: "구매자 발굴·계약, 정산 대행, 계량·인증 관리가 필요하다.",
     CURTAIL_SCENARIO: "없다.",
 }
+
+
+#: 적용 단가 문구의 꼬리. **화면·PPT·Excel·Word 가 이 한 문장을 함께 쓴다** (58세션).
+APPLIED_PRICE_TAIL = "실제 단가는 시장 상황과 계약 조건에 따라 달라지므로 참고용입니다."
+
+
+def default_external_price_won_per_kwh() -> float:
+    """외부 판매 단가 기본값. **기준 데이터에서 읽는다** (58세션).
+
+    코드에 박지 않는다 — 기준 데이터 화면에서 [판단] 으로 고칠 수 있어야 한다.
+    """
+    return float(assumption("surplus.external.price_won_per_kwh"))
+
+
+def default_smp_price_won_per_kwh() -> float:
+    """상계 잔여 정산(SMP) 단가 기본값. **기준 데이터에서 읽는다** (58세션)."""
+    return float(assumption("surplus.offset.smp_price_won_per_kwh"))
+
+
+def _price_text(value: float) -> str:
+    """단가 한 개. 정수면 소수점을 달지 않는다."""
+    return f"{value:,.0f}원/kWh" if float(value).is_integer() else f"{value:,.1f}원/kWh"
+
+
+def applied_price_note(
+    *,
+    smp_price_won_per_kwh: float | None = None,
+    external_price_won_per_kwh: float | None = None,
+) -> str:
+    """**무슨 단가로 산출했는지** 한 줄 (58세션).
+
+    58세션에 기본값이 생기면서 「미산출」 이 사라졌다. 금액이 늘 나오면 **어느
+    단가로 나온 것인지**를 함께 적지 않고는 읽는 사람이 그 수를 확정값으로 본다.
+
+    **숫자를 박지 않는다.** 사용자가 기준 데이터나 입력칸에서 단가를 고치면 그
+    값이 그대로 적힌다. 적용하지 않은 단가는 문장에서 빠진다 — 상계 잔여를
+    현금으로 정산하지 않는 구간이면 SMP 단가는 쓰이지 않는다.
+    """
+    parts: list[str] = []
+    if smp_price_won_per_kwh is not None:
+        parts.append(f"상계거래 SMP {_price_text(smp_price_won_per_kwh)}")
+    if external_price_won_per_kwh is not None:
+        parts.append(f"외부 판매 {_price_text(external_price_won_per_kwh)}")
+    if not parts:
+        return ""
+    return f"※ {', '.join(parts)} 로 산출했습니다. {APPLIED_PRICE_TAIL}"
 
 
 def offset_carry_only_max_kw() -> float:
@@ -278,6 +328,27 @@ class SurplusResult:
     offset: OffsetSettlement | None = None
     """상계 정산. **상계를 쓸 수 없는 구간(1,000 kW 초과)이면 ``None`` 이다.**"""
     notices: tuple[Notice, ...] = field(default=())
+    external_price_won_per_kwh: float | None = None
+    """외부 판매에 적용한 단가. **없으면 그 시나리오가 미산출이다.**"""
+
+    @property
+    def applied_price_note(self) -> str:
+        """적용 단가 한 줄. **네 산출물이 이 한 곳에서 읽는다** (58세션).
+
+        상계 잔여 정산 단가는 :class:`OffsetSettlement` 이 이미 「적용했는가」 를
+        가려 두었다 — 현금 정산 구간이 아니면 ``None`` 이다.
+
+        **잉여가 없으면 빈 문자열이다.** 팔 것이 없는데 단가를 밝히면 없는
+        절이 생긴다 (41세션 2-2 와 같은 규약).
+        """
+        if self.total_kwh <= 0:
+            return ""
+        return applied_price_note(
+            smp_price_won_per_kwh=(
+                self.offset.smp_price_won_per_kwh if self.offset is not None else None
+            ),
+            external_price_won_per_kwh=self.external_price_won_per_kwh,
+        )
 
     @property
     def off_day_share(self) -> float | None:
@@ -467,6 +538,16 @@ def evaluate_surplus(
                     fact="surplus.offset_basis",
                 )
             )
+        # **어느 단가로 산출했는지 적는다** (58세션). 기본값이 생겨 「미산출」 이
+        # 사라졌으므로, 이 줄이 없으면 참고값이 확정값으로 읽힌다.
+        price_note = applied_price_note(
+            smp_price_won_per_kwh=(
+                settlement.smp_price_won_per_kwh if settlement is not None else None
+            ),
+            external_price_won_per_kwh=external_price_won_per_kwh,
+        )
+        if price_note:
+            notices.append(basis(price_note, fact="surplus.applied_price"))
     return SurplusResult(
         total_kwh=total_kwh,
         generation_kwh=generation_kwh,
@@ -478,6 +559,7 @@ def evaluate_surplus(
         scenarios=tuple(scenarios),
         offset=settlement,
         notices=tuple(notices),
+        external_price_won_per_kwh=external_price_won_per_kwh,
     )
 
 

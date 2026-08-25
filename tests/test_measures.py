@@ -1229,3 +1229,124 @@ def test_태양광이_없으면_잉여도_더하지_않는다(
     )
     assert result.surplus_revenue_won == 0.0
     assert result.saving_won == pytest.approx(0.0)
+
+
+# ===================================================================== 58세션 · 잉여 단가 기본값
+
+
+def test_잉여_단가_기본값이_기준_데이터에서_온다(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**코드에 박지 않는다** (58세션 1-1).
+
+    박아 두면 기준 데이터 화면에서 고칠 수 없고, 「이 숫자를 누가 정했나」 를
+    되물을 곳이 사라진다. 파일을 갈아 끼우면 함수가 그 값을 낸다.
+    """
+    import json
+    import shutil
+
+    from kwise.measures import (
+        default_external_price_won_per_kwh,
+        default_smp_price_won_per_kwh,
+    )
+    from kwise.rules import reload_rules
+
+    assert default_external_price_won_per_kwh() == 140.0
+    assert default_smp_price_won_per_kwh() == 120.0
+
+    data = Path("data")
+    root = tmp_path / "data"
+    (root / "defaults").mkdir(parents=True)
+    for name in ("rules_kr.json", "assumptions.json"):
+        shutil.copy2(data / name, root / name)
+        shutil.copy2(data / "defaults" / name, root / "defaults" / name)
+    payload = json.loads((root / "assumptions.json").read_text(encoding="utf-8"))
+    payload["items"]["surplus.external.price_won_per_kwh"]["value"] = 111.0
+    payload["items"]["surplus.offset.smp_price_won_per_kwh"]["value"] = 99.0
+    (root / "assumptions.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    monkeypatch.setenv("KWISE_TARIFF_DIR", str(root))
+    reload_rules()
+    try:
+        assert default_external_price_won_per_kwh() == 111.0
+        assert default_smp_price_won_per_kwh() == 99.0
+    finally:
+        reload_rules()
+
+
+def test_잉여_단가가_출고층에도_있다() -> None:
+    r"""**출고 복원이 앱을 죽이면 안 된다** (57세션 3절이 겪은 일).
+
+    판단값 11건이 ``data\defaults`` 에 없어 「출고값 복원」 을 누르면 항목이
+    사라졌다. 새로 더한 단가 둘도 양쪽에 있어야 한다.
+    """
+    from kwise.rules import RuleOrigin, assumptions, load_defaults
+
+    keys = ("surplus.external.price_won_per_kwh", "surplus.offset.smp_price_won_per_kwh")
+    current = assumptions()
+    factory = load_defaults(RuleOrigin.JUDGEMENT)
+    for key in keys:
+        assert key in current.item_keys(), key
+        assert key in factory.item_keys(), f"출고층에 없습니다: {key}"
+        # **판단값이다.** 법령 유래가 아니므로 rules_kr.json 에 두지 않는다.
+        assert current[key].source == "판단값"
+        assert current[key].value == factory[key].value
+
+
+def test_적용_단가_문구가_실제_값을_읽는다() -> None:
+    """**숫자를 박지 않는다** (58세션 2절). 고친 단가가 그대로 적힌다."""
+    from kwise.measures import APPLIED_PRICE_TAIL, applied_price_note
+
+    text = applied_price_note(smp_price_won_per_kwh=120.0, external_price_won_per_kwh=140.0)
+    assert "상계거래 SMP 120원/kWh" in text
+    assert "외부 판매 140원/kWh" in text
+    assert text.endswith(APPLIED_PRICE_TAIL)
+    # 고치면 따라온다.
+    assert "외부 판매 155원/kWh" in applied_price_note(external_price_won_per_kwh=155.0)
+    # **적용하지 않은 단가는 문장에서 빠진다.**
+    assert "상계거래" not in applied_price_note(external_price_won_per_kwh=140.0)
+    assert applied_price_note() == ""
+
+
+def test_적용_단가_문구가_결과에서_나온다(surplus_case: SurplusCase, tariff: TariffTable) -> None:
+    """**네 산출물이 한 곳에서 읽는다** (58세션 2절)."""
+    result = _surplus(
+        surplus_case, tariff, external_price_won_per_kwh=140.0, smp_price_won_per_kwh=120.0
+    )
+    note = result.applied_price_note
+    assert "상계거래 SMP 120원/kWh" in note
+    assert "외부 판매 140원/kWh" in note
+    assert note in texts(result.notices), "안내로도 나가야 Word·화면이 같은 문장을 쓴다."
+
+    # **비우면 그 단가가 문장에서 빠지고 금액이 미산출로 돌아간다.**
+    empty = _surplus(surplus_case, tariff)
+    assert empty.scenario(EXTERNAL_SCENARIO).revenue_won is None
+    assert "외부 판매" not in empty.applied_price_note
+
+
+def test_잉여가_0이면_단가를_넣어도_문구가_없다(
+    tmp_path_factory: pytest.TempPathFactory, tariff: TariffTable
+) -> None:
+    """**잉여가 없으면 절 자체가 없다** (58세션 3-4). 단가는 그것을 바꾸지 않는다."""
+    path = write_month(tmp_path_factory.mktemp("nosurplus") / "big.csv", 2023, 7, kwh=2_500.0)
+    usage = load_usage(path)
+    weather = clearsky_weather(start="2023-06-30", end="2023-08-01")
+    config = PvSystemConfig(
+        37.5, 127.0, arrays=(ArrayConfig.roof("지붕", 1_000.0),), altitude_m=50.0
+    )
+    net = apply_generation(usage, unit_generation_kw(usage, weather, config) * 1_000.0)
+    result = evaluate_surplus(
+        usage,
+        tariff,
+        CURRENT,
+        net.surplus_kw,
+        generation_kwh=net.generated_kwh,
+        net_usage=net.usage,
+        capacity_kwp=1_000.0,
+        external_price_won_per_kwh=140.0,
+        smp_price_won_per_kwh=120.0,
+    )
+    assert result.total_kwh == pytest.approx(0.0)
+    assert result.applied_price_note == ""
+    assert not [item for item in result.notices if "산출했습니다" in item.text]

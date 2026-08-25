@@ -435,6 +435,9 @@ def measure_summary_frame(
                         reason=scenario.basis,
                     ),
                     "회수기간": "—",
+                    # **적용 단가를 여기 적는다** (58세션). 화면 캡션·PPT 각주·
+                    # Word 부록과 **같은 문장**이다 —
+                    # :meth:`SurplusResult.applied_price_note` 하나에서 온다.
                     "비고": (
                         f"연간 잉여 {surplus.total_kwh / 1000:,.1f} MWh · "
                         + (
@@ -445,6 +448,7 @@ def measure_summary_frame(
                             if is_offset and offset is not None
                             else scenario.admin_burden
                         )
+                        + (f" {surplus.applied_price_note}" if surplus.applied_price_note else "")
                     ),
                 }
             )

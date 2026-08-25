@@ -3437,6 +3437,100 @@ def test_잉여_단가_이름이_하나다() -> None:
     assert "외부 단가" not in UNPRICED_REASONS["external_price"]
 
 
+# ======================================================== 58세션 · 잉여 단가 기본값
+
+
+def test_단가_입력칸이_기준_데이터_기본값으로_찬다() -> None:
+    """**기본값을 두면 사용자가 판단할 재료가 생긴다** (58세션 1-3).
+
+    자리는 ESS 카드가 아니라 **태양광 카드의 잉여 절**이다 (41세션에 잉여가
+    태양광 안으로 들어갔다). 값은 코드에 박지 않고 기준 데이터에서 읽는다 —
+    ``value=0.0`` 이면 어느 화면에서도 고칠 수 없는 기본값이 된다.
+    """
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    handling = source[source.index("def _surplus_handling(") : source.index("def _surplus_carry(")]
+    assert "value=default_external_price_won_per_kwh()" in handling, handling
+    assert "value=default_smp_price_won_per_kwh()" in handling, handling
+    # ``min_value=0.0`` 은 남는다 — 음수 단가를 막는 자리다.
+    assert not re.search(r"(?<![_\w])value=0\.0", handling), handling
+
+
+def test_비우면_미산출로_돌아간다() -> None:
+    """**지어낸 단가로 금액을 내지 않는다** (7.5 · 58세션 1-3).
+
+    기본값이 생겨도 규약은 그대로다. 바뀐 것은 「기본값이 어디서 오는가」 뿐이고,
+    사용자가 0 을 넣으면 ``measure_float`` 가 ``None`` 을 돌려줘 금액이 사라진다.
+    """
+    import streamlit as st
+
+    from kwise.ui.state import input_key, measure_price
+
+    key = input_key("solar", "surplus_price")
+    st.session_state.pop(key, None)
+    # **아직 손대지 않았으면 기준 데이터 기본값이다** — 고르지 않은 시나리오도
+    # 표에 금액이 서야 비교가 된다.
+    assert measure_price("solar", "surplus_price", 140.0) == 140.0
+    try:
+        st.session_state[key] = 0.0
+        assert measure_price("solar", "surplus_price", 140.0) is None
+        st.session_state[key] = 155.0
+        assert measure_price("solar", "surplus_price", 140.0) == 155.0
+    finally:
+        st.session_state.pop(key, None)
+
+
+def test_단가를_읽는_자리가_하나다() -> None:
+    """**세 자리가 같은 값을 봐야 한다** (58세션 2절).
+
+    태양광 카드·조합 비교·산출물 재료가 단가를 따로 읽으면 한 자리만 기본값을
+    갖게 되고, 그러면 화면과 보고서가 다른 금액을 말한다.
+    """
+    for name in ("measures.py", "compare.py"):
+        source = (VIEWS / name).read_text(encoding="utf-8")
+        assert 'measure_float("solar", "surplus_price")' not in source, name
+        assert 'measure_float("solar", "smp_price")' not in source, name
+        assert "surplus_prices()" in source, name
+
+
+def test_기준_데이터에서_판단_배지로_고친다() -> None:
+    """**50세션에 ESS 계수를 둔 것과 같은 자리다** (58세션 1-2).
+
+    기준 데이터 화면은 항목을 전부 한 줄씩 그리고 실수 항목에 숫자 입력칸을
+    준다 — 판단값이면 배지가 [판단] 이다. 별도 배선이 필요 없다는 사실을
+    못박아 두어야, 다음 사람이 화면에 손으로 칸을 하나 더 만들지 않는다.
+    """
+    from kwise.rules import describe_items
+    from kwise.ui.rules_view import build_rows
+
+    rows = {row.key: row for row in build_rows(describe_items(), ())}
+    for key in ("surplus.external.price_won_per_kwh", "surplus.offset.smp_price_won_per_kwh"):
+        row = rows[key]
+        assert not row.is_statutory, key  # 배지가 🟦 판단이다
+        assert isinstance(row.view.value, float), key  # 숫자 입력칸이 선다
+    source = (VIEWS / "rules_admin.py").read_text(encoding="utf-8")
+    assert "🟦 판단" in source
+    assert "surplus." not in source, "항목을 화면에 손으로 배선하지 않는다."
+
+
+def test_적용_단가를_네_산출물이_같이_쓴다() -> None:
+    """**같은 글이 두 자리에 따로 생기지 않게 한다** (46세션 줄기 · 58세션 2절).
+
+    화면 캡션 · PPT 잉여 장 각주 · Excel 「수단별 결과」 비고 · Word 부록이
+    모두 :meth:`SurplusResult.applied_price_note` 에서 읽는다.
+    """
+    from kwise.measures import APPLIED_PRICE_TAIL
+
+    measures_src = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    assert "result.applied_price_note" in measures_src
+    report = Path("src") / "kwise" / "report"
+    for name in ("document.py", "excel.py"):
+        source = (report / name).read_text(encoding="utf-8")
+        assert "applied_price_note" in source, name
+        # **문장을 다시 적지 않는다.**
+        assert APPLIED_PRICE_TAIL not in source, name
+    assert APPLIED_PRICE_TAIL not in measures_src
+
+
 def test_토일공휴일_용어가_두_카드에서_같다() -> None:
     """7.5 지표와 잉여 결과가 같은 말을 쓴다 (27세션 7-1 · 26세션 3-2)."""
     from kwise.measures.surplus import SurplusResult
