@@ -55,6 +55,7 @@ __all__ = [
     "CAPACITY_ROWS",
     "DAY_TYPE_LABELS",
     "ESS_SPEC_CAPTION",
+    "NO_REDUCTION_CAPTION",
     "ESS_SPEC_HEADER",
     "ESS_SPEC_ROWS",
     "MONTHLY_CHARGE_PARTS",
@@ -67,6 +68,7 @@ __all__ = [
     "daily_usage_frame",
     "dr_daily_frame",
     "ess_day_frame",
+    "ess_spec_caption",
     "ess_spec_frame",
     "ess_spec_groups",
     "ess_spec_rows",
@@ -663,6 +665,31 @@ def ess_spec_rows(frame: pd.DataFrame) -> tuple[tuple[str, ...], ...]:
 #: 목표별 사양 표 위 한 줄 (46세션). 곡선 캡션이 하던 일이다 — 왜 U자인지를
 #: 적는다. **곡선이 없어졌으므로 「개략」 을 밝힐 필요도 없어졌다.**
 ESS_SPEC_CAPTION = "목표를 낮추면 저감량은 늘지만 필요 용량이 더 빠르게 늘어 회수기간이 나빠집니다."
+
+NO_REDUCTION_CAPTION = (
+    "저감량이 전 줄 0 kW 입니다 — 목표를 지켜도 요금적용전력이 내려가지 않아 "
+    "기본요금이 그대로입니다. 남는 것은 충·방전 단가차뿐입니다."
+)
+"""저감량이 전 줄 0 인 표의 캡션 (59세션 3절).
+
+**:data:`ESS_SPEC_CAPTION` 이 이 자료에서 거짓이다.** 「목표를 낮추면 저감량은
+늘지만」 이라 적어 두었는데 표는 0 kW 가 다섯 줄이다 — 계약전력이 과다해
+요금적용전력이 **하한(계약전력의 30%)에 걸려 있으면** 피크를 아무리 깎아도
+기준 전력이 안 내려간다. 대형 자료에 계약전력 20,000 kW 를 주면 하한 6,000 kW
+가 관측 최대 5,293 kW 보다 커서 그 자리가 된다.
+
+**줄을 뭉치거나 빼지 않는다.** 0 은 계산이 못 낸 값이 아니라 **이 자료의
+사실**이고, 다섯 줄이 나란히 0 인 것 자체가 「규모를 키워도 소용없다」 는
+근거다. 틀린 것은 그 위에 붙은 한 줄이었다 — 한 줄을 다른 한 줄로 바꾼다.
+"""
+
+
+def ess_spec_caption(frame: pd.DataFrame) -> str:
+    """사양 표 위 한 줄. **표가 말하는 것과 어긋나지 않게 고른다** (59세션 3절)."""
+    column = frame["저감량(kW)"] if "저감량(kW)" in frame else None
+    if column is not None and len(column) and not (column > 0).any():
+        return NO_REDUCTION_CAPTION
+    return ESS_SPEC_CAPTION
 
 
 def capacity_band_frame(model: EssCostModel) -> pd.DataFrame:

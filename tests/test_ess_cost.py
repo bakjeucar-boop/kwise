@@ -1539,6 +1539,31 @@ def test_성립하는_점이_없으면_목표를_고르지_않는다(
     assert SHORTEST_PAYBACK not in " ".join(frame["표식"])
 
 
+def test_저감량이_전_줄_0_이면_캡션이_바뀐다() -> None:
+    """**캡션이 표와 어긋나 있었다** (59세션 3절 · PPT 목록 P3).
+
+    계약전력이 과다해 요금적용전력이 하한(계약전력의 30%)에 걸려 있으면 피크를
+    아무리 깎아도 기준 전력이 안 내려간다 — 사양 표의 저감량이 다섯 줄 모두
+    0 kW 다. 그 위에 「목표를 낮추면 저감량은 늘지만」 이 서 있었다.
+
+    **줄을 뭉치거나 빼지 않는다.** 0 은 못 낸 값이 아니라 이 자료의 사실이고,
+    다섯 줄이 나란히 0 인 것 자체가 근거다. 바뀌는 것은 한 줄뿐이다.
+    """
+    import pandas as pd
+
+    from kwise.report.frames import ESS_SPEC_CAPTION, NO_REDUCTION_CAPTION, ess_spec_caption
+
+    zeros = pd.DataFrame({"저감량(kW)": [0.0] * 5})
+    assert ess_spec_caption(zeros) == NO_REDUCTION_CAPTION
+    assert "0 kW" in NO_REDUCTION_CAPTION and "기본요금" in NO_REDUCTION_CAPTION
+
+    # 한 줄이라도 내려가면 원래 캡션이다 — 관계를 설명하는 말이 참이 된다.
+    mixed = pd.DataFrame({"저감량(kW)": [0.0, 0.0, 113.0]})
+    assert ess_spec_caption(mixed) == ESS_SPEC_CAPTION
+    # 표가 아예 없으면 관계를 말할 것도 없으므로 기본값이다.
+    assert ess_spec_caption(pd.DataFrame({"저감량(kW)": []})) == ESS_SPEC_CAPTION
+
+
 def test_회수기간_50년_초과는_상한으로_적는다() -> None:
     """**500년·3,000년 같은 값은 근거로 읽히지 않는다** (50세션 3-7).
 

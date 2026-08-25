@@ -1623,14 +1623,12 @@ def _ess(
         _notices(optimum.notices)
         return
 
-    st.dataframe(
-        _ess_spec_view(
-            frames.ess_spec_frame(optimum, baseline_demand_kw=curve.baseline_demand_kw)
-        ),
-        hide_index=True,
-        width="stretch",
-    )
-    st.caption(frames.ESS_SPEC_CAPTION, help=fmt.tip("table.ess_spec"))
+    spec = frames.ess_spec_frame(optimum, baseline_demand_kw=curve.baseline_demand_kw)
+    st.dataframe(_ess_spec_view(spec), hide_index=True, width="stretch")
+    # **캡션이 표와 어긋나면 안 된다** (59세션 3절). 계약전력 과다 자료는 저감량이
+    # 전 줄 0 kW 인데 「목표를 낮추면 저감량은 는다」 고 적혔다 — 문구를 더하는
+    # 것이 아니라 **한 줄을 다른 한 줄로 바꾼다.**
+    st.caption(frames.ess_spec_caption(spec), help=fmt.tip("table.ess_spec"))
 
     # **고를 수 있는 목표가 없으면 목표를 제시하지 않는다** (48세션). 지금까지는
     # 「최적 230 kW · 154.5년」 처럼 적었는데, 그 사양은 kW당 배터리비가 10년

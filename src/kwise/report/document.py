@@ -917,12 +917,15 @@ def measure_entries(
         # 한 산출물에 두 숫자가 남았다. 자리에 목표별 사양 표가 들어간다 —
         # 전부 카드 기준 참값이고 정밀화가 이미 잰 점이라 추가 계산이 없다.
         ess_table: tuple[tuple[str, ...], ...] = ()
+        ess_caption = ""
         if ess_optimum is not None and ess_curve is not None:
-            ess_table = frames.ess_spec_rows(
-                frames.ess_spec_frame(
-                    ess_optimum, baseline_demand_kw=ess_curve.baseline_demand_kw
-                )
+            spec = frames.ess_spec_frame(
+                ess_optimum, baseline_demand_kw=ess_curve.baseline_demand_kw
             )
+            ess_table = frames.ess_spec_rows(spec)
+            # **캡션이 표와 어긋나면 안 된다** (59세션 3절). 계약전력 과다 자료는
+            # 저감량이 전 줄 0 kW 인데 「목표를 낮추면 저감량은 는다」 고 적혔다.
+            ess_caption = frames.ess_spec_caption(spec)
         # **표가 위에 서면 그림은 납작하게 굽는다** (53세션 2절). 남는 높이가
         # 1in 남짓이라 세로가 긴 비율로는 폭을 못 쓴다.
         ess_size = MEASURE_STRIP_FIGURE if ess_table else MEASURE_PAIR_FIGURE
@@ -951,7 +954,7 @@ def measure_entries(
             figure_caption=_ESS_DAY_CAPTION,
             figures=_pair((ess_day, _ESS_DAY_CAPTION)),
             spec_table=ess_table,
-            spec_caption=frames.ESS_SPEC_CAPTION,
+            spec_caption=ess_caption,
             spec_note=spec_mark_note(row[-1] for row in ess_table[1:]),
         )
     elif ess_optimum is not None and ess_optimum.below_minimum and ess_curve is not None:
@@ -995,6 +998,11 @@ def measure_entries(
         # 옮기므로 갑 종별에서는 :data:`BASE_FEE_ON_CONTRACT_CONCLUSION` 이
         # 실린다 — 문장을 여기서 새로 짓지 않는다.
         measured = bool(ess_optimum.points)
+        margin_spec = (
+            frames.ess_spec_frame(ess_optimum, baseline_demand_kw=ess_curve.baseline_demand_kw)
+            if measured
+            else None
+        )
         lines = body_lines(ess_optimum.notices)
         reason = "성립하는 목표가 없어" if measured else "성립하지 않아"
         facts = (
@@ -1022,16 +1030,8 @@ def measure_entries(
             notices=ess_optimum.notices,
             actionable=False,
             facts=facts,
-            spec_table=(
-                frames.ess_spec_rows(
-                    frames.ess_spec_frame(
-                        ess_optimum, baseline_demand_kw=ess_curve.baseline_demand_kw
-                    )
-                )
-                if measured
-                else ()
-            ),
-            spec_caption=frames.ESS_SPEC_CAPTION if measured else "",
+            spec_table=frames.ess_spec_rows(margin_spec) if margin_spec is not None else (),
+            spec_caption=frames.ess_spec_caption(margin_spec) if margin_spec is not None else "",
         )
 
     return tuple(entries[kind.key] for kind in MEASURE_CATALOG if kind.key in entries)

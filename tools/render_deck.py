@@ -103,6 +103,20 @@ CASES: tuple[Case, ...] = (
         area_m2=1_000.0,
         building_name="소형 사무빌딩(갑)",
     ),
+    Case(
+        key="large-b-over",
+        title="대형 · 일반용(을) 고압A 선택Ⅰ · 계약전력 과다 20,000 kW",
+        csv=LARGE_CSV,
+        contract_type="general_b",
+        voltage="high_a",
+        option="I",
+        # **요금적용전력 하한(계약전력의 30%)이 최대수요를 넘는 자리다** —
+        # 6,000 kW 하한이 관측 최대 5,293 kW 보다 커서 피크를 낮춰도 기준 전력이
+        # 그대로다. ESS 사양 표의 저감량이 전 줄 0 kW 로 선다 (59세션 3절).
+        contract_kw=20_000.0,
+        area_m2=20_000.0,
+        building_name="대형 사업장(계약 과다)",
+    ),
 )
 
 BY_KEY = {case.key: case for case in CASES}
