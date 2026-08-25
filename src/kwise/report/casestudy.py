@@ -40,6 +40,12 @@ from kwise.measures import (
     solar_curve,
     unit_generation_kw,
 )
+from kwise.measures.ess import (
+    EssOptimum,
+    EssOptimumPoint,
+    ess_target_curve,
+    refine_ess_target,
+)
 from kwise.notices import texts
 from kwise.progress import ProgressReporter, StageRunner, record
 from kwise.pv import (
@@ -116,6 +122,9 @@ class CaseResult:
     sensitivity_rows: tuple[dict[str, object], ...]
     selection_rows: tuple[dict[str, object], ...]
     measure_rows: tuple[dict[str, object], ...]
+    ess: EssOptimum | None
+    """ESS 정밀화 결과 (54세션). **타당성 판정이 이것을 본다** — 행만 남기면
+    「목표를 냈는데 절감액이 음수」 같은 어긋남을 볼 수가 없다."""
     elapsed_sec: float
     weather_source: str
     warnings: tuple[str, ...] = field(default=())
@@ -244,6 +253,72 @@ def _pv_config(region_key: str = CASE_REGION_KEY) -> PvSystemConfig:
         arrays=(ArrayConfig.roof("지붕", 1_000.0),),
         altitude_m=50.0,
         timezone="Asia/Seoul",
+    )
+
+
+def _case_ess(
+    usage: UsageData,
+    table: TariffTable,
+    definition: CaseDefinition,
+    baseline: BillingResult,
+    quality: QualityReport,
+) -> EssOptimum | None:
+    """케이스 하나의 ESS 정밀화 (54세션). **화면과 같은 경로다.**
+
+    개략 곡선이 목표를 못 그리면 ``None`` 이다 — 어떤 목표에서도 초과 구간이
+    없는 자료다.
+    """
+    peak = float(baseline.billing_demand_kw)
+    if peak <= 0:
+        return None
+    curve = ess_target_curve(
+        usage.kw,
+        usage.meta.interval_minutes,
+        baseline_demand_kw=peak,
+        base_fee_won_per_kw=float(table.rates(definition.selection).base_won_per_kw),
+    )
+    if curve.best is None:
+        return None
+    return refine_ess_target(
+        usage,
+        table,
+        definition.selection,
+        curve=curve,
+        baseline=baseline,
+        quality=quality,
+    )
+
+
+def _ess_point(optimum: EssOptimum) -> EssOptimumPoint | None:
+    """고른 목표의 점. 성립하지 않으면 ``None``."""
+    return next(
+        (item for item in optimum.points if item.target_kw == optimum.target_kw), None
+    )
+
+
+def _ess_remark(optimum: EssOptimum | None, baseline_demand_kw: float) -> str:
+    """비고 한 줄 — **왜 그런지**가 판정의 근거다."""
+    if optimum is None:
+        return "초과 구간이 없어 곡선을 그리지 못했다"
+    if optimum.below_minimum:
+        return (
+            f"최소 규격 미달 — 필요 출력 {optimum.required_power_kw:,.1f} kW "
+            f"< 상업용 최소 {optimum.minimum_power_kw:,.0f} kW"
+        )
+    if not optimum.viable:
+        negatives = sum(1 for item in optimum.points if item.annual_saving_won <= 0)
+        return (
+            f"성립하는 목표 없음 — 참고 지점 {len(optimum.points)}개 중 "
+            f"절감액 0 이하 {negatives}개"
+        )
+    point = _ess_point(optimum)
+    if point is None:  # pragma: no cover - 고른 목표는 언제나 점 목록에 있다
+        return "고른 목표의 점을 찾지 못했다"
+    return (
+        f"목표 {optimum.target_kw:,.0f} kW "
+        f"(기준 {baseline_demand_kw:,.1f} → 실제 {point.achieved_demand_kw:,.1f}) · "
+        f"{point.grid_power_kw:,.0f} kW / {point.grid_capacity_kwh:,.0f} kWh · "
+        f"회수 {optimum.payback_years:,.1f}년"
     )
 
 
@@ -415,6 +490,25 @@ def run_one_case(
             "비고": "요금표와 약관만으로 확정",
         },
     ]
+    # **ESS 도 돌린다** (54세션). 여태 케이스 스터디가 손대지 않던 자리다 —
+    # 요금·진단·태양광·감도는 여섯 케이스를 다 훑는데 **ESS 만 한 번도 돌지
+    # 않았다.** 그래서 「고를 수 있는 목표가 없는데 목표를 내고 절감액이 음수로
+    # 나오는」 갈래가 66/66 을 통과한 채 실물에만 나왔다.
+    #
+    # **화면과 같은 경로다** — 개략 곡선 → 정밀화. 그 경로가 깨졌던 자리다.
+    ess = _case_ess(usage, table, definition, baseline, quality)
+    chosen = _ess_point(ess) if ess is not None and ess.viable else None
+    measure_rows.append(
+        {
+            "케이스": definition.label,
+            "수단": "7.6 ESS",
+            "절감액(원)": chosen.annual_saving_won if chosen is not None else None,
+            "12개월 환산(원)": None,
+            "확실성": "중간~낮음",
+            "비고": _ess_remark(ess, diagnosis.peak.billing_demand_kw),
+        }
+    )
+
     if diagnosis.dr is not None:
         response = evaluate_demand_response(diagnosis.dr)
         measure_rows.append(
@@ -446,6 +540,7 @@ def run_one_case(
         sensitivity_rows=tuple(sensitivity_rows),
         selection_rows=tuple(selection_rows),
         measure_rows=tuple(measure_rows),
+        ess=ess,
         elapsed_sec=elapsed,
         weather_source=weather_source,
         warnings=texts(quality.notices),

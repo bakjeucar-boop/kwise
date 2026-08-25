@@ -562,9 +562,20 @@ def ess_spec_frame(optimum: EssOptimum, *, baseline_demand_kw: float) -> pd.Data
     def mark(point: EssOptimumPoint) -> str:
         # **성립하는 목표가 없으면 표식을 찍지 않는다** (48세션).
         # **「최적」 이라 부르지 않는다** (49세션) — 578년짜리도 최단 회수기간이다.
-        labels = (
-            [SHORTEST_PAYBACK] if optimum.viable and point.target_kw == optimum.target_kw else []
+        #
+        # **회수기간이 없는 줄에는 붙이지 않는다** (54세션). 절감액이 0 이하면
+        # 회수기간 칸이 「—」 인데 표식은 「최단 회수기간」 을 말해 앞뒤가 안
+        # 맞았다. ``optimum.viable`` 만 보고 찍고 있었고, 그 깃발이 잘못 서는
+        # 갈래가 있었다 (:func:`~kwise.measures.ess.refine_ess_target`).
+        # **깃발이 바로잡힌 뒤에도 이 조건은 남긴다** — 다른 자료에서 또 날 수
+        # 있고, 표식은 제 줄의 값과 어긋나지 않아야 한다.
+        chosen = (
+            optimum.viable
+            and point.target_kw == optimum.target_kw
+            and point.annual_saving_won > 0
+            and point.payback_years is not None
         )
+        labels = [SHORTEST_PAYBACK] if chosen else []
         # **표가 사실과 달라지는 자리다** (48세션). 목표를 못 지킨 줄에 목표만
         # 적어 두면 「210 kW · 저감 55 kW」 라 읽히는데 실제 요금적용전력은
         # 264 kW 다. 실제 값을 표식에 적어 그 어긋남을 표 안에서 닫는다.
@@ -574,6 +585,21 @@ def ess_spec_frame(optimum: EssOptimum, *, baseline_demand_kw: float) -> pd.Data
             labels.append(MARGIN_SHORT)
         return " · ".join(labels)
 
+    def reduction(point: EssOptimumPoint) -> float:
+        """실제로 내려간 요금적용전력 (54세션).
+
+        **목표에서 빼면 안 된다.** 목표를 못 지킨 줄에서 「저감량 836 kW」 와
+        「목표 미달 (실제 2,801 kW)」 가 한 줄에 나란히 섰다 — 실제 요금적용전력은
+        한 kW 도 안 내려갔는데 저감량이 836 kW 라고 적혀 있었다.
+
+        목표를 지킨 줄에서는 달성값이 곧 목표라 **값이 달라지지 않는다.**
+        재지 못한 점(출력 0)은 달성값이 없으므로 목표로 적는다.
+        """
+        achieved = point.achieved_demand_kw
+        if achieved <= 0:
+            return max(0.0, baseline_demand_kw - point.target_kw)
+        return max(0.0, baseline_demand_kw - achieved)
+
     def span(bounds: tuple[float, float]) -> str:
         low, high = bounds
         return f"{low:,.0f}" if abs(high - low) < 0.5 else f"{low:,.0f}~{high:,.0f}"
@@ -581,7 +607,7 @@ def ess_spec_frame(optimum: EssOptimum, *, baseline_demand_kw: float) -> pd.Data
     return pd.DataFrame(
         {
             "목표 요금적용전력(kW)": [span(bounds) for _, bounds in rows],
-            "저감량(kW)": [max(0.0, baseline_demand_kw - point.target_kw) for point, _ in rows],
+            "저감량(kW)": [reduction(point) for point, _ in rows],
             "출력(kW)": [point.grid_power_kw for point, _ in rows],
             "용량(kWh)": [point.grid_capacity_kwh for point, _ in rows],
             "방전시간(h)": [point.discharge_hours for point, _ in rows],
@@ -1066,12 +1092,19 @@ def dispatch_schedule(frame: pd.DataFrame) -> tuple[str, str]:
     나열하면 그림보다 못한 목록이 된다.
     """
 
+    # **``시각`` 은 구간 **시작**이다** (:func:`day_profile`). 그대로 min–max 를
+    # 적으면 오른쪽 끝이 한 구간 짧고, **한 구간만 돌면 「22:00–22:00」** 처럼
+    # 길이가 0 인 구간이 된다 — 35 kWh 를 충전했다면서 시작과 끝이 같았다
+    # (54세션). 오른쪽 끝에 한 구간을 더해 실제로 덮은 구간을 적는다.
+    times = pd.DatetimeIndex(frame["시각"])
+    step = (times[1] - times[0]) if len(times) > 1 else pd.Timedelta(minutes=15)
+
     def span(column: str) -> str:
         active = frame[frame[column] > 0]
         if active.empty:
             return ""
-        times = pd.DatetimeIndex(active["시각"])
-        return f"{times.min():%H:%M}–{times.max():%H:%M}"
+        marks = pd.DatetimeIndex(active["시각"])
+        return f"{marks.min():%H:%M}–{marks.max() + step:%H:%M}"
 
     return span("충전(kW)"), span("방전(kW)")
 

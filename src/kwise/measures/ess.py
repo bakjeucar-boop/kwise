@@ -1844,18 +1844,29 @@ def refine_ess_target(
         widened += 1
 
     if best is None:
+        # **고를 수 있는 목표가 없다** (54세션). 여기까지 왔다는 것은 창을
+        # 넓혀 가며 훑었는데도 **값이 매겨지고 목표를 지키고 마진이 있는 점이
+        # 하나도 없었다**는 뜻이다 — 즉 어떤 목표에서도 성립하지 않는다.
+        #
+        # **``viable=False`` 를 넘기지 않고 있었다.** 기본값이 참이라 하류가
+        # 전부 「성립」 으로 읽었다: 3단계가 목표를 받아 카드와 PPT 를 만들고,
+        # 그 목표로 다시 계산한 절감액이 **음수**로 나왔으며, 사양 표에는
+        # 회수기간이 「—」 인 줄에 「최단 회수기간」 표식이 붙었다.
+        # 앞의 ``viable_anchor is None`` 갈래와 **같은 사실**인데 결과만 달랐다.
         return EssOptimum(
-            target_kw=anchor,
+            target_kw=0.0,
             payback_years=None,
             curve_target_kw=anchor,
             window_kw=window,
             widened=widened,
             at_edge=False,
+            viable=False,
             points=tuple(scored[target] for target in sorted(scored)),
             notices=(
-                info(
-                    "정밀화 구간에서 회수기간이 나오는 목표가 없어 개략 곡선의 선택을 "
-                    "그대로 씁니다. 절감액이 0 이하인 자료입니다.",
+                warn(
+                    "정밀화 구간의 어떤 목표에서도 회수기간이 나오지 않았습니다 — "
+                    "요금을 다시 계산하면 절감액이 0 이하입니다. "
+                    "피크저감 목적의 ESS 는 이 부하에서 성립하지 않습니다.",
                     fact="ess.refine_unpriced",
                 ),
             ),

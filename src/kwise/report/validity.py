@@ -34,6 +34,12 @@ GENERATION_TOLERANCE = 0.01
 # 확정 계산이 감도와 무관한지 볼 때 쓰는 허용 오차 (원).
 EXACT_TOLERANCE_WON = 1.0
 
+#: 「목표를 지켰다」 를 판정할 때 봐 주는 폭 (kW) (54세션).
+#:
+#: 요금적용전력은 월별 최대의 12개월 이월값이라 목표와 정확히 같지 않을 수 있다 —
+#: **디스패치가 목표를 지켰다면 그 값을 넘지 않는다**는 것만 본다.
+ACHIEVED_TOLERANCE_KW = 0.5
+
 
 @dataclass(frozen=True)
 class Check:
@@ -155,6 +161,81 @@ def _sensitivity_checks(result: CaseResult) -> list[Check]:
             "상한 시나리오 기록 (단조성은 요구하지 않는다)",
             True,
             f"기본요금 절감액 상한: {', '.join(tops) if tops else '—'}",
+        )
+    )
+    return checks
+
+
+def _ess_checks(result: CaseResult) -> list[Check]:
+    """ESS 판정 (54세션). **여태 한 번도 안 보던 자리다.**
+
+    요금·진단·태양광·감도는 여섯 케이스를 다 훑는데 ESS 만 케이스 스터디에
+    들어 있지 않았다. 그래서 「고를 수 있는 목표가 없는데 목표를 내고, 그
+    목표로 다시 계산한 절감액이 음수」 인 갈래가 **66/66 을 통과한 채** 실물에만
+    나왔다.
+
+    보는 것은 넷이다 — 전부 **표가 스스로 어긋나지 않는가**를 묻는다.
+    """
+    label = result.label
+    optimum = result.ess
+    if optimum is None:
+        return [
+            Check(label, "ESS — 초과 구간이 없어 곡선을 그리지 못했다", True, "판정할 것이 없다")
+        ]
+    checks: list[Check] = []
+    chosen = next(
+        (item for item in optimum.points if item.target_kw == optimum.target_kw), None
+    )
+
+    # ① 성립하지 않으면 목표를 내지 않는다.
+    checks.append(
+        Check(
+            label,
+            "ESS 성립하지 않으면 목표가 0 (없는 목표를 내지 않는다)",
+            optimum.viable or optimum.target_kw == 0.0,
+            f"viable={optimum.viable} · 목표 {optimum.target_kw:,.0f} kW",
+        )
+    )
+
+    # ② 목표를 냈으면 그 목표의 절감액이 양수다.
+    saving = chosen.annual_saving_won if chosen is not None else None
+    checks.append(
+        Check(
+            label,
+            "ESS 목표를 냈으면 절감액 > 0",
+            not optimum.viable or (saving is not None and saving > 0),
+            f"목표 {optimum.target_kw:,.0f} kW · 절감액 "
+            + (f"{saving:,.0f} 원" if saving is not None else "—"),
+        )
+    )
+
+    # ③ 「목표 미달」 은 실제로 미달일 때만 붙는다.
+    mismatched = [
+        item
+        for item in optimum.points
+        if item.target_met and item.achieved_demand_kw > item.target_kw + ACHIEVED_TOLERANCE_KW
+    ]
+    checks.append(
+        Check(
+            label,
+            "ESS 목표 달성이면 실제 요금적용전력이 목표 이하",
+            not mismatched,
+            f"어긋난 점 {len(mismatched)}개 / {len(optimum.points)}개",
+        )
+    )
+
+    # ④ 절감액이 0 이하인 점에는 회수기간이 없다 — 표식이 그 줄에 붙지 않는다.
+    priced_but_unprofitable = [
+        item
+        for item in optimum.points
+        if item.annual_saving_won <= 0 and item.payback_years is not None
+    ]
+    checks.append(
+        Check(
+            label,
+            "ESS 절감액이 0 이하인 점에는 회수기간이 없다",
+            not priced_but_unprofitable,
+            f"어긋난 점 {len(priced_but_unprofitable)}개 / {len(optimum.points)}개",
         )
     )
     return checks
@@ -327,6 +408,7 @@ def check_case_study(study: CaseStudy) -> tuple[Check, ...]:
         checks.extend(_basic_checks(result))
         checks.extend(_sensitivity_checks(result))
         checks.extend(_measure_checks(result))
+        checks.extend(_ess_checks(result))
 
     present = {result.definition.key for result in study.results}
     missing = [key for key in CROSS_CASE_KEYS if key not in present]

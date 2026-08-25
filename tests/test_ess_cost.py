@@ -1639,3 +1639,203 @@ def test_소형_사무빌딩에서_성립하지_않는_사양을_고르지_않�
     assert "경제성" not in message
     # 표를 싣지 않는다 — 회수기간도 목표별 사양도 낼 것이 없다.
     assert optimum.points == ()
+
+
+# ===================================================================== 54세션 · 성립 판정
+#
+# **「고를 수 있는 목표가 없다」 는 갈래가 둘인데 하나만 그렇게 말하고 있었다.**
+#
+#     곡선에 마진 조건을 넘는 점이 없다      → viable=False · 목표 0    (48세션)
+#     창을 넓혀도 후보가 하나도 없다          → **viable 기본값(참)이 그대로 나갔다**
+#
+# 뒤쪽이 나가면 3단계가 목표를 받아 카드와 PPT 를 만들고, 그 목표로 다시 계산한
+# 절감액이 **음수**로 나오며, 사양 표에는 회수기간이 「—」 인 줄에 「최단
+# 회수기간」 표식이 붙는다. 실물에서 다섯 줄이 모두 음수로 나온 자리다.
+
+_NIGHT_CASE = PROJECT_ROOT / "input" / "cases" / "C6_야간 피크형.csv"
+
+
+def _night_optimum(tariff: TariffTable, *, scale: float) -> tuple[object, float]:
+    """야간 피크 자료를 **단가를 낮춰** 돌린다.
+
+    단가를 낮추면 개략 곡선의 마진 조건이 통과해 48세션 갈래를 빠져나가고,
+    정밀화는 목표를 하나도 못 지켜 후보가 비는 — 바로 그 자리에 닿는다.
+    """
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.io import load_usage
+    from kwise.measures.ess_cost import load_ess_cost_model
+    from kwise.quality import check_quality
+    from kwise.tariff import BillingOptions, TariffSelection, calculate_bill
+
+    usage = load_usage(_NIGHT_CASE)
+    selection = TariffSelection("general_b", "high_a", "I")
+    options = BillingOptions(contract_kw=6_000.0)
+    quality = check_quality(usage, contract_kw=6_000.0)
+    diag = diagnose(usage, tariff, ContractInfo(selection, contract_kw=6_000.0), quality=quality)
+    baseline = calculate_bill(usage, tariff, selection, options=options, quality=quality)
+    peak = float(diag.peak.billing_demand_kw)
+    base = load_ess_cost_model()
+    model = base.with_coefficients(
+        fixed_won=base.fixed_won * scale, per_kwh_won=base.per_kwh_won * scale
+    )
+    curve = ess_target_curve(
+        usage.kw,
+        usage.meta.interval_minutes,
+        baseline_demand_kw=peak,
+        base_fee_won_per_kw=float(tariff.rates(selection).base_won_per_kw),
+        model=model,
+    )
+    optimum = refine_ess_target(
+        usage,
+        tariff,
+        selection,
+        curve=curve,
+        baseline=baseline,
+        quality=quality,
+        options=options,
+        model=model,
+    )
+    return optimum, peak
+
+
+def test_후보가_없으면_성립하지_않는다고_말한다(tariff: TariffTable) -> None:
+    """**깃발이 서지 않던 갈래다** (54세션 1-1).
+
+    창을 넓혀도 「값이 매겨지고 목표를 지키고 마진이 있는」 점이 하나도 없으면
+    고를 수 있는 목표가 없는 것이다. 그런데 ``viable`` 을 넘기지 않아 기본값
+    참이 그대로 나갔고, 3단계가 그 목표로 ESS 를 만들었다.
+    """
+    optimum, _peak = _night_optimum(tariff, scale=0.1)
+    # 개략 곡선은 마진을 통과한다 — 48세션 갈래가 아니다.
+    assert not optimum.below_minimum
+    assert optimum.points, "왜 안 되는지 보이는 참고 지점은 남는다"
+    assert all(point.annual_saving_won <= 0 for point in optimum.points)
+
+    assert not optimum.viable, "후보가 없는데 성립이라고 말한다"
+    assert optimum.target_kw == 0.0, "성립하지 않으면 목표를 내지 않는다"
+    assert optimum.payback_years is None
+    assert any(item.fact == "ess.refine_unpriced" for item in optimum.notices)
+
+
+def test_회수기간이_없는_줄에는_표식이_없다(tariff: TariffTable) -> None:
+    """**절감액이 0 이하면 표식을 붙이지 않는다** (54세션 1-4).
+
+    「최단 회수기간」 과 회수기간 「—」 가 한 줄에 있었다. 깃발이 바로잡힌
+    뒤에도 이 조건은 남긴다 — 다른 자료에서 또 날 수 있다.
+    """
+    from kwise.measures import SHORTEST_PAYBACK
+    from kwise.report.frames import ess_spec_frame, ess_spec_rows
+
+    optimum, peak = _night_optimum(tariff, scale=0.1)
+    rows = ess_spec_rows(ess_spec_frame(optimum, baseline_demand_kw=peak))
+    for row in rows[1:]:
+        payback, mark = row[-2], row[-1]
+        if SHORTEST_PAYBACK in mark:
+            assert payback != "—", f"회수기간이 없는 줄에 표식이 붙었다: {row}"
+    assert not any(SHORTEST_PAYBACK in row[-1] for row in rows[1:])
+
+
+def test_저감량은_실제로_내려간_만큼이다(tariff: TariffTable) -> None:
+    """**목표에서 빼면 안 된다** (54세션 1-2).
+
+    「저감량 836 kW」 옆에 「목표 미달 (실제 2,801 kW)」 가 나란히 섰다 —
+    요금적용전력은 한 kW 도 안 내려갔는데 저감량이 836 kW 라고 적혀 있었다.
+    """
+    from kwise.report.frames import ess_spec_frame
+
+    optimum, peak = _night_optimum(tariff, scale=0.1)
+    frame = ess_spec_frame(optimum, baseline_demand_kw=peak)
+    # 목표를 하나도 못 지킨 자료다 — 저감량은 전부 0 이어야 한다.
+    assert list(frame["저감량(kW)"]) == [0.0] * len(frame), frame.to_string()
+
+
+def test_목표를_지킨_줄은_저감량이_그대로다(
+    sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult
+) -> None:
+    """**회귀값 불변** (54세션 1-2). 달성값이 곧 목표라 값이 달라지지 않는다."""
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.quality import check_quality
+    from kwise.report.frames import ess_spec_frame
+    from kwise.tariff import TariffSelection
+
+    selection = TariffSelection("general_b", "high_a", "I")
+    quality = check_quality(sample_usage, contract_kw=6_000.0)
+    diag = diagnose(
+        sample_usage, tariff, ContractInfo(selection, contract_kw=6_000.0), quality=quality
+    )
+    peak = float(diag.peak.billing_demand_kw)
+    curve = ess_target_curve(
+        sample_usage.kw,
+        sample_usage.meta.interval_minutes,
+        baseline_demand_kw=peak,
+        base_fee_won_per_kw=float(tariff.rates(selection).base_won_per_kw),
+    )
+    optimum = refine_ess_target(
+        sample_usage, tariff, selection, curve=curve, baseline=sample_bill, quality=quality
+    )
+    assert optimum.viable
+    assert optimum.target_kw == pytest.approx(5_180.0)
+    frame = ess_spec_frame(optimum, baseline_demand_kw=peak)
+    chosen = frame[frame["목표 요금적용전력(kW)"].str.startswith("5,180")]
+    assert len(chosen) == 1
+    assert float(chosen["저감량(kW)"].iloc[0]) == pytest.approx(113.0, abs=1.0)
+    assert float(chosen["연간 절감액(원)"].iloc[0]) == pytest.approx(8_264_580.0, abs=1.0)
+    assert float(chosen["회수기간(년)"].iloc[0]) == pytest.approx(31.69, abs=0.01)
+
+
+def test_충방전_시각이_구간으로_나온다(
+    sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult
+) -> None:
+    """**「22:00–22:00」 은 구간이 아니다** (54세션 1-3).
+
+    ``시각`` 열은 구간 **시작**이라 그대로 min–max 를 적으면 오른쪽 끝이 한
+    구간 짧고, 한 구간만 돌면 길이가 0 인 구간이 된다 — 35 kWh 를 충전했다면서
+    시작과 끝이 같았다.
+    """
+    from kwise.measures import EssCostInput, evaluate_ess
+    from kwise.report.frames import dispatch_schedule, ess_day_frame
+    from kwise.tariff import TariffSelection
+    from kwise.ui.state import reference_day
+
+    result = evaluate_ess(
+        sample_usage,
+        tariff,
+        TariffSelection("general_b", "high_a", "I"),
+        target_kw=5_180.0,
+        cost=EssCostInput.unpriced(),
+        baseline=sample_bill,
+    )
+    day = reference_day(sample_usage)
+    assert day is not None
+    frame = ess_day_frame(sample_usage, result.dispatch, day.date)
+    charge, discharge = dispatch_schedule(frame)
+    for span in (charge, discharge):
+        assert span, "구간을 못 읽었다"
+        start, _, end = span.partition("–")
+        assert start != end, f"길이가 0 인 구간이다: {span}"
+    # 대표일의 충전은 한 구간뿐이다 — 그래도 구간으로 적힌다.
+    assert charge == "22:00–22:15", charge
+
+
+def test_케이스_스터디가_ESS_를_돌린다() -> None:
+    """**여태 한 번도 안 돌았다** (54세션 1-5).
+
+    요금·진단·태양광·감도는 여섯 케이스를 다 훑는데 ESS 만 빠져 있어,
+    깨진 갈래가 66/66 을 통과한 채 실물에만 나왔다.
+    """
+    import inspect
+
+    from kwise.report import casestudy, validity
+
+    source = inspect.getsource(casestudy.run_one_case)
+    assert "_case_ess(" in source, "케이스 스터디가 ESS 를 돌리지 않는다."
+    assert "7.6 ESS" in source
+    checks = inspect.getsource(validity)
+    assert "_ess_checks(" in checks
+    for name in (
+        "ESS 성립하지 않으면 목표가 0",
+        "ESS 목표를 냈으면 절감액 > 0",
+        "ESS 목표 달성이면 실제 요금적용전력이 목표 이하",
+        "ESS 절감액이 0 이하인 점에는 회수기간이 없다",
+    ):
+        assert name in checks, name
