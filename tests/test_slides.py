@@ -2248,3 +2248,72 @@ def test_ESS_부록이_한_장이다(full_sections: DocumentSections) -> None:
     )
     titles = [page.title for page in appendix_pages(sections)]
     assert all(" — " in title for title in titles), titles
+
+
+# ===================================================================== 53세션 · 9절 렌더링
+
+
+def _overlaps(first: tuple[float, float], second: tuple[float, float]) -> float:
+    """두 세로 구간이 겹치는 길이 (in). 0 이면 안 겹친다."""
+    return max(0.0, min(first[1], second[1]) - max(first[0], second[0]))
+
+
+def _table_and_text_bands(
+    slide: object,
+) -> tuple[list[tuple[float, float]], list[tuple[float, float, str]]]:
+    from pptx.util import Emu
+
+    tables: list[tuple[float, float]] = []
+    texts: list[tuple[float, float, str]] = []
+    for shape in slide.shapes:  # type: ignore[attr-defined]
+        if shape.top is None or not shape.height:
+            continue
+        band = (Emu(shape.top).inches, Emu(shape.top + shape.height).inches)
+        if shape.has_table:
+            tables.append(band)
+        elif shape.has_text_frame and shape.text_frame.text.strip():
+            texts.append((band[0], band[1], shape.text_frame.text))
+    return tables, texts
+
+
+def test_표가_아래_글씨를_덮지_않는다(full_sections: DocumentSections) -> None:
+    """**실물을 렌더해서야 보였다** (53세션 9절).
+
+    표 높이는 우리가 넘긴 값이 아니라 **줄 높이의 합**이라 계산과 어긋난다.
+    개선안별 요약은 각주가 세 줄인데 예약이 두 줄어치였고, ESS 사양 표는
+    캡션을 밑변에 딱 붙여 두어 마지막 줄에 얹혔다.
+    """
+    import dataclasses
+
+    sections = dataclasses.replace(
+        full_sections,
+        measures=(*full_sections.measures, _ess_entry_with_spec()),
+    )
+    for index, slide in enumerate(build_slides(sections).slides, start=1):
+        tables, texts = _table_and_text_bands(slide)
+        for table in tables:
+            for top, bottom, text in texts:
+                # 표보다 위에서 시작하는 글(제목·해석·지표)은 대상이 아니다.
+                if top < table[0]:
+                    continue
+                assert _overlaps(table, (top, bottom)) < 0.02, (
+                    f"{index}장 — 표({table[0]:.2f}~{table[1]:.2f}in)가 "
+                    f"「{text[:30]}」({top:.2f}in)를 덮습니다."
+                )
+
+
+def test_슬라이드_안에서_끝난다(full_sections: DocumentSections) -> None:
+    """**각주는 아래에 붙어 있어 넘친 줄이 밖으로 나간다** (53세션 9절)."""
+    import dataclasses
+
+    guide = load_design_guide()
+    sections = dataclasses.replace(
+        full_sections,
+        measures=(*full_sections.measures, _ess_entry_with_spec()),
+    )
+    for index, slide in enumerate(build_slides(sections).slides, start=1):
+        tables, texts = _table_and_text_bands(slide)
+        for _top, bottom, text in texts:
+            assert bottom <= guide.slide.height_in + 0.01, f"{index}장 — 「{text[:20]}」"
+        for table in tables:
+            assert table[1] <= guide.slide.height_in + 0.01, f"{index}장 — 표"

@@ -298,6 +298,10 @@ def render_png(figure: Figure) -> bytes:
         format="png",
         dpi=FIGURE_DPI,
         bbox_inches="tight",
+        # **여백을 조금 더 준다** (53세션 9절). 기본값 0.1 로는 세로로 눕힌 축
+        # 이름의 첫 글자가 잘렸다 — 선택요금 전환 아래 칸의 「현행 대비 (억원)」
+        # 이 「행 대비 (억원)」 으로 보였다.
+        pad_inches=0.16,
         facecolor=canvas,
         edgecolor="none",
     )

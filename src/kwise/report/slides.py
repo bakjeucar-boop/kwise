@@ -565,29 +565,53 @@ def _note(slide: Slide, guide: DesignGuide, *lines: str) -> None:
     **앞에 :data:`NOTE_MARK` 를 붙인다** (53세션 1-1). 작은 회색 글씨라는 것만으로는
     본문의 끝인지 참고인지 갈리지 않는다 — 표식 하나가 그 자리를 정한다.
     """
-    kept = [mark_note(line) for line in lines if line]
+    kept, height = _note_block(guide, lines)
     if not kept:
         return
     geometry = guide.slide
     size = guide.type_scale.caption
-    # **줄 수를 세어 높이를 잡는다.** 각주는 아래에 붙어 있으므로 넘친 줄이
-    # 슬라이드 밖으로 나간다 — 줄 수로 잡으면 그만큼 위에서 시작한다.
-    wrapped = sum(
-        max(1, math.ceil(_text_width_in(line, size) / geometry.content_width_in))
-        for line in kept
-    )
-    height = 0.2 * wrapped
     _text(
         slide,
         guide,
         kept,
         left=geometry.margin_in,
-        top=geometry.height_in - geometry.margin_in - 0.42 - height + 0.2,
+        top=_note_top(guide, *lines),
         width=geometry.content_width_in,
         height=height,
         size=size,
         color=guide.colors.muted,
     )
+
+
+def _note_block(guide: DesignGuide, lines: Sequence[str]) -> tuple[list[str], float]:
+    """각주로 실을 줄과 그 높이 (in) (53세션 9절).
+
+    **줄 수를 세어 잡는다.** 각주는 슬라이드 아래에 붙어 있으므로 넘친 줄이
+    밖으로 나가고, 위쪽 표는 그 사실을 모른 채 자리를 다 쓴다 — 개선안별 요약이
+    그랬다: 각주가 세 줄인데 예약은 두 줄어치라 **표 마지막 줄과 겹쳤다.**
+    """
+    kept = [mark_note(line) for line in lines if line]
+    if not kept:
+        return [], 0.0
+    size = guide.type_scale.caption
+    width = guide.slide.content_width_in
+    wrapped = sum(
+        max(1, math.ceil(_text_width_in(line, size) / width)) for line in kept
+    )
+    return kept, 0.2 * wrapped
+
+
+def _note_top(guide: DesignGuide, *lines: str) -> float:
+    """각주 띠가 시작하는 y. **각주가 없으면 본문 바닥이다.**
+
+    :func:`_body_bottom` 을 대신한다 — 그쪽은 각주 높이를 :data:`_NOTE_HEIGHT`
+    로 못박아 두어, 각주가 두 줄을 넘으면 위쪽이 그만큼 침범당했다.
+    """
+    geometry = guide.slide
+    _kept, height = _note_block(guide, lines)
+    if not height:
+        return geometry.height_in - geometry.margin_in
+    return geometry.height_in - geometry.margin_in - 0.42 - height + 0.2
 
 
 def _body_bottom(guide: DesignGuide, *, note: bool) -> float:
@@ -629,6 +653,17 @@ def _caption(
 
 #: 캡션 한 줄이 차지하는 높이 (in). 그림 덩어리의 높이 계산에 함께 든다.
 _CAPTION_HEIGHT = 0.32
+
+
+def _table_room_above(guide: DesignGuide, *, top: float, note_top: float) -> float:
+    """각주 띠 **바로 위까지** 표에 내줄 수 있는 높이 (53세션 9절).
+
+    :func:`_table_room` 은 각주 자리를 0.65in 로 못박는데, 각주가 세 줄이면
+    0.82in 을 먹는다 — 그 차이가 그대로 겹침이 됐다. 실측한 자리를 받는다.
+    """
+    geometry = guide.slide
+    room = note_top - geometry.block_gap_in - top
+    return max(0.0, room) / (1.0 + geometry.text_slack)
 
 
 def _table_room(guide: DesignGuide, *, top: float, footnote: bool) -> float:
@@ -1100,7 +1135,10 @@ def _build_building(
         left=geometry.margin_in,
         top=top,
         width=geometry.content_width_in,
-        height=min(_table_room(guide, top=top, footnote=True), 0.44 * len(rows)),
+        height=min(
+            _table_room_above(guide, top=top, note_top=_note_top(guide, note)),
+            0.44 * len(rows),
+        ),
         widths=(0.26, 0.74),
     )
     _note(slide, guide, note)
@@ -1426,6 +1464,13 @@ def _build_measure_summary(
     )
     if len(rows) == 1:
         rows.append(["검토한 수단이 없습니다", "—", "—", "—"])
+    # **각주가 실제로 먹는 자리를 재서 그 위까지만 쓴다** (53세션 9절).
+    # 아래 각주는 세 줄로 흐르는데 예약은 두 줄어치였다 — 표 마지막 줄이
+    # 「※ 회수기간 = …」 위에 겹쳐 있었다.
+    notes = (
+        narrative.glossary_note(GLOSSARY_KEYS["measure_summary"]),
+        f"{ANNUAL_BASIS_NOTE} {NOT_INCLUDED_NOTICE} {TRUNCATION_FOOTNOTE}",
+    )
     _table(
         slide,
         guide,
@@ -1433,15 +1478,13 @@ def _build_measure_summary(
         left=geometry.margin_in,
         top=top,
         width=geometry.content_width_in,
-        height=min(_table_room(guide, top=top, footnote=True) - 0.3, 0.5 * len(rows)),
+        height=min(
+            _table_room_above(guide, top=top, note_top=_note_top(guide, *notes)),
+            0.5 * len(rows),
+        ),
         widths=(0.26, 0.34, 0.24, 0.16),
     )
-    _note(
-        slide,
-        guide,
-        narrative.glossary_note(GLOSSARY_KEYS["measure_summary"]),
-        f"{ANNUAL_BASIS_NOTE} {NOT_INCLUDED_NOTICE} {TRUNCATION_FOOTNOTE}",
-    )
+    _note(slide, guide, *notes)
 
 
 #: 금액 기준을 **한 번만** 적는다 (39세션 2-2). 값마다 「(12개월 환산 ○○원)」 을
@@ -1485,12 +1528,15 @@ def _measure_note(entry: MeasureEntry) -> str:
         ("투자비", entry.investment),
         ("회수기간", entry.payback),
     ):
-        reason = split_reason(value)[1]
+        head, reason = split_reason(value)
         if reason:
-            # **「미산출」 이 두 번 나오지 않게 한다** (53세션). 태양광 투자비 사유가
+            # **머리말을 그대로 옮긴다** (53세션 9절). 「미산출」 로 못박아 두어
+            # 「기본요금 변화없음」 인 값이 각주에서 「절감액 **미산출**」 이 됐다.
+            #
+            # **「미산출」 이 두 번 나오지 않게 한다.** 태양광 투자비 사유가
             # 「미산출 — 태양광 설치 단가 미입력」 꼴이라, 앞에 라벨을 붙이면
             # 「투자비 미산출 — 미산출 — 태양광 …」 이 됐다.
-            parts.append(f"{label} {_UNPRICED} — {split_reason(reason)[1] or reason}")
+            parts.append(f"{label} {head} — {split_reason(reason)[1] or reason}")
     if entry.slide_note:
         parts.append(entry.slide_note)
     return " · ".join(parts)
@@ -1547,13 +1593,28 @@ def _measure_pictures(
 #: 잡았다. 50세션에 격자가 붙어 표가 **다섯 줄에서 여섯 줄**이 되자 그 비율이
 #: 그대로 표를 키워, 남은 자리에 그림이 **0.85 × 0.41in** 로 우겨 넣어졌다 —
 #: 손톱만 한 차트다. **비율이 아니라 줄 수로 잡는다.**
-_SPEC_ROW_HEIGHT = 0.28
+_SPEC_ROW_HEIGHT = 0.30
+
+#: 그림을 뺐을 때 사양 표가 늘어날 수 있는 **줄당 상한** (in) (53세션 9절).
+#: 남는 자리를 표가 다 쓰되, 여섯 줄짜리 표가 슬라이드를 세로로 가르지 않게 한다.
+_SPEC_ROW_MAX = 0.55
+
+#: 사양 표와 그 아래 참고 줄 사이의 숨 (in).
+#:
+#: **0 이면 캡션이 마지막 줄에 얹힌다** (53세션 9절). 표 높이는 PowerPoint 에서
+#: 최소값일 뿐이라 실제로는 조금 더 벌어지는데, 캡션을 표 밑변에 딱 붙여 두어
+#: 그 차이만큼 겹쳤다 — 실물을 렌더해서야 보였다.
+_SPEC_CAPTION_GAP = 0.10
 
 #: 표 아래 그림에 남겨야 하는 최소 높이 (in). 캡션 0.32 + 그림 0.7 남짓이다.
 #:
 #: **이보다 좁으면 그림을 싣지 않는다.** 뭉갠 차트는 없는 것만 못하고, 자리를
 #: 비우면 표가 그 자리를 받아 마지막 줄이 캡션에 닿지 않는다.
-_MIN_FIGURE_BLOCK = 1.02
+#:
+#: **53세션 9절에 1.02 → 1.35 로 올렸다.** 실물을 렌더해 보니 1.0in 짜리 칸에
+#: 앉은 ESS 대표일 곡선은 축 눈금이 읽히지 않는 손톱만 한 그림이었다 — 그
+#: 자리를 표에 주면 아홉 열이 넉넉히 앉는다. 같은 그림은 화면과 Word 에 있다.
+_MIN_FIGURE_BLOCK = 1.35
 
 #: 사양 표 아래 참고 **한 줄**이 먹는 높이 (in). 줄 수만큼 곱한다.
 _SPEC_CAPTION_HEIGHT = 0.24
@@ -1648,10 +1709,13 @@ def _spec_block(
     # **그림이 들어갈 자리가 남는가**로 갈린다. 남지 않으면 그림을 빼고 표가
     # 남은 높이를 다 쓴다 — 상한은 그 자리다.
     gap = gap / 2 if lines else gap
-    room = height - wanted - caption_height - gap
+    room = height - wanted - caption_height - _SPEC_CAPTION_GAP - gap
     if room < _MIN_FIGURE_BLOCK:
+        # **그림을 빼고 그 자리를 표에 준다.** 아래를 비워 두면 슬라이드가 덜
+        # 만들어진 것처럼 보이고, 줄이 벌어진 표가 아홉 열을 훨씬 잘 읽힌다.
         drawings = ()
-        wanted = min(wanted, height - caption_height)
+        roomy = height - caption_height - _SPEC_CAPTION_GAP
+        wanted = min(max(wanted, roomy), _SPEC_ROW_MAX * len(entry.spec_table))
     _table(
         slide,
         guide,
@@ -1671,14 +1735,14 @@ def _spec_block(
             guide,
             lines,
             left=geometry.margin_in,
-            top=top + used,
+            top=top + used + _SPEC_CAPTION_GAP,
             width=geometry.content_width_in,
             height=caption_height,
             size=guide.type_scale.caption,
             color=guide.colors.muted,
             spacing=1.0,
         )
-        used += caption_height
+        used += caption_height + _SPEC_CAPTION_GAP
     # **표와 그림 사이는 반 칸이다.** 참고 한 줄이 이미 둘을 가르므로 온 칸을
     # 두면 그만큼 그림이 눌린다.
     return top + used + gap, height - used - gap, drawings
@@ -1747,7 +1811,7 @@ def _build_measure(
     terms_note = narrative.glossary_note(GLOSSARY_KEYS.get(spec.key, ()))
     note = _measure_note(entry)
     body = bottom + geometry.block_gap_in
-    height = _body_bottom(guide, note=bool(note or terms_note)) - body - _BODY_TAIL
+    height = _note_top(guide, terms_note, note) - body - _BODY_TAIL
     drawings = entry.slide_figures
     crowded = False
     if entry.spec_table:
@@ -1829,7 +1893,7 @@ def _build_surplus(
     gap = geometry.block_gap_in
     half = (geometry.content_width_in - gap) / 2
     right_left = geometry.margin_in + half + gap
-    bottom = _body_bottom(guide, note=True)
+    bottom = _note_top(guide, page.note)
     if page.figure is not None:
         _picture_block(
             slide,
@@ -2112,6 +2176,7 @@ def _build_appendix(
     rows.extend([list(record) for record in page.rows])
     if len(rows) == 1:
         rows.append(["계산 근거", "절감액이 산출된 수단이 없습니다", "—"])
+    appendix_note = _appendix_note(sections)
     _table(
         slide,
         guide,
@@ -2119,13 +2184,16 @@ def _build_appendix(
         left=geometry.margin_in,
         top=top,
         width=geometry.content_width_in,
-        height=min(_table_room(guide, top=top, footnote=True), 0.4 * len(rows)),
+        height=min(
+            _table_room_above(guide, top=top, note_top=_note_top(guide, appendix_note)),
+            0.4 * len(rows),
+        ),
         widths=(0.24, 0.5, 0.26),
     )
     _caption(
         slide,
         guide,
-        mark_note(_appendix_note(sections)),
+        mark_note(appendix_note),
         left=geometry.margin_in,
         top=geometry.height_in - geometry.margin_in - 0.3,
         width=geometry.content_width_in,
