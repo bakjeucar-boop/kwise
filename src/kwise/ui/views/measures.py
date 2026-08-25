@@ -31,6 +31,7 @@ from kwise.diagnose.dr import dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData
 from kwise.measures import (
     BASE_FEE_UNCHANGED,
+    CURTAIL_SCENARIO,
     EXTERNAL_SCENARIO,
     OFFSET_SCENARIO,
     SHORTEST_PAYBACK,
@@ -1096,17 +1097,23 @@ def _solar(
 
 
 def solar_surplus_scenario() -> str:
-    """고른 잉여 처리 방식. **안 골랐으면 빈 문자열이다** (48세션).
+    """고른 잉여 처리 방식. **안 골랐으면 기준선인 출력제어다** (56세션).
 
-    41세션이 「기본값 없음」 으로 둔 라디오다 — 상계와 외부 판매는 계약 상대도
-    정산 절차도 다른 길이라 미리 골라 두면 그것이 권고로 읽힌다. 그래서 **고른
-    경우에만** 수익을 절감액에 더한다.
+    41세션은 「기본값 없음」 으로 두었다 — 상계와 외부 판매는 계약 상대도 정산
+    절차도 다른 길이라 미리 골라 두면 그것이 권고로 읽힌다는 까닭이었다.
+    **그런데 「고르지 않음」 도 하나의 답이었다** — 0원이 더해지므로 값으로는
+    출력제어와 같은데, 화면은 무엇이 기준인지 말하지 않았다. 잉여가 나는
+    자료에서 그 선택이 절감액을 바꾸므로, 사용자가 접힘을 못 보고 지나치면
+    **어느 전제로 나온 숫자인지 모른 채** 결론을 읽게 된다.
 
-    ``dr_off_days`` 와 같은 방식이다 — 고르는 자리는 태양광 카드의 접힘 안인데
-    쓰는 자리가 그 위 지표와 3단계다. Streamlit 이 위젯 값을 세션에 먼저 넣고
+    **아무 절차도 필요 없는 쪽이 기준선이다.** 상계거래는 계약 변경과 역송
+    계량기가 따라오는데 그것을 전제로 절감액을 부풀리면 안 된다.
+
+    ``dr_off_days`` 와 같은 방식이다 — 고르는 자리는 태양광 카드 안인데 쓰는
+    자리가 그 위 지표와 3단계다. Streamlit 이 위젯 값을 세션에 먼저 넣고
     스크립트를 다시 돌리므로 고른 그 실행에서 바로 반영된다.
     """
-    return str(st.session_state.get(input_key("solar", "surplus_use")) or "")
+    return str(st.session_state.get(input_key("solar", "surplus_use")) or CURTAIL_SCENARIO)
 
 
 def chosen_surplus_revenue(result: SurplusResult | None) -> tuple[str, float | None]:
@@ -1126,15 +1133,22 @@ def chosen_surplus_revenue(result: SurplusResult | None) -> tuple[str, float | N
 
 
 def _solar_saving_tip(point: SolarPoint, months: float) -> str:
-    """절감액이 무엇으로 갈리는지 한 줄 (48세션). 안 골랐으면 붙이지 않는다."""
-    if not point.surplus_scenario:
+    """절감액에 **무엇이 들어 있는지** 한 줄 (48세션 · 56세션에 언제나 붙인다).
+
+    41세션까지는 아무것도 고르지 않을 수 있어 「안 골랐으면 안 붙인다」 였다.
+    56세션에 기준선(출력제어)이 기본이 되면서 **언제나 고른 것이 있다** — 그러면
+    이 줄이 「지금 이 숫자에 무엇이 들어 있나」 에 늘 답한다.
+    """
+    if not point.surplus_scenario:  # pragma: no cover - 기본값이 있어 비지 않는다
         return ""
     self_consumed = money.won(annualize(point.self_consumption_saving_won, months), reason="—")
     added = money.won(annualize(point.surplus_revenue_won, months), reason="—")
+    head = f"자가소비로 줄인 요금 {self_consumed} + 잉여 {point.surplus_scenario} {added}."
+    if not point.surplus_revenue_won:
+        return fmt.markdown_safe(head)
     return fmt.markdown_safe(
-        f"자가소비로 줄인 요금 {self_consumed} + 잉여 {point.surplus_scenario} {added}.\n\n"
-        "역송분은 요금 계산에서 빠져 있고, 상계 차감은 그 뒤에 남은 순부하 사용량을 "
-        "한도로 잽니다 — 겹쳐 세지 않았습니다."
+        head + '\n\n역송분은 요금 계산에서 빠져 있고, 상계 차감은 그 뒤에 남은 '
+        "순부하 사용량을 한도로 잽니다 — 겹쳐 세지 않았습니다."
     )
 
 
@@ -1231,26 +1245,32 @@ def _surplus_handling(
     으로 「생기려면 얼마가 필요한가」 에 답하고 있으므로, 고를 것이 없는 자리에
     선택지를 세우면 없는 결정을 만든다.
 
-    **접힘 안에 둔다** (41세션 2-5). 태양광 카드는 이미 지표 여덟·표 하나·
-    그림 셋을 지고 있어 본문 예산이 빠듯하다 — 잉여 처리는 용량을 정한 **뒤**에
-    보는 것이라 접어도 순서를 해치지 않는다.
+    **잉여가 나면 펼쳐 둔다** (56세션). 41세션은 본문 예산을 이유로 접었는데,
+    **접힘 안은 예산을 따로 세므로** 그 근거가 서지 않았다. 그리고 접어 두면
+    사용자가 절을 못 보고 지나쳐 **무엇을 전제로 나온 절감액인지 모른 채**
+    결론을 읽는다 — 잉여가 나는 자료에서 그 선택은 금액을 바꾼다.
 
-    **기본값을 정하지 않는다.** 상계와 외부 판매는 계약도 정산도 다른 길이라
-    어느 쪽을 미리 골라 두면 그것이 권고로 읽힌다.
+    **27세션의 「카드는 접고 시작」 과 어긋나지 않는다.** 실제 규약은 16세션
+    0-2 의 **「켠 카드는 펼쳐진 채로 남는다」** 이고 수단 카드 자체가 이미
+    ``expanded=True`` 다. 여기는 카드가 아니라 **카드 안의 절**이므로, 켠 카드
+    안에서 다시 접어 두는 쪽이 오히려 그 규약과 어긋난다.
+
+    **기본은 출력제어다.** 아무 절차도 필요 없는 쪽이 기준선이다 —
+    :func:`solar_surplus_scenario`.
     """
     if surplus.total_kwh <= 0:
         return
     options = surplus_options(point.capacity_kwp)
-    with st.expander("잉여 처리"):
+    with st.expander("잉여 처리", expanded=True):
         choice = st.radio(
             "남는 전기를 어떻게 하나",
             options,
-            index=None,
+            index=options.index(CURTAIL_SCENARIO),
             key=input_key("solar", "surplus_use"),
             horizontal=True,
             help=manual_tip("measure-surplus"),
         )
-        if choice is None:
+        if choice is None:  # pragma: no cover - 기본값이 있어 비지 않는다
             return
         # **단가는 위젯 키에만 둔다** (48세션). :func:`_surplus_result` 가 세션에서
         # 읽으므로 여기서 값을 받아 넘기지 않는다 — 옮겨 적으면 카드 위 절감액과

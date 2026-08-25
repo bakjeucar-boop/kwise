@@ -168,7 +168,7 @@ from kwise.measures.solar import (
     with_surplus_revenue,
 )
 from kwise.measures.surplus import (
-    DISCARD_SCENARIO,
+    CURTAIL_SCENARIO,
     ELIGIBILITY_NOTICE,
     EXTERNAL_SCENARIO,
     OFFSET_SCENARIO,
@@ -193,10 +193,10 @@ __all__ = [
     "BASE_FEE_UNCHANGED",
     "BELOW_MINIMUM_CONCLUSION",
     "CAPACITY_MARKS",
+    "CURTAIL_SCENARIO",
     "DEFAULT_MODULE_DENSITY_KWP_PER_M2",
     "DEFAULT_STEPS",
     "DEFAULT_USABLE_RATIO",
-    "DISCARD_SCENARIO",
     "DR_ADVISORY",
     "ELIGIBILITY_NOTICE",
     "EXTERNAL_SCENARIO",

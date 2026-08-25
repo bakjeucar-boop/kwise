@@ -3347,30 +3347,78 @@ def test_잉여가_0이면_처리_선택지가_안_나온다() -> None:
     assert '"잉여 없는 최대 용량"' in verdict
 
 
-def test_잉여_처리가_셋이고_기본값이_없다() -> None:
-    """**41세션에 「버리기」 를 되살렸다** (2-2).
+def test_잉여_처리가_셋이고_기본은_출력제어다() -> None:
+    """**아무 절차도 필요 없는 쪽이 기준선이다** (56세션 2·3절).
 
-    27세션은 표에서 뺐다 — 언제나 0원인 줄이라 견주는 데 보탬이 없었다. 41세션에
-    표가 아니라 **고르는 자리**가 되면서 뜻이 달라졌다: 「아무것도 하지 않는다」
-    를 고를 수 없으면 셋 중 하나를 강요하게 된다.
+    41세션은 기본값을 두지 않았다 — 미리 고르면 권고로 읽힌다는 까닭이었다.
+    그런데 「고르지 않음」 도 하나의 답이었고(0원), 화면은 **무엇이 기준인지
+    말하지 않았다.** 잉여가 나는 자료에서 그 선택이 절감액을 바꾸므로,
+    접힘을 못 보고 지나치면 어느 전제로 나온 숫자인지 모른 채 결론을 읽는다.
+
+    **이름도 고쳤다.** 「버리기」 는 만들어서 내다 버리는 그림인데 실제로는
+    인버터가 남는 만큼 출력을 낮추는 것이다 — 애초에 안 만든다.
     """
     from kwise.measures import (
-        DISCARD_SCENARIO,
+        CURTAIL_SCENARIO,
         EXTERNAL_SCENARIO,
         OFFSET_SCENARIO,
         surplus_options,
     )
 
-    assert (OFFSET_SCENARIO, EXTERNAL_SCENARIO, DISCARD_SCENARIO) == (
+    assert (OFFSET_SCENARIO, EXTERNAL_SCENARIO, CURTAIL_SCENARIO) == (
         "상계거래(한전)",
         "외부 판매",
-        "버리기",
+        "출력제어",
     )
-    assert surplus_options(500.0) == (OFFSET_SCENARIO, EXTERNAL_SCENARIO, DISCARD_SCENARIO)
+    assert surplus_options(500.0) == (OFFSET_SCENARIO, EXTERNAL_SCENARIO, CURTAIL_SCENARIO)
     source = (VIEWS / "measures.py").read_text(encoding="utf-8")
     handling = source[source.index("def _surplus_handling(") : source.index("def _surplus_carry(")]
-    # **기본값을 정하지 않는다.** 미리 고르면 그것이 권고로 읽힌다.
-    assert "index=None" in handling, handling
+    # **기준선이 기본이다.** 상계거래는 계약 변경과 역송 계량기가 따라오는데
+    # 그것을 전제로 절감액을 부풀리면 안 된다.
+    assert "index=options.index(CURTAIL_SCENARIO)" in handling, handling
+    assert "index=None" not in handling, handling
+    # **잉여가 나면 펼쳐 둔다** — 접어 두면 절을 못 보고 지나친다.
+    assert 'st.expander("잉여 처리", expanded=True)' in handling, handling
+
+
+def test_잉여가_0이면_잉여_처리_절이_없다() -> None:
+    """**고를 것이 없는 자리에 선택지를 세우지 않는다** (41세션 2-2).
+
+    접거나 감추는 문제가 아니라 **아예 그리지 않는다** — 위 지표가 「잉여 없는
+    최대 용량」 으로 「생기려면 얼마가 필요한가」 에 이미 답한다.
+    """
+    source = (VIEWS / "measures.py").read_text(encoding="utf-8")
+    handling = source[source.index("def _surplus_handling(") : source.index("def _surplus_carry(")]
+    body = handling.split('"""')[2]
+    assert body.index("if surplus.total_kwh <= 0:") < body.index("st.expander"), body
+
+
+def test_버리기라는_말이_값으로_남지_않았다(screen_lines: tuple[object, ...]) -> None:
+    """**만들어서 버리는 것이 아니다** (56세션 3절).
+
+    27세션에 화면에서 뺐다가 41세션에 되살아난 이력이 있어 **전수로 본다** —
+    시나리오 이름·화면 문구·산출물 재료 어디에도 값으로 남지 않아야 한다.
+    이름을 왜 고쳤는지 적은 글(도크스트링·매뉴얼)은 남긴다: 그것이 사라지면
+    다음 사람이 같은 이름을 다시 들고 온다.
+    """
+    from kwise.measures import CURTAIL_SCENARIO, surplus_options
+
+    banned = "버리기"
+    assert CURTAIL_SCENARIO == "출력제어"
+    assert not [item for item in surplus_options(500.0) if banned in item]
+    offenders = [
+        f"[{item.slot}] {item.where} :: {item.text[:60]}"
+        for item in screen_lines
+        if banned in str(item.text)
+    ]
+    assert offenders == [], offenders
+
+    # 산출물 재료 — 잉여 장의 시나리오 표와 태양광 각주.
+    from kwise.report.document import SURPLUS_SCENARIO_HEADER
+
+    assert banned not in " ".join(SURPLUS_SCENARIO_HEADER)
+    source = (Path("src") / "kwise" / "report" / "document.py").read_text(encoding="utf-8")
+    assert banned not in source, "산출물 재료에 남아 있습니다."
 
 
 def test_잉여_단가_이름이_하나다() -> None:

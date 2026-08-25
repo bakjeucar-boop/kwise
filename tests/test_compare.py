@@ -474,3 +474,69 @@ def test_range_width_separates_total_and_peak_metrics(pv_sensitivity: pd.DataFra
     assert generation is not None and generation < 0.01
     assert energy is not None and energy < 0.05
     assert base_fee is not None and base_fee > energy * 5
+
+
+# ===================================================================== 56세션 · 잉여 처리
+
+
+def test_잉여_수익은_요금_재계산_없이_얹힌다(
+    sample_comparison: ComparisonResult,
+) -> None:
+    """**값이 이미 손에 있는데 조합 여섯의 요금이 다시 돌았다** (56세션 2절).
+
+    잉여 수익은 요금 계산 **밖에서** 붙는 덧셈이라 부하도 청구서도 바꾸지 않는다.
+    그런데 조합 명세에 들어 있어 라디오를 누를 때마다 2.3초가 들었고, 세션
+    기억이 여덟 칸뿐이라 새 항목이 **태양광 곡선과 ESS 정밀화를 밀어내** 6.5초짜리
+    재계산까지 불렀다.
+    """
+    base = sample_comparison.with_surplus_revenue(None, "")
+    added = base.with_surplus_revenue(1_000_000.0, "상계거래(한전)")
+
+    # **청구서는 그대로다** — 다시 계산하지 않았다는 뜻이다.
+    assert [item.bill for item in added.combinations] == [
+        item.bill for item in base.combinations
+    ]
+    # 태양광을 켠 조합에만 붙는다.
+    for before, after in zip(base.combinations, added.combinations, strict=True):
+        expected = 1_000_000.0 if after.spec.has_pv else 0.0
+        assert after.surplus_revenue_won == expected
+        assert after.saving_won == pytest.approx(before.saving_won + expected)
+    assert any(item.spec.has_pv for item in added.combinations), "태양광 조합이 있어야 본다"
+
+    # **되돌리면 처음과 같다** — 덧셈만 하므로 어디서 출발해도 같은 답이다.
+    back = added.with_surplus_revenue(None, "")
+    assert [item.saving_won for item in back.combinations] == [
+        item.saving_won for item in base.combinations
+    ]
+    assert [item.annual_saving_won for item in back.combinations] == [
+        item.annual_saving_won for item in base.combinations
+    ]
+
+
+def test_잉여_수익_근거가_한_자리에서_나온다(sample_comparison: ComparisonResult) -> None:
+    """**같은 글을 두 자리에서 짓지 않는다** (46세션과 같은 줄기)."""
+    from kwise.compare.combination import SURPLUS_REVENUE_FACT, surplus_notice
+
+    assert surplus_notice(0.0, "출력제어") is None
+    note = surplus_notice(1_000_000.0, "상계거래(한전)")
+    assert note is not None and note.fact == SURPLUS_REVENUE_FACT
+
+    added = sample_comparison.with_surplus_revenue(1_000_000.0, "상계거래(한전)")
+    facts = [item.fact_base for item in added.notices]
+    assert SURPLUS_REVENUE_FACT in facts
+    # 0 으로 되돌리면 근거도 사라진다 — 없는 사실을 남기지 않는다.
+    cleared = added.with_surplus_revenue(None, "")
+    assert SURPLUS_REVENUE_FACT not in [item.fact_base for item in cleared.notices]
+
+
+def test_조합_비교_열쇠가_잉여_수익을_안_본다() -> None:
+    """**요금과 무관한 값이 열쇠에 있으면 캐시가 죽는다** (56세션 2절)."""
+    import inspect
+
+    from kwise.ui import cache
+
+    source = inspect.getsource(cache.cached_comparison)
+    assert "stripped" in source
+    assert "surplus_revenue_won=None" in source
+    assert 'key = f"compare|{token}|{stripped}|{options_key}|{stamp}"' in source
+    assert "with_surplus_revenue" in source

@@ -225,7 +225,7 @@ reference/          기존 pv_peak_cut 코드. **읽기 전용**</code></pre></d
 <h3 id="tech-measures">4.3 개선 수단별 산식</h3>
 <p><strong>절감액은 언제나 재계산이다.</strong> 수단을 적용한 15분 부하를 만들어 <code>calculate_bill()</code> 을 다시 부른다. 비율로 어림하지 않는다.</p>
 <div class="table-wrap"><table><thead><tr><th>#</th><th>수단</th><th>산식 요지</th><th>확실성</th></tr></thead><tbody><tr><td>7.1</td><td>선택요금 전환</td><td>같은 종별·전압의 모든 선택요금으로 요금을 다시 계산해 최소를 고른다</td><td>높음</td></tr><tr><td>7.2</td><td>계약전력 조정</td><td>요금적용전력 × (1+여유율) 로 권장값을 잡고 <strong>하한 규정이 걸릴 때만</strong> 금액이 난다</td><td>높음</td></tr><tr><td>7.3</td><td>경제성DR</td><td>거래 가능일 × 등록 용량 × 입찰 시간 = 감축 가능량(kWh)</td><td>중간</td></tr><tr><td>7.4</td><td>역률 개선</td><td>두 역률에서 각각 요금을 계산해 차를 낸다</td><td>높음</td></tr><tr><td>7.5</td><td>태양광</td><td>용량 곡선 20단계. 각 점에서 순부하를 만들어 재계산</td><td>중간</td></tr><tr><td>7.6</td><td>ESS</td><td>목표 요금적용전력에서 출력·용량을 역산하고 디스패치 후 재계산</td><td>중간~낮음</td></tr></tbody></table></div>
-<p><strong>7.7 잉여 활용은 41세션에 빠졌다.</strong> 잉여는 태양광을 얼마나 크게 지을지에 따라 나오는 <strong>결과</strong>이지 따로 고르는 수단이 아니다 — 처리 선택(상계·외부 판매·버리기)을 7.5 안으로 옮기고 개선안을 여섯으로 줄였다. 계산 모듈 (<code>kwise.measures.surplus</code>)은 그대로 남는다.</p>
+<p><strong>7.7 잉여 활용은 41세션에 빠졌다.</strong> 잉여는 태양광을 얼마나 크게 지을지에 따라 나오는 <strong>결과</strong>이지 따로 고르는 수단이 아니다 — 처리 선택(상계·외부 판매·출력제어)을 7.5 안으로 옮기고 개선안을 여섯으로 줄였다. 계산 모듈 (<code>kwise.measures.surplus</code>)은 그대로 남는다.</p>
 <p><strong>순서는 투자비 순으로 확정했고 바꾸지 않는다. 번호도 밀지 않는다.</strong> 수단을 더하거나 뺄 때마다 번호가 밀리면 코드 docstring 과 문서 참조가 계속 어긋난다. 목록은 <code>kwise.measures.MEASURE_CATALOG</code> 한 곳에 있고 화면과 보고서가 함께 읽는다.</p>
 <h4 id="tech-tariff-switch">7.1 선택요금 전환</h4>
 <p><strong>같은 계약종별 안에서만 비교한다.</strong> 종별은 용도로 정해지는 계약이지 고를 수 있는 요금제가 아니다. <strong>전압구분도 현행에 가둔다</strong> — 고압A(3.3~66 kV)와 고압B(154 kV)는 수전설비가 물리적으로 다르다. 단가만 보면 그럴듯한 권고가 나와서 더 위험하다.</p>

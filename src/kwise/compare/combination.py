@@ -17,6 +17,7 @@ ESS 충전이 새 피크를 만드는지도 확인한다. 경부하 시간대 �
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 
 import pandas as pd
@@ -235,6 +236,35 @@ class ComparisonResult:
         ]
         return pd.DataFrame(rows).set_index("조합")
 
+    def with_surplus_revenue(
+        self, revenue_won: float | None, scenario: str
+    ) -> ComparisonResult:
+        """고른 잉여 처리를 **이미 계산한 비교에 얹는다** (56세션).
+
+        잉여 수익은 **요금 계산 밖에서 붙는 몫**이라 부하도 청구서도 바꾸지
+        않는다 (:meth:`CombinationResult.total_won`). 그런데 조합 명세에 들어
+        있어, 라디오를 누를 때마다 조합 여섯의 요금이 통째로 다시 돌았다 —
+        **값이 이미 손에 있는데도** 2.3초를 썼고, 세션 기억이 여덟 칸뿐이라
+        (:data:`~kwise.ui.memo._MAX_ENTRIES`) 새 항목이 태양광 곡선과 ESS
+        정밀화를 밀어내 6.5초짜리 재계산까지 불렀다.
+
+        **덧셈만 한다.** 어떤 수익에서 출발했든 같은 답이 나오도록 이미 얹혀
+        있던 몫을 먼저 뺀다.
+        """
+        revenue = float(revenue_won or 0.0)
+        combinations = tuple(
+            _with_surplus(item, revenue, scenario, self.base_fee_months)
+            for item in self.combinations
+        )
+        if combinations == self.combinations:
+            return self
+        return replace(
+            self,
+            baseline=combinations[0],
+            combinations=combinations,
+            notices=aggregate_notices(combinations),
+        )
+
     @property
     def best(self) -> CombinationResult:
         """절감액이 가장 큰 조합. 투자비는 따로 본다."""
@@ -422,15 +452,9 @@ def evaluate_combination(
     # **고른 잉여 처리를 더한다** (48세션). 태양광을 켠 조합에만 붙고, 아무것도
     # 고르지 않았으면 0 이다. 역송분은 요금 계산에서 이미 빠져 있어 겹치지 않는다.
     surplus_revenue = (spec.surplus_revenue_won or 0.0) if spec.has_pv else 0.0
-    if surplus_revenue:
-        notices.append(
-            basis(
-                f"잉여 {spec.surplus_scenario} 수익 "
-                f"{money.won(surplus_revenue, reason='—')} 을 절감액에 더했습니다. "
-                "역송분은 요금 계산에서 빠져 있어 자가소비 절감액과 겹치지 않습니다.",
-                fact="combination.surplus_revenue",
-            )
-        )
+    surplus_note = surplus_notice(surplus_revenue, spec.surplus_scenario)
+    if surplus_note is not None:
+        notices.append(surplus_note)
     saving = baseline_bill.total_won - bill.total_won + (contract_saving or 0.0) + surplus_revenue
     annual = annualize(saving, baseline_bill.base_fee_months)
     return CombinationResult(
@@ -504,6 +528,79 @@ def default_combinations(
     return tuple(specs)
 
 
+SURPLUS_REVENUE_FACT = "combination.surplus_revenue"
+
+
+def surplus_notice(revenue_won: float, scenario: str) -> Notice | None:
+    """잉여 수익을 더했다는 **근거 한 줄**. 0 이면 없다 (56세션에 뽑았다).
+
+    :meth:`ComparisonResult.with_surplus_revenue` 가 같은 글을 다시 지어야 하므로
+    한 자리에 둔다 — 46세션의 「같은 규칙이 두 자리에 있으면」 과 같은 줄기다.
+    """
+    if not revenue_won:
+        return None
+    return basis(
+        f"잉여 {scenario} 수익 {money.won(revenue_won, reason='—')} 을 절감액에 "
+        "더했습니다. 역송분은 요금 계산에서 빠져 있어 자가소비 절감액과 "
+        "겹치지 않습니다.",
+        fact=SURPLUS_REVENUE_FACT,
+    )
+
+
+def _with_surplus(
+    result: CombinationResult, revenue_won: float, scenario: str, base_fee_months: float
+) -> CombinationResult:
+    """조합 하나에 잉여 수익을 다시 얹는다 (56세션). **태양광을 켠 조합만이다.**"""
+    wanted = revenue_won if result.spec.has_pv else 0.0
+    if wanted == result.surplus_revenue_won:
+        return result
+    saving = result.saving_won - result.surplus_revenue_won + wanted
+    annual = annualize(saving, base_fee_months)
+    kept = tuple(item for item in result.notices if item.fact != SURPLUS_REVENUE_FACT)
+    note = surplus_notice(wanted, scenario)
+    return replace(
+        result,
+        spec=replace(
+            result.spec,
+            surplus_revenue_won=wanted or None,
+            surplus_scenario=scenario if wanted else "",
+        ),
+        saving_won=saving,
+        annual_saving_won=annual,
+        surplus_revenue_won=wanted,
+        payback_years=(
+            payback_years(result.investment_won, annual)
+            if result.investment_won is not None
+            else None
+        ),
+        notices=(*kept, note) if note is not None else kept,
+    )
+
+
+def aggregate_notices(results: Sequence[CombinationResult]) -> tuple[Notice, ...]:
+    """조합 안내를 한 자리에 모은다 — **묶는 규칙은 여기 하나다** (56세션에 뽑았다).
+
+    **조합명은 여기서 붙인다** (20세션 4절). 조합이 여럿이라 어느 조합의 말인지
+    밝혀야 하는데, 문구에 심어 두면 그 앞말이 지문이 되어 같은 조합의 다른
+    경고를 잡아먹는다. 판별자 ``c{번호}`` 는 조합마다 같은 사실을 따로 남기기
+    위한 것이다.
+
+    합산 금지 규칙은 **근거**다 — 표의 숫자가 어떻게 만들어졌는지 그 자체다.
+    """
+    return (
+        *(
+            item
+            for index, result in enumerate(results)
+            for item in prefixed(result.notices, result.name, tag=f"c{index}")
+        ),
+        basis(
+            "조합의 절감액은 수단별 절감액의 단순 합이 아니라, 각 조합의 부하를 "
+            "재구성하여 처음부터 다시 산출한 값입니다.",
+            fact="combination.not_additive",
+        ),
+    )
+
+
 def compare_combinations(
     usage: UsageData,
     table: TariffTable,
@@ -552,22 +649,10 @@ def compare_combinations(
     # 밝혀야 하는데, 문구에 심어 두면 그 앞말이 지문이 되어 같은 조합의 다른 경고를
     # 잡아먹는다. 판별자 ``c{번호}`` 는 조합마다 같은 사실을 따로 남기기 위한 것이다.
     # 합산 금지 규칙은 **근거**다 — 표의 숫자가 어떻게 만들어졌는지 그 자체다.
-    notices = (
-        *(
-            item
-            for index, result in enumerate(results)
-            for item in prefixed(result.notices, result.name, tag=f"c{index}")
-        ),
-        basis(
-            "조합의 절감액은 수단별 절감액의 단순 합이 아니라, 각 조합의 부하를 "
-            "재구성하여 처음부터 다시 산출한 값입니다.",
-            fact="combination.not_additive",
-        ),
-    )
     return ComparisonResult(
         baseline=results[0],
         combinations=tuple(results),
         base_fee_months=base.base_fee_months,
         period_label=base.period_label,
-        notices=notices,
+        notices=aggregate_notices(results),
     )

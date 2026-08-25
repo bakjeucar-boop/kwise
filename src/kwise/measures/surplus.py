@@ -6,7 +6,7 @@
 
     상계거래(한전)  그 슬롯의 실제 계시로 그 달 사용량에서 차감
     외부 판매       사용자가 넣은 잉여 판매 단가
-    버리기          0원
+    출력제어        0원 — **아무 절차도 필요 없는 기준선이다**
 
 **자격요건은 판정하지 않는다.** 제도별 자격요건과 행정 절차는 별도 확인 사항이며,
 여기서는 금액만 참고로 제시한다.
@@ -56,7 +56,7 @@ from kwise.tariff import (
 )
 
 __all__ = [
-    "DISCARD_SCENARIO",
+    "CURTAIL_SCENARIO",
     "ELIGIBILITY_NOTICE",
     "EXTERNAL_SCENARIO",
     "OFFSET_SCENARIO",
@@ -78,15 +78,26 @@ ELIGIBILITY_NOTICE = (
 #: 시나리오 이름. **파는 곳으로 적는다** (27세션 7-3).
 OFFSET_SCENARIO = "상계거래(한전)"
 EXTERNAL_SCENARIO = "외부 판매"
-#: **41세션에 되살렸다.** 27세션은 「언제나 0원인 줄」 이라 표에서 뺐는데, 41세션에
-#: 표가 아니라 **고르는 자리**가 되면서 뜻이 달라졌다 — 「아무것도 하지 않는다」 를
-#: 고를 수 없으면 셋 중 하나를 강요하게 된다.
-DISCARD_SCENARIO = "버리기"
+CURTAIL_SCENARIO = "출력제어"
+"""남는 만큼 인버터 출력을 낮춘다 — **기준선이다** (56세션에 「버리기」 에서 고쳤다).
+
+**41세션에 되살렸다.** 27세션은 「언제나 0원인 줄」 이라 표에서 뺐는데, 41세션에
+표가 아니라 **고르는 자리**가 되면서 뜻이 달라졌다 — 「아무것도 하지 않는다」 를
+고를 수 없으면 셋 중 하나를 강요하게 된다.
+
+**「버리기」 는 사실과 달랐다.** 만들어서 내다 버리는 것이 아니라 **애초에 안
+만드는 것**이다 — 인버터가 남는 만큼 출력을 낮춘다. 「버리기」 는 낭비하는
+그림을 그려 고르지 말아야 할 것처럼 읽혔는데, 실제로는 **계약 변경도 역송
+계량기도 필요 없는 유일한 길**이라 기준선이 되어야 하는 쪽이다.
+
+후보 둘을 물렸다 — 「자가소비만」 은 셋 다 자가소비하므로 구별이 안 되고,
+「발전량 조정」 은 무엇을 조정하는지 불분명하고 용량 조정과 헷갈린다.
+"""
 
 _ADMIN_NOTES = {
     OFFSET_SCENARIO: "계약 변경, 역송 계량기, 월별 정산 관리가 필요하다.",
     EXTERNAL_SCENARIO: "구매자 발굴·계약, 정산 대행, 계량·인증 관리가 필요하다.",
-    DISCARD_SCENARIO: "없다.",
+    CURTAIL_SCENARIO: "없다.",
 }
 
 
@@ -112,8 +123,8 @@ def surplus_options(capacity_kwp: float) -> tuple[str, ...]:
     위는 전력시장 직접 거래 영역이라 이 도구가 다루는 구조가 아니다.
     """
     if capacity_kwp > offset_max_kw():
-        return (EXTERNAL_SCENARIO, DISCARD_SCENARIO)
-    return (OFFSET_SCENARIO, EXTERNAL_SCENARIO, DISCARD_SCENARIO)
+        return (EXTERNAL_SCENARIO, CURTAIL_SCENARIO)
+    return (OFFSET_SCENARIO, EXTERNAL_SCENARIO, CURTAIL_SCENARIO)
 
 
 @dataclass(frozen=True)
@@ -427,10 +438,11 @@ def evaluate_surplus(
     )
     scenarios.append(
         SurplusScenario(
-            DISCARD_SCENARIO,
+            CURTAIL_SCENARIO,
             0.0,
-            "역송하지 않고 버립니다.",
-            _ADMIN_NOTES[DISCARD_SCENARIO],
+            "잉여가 날 때 인버터 출력을 낮춰 계통으로 내보내지 않습니다. "
+            "계약 변경이나 역송 계량기가 필요 없습니다.",
+            _ADMIN_NOTES[CURTAIL_SCENARIO],
         )
     )
 

@@ -557,7 +557,10 @@ class SurplusPage:
     facts: tuple[tuple[str, str], ...]
     """지표 넷 — 연간 잉여 · 평일 · 토·일·공휴일 · 잉여 없는 최대 용량."""
     scenario_rows: tuple[tuple[str, ...], ...]
-    """시나리오 표. 머리글이 첫 줄이다. **「버리기」 는 싣지 않는다** (27세션)."""
+    """시나리오 표. 머리글이 첫 줄이다. **기준선(출력제어)은 싣지 않는다** (27세션).
+
+    언제나 0원이고 「아무것도 하지 않는다」 는 표에 세울 방안이 아니다 — 그것이
+    기준선이라는 사실은 화면 라디오가 고른 자리로 말한다 (56세션)."""
     note: str
     figure: bytes | None = None
     figure_caption: str = ""
@@ -600,9 +603,9 @@ def surplus_page(
         facts.append(("잉여 없는 최대 용량", f"{surplus_free_kwp:,.0f} kWp"))
     rows: list[tuple[str, ...]] = [SURPLUS_SCENARIO_HEADER]
     for item in surplus.scenarios:
-        # **「버리기」 는 싣지 않는다** (27세션에 화면에서 뺐다). 언제나 0원이고
+        # **기준선은 싣지 않는다** (27세션에 화면에서 뺐다). 언제나 0원이고
         # 「아무것도 하지 않는다」 는 표에 세울 방안이 아니다.
-        if item.name == surplus_module.DISCARD_SCENARIO:
+        if item.name == surplus_module.CURTAIL_SCENARIO:
             continue
         rows.append(
             (
@@ -842,12 +845,12 @@ def measure_entries(
         surplus_facts: tuple[tuple[str, str], ...] = ()
         surplus_note = ""
         if surplus is not None and surplus.total_kwh > 0:
-            # **파는 길만 적는다** — 「버리기」 에는 자격요건이 없고, 상계거래는
+            # **파는 길만 적는다** — 출력제어에는 자격요건이 없고, 상계거래는
             # 1,000 kW 를 넘으면 아예 선택지에 없다 (41세션 2-3).
             sellable = " · ".join(
                 item.name
                 for item in surplus.scenarios
-                if item.name != surplus_module.DISCARD_SCENARIO
+                if item.name != surplus_module.CURTAIL_SCENARIO
             )
             cautions.append(
                 f"{sellable}의 **자격요건은 판정하지 않았습니다.** 금액만 참고하십시오."
@@ -858,8 +861,8 @@ def measure_entries(
             )
             # **시나리오 줄을 각주에서 뺐다** (53세션 3절). 잉여가 나면
             # **「잉여 활용」 장이 다음에 붙어** 같은 것을 표로 낸다 — 각주가
-            # 「상계거래 … · 외부 판매 … · **버리기 0원**」 을 이어 적고 있었고,
-            # 「버리기」 는 27세션에 화면에서 뺀 줄이다.
+            # 「상계거래 … · 외부 판매 … · **기준선 0원**」 을 이어 적고 있었고,
+            # 그 줄은 27세션에 화면에서 뺀 것이다.
             surplus_note = ""
         entries["solar"] = MeasureEntry(
             kind=measure_kind("solar"),

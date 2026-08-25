@@ -1368,7 +1368,7 @@ def test_ppt_에_잉여_장이_없고_태양광_장이_진다(
     assert facts["자가소비"].endswith("MWh"), facts
     assert facts["잉여 없는 최대 용량"] == "2,048 kWp", facts
     # **시나리오는 태양광 각주에 없다** (53세션 3절). 잉여가 나면 「잉여 활용」
-    # 장이 다음에 붙어 표로 낸다 — 각주는 「버리기 0원」 까지 이어 적고 있었다.
+    # 장이 다음에 붙어 표로 낸다 — 각주는 기준선 0원까지 이어 적고 있었다.
     assert solar.slide_note == "", solar.slide_note
     assert any("자격요건은 판정하지 않았습니다" in line for line in solar.cautions)
 
@@ -1378,7 +1378,7 @@ def test_ppt_에_잉여_장이_없고_태양광_장이_진다(
     assert page is not None
     names = [row[0] for row in page.scenario_rows[1:]]
     assert "외부 판매" in names
-    assert "버리기" not in names, names
+    assert "출력제어" not in names, names
     # 그림은 여전히 둘이다 — 셋을 넣으면 축 눈금이 뭉개진다 (38세션 3절).
     assert len(solar.slide_figures) <= 2
 
@@ -1619,7 +1619,7 @@ def _surplus_result(*, weekday: float, weekend: float, holiday: float) -> object
     import pandas as pd
 
     from kwise.measures.surplus import (
-        DISCARD_SCENARIO,
+        CURTAIL_SCENARIO,
         EXTERNAL_SCENARIO,
         OFFSET_SCENARIO,
         SurplusResult,
@@ -1638,7 +1638,7 @@ def _surplus_result(*, weekday: float, weekend: float, holiday: float) -> object
         scenarios=(
             SurplusScenario(OFFSET_SCENARIO, 2_545_000.0, "상계", "계약 변경"),
             SurplusScenario(EXTERNAL_SCENARIO, None, "단가 미입력", "구매자 발굴"),
-            SurplusScenario(DISCARD_SCENARIO, 0.0, "버린다", "없다"),
+            SurplusScenario(CURTAIL_SCENARIO, 0.0, "출력을 낮춘다", "없다"),
         ),
     )
 
@@ -1692,8 +1692,8 @@ def test_잉여_문장이_평일_휴일_비중으로_갈린다() -> None:
     assert "고르게 발생합니다" in lead(weekday=5_000.0, weekend=3_000.0, holiday=2_000.0)
 
 
-def test_잉여_장에_버리기가_없다(full_sections: DocumentSections) -> None:
-    """**27세션에 화면에서 뺐다** (53세션 3-2). 「아무것도 안 한다」 는 방안이 아니다."""
+def test_잉여_장에_기준선이_없다(full_sections: DocumentSections) -> None:
+    """**27세션에 표에서 뺐다** (53세션 3-2). 「아무것도 안 한다」 는 방안이 아니다."""
     import dataclasses
 
     from kwise.report.document import SURPLUS_SCENARIO_HEADER, surplus_page
@@ -1713,7 +1713,7 @@ def test_잉여_장에_버리기가_없다(full_sections: DocumentSections) -> N
     )
     slide = _slide_by_key(build_slides(sections), sections, "surplus")
     text = _slide_text(slide)
-    assert "버리기" not in text
+    assert "출력제어" not in text
     assert "상계거래는 계약 변경과 역송 계량기가 필요합니다" in text
     assert "자격요건은 판정하지 않았습니다" in text
 

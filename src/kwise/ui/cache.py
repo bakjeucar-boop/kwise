@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -426,13 +427,26 @@ def cached_comparison(
     _options: BillingOptions | None = None,
     _progress: ProgressReporter | None = None,
 ) -> ComparisonResult:
-    key = f"compare|{token}|{specs}|{options_key}|{stamp}"
-    return session_memo(
+    # **잉여 수익을 열쇠에서 뺀다** (56세션). 그 몫은 요금 계산 **밖에서** 붙는
+    # 덧셈이라 부하도 청구서도 바꾸지 않는데, 조합 명세에 들어 있어 라디오를
+    # 누를 때마다 조합 여섯의 요금이 통째로 다시 돌았다 — 값이 이미 손에 있는데
+    # 2.3초를 썼다. 게다가 기억이 여덟 칸뿐이라(:mod:`kwise.ui.memo`) 새 항목이
+    # **태양광 곡선과 ESS 정밀화를 밀어내** 6.5초짜리 재계산까지 불렀다.
+    revenue = next(
+        (spec.surplus_revenue_won for spec in specs if spec.has_pv and spec.surplus_revenue_won),
+        None,
+    )
+    scenario = next((spec.surplus_scenario for spec in specs if spec.surplus_scenario), "")
+    stripped = tuple(
+        replace(spec, surplus_revenue_won=None, surplus_scenario="") for spec in specs
+    )
+    key = f"compare|{token}|{stripped}|{options_key}|{stamp}"
+    base = session_memo(
         key,
         lambda: compare_combinations(
             _usage,
             _table,
-            specs,
+            stripped,
             baseline_bill=_baseline,
             unit_pv_kw_per_kwp=_unit,
             quality=_quality,
@@ -440,6 +454,7 @@ def cached_comparison(
             progress=_progress,
         ),
     )
+    return base.with_surplus_revenue(revenue, scenario)
 
 
 @st.cache_data(show_spinner="선택요금을 모두 다시 계산하는 중…")

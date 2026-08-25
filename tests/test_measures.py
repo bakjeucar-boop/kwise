@@ -18,7 +18,7 @@ from kwise.compare import CombinationSpec, evaluate_combination
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData, load_usage
 from kwise.measures import (
-    DISCARD_SCENARIO,
+    CURTAIL_SCENARIO,
     EXTERNAL_SCENARIO,
     OFFSET_SCENARIO,
     PV_UNPRICED_REASON,
@@ -652,13 +652,14 @@ def test_surplus_scenarios(surplus_case: SurplusCase, tariff: TariffTable) -> No
         surplus_case, tariff, external_price_won_per_kwh=90.0, smp_price_won_per_kwh=130.0
     )
     assert result.total_kwh == pytest.approx(surplus_case.net.surplus_kwh)
-    # **셋이다** (41세션 2-2). 27세션은 「버림」 이 언제나 0원인 줄이라 표에서
-    # 뺐는데, 41세션에 표가 아니라 **고르는 자리**가 되면서 뜻이 달라졌다 —
-    # 「아무것도 하지 않는다」 를 고를 수 없으면 셋 중 하나를 강요하게 된다.
+    # **셋이다** (41세션 2-2 · 56세션에 「버리기」 를 「출력제어」 로).
+    # 27세션은 언제나 0원인 줄이라 표에서 뺐는데, 41세션에 표가 아니라
+    # **고르는 자리**가 되면서 뜻이 달라졌다 — 「아무것도 하지 않는다」 를 고를
+    # 수 없으면 셋 중 하나를 강요하게 된다.
     assert [item.name for item in result.scenarios] == [
         OFFSET_SCENARIO,
         EXTERNAL_SCENARIO,
-        DISCARD_SCENARIO,
+        CURTAIL_SCENARIO,
     ]
     offset = result.scenario(OFFSET_SCENARIO)
     assert offset.revenue_won is not None
@@ -670,7 +671,7 @@ def test_surplus_scenarios(surplus_case: SurplusCase, tariff: TariffTable) -> No
     assert 92.8 <= settlement.deducted_won / settlement.deducted_kwh <= 227.8
     external = result.scenario(EXTERNAL_SCENARIO)
     assert external.revenue_won == pytest.approx(result.total_kwh * 90.0)
-    assert result.scenario(DISCARD_SCENARIO).revenue_won == 0.0
+    assert result.scenario(CURTAIL_SCENARIO).revenue_won == 0.0
 
 
 def test_external_price_is_not_invented(surplus_case: SurplusCase, tariff: TariffTable) -> None:
@@ -792,8 +793,8 @@ def test_carry_is_not_shown_when_there_is_none(
 def test_offset_is_dropped_above_the_cap(surplus_case: SurplusCase, tariff: TariffTable) -> None:
     """**1,000 kW 를 넘으면 상계거래가 목록에 없다** (41세션 2-3)."""
     cap = offset_max_kw()
-    assert surplus_options(cap) == (OFFSET_SCENARIO, EXTERNAL_SCENARIO, DISCARD_SCENARIO)
-    assert surplus_options(cap + 1.0) == (EXTERNAL_SCENARIO, DISCARD_SCENARIO)
+    assert surplus_options(cap) == (OFFSET_SCENARIO, EXTERNAL_SCENARIO, CURTAIL_SCENARIO)
+    assert surplus_options(cap + 1.0) == (EXTERNAL_SCENARIO, CURTAIL_SCENARIO)
 
     result = _surplus(surplus_case, tariff, capacity_kwp=cap + 1.0)
     assert OFFSET_SCENARIO not in [item.name for item in result.scenarios]
