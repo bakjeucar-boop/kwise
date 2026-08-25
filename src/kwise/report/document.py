@@ -984,28 +984,54 @@ def measure_entries(
         # 없어 카드가 목표를 제시하지 않은 경우인데, 장을 통째로 빼면 「검토하지
         # 않았다」 와 구분되지 않는다. 계약전력 「하향 여지 없음」·잉여 0 과 같은
         # 틀로 적는다 — 결론과 **왜 없는지 보이는 지표**, 실행 주의사항은 없다.
+        #
+        # **성립하지 않는 까닭이 둘이다** (59세션 2절 · 56세션).
+        #
+        #     ① 마진 조건   창을 훑어 잰 점이 있고, 그 점들이 전부 회수되지 않는다
+        #     ② 갑 종별     기본요금이 계약전력에 붙어 **훑기 전에 끊는다** — 잰 점이 없다
+        #
+        # 잰 점이 없으면 표를 그리지 않는다 — 화면 카드와 같은 규약이다
+        # (:mod:`kwise.ui.views.measures`). 결론은 계산이 낸 안내를 그대로
+        # 옮기므로 갑 종별에서는 :data:`BASE_FEE_ON_CONTRACT_CONCLUSION` 이
+        # 실린다 — 문장을 여기서 새로 짓지 않는다.
+        measured = bool(ess_optimum.points)
+        lines = body_lines(ess_optimum.notices)
+        reason = "성립하는 목표가 없어" if measured else "성립하지 않아"
+        facts = (
+            (
+                ("요금적용전력", f"{ess_curve.baseline_demand_kw:,.0f} kW"),
+                ("성립 한계 방전시간", f"{ess_curve.viable_limit_hours:,.2f}h"),
+                ("가장 짧은 방전시간", f"{_shortest_discharge_hours(ess_curve):,.2f}h"),
+            )
+            if measured
+            # 갑 종별은 이 둘이 까닭 전부다 — 기본요금이 붙는 자리가 피크가 아니다.
+            else (
+                ("요금적용전력", f"{ess_curve.baseline_demand_kw:,.0f} kW"),
+                ("기본요금 기준", "계약전력"),
+            )
+        )
         entries["ess"] = MeasureEntry(
             kind=measure_kind("ess"),
-            conclusion=NOT_VIABLE_CONCLUSION,
-            saving=f"{_UNPRICED} — 성립하는 목표가 없어 사양을 정하지 않았습니다.",
-            saving_annual=f"{_UNPRICED} — 성립하는 목표가 없어 사양을 정하지 않았습니다.",
+            conclusion=lines[0] if lines else NOT_VIABLE_CONCLUSION,
+            saving=f"{_UNPRICED} — {reason} 사양을 정하지 않았습니다.",
+            saving_annual=f"{_UNPRICED} — {reason} 사양을 정하지 않았습니다.",
             has_saving=False,
             investment=f"{_UNPRICED} — 사양 미정",
             payback=_UNPRICED,
             certainty=str(Certainty.HIGH),
             notices=ess_optimum.notices,
             actionable=False,
-            facts=(
-                ("요금적용전력", f"{ess_curve.baseline_demand_kw:,.0f} kW"),
-                ("성립 한계 방전시간", f"{ess_curve.viable_limit_hours:,.2f}h"),
-                ("가장 짧은 방전시간", f"{_shortest_discharge_hours(ess_curve):,.2f}h"),
-            ),
-            spec_table=frames.ess_spec_rows(
-                frames.ess_spec_frame(
-                    ess_optimum, baseline_demand_kw=ess_curve.baseline_demand_kw
+            facts=facts,
+            spec_table=(
+                frames.ess_spec_rows(
+                    frames.ess_spec_frame(
+                        ess_optimum, baseline_demand_kw=ess_curve.baseline_demand_kw
+                    )
                 )
+                if measured
+                else ()
             ),
-            spec_caption=frames.ESS_SPEC_CAPTION,
+            spec_caption=frames.ESS_SPEC_CAPTION if measured else "",
         )
 
     return tuple(entries[kind.key] for kind in MEASURE_CATALOG if kind.key in entries)

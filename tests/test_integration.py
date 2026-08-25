@@ -426,6 +426,47 @@ def test_워드_생성_코드와_시험이_남아_있다() -> None:
     assert "36세션 1절 · Word" in source, "감춘 이유를 코드 주석에 남기십시오."
 
 
+def _deck_texts(app: AppTest) -> list[str]:
+    """만들어 둔 덱의 슬라이드별 글. **화면이 만든 그 바이트를 연다.**"""
+    import io
+
+    from pptx import Presentation
+
+    from kwise.ui.artifacts import ARTIFACT_KEY
+
+    store = dict(app.session_state[ARTIFACT_KEY])
+    deck = Presentation(io.BytesIO(store["ppt"].payload))
+    return [
+        "\n".join(
+            shape.text_frame.text
+            for shape in slide.shapes
+            if shape.has_text_frame and shape.text_frame.text.strip()
+        )
+        for slide in deck.slides
+    ]
+
+
+def test_갑_종별에서도_ESS_장이_선다() -> None:
+    """**장이 통째로 빠지고 있었다** (59세션 2절 · PPT 목록 P2·P10).
+
+    56세션이 갑 종별을 훑기 전에 끊은 뒤로 목표가 없어졌는데, 3단계는 목표가
+    있을 때만 개략 곡선을 산출물에 넘기고 있었다 — 「성립 불가」 갈래가 열릴
+    조건(``ess_curve is not None``)을 못 채워 **켠 수단이 덱에서 사라졌다.**
+    """
+    app = _app(
+        contract_form=ContractForm(
+            contract_type="general_a_1", voltage="high_a", option="I", contract_kw=6_000.0
+        ),
+        **_on("ess"),
+    )
+    built = app.button(key="build_ppt").click().run(timeout=900)
+    assert not built.exception, built.exception
+    ess = [text for text in _deck_texts(built) if text.startswith("ESS\n")]
+    assert ess, "갑 종별 덱에 ESS 장이 없습니다."
+    assert "기본공급약관 제68조" in ess[0], ess[0][:200]
+    assert "계약전력" in ess[0]
+
+
 def test_수단이_없어도_두_산출물이_만들어진다() -> None:
     """진단만 보고 받아 가는 것이 정상 경로다 (8세션에 Excel 에서 잡았다)."""
     app = _app()

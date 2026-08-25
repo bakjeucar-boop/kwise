@@ -1871,6 +1871,87 @@ def test_요약_근거에_0원인_수단이_안_든다() -> None:
     assert "줄일 수 있는 몫은 없습니다" in lead(0.0, 0.0)
 
 
+def test_갑_종별_ESS_장이_결론_한_줄로_선다(
+    sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult
+) -> None:
+    """**장이 통째로 사라지고 있었다** (59세션 2절 · 목록 P2·P10).
+
+    56세션이 갑 종별을 훑기 전에 끊으면서 ``EssOptimum.points`` 가 비었고, 화면
+    경로는 목표가 있을 때만 곡선을 담아 넘겨(``ess_curve``) **성립 불가 갈래
+    둘이 열리지 않았다.** 켠 수단이 산출물에서 사라지면 「검토하지 않았다」 와
+    구분되지 않는다 (48세션).
+
+    문장은 계산이 낸 것을 그대로 옮긴다 — 슬라이드가 새로 짓지 않는다.
+    """
+    from kwise.measures.ess import (
+        BASE_FEE_ON_CONTRACT_CONCLUSION,
+        ess_target_curve,
+        refine_ess_target,
+    )
+    from kwise.report.document import measure_entries
+    from kwise.tariff import TariffSelection
+
+    selection = TariffSelection("general_a_1", "high_a", "I")
+    curve = ess_target_curve(
+        sample_usage.kw,
+        15,
+        baseline_demand_kw=5_293.44,
+        base_fee_won_per_kw=float(tariff.rates(selection).base_won_per_kw),
+    )
+    optimum = refine_ess_target(
+        sample_usage, tariff, selection, curve=curve, baseline=sample_bill
+    )
+    assert not optimum.viable and not optimum.points
+
+    entry = next(
+        item
+        for item in measure_entries(ess_optimum=optimum, ess_curve=curve)
+        if item.kind.key == "ess"
+    )
+    assert entry.conclusion == BASE_FEE_ON_CONTRACT_CONCLUSION.format(
+        label=tariff.contract("general_a_1").label
+    )
+    assert "제68조" in entry.conclusion
+    # **잰 점이 없으면 표를 그리지 않는다** — 화면 카드와 같은 규약이다.
+    assert entry.spec_table == ()
+    assert not entry.spec_caption
+    # 까닭이 지표 둘에 보인다 — 기본요금이 붙는 자리가 피크가 아니다.
+    assert ("기본요금 기준", "계약전력") in entry.facts
+    # 마진 갈래의 지표는 쓰지 않는다 — 잰 것이 없어 값이 없다.
+    assert not any(label == "성립 한계 방전시간" for label, _value in entry.facts)
+
+
+def test_마진_미달_ESS_장은_표를_남긴다(
+    sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult
+) -> None:
+    """**성립 불가 갈래 둘이 다르다** (59세션 2절). 이쪽은 잰 점이 있다."""
+    from kwise.measures.ess import ess_target_curve, refine_ess_target
+    from kwise.report.document import measure_entries
+
+    from kwise.tariff import TariffSelection
+
+    curve = ess_target_curve(
+        sample_usage.kw, 15, baseline_demand_kw=5_293.44, base_fee_won_per_kw=70.0
+    )
+    optimum = refine_ess_target(
+        sample_usage,
+        tariff,
+        TariffSelection("general_b", "high_a", "I"),
+        curve=curve,
+        baseline=sample_bill,
+    )
+    assert not optimum.viable and optimum.points
+
+    entry = next(
+        item
+        for item in measure_entries(ess_optimum=optimum, ess_curve=curve)
+        if item.kind.key == "ess"
+    )
+    assert entry.spec_table
+    assert any(label == "성립 한계 방전시간" for label, _value in entry.facts)
+    assert "성립하는 목표가 없어" in entry.saving
+
+
 def test_계약전력이_세_갈래다(sample_usage: UsageData, sample_bill: BillingResult) -> None:
     """**초과 위약 갈래가 없었다** (53세션 4-9). 계산은 이미 알고 있었다."""
     from kwise.measures import evaluate_contract_adjustment

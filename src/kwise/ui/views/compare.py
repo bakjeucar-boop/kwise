@@ -942,10 +942,13 @@ def _measure_results(
         # 목표별 사양 표가 이 점들을 쓴다 (46세션). 2단계가 이미 돌려 기억에 걸린다.
         ess_optimum = _ess_optimum(usage, table, form, diagnosis, baseline, quality)
         ess_target = _ess_target(usage, table, form, diagnosis, baseline, quality)
-    if ess_target is not None:
-        # **회수기간 곡선을 함께 들고 간다** (38세션 3-3). 2단계 카드가 이미 돌린
-        # 것이라 캐시에 걸린다 — 계산이 한 번 더 도는 것이 아니다.
+        # **회수기간 곡선은 목표가 없어도 들고 간다** (38세션 3-3 · 59세션 2절).
+        # 목표가 있을 때만 담고 있었는데, :func:`~kwise.report.document.measure_entries`
+        # 의 「성립 불가」 갈래 둘이 ``ess_curve is not None`` 을 조건으로 달고
+        # 있어 **갑 종별에서 ESS 장이 통째로 사라졌다** — 결론 장으로 서야 할
+        # 자리다. 2단계 카드가 이미 돌린 것이라 캐시에 걸린다.
         ess_curve = _ess_curve(usage, table, form, diagnosis)
+    if ess_target is not None:
         # **2단계와 같은 인자로 부른다** — 캐시에 걸려 같은 값이 나온다 (14세션 5-1).
         ess = cached_ess(
             usage,
