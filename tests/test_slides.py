@@ -1367,9 +1367,25 @@ def test_ppt_에_잉여_장이_없고_태양광_장이_진다(
     assert facts["잉여"].endswith("MWh"), facts
     assert facts["자가소비"].endswith("MWh"), facts
     assert facts["잉여 없는 최대 용량"] == "2,048 kWp", facts
-    # **시나리오는 태양광 각주에 없다** (53세션 3절). 잉여가 나면 「잉여 활용」
-    # 장이 다음에 붙어 표로 낸다 — 각주는 기준선 0원까지 이어 적고 있었다.
+    # **시나리오 나열은 태양광 각주에 없다** (53세션 3절). 잉여가 나면 「잉여
+    # 활용」 장이 다음에 붙어 표로 낸다 — 각주는 기준선 0원까지 이어 적고 있었다.
+    # 고른 시나리오가 없는 점(``solar_point`` 원본)이라 각주도 비어 있다.
     assert solar.slide_note == "", solar.slide_note
+
+    # **고르면 절감액이 무엇의 합인지 한 줄 적는다** (59세션 5절). 화면은 절감액
+    # 물음표가 늘 이 줄을 낸다 (57세션) — PPT 에만 없었다.
+    from kwise.measures import with_surplus_revenue
+
+    chosen = with_surplus_revenue(
+        point, revenue_won=350_000.0, scenario="외부 판매", base_fee_months=12.0
+    )
+    noted = next(
+        entry
+        for entry in measure_entries(solar=chosen, surplus=surplus, surplus_free_kwp=2_048.0)
+        if entry.kind.key == "solar"
+    )
+    assert noted.slide_note.startswith("절감액 = 자가소비로 줄인 요금"), noted.slide_note
+    assert "잉여 외부 판매" in noted.slide_note
     assert any("자격요건은 판정하지 않았습니다" in line for line in solar.cautions)
 
     from kwise.report.document import surplus_page
@@ -1377,8 +1393,10 @@ def test_ppt_에_잉여_장이_없고_태양광_장이_진다(
     page = surplus_page(surplus, capacity_kwp=capacity, surplus_free_kwp=2_048.0)
     assert page is not None
     names = [row[0] for row in page.scenario_rows[1:]]
+    # **셋을 다 싣는다** (59세션 4·13절). 출력제어가 기본 선택이라 그 줄이 없으면
+    # 지금 절감액에 든 것이 표에 없다.
     assert "외부 판매" in names
-    assert "출력제어" not in names, names
+    assert "출력제어" in names, names
     # 그림은 여전히 둘이다 — 셋을 넣으면 축 눈금이 뭉개진다 (38세션 3절).
     assert len(solar.slide_figures) <= 2
 
@@ -1692,30 +1710,128 @@ def test_잉여_문장이_평일_휴일_비중으로_갈린다() -> None:
     assert "고르게 발생합니다" in lead(weekday=5_000.0, weekend=3_000.0, holiday=2_000.0)
 
 
-def test_잉여_장에_기준선이_없다(full_sections: DocumentSections) -> None:
-    """**27세션에 표에서 뺐다** (53세션 3-2). 「아무것도 안 한다」 는 방안이 아니다."""
+def test_잉여_장이_셋을_다_싣고_금액_순으로_세운다(full_sections: DocumentSections) -> None:
+    """**출력제어 줄이 없었다** (59세션 4·10·13절 · 목록 P4·P7·P16).
+
+    53세션까지는 출력제어를 「기준선」 으로 보고 뺐다 (27세션이 화면에서 뺀
+    것을 따랐다). **57세션에 그것이 기본 선택이 됐다** — 표에서 빼 두면 지금
+    절감액에 든 것이 어디에도 없고, 「절감액에 반영」 표식이 어느 줄에도 안
+    붙어 상계거래가 골라진 것처럼 읽힌다.
+
+    **금액이 큰 순서다.** 58세션에 단가 기본값이 생겨 순위가 뒤집혔는데
+    (외부 판매 > 상계거래), 정의 순서가 고정이라 표에서 그 사실이 안 보였다.
+    """
     import dataclasses
 
-    from kwise.report.document import SURPLUS_SCENARIO_HEADER, surplus_page
+    from kwise.measures.surplus import (
+        CURTAIL_SCENARIO,
+        EXTERNAL_SCENARIO,
+        OFFSET_SCENARIO,
+        SurplusScenario,
+    )
+    from kwise.report.document import (
+        SURPLUS_CHOSEN_MARK,
+        SURPLUS_SCENARIO_HEADER,
+        surplus_page,
+    )
 
+    base = _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0)
+    # 58세션 뒤의 자리 — 두 줄 다 금액이 서고 **외부 판매가 더 크다.**
+    priced = dataclasses.replace(
+        base,  # type: ignore[type-var]
+        scenarios=(
+            SurplusScenario(OFFSET_SCENARIO, 2_283_732.0, "상계", "계약 변경"),
+            SurplusScenario(EXTERNAL_SCENARIO, 2_947_148.0, "외부", "구매자 발굴"),
+            SurplusScenario(CURTAIL_SCENARIO, 0.0, "출력을 낮춘다", "없다"),
+        ),
+    )
     page = surplus_page(
-        _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0),  # type: ignore[arg-type]
+        priced,
         capacity_kwp=160.0,
         surplus_free_kwp=40.0,
+        chosen_scenario=CURTAIL_SCENARIO,
     )
     assert page is not None
     assert page.scenario_rows[0] == SURPLUS_SCENARIO_HEADER
-    assert [row[0] for row in page.scenario_rows[1:]] == ["상계거래(한전)", "외부 판매"]
+    assert [row[0] for row in page.scenario_rows[1:]] == [
+        EXTERNAL_SCENARIO,
+        OFFSET_SCENARIO,
+        CURTAIL_SCENARIO,
+    ]
     assert len(page.facts) == 4
+    # **고른 것에만 붙는다.** 기본 선택은 출력제어다 (57세션).
+    marked = [row[0] for row in page.scenario_rows[1:] if SURPLUS_CHOSEN_MARK in row[2]]
+    assert marked == [CURTAIL_SCENARIO]
 
     sections = dataclasses.replace(
         full_sections, measures=_all_measures(full_sections), surplus=page
     )
     slide = _slide_by_key(build_slides(sections), sections, "surplus")
     text = _slide_text(slide)
-    assert "출력제어" not in text
+    assert "출력제어" in text
+    assert SURPLUS_CHOSEN_MARK in text
     assert "상계거래는 계약 변경과 역송 계량기가 필요합니다" in text
     assert "자격요건은 판정하지 않았습니다" in text
+
+
+def test_금액을_못_낸_줄은_맨_뒤다() -> None:
+    """**견줄 수 없는 것을 견주는 자리에 세우지 않는다** (59세션 10절).
+
+    단가를 비우면 「미산출」 로 돌아간다 (58세션). 그 줄을 금액 순 어딘가에
+    끼워 넣으면 순위가 값이 아니라 정의 순서로 정해진다.
+    """
+    from kwise.measures.surplus import CURTAIL_SCENARIO, EXTERNAL_SCENARIO, OFFSET_SCENARIO
+    from kwise.report.document import surplus_page
+
+    # ``_surplus_result`` 의 외부 판매는 단가 미입력(``None``)이다.
+    page = surplus_page(
+        _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0),  # type: ignore[arg-type]
+        capacity_kwp=160.0,
+        surplus_free_kwp=40.0,
+    )
+    assert page is not None
+    assert [row[0] for row in page.scenario_rows[1:]] == [
+        OFFSET_SCENARIO,
+        CURTAIL_SCENARIO,
+        EXTERNAL_SCENARIO,
+    ]
+    assert page.scenario_rows[-1][1] == "미산출"
+
+
+def test_상계거래_비고가_기간말_잔여를_늘_적는다() -> None:
+    """**「120원인데 왜 이 금액인가」 를 표가 닫는다** (59세션 10절).
+
+    표 아래 각주가 「상계거래 SMP 120원/kWh」 라고 적는데 금액은 그 단가와
+    무관할 수 있다 — 잉여가 사용량에 다 잠기면 SMP 가 곱해질 몫이 없다.
+    잔여 0 을 적지 않으면 그 사실이 표 어디에도 없다.
+    """
+    import dataclasses
+
+    from kwise.measures.surplus import OFFSET_SCENARIO, OffsetSettlement, SurplusScenario
+    from kwise.report.document import surplus_page
+
+    base = _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0)
+    settled = dataclasses.replace(
+        base,  # type: ignore[type-var]
+        offset=OffsetSettlement(
+            deducted_kwh=23_416.0,
+            remaining_kwh=0.0,
+            revenue_won=2_283_732.0,
+            carry_over={},
+            settles_cash=True,
+            smp_price_won_per_kwh=120.0,
+            smp_won=0.0,
+        ),
+        scenarios=(
+            SurplusScenario(OFFSET_SCENARIO, 2_283_732.0, "상계", "계약 변경"),
+            *base.scenarios[1:],  # type: ignore[attr-defined]
+        ),
+    )
+    page = surplus_page(settled, capacity_kwp=160.0, surplus_free_kwp=40.0)
+    assert page is not None
+    remark = next(row[2] for row in page.scenario_rows[1:] if row[0] == OFFSET_SCENARIO)
+    assert "당월 차감 23,416 kWh" in remark
+    assert "기간 말 잔여 0 kWh" in remark
 
 
 def test_잉여_장이_적용_단가를_밝힌다(full_sections: DocumentSections) -> None:

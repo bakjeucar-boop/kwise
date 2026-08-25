@@ -56,6 +56,8 @@ class Case:
     contract_kw: float
     area_m2: float
     building_name: str
+    surplus_use: str = ""
+    """고른 잉여 처리. 비우면 화면 기본값(출력제어)이다 (57세션)."""
 
 
 CASES: tuple[Case, ...] = (
@@ -117,6 +119,20 @@ CASES: tuple[Case, ...] = (
         area_m2=20_000.0,
         building_name="대형 사업장(계약 과다)",
     ),
+    Case(
+        key="small-b-sell",
+        title="소형 · 일반용(을) 고압A 선택Ⅰ · 잉여 외부 판매",
+        csv=SMALL_CSV,
+        contract_type="general_b",
+        voltage="high_a",
+        option="I",
+        contract_kw=300.0,
+        area_m2=1_000.0,
+        building_name="소형 사무빌딩(외부 판매)",
+        # **기본이 아닌 잉여 처리를 골라 본다** (59세션 5절). 기본값(출력제어)은
+        # 0원이라 「절감액에 잉여가 얹힌다」 는 사실이 값으로 안 보인다.
+        surplus_use="외부 판매",
+    ),
 )
 
 BY_KEY = {case.key: case for case in CASES}
@@ -153,6 +169,8 @@ def build_deck(case: Case, *, timeout: int = 1800) -> bytes:
     # **태양광은 「계산」 을 누른 상태로 시작한다.** 위젯에 키가 없어 면적을
     # 세션으로 심을 수 없다 — 눌린 결과(``solar_inputs``)를 바로 넣는다.
     state["solar_inputs"] = SolarInputs(region_key=REGION, area_m2=case.area_m2)
+    if case.surplus_use:
+        state["measure_solar_surplus_use"] = case.surplus_use
     for key in ALL_MEASURES:
         state[f"measure_on_{key}"] = True
     state["combination_pick"] = ALL_MEASURES

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from kwise import money
 from kwise.diagnose import ChargeStructure, Diagnosis
 from kwise.diagnose.dr import DrProfile
 from kwise.diagnose.summary import PvPotential
@@ -56,6 +57,7 @@ __all__ = [
     "peak_month_close",
     "peak_month_lead",
     "peak_summary_lead",
+    "solar_saving_breakdown",
     "structure_lead",
     "surplus_lead",
     "surplus_off_day_high",
@@ -345,6 +347,30 @@ def building_lead(quality: QualityReport | None) -> str:
     return (
         f"{head} {worst.month} 등 {len(heavy)}개 달이 크게 비어 그 달들의 "
         "최대수요는 낮게 잡혔을 수 있습니다."
+    )
+
+
+def solar_saving_breakdown(
+    *, self_consumption_won: float, surplus_scenario: str, surplus_revenue_won: float | None
+) -> str:
+    """태양광 절감액에 **무엇이 들어 있는지** 한 줄 (48세션 · 57세션 · 59세션 5절).
+
+    **화면 툴팁이 이미 쓰던 문장이다.** 57세션에 기준선(출력제어)이 기본이 되면서
+    화면은 이 줄을 늘 붙이는데, PPT 태양광 장에는 그 정보가 없었다 — 큰 글씨
+    절감액에 잉여 수익이 얹혀 있는데 그 사실이 어디에도 안 적혔다.
+
+    **잉여 장과 겹치지 않는다** (59세션 4절). 잉여 장은 시나리오 표에서
+    「어느 것을 골랐나」 를 :data:`~kwise.report.document.SURPLUS_CHOSEN_MARK` 로
+    말하고, 이 줄은 **절감액이 무엇의 합인가**를 말한다.
+
+    금액은 부르는 쪽이 **12개월로 환산해서** 넘긴다 — 이 함수는 서식만 잡는다.
+    """
+    if not surplus_scenario:
+        return ""
+    added = money.won(surplus_revenue_won, reason="—")
+    return (
+        f"절감액 = 자가소비로 줄인 요금 {money.won(self_consumption_won, reason='—')} "
+        f"+ 잉여 {surplus_scenario} {added}"
     )
 
 

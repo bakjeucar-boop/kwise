@@ -55,7 +55,7 @@ from kwise.measures.demand_response import DemandResponseResult
 from kwise.notices import Notice, tooltip
 from kwise.pv import PvPresets, area_from_capacity_m2, capacity_preview, load_pv_presets
 from kwise.quality import QualityReport
-from kwise.report import CONTRACT_CHANGE_WARNING, frames
+from kwise.report import CONTRACT_CHANGE_WARNING, frames, narrative
 from kwise.report.days import RepresentativeDay, find_day, representative_days
 from kwise.report.worksheet import (
     Worksheet,
@@ -1143,9 +1143,16 @@ def _solar_saving_tip(point: SolarPoint, months: float) -> str:
     """
     if not point.surplus_scenario:  # pragma: no cover - 기본값이 있어 비지 않는다
         return ""
-    self_consumed = money.won(annualize(point.self_consumption_saving_won, months), reason="—")
-    added = money.won(annualize(point.surplus_revenue_won, months), reason="—")
-    head = f"자가소비로 줄인 요금 {self_consumed} + 잉여 {point.surplus_scenario} {added}."
+    # **문구는 :mod:`kwise.report.narrative` 가 쥔다** (59세션 5절). PPT 태양광
+    # 장이 같은 줄을 각주로 깐다 — 두 벌로 적으면 한쪽만 고쳐진다.
+    head = (
+        narrative.solar_saving_breakdown(
+            self_consumption_won=annualize(point.self_consumption_saving_won, months),
+            surplus_scenario=point.surplus_scenario,
+            surplus_revenue_won=annualize(point.surplus_revenue_won, months),
+        ).replace("절감액 = ", "")
+        + "."
+    )
     if not point.surplus_revenue_won:
         return fmt.markdown_safe(head)
     return fmt.markdown_safe(

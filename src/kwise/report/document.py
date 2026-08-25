@@ -605,12 +605,21 @@ def surplus_page(
     ]
     if surplus_free_kwp:
         facts.append(("잉여 없는 최대 용량", f"{surplus_free_kwp:,.0f} kWp"))
+    # **셋을 다 싣는다** (59세션 4·13절). 53세션까지는 출력제어를 「기준선」 이라
+    # 보고 뺐는데(27세션이 화면에서 뺀 것을 따랐다), **57세션에 그것이 기본
+    # 선택이 됐다.** 빼 두면 지금 절감액에 든 것이 표에 없어, 「절감액에 반영」
+    # 표식이 어느 줄에도 안 붙고 상계거래가 골라진 것처럼 읽힌다.
+    #
+    # **금액이 큰 순서로 세운다** (59세션 10절). 58세션에 단가 기본값이 생겨
+    # 「미산출」 이 사라지면서 순위가 뒤집혔는데(외부 판매가 상계거래보다 크다),
+    # 시나리오 정의 순서가 고정이라 그 사실이 표에서 안 보였다. 금액을 못 낸
+    # 줄은 맨 뒤다 — 견줄 수 없는 것을 견주는 자리에 세우지 않는다.
+    ordered = sorted(
+        surplus.scenarios,
+        key=lambda item: (item.revenue_won is None, -(item.revenue_won or 0.0)),
+    )
     rows: list[tuple[str, ...]] = [SURPLUS_SCENARIO_HEADER]
-    for item in surplus.scenarios:
-        # **기준선은 싣지 않는다** (27세션에 화면에서 뺐다). 언제나 0원이고
-        # 「아무것도 하지 않는다」 는 표에 세울 방안이 아니다.
-        if item.name == surplus_module.CURTAIL_SCENARIO:
-            continue
+    for item in ordered:
         rows.append(
             (
                 item.name,
@@ -654,8 +663,11 @@ def _surplus_remark(
     parts: list[str] = []
     if scenario.name == surplus_module.OFFSET_SCENARIO and surplus.offset is not None:
         parts.append(f"당월 차감 {surplus.offset.deducted_kwh:,.0f} kWh")
-        if surplus.offset.remaining_kwh > 0:
-            parts.append(f"기간 말 잔여 {surplus.offset.remaining_kwh:,.0f} kWh")
+        # **잔여가 0 이어도 적는다** (59세션 10절). 표 아래 각주가 「상계거래 SMP
+        # 120원/kWh」 라고 적는데 금액은 그 단가와 무관하다 — 잉여가 사용량에 다
+        # 잠겨 **SMP 가 곱해질 몫이 없기** 때문이다. 잔여 줄이 없으면 「120원인데
+        # 왜 이 금액인가」 를 묻게 된다.
+        parts.append(f"기간 말 잔여 {surplus.offset.remaining_kwh:,.0f} kWh")
     elif not scenario.is_priced:
         parts.append("판매 단가를 넣으면 산출됩니다")
     if chosen:
@@ -869,7 +881,16 @@ def measure_entries(
             # **「잉여 활용」 장이 다음에 붙어** 같은 것을 표로 낸다 — 각주가
             # 「상계거래 … · 외부 판매 … · **기준선 0원**」 을 이어 적고 있었고,
             # 그 줄은 27세션에 화면에서 뺀 것이다.
-            surplus_note = ""
+            #
+            # **대신 절감액이 무엇의 합인지 적는다** (59세션 5절). 큰 글씨
+            # 절감액에 잉여 수익이 얹혀 있는데 그 사실이 어디에도 없었다 —
+            # 화면은 절감액 물음표가 늘 이 줄을 낸다 (57세션). 잉여 장과
+            # 겹치지 않는다: 그쪽은 **어느 것을 골랐나**를 표식으로 말한다.
+            surplus_note = narrative.solar_saving_breakdown(
+                self_consumption_won=solar.self_consumption_saving_won,
+                surplus_scenario=solar.surplus_scenario,
+                surplus_revenue_won=solar.surplus_revenue_won,
+            )
         entries["solar"] = MeasureEntry(
             kind=measure_kind("solar"),
             conclusion=_solar_conclusion(
