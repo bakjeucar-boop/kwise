@@ -874,7 +874,8 @@ def daily_temperature_png(
         linewidth=1.0,
         label="일평균 기온",
     )
-    right.set_ylabel("일평균 기온 (℃)", color=temp_color)
+    # **눈금과 이름 사이를 벌린다.** 붙여 두면 「30」 과 「℃」 가 닿는다.
+    right.set_ylabel("일평균 기온 (℃)", color=temp_color, labelpad=8)
     right.grid(visible=False)
     if len(frame):
         mean = temperature_mean_frame(frame)
@@ -897,8 +898,20 @@ def daily_temperature_png(
         )
     # **범례를 두 축에서 모아 하나로 단다.** twinx 는 축마다 따로 그려서
     # 그대로 두면 상자가 둘 겹친다.
+    #
+    # **이 그림만 범례가 아래다** (53세션 7-3). 23세션 규약은 「바깥 오른쪽」
+    # 인데, 오른쪽에는 기온 축의 눈금과 이름(「일평균 기온 (℃)」)이 이미 서
+    # 있다 — 범례를 그 자리에 두면 축 이름 위에 겹쳐 **둘 다 못 읽는다.**
+    # 규약을 흔드는 것이 아니라 **그 자리가 비어 있지 않은 유일한 그림**이다.
     handles = axes.get_lines() + right.get_lines()[:1]
-    add_legend(axes, handles=handles, labels=[line.get_label() for line in handles])
+    add_legend(
+        axes,
+        handles=handles,
+        labels=[line.get_label() for line in handles],
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.28),
+        ncol=len(handles),
+    )
     return render_png(figure)
 
 

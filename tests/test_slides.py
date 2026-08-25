@@ -2087,3 +2087,65 @@ def test_기본요금_변화없음도_사유를_각주로_내린다() -> None:
     assert reason == "요금적용전력 하한 30% 적용"
     # 관계없는 값은 그대로 둔다.
     assert split_reason("53,575,000원") == ("53,575,000원", "")
+
+
+# ===================================================================== 53세션 · 7절 3·4페이지
+
+
+def test_3장_해석이_각주로_내려갔다(full_sections: DocumentSections) -> None:
+    """**이 장의 본체는 표다** (53세션 7-1).
+
+    자료가 얼마나 성한지는 표를 읽는 데 붙는 단서이지 제목 다음에 와야 할
+    결론이 아니다.
+    """
+    from pptx.util import Emu
+
+    from kwise.report import narrative
+    from kwise.report.slides import NOTE_MARK
+
+    guide = load_design_guide()
+    slide = _slide_by_key(build_slides(full_sections), full_sections, "building")
+    quality = full_sections.diagnosis.quality if full_sections.diagnosis else None
+    lead = narrative.building_lead(quality)
+    found = [
+        (Emu(shape.top).inches, shape.text_frame.text)
+        for shape in slide.shapes  # type: ignore[attr-defined]
+        if shape.has_text_frame and lead in shape.text_frame.text
+    ]
+    assert len(found) == 1, found
+    top, text = found[0]
+    assert text.startswith(NOTE_MARK.strip()), text
+    # 슬라이드 아래쪽이다 — 제목 바로 아래가 아니다.
+    assert top > guide.slide.height_in * 0.8, top
+    tables = [shape for shape in slide.shapes if shape.has_table]  # type: ignore[attr-defined]
+    assert tables and Emu(tables[0].top).inches < top
+
+
+def test_4장_캡션이_전제를_되풀이하지_않는다(full_sections: DocumentSections) -> None:
+    """**캡션은 무엇을 그렸나를 적는다** (53세션 7-2)."""
+    slide = _slide_by_key(build_slides(full_sections), full_sections, "usage_pattern")
+    text = _slide_text(slide)
+    assert "결측일은 그리지 않았습니다" not in text, text
+    assert "일별 사용량" in text
+
+
+def test_기온_그림은_범례가_아래다() -> None:
+    """**오른쪽에는 기온 축의 이름이 이미 서 있다** (53세션 7-3).
+
+    범례를 그 자리에 두면 축 이름 위에 겹쳐 둘 다 못 읽는다. 23세션의
+    「바깥 오른쪽」 규약을 흔드는 것이 아니라 **그 자리가 비어 있지 않은
+    유일한 그림**이다.
+    """
+    from pathlib import Path as _Path
+
+    from kwise.report.slides import FULL_FIGURE, FULL_FIGURE_WITH_LEGEND
+
+    # 범례가 높이를 먹으므로 **미리 낮게 굽는다.**
+    assert FULL_FIGURE_WITH_LEGEND[1] < FULL_FIGURE[1]
+    source = (SRC_ROOT / "report" / "figures.py").read_text(encoding="utf-8")
+    body = source[
+        source.index("def daily_temperature_png(") : source.index("def power_factor_day_png(")
+    ]
+    assert 'bbox_to_anchor=(0.5, -0.28)' in body, "범례가 아래로 내려가 있지 않습니다."
+    assert "labelpad=8" in body, "기온 축 이름이 눈금에 붙어 있습니다."
+    assert _Path(SRC_ROOT).is_dir()

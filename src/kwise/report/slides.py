@@ -62,6 +62,7 @@ __all__ = [
     "DECK_TITLE",
     "DEFAULT_OUTPUT_DIR",
     "FULL_FIGURE",
+    "FULL_FIGURE_WITH_LEGEND",
     "HALF_FIGURE",
     "HALF_FIGURE_WITH_LEGEND",
     "IMMEDIATE",
@@ -567,7 +568,14 @@ def _note(slide: Slide, guide: DesignGuide, *lines: str) -> None:
     if not kept:
         return
     geometry = guide.slide
-    height = 0.2 * len(kept)
+    size = guide.type_scale.caption
+    # **줄 수를 세어 높이를 잡는다.** 각주는 아래에 붙어 있으므로 넘친 줄이
+    # 슬라이드 밖으로 나간다 — 줄 수로 잡으면 그만큼 위에서 시작한다.
+    wrapped = sum(
+        max(1, math.ceil(_text_width_in(line, size) / geometry.content_width_in))
+        for line in kept
+    )
+    height = 0.2 * wrapped
     _text(
         slide,
         guide,
@@ -576,7 +584,7 @@ def _note(slide: Slide, guide: DesignGuide, *lines: str) -> None:
         top=geometry.height_in - geometry.margin_in - 0.42 - height + 0.2,
         width=geometry.content_width_in,
         height=height,
-        size=guide.type_scale.caption,
+        size=size,
         color=guide.colors.muted,
     )
 
@@ -659,11 +667,18 @@ HALF_FIGURE_WITH_LEGEND = (5.4, 4.6)
 #: 좌우 2단의 넓은 쪽.
 WIDE_FIGURE = (7.2, 4.4)
 
-#: **폭을 다 쓰는 칸**의 그림 (38세션 4절). 4·5장이 이 크기로 굽는다.
+#: **폭을 다 쓰는 칸**의 그림 (38세션 4절). 5장이 이 크기로 굽는다.
 #:
 #: 기본 비율(9:3.6)로 구우면 슬라이드에서 높이가 먼저 차서 폭의 8할만 쓰고
 #: 좌우가 통째로 빈다 — 칸의 가로세로에서 나온 값이라 여기 둔다.
 FULL_FIGURE = (12.0, 3.4)
+
+#: **범례가 아래에 붙는** 폭 전체 그림 (53세션 7-3). 4장의 기온 그래프다.
+#:
+#: 범례 줄이 그림 높이에 얹혀 비율이 0.29 → 0.36 으로 두꺼워졌고, 그만큼
+#: 슬라이드에서 폭을 못 썼다 (9.4 → 7.8in). **범례가 먹는 만큼 미리 낮게 굽는다**
+#: — :data:`HALF_FIGURE_WITH_LEGEND` 와 같은 이치다.
+FULL_FIGURE_WITH_LEGEND = (12.0, 2.8)
 
 
 def _picture(
@@ -1047,7 +1062,10 @@ def _build_building(
     bill = sections.bill
     meta = sections.usage.meta
     quality = sections.diagnosis.quality if sections.diagnosis is not None else None
-    top = _lead(slide, guide, narrative.building_lead(quality), top=top)
+    # **해석 한 줄을 각주로 내렸다** (53세션 7-1). 이 장의 본체는 표다 —
+    # 자료가 얼마나 성한지는 그 표를 **읽는 데 붙는 단서**이지 제목 다음에 와야
+    # 할 결론이 아니다. 표가 그만큼 넓게 앉는다.
+    note = narrative.building_lead(quality)
     rows = [
         ["항목", "내용"],
         ["건물명", sections.building],
@@ -1081,9 +1099,10 @@ def _build_building(
         left=geometry.margin_in,
         top=top,
         width=geometry.content_width_in,
-        height=min(_table_room(guide, top=top, footnote=False), 0.44 * len(rows)),
+        height=min(_table_room(guide, top=top, footnote=True), 0.44 * len(rows)),
         widths=(0.26, 0.74),
     )
+    _note(slide, guide, note)
 
 
 def _build_usage_pattern(
@@ -1149,8 +1168,12 @@ def _build_usage_pattern(
 
 
 #: 기온을 곁들인 그림의 캡션과, 곁들이지 못했을 때의 캡션.
-_TEMPERATURE_CAPTION = "일별 사용량과 일평균 기온 — 결측일은 그리지 않았습니다."
-_USAGE_ONLY_CAPTION = "일별 사용량 — 결측일은 그리지 않았습니다."
+#:
+#: **「결측일은 그리지 않았습니다」 를 뺐다** (53세션 7-2). 그 사실은 3장이
+#: 표 한 줄과 각주로 이미 두 번 말한다 — 캡션은 **무엇을 그렸나**를 적는
+#: 자리이지 전제를 되풀이하는 자리가 아니다.
+_TEMPERATURE_CAPTION = "일별 사용량과 일평균 기온"
+_USAGE_ONLY_CAPTION = "일별 사용량"
 
 
 def _usage_figure(sections: DocumentSections) -> tuple[bytes, str]:
@@ -1162,7 +1185,9 @@ def _usage_figure(sections: DocumentSections) -> tuple[bytes, str]:
     temperature = sections.temperature
     if temperature is not None and len(temperature):
         try:
-            png = figures.daily_temperature_png(sections.usage, temperature, size=FULL_FIGURE)
+            png = figures.daily_temperature_png(
+                sections.usage, temperature, size=FULL_FIGURE_WITH_LEGEND
+            )
             return png, _TEMPERATURE_CAPTION
         except Exception:  # pragma: no cover - 그림 하나 때문에 덱을 잃지 않는다
             pass
