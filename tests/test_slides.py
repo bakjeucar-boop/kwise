@@ -1952,9 +1952,22 @@ def test_요금구조가_세_갈래다() -> None:
             )
         )
 
-    assert "나머지는 전력량요금입니다" in lead(base_fee_share_low() - 0.05)
+    low = lead(base_fee_share_low() - 0.05)
+    assert "나머지는 전력량요금입니다" in low
+    # **뒷문장이 지침에서 결과로 바뀌었다** (59세션 7절). 「단가가 낮은 시간대로
+    # 부하를 옮기거나 사용량을 줄이는 방안」 은 앞말에서 곧바로 따라오는 말이라
+    # 읽는 사람이 얻는 것이 없었다 — 높음 갈래의 거울 문장으로 바꿨다.
+    assert "피크를 낮춰도 줄어드는 몫이 작습니다" in low
+    assert "단가가 낮은 시간대로 부하를 옮기거나" not in low
+    # **갈래는 그대로 셋이다** (54세션). 뒷문장이 셋을 가르는 자리다.
     assert "함께 큽니다" in lead((base_fee_share_low() + base_fee_share_high()) / 2)
     assert "최대수요를 낮추는 방안을 먼저" in lead(base_fee_share_high() + 0.05)
+    tails = {
+        lead(base_fee_share_low() - 0.05).split(" — ", 1)[-1],
+        lead((base_fee_share_low() + base_fee_share_high()) / 2).split(" — ", 1)[-1],
+        lead(base_fee_share_high() + 0.05).split(" — ", 1)[-1],
+    }
+    assert len(tails) == 3, tails
     assert "산출하지 못했습니다" in structure_lead(
         SimpleNamespace(  # type: ignore[arg-type]
             base_won=0.0,
@@ -2085,6 +2098,32 @@ def test_계약전력이_세_갈래다(sample_usage: UsageData, sample_bill: Bil
     assert "초과 위약 검토 대상입니다" in over, over
     assert "상향을 검토해야 합니다" in over
     assert "낮출 여지가" in conclusion(6_500.0)
+
+
+def test_계약전력_각주가_하한_미결착을_말한다(
+    sample_usage: UsageData, sample_bill: BillingResult
+) -> None:
+    """**「하향 여지 8 kW」 옆의 0원이 설명 없이 서 있었다** (59세션 9절).
+
+    여지는 「낮출 수 있는가」 이고 절감액은 「낮추면 돈이 주는가」 다. 둘이
+    갈리는 까닭을 계산이 이미 안내로 내고 있었는데(화면 산출 근거에 있다)
+    슬라이드만 그것을 안 읽었다 — **문장을 새로 짓지 않는다.**
+    """
+    from kwise.measures import evaluate_contract_adjustment
+    from kwise.report.document import CONTRACT_FLOOR_NOT_BINDING_FACT, measure_entries
+
+    # 요금적용전력 5,293 kW 가 하한(계약전력의 30%)보다 훨씬 커서 안 걸린다.
+    contract = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=6_000.0)
+    assert not contract.saving_won
+    entry = next(
+        item for item in measure_entries(contract=contract) if item.kind.key == "contract"
+    )
+    assert entry.slide_note == (
+        "하한이 요금적용전력에 걸리지 않아 계약전력을 낮춰도 기본요금이 줄지 않습니다."
+    )
+    assert any(
+        item.fact == CONTRACT_FLOOR_NOT_BINDING_FACT for item in contract.notices
+    ), "화면 산출 근거에 있던 안내다 — 문구를 새로 짓지 않았다."
 
 
 def test_역률이_세_갈래다(

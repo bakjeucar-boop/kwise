@@ -675,6 +675,11 @@ def _surplus_remark(
     return " · ".join(parts)
 
 
+#: 「하한이 요금적용전력에 걸리지 않아…」 안내의 사실 ID (48세션에 붙은 것).
+#: 계약전력 장이 이 안내를 각주로 옮겨 적는다 (59세션 9절).
+CONTRACT_FLOOR_NOT_BINDING_FACT = "contract.floor_not_binding"
+
+
 def measure_entries(
     *,
     switch: TariffSwitchResult | None = None,
@@ -766,6 +771,11 @@ def measure_entries(
                 lambda: figures.contract_headroom_png(contract, size=MEASURE_STRIP_FIGURE)
             ),
             figure_caption=_CONTRACT_HEADROOM_CAPTION,
+            # **「하향 여지 8 kW」 옆의 0원이 설명 없이 서 있었다** (59세션 9절).
+            # 여지는 「낮출 수 있는가」 이고 절감액은 「낮추면 돈이 주는가」 다 —
+            # 둘이 갈리는 까닭을 계산이 이미 안내로 내고 있었고(화면 산출 근거에
+            # 있다), 슬라이드만 그것을 안 읽었다. **문장을 새로 짓지 않는다.**
+            slide_note=_notice_text(contract.notices, CONTRACT_FLOOR_NOT_BINDING_FACT),
         )
 
     if demand_response is not None:
