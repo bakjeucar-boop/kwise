@@ -2100,6 +2100,55 @@ def test_계약전력이_세_갈래다(sample_usage: UsageData, sample_bill: Bil
     assert "낮출 여지가" in conclusion(6_500.0)
 
 
+def test_부록이_효과_있는_수단을_빠뜨리지_않는다(full_sections: DocumentSections) -> None:
+    """**사용자가 물었다 — 「선택요금 조정이 빠진 이유는 효과가 0 이라서인가요?」**
+    (59세션 11절 · 목록 P11).
+
+    55세션이 정한 규칙은 「값이 0 이거나 미산출인 수단은 뺀다」 이고, 뒤집으면
+    **효과가 있으면 반드시 실린다** 는 뜻이다. 그 역이 실제로 참인지를 못박는다.
+
+    각주는 규칙을 그대로 적는다 — 「산출되지 않은」 이라고만 적으면 계약전력
+    조정처럼 **산출은 됐는데 0 인** 줄이 못 낸 것으로 읽힌다.
+    """
+    import dataclasses
+    import inspect
+
+    from kwise.report.slides import _appendix_note, appendix_pages, measure_slide_title
+
+    sections = dataclasses.replace(full_sections, measures=_all_measures(full_sections))
+    titles = " ".join(page.title for page in appendix_pages(sections))
+    sheets = {sheet.key for sheet in sections.worksheets}
+    for entry in sections.measures:
+        name = measure_slide_title(entry)
+        if entry.has_saving and entry.kind.key in sheets:
+            assert name in titles, f"효과가 있는데 부록에 없습니다: {name}"
+        if not entry.has_saving:
+            assert name not in titles, f"효과가 0·미산출인데 부록에 있습니다: {name}"
+
+    # **근거 표가 없으면 효과가 있어도 못 싣는다.** 화면 경로는 여섯 수단 모두
+    # 근거 표를 만든다 — 그 배선이 끊기면 부록에서 조용히 사라지므로 못박는다.
+    from kwise.ui.views.compare import _MeasureResults
+
+    source = inspect.getsource(_MeasureResults.worksheets)
+    for name in (
+        "tariff_switch_worksheet",
+        "contract_worksheet",
+        "demand_response_worksheet",
+        "power_factor_worksheet",
+        "solar_worksheet",
+        "ess_worksheet",
+    ):
+        assert name in source, f"근거 표를 만들지 않는 수단이 있습니다: {name}"
+
+    note = _appendix_note(sections)
+    dropped = [item for item in sections.measures if not item.has_saving]
+    if dropped:
+        assert "절감액이 0 이거나 산출되지 않은 수단" in note, note
+        for entry in dropped:
+            assert measure_slide_title(entry) in note, note
+    assert "자리가 모자라" not in note
+
+
 def test_역률_영향을_큰_글자에_녹이지_않는다(
     sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult
 ) -> None:

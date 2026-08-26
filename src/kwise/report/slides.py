@@ -2221,12 +2221,17 @@ def _appendix_note(sections: DocumentSections) -> str:
 
     「자리가 모자라 뺐습니다」 는 우리 쪽 사정이다. 뺀 것이 있다면 **무엇을 왜
     뺐는지**와 전문이 어디 있는지를 적는다.
+
+    **규칙을 정확히 적는다** (59세션 11절). 뺀 갈래는 둘이다 — 「값이 0」 과
+    「못 냈다」. 「산출되지 않은」 이라고만 적으면 계약전력 조정처럼 **산출은
+    됐는데 0 인** 줄이 못 낸 것으로 읽힌다. 8절이 값 자리에서 둘을 가른 것과
+    같은 자리다.
     """
     dropped = [entry for entry in sections.measures if not entry.has_saving]
     note = "전문은 Excel 부록 A 에 있습니다."
     if dropped:
         names = " · ".join(measure_slide_title(entry) for entry in dropped)
-        note = f"절감액이 산출되지 않은 수단({names})은 근거를 싣지 않았습니다. {note}"
+        note = f"절감액이 0 이거나 산출되지 않은 수단({names})은 근거를 싣지 않았습니다. {note}"
     return note
 
 
