@@ -2100,6 +2100,54 @@ def test_계약전력이_세_갈래다(sample_usage: UsageData, sample_bill: Bil
     assert "낮출 여지가" in conclusion(6_500.0)
 
 
+def test_각주에_미산출이_두_번_서지_않는다() -> None:
+    """**앞에도 뒤에도 붙는다** (53세션 9절 · 59세션 8절).
+
+    태양광 투자비 사유는 「미산출 — …」 라 **앞**에 겹쳤고, 계약전력 사유는
+    「하한 규정 미확인 — 금액 미산출」 이라 **뒤**에 겹쳤다.
+    """
+    from kwise.report.slides import _measure_note, _trim_repeat
+
+    assert _trim_repeat("하한 규정 미확인 — 금액 미산출", "미산출") == "하한 규정 미확인"
+    # 꼬리가 머리말이 아니면 그대로 둔다.
+    assert _trim_repeat("정산 단가 미입력", "미산출") == "정산 단가 미입력"
+    assert (
+        _trim_repeat("요금적용전력 하한 30% 적용, 12.00개월분 재계산", "기본요금 변화없음")
+        == "요금적용전력 하한 30% 적용, 12.00개월분 재계산"
+    )
+
+    from kwise.report.document import MeasureEntry
+    from kwise.measures import measure_kind
+
+    entry = MeasureEntry(
+        kind=measure_kind("contract"),
+        conclusion="",
+        saving="미산출 — 하한 규정 미확인 — 금액 미산출",
+        investment="—",
+        payback="즉시",
+        certainty="높음",
+    )
+    note = _measure_note(entry)
+    assert note.count("미산출") == 1, note
+    assert "하한 규정 미확인" in note
+
+
+def test_계약종별을_바꾸면_계약전력_결과가_따라온다() -> None:
+    """**캐시 열쇠에 계약종별이 없었다** (59세션 8절).
+
+    하한 비율은 종별 속성이라 ``BillingResult`` 가 들고 오는데 그 인자는
+    ``_bill`` 이라 열쇠에서 빠진다. 다른 캐시 함수는 모두 ``form`` 을 열쇠에
+    두는데 여기만 없어, **한 세션에서 종별을 바꾸면 앞 결과가 다시 나왔다.**
+    """
+    import inspect
+
+    from kwise.ui.cache import cached_contract_adjustment
+
+    params = list(inspect.signature(cached_contract_adjustment).parameters)
+    keys = [name for name in params if not name.startswith("_")]
+    assert "form" in keys, params
+
+
 def test_계약전력_각주가_하한_미결착을_말한다(
     sample_usage: UsageData, sample_bill: BillingResult
 ) -> None:

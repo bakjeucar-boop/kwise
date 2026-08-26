@@ -878,6 +878,9 @@ def _measure_results(
             usage,
             baseline,
             token,
+            # **계약종별이 하한 비율을 정한다** (59세션 8절). ``baseline`` 은
+            # 열쇠에서 빠지므로 이것이 없으면 종별을 바꿔도 앞 결과가 나온다.
+            form,
             form.contract_kw,
             None,
             # **2단계와 같은 여유율을 읽는다.** 슬라이더를 감춘 경우에도 2단계가

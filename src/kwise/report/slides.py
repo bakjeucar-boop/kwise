@@ -1515,6 +1515,19 @@ def _cautions(entry: MeasureEntry) -> tuple[str, ...]:
     return tuple(seen)[:CAUTION_LIMIT]
 
 
+def _trim_repeat(reason: str, head: str) -> str:
+    """사유 꼬리에 머리말이 되풀이되면 뗀다 (59세션 8절).
+
+    「하한 규정 미확인 — 금액 미산출」 처럼 사유 자체가 「…미산출」 로 끝나는
+    자리가 있다. 앞에 「절감액 미산출」 을 붙이면 한 줄에 같은 말이 두 번 선다.
+    **떼는 것은 표시뿐이고 계산이 낸 사유 문자열은 그대로 둔다.**
+    """
+    tail = reason.rsplit(_REASON_MARK, 1)[-1].strip()
+    if _REASON_MARK in reason and tail.endswith(head):
+        return reason.rsplit(_REASON_MARK, 1)[0].strip()
+    return reason
+
+
 def _measure_note(entry: MeasureEntry) -> str:
     """수단 장 맨 아래 작은 글씨 (39세션 2-1).
 
@@ -1535,7 +1548,11 @@ def _measure_note(entry: MeasureEntry) -> str:
             # **「미산출」 이 두 번 나오지 않게 한다.** 태양광 투자비 사유가
             # 「미산출 — 태양광 설치 단가 미입력」 꼴이라, 앞에 라벨을 붙이면
             # 「투자비 미산출 — 미산출 — 태양광 …」 이 됐다.
-            parts.append(f"{label} {head} — {split_reason(reason)[1] or reason}")
+            #
+            # **꼬리에도 붙는다** (59세션 8절). 계약전력의 사유는 「하한 규정
+            # 미확인 — 금액 미산출」 이라 앞이 아니라 **뒤**에 같은 말이 있었다
+            # — 「절감액 미산출 — 하한 규정 미확인 — 금액 미산출」.
+            parts.append(f"{label} {head} — {_trim_repeat(split_reason(reason)[1] or reason, head)}")
     if entry.slide_note:
         parts.append(entry.slide_note)
     return " · ".join(parts)

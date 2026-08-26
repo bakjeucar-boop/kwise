@@ -406,6 +406,9 @@ def _contract(
         usage,
         baseline,  # type: ignore[arg-type]
         usage_token(usage),
+        # **계약종별이 하한 비율을 정한다** (59세션 8절). ``baseline`` 은 열쇠에서
+        # 빠지므로 이것이 없으면 종별을 바꿔도 앞 결과가 그대로 나온다.
+        form,
         form.contract_kw,
         None,
         margin,
