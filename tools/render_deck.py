@@ -207,7 +207,7 @@ def export_png(pptx: Path, outdir: Path) -> bool:
     outdir.mkdir(parents=True, exist_ok=True)
     script = _EXPORT_PS1.format(pptx=str(pptx.resolve()), outdir=str(outdir.resolve()))
     try:
-        done = subprocess.run(  # noqa: S603
+        done = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
             capture_output=True,
             text=True,
@@ -248,12 +248,17 @@ def main(argv: list[str] | None = None) -> int:
         pptx = args.out / f"{case.key}.pptx"
         pptx.write_bytes(payload)
         print(f"  {pptx} ({len(payload) / 1024:.0f} KB)")
-        if args.png:
-            if export_png(pptx, args.out / case.key):
-                count = len(list((args.out / case.key).glob("*.PNG"))) + len(
-                    list((args.out / case.key).glob("*.png"))
-                )
-                print(f"  png {count}장 → {args.out / case.key}")
+        if args.png and export_png(pptx, args.out / case.key):
+            # Windows 는 glob 이 대소문자를 가리지 않아 `*.PNG` 와 `*.png` 가
+            # 같은 파일을 둘 다 문다 — 세는 자리에서 겹치지 않게 한 번만 훑는다.
+            count = len(
+                [
+                    item
+                    for item in (args.out / case.key).iterdir()
+                    if item.suffix.lower() == ".png"
+                ]
+            )
+            print(f"  png {count}장 → {args.out / case.key}")
     return 0
 
 

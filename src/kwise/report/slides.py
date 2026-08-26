@@ -1552,9 +1552,8 @@ def _measure_note(entry: MeasureEntry) -> str:
             # **꼬리에도 붙는다** (59세션 8절). 계약전력의 사유는 「하한 규정
             # 미확인 — 금액 미산출」 이라 앞이 아니라 **뒤**에 같은 말이 있었다
             # — 「절감액 미산출 — 하한 규정 미확인 — 금액 미산출」.
-            parts.append(f"{label} {head} — {_trim_repeat(split_reason(reason)[1] or reason, head)}")
-    if entry.slide_note:
-        parts.append(entry.slide_note)
+            tail = _trim_repeat(split_reason(reason)[1] or reason, head)
+            parts.append(f"{label} {head} — {tail}")
     return " · ".join(parts)
 
 
@@ -1826,8 +1825,12 @@ def _build_measure(
     # 쓰이고, 미산출 사유는 그 아래에서 받는다.
     terms_note = narrative.glossary_note(GLOSSARY_KEYS.get(spec.key, ()))
     note = _measure_note(entry)
+    # **장이 따로 적는 줄은 제 줄에 선다** (59세션 14절). 미산출 사유 뒤에
+    # 「·」 로 이어 붙이면 「역률 영향 반영 시 279,249,000원」 이 또 하나의
+    # 미산출 사유처럼 읽힌다 — 다른 종류의 말이므로 ※ 를 따로 단다.
+    extra = entry.slide_note
     body = bottom + geometry.block_gap_in
-    height = _note_top(guide, terms_note, note) - body - _BODY_TAIL
+    height = _note_top(guide, terms_note, note, extra) - body - _BODY_TAIL
     drawings = entry.slide_figures
     crowded = False
     if entry.spec_table:
@@ -1840,12 +1843,12 @@ def _build_measure(
         crowded = bool(entry.slide_figures) and not drawings
     if drawings and height > _MIN_FIGURE_BLOCK:
         _measure_pictures(slide, guide, drawings, top=body, height=height)
-        _note(slide, guide, terms_note, note)
+        _note(slide, guide, terms_note, note, extra)
         return
     # **여지가 없는 수단은 그 사실을 숫자로 보인다** (39세션 4-2·4-3). 실행
     # 주의사항 대신 「왜 없는지」 를 세우는 자리다.
     if crowded:
-        _note(slide, guide, terms_note, note)
+        _note(slide, guide, terms_note, note, extra)
         return
     if not entry.actionable and entry.facts and not entry.facts_first:
         _stats(
@@ -1856,7 +1859,7 @@ def _build_measure(
             top=body + max(0.0, (height - 0.94) / 2),
             width=geometry.content_width_in,
         )
-        _note(slide, guide, terms_note, note)
+        _note(slide, guide, terms_note, note, extra)
         return
     rows = [["주의사항"], *[[line] for line in _cautions(entry)]]
     if len(rows) == 1:
@@ -1874,7 +1877,7 @@ def _build_measure(
         width=geometry.content_width_in,
         height=table_height,
     )
-    _note(slide, guide, terms_note, note)
+    _note(slide, guide, terms_note, note, extra)
 
 
 def _build_surplus(

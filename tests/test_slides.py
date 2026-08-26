@@ -1369,8 +1369,10 @@ def test_ppt_에_잉여_장이_없고_태양광_장이_진다(
     assert facts["잉여 없는 최대 용량"] == "2,048 kWp", facts
     # **시나리오 나열은 태양광 각주에 없다** (53세션 3절). 잉여가 나면 「잉여
     # 활용」 장이 다음에 붙어 표로 낸다 — 각주는 기준선 0원까지 이어 적고 있었다.
-    # 고른 시나리오가 없는 점(``solar_point`` 원본)이라 각주도 비어 있다.
-    assert solar.slide_note == "", solar.slide_note
+    # 고른 시나리오가 없는 점(``solar_point`` 원본)이라 잉여 조각은 없다 —
+    # 남는 것은 역률 조정 한 줄뿐이다 (59세션 12절).
+    assert "자가소비로 줄인 요금" not in solar.slide_note, solar.slide_note
+    assert solar.slide_note.startswith("역률 영향 반영 시"), solar.slide_note
 
     # **고르면 절감액이 무엇의 합인지 한 줄 적는다** (59세션 5절). 화면은 절감액
     # 물음표가 늘 이 줄을 낸다 (57세션) — PPT 에만 없었다.
@@ -1434,6 +1436,7 @@ def test_잉여가_0이면_태양광_장이_늘지_않는다(
         if entry.kind.key == "solar"
     )
     assert "잉여" not in dict(solar.facts)
+    # **발전이 0 이면 역률도 안 떨어진다** — 조정 줄도 없다 (59세션 12절).
     assert solar.slide_note == ""
     assert not any("자격요건" in line for line in solar.cautions), solar.cautions
 
@@ -1814,10 +1817,10 @@ def test_상계거래_비고가_기간말_잔여를_늘_적는다() -> None:
     settled = dataclasses.replace(
         base,  # type: ignore[type-var]
         offset=OffsetSettlement(
+            months=(),
             deducted_kwh=23_416.0,
+            deducted_won=2_283_732.0,
             remaining_kwh=0.0,
-            revenue_won=2_283_732.0,
-            carry_over={},
             settles_cash=True,
             smp_price_won_per_kwh=120.0,
             smp_won=0.0,
@@ -2056,7 +2059,6 @@ def test_마진_미달_ESS_장은_표를_남긴다(
     """**성립 불가 갈래 둘이 다르다** (59세션 2절). 이쪽은 잰 점이 있다."""
     from kwise.measures.ess import ess_target_curve, refine_ess_target
     from kwise.report.document import measure_entries
-
     from kwise.tariff import TariffSelection
 
     curve = ess_target_curve(
@@ -2098,6 +2100,42 @@ def test_계약전력이_세_갈래다(sample_usage: UsageData, sample_bill: Bil
     assert "초과 위약 검토 대상입니다" in over, over
     assert "상향을 검토해야 합니다" in over
     assert "낮출 여지가" in conclusion(6_500.0)
+
+
+def test_장이_따로_적는_줄은_제_줄에_선다(full_sections: DocumentSections) -> None:
+    """**다른 종류의 말을 「·」 로 잇지 않는다** (59세션 14절).
+
+    미산출 사유 뒤에 이어 붙이니 「역률 영향 반영 시 279,249,000원」 이 또 하나의
+    미산출 사유처럼 읽혔다. ``slide_note`` 는 제 ※ 를 단다.
+    """
+    import dataclasses
+
+    from kwise.report.slides import NOTE_MARK, _measure_note
+
+    measures = _all_measures(full_sections)
+    entry = next(item for item in measures if item.kind.key == "solar")
+    noted = dataclasses.replace(entry, slide_note="역률 영향 반영 시 279,249,000원")
+    # 각주 본문에는 들어가지 않는다 — 슬라이드가 따로 한 줄로 깐다.
+    assert "역률 영향" not in _measure_note(noted)
+
+    sections = dataclasses.replace(
+        full_sections, measures=tuple(_replace_solar(measures, noted))
+    )
+    slide = _slide_by_key(build_slides(sections), sections, "measure_solar")
+    lines = [
+        line
+        for shape in slide.shapes
+        if shape.has_text_frame
+        for line in shape.text_frame.text.split("\n")
+        if line.startswith(NOTE_MARK.strip())
+    ]
+    assert any(line.strip().startswith("※ 역률 영향 반영 시") for line in lines), lines
+
+
+def _replace_solar(
+    measures: tuple[MeasureEntry, ...], swapped: MeasureEntry
+) -> list[MeasureEntry]:
+    return [swapped if item.kind.key == "solar" else item for item in measures]
 
 
 def test_부록이_효과_있는_수단을_빠뜨리지_않는다(full_sections: DocumentSections) -> None:
@@ -2200,7 +2238,8 @@ def test_역률_영향을_큰_글자에_녹이지_않는다(
 
     # Excel 도 같은 문장을 쓴다.
     frame = measure_summary_frame(solar=dropped, base_fee_months=12.0)
-    row = frame.loc[[name for name in frame.index if str(name).startswith("태양광")][0]]
+    key = next(name for name in frame.index if str(name).startswith("태양광"))
+    row = frame.loc[key]
     assert line in str(row["비고"]), row["비고"]
     assert str(row["절감액(원)"]).startswith("29,564,000")
 
@@ -2248,8 +2287,8 @@ def test_각주에_미산출이_두_번_서지_않는다() -> None:
         == "요금적용전력 하한 30% 적용, 12.00개월분 재계산"
     )
 
-    from kwise.report.document import MeasureEntry
     from kwise.measures import measure_kind
+    from kwise.report.document import MeasureEntry
 
     entry = MeasureEntry(
         kind=measure_kind("contract"),

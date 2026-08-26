@@ -25,7 +25,6 @@ import math
 import pandas as pd
 import streamlit as st
 
-from kwise import money
 from kwise.diagnose import Diagnosis, default_margin_ratio, margin_range
 from kwise.diagnose.dr import dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData

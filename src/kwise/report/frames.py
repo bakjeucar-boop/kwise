@@ -55,10 +55,10 @@ __all__ = [
     "CAPACITY_ROWS",
     "DAY_TYPE_LABELS",
     "ESS_SPEC_CAPTION",
-    "NO_REDUCTION_CAPTION",
     "ESS_SPEC_HEADER",
     "ESS_SPEC_ROWS",
     "MONTHLY_CHARGE_PARTS",
+    "NO_REDUCTION_CAPTION",
     "TARIFF_PARTS",
     "band_frame",
     "capacity_band_frame",
@@ -686,7 +686,7 @@ NO_REDUCTION_CAPTION = (
 
 def ess_spec_caption(frame: pd.DataFrame) -> str:
     """사양 표 위 한 줄. **표가 말하는 것과 어긋나지 않게 고른다** (59세션 3절)."""
-    column = frame["저감량(kW)"] if "저감량(kW)" in frame else None
+    column = frame.get("저감량(kW)")
     if column is not None and len(column) and not (column > 0).any():
         return NO_REDUCTION_CAPTION
     return ESS_SPEC_CAPTION

@@ -358,12 +358,14 @@ def power_factor_adjusted_saving(*, saving_won: float, extra_won: float) -> str:
     여야 한다 (31세션) — 태양광이 역률을 떨어뜨려 역률요금이 느는 것은 사실이지만
     그것을 큰 글자에 녹이면 독립 평가가 깨진다. **둘을 나눠 보인다.**
 
-    영향이 0 이면 빈 글이다 — 없는 조정을 적지 않는다.
+    **원 단위로 반올림해 0 이면 빈 글이다** — 없는 조정을 적지 않는다. 발전이
+    0 인 점에서도 부동소수 찌꺼기(1e-11 원)가 남아 「역률 영향 반영 시 0원」 이
+    섰다.
 
     금액은 부르는 쪽이 **같은 기준으로** 넘긴다 (둘 다 관측 기간이거나 둘 다
     12개월 환산). 이 함수는 서식만 잡는다.
     """
-    if not extra_won:
+    if round(extra_won) == 0:
         return ""
     return f"역률 영향 반영 시 {money.won(saving_won - extra_won, reason='—')}"
 
