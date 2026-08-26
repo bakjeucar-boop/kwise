@@ -57,6 +57,7 @@ __all__ = [
     "peak_month_close",
     "peak_month_lead",
     "peak_summary_lead",
+    "power_factor_adjusted_saving",
     "solar_saving_breakdown",
     "structure_lead",
     "surplus_lead",
@@ -348,6 +349,23 @@ def building_lead(quality: QualityReport | None) -> str:
         f"{head} {worst.month} 등 {len(heavy)}개 달이 크게 비어 그 달들의 "
         "최대수요는 낮게 잡혔을 수 있습니다."
     )
+
+
+def power_factor_adjusted_saving(*, saving_won: float, extra_won: float) -> str:
+    """역률 영향을 반영한 절감액 한 줄 (59세션 12절 · 목록 P6).
+
+    **큰 글자는 조정 전 값이다.** 2단계 카드의 절감액은 「그 수단만 적용했을 때」
+    여야 한다 (31세션) — 태양광이 역률을 떨어뜨려 역률요금이 느는 것은 사실이지만
+    그것을 큰 글자에 녹이면 독립 평가가 깨진다. **둘을 나눠 보인다.**
+
+    영향이 0 이면 빈 글이다 — 없는 조정을 적지 않는다.
+
+    금액은 부르는 쪽이 **같은 기준으로** 넘긴다 (둘 다 관측 기간이거나 둘 다
+    12개월 환산). 이 함수는 서식만 잡는다.
+    """
+    if not extra_won:
+        return ""
+    return f"역률 영향 반영 시 {money.won(saving_won - extra_won, reason='—')}"
 
 
 def solar_saving_breakdown(

@@ -846,6 +846,8 @@ class _MeasureResults:
             surplus_kw=self.surplus_kw,
             surplus_free_kwp=self.surplus_free_kwp,
             area_m2=self.solar_area_m2,
+            # **역률 조정값을 같은 기준으로 적으려면 개월수가 필요하다** (59세션 12절).
+            base_fee_months=self.base_fee_months or None,
         )
 
 

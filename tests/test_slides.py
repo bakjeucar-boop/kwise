@@ -2100,6 +2100,89 @@ def test_계약전력이_세_갈래다(sample_usage: UsageData, sample_bill: Bil
     assert "낮출 여지가" in conclusion(6_500.0)
 
 
+def test_역률_영향을_큰_글자에_녹이지_않는다(
+    sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult
+) -> None:
+    """**둘을 나눠 보인다** (59세션 12절 · 목록 P6 · 31세션 독립 평가).
+
+    태양광이 유효전력만 상쇄해 역률이 떨어지고 역률요금이 는다 — 사실이고
+    계산이 이미 내던 값인데(``power_factor_extra_won``) **어느 산출물에도 금액
+    으로 서 있지 않았다.** 큰 글자는 조정 전 값이고 조정값은 곁에 적는다.
+    """
+    import dataclasses
+
+    import pandas as pd
+
+    from kwise.measures import solar_point
+    from kwise.report.document import measure_entries
+    from kwise.report.excel import measure_summary_frame
+    from kwise.report.narrative import power_factor_adjusted_saving
+    from kwise.tariff import TariffSelection
+
+    selection = TariffSelection("general_b", "high_a", "I")
+    index = pd.DatetimeIndex(sample_usage.kw.index)
+    unit = pd.Series(0.0, index=index, name="kw")
+    point = solar_point(sample_usage, tariff, selection, unit, 100.0, baseline=sample_bill)
+    # 역률이 떨어진 자리를 만든다 — 발전이 0 인 점에는 조정이 없다.
+    dropped = dataclasses.replace(
+        point,
+        generation_kwh=1_940_781.0,
+        self_consumed_kwh=1_940_781.0,
+        self_consumption_ratio=1.0,
+        total_saving_won=29_564_000.0,
+        annual_saving_won=29_564_000.0,
+        power_factor_extra_won=156_000.0,
+        power_factor_after_pct=91.8,
+    )
+    line = power_factor_adjusted_saving(saving_won=29_564_000.0, extra_won=156_000.0)
+    assert line == "역률 영향 반영 시 29,408,000원"
+
+    entry = next(
+        item
+        for item in measure_entries(solar=dropped, base_fee_months=12.0)
+        if item.kind.key == "solar"
+    )
+    # **큰 글자는 조정 전이다.**
+    assert entry.saving_annual.startswith("29,564,000원"), entry.saving_annual
+    assert "역률" not in entry.saving_annual
+    # 곁에 적는다 — PPT 는 각주, Word 는 주의사항 목록. **같은 문장이다.**
+    assert line in entry.slide_note
+    assert line in entry.cautions
+
+    # Excel 도 같은 문장을 쓴다.
+    frame = measure_summary_frame(solar=dropped, base_fee_months=12.0)
+    row = frame.loc[[name for name in frame.index if str(name).startswith("태양광")][0]]
+    assert line in str(row["비고"]), row["비고"]
+    assert str(row["절감액(원)"]).startswith("29,564,000")
+
+    # **영향이 0 이면 어디에도 줄이 없다.**
+    flat = dataclasses.replace(dropped, power_factor_extra_won=0.0)
+    quiet = next(
+        item
+        for item in measure_entries(solar=flat, base_fee_months=12.0)
+        if item.kind.key == "solar"
+    )
+    assert "역률 영향 반영 시" not in quiet.slide_note
+    assert not [line for line in quiet.cautions if "역률 영향 반영 시" in line]
+
+
+def test_합산효과는_태양광_역률_영향을_반영하지_않는다() -> None:
+    """**이중 반영이 아니다** (59세션 12절). 오히려 아예 들어가지 않는다.
+
+    조합 요금은 :class:`BillingOptions` 의 ``power_factor_pct`` 하나로만 역률을
+    본다 — 켠 「역률 개선」 의 목표값이거나 기준선 값이다. 태양광이 떨어뜨리는
+    역률은 그 옵션에 들어가지 않으므로 2단계 카드가 참고로 내는 값이다.
+    **고치려면 계산을 바꿔야 하고, 그것은 이 세션의 범위가 아니다.**
+    """
+    import inspect
+
+    from kwise.compare import combination
+
+    source = inspect.getsource(combination)
+    assert "power_factor_after_pct" not in source
+    assert "power_factor_extra_won" not in source
+
+
 def test_각주에_미산출이_두_번_서지_않는다() -> None:
     """**앞에도 뒤에도 붙는다** (53세션 9절 · 59세션 8절).
 

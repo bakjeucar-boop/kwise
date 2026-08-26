@@ -51,6 +51,7 @@ from kwise.measures import (
     SurplusResult,
     SurplusScenario,
     TariffSwitchResult,
+    annualize,
     measure_kind,
     payback_text,
     spec_mark_note,
@@ -701,6 +702,7 @@ def measure_entries(
     surplus_kw: pd.Series | None = None,
     surplus_free_kwp: float | None = None,
     area_m2: float | None = None,
+    base_fee_months: float | None = None,
 ) -> tuple[MeasureEntry, ...]:
     """검토한 수단을 **7장 순서 그대로** 항목으로 만든다.
 
@@ -901,6 +903,25 @@ def measure_entries(
                 surplus_scenario=solar.surplus_scenario,
                 surplus_revenue_won=solar.surplus_revenue_won,
             )
+        # **역률 영향을 큰 글자에 녹이지 않는다** (59세션 12절 · 목록 P6).
+        # 태양광이 유효전력만 상쇄해 역률이 떨어지고 역률요금이 는다 — 사실이고
+        # 계산이 이미 내고 있다(``power_factor_extra_won``). 그러나 카드의
+        # 절감액은 「그 수단만 적용했을 때」 여야 하므로(31세션) **둘을 나눠
+        # 보인다.** Word 는 주의사항 목록이, PPT 는 각주가 받는다 —
+        # **같은 문장**이다.
+        power_factor_line = narrative.power_factor_adjusted_saving(
+            saving_won=(
+                solar.annual_saving_won if base_fee_months else solar.total_saving_won
+            ),
+            extra_won=(
+                annualize(solar.power_factor_extra_won, base_fee_months)
+                if base_fee_months
+                else solar.power_factor_extra_won
+            ),
+        )
+        if power_factor_line:
+            cautions.append(power_factor_line)
+            surplus_note = " · ".join(part for part in (surplus_note, power_factor_line) if part)
         entries["solar"] = MeasureEntry(
             kind=measure_kind("solar"),
             conclusion=_solar_conclusion(

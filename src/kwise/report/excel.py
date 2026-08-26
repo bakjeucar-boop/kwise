@@ -44,6 +44,7 @@ from kwise.measures import (
     payback_text,
 )
 from kwise.notices import Notice, dedupe
+from kwise.report import narrative
 from kwise.report.appendix import basis_data_frame, known_limits, worksheet_frame
 from kwise.report.columns import localize
 from kwise.report.notices import (
@@ -405,9 +406,22 @@ def measure_summary_frame(
                     if solar.payback_years is not None
                     else UNPRICED_REASONS["no_saving"]
                 ),
+                # **역률 조정값을 곁에 적는다** (59세션 12절 · 목록 P6). 금액
+                # 칸은 조정 전 값이다 — 카드의 절감액은 「그 수단만 적용했을 때」
+                # 여야 한다 (31세션). 문장은 화면·PPT·Word 와 같은 것을 쓴다.
                 "비고": (
-                    f"자가소비율 {solar.self_consumption_ratio:.0%}, "
-                    f"도입 후 역률 {solar.power_factor_after_pct:.1f}%"
+                    ", ".join(
+                        part
+                        for part in (
+                            f"자가소비율 {solar.self_consumption_ratio:.0%}",
+                            f"도입 후 역률 {solar.power_factor_after_pct:.1f}%",
+                            narrative.power_factor_adjusted_saving(
+                                saving_won=solar.total_saving_won,
+                                extra_won=solar.power_factor_extra_won,
+                            ),
+                        )
+                        if part
+                    )
                     if solar.self_consumption_ratio is not None
                     else "발전량 0"
                 ),
