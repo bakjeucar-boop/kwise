@@ -566,7 +566,12 @@ class SurplusPage:
 
     언제나 0원이고 「아무것도 하지 않는다」 는 표에 세울 방안이 아니다 — 그것이
     기준선이라는 사실은 화면 라디오가 고른 자리로 말한다 (57세션)."""
-    note: str
+    notes: tuple[str, ...] = ()
+    """각주 **줄 목록.** 한 줄에 하나씩 「※」 가 선다 (60세션 1절).
+
+    58세션까지는 한 문자열이었다. 자격요건 각주와 적용 단가 각주를 빈칸으로
+    이어 넘기는 바람에 **「※」 가 한 줄 가운데 또 섰다** — 뒤 문장이 제 표식을
+    달고 오기 때문이다. 성격이 다른 두 말이므로 **줄을 가른다.**"""
     figure: bytes | None = None
     figure_caption: str = ""
 
@@ -643,7 +648,7 @@ def surplus_page(
         scenario_rows=tuple(rows),
         # **적용 단가를 표 아래에 적는다** (58세션). 화면 캡션·Excel 참고사항·
         # Word 부록이 쓰는 것과 **같은 문장**이다 — 값은 실제 적용 단가에서 온다.
-        note=" ".join(part for part in (SURPLUS_PAGE_NOTE, surplus.applied_price_note) if part),
+        notes=tuple(part for part in (SURPLUS_PAGE_NOTE, surplus.applied_price_note) if part),
         figure=figure,
         figure_caption=_SURPLUS_DAILY_CAPTION,
     )

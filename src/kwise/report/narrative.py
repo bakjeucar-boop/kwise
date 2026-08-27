@@ -41,6 +41,8 @@ __all__ = [
     "COMBINATION_LEAD",
     "FORMULA_SEPARATOR",
     "GLOSSARY_KEYS",
+    "NOTE_JOIN",
+    "NOTE_MARK",
     "SINGLE_MEASURE_LEAD",
     "Term",
     "base_fee_share_high",
@@ -51,7 +53,9 @@ __all__ = [
     "dr_lead",
     "glossary_note",
     "load_factor_flat",
+    "mark_note",
     "measure_summary_lead",
+    "note_line",
     "pattern_lead",
     "peak_detail_lead",
     "peak_month_close",
@@ -296,6 +300,73 @@ GLOSSARY_KEYS: dict[str, tuple[str, ...]] = {
 #: 평균 수요 ÷ 최대 수요 · 기저부하 비율 = …」 은 나눗셈 뒤에 곱셈이 붙은
 #: 것처럼 보인다. 산식이 아닌 자리의 「·」 는 그대로 둔다.
 FORMULA_SEPARATOR = ", "
+
+
+#: **참고용 작은 글씨 앞에 붙이는 표식** (53세션 1-1).
+#:
+#: 툴팁에서 옮긴 용어 풀이, 전제·한계 각주, 표 아래 참고 한 줄이 전부 이것을
+#: 단다. **그림 캡션은 제외한다** — 캡션은 그림이 무엇인지 말하는 이름이지
+#: 참고가 아니다.
+#:
+#: **여기가 정본이다** (60세션 1절). ``report.slides`` 가 다시 내보내므로
+#: 두 이름 다 쓸 수 있지만 값은 한 자리에만 있다.
+NOTE_MARK = "※ "
+
+
+#: 각주 **한 줄 안에서** 조각을 잇는 기호 (60세션 1절).
+#:
+#: 산식 자리의 :data:`FORMULA_SEPARATOR` 와 다르다 — 이쪽은 「절감액 미산출 —
+#: 사유 · 투자비 미산출 — 사유」 처럼 **성격이 같은 조각**을 잇는다.
+NOTE_JOIN = " · "
+
+
+#: 조각이 이미 문장으로 끝났다고 보는 글자 (60세션 2절).
+_SENTENCE_END = ".。!?"
+
+
+def mark_note(line: str) -> str:
+    """참고 한 줄에 :data:`NOTE_MARK` 를 붙인다. **이미 붙었으면 그대로 둔다.**"""
+    text = line.strip()
+    if not text or text.startswith(NOTE_MARK.strip()):
+        return text
+    return f"{NOTE_MARK}{text}"
+
+
+def note_line(*parts: str) -> str:
+    """각주 **한 줄**을 조립한다 — 이 프로젝트에서 각주를 잇는 유일한 자리다.
+
+    59세션까지는 부르는 쪽이 저마다 ``" · ".join(...)`` 을 했다. 그래서 같은
+    결함이 자리마다 따로 났다 (60세션 1·2절).
+
+    셋을 여기서만 한다.
+
+    1. **빈 조각은 버린다.**
+    2. **조각이 달고 온 :data:`NOTE_MARK` 는 뗀다.** 표식은 줄 맨 앞의 하나뿐이고
+       그것은 :func:`mark_note` 가 단다 — 조각마다 달고 오면 한 줄에 「※」 가
+       두 번 선다 (잉여 장이 그랬다).
+    3. **앞 조각이 마침표로 끝나면 구분점을 두지 않는다.** 「… 않았습니다**. ·**
+       투자비 미산출」 로 겹친다 — 문장이 이미 끝났으므로 빈칸이면 족하다.
+       (ESS 성립 불가 장이 그랬다.)
+
+    표식을 붙이지는 **않는다** — 줄로 세울 때 :func:`mark_note` 가 한다.
+    """
+    kept = [stripped for part in parts if (stripped := _strip_mark(part))]
+    if not kept:
+        return ""
+    line = kept[0]
+    for part in kept[1:]:
+        join = " " if line[-1] in _SENTENCE_END else NOTE_JOIN
+        line = f"{line}{join}{part}"
+    return line
+
+
+def _strip_mark(part: str) -> str:
+    """조각 앞의 :data:`NOTE_MARK` 를 뗀다. 줄 맨 앞의 하나만 남기기 위함이다."""
+    text = part.strip()
+    mark = NOTE_MARK.strip()
+    while text.startswith(mark):
+        text = text[len(mark) :].strip()
+    return text
 
 
 def glossary_note(keys: tuple[str, ...], pattern: LoadPattern | None = None) -> str:

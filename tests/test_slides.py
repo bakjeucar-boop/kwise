@@ -1865,12 +1865,12 @@ def test_잉여_장이_적용_단가를_밝힌다(full_sections: DocumentSection
     )
     page = surplus_page(priced, capacity_kwp=160.0, surplus_free_kwp=40.0)
     assert page is not None
-    assert "외부 판매 140원/kWh" in page.note
-    assert "참고용입니다" in page.note
+    assert "외부 판매 140원/kWh" in " ".join(page.notes)
+    assert "참고용입니다" in " ".join(page.notes)
     # **단가가 없으면 그 문장도 없다** — 지어낸 단가를 밝히지 않는다.
     plain = surplus_page(base, capacity_kwp=160.0, surplus_free_kwp=40.0)  # type: ignore[arg-type]
     assert plain is not None
-    assert "원/kWh" not in plain.note
+    assert "원/kWh" not in " ".join(plain.notes)
 
     sections = dataclasses.replace(
         full_sections, measures=_all_measures(full_sections), surplus=page

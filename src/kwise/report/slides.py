@@ -148,20 +148,13 @@ LAYOUTS: tuple[str, ...] = (
 
 _UNPRICED = "미산출"
 
-#: **참고용 작은 글씨 앞에 붙이는 표식** (53세션 1-1).
+#: 참고용 작은 글씨 앞에 붙이는 표식 (53세션 1-1).
 #:
-#: 툴팁에서 옮긴 용어 풀이, 전제·한계 각주, 표 아래 참고 한 줄이 전부 이것을
-#: 단다. **그림 캡션은 제외한다** — 캡션은 그림이 무엇인지 말하는 이름이지
-#: 참고가 아니다.
-NOTE_MARK = "※ "
-
-
-def mark_note(line: str) -> str:
-    """참고 한 줄에 :data:`NOTE_MARK` 를 붙인다. **이미 붙었으면 그대로 둔다.**"""
-    text = line.strip()
-    if not text or text.startswith(NOTE_MARK.strip()):
-        return text
-    return f"{NOTE_MARK}{text}"
+#: **정본은 :mod:`kwise.report.narrative` 에 있다** (60세션 1절) — 뜻과 규칙은
+#: 거기 적혀 있다. 각주를 조립하는 자리가 ``document`` 와 ``slides`` 둘이라
+#: 둘 다의 아래에 있는 모듈로 옮겼다. 여기서는 이름만 이어 받는다.
+NOTE_MARK = narrative.NOTE_MARK
+mark_note = narrative.mark_note
 
 
 #: 「미산출 — 사유」 를 가르는 표식.
@@ -1912,7 +1905,7 @@ def _build_surplus(
     gap = geometry.block_gap_in
     half = (geometry.content_width_in - gap) / 2
     right_left = geometry.margin_in + half + gap
-    bottom = _note_top(guide, page.note)
+    bottom = _note_top(guide, *page.notes)
     if page.figure is not None:
         _picture_block(
             slide,
@@ -1934,7 +1927,7 @@ def _build_surplus(
         height=min(bottom - top, 0.46 * len(page.scenario_rows)),
         widths=(0.34, 0.26, 0.40),
     )
-    _note(slide, guide, page.note)
+    _note(slide, guide, *page.notes)
 
 
 def _build_combination(
