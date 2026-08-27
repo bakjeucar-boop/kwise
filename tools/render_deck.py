@@ -228,7 +228,27 @@ def export_png(pptx: Path, outdir: Path) -> bool:
 LABEL_NAME = "_이_덱은.txt"
 
 
-def label_text(case: Case) -> str:
+def slide_titles(pptx: Path) -> list[str]:
+    """덱에서 장 제목을 뽑는다 — **장 수가 다른 까닭을 라벨이 스스로 말하게 한다.**"""
+    from pptx import Presentation
+
+    titles: list[str] = []
+    for slide in Presentation(str(pptx)).slides:
+        heads = sorted(
+            (
+                shape
+                for shape in slide.shapes
+                if shape.has_text_frame
+                and shape.top is not None
+                and shape.text_frame.text.strip()
+            ),
+            key=lambda shape: shape.top,
+        )
+        titles.append(heads[0].text_frame.text.strip().splitlines()[0] if heads else "?")
+    return titles
+
+
+def label_text(case: Case, titles: Sequence[str] = ()) -> str:
     """이 덱이 무엇인지 사람이 읽을 한 벌 (60세션 곁가지).
 
     **이름만 봐서 모르는 산출물은 실물 확인이 안 된다.** ``large-b-over`` 가
@@ -249,6 +269,23 @@ def label_text(case: Case) -> str:
     ]
     if case.surplus_use:
         lines.append(f"잉여 처리   {case.surplus_use}")
+    if titles:
+        # **장 수는 벌마다 다르다.** 갈리는 것은 수단 장이 아니라 **부록 장**이다 —
+        # 「값이 0 이거나 미산출인 수단은 부록에서 뺀다」 (39세션 · ``has_saving``).
+        # 그래서 대형 갑은 부록 ESS 가 빠져 20장, 계약 과다는 부록 계약전력
+        # 조정이 붙어 22장이다. 소형은 「잉여 활용」 이 하나 붙고 부록 ESS 가
+        # 빠져 21장이 된다 — **더한 것과 뺀 것이 상쇄돼 대형 을과 같아 보인다.**
+        lines += [
+            "",
+            f"장 수        {len(titles)}장",
+            "",
+            "  장 수가 벌마다 다른 까닭 —",
+            "    · 부록 산출근거는 절감액이 0 이거나 미산출인 수단을 뺀다",
+            "    · 「잉여 활용」 은 잉여가 실제로 날 때만 선다",
+            "",
+            "  장 차례 —",
+        ]
+        lines += [f"    {index:>2}. {title}" for index, title in enumerate(titles, 1)]
     lines += [
         "",
         "다시 뽑으려면 —",
@@ -257,10 +294,11 @@ def label_text(case: Case) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_label(outdir: Path, case: Case) -> Path:
-    """png 폴더에 라벨을 남긴다."""
+def write_label(outdir: Path, case: Case, pptx: Path | None = None) -> Path:
+    """png 폴더에 라벨을 남긴다. 덱을 주면 **장 차례**도 싣는다."""
+    titles = slide_titles(pptx) if pptx is not None else []
     path = outdir / LABEL_NAME
-    path.write_text(label_text(case), encoding="utf-8")
+    path.write_text(label_text(case, titles), encoding="utf-8")
     return path
 
 
@@ -303,7 +341,7 @@ def main(argv: list[str] | None = None) -> int:
         pptx.write_bytes(payload)
         print(f"  {pptx} ({len(payload) / 1024:.0f} KB)")
         if args.png and export_png(pptx, args.out / case.key):
-            write_label(args.out / case.key, case)
+            write_label(args.out / case.key, case, pptx)
             # Windows 는 glob 이 대소문자를 가리지 않아 `*.PNG` 와 `*.png` 가
             # 같은 파일을 둘 다 문다 — 세는 자리에서 겹치지 않게 한 번만 훑는다.
             count = len(

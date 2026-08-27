@@ -1638,6 +1638,27 @@ _SPEC_CAPTION_HEIGHT = 0.24
 #: 6.68in 에 앉는데 잘리지 않는다 — 그것이 이 값의 상한을 말해 준다.
 _BODY_TAIL = 0.1
 
+def _measure_stats_top(title_bottom: float, lead_height: float) -> float:
+    """수단 장에서 **지표 셋(절감액·투자비·회수기간)이 앉는 y** (in) (60세션 10절).
+
+    **규약 — 이 자리는 수단 장 전부가 함께 쓴다. 한 장의 사정으로 옮기지 않는다.**
+
+    값은 「제목 아래끝 + 결론 높이」 다. 결론이 한 줄이면 1.84in, 두 줄이면
+    **2.12in** 이고 (:func:`_wrapped_height` 가 재 준다), **같은 벌 안의 모든
+    수단 장이 같은 값을 쓴다.** 고객은 장을 넘기며 같은 자리에서 큰 숫자를
+    찾는다 — 한 장만 내리면 넘길 때마다 숫자가 위아래로 흔들린다.
+
+    **여백보다 위계가 먼저다** (60세션 9-5 판정). ESS 성립 불가 장은 그림도
+    표도 없어 아래가 2.57in 비는데, 그 빈자리를 메우려고 지표를 내리는 안을
+    버린 까닭이 이것이다. 빈자리는 「이 수단은 여기서 끝났다」 를 말하지만,
+    흔들리는 자리는 **아무것도 말하지 않으면서 읽는 눈을 뺏는다.**
+
+    아래 줄(:attr:`MeasureEntry.facts`)은 다르다 — 그쪽은 이 장에만 있으므로
+    :data:`_STAT_ROW_GAP` 으로 **윗줄에 붙인다.**
+    """
+    return title_bottom + lead_height
+
+
 #: **그림 없이 지표만 있는 장에서 지표 두 줄을 얼마나 띄울까** (in) (60세션 3절).
 #:
 #: 36세션 3-3 이 정한 규약은 「남는 높이 **가운데** 앉힌다」 하나뿐이었고 그것은
@@ -1812,7 +1833,7 @@ def _build_measure(
         color=colors.ink,
         bold=True,
     )
-    stats_top = top + lead
+    stats_top = _measure_stats_top(top, lead)
     # **근거가 결과보다 먼저 오는 장이 있다** (53세션 6-1). 계약전력 조정이
     # 그렇다 — 여유가 얼마나 있는지를 보고 나서야 「얼마로 낮출까」 를 읽는다.
     if entry.facts_first and entry.facts:
@@ -1882,13 +1903,21 @@ def _build_measure(
         )
         _note(slide, guide, terms_note, note, extra)
         return
-    rows = [["주의사항"], *[[line] for line in _cautions(entry)]]
-    if len(rows) == 1:
-        rows.append(["—"])
+    # **여기는 그림 굽기가 실패했을 때의 폴백이다** (60세션 10절). `_safe_figure`
+    # 가 ``None`` 을 돌려주면(13세션) 수단 장에 그림이 없고, 그때 실을 것이
+    # 주의사항이다. 정상 경로에서는 위에서 이미 돌아갔다 — 벌 여섯 어디에도
+    # 이 표가 서지 않는 까닭이 그것이지, 갈래가 죽어서가 아니다.
+    cautions = _cautions(entry)
+    if not cautions:
+        # **빈 표를 그리지 않는다** (60세션 10절). 「주의사항 / —」 만 남는
+        # 자리가 있었다 — 실행할 것이 없는 수단(`actionable=False`)은
+        # `_cautions` 가 빈 것을 돌려주기 때문이다. 뜨지 않느니만 못한 표다.
+        _note(slide, guide, terms_note, note, extra)
+        return
+    rows = [["주의사항"], *[[line] for line in cautions]]
     table_height = min(height, 0.7 * len(rows))
     # **남는 높이 가운데 앉힌다** — 그림 덩어리와 같은 규약이다 (36세션 3-3).
-    # 주의사항이 한 줄뿐인 장(잉여 0)은 표가 짧아, 위로 붙여 두면 아래 절반이
-    # 통째로 비어 슬라이드가 덜 만들어진 것처럼 보인다.
+    # **덩어리가 하나인 자리다** — 60세션 3절의 「둘 이상이면 붙인다」 와 짝이다.
     _table(
         slide,
         guide,

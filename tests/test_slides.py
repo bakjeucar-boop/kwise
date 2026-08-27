@@ -3089,3 +3089,117 @@ def test_그림_없는_장은_지표_두_줄을_붙인다(
     assert 0.0 <= gap <= _STAT_ROW_GAP + 0.02, (
         f"지표 두 줄이 {gap:.2f}in 갈렸습니다 — 규약은 {_STAT_ROW_GAP}in 입니다."
     )
+
+
+# ==================================================== 60세션 10절 — 주의사항 표와 지표 자리
+
+
+def _blind(sections: DocumentSections) -> DocumentSections:
+    """**그림 굽기가 통째로 실패한 상태** — `_safe_figure` 가 전부 ``None`` 인 자리.
+
+    13세션이 「차트 하나 때문에 문서 전체를 잃는 편보다 그림 없이 표만 내는 편이
+    낫다」 로 만든 폴백이다. 자료로는 못 만든다 — 그림이 성공하는 한 수단 장은
+    늘 그림 갈래로 돌아가기 때문이다.
+    """
+    import dataclasses
+
+    return dataclasses.replace(
+        sections,
+        measures=tuple(
+            dataclasses.replace(entry, figure=None, figures=(), spec_table=())
+            for entry in _all_measures(sections)
+        ),
+    )
+
+
+def _caution_table(slide: object) -> object | None:
+    for shape in slide.shapes:  # type: ignore[attr-defined]
+        if (
+            getattr(shape, "has_table", False)
+            and shape.has_table
+            and shape.table.rows[0].cells[0].text.strip() == "주의사항"
+        ):
+            return shape.table
+    return None
+
+
+def test_그림이_안_구워지면_주의사항_표가_선다(full_sections: DocumentSections) -> None:
+    """**뜨지 않는 갈래는 없는 갈래와 같다** (46세션 · 60세션 10절).
+
+    벌 여섯 어디에도 이 표가 서지 않아 「죽은 갈래인가」 를 물었다. 죽지
+    않았다 — **그림 굽기 실패 폴백**이라 정상 경로에서 안 설 뿐이다.
+    조건이 실제로 있으므로 시험이 그 조건을 세운다.
+    """
+    sections = _blind(full_sections)
+    entry = next(
+        item for item in sections.measures if item.actionable and item.cautions
+    )
+    slide = _slide_by_key(build_slides(sections), sections, f"measure_{entry.kind.key}")
+    table = _caution_table(slide)
+    assert table is not None, f"{entry.kind.key} 장에 주의사항 표가 서야 합니다."
+    body = [table.rows[index].cells[0].text.strip() for index in range(1, len(table.rows))]
+    assert body and body != ["—"], f"표가 비어 있습니다: {body}"
+    assert body[0] in entry.cautions, "표가 그 수단의 주의사항을 그대로 싣는다."
+
+
+def test_실행할_것이_없으면_빈_주의사항_표를_그리지_않는다(
+    full_sections: DocumentSections,
+) -> None:
+    """**「주의사항 / —」 만 남는 자리가 있었다** (60세션 10절).
+
+    계약전력 조정이 하향 여지가 없으면 ``actionable=False`` 인데 **지표를 먼저
+    세우는 장**(``facts_first``)이라, 그림이 실패하면 지표 갈래가 안 잡고
+    주의사항 갈래로 흘렀다. `_cautions` 는 실행할 것이 없으면 빈 것을 돌려주므로
+    머리글과 「—」 한 줄짜리 표가 섰다. **뜨지 않느니만 못한 표다.**
+    """
+    sections = _blind(full_sections)
+    entry = next(
+        item
+        for item in sections.measures
+        if not item.actionable and item.facts_first and item.facts
+    )
+    slide = _slide_by_key(build_slides(sections), sections, f"measure_{entry.kind.key}")
+    assert _caution_table(slide) is None, "빈 주의사항 표가 서면 안 됩니다."
+    # 지표는 위에서 이미 섰다 — 볼 것이 사라진 것이 아니다.
+    text = _slide_text(slide)
+    assert any(label in text for label, _value in entry.facts)
+
+
+def test_지표_셋은_수단_장마다_같은_높이에_선다(full_sections: DocumentSections) -> None:
+    """**여백보다 위계가 먼저다** (60세션 9-5 판정 · 10절에 규약으로).
+
+    고객은 장을 넘기며 **같은 자리**에서 큰 숫자를 찾는다. 한 장만 내리면
+    넘길 때마다 숫자가 위아래로 흔들린다 — ESS 성립 불가 장의 빈자리를 메우려고
+    지표를 내리는 안을 버린 까닭이다.
+
+    자리는 :func:`~kwise.report.slides._measure_stats_top` 이 쥔다. **결론이
+    한 줄인 장과 두 줄인 장은 다르다** — 값이 아니라 **산식이 같아야 한다.**
+    """
+    import dataclasses
+
+    from pptx.util import Emu
+
+    from kwise.report.slides import _measure_stats_top
+
+    sections = dataclasses.replace(full_sections, measures=_all_measures(full_sections))
+    deck = build_slides(sections)
+    keys = [spec.key for spec in slide_specs(sections)]
+    seen: dict[float, list[str]] = {}
+    for entry in sections.measures:
+        key = f"measure_{entry.kind.key}"
+        if key not in keys:
+            continue
+        slide = list(deck.slides)[keys.index(key)]
+        tops = [
+            Emu(shape.top).inches
+            for shape in slide.shapes
+            if shape.has_text_frame
+            and shape.top is not None
+            and shape.text_frame.text.strip() == "절감액"
+        ]
+        assert len(tops) == 1, f"{key} 에 「절감액」 라벨이 하나여야 합니다: {tops}"
+        seen.setdefault(round(tops[0], 2), []).append(key)
+    # 결론 줄 수가 갈래를 만든다 — 자리는 둘까지다 (한 줄 · 두 줄).
+    assert len(seen) <= 2, f"지표 셋이 세 자리 넘게 흩어졌습니다: {seen}"
+    assert _measure_stats_top(1.40, 0.72) == pytest.approx(2.12)
+    assert _measure_stats_top(1.40, 0.44) == pytest.approx(1.84)
