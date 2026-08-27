@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -223,6 +224,59 @@ def export_png(pptx: Path, outdir: Path) -> bool:
     return True
 
 
+#: png 폴더에 함께 두는 라벨 파일. **맨 앞에 오게 밑줄로 시작한다.**
+LABEL_NAME = "_이_덱은.txt"
+
+
+def label_text(case: Case) -> str:
+    """이 덱이 무엇인지 사람이 읽을 한 벌 (60세션 곁가지).
+
+    **이름만 봐서 모르는 산출물은 실물 확인이 안 된다.** ``large-b-over`` 가
+    「대형 갑」 으로 읽혀 결론 두 줄 겹침(T1)을 엉뚱한 장에서 찾았다 — 그것은
+    **대형 을**이고 갑은 ``large-a`` 다.
+    """
+    lines = [
+        f"{case.key} — {case.title}",
+        "",
+        f"자료        {case.csv.name}",
+        f"계약종별    {case.contract_type}",
+        f"전압구분    {case.voltage}",
+        f"선택요금    {case.option or '(화면 기본값)'}",
+        f"계약전력    {case.contract_kw:,.0f} kW",
+        f"면적        {case.area_m2:,.0f} m²",
+        f"건물명      {case.building_name}",
+        f"지역        {REGION}",
+    ]
+    if case.surplus_use:
+        lines.append(f"잉여 처리   {case.surplus_use}")
+    lines += [
+        "",
+        "다시 뽑으려면 —",
+        f"    .venv\\Scripts\\python.exe tools\\render_deck.py --case {case.key} --png",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def write_label(outdir: Path, case: Case) -> Path:
+    """png 폴더에 라벨을 남긴다."""
+    path = outdir / LABEL_NAME
+    path.write_text(label_text(case), encoding="utf-8")
+    return path
+
+
+def write_index(outdir: Path, cases: Sequence[Case]) -> Path:
+    """산출 폴더에 **이번에 뽑은 벌 목록**을 남긴다."""
+    rows = [f"{'벌':<14}{'자료':<26}{'계약종별':<14}{'계약전력':>12}  제목", ""]
+    rows += [
+        f"{case.key:<14}{case.csv.name:<26}{case.contract_type:<14}"
+        f"{case.contract_kw:>10,.0f} kW  {case.title}"
+        for case in cases
+    ]
+    path = outdir / "_뽑은_벌.txt"
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return path
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="PPT 실물 렌더")
     parser.add_argument(
@@ -249,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         pptx.write_bytes(payload)
         print(f"  {pptx} ({len(payload) / 1024:.0f} KB)")
         if args.png and export_png(pptx, args.out / case.key):
+            write_label(args.out / case.key, case)
             # Windows 는 glob 이 대소문자를 가리지 않아 `*.PNG` 와 `*.png` 가
             # 같은 파일을 둘 다 문다 — 세는 자리에서 겹치지 않게 한 번만 훑는다.
             count = len(
@@ -259,6 +314,8 @@ def main(argv: list[str] | None = None) -> int:
                 ]
             )
             print(f"  png {count}장 → {args.out / case.key}")
+    index = write_index(args.out, picked)
+    print(f"[목록] {index}")
     return 0
 
 
