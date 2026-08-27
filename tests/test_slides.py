@@ -3268,3 +3268,78 @@ def test_덱_라벨이_그림_실패를_0_까지_적는다() -> None:
     noisy = render_deck.label_text(case, ("표지",), ("그림 실패 — 태양광 · 일별 발전량: ...",))
     assert "그림 실패    1개" in noisy
     assert "태양광 · 일별 발전량" in noisy
+
+
+# ================================================= 60세션 12절 — T6 판정을 집행한다
+
+
+def test_기온_그림이_실패하면_사용량만_그리고_기록을_남긴다(
+    full_sections: DocumentSections,
+) -> None:
+    """**삼키던 자리 둘 가운데 하나** (60세션 11-3 의 2번 · 12절 집행).
+
+    기온이 빠진 채 사용량만 그려도 장은 채워지므로 **아무도 모른 채 지나간다.**
+    11절이 기록 통로를 붙였고, 이 시험이 그 통로를 실제로 타는지 본다.
+    """
+    import dataclasses
+
+    import pandas as pd
+
+    from kwise.report import figures
+    from kwise.report.figures import FigureFailureCollector
+    from kwise.report.slides import _usage_figure
+
+    # **기온을 붙여야 갈래가 열린다.** 없으면 애초에 기온을 안 그리므로
+    # 이 시험은 아무것도 못 본다 — 건너뛴 시험은 없는 시험이다.
+    index = pd.date_range(full_sections.usage.meta.start, periods=48, freq="h")
+    warm = dataclasses.replace(
+        full_sections, temperature=pd.Series(range(48), index=index, dtype=float)
+    )
+    assert "기온" in _usage_figure(warm)[1], "성한 자료에서는 기온을 그린다."
+
+    def boom(*_args: object, **_kwargs: object) -> bytes:
+        raise RuntimeError("기온 축이 깨졌다")
+
+    original = figures.daily_temperature_png
+    try:
+        figures.daily_temperature_png = boom  # type: ignore[assignment]
+        with FigureFailureCollector() as collector:
+            png, caption = _usage_figure(warm)
+    finally:
+        figures.daily_temperature_png = original  # type: ignore[assignment]
+
+    assert png, "기온이 없어도 사용량 그림은 나온다 — 장을 비우지 않는다."
+    assert "기온" not in caption, f"캡션이 사용량만 말해야 합니다: {caption}"
+    assert len(collector.messages) == 1, collector.messages
+    assert "일별 기온" in collector.messages[0]
+    assert "RuntimeError" in collector.messages[0]
+
+
+def test_진단이_없으면_제목만_선다(full_sections: DocumentSections) -> None:
+    """**물음 넷을 한 자리로 모았다** (60세션 11-3 의 8~11 · 12절 집행).
+
+    네 장이 저마다 「값이 없으면 조용히 돌아선다」 를 들고 있었고, 주석은 넷 다
+    「진단 없이 부르지 않는다」 라고 적고 있었다. **틀린 말이었다** —
+    :func:`slide_specs` 는 진단 유무를 보지 않아 넷을 늘 자리표에 넣는다.
+
+    그래서 걷어내지 않고 **모으기만 했다.** 장은 그대로 서고, 비어 있다는
+    사실도 그대로다 — 바뀐 것은 그 물음을 읽을 자리가 하나가 된 것뿐이다.
+    """
+    import dataclasses
+
+    from kwise.report.slides import _NEEDS_DIAGNOSIS, slide_specs
+
+    blind = dataclasses.replace(full_sections, diagnosis=None)
+    keys = [spec.key for spec in slide_specs(blind)]
+    # 자리표는 넷을 그대로 낸다 — 「부르지 않는다」 가 아니다.
+    assert set(keys) >= _NEEDS_DIAGNOSIS, keys
+
+    deck = build_slides(blind)
+    for key in sorted(_NEEDS_DIAGNOSIS):
+        slide = list(deck.slides)[keys.index(key)]
+        texts = [
+            shape.text_frame.text.strip()
+            for shape in slide.shapes
+            if shape.has_text_frame and shape.text_frame.text.strip()
+        ]
+        assert texts == [SLIDE_TITLES[key]], f"{key} 는 제목만 서야 합니다: {texts}"

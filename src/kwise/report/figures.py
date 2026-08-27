@@ -76,7 +76,9 @@ __all__ = [
     "DONUT_GRID",
     "FALLBACK_FONT",
     "FIGURE_DPI",
+    "FIGURE_LOGGER",
     "KOREAN_FONT_CANDIDATES",
+    "FigureFailureCollector",
     "add_legend",
     "apply_style",
     "band_donut_grid_png",
@@ -94,6 +96,7 @@ __all__ = [
     "korean_font",
     "monthly_charge_png",
     "monthly_peak_png",
+    "note_figure_failure",
     "power_factor_day_png",
     "power_triangle_png",
     "render_png",
@@ -128,7 +131,7 @@ _log = logging.getLogger(__name__)
 #: 「조용한 폴백」 과 같은 모양이다.
 #:
 #: 걷어내는 대신 **남긴다.** 로거 이름이 하나이므로 도구가 여기에 손잡이를
-#: 걸어 실패를 셀 수 있다 (:func:`collect_figure_failures`).
+#: 걸어 실패를 셀 수 있다 (:class:`FigureFailureCollector`).
 FIGURE_LOGGER = f"{__name__}.fallback"
 
 _fallback_log = logging.getLogger(FIGURE_LOGGER)
@@ -164,6 +167,7 @@ class FigureFailureCollector(logging.Handler):
 
     def __exit__(self, *_exc: object) -> None:
         _fallback_log.removeHandler(self)
+
 
 #: 찾을 순서. **앞에 있는 것이 이긴다.**
 KOREAN_FONT_CANDIDATES: tuple[str, ...] = (
@@ -253,6 +257,8 @@ def _register_system_fonts() -> None:
         if any(hint in Path(path).name.lower() for hint in _FONT_FILE_HINTS):
             try:
                 font_manager.fontManager.addfont(path)
+            # **그대로 둔다** (60세션 12절 판정). 시험을 세우려면 깨진 폰트
+            # 파일을 시스템 글꼴 경로에 심어야 한다 — 값보다 비용이 크다.
             except (OSError, RuntimeError):  # pragma: no cover - 깨진 폰트 파일
                 continue
 

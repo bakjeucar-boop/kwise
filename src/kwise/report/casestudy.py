@@ -312,8 +312,17 @@ def _ess_remark(optimum: EssOptimum | None, baseline_demand_kw: float) -> str:
             f"절감액 0 이하 {negatives}개"
         )
     point = _ess_point(optimum)
-    if point is None:  # pragma: no cover - 고른 목표는 언제나 점 목록에 있다
-        return "고른 목표의 점을 찾지 못했다"
+    # **없을 때의 갈래를 걷어냈다** (60세션 12절). 고른 목표는 언제나 점 목록에
+    # 있다 — 아니면 탐색이 어긋난 것이므로 비고 한 줄로 덮지 않는다.
+    #
+    # **맨 예외로 죽이지는 않는다.** 걷어내기만 하면
+    # ``AttributeError: 'NoneType' object has no attribute 'achieved_demand_kw'``
+    # 가 나는데, 어느 목표에서 난 것인지 짚지 못한다 — 케이스 스터디는 여섯을
+    # 잇달아 도는 자리라 그것만으로는 어디를 볼지 모른다.
+    assert point is not None, (
+        f"고른 목표 {optimum.target_kw:,.0f} kW 가 점 목록"
+        f"({len(optimum.points)}개)에 없다 — ESS 탐색이 어긋났다"
+    )
     return (
         f"목표 {optimum.target_kw:,.0f} kW "
         f"(기준 {baseline_demand_kw:,.1f} → 실제 {point.achieved_demand_kw:,.1f}) · "

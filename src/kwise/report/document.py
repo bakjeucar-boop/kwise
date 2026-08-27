@@ -1214,11 +1214,11 @@ class DocumentSections:
 
 def _set_korean_font(document: DocumentType) -> None:
     """본문 폰트를 한글 폰트로. **동아시아 글꼴을 따로 지정해야** Word 가 쓴다."""
+    # **없을 때의 갈래를 걷어냈다** (60세션 12절). 다섯은 기본 템플릿에 늘 있고,
+    # 없으면 `python-docx` 가 `KeyError: "no style with name 'Heading 1'"` 로
+    # **어느 스타일인지 짚어 준다** — 조용히 건너뛰면 글꼴이 빠진 문서가 그냥 나간다.
     for name in ("Normal", "Title", "Heading 1", "Heading 2", "Heading 3"):
-        try:
-            style = document.styles[name]
-        except KeyError:  # pragma: no cover - 기본 템플릿에는 모두 있다
-            continue
+        style = document.styles[name]
         style.font.name = KOREAN_FONT
         rpr = style.element.get_or_add_rPr()
         rpr.rFonts.set(qn("w:eastAsia"), KOREAN_FONT)

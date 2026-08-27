@@ -605,3 +605,65 @@ def test_peak_window_on_a_day_without_observations() -> None:
     # 관측이 하나라도 있으면 그 자리를 중심으로 자른다.
     frame.loc[2, "원부하(kW)"] = 10.0
     assert len(peak_window(frame)) == 4
+
+
+# ================================================= 60세션 12절 — 폴백 갈래에 시험을 세운다
+
+
+def test_기상을_못_얻으면_태양광을_빼고_사유를_적는다(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**배치의 기상 폴백은 아무도 안 타고 있었다** (60세션 11-3 의 5번 · 12절 집행).
+
+    화면 쪽에 같은 문구가 셋 있어 `test_integration` 이 그쪽을 무는데,
+    ``batch.py`` 의 갈래는 **시험이 한 번도 밟지 않았다.** 배치는 밤에 혼자 도는
+    자리라, 태양광이 조용히 빠지면 다음 날 표만 보고는 알 수 없다.
+    """
+    from kwise.pv import WeatherUnavailableError
+
+    monkeypatch.setenv("PROJECT_CACHE", str(tmp_path / "cache"))
+    write_month(tmp_path / "건물A.csv", 2024, 3, kwh=100.0)
+    path = tmp_path / "cases.yaml"
+    path.write_text(
+        "output_dir: out\n"
+        "cases:\n"
+        "  - name: 건물A\n"
+        "    usage: 건물A.csv\n"
+        "    contract_type: general_b\n"
+        "    voltage: high_a\n"
+        "    option: I\n"
+        "    contract_kw: 500\n"
+        "    pv_capacity_kwp: 100\n",
+        encoding="utf-8",
+    )
+
+    def deny(*_args: object, **_kwargs: object) -> None:
+        raise WeatherUnavailableError("프록시 뒤라 못 얻었다")
+
+    monkeypatch.setattr("kwise.report.batch.load_weather", deny)
+    result = run_batch(load_batch_config(path), include_timeseries=False)
+
+    summary = result.summaries[0]
+    assert "기상 자료를 얻지 못해" in summary.note, summary.note
+    assert "프록시 뒤라 못 얻었다" in summary.note, "왜 못 얻었는지 남아야 합니다."
+
+
+def test_엑셀_저장이_OS_오류로_실패하면_자리를_짚어_알린다(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**`PermissionError` 옆 한 줄이 비어 있었다** (60세션 11-3 의 4번 · 12절 집행).
+
+    디스크가 차거나 경로가 너무 길면 `OSError` 다. 그대로 던지면 사용자가
+    「무슨 파일인지」 를 못 본다 — `ReportWriteError` 가 경로를 짚는다.
+    """
+    from kwise.report.excel import ReportWriteError, write_workbook
+
+    def deny(*_args: object, **_kwargs: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr("kwise.report.excel.pd.ExcelWriter", deny)
+    target = tmp_path / "result.xlsx"
+    with pytest.raises(ReportWriteError) as caught:
+        write_workbook({"시트": pd.DataFrame({"a": [1]})}, target)
+    assert str(target) in str(caught.value), "어느 파일인지 짚어야 합니다."
+    assert "No space left" in str(caught.value), "무엇 때문인지 남아야 합니다."

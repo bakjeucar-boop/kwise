@@ -1162,9 +1162,9 @@ def _build_usage_pattern(
     geometry = guide.slide
     top = _title(slide, guide, spec.title)
     meta = sections.usage.meta
+    # 재료가 없으면 여기 오지 않는다 — `build_slides` 가 한 자리에서 막는다.
+    assert sections.diagnosis is not None
     diagnosis = sections.diagnosis
-    if diagnosis is None:  # pragma: no cover - 진단 없이 부르지 않는다
-        return
     pattern = diagnosis.pattern
     top = _lead(slide, guide, narrative.pattern_lead(pattern), top=top)
     # 1년치가 아닌 자료를 「연간」 이라 적으면 그 자체가 오독이다 (화면과 같다).
@@ -1220,7 +1220,8 @@ def _usage_figure(sections: DocumentSections) -> tuple[bytes, str]:
                 sections.usage, temperature, size=FULL_FIGURE_WITH_LEGEND
             )
             return png, _TEMPERATURE_CAPTION
-        except Exception as exc:  # pragma: no cover - 그림 하나 때문에 덱을 잃지 않는다
+        # **시험이 이 갈래를 탄다** (60세션 12절). 그림 하나 때문에 덱을 잃지 않는다.
+        except Exception as exc:
             # **조용히 삼키지 않는다** (60세션 11절). 기온이 빠진 채 사용량만
             # 그려도 장은 채워지므로 아무도 모른 채 지나간다.
             figures.note_figure_failure("전력사용현황 · 일별 기온", exc)
@@ -1269,9 +1270,8 @@ def _build_peak_summary(
     """
     geometry = guide.slide
     top = _title(slide, guide, spec.title)
+    assert sections.diagnosis is not None  # `build_slides` 가 한 자리에서 막는다
     diagnosis = sections.diagnosis
-    if diagnosis is None:  # pragma: no cover
-        return
     quality = diagnosis.quality
     top = _lead(
         slide,
@@ -1312,9 +1312,8 @@ def _build_peak_detail(
     """
     geometry = guide.slide
     top = _title(slide, guide, spec.title)
+    assert sections.diagnosis is not None  # `build_slides` 가 한 자리에서 막는다
     diagnosis = sections.diagnosis
-    if diagnosis is None:  # pragma: no cover
-        return
     top = _lead(slide, guide, narrative.peak_detail_lead(diagnosis), top=top)
     peak = diagnosis.peak
     gap = geometry.block_gap_in
@@ -1353,10 +1352,10 @@ def _build_structure(
     """현재 요금 구조 — 월별 요금 막대와 **계시별 도넛 2×2** (36세션 2·4절)."""
     geometry = guide.slide
     top = _title(slide, guide, spec.title)
+    assert sections.diagnosis is not None  # `build_slides` 가 한 자리에서 막는다
     diagnosis = sections.diagnosis
-    structure = diagnosis.structure if diagnosis is not None else None
-    if structure is None:  # pragma: no cover - 계약 정보가 없으면 부르지 않는다
-        return
+    structure = diagnosis.structure
+    assert structure is not None
     top = _lead(slide, guide, narrative.structure_lead(structure), top=top)
     pattern = diagnosis.pattern if diagnosis is not None else None
     note = narrative.glossary_note(GLOSSARY_KEYS["structure"], pattern)
@@ -1946,6 +1945,9 @@ def _build_surplus(
     """
     geometry = guide.slide
     page = sections.surplus
+    # **그대로 둔다** (60세션 12절 판정). 이쪽은 `_missing_input` 넷과 달리
+    # **자리표가 실제로 보증한다** — `slide_specs` 가 잉여 0 이면 `surplus`
+    # 열쇠를 아예 안 낸다 (10절에 벌 여섯으로 확인했다).
     if page is None:  # pragma: no cover - 자리표가 없으면 부르지 않는다
         return
     top = _title(slide, guide, spec.title)
@@ -2408,6 +2410,32 @@ def _build_closing(
         )
 
 
+#: **진단이 있어야 속을 채우는 장** (60세션 12절).
+#:
+#: 넷이 저마다 「값이 없으면 조용히 돌아선다」 를 들고 있었다. 물음이 같으면
+#: 자리도 하나여야 한다 — :func:`_missing_input` 이 그 자리다.
+_NEEDS_DIAGNOSIS = frozenset({"usage_pattern", "peak_summary", "peak_detail", "structure"})
+
+
+def _missing_input(key: str, sections: DocumentSections) -> bool:
+    """이 장이 **속을 채울 재료가 없는가** (60세션 12절).
+
+    **「부르지 않는다」 가 아니었다.** 네 자리의 주석이 그렇게 적고 있었는데,
+    :func:`slide_specs` 는 진단 유무를 **보지 않아** 넷을 늘 자리표에 넣는다.
+    진단이 없는 :class:`DocumentSections` 를 지으면 **제목만 있는 장 넷**이
+    실제로 만들어진다 — 60세션 12절에 실물로 확인했다.
+
+    그래서 걷어내지 않고 **모으기만 했다.** 자리가 하나면 「이 넷이 왜 비는가」
+    를 한 번만 읽으면 되고, 나중에 자리표가 진짜로 막게 되면 지울 곳도 하나다.
+
+    요금 구조 장은 물음이 하나 더 있다 — **계약 정보**가 있어야 선다.
+    """
+    diagnosis = sections.diagnosis
+    if diagnosis is None:
+        return True
+    return key == "structure" and diagnosis.structure is None
+
+
 _BUILDERS: dict[str, Callable[[Slide, DesignGuide, DocumentSections, SlideSpec], None]] = {
     "cover": _build_cover,
     "agenda": _build_agenda,
@@ -2444,6 +2472,12 @@ def build_slides(
             # **본문 콘텐츠는 라이트다** (36세션 3-2). 샌드위치의 속이다.
             slide.background.fill.solid()
             slide.background.fill.fore_color.rgb = _rgb(colors.white)
+        # **속을 채울 재료가 없으면 제목만 세우고 넘어간다** (60세션 12절).
+        # 네 장이 저마다 들고 있던 물음을 여기 하나로 모았다 — 장은 그대로
+        # 서고 비어 있다는 사실도 그대로다.
+        if spec.key in _NEEDS_DIAGNOSIS and _missing_input(spec.key, sections):
+            _title(slide, design, spec.title)
+            continue
         builder = _BUILDERS.get(spec.key, _build_measure)
         builder(slide, design, sections, spec)
     return presentation
