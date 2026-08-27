@@ -74,7 +74,13 @@ def _psapi() -> tuple[Any, Any] | None:
     32비트로 잘려 호출이 조용히 실패하고 0 이 돌아온다 — 메모리를 재지 못한 것을
     "0 MB 썼다" 로 읽게 된다.
     """
-    if sys.platform != "win32":  # pragma: no cover - 이 프로젝트는 Windows 전용이다
+    # **주석이 거짓이었다** (60세션 13절). 「이 프로젝트는 Windows 전용이다」 라고
+    # 적혀 있었는데 **배포는 리눅스다** — Streamlit Cloud 로 나가고 `packages.txt`
+    # 가 `fonts-nanum` 을 깐다. Windows 인 것은 **개발과 성능 측정**이지 프로젝트가
+    # 아니다. 성능 측정은 앞단에서 손으로 돌리는 일이라 배포지에서는 부르지 않는다.
+    #
+    # **동작은 그대로다** — RSS 를 재는 것이 Windows API 라 다른 데서는 잴 수 없다.
+    if sys.platform != "win32":  # pragma: no cover - 측정은 Windows 에서만 한다
         return None
     kernel32 = ctypes.windll.kernel32
     psapi = ctypes.windll.psapi

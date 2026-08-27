@@ -2428,6 +2428,16 @@ def _missing_input(key: str, sections: DocumentSections) -> bool:
     그래서 걷어내지 않고 **모으기만 했다.** 자리가 하나면 「이 넷이 왜 비는가」
     를 한 번만 읽으면 되고, 나중에 자리표가 진짜로 막게 되면 지울 곳도 하나다.
 
+    **사용자는 그 빈 장을 받을 수 없다** (60세션 13절에 경로를 따라가 확인했다).
+    덱을 짓는 자리는 화면 하나뿐이고(:mod:`kwise.ui.views.compare`), 거기 오는
+    :class:`~kwise.ui.context.AnalysisContext` 는 ``diagnosis`` 가 **필수**다.
+    배치와 CLI 는 덱을 아예 만들지 않는다. 그러니 이 갈래는 **결함이 아니라
+    라이브러리 경계**다 — 46세션의 「뜰 수 없는 경고」 와 다르다. 저쪽은 조건이
+    성립할 수 없었고, 이쪽은 **타입이 열어 둔 문을 지키고 서 있다.**
+
+    ``DocumentSections.diagnosis`` 가 ``Diagnosis | None`` 인 한 이 문은 열려
+    있다. 필수로 바꾸면 이 함수는 그때 지운다 — **동작이 바뀌는 일이라 미뤘다.**
+
     요금 구조 장은 물음이 하나 더 있다 — **계약 정보**가 있어야 선다.
     """
     diagnosis = sections.diagnosis
