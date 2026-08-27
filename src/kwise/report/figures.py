@@ -120,6 +120,51 @@ __all__ = [
 
 _log = logging.getLogger(__name__)
 
+#: **그림 굽기가 실패했을 때 기록이 나가는 자리** (60세션 11절).
+#:
+#: 산출물 쪽에는 「그림 하나 때문에 덱 전체를 잃지 않는다」 는 폴백이 둘 있다
+#: (``document._safe_figure`` · ``slides._daily_figure``). 폴백 자체는 옳지만
+#: **조용하면 그림이 빠진 장을 받아도 알 길이 없다** — 21세션이 걷어낸
+#: 「조용한 폴백」 과 같은 모양이다.
+#:
+#: 걷어내는 대신 **남긴다.** 로거 이름이 하나이므로 도구가 여기에 손잡이를
+#: 걸어 실패를 셀 수 있다 (:func:`collect_figure_failures`).
+FIGURE_LOGGER = f"{__name__}.fallback"
+
+_fallback_log = logging.getLogger(FIGURE_LOGGER)
+
+
+def note_figure_failure(what: str, exc: BaseException) -> None:
+    """그림 하나가 안 구워졌다는 사실을 남긴다. **폴백을 막지는 않는다.**
+
+    Args:
+        what: 어느 수단의 어느 그림인지. 「태양광 · 일별 발전량」 처럼 적는다.
+        exc: 삼킨 예외.
+    """
+    _fallback_log.warning("그림 실패 — %s: %s: %s", what, type(exc).__name__, exc)
+
+
+class FigureFailureCollector(logging.Handler):
+    """:data:`FIGURE_LOGGER` 에 붙여 실패를 모으는 손잡이.
+
+    ``with`` 로 쓴다. 나가면 스스로 떨어진다 — 도구가 여러 벌을 잇달아 뽑을 때
+    앞 벌의 실패가 뒤 벌에 묻지 않는다.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.WARNING)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+    def __enter__(self) -> FigureFailureCollector:
+        _fallback_log.addHandler(self)
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        _fallback_log.removeHandler(self)
+
 #: 찾을 순서. **앞에 있는 것이 이긴다.**
 KOREAN_FONT_CANDIDATES: tuple[str, ...] = (
     "Malgun Gothic",  # 윈도우 내장

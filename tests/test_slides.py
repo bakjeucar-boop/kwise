@@ -3203,3 +3203,68 @@ def test_지표_셋은_수단_장마다_같은_높이에_선다(full_sections: D
     assert len(seen) <= 2, f"지표 셋이 세 자리 넘게 흩어졌습니다: {seen}"
     assert _measure_stats_top(1.40, 0.72) == pytest.approx(2.12)
     assert _measure_stats_top(1.40, 0.44) == pytest.approx(1.84)
+
+
+# ============================================= 60세션 11절 — 조용한 폴백에 기록을 남긴다
+
+
+def test_그림이_안_구워지면_기록이_남는다() -> None:
+    """**조용한 폴백은 21세션이 이미 걷어낸 모양이다** (60세션 11절 · T5).
+
+    산출물 쪽에는 「그림 하나 때문에 덱 전체를 잃지 않는다」 는 폴백이 둘 있다.
+    폴백 자체는 옳다 — 걷어내지 않는다. 다만 **조용하면 그림이 빠진 장을 받아도
+    알 길이 없다.** 걷어내는 대신 남긴다.
+    """
+    from kwise.report.document import _safe_figure
+    from kwise.report.figures import FigureFailureCollector
+
+    def broken() -> bytes:
+        raise RuntimeError("글꼴이 없다")
+
+    with FigureFailureCollector() as collector:
+        assert _safe_figure(broken, "태양광 · 일별 발전량") is None
+        # **성공은 기록하지 않는다** — 실패만 센다.
+        assert _safe_figure(lambda: b"png", "역률 개선 · 전력삼각형") == b"png"
+    assert len(collector.messages) == 1, collector.messages
+    line = collector.messages[0]
+    assert "태양광 · 일별 발전량" in line, "어느 수단의 어느 그림인지 남아야 합니다."
+    assert "RuntimeError" in line and "글꼴이 없다" in line, "무슨 예외였는지 남아야 합니다."
+
+
+def test_손잡이는_나가면_떨어진다() -> None:
+    """**벌을 잇달아 뽑을 때 앞 벌의 실패가 뒤 벌에 묻으면 안 된다** (60세션 11절)."""
+    from kwise.report.document import _safe_figure
+    from kwise.report.figures import FigureFailureCollector
+
+    def broken() -> bytes:
+        raise ValueError("깨졌다")
+
+    with FigureFailureCollector() as first:
+        _safe_figure(broken, "첫 벌")
+    with FigureFailureCollector() as second:
+        _safe_figure(broken, "둘째 벌")
+    assert len(first.messages) == 1 and "첫 벌" in first.messages[0]
+    assert len(second.messages) == 1 and "둘째 벌" in second.messages[0]
+
+
+def test_덱_라벨이_그림_실패를_0_까지_적는다() -> None:
+    """**0 이면 0 이라 적는다** (60세션 11절).
+
+    줄이 아예 없으면 「기록을 안 남긴 것」 과 「실패가 없던 것」 이 갈리지 않는다.
+    장 수가 같아도 속이 다를 수 있다는 것도 라벨이 말한다 — 소형 21장과 대형 을
+    21장은 잉여 장이 붙고 부록 ESS 가 빠져 **상쇄된 것**이다.
+    """
+    import sys
+
+    sys.path.insert(0, str(Path("tools").resolve()))
+    import render_deck  # type: ignore[import-not-found]
+
+    case = render_deck.BY_KEY["small-b"]
+    quiet = render_deck.label_text(case, ("표지", "목차"), ())
+    assert "그림 실패    0개" in quiet, quiet
+    assert "장 수가 같아도 같은 덱이 아니다" in quiet
+    assert "우연히 같다" in quiet
+
+    noisy = render_deck.label_text(case, ("표지",), ("그림 실패 — 태양광 · 일별 발전량: ...",))
+    assert "그림 실패    1개" in noisy
+    assert "태양광 · 일별 발전량" in noisy

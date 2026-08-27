@@ -1220,8 +1220,10 @@ def _usage_figure(sections: DocumentSections) -> tuple[bytes, str]:
                 sections.usage, temperature, size=FULL_FIGURE_WITH_LEGEND
             )
             return png, _TEMPERATURE_CAPTION
-        except Exception:  # pragma: no cover - 그림 하나 때문에 덱을 잃지 않는다
-            pass
+        except Exception as exc:  # pragma: no cover - 그림 하나 때문에 덱을 잃지 않는다
+            # **조용히 삼키지 않는다** (60세션 11절). 기온이 빠진 채 사용량만
+            # 그려도 장은 채워지므로 아무도 모른 채 지나간다.
+            figures.note_figure_failure("전력사용현황 · 일별 기온", exc)
     return figures.daily_usage_png(sections.usage, size=FULL_FIGURE), _USAGE_ONLY_CAPTION
 
 

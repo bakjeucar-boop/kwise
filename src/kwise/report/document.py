@@ -396,15 +396,24 @@ def _pair(*items: tuple[bytes | None, str]) -> tuple[MeasureFigure, ...]:
     return tuple(MeasureFigure(png, caption) for png, caption in items if png is not None)
 
 
-def _safe_figure(make: Callable[[], bytes]) -> bytes | None:
+def _safe_figure(make: Callable[[], bytes], what: str = "이름 없는 그림") -> bytes | None:
     """그림을 굽되 **실패해도 보고서를 죽이지 않는다.**
 
     차트 하나 때문에 문서 전체를 잃는 편보다 그림 없이 표만 내는 편이 낫다
     (13세션에 3단계 화면에서 같은 종류의 결함을 겪었다).
+
+    **조용히 삼키지는 않는다** (60세션 11절). 그림이 빠진 장을 사용자가 받아도
+    알 길이 없으면 21세션이 걷어낸 「조용한 폴백」 과 같아진다 — 폴백은 두되
+    :func:`~kwise.report.figures.note_figure_failure` 로 남긴다.
+
+    Args:
+        make: 그림을 굽는 일.
+        what: 어느 수단의 어느 그림인지 — 기록에 그대로 실린다.
     """
     try:
         return make()
-    except Exception:
+    except Exception as exc:
+        figures.note_figure_failure(what, exc)
         return None
 
 
@@ -636,7 +645,8 @@ def surplus_page(
     figure = None
     if usage is not None and surplus_kw is not None:
         figure = _safe_figure(
-            lambda: figures.surplus_daily_png(usage, surplus_kw, size=MEASURE_PAIR_FIGURE)
+            lambda: figures.surplus_daily_png(usage, surplus_kw, size=MEASURE_PAIR_FIGURE),
+            "잉여 활용 · 일별 잉여",
         )
     return SurplusPage(
         lead=narrative.surplus_page_lead(
@@ -741,7 +751,10 @@ def measure_entries(
                 *body_lines(switch.notices),
             ),
             notices=switch.notices,
-            figure=_safe_figure(lambda: figures.tariff_option_png(switch, size=TARIFF_FIGURE)),
+            figure=_safe_figure(
+                lambda: figures.tariff_option_png(switch, size=TARIFF_FIGURE),
+                "선택요금 전환 · 요금제별 구성",
+            ),
             figure_caption="요금제별 요금 구성과 현행 대비 차액",
         )
 
@@ -775,7 +788,8 @@ def measure_entries(
                 ("하향 여지", f"{contract.reduction_kw:,.0f} kW"),
             ),
             figure=_safe_figure(
-                lambda: figures.contract_headroom_png(contract, size=MEASURE_STRIP_FIGURE)
+                lambda: figures.contract_headroom_png(contract, size=MEASURE_STRIP_FIGURE),
+                "계약전력 조정 · 여유율",
             ),
             figure_caption=_CONTRACT_HEADROOM_CAPTION,
             # **「하향 여지 8 kW」 옆의 0원이 설명 없이 서 있었다** (59세션 9절).
@@ -808,7 +822,10 @@ def measure_entries(
             notices=demand_response.notices,
             slide_note=_notice_text(demand_response.notices, DR_OFF_DAYS_FACT),
             figure=(
-                _safe_figure(lambda: figures.dr_daily_png(dr_profile, size=MEASURE_FULL_FIGURE))
+                _safe_figure(
+                    lambda: figures.dr_daily_png(dr_profile, size=MEASURE_FULL_FIGURE),
+                    "경제성DR · 일별 평균 부하",
+                )
                 if dr_profile is not None
                 else None
             ),
@@ -818,7 +835,9 @@ def measure_entries(
     if power_factor is not None:
         # **화면은 그림이 둘이다** (38세션 3-1). 전력삼각형만 실으면 「어느
         # 시간대가 요금 대상인가」 가 슬라이드에서 빠진다.
-        triangle = _safe_figure(lambda: figures.power_triangle_png(power_factor))
+        triangle = _safe_figure(
+            lambda: figures.power_triangle_png(power_factor), "역률 개선 · 전력삼각형"
+        )
         pf_day = (
             _safe_figure(
                 lambda: figures.power_factor_day_png(
@@ -827,7 +846,8 @@ def measure_entries(
                     current_pct=power_factor.current_pct,
                     target_pct=power_factor.target_pct,
                     size=MEASURE_PAIR_FIGURE,
-                )
+                ),
+                "역률 개선 · 대표일 부하",
             )
             if usage is not None and day is not None
             else None
@@ -859,12 +879,16 @@ def measure_entries(
         if usage is not None and solar_generation_kw is not None:
             load, generation = usage, solar_generation_kw
             solar_annual = _safe_figure(
-                lambda: figures.solar_annual_png(load, generation, size=MEASURE_PAIR_FIGURE)
+                lambda: figures.solar_annual_png(load, generation, size=MEASURE_PAIR_FIGURE),
+                "태양광 · 일별 발전량",
             )
             if day is not None:
                 point = day
                 solar_day = _safe_figure(
-                    lambda: figures.solar_day_png(load, generation, point, size=MEASURE_PAIR_FIGURE)
+                    lambda: figures.solar_day_png(
+                        load, generation, point, size=MEASURE_PAIR_FIGURE
+                    ),
+                    "태양광 · 대표일 부하",
                 )
         cautions = [
             "발전량 예측은 피크 발전량을 과소 산출하는 경향이 있어 피크 절감량이 "
@@ -988,7 +1012,8 @@ def measure_entries(
         ess_size = MEASURE_STRIP_FIGURE if ess_table else MEASURE_PAIR_FIGURE
         ess_day = (
             _safe_figure(
-                lambda: figures.ess_day_png(usage, ess.dispatch, day, size=ess_size)
+                lambda: figures.ess_day_png(usage, ess.dispatch, day, size=ess_size),
+                "ESS · 대표일 부하",
             )
             if usage is not None and day is not None
             else None

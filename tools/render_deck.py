@@ -26,6 +26,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+# **`sys.path` 를 세운 뒤에 들여온다.** 위에 두면 저장소를 설치하지 않은
+# 환경에서 이 도구가 통째로 못 뜬다.
+from kwise.report.figures import FigureFailureCollector  # noqa: E402
+
 APP = PROJECT_ROOT / "src" / "kwise" / "ui" / "app.py"
 LARGE_CSV = PROJECT_ROOT / "input" / "사용량조회_20240429.csv"
 SMALL_CSV = PROJECT_ROOT / "input" / "사용량조회_소형사무빌딩.csv"
@@ -248,7 +252,9 @@ def slide_titles(pptx: Path) -> list[str]:
     return titles
 
 
-def label_text(case: Case, titles: Sequence[str] = ()) -> str:
+def label_text(
+    case: Case, titles: Sequence[str] = (), failures: Sequence[str] = ()
+) -> str:
     """이 덱이 무엇인지 사람이 읽을 한 벌 (60세션 곁가지).
 
     **이름만 봐서 모르는 산출물은 실물 확인이 안 된다.** ``large-b-over`` 가
@@ -266,9 +272,13 @@ def label_text(case: Case, titles: Sequence[str] = ()) -> str:
         f"면적        {case.area_m2:,.0f} m²",
         f"건물명      {case.building_name}",
         f"지역        {REGION}",
+        # **0 이면 0 이라 적는다** (60세션 11절). 줄이 없으면 「기록을 안 남긴
+        # 것」 과 「실패가 없던 것」 이 갈리지 않는다.
+        f"그림 실패    {len(failures)}개",
     ]
     if case.surplus_use:
         lines.append(f"잉여 처리   {case.surplus_use}")
+    lines += [f"    {line}" for line in failures]
     if titles:
         # **장 수는 벌마다 다르다.** 갈리는 것은 수단 장이 아니라 **부록 장**이다 —
         # 「값이 0 이거나 미산출인 수단은 부록에서 뺀다」 (39세션 · ``has_saving``).
@@ -283,6 +293,11 @@ def label_text(case: Case, titles: Sequence[str] = ()) -> str:
             "    · 부록 산출근거는 절감액이 0 이거나 미산출인 수단을 뺀다",
             "    · 「잉여 활용」 은 잉여가 실제로 날 때만 선다",
             "",
+            "  ** 장 수가 같아도 같은 덱이 아니다 **",
+            "    소형 21장과 대형 을 21장은 속이 다르다 — 소형은 「잉여 활용」 이",
+            "    하나 붙고 부록 ESS 가 하나 빠져 **상쇄된 것**이다. 우연히 같다.",
+            "    아래 장 차례를 대조하십시오.",
+            "",
             "  장 차례 —",
         ]
         lines += [f"    {index:>2}. {title}" for index, title in enumerate(titles, 1)]
@@ -294,11 +309,16 @@ def label_text(case: Case, titles: Sequence[str] = ()) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_label(outdir: Path, case: Case, pptx: Path | None = None) -> Path:
+def write_label(
+    outdir: Path,
+    case: Case,
+    pptx: Path | None = None,
+    failures: Sequence[str] = (),
+) -> Path:
     """png 폴더에 라벨을 남긴다. 덱을 주면 **장 차례**도 싣는다."""
     titles = slide_titles(pptx) if pptx is not None else []
     path = outdir / LABEL_NAME
-    path.write_text(label_text(case, titles), encoding="utf-8")
+    path.write_text(label_text(case, titles, failures), encoding="utf-8")
     return path
 
 
@@ -334,14 +354,23 @@ def main(argv: list[str] | None = None) -> int:
 
     picked = [BY_KEY[key] for key in (args.case or [case.key for case in CASES])]
     args.out.mkdir(parents=True, exist_ok=True)
+    # **그림 굽기 실패를 벌마다 따로 센다** (60세션 11절). 덱을 다 뽑고 나서
+    # 한 번에 세면 어느 벌의 실패인지 갈리지 않는다.
+    failed: dict[str, list[str]] = {}
     for case in picked:
         print(f"[{case.key}] {case.title}")
-        payload = build_deck(case)
+        with FigureFailureCollector() as collector:
+            payload = build_deck(case)
+        if collector.messages:
+            failed[case.key] = list(collector.messages)
+            print(f"  ** 그림 {len(collector.messages)}개가 안 구워졌다 **")
+            for line in collector.messages:
+                print(f"     {line}")
         pptx = args.out / f"{case.key}.pptx"
         pptx.write_bytes(payload)
         print(f"  {pptx} ({len(payload) / 1024:.0f} KB)")
         if args.png and export_png(pptx, args.out / case.key):
-            write_label(args.out / case.key, case, pptx)
+            write_label(args.out / case.key, case, pptx, failed.get(case.key, []))
             # Windows 는 glob 이 대소문자를 가리지 않아 `*.PNG` 와 `*.png` 가
             # 같은 파일을 둘 다 문다 — 세는 자리에서 겹치지 않게 한 번만 훑는다.
             count = len(
@@ -354,6 +383,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  png {count}장 → {args.out / case.key}")
     index = write_index(args.out, picked)
     print(f"[목록] {index}")
+    # **끝에 다시 낸다.** 벌이 여섯이면 앞의 실패는 화면 밖으로 밀려 있다.
+    if failed:
+        total = sum(len(items) for items in failed.values())
+        print("")
+        print(f"[그림 실패] 벌 {len(failed)}개에서 {total}개 — 그 장은 그림 없이 나갔다")
+        for key, items in failed.items():
+            print(f"  {key}: {len(items)}개")
+    else:
+        print("")
+        print("[그림 실패] 0개")
     return 0
 
 
