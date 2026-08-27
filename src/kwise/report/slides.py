@@ -1638,6 +1638,28 @@ _SPEC_CAPTION_HEIGHT = 0.24
 #: 6.68in 에 앉는데 잘리지 않는다 — 그것이 이 값의 상한을 말해 준다.
 _BODY_TAIL = 0.1
 
+#: **그림 없이 지표만 있는 장에서 지표 두 줄을 얼마나 띄울까** (in) (60세션 3절).
+#:
+#: 36세션 3-3 이 정한 규약은 「남는 높이 **가운데** 앉힌다」 하나뿐이었고 그것은
+#: **그림 덩어리를 위해 만든 것**이다. 그림이 있으면 덩어리가 자리를 채우므로
+#: 가운데가 옳다. 그림이 없는 장에서는 채울 것이 없어 **가운데가 곧 「멀리」**가
+#: 된다 — ESS 성립 불가 장이 지표 셋과 지표 다섯 사이를 1.46in 벌려 **한 장이
+#: 둘로 읽혔다.**
+#:
+#: 지표 두 줄은 **같은 것을 말하는 한 덩어리**다. 붙여 놓고 남는 자리는 아래에
+#: 둔다 — 여백이 아래 있는 것은 덜 만들어진 것으로 읽히지 않지만, 덩어리
+#: 사이에 있는 것은 갈라진 것으로 읽힌다.
+#:
+#: :data:`~kwise.report.design.SlideGeometry.block_gap_in` 과 같은 값을 쓰지
+#: 않는다 — 저쪽은 **성격이 다른 덩어리** 사이의 숨이고, 이쪽은 **같은 덩어리
+#: 안**의 줄 간격이다.
+#:
+#: **경계는 덩어리 수다.** 그림 없는 장에 덩어리가 **하나**면 가운데 앉힌다 —
+#: 주의사항 표가 그렇고, 36세션 규약이 그대로 옳다 (아래 절반이 비면 덜
+#: 만들어진 것으로 읽힌다). **둘 이상**이면 붙인다 — 가운데는 그 사이를
+#: 벌리는 자리이기 때문이다.
+_STAT_ROW_GAP = 0.18
+
 #: 사양 표의 열 폭 비율 (53세션 2절). **아홉 열을 고르게 나누지 않는다.**
 #:
 #: 고르게 나누면 한 칸이 1.37in 인데, 「5,220~5,240 kW」 는 11.5pt 로 1.34in 이라
@@ -1847,12 +1869,15 @@ def _build_measure(
         _note(slide, guide, terms_note, note, extra)
         return
     if not entry.actionable and entry.facts and not entry.facts_first:
+        # **위 지표에 붙인다** (60세션 3절). 여기는 그림이 없는 장이라 남는
+        # 높이 가운데 앉히면 지표 두 줄이 갈려 한 장이 둘로 읽힌다 —
+        # :data:`_STAT_ROW_GAP` 에 그 까닭이 적혀 있다.
         _stats(
             slide,
             guide,
             list(entry.facts),
             left=geometry.margin_in,
-            top=body + max(0.0, (height - 0.94) / 2),
+            top=body - geometry.block_gap_in + _STAT_ROW_GAP,
             width=geometry.content_width_in,
         )
         _note(slide, guide, terms_note, note, extra)
