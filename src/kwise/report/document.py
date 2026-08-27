@@ -926,7 +926,7 @@ def measure_entries(
         )
         if power_factor_line:
             cautions.append(power_factor_line)
-            surplus_note = " · ".join(part for part in (surplus_note, power_factor_line) if part)
+            surplus_note = narrative.note_line(surplus_note, power_factor_line)
         entries["solar"] = MeasureEntry(
             kind=measure_kind("solar"),
             conclusion=_solar_conclusion(

@@ -1547,7 +1547,10 @@ def _measure_note(entry: MeasureEntry) -> str:
             # — 「절감액 미산출 — 하한 규정 미확인 — 금액 미산출」.
             tail = _trim_repeat(split_reason(reason)[1] or reason, head)
             parts.append(f"{label} {head} — {tail}")
-    return " · ".join(parts)
+    # **잇는 것은 한 자리에서만 한다** (60세션 2절). 사유가 마침표로 끝나는
+    # 장이 있어 「… 않았습니다**. ·** 투자비 미산출」 이 됐다 — ESS 성립 불가
+    # 장이 그렇다. 다른 수단 장은 사유가 마침표 없이 끝나 이 장에서만 났다.
+    return narrative.note_line(*parts)
 
 
 def _measure_layout(entry: MeasureEntry) -> str:
