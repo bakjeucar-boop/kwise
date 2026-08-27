@@ -2142,8 +2142,12 @@ def test_부록이_효과_있는_수단을_빠뜨리지_않는다(full_sections:
     """**사용자가 물었다 — 「선택요금 조정이 빠진 이유는 효과가 0 이라서인가요?」**
     (59세션 11절 · 목록 P11).
 
-    55세션이 정한 규칙은 「값이 0 이거나 미산출인 수단은 뺀다」 이고, 뒤집으면
-    **효과가 있으면 반드시 실린다** 는 뜻이다. 그 역이 실제로 참인지를 못박는다.
+    규칙은 「값이 0 이거나 미산출인 수단은 뺀다」 이고, 뒤집으면 **효과가 있으면
+    반드시 실린다** 는 뜻이다. 그 역이 실제로 참인지를 못박는다.
+
+    **판정은 ``MeasureEntry.has_saving`` 이 쥔다** — 39세션이 세웠고, 「0 이거나」
+    는 59세션 11절에 붙었다. (60세션 7절에 **55세션** 참조를 여기서 걷어냈다.
+    55세션 자리는 비어 있다.)
 
     각주는 규칙을 그대로 적는다 — 「산출되지 않은」 이라고만 적으면 계약전력
     조정처럼 **산출은 됐는데 0 인** 줄이 못 낸 것으로 읽힌다.
@@ -2886,3 +2890,202 @@ def test_슬라이드_안에서_끝난다(full_sections: DocumentSections) -> No
             assert bottom <= guide.slide.height_in + 0.01, f"{index}장 — 「{text[:20]}」"
         for table in tables:
             assert table[1] <= guide.slide.height_in + 0.01, f"{index}장 — 표"
+
+
+# ============================================================ 60세션 — 각주 조립
+
+
+def _priced_surplus_page() -> object:
+    """**적용 단가가 붙은 잉여 장** — 각주가 두 줄이 되는 유일한 갈래다 (58세션).
+
+    단가가 없으면 :meth:`SurplusResult.applied_price_note` 가 비어 각주가 한
+    줄뿐이다. 「※」 가 두 번 서는 결함은 **둘째 줄이 있을 때만** 난다.
+    """
+    import dataclasses
+
+    from kwise.measures.surplus import (
+        EXTERNAL_SCENARIO,
+        OFFSET_SCENARIO,
+        SurplusScenario,
+    )
+    from kwise.report.document import surplus_page
+
+    base = _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0)
+    priced = dataclasses.replace(
+        base,  # type: ignore[type-var]
+        external_price_won_per_kwh=140.0,
+        scenarios=(
+            SurplusScenario(OFFSET_SCENARIO, 2_545_000.0, "상계", "계약 변경"),
+            SurplusScenario(EXTERNAL_SCENARIO, 3_267_824.0, "외부", "구매자 발굴"),
+            base.scenarios[2],  # type: ignore[attr-defined]
+        ),
+    )
+    page = surplus_page(priced, capacity_kwp=160.0, surplus_free_kwp=40.0)
+    assert page is not None
+    return page
+
+
+def _unviable_ess_entry(
+    sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult
+) -> MeasureEntry:
+    """**ESS 성립 불가 장의 항목** — 그림도 표도 없고 지표만 두 줄인 장 (60세션).
+
+    갑 종별은 기본요금이 계약전력에 붙어 성립할 수 없다 (56세션). 이 갈래는
+    **대형·소형 어느 자료의 기본 계약에도 서지 않아서**, ``full_sections`` 만
+    훑는 시험은 여기서 나는 결함을 못 잡는다 — 59세션 되짚기 ① 이 적은
+    「갈래를 만든 세션과 그것이 실물에 서는지 본 세션이 달랐다」 가 이 자리다.
+    """
+    from kwise.measures.ess import ess_target_curve, refine_ess_target
+    from kwise.report.document import measure_entries
+    from kwise.tariff import TariffSelection
+
+    selection = TariffSelection("general_a_1", "high_a", "I")
+    curve = ess_target_curve(
+        sample_usage.kw,
+        15,
+        baseline_demand_kw=5_293.44,
+        base_fee_won_per_kw=float(tariff.rates(selection).base_won_per_kw),
+    )
+    optimum = refine_ess_target(
+        sample_usage, tariff, selection, curve=curve, baseline=sample_bill
+    )
+    entry = next(
+        item
+        for item in measure_entries(ess_optimum=optimum, ess_curve=curve)
+        if item.kind.key == "ess"
+    )
+    assert not entry.actionable and entry.facts and not entry.facts_first
+    return entry
+
+
+def test_각주_한_줄에_표식이_한_번만_선다(full_sections: DocumentSections) -> None:
+    """**「※」 가 한 줄 가운데 또 서고 있었다** (60세션 1절).
+
+    잉여 장이 자격요건 각주와 적용 단가 각주를 빈칸으로 이어 한 줄로 넘겼는데,
+    **뒤 문장이 제 표식을 달고 온다.** :func:`mark_note` 는 맨 앞만 보므로
+    가운데 것을 못 잡았다.
+
+    조각을 잇는 것은 :func:`~kwise.report.narrative.note_line` 하나뿐이고,
+    거기서 조각이 달고 온 표식을 뗀다.
+    """
+    from kwise.report.narrative import NOTE_MARK, note_line
+
+    mark = NOTE_MARK.strip()
+    # ① 잇는 자리가 표식을 뗀다.
+    assert note_line(f"{mark} 앞", f"{mark} 뒤").count(mark) == 0
+    assert note_line("앞입니다.", f"{mark} 뒤") == "앞입니다. 뒤"
+
+    # ② **결함이 났던 그 장에서 확인한다.** 대형 자료에는 잉여 장이 없어
+    #    ``full_sections`` 만 훑으면 이 시험은 뜰 수가 없다 (59세션 되짚기 ①).
+    import dataclasses
+
+    page = _priced_surplus_page()
+    assert len(page.notes) >= 2, "잉여 장 각주가 둘이어야 이 시험이 뜻을 가집니다."
+    assert any(mark in text for text in page.notes), "문장 하나가 표식을 달고 온다."
+
+    guide = load_design_guide()
+    sections = dataclasses.replace(
+        full_sections, measures=_all_measures(full_sections), surplus=page
+    )
+    deck = build_slides(sections)
+    surplus_lines = _note_lines(_slide_by_key(deck, sections, "surplus"), guide)
+    assert len(surplus_lines) >= 2, f"잉여 장 각주가 두 줄이어야 합니다: {surplus_lines}"
+
+    # ③ 덱 어느 줄에도 표식이 두 번 서지 않는다.
+    for index, slide in enumerate(deck.slides, 1):
+        for line in _note_lines(slide, guide):
+            assert line.count(mark) <= 1, f"{index}장 각주에 {mark} 가 둘입니다: {line}"
+
+
+def test_마침표로_끝난_조각_뒤에는_구분점이_없다(
+    full_sections: DocumentSections,
+    sample_usage: UsageData,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+) -> None:
+    """**마침표와 구분점이 겹쳤다** (60세션 2절).
+
+    「… 사양을 정하지 않았습니다**. ·** 투자비 미산출」 — 사유가 마침표로 끝나는
+    장이 ESS 성립 불가 하나뿐이라 다른 장에서는 드러나지 않았다.
+    **문장이 이미 끝났으면 빈칸이면 족하다.**
+    """
+    import re
+
+    from kwise.report.narrative import NOTE_JOIN, note_line
+
+    # ① 마침표로 끝나면 빈칸, 아니면 구분점.
+    assert note_line("않았습니다.", "투자비 미산출") == "않았습니다. 투자비 미산출"
+    assert note_line("사유 (괄호로 끝남)", "다음") == f"사유 (괄호로 끝남){NOTE_JOIN}다음"
+
+    # ② **마침표로 끝나는 사유가 있는 장에서 확인한다.** 그런 사유는 ESS 성립
+    #    불가 장 하나뿐이라, 대형 자료만 훑으면 이 시험은 뜰 수가 없다.
+    import dataclasses
+
+    from kwise.report.slides import _measure_note
+
+    entry = _unviable_ess_entry(sample_usage, tariff, sample_bill)
+    reasons = [split_reason(entry.slide_saving)[1], split_reason(entry.investment)[1]]
+    assert any(text and text.rstrip().endswith(".") for text in reasons), (
+        f"마침표로 끝나는 사유가 있어야 이 시험이 뜻을 가집니다: {reasons}"
+    )
+    assert not re.search(r"[.。]\s*·", _measure_note(entry))
+
+    guide = load_design_guide()
+    measures = tuple(
+        entry if item.kind.key == "ess" else item for item in _all_measures(full_sections)
+    )
+    sections = dataclasses.replace(full_sections, measures=measures)
+    for index, slide in enumerate(build_slides(sections).slides, 1):
+        for line in _note_lines(slide, guide):
+            assert not re.search(r"[.。]\s*·", line), f"{index}장 각주가 겹칩니다: {line}"
+
+
+def test_그림_없는_장은_지표_두_줄을_붙인다(
+    full_sections: DocumentSections,
+    sample_usage: UsageData,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+) -> None:
+    """**한 장이 둘로 읽혔다** (60세션 3절).
+
+    36세션의 「남는 높이 **가운데** 앉힌다」 는 **그림 덩어리를 위해** 만든
+    규약이다. 그림이 없는 장에는 채울 것이 없어 가운데가 곧 「멀리」가 된다 —
+    ESS 성립 불가 장이 지표 셋과 지표 다섯 사이를 1.46in 벌리고 있었다.
+
+    **간격은 :data:`~kwise.report.slides._STAT_ROW_GAP` 이 정한다.** 값을
+    코드에 흩어 두면 다음에 같은 장이 하나 더 생길 때 또 벌어진다.
+    """
+    import dataclasses
+
+    from pptx.util import Emu
+
+    from kwise.report.slides import _STAT_ROW_GAP
+
+    entry = _unviable_ess_entry(sample_usage, tariff, sample_bill)
+
+    # 수단을 모두 켜 놓고 ESS 만 이 갈래로 바꿔 끼운다.
+    measures = tuple(
+        entry if item.kind.key == "ess" else item for item in _all_measures(full_sections)
+    )
+    sections = dataclasses.replace(full_sections, measures=measures)
+    slide = _slide_by_key(build_slides(sections), sections, "measure_ess")
+    # **라벨로 두 덩어리를 가른다.** 좌표만 훑으면 제목·결론 사이의 숨까지
+    # 섞여 무엇을 재는지 흐려진다.
+    upper = {"절감액", "투자비", "회수기간"}
+    lower = {label for label, _value in entry.facts}
+    assert lower, "아래 덩어리가 있어야 이 시험이 뜻을 가집니다."
+
+    boxes = [
+        (Emu(shape.top).inches, Emu(shape.top + shape.height).inches, shape.text_frame.text.strip())
+        for shape in slide.shapes  # type: ignore[attr-defined]
+        if shape.has_text_frame and shape.top is not None and shape.height
+    ]
+    assert any(text in upper for _t, _b, text in boxes), "위 덩어리를 못 찾았습니다."
+    lower_top = min(top for top, _b, text in boxes if text in lower)
+    # **값 줄까지 포함해 아래끝을 잰다** — 라벨만 보면 그 아래 값 칸이 틈으로
+    # 잘못 셈된다.
+    upper_bottom = max(bottom for _t, bottom, _x in boxes if bottom <= lower_top + 0.01)
+    gap = lower_top - upper_bottom
+    assert 0.0 <= gap <= _STAT_ROW_GAP + 0.02, (
+        f"지표 두 줄이 {gap:.2f}in 갈렸습니다 — 규약은 {_STAT_ROW_GAP}in 입니다."
+    )
