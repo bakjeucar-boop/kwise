@@ -125,12 +125,16 @@ class ContractRule:
     """엑셀에 없는 종별 속성. **변환이 이 값을 만들어내지 않는다.**
 
     Attributes:
-        base_fee_basis: 기본요금 기준. ``"billing_demand"`` 는 요금적용전력(을),
-            ``"contract"`` 는 계약전력(갑)이다. 한전 기본공급약관상 갑 종별은
-            계약전력으로 기본요금을 매긴다.
+        base_fee_basis: 기본요금 기준. ``"billing_demand"`` 는 요금적용전력,
+            ``"contract"`` 는 계약전력이다. **갑/을 구분이 아니다** — 갈림길은
+            최대수요전력계 설치 여부이고, 그것을 정하는 것은 공급전압이다
+            (제38조 제2항 · 제68조 제1항 · 제2항). 61세션에 약관 원문으로
+            확인했다: 고압 이상 고객에게는 최대수요전력계를 설치하므로,
+            **저압이 없는 종별(을·갑Ⅱ)은 언제나 요금적용전력 기준**이다.
         time_of_use: 시간대별 요금제인지. 갑Ⅰ·교육용(갑)은 '전체시간' 단일 단가다.
-        contract_floor_ratio: 요금적용전력 하한 비율. 계약전력 기준(갑)은
-            하한 개념이 없으므로 None.
+        contract_floor_ratio: 요금적용전력 하한 비율. 제68조 제1항의 30% 는
+            최대수요전력계 고객 전체에 걸리므로 **갑Ⅱ에도 있다.**
+            계약전력 기준(``"contract"``) 종별만 하한 개념이 없어 None 이다.
     """
 
     key: str
@@ -156,6 +160,10 @@ CONTRACT_RULES: Mapping[str, ContractRule] = {
         time_of_use=True,
         contract_floor_ratio=0.3,
     ),
+    # 갑Ⅰ·교육용(갑)은 **저압과 고압을 함께 가진다.** 제38조 제2항대로면 고압
+    # 고객은 요금적용전력, 저압 고객은 계약전력(제68조 제2항)이라 **전압별로
+    # 갈라야 한다.** 지금 구조는 종별당 기준 하나뿐이라 저압 쪽에 맞춰 두었다.
+    # **미해결** — 전압별 기준은 다음 세션 몫이다 (61세션 4절).
     "일반용(갑) I": ContractRule(
         key="general_a_1",
         label="일반용전력(갑)Ⅰ",
@@ -165,14 +173,17 @@ CONTRACT_RULES: Mapping[str, ContractRule] = {
         time_of_use=False,
         contract_floor_ratio=None,
     ),
+    # 갑Ⅱ 는 **저압이 없다** (고압A·고압B 뿐). 제38조 제2항에 따라 고압 이상
+    # 고객에게는 최대수요전력계를 설치하므로 제68조 제1항 — 요금적용전력이다.
+    # 용인 소규모 건물 청구서로 확인했다 (61세션): 8,230원/kW × 118 kW.
     "일반용(갑) II": ContractRule(
         key="general_a_2",
         label="일반용전력(갑)Ⅱ",
         threshold_kw=300,
         threshold_direction="below",
-        base_fee_basis="contract",
+        base_fee_basis="billing_demand",
         time_of_use=True,
-        contract_floor_ratio=None,
+        contract_floor_ratio=0.3,
     ),
     "산업용(갑) I": ContractRule(
         key="industrial_a_1",
@@ -183,14 +194,15 @@ CONTRACT_RULES: Mapping[str, ContractRule] = {
         time_of_use=False,
         contract_floor_ratio=None,
     ),
+    # 산업용(갑)Ⅱ 도 저압이 없다. 위 일반용(갑)Ⅱ 와 같은 조문이다.
     "산업용(갑) II": ContractRule(
         key="industrial_a_2",
         label="산업용전력(갑)Ⅱ",
         threshold_kw=300,
         threshold_direction="below",
-        base_fee_basis="contract",
+        base_fee_basis="billing_demand",
         time_of_use=True,
-        contract_floor_ratio=None,
+        contract_floor_ratio=0.3,
     ),
     "산업용(을)": ContractRule(
         key="industrial_b",

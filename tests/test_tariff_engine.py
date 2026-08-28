@@ -24,6 +24,7 @@ from kwise.tariff import (
     BillingResult,
     TariffSelection,
     TariffTable,
+    apply_contract_floor,
     billing_demands,
     calculate_bill,
     is_demand_month,
@@ -209,6 +210,46 @@ def test_billing_demand_keeps_the_12_month_maximum() -> None:
     assert demands[pd.Period("2023-07", freq="M")] == 5_000.0
     assert demands[pd.Period("2023-08", freq="M")] == 5_000.0
     assert demands[pd.Period("2023-09", freq="M")] == 5_000.0
+
+
+def test_요금적용전력은_제68조_제1항_산식을_그대로_따른다() -> None:
+    """**약관 문장 하나를 시험 하나로 못박는다** (61세션 2절).
+
+        검침 당월을 포함한 직전 12개월 중 12월분, 1월분, 2월분, 7월분, 8월분,
+        9월분 및 당월분의 최대수요전력 중 가장 큰 최대수요전력을 요금적용전력으로
+        하며, 가장 큰 최대수요전력이 계약전력의 30% 미만인 경우에는 계약전력의
+        30%를 요금적용전력으로 합니다.
+
+    값은 용인 소규모 건물(갑Ⅱ 고압A, 계약전력 290 kW) 실측의 모양을 땄다.
+    2026-08 의 답은 **당월 118 이 아니라 1월분 132** 다 — 1월은 대상월이고
+    직전 12개월 안에 있다.
+    """
+    peaks = {
+        "2025-09": 112.0,  # 대상월
+        "2025-10": 300.0,  # 대상월 아님 — 당월분으로만 세고 이월되지 않는다
+        "2025-11": 102.0,
+        "2025-12": 120.0,  # 대상월
+        "2026-01": 132.0,  # 대상월 — 여기가 2026-08 의 답이다
+        "2026-02": 113.0,  # 대상월
+        "2026-03": 87.0,
+        "2026-04": 68.0,
+        "2026-05": 80.0,
+        "2026-06": 90.0,
+        "2026-07": 113.0,  # 대상월
+        "2026-08": 118.0,  # 당월
+    }
+    demands = billing_demands(peaks)
+    assert demands[pd.Period("2025-10", freq="M")] == 300.0  # 당월은 대상월이 아니어도 센다
+    assert demands[pd.Period("2025-11", freq="M")] == 112.0  # 10월분 300 은 이월되지 않는다
+    assert demands[pd.Period("2026-08", freq="M")] == 132.0
+
+    # 하한 — 계약전력의 30%. 290 kW 면 87 kW 라 걸리지 않는다.
+    assert apply_contract_floor(demands, contract_kw=290.0, floor_ratio=0.3) == demands
+    # 계약전력이 600 kW 면 하한 180 kW 가 132 이하의 달을 전부 들어올린다.
+    floored = apply_contract_floor(demands, contract_kw=600.0, floor_ratio=0.3)
+    assert min(floored.values()) == 180.0
+    assert floored[pd.Period("2026-08", freq="M")] == 180.0  # 132 → 하한
+    assert floored[pd.Period("2025-10", freq="M")] == 300.0  # 하한 위는 그대로
 
 
 def test_billing_demand_drops_the_peak_after_12_months() -> None:
@@ -671,25 +712,44 @@ def test_hand_case_night_peak_is_excluded_from_billing_demand(
     assert row["base_won"] == pytest.approx(400.0 * BASE_A_I)
 
 
-# ===================================================================== 9세션 — 갑 종별 잠정 경고
+# =============================================== 9세션 — 저압·고압을 함께 쓰는 종별의 경고
 
 
-def test_갑_종별에_기본요금_기준_잠정_경고가_붙는다(
+def test_저압이_있는_종별에_전압_전제_경고가_붙는다(
     tariff: TariffTable, sample_usage: UsageData
 ) -> None:
-    """약관 제38조 확인 전까지 갑 종별 기본요금 기준은 잠정이다 (미해결 항목).
+    """갑Ⅰ·교육용(갑)은 **저압과 고압을 함께 쓴다** (61세션에 범위를 좁혔다).
 
-    **PoC 범위(일반용(을))에서는 이 경로를 타지 않아 샘플에 영향이 없다.**
-    그래서 갑 종별을 실제로 쓸 때 조용히 틀리기 쉽다 — 결과에 함께 싣는다.
+    제38조 제2항대로면 고압 고객은 요금적용전력 기준이고 저압 고객은 계약전력
+    기준이다(제68조 제2항). 지금 구조는 종별당 기준 하나뿐이라 저압에 맞춰
+    두었으므로, 이 종별을 고압으로 쓰면 기본요금이 과대 산출된다 — 함께 싣는다.
     """
     bill = calculate_bill(
         sample_usage,
         tariff,
-        TariffSelection("general_a_2", "high_a", "I"),
+        TariffSelection("general_a_1", "high_a", "I"),
         options=BillingOptions(contract_kw=5_800.0),
     )
     assert TENTATIVE_BASE_FEE_BASIS_WARNING in texts(bill.notices)
-    assert "제38조" in TENTATIVE_BASE_FEE_BASIS_WARNING
+    assert "저압" in TENTATIVE_BASE_FEE_BASIS_WARNING
+    assert "고압" in TENTATIVE_BASE_FEE_BASIS_WARNING
+
+
+def test_갑Ⅱ에는_전압_전제_경고가_붙지_않는다(
+    tariff: TariffTable, sample_usage: UsageData
+) -> None:
+    """**갑Ⅱ 는 저압이 없어 전제가 갈리지 않는다** (61세션 3절).
+
+    60세션까지는 이 경고가 갑Ⅱ 에도 붙었다. 붙을 자리가 아니었다 — 기준이
+    잠정이 아니라 **틀려 있었고**, 경고는 틀린 값을 고쳐 주지 못한다.
+    """
+    bill = calculate_bill(
+        sample_usage,
+        tariff,
+        TariffSelection("general_a_2", "high_a", "II"),
+        options=BillingOptions(contract_kw=5_800.0),
+    )
+    assert TENTATIVE_BASE_FEE_BASIS_WARNING not in texts(bill.notices)
 
 
 def test_을_종별에는_잠정_경고가_붙지_않는다(tariff: TariffTable, sample_usage: UsageData) -> None:

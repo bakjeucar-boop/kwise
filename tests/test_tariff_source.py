@@ -25,6 +25,7 @@ from kwise.notices import texts
 from kwise.quality import QualityReport
 from kwise.tariff import (
     BANDS,
+    TENTATIVE_BASE_FEE_BASIS_WARNING,
     BillingOptions,
     TariffDataError,
     TariffSelection,
@@ -172,12 +173,14 @@ def test_sample_billing_demand_is_unchanged(
 
 def test_thresholds_and_floor_ratios_survive_the_conversion(tariff: TariffTable) -> None:
     """계약전력 임계값과 요금적용전력 하한은 엑셀에 없다. 코드가 들고 있다."""
+    # 갑Ⅱ 에 하한 30% 가 있는 것이 맞다 (61세션). 제68조 제1항의 하한은 최대수요
+    # 전력계 고객 전체에 걸리고, 갑Ⅱ 는 저압이 없어 언제나 그 고객이다.
     expected = {
         "general_a_1": (300.0, "below", None),
-        "general_a_2": (300.0, "below", None),
+        "general_a_2": (300.0, "below", 0.3),
         "general_b": (300.0, "above", 0.3),
         "industrial_a_1": (300.0, "below", None),
-        "industrial_a_2": (300.0, "below", None),
+        "industrial_a_2": (300.0, "below", 0.3),
         "industrial_b": (300.0, "above", 0.3),
         "education_a": (1_000.0, "below", None),  # 교육용은 1,000 kW 다
         "education_b": (1_000.0, "above", 0.15),  # 15% 특례
@@ -295,17 +298,19 @@ def test_flat_rate_type_still_charges_a_higher_summer_rate(tariff: TariffTable) 
     assert rates.rate("spring_fall", "peak") == pytest.approx(98.6)
 
 
-# --------------------------------------------------------------------- 갑 = 계약전력 기준
+# --------------------------------------------------- 계약전력 기준 · 요금적용전력 기준
 
 
 def test_type_a_base_fee_uses_the_contract_power(
     sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
 ) -> None:
-    """**갑 종별 기본요금은 계약전력 기준이다** (기본공급약관 제68조).
+    """**저압이 있는 종별은 계약전력 기준으로 둔다** (기본공급약관 제68조 제2항).
 
-    요금적용전력으로 매기면 기본요금이 통째로 틀린다.
+    요금적용전력으로 매기면 기본요금이 통째로 틀린다. 갑Ⅰ·교육용(갑)은 저압과
+    고압을 함께 쓰는데 지금 구조가 종별당 기준 하나뿐이라 저압에 맞춰 두었다
+    (61세션 4절 — 전압별 기준은 미해결).
     """
-    selection = TariffSelection("general_a_2", "high_a", "I")
+    selection = TariffSelection("general_a_1", "high_a", "I")
     bill = calculate_bill(
         sample_usage,
         tariff,
@@ -318,7 +323,38 @@ def test_type_a_base_fee_uses_the_contract_power(
     assert bill.total_base_won == pytest.approx(250.0 * rate * bill.base_fee_months)
     # 요금적용전력은 참고용으로 함께 싣는다. 기본요금에는 쓰지 않는다.
     assert bill.billing_demand_kw > 250.0
-    assert any("계약전력" in note and "갑 종별" in note for note in texts(bill.notices))
+    assert any("계약전력" in note and "제68조 제2항" in note for note in texts(bill.notices))
+
+
+def test_갑Ⅱ_기본요금은_요금적용전력_기준이다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """**갑Ⅱ 는 저압이 없다 → 언제나 최대수요전력계 고객이다** (61세션 3절).
+
+    제38조 제2항이 「고압 이상의 전압으로 전기를 공급받는 고객에게는 최대수요
+    전력을 계량할 수 있는 전력량계를 설치한다」 고 적었고, 제68조 제1항이 그
+    고객의 기본요금을 요금적용전력으로 매긴다. 60세션까지는 갑 전체를 계약전력
+    기준으로 두어 **용인 실측에서 기본요금이 2.3배로 나왔다** (계약전력 290 kW
+    대 요금적용전력 132 kW).
+    """
+    for key in ("general_a_2", "industrial_a_2"):
+        contract = tariff.contract(key)
+        assert not contract.base_fee_on_contract, key
+        assert contract.contract_floor_ratio == pytest.approx(0.3), key
+        assert "low" not in contract.voltages, f"{key} 에 저압이 생기면 이 전제가 무너진다"
+
+    selection = TariffSelection("general_a_2", "high_a", "II")
+    bill = calculate_bill(
+        sample_usage,
+        tariff,
+        selection,
+        options=BillingOptions(contract_kw=250.0),
+        quality=sample_report,
+    )
+    # 기본요금에 실제로 곱한 kW 가 계약전력이 아니라 월별 요금적용전력이다.
+    assert set(bill.monthly["base_demand_kw"]) != {250.0}
+    assert (bill.monthly["base_demand_kw"] == bill.monthly["billing_demand_kw"]).all()
+    assert not any(TENTATIVE_BASE_FEE_BASIS_WARNING in note for note in texts(bill.notices))
 
 
 def test_type_a_refuses_to_guess_the_contract_power(

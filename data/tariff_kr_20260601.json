@@ -412,7 +412,7 @@
       "threshold_kw": 300,
       "threshold_direction": "below",
       "effective_date": "2026-06-01",
-      "base_fee_basis": "contract",
+      "base_fee_basis": "billing_demand",
       "time_of_use": true,
       "options": [
         "I",
@@ -430,7 +430,7 @@
         1,
         2
       ],
-      "contract_floor_ratio": null,
+      "contract_floor_ratio": 0.3,
       "voltages": {
         "high_a": {
           "label": "고압A",
@@ -662,7 +662,7 @@
       "threshold_kw": 300,
       "threshold_direction": "below",
       "effective_date": "2026-06-01",
-      "base_fee_basis": "contract",
+      "base_fee_basis": "billing_demand",
       "time_of_use": true,
       "options": [
         "I",
@@ -680,7 +680,7 @@
         1,
         2
       ],
-      "contract_floor_ratio": null,
+      "contract_floor_ratio": 0.3,
       "voltages": {
         "high_a": {
           "label": "고압A",
