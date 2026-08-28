@@ -33,6 +33,9 @@ from kwise.report.figures import FigureFailureCollector  # noqa: E402
 APP = PROJECT_ROOT / "src" / "kwise" / "ui" / "app.py"
 LARGE_CSV = PROJECT_ROOT / "input" / "사용량조회_20240429.csv"
 SMALL_CSV = PROJECT_ROOT / "input" / "사용량조회_소형사무빌딩.csv"
+#: 용인 소규모 건물 실측 (61세션). **회귀 케이스가 아니라 디버깅용**이다 —
+#: 케이스 스터디 목록에는 넣지 않았다 (61세션 8절).
+YONGIN_XLSX = PROJECT_ROOT / "input" / "전기사용량_소형건물.xlsx"
 
 #: 통합 시험과 같은 지역을 쓴다 (48세션). 지역을 바꾸면 발전량이 통째로 흔들린다.
 PROVINCE = "강원도"
@@ -63,6 +66,9 @@ class Case:
     building_name: str
     surplus_use: str = ""
     """고른 잉여 처리. 비우면 화면 기본값(출력제어)이다 (57세션)."""
+    province: str = PROVINCE
+    sigungu: str = REGION
+    """지역. 실측 자료의 소재지가 분명한 벌만 바꾼다 — 발전량이 통째로 흔들린다."""
 
 
 CASES: tuple[Case, ...] = (
@@ -138,6 +144,22 @@ CASES: tuple[Case, ...] = (
         # 0원이라 「절감액에 잉여가 얹힌다」 는 사실이 값으로 안 보인다.
         surplus_use="외부 판매",
     ),
+    Case(
+        key="small-a2",
+        title="용인 소규모 · 일반용(갑)Ⅱ 고압A 선택Ⅱ · 계약전력 290 kW",
+        csv=YONGIN_XLSX,
+        contract_type="general_a_2",
+        voltage="high_a",
+        option="II",
+        # **갑Ⅱ 가 요금적용전력을 쓰는지 실물로 보는 자리다** (61세션).
+        # 청구서(8,230원/kW × 118 kW)와 대조한 벌이고, 고치기 전에는 기본요금이
+        # 계약전력 290 kW 로 매겨져 12개월 28,640,400원이 나오고 있었다.
+        contract_kw=290.0,
+        area_m2=1_000.0,
+        building_name="용인 소규모 건물(갑Ⅱ)",
+        province="경기도",
+        sigungu="경기도/용인시",
+    ),
 )
 
 BY_KEY = {case.key: case for case in CASES}
@@ -168,8 +190,8 @@ def build_deck(case: Case, *, timeout: int = 1800) -> bytes:
         option=case.option or _first_option(case.contract_type, case.voltage),
         contract_kw=case.contract_kw,
     )
-    state["building_province"] = PROVINCE
-    state["building_sigungu"] = REGION
+    state["building_province"] = case.province
+    state["building_sigungu"] = case.sigungu
     state["building_name"] = case.building_name
     # **태양광은 「계산」 을 누른 상태로 시작한다.** 위젯에 키가 없어 면적을
     # 세션으로 심을 수 없다 — 눌린 결과(``solar_inputs``)를 바로 넣는다.
