@@ -1662,6 +1662,13 @@ def test_소형_사무빌딩에서_성립하지_않는_사양을_고르지_않�
     assert "최소 규격" in message and "50 kW" in message
     # **「경제성 없음」 이라 쓰지 않는다** — 확인된 사실이 아니다.
     assert "경제성" not in message
+    # **주어가 시장이 아니라 이 건물이다** (63세션). 「제품을 찾기 어려워」 는
+    # 「제품만 나오면 되겠다」 로 읽혔다 — 사유는 이 건물이 필요로 하는 양이
+    # 설비 한 대보다 작다는 것이다.
+    assert "찾기 어려" not in message
+    assert "필요보다 큰 설비" in message
+    # **회수기간을 사유로 쓰지 않는다** (63세션). 초기 검토 단계라 단단하지 않다.
+    assert "회수" not in message and "년" not in message
     # 표를 싣지 않는다 — 회수기간도 목표별 사양도 낼 것이 없다.
     assert optimum.points == ()
 
