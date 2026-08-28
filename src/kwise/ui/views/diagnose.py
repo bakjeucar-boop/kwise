@@ -485,10 +485,12 @@ def _power_factor_block(form: ContractForm | None) -> None:
 
 
 def _tentative_basis_block(table: TariffTable, form: ContractForm | None) -> None:
-    """갑 종별 기본요금 기준이 잠정임을 **접지 않고** 알린다 (미해결 — 약관 제38조).
+    """기본요금을 계약전력으로 매기는 종별에 전압 전제를 **접지 않고** 알린다.
 
-    PoC 범위(일반용(을))에서는 이 경로를 타지 않아 샘플에 영향이 없다. 그래서
-    갑 종별을 실제로 쓸 때 조용히 틀리기 쉽다 — 화면 위쪽에 남긴다.
+    갈림길은 최대수요전력계 설치 여부이고 그것을 정하는 것은 공급전압이다
+    (약관 제38조 제2항 · 제68조). 저압이 없는 종별(을·갑Ⅱ)은 이 경로를 타지
+    않는다 — 남는 것은 저압과 고압을 함께 쓰는 갑Ⅰ·교육용(갑)뿐이고,
+    그쪽을 고압으로 쓰면 조용히 틀린다. 화면 위쪽에 남긴다 (61세션).
     """
     if form is None:
         return
@@ -496,8 +498,8 @@ def _tentative_basis_block(table: TariffTable, form: ContractForm | None) -> Non
     if not contract_type.base_fee_on_contract:
         return
     callout.caution(
-        f"**{contract_type.label}** — {TENTATIVE_BASE_FEE_BASIS_WARNING} "
-        f"현재는 계약전력 {fmt.kw(form.contract_kw)} 기준으로 계산합니다."
+        f"**{contract_type.label}** — 계약전력 {fmt.kw(form.contract_kw)} 기준으로 "
+        f"계산했습니다. {TENTATIVE_BASE_FEE_BASIS_WARNING}"
     )
 
 

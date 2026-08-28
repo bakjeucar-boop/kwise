@@ -262,8 +262,8 @@ def test_over_contracted_case_shows_reduction(sample_usage: UsageData) -> None:
     assert adequacy.suggested_contract_kw == 5_823.0  # 5,293.44 × 1.10 올림
     assert adequacy.reduction_kw == pytest.approx(1_177.0)
     assert adequacy.is_over_contracted
-    assert adequacy.saving_won is None  # 하한 규정을 모르면 금액을 만들지 않는다
-    assert "미확인" in adequacy.saving_basis
+    assert adequacy.saving_won is None  # 하한 비율이 없으면 금액을 만들지 않는다
+    assert "미산출" in adequacy.saving_basis
 
 
 def test_saving_is_recalculated_when_the_floor_rule_is_known(sample_usage: UsageData) -> None:

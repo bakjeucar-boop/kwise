@@ -56,7 +56,13 @@ from kwise.measures import (
 from kwise.notices import texts
 from kwise.pv import ArrayConfig, PvSystemConfig
 from kwise.quality import QualityReport
-from kwise.tariff import BillingResult, TariffSelection, TariffTable, calculate_bill
+from kwise.tariff import (
+    BillingOptions,
+    BillingResult,
+    TariffSelection,
+    TariffTable,
+    calculate_bill,
+)
 from tests._synthetic import clearsky_weather, write_month
 
 CURRENT = TariffSelection("general_b", "high_a", "I")
@@ -181,6 +187,52 @@ def test_floor_ratio_defaults_to_the_contract_type(
     assert result.saving_won == pytest.approx(0.0)
 
 
+def test_갑Ⅱ도_계약전력_조정_금액을_낸다(
+    sample_usage: UsageData, tariff: TariffTable, sample_report: QualityReport
+) -> None:
+    """**「미산출」 의 뿌리는 기본요금 기준 오류였다** (61세션 6절).
+
+    갑Ⅱ 의 하한 비율이 요금 데이터에 비어 있어 카드가 :data:`ContractStatus.UNKNOWN`
+    을 내고 있었다. 61세션이 제68조 제1항의 30% 를 넣자 **따로 고치지 않고
+    금액이 나왔다** — 같은 뿌리였다.
+
+    **하한이 절감액의 바닥을 만든다.** 계약전력 20,000 kW 의 30% 는 6,000 kW 로
+    요금적용전력 5,293 kW 를 넘으므로 지금 기본요금은 6,000 kW 로 매겨진다.
+    낮추면 그 바닥이 내려가지만, 요금적용전력 아래로는 못 내려간다.
+    """
+    selection = TariffSelection("general_a_2", "high_a", "II")
+    bill = calculate_bill(
+        sample_usage,
+        tariff,
+        selection,
+        options=BillingOptions(contract_kw=20_000.0),
+        quality=sample_report,
+    )
+    result = evaluate_contract_adjustment(sample_usage, bill, contract_kw=20_000.0)
+    assert result.status is ContractStatus.CONFIRMED
+    assert result.contract_floor_ratio == pytest.approx(0.30)
+    assert result.saving_won is not None and result.saving_won > 0
+
+    rate = bill.base_rate_won_per_kw
+    monthly = bill.monthly
+    floor_now = 20_000.0 * 0.30
+    floor_then = result.suggested_contract_kw * 0.30
+    expected = float(
+        (
+            (monthly["demand_before_floor_kw"].clip(lower=floor_now))
+            - (monthly["demand_before_floor_kw"].clip(lower=floor_then))
+        )
+        .mul(monthly["base_fee_factor"])
+        .sum()
+        * rate
+    )
+    assert result.saving_won == pytest.approx(expected)
+
+    # **하한을 안 씌우면 이만큼 과다 산출된다.** 계약전력 차이로 곧장 곱한 값이다.
+    naive = (20_000.0 - result.suggested_contract_kw) * rate * bill.base_fee_months
+    assert result.saving_won < naive
+
+
 def test_unknown_floor_rule_reports_headroom_without_money(
     sample_usage: UsageData, tariff: TariffTable, sample_report: QualityReport
 ) -> None:
@@ -204,7 +256,7 @@ def test_unknown_floor_rule_reports_headroom_without_money(
     # 여지와 경고는 언제나 나온다
     assert result.reduction_kw == pytest.approx(1_177.0)
     assert result.is_over_contracted
-    assert any("하한 규정" in message for message in texts(result.notices))
+    assert any("하한 비율" in message for message in texts(result.notices))
 
 
 def test_confirmed_floor_rule_recalculates_the_base_fee(

@@ -1919,16 +1919,20 @@ def _kap_optimum(tariff: TariffTable, contract_type: str = "general_a_1") -> obj
 
 @pytest.mark.parametrize(
     "contract_type",
-    ["general_a_1", "general_a_2", "industrial_a_1", "industrial_a_2", "education_a"],
+    # **갑Ⅱ 둘이 61세션에 빠졌다.** 갑Ⅱ 는 저압이 없어 기본요금이 요금적용전력에
+    # 붙는다 (제38조 제2항 · 제68조 제1항) — 피크를 낮추면 기본요금이 줄고,
+    # 따라서 ESS 가 성립할 수 있다. 판정은 종별 이름이 아니라 기준 필드가 한다.
+    ["general_a_1", "industrial_a_1", "education_a"],
 )
-def test_갑_종별은_피크저감으로_기본요금이_줄지_않는다(
+def test_계약전력_기준_종별은_피크저감으로_기본요금이_줄지_않는다(
     tariff: TariffTable, contract_type: str
 ) -> None:
-    """**기본 단가에서 열리던 갈래다** (56세션 1절).
+    """**기본 단가에서 열리던 갈래다** (56세션 1절 · 61세션에 범위를 좁혔다).
 
-    갑 종별은 기본요금을 계약전력으로 매긴다 (약관 제68조). 개략 곡선은
-    ``저감량 × 기본요금단가`` 로 회수기간을 내므로 「성립하는 목표」 를 만들어
-    내고, 정밀화가 요금을 다시 계산해 0 이하를 만나 후보가 빈다.
+    기본요금이 계약전력에 붙는 종별은 피크를 깎아도 줄지 않는다 (약관 제68조
+    제2항). 개략 곡선은 ``저감량 × 기본요금단가`` 로 회수기간을 내므로 그런
+    종별에서도 「성립하는 목표」 를 만들어 내고, 정밀화가 요금을 다시 계산해
+    0 이하를 만나 후보가 빈다.
     """
     from kwise.measures.ess import BASE_FEE_ON_CONTRACT_CONCLUSION
 
@@ -1941,6 +1945,20 @@ def test_갑_종별은_피크저감으로_기본요금이_줄지_않는다(
     assert tariff.contract(contract_type).label in message
     assert "계약전력으로 매깁니다" in message
     assert BASE_FEE_ON_CONTRACT_CONCLUSION.startswith("{label}")
+
+
+@pytest.mark.parametrize("contract_type", ["general_a_2", "industrial_a_2"])
+def test_갑Ⅱ는_ESS_배제_갈래를_타지_않는다(tariff: TariffTable, contract_type: str) -> None:
+    """**배제 조건은 종별 이름이 아니라 기본요금 기준 필드가 판정한다** (61세션 5절).
+
+    56세션이 이 갈래를 지을 때는 「갑 종별」 이라 적었지만 조건은 처음부터
+    ``base_fee_on_contract`` 였다. 갑Ⅱ 가 요금적용전력 기준으로 옮겨 가면서
+    **문지기가 저절로 열렸다** — 따로 고칠 자리가 없었다.
+    """
+    contract = tariff.contract(contract_type)
+    assert not contract.base_fee_on_contract
+    optimum = _kap_optimum(tariff, contract_type)
+    assert not any(item.fact == "ess.base_fee_on_contract" for item in optimum.notices)
 
 
 def test_을_종별은_그대로다(tariff: TariffTable) -> None:
