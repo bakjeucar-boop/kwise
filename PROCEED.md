@@ -99,7 +99,75 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 ---
 
-## 오늘 (2026-08-29) 64세션 — **요금 구조 챕터: AMI 계량 자료 기준 표시**
+## 오늘 (2026-08-29) 65세션 — **화면 여는 절차를 코드로 · 문장에 못 박기**
+
+### 1절. 착수 전 상태 · S64 확인 둘
+
+#### 1-1. 오늘 PC — **2번 PC** (`DESKTOP-L8O0EG1`)
+
+**기계 이름이 저장소 어디에도 없었다.** 그래서 이렇게 갈랐다 — `.venv` 는 git
+제외인데 **playwright 가 들어 있다.** S64 가 깐 그 기계다. 「성능」 항목이
+「2번 PC 가 느리다」 고 적어 둔 것과도 맞는다 (S64 실측이 규약값의 세 배였다).
+
+**앞으로 헤매지 않게 여기 적어 둔다 — 2번 PC 는 `DESKTOP-L8O0EG1` 이다.**
+1번 PC 이름은 아직 모른다. 그 PC 에서 여는 세션이 이 줄 옆에 적어 주면 된다.
+
+`git pull` — `Already up to date.` HEAD **`3cdb746`** (S64 마감 그대로).
+
+#### 1-2. 원본에서 다시 읽은 값
+
+| 무엇 | 값 |
+|---|---|
+| pytest | **1,491 passed** · ruff pass (`tools\` 포함) · mypy pass (strict, 107 files) |
+| 화면 감사 | **973건** (한글 871) · 규칙 위반 **0** — **오늘 고치기 전에 직접 돌린 값** |
+| 케이스 스터디 | **90/90** · 소요 **111.0초** (S64 실측) |
+| 회귀값 셋 | **요금적용전력 5,293.4 kW · 부하율 49.0% · 기본요금 비중 13.5%** (1997행) |
+
+playwright — **이미 있다** (`.venv\Lib\site-packages\playwright`). 깔 것이 없었다.
+
+#### 1-3. 확인 ① — 제68조 중복 중 **지운 쪽은 화면 7.1 카드다. 통과**
+
+| 무엇 | 어디 |
+|---|---|
+| **남은 자리** | **화면 1단계 · 진단 툴팁 1건.** 실주행 문구로 확인했다 — 「요금적용전력은 중간·최대부하 시간대의 최대수요만 대상으로 하며 (경부하 제외)…(한전 기본공급약관 제68조).」 |
+| **내린 자리** | **화면 7.1 선택요금 전환 카드** — `ui\views\measures.py:362` `partition_facts(result.notices, _TARIFF_HIDDEN_FACTS)` |
+| **PPT 는?** | **애초에 이 문장을 싣는 자리가 아니었다.** `_TARIFF_HIDDEN_FACTS` 는 `ui\views\measures.py` **안에서만** 쓰인다 (`grep` 으로 확인 — `report\` 어디에도 없다) |
+| 산출물 | 그대로다. Excel 부록 C 는 `sections.bill.notices` 를 쓴다 (`report\excel.py:756`) |
+
+**걱정하던 일이 아니다.** 두 자리가 둘 다 화면이었고, 남은 쪽이 1단계다 —
+화면은 1단계를 안 거치면 2단계가 안 뜨므로 근거가 사라지는 경로가 없다.
+
+#### 1-4. 확인 ② — 공유 상수 **자리는 맞다. 그런데 문이 둘이다**
+
+| 무엇 | 값 |
+|---|---|
+| 파일·이름 | `src\kwise\tariff\engine.py:85` — **`AMI_BASIS_NOTICE`** |
+| 내보내기 | `kwise.tariff` (`__init__.py` 23·97행) |
+| 쓰는 자리 | 화면 `ui\views\diagnose.py:878` · PPT `report\slides.py:1370` |
+
+**성격이 같은 자리인가 — 그렇다.** 바로 위에 `NOT_INCLUDED_NOTICE`, 바로 아래에
+`TENTATIVE_BASE_FEE_BASIS_WARNING` 이 있다. **셋 다 「요금 엔진이 낸 값을 어떻게
+읽을 것인가」** 다 — 무엇을 안 넣었나 · 기준이 잠정이다 · 어느 자료로 쟀나.
+「무엇 옆에 두었나」 가 아니라 갈래로 봐도 한 식구다. **옮기지 않는다.**
+
+**다만 결함 유형 ③ 이 하나 보인다 — 같은 갈래가 두 문으로 들어온다.**
+
+    report\slides.py:55   from kwise.report.notices import NOT_INCLUDED_NOTICE, ...
+    report\slides.py:61   from kwise.tariff import AMI_BASIS_NOTICE
+
+`report\notices.py:28` 이 `NOT_INCLUDED_NOTICE` 와 `TENTATIVE_BASE_FEE_BASIS_WARNING`
+을 `kwise.tariff` 에서 들여와 `__all__` 로 **다시 내보낸다** — 보고서 쪽이 쓰는
+문이다. `AMI_BASIS_NOTICE` 만 그 문을 안 지나서, **`slides.py` 한 파일 안에서
+같은 갈래의 상수 둘이 서로 다른 데서 들어온다.**
+
+**화면 쪽은 안 어긋난다** — `ui\views\diagnose.py:44` 가 둘을 같은 문
+(`kwise.tariff`)으로 들여온다. 어긋난 것은 보고서 쪽 하나다.
+
+**옮기지 않고 보고만 한다. 3절에서 정한다** (지시서 1절 지시).
+
+---
+
+## 지난 (2026-08-29) 64세션 — **요금 구조 챕터: AMI 계량 자료 기준 표시**
 
 ### 1절. 착수 전 상태 — **원본에서 다시 읽었다**
 
