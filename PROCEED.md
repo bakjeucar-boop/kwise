@@ -230,6 +230,78 @@ small-a2` 와 `capture_screen.py --spot 요금구조` 가 **같은 조건**이�
 죽었다**(3절에서 되살린다)는 것도 붙였다 — 이 금지가 왜 값싼 규칙이 아닌지가
 거기 있다.
 
+### 3절. 죽은 못 둘 · 제어문자 일곱 자리
+
+#### 3-1. 33세션이 지키려던 것 — **먼저 읽었다**
+
+| 못 | 무엇을 지키나 | 범위 |
+|---|---|---|
+| `tests\test_ui_screen.py:1218` `test_화면에_영문_달_이름이_없다` | 화면 vega 스펙에 **strftime 서식(`%a %b %h %B`)** 이나 **영문 달 이름**이 없다 | 3단계까지 그려진 스펙 전부 |
+| `tests\test_report.py:327` `test_excel_dates_are_iso_not_english` | Excel 글자 셀에 **영문 달 이름**이 없고, 날짜 셀 서식이 `YYYY-MM-DD HH:MM:SS` 하나다 | 시트마다 앞 40행 |
+
+**둘의 목록이 다르다** — 화면 쪽은 `May` 가 빠져 있고 Excel 쪽은 들어 있다.
+**33세션이 그렇게 두었고 이번에 손대지 않았다.** (화면은 `%[abhB]` 서식 검사가
+따로 있어 달 이름 목록에 덜 기대는 것으로 읽힌다. 추측이라 문서에 안 적는다.)
+
+#### 3-2. 고친 것 — `\b` 가 백스페이스로 박혀 있었다
+
+    (전) r"%[-_0]?[abhB]<BS>|<BS>(?:Jan|…|Dec)<BS>"
+    (후) r"%[-_0]?[abhB]\b|\b(?:Jan|…|Dec)\b"
+
+    (전) r"<BS>(?:Jan|…|Dec)<BS>"
+    (후) r"\b(?:Jan|…|Dec)\b"
+
+**되살린 규칙이 무엇을 잡는지 확인했다.**
+
+| 넣어 본 것 | 화면 못 | Excel 못 |
+|---|---|---|
+| `Jan 2024` | **잡는다** | **잡는다** |
+| `%b %d` · `%-b` | **잡는다** | 안 잡는다 (서식 검사는 화면 쪽만) |
+| `Janus` | 안 잡는다 | 안 잡는다 |
+| `2024-04-29 (Mon)` · `2024-01` · `2024년 4월` · `April` | 안 잡는다 | 안 잡는다 |
+
+**낱말 경계가 살아난 것이 `Janus` 에서 보인다** — 백스페이스였을 때는 이것도
+못 잡았고 `Jan 2024` 도 못 잡았다.
+
+#### 3-3. 일부러 깨뜨렸다 — **실패를 눈으로 봤다**
+
+규칙만 고치고 통과를 보는 것으로는 **못이 산출물까지 닿는지** 알 수 없다.
+**산출물 두 갈래에 영문 달 이름을 실제로 심었다.**
+
+| 어디에 심었나 | 시험이 낸 말 |
+|---|---|
+| Excel 요약 시트 행 이름 (`report\excel.py` — 「기본요금」 → 「기본요금 Jan 2024」) | `AssertionError: 요약!B13` |
+| 화면 월별 최대수요 차트 y축 제목 (`ui\charts.py` — 「최대수요 (kW)」 → 「최대수요 Jan (kW)」) | `AssertionError: <re.Match object; span=(641, 644), match='Jan'>` |
+
+**둘 다 자리를 짚어 준다** — Excel 은 시트와 셀 좌표로, 화면은 스펙 안 위치로.
+**되돌린 뒤 `git diff` 에 `excel.py`·`charts.py` 가 없다.**
+
+#### 3-4. 제어문자 — **일곱 자리를 자리마다 적고 고쳤다**
+
+| 자리 | 박혀 있던 것 | 있어야 할 것 |
+|---|---|---|
+| `tests\test_ui_screen.py:1218` | U+0008 ×3 | `\b` (낱말 경계) |
+| `tests\test_report.py:327` | U+0008 ×2 | `\b` (낱말 경계) |
+| `src\kwise\measures\ess.py:104` | `data`+U+0007+`ssumptions.json` | `data\assumptions.json` |
+| `docs\REQUIREMENTS_kwise.md:1534` | `tools`+U+0008+`uild_docs.py` | `tools\build_docs.py` |
+| `docs\TECHNICAL.md:824` | `tools`+U+000C+`it_ess_cost.py` | `tools\fit_ess_cost.py` |
+| `docs\TECHNICAL.md:924` | `data`+U+0007+`ssumptions.json` | `data\assumptions.json` |
+| `PROCEED.md` 2자리 | `report`+U+000C+`igures.py` · `tools`+U+000C+`it_ess_cost.py` | `report\figures.py` · `tools\fit_ess_cost.py` |
+
+**전부 같은 뿌리다** — `\a`(BEL) · `\b`(BS) · `\f`(FF). 경로와 정규식의 백슬래시가
+이스케이프로 읽힌 것이다. **한 자리도 짐작으로 고치지 않았다** — 박힌 문자열과
+바꿀 문자열을 짝으로 적고, 예상한 자리 수와 맞을 때만 바꾸게 했다.
+
+**`data\source\기본공급약관.txt` 등 약관·규칙 원문은 건드리지 않았다.**
+그 U+000C 1,272곳은 PDF 쪽 구분이라 정상이다.
+
+#### 3-5. 다시 훑었다 — **남은 것 0**
+
+**`splitlines()` 로 세지 않았다.** 그것은 U+000C 를 줄바꿈으로 삼켜 적게 센다 —
+65세션이 그것에 걸려 일곱을 다섯으로 셌다. **문자 자리로 훑는다.**
+
+    남은 자리 0곳 · 약관 원문에서 건너뛴 것 1,272곳(정상)
+
 ---
 
 ## 지난 (2026-08-29) 65세션 — **화면 여는 절차를 코드로 · 문장에 못 박기**
@@ -2563,7 +2635,7 @@ Windows 인 것은 **개발과 성능 측정**이지 프로젝트가 아니다.
 | **각주를 잇는 것은 한 자리뿐이다** — 장은 문장 목록만 넘기고, 표식(`※`)과 구분 기호는 그 함수가 정한다 | `report
 arrative.py` — `note_line` · `NOTE_MARK` · `NOTE_JOIN` (1·2절) |
 | **지표 셋의 자리는 수단 장 전부가 함께 쓴다. 한 장의 사정으로 옮기지 않는다** — 여백보다 위계가 먼저다 | `report\slides.py` — `_measure_stats_top` (9-5 판정 · 10-4 에 규약으로) |
-| **그림 굽기 실패를 삼키지 않는다** — 폴백은 그대로 두고 어느 수단·어느 그림·무슨 예외였는지 통로 하나로 태운다 | `reportigures.py` — `note_figure_failure` · `FigureFailureCollector` (11절) |
+| **그림 굽기 실패를 삼키지 않는다** — 폴백은 그대로 두고 어느 수단·어느 그림·무슨 예외였는지 통로 하나로 태운다 | `report\figures.py` — `note_figure_failure` · `FigureFailureCollector` (11절) |
 | **덱 라벨이 스스로 말한다** — 자료·계약·장 수·장 수가 갈리는 까닭·장 차례, 그리고 「우연히 같다」 | `tools
 ender_deck.py` — `label_text` (9-1 · 10-2 · 11-4) |
 
@@ -12429,7 +12501,7 @@ ESS 단가 재설계도 오늘 안에 들어갔다.
       옥외 컨테이너·소방·공조가 빠진 **장치비용**이고 설치공사는 별도라, 우리
       회귀(옥외 기준)의 관급 설비비와 같은 층위다. `category="catalog"` 로 두고
       표에만 싣는다. 사례가 둘 이상 모이면 `data\ess_cost_cases.json` 에 넣고
-      `toolsit_ess_cost.py` 를 다시 돌린다
+      `tools\fit_ess_cost.py` 를 다시 돌린다
 
 ### 약관 조문 확인이 필요한 것
 

@@ -1215,7 +1215,7 @@ def test_화면에_영문_달_이름이_없다(stage3: AppTest) -> None:
     import json
     import re
 
-    english = re.compile(r"%[-_0]?[abhB]|(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)")
+    english = re.compile(r"%[-_0]?[abhB]\b|\b(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b")
     for spec in _rendered_specs(stage3):
         rendered = json.dumps(spec, ensure_ascii=False)
         # 자료 값(ISO 날짜)은 영어가 아니다. 서식 문자와 달 이름만 본다.

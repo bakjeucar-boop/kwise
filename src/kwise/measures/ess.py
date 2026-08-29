@@ -101,7 +101,7 @@ __all__ = [
     "viable_discharge_hours",
 ]
 
-# 값은 ``datassumptions.json`` 에 있다 (요구사항서 12장). 판단값이다.
+# 값은 ``data\assumptions.json`` 에 있다 (요구사항서 12장). 판단값이다.
 
 
 def default_round_trip() -> float:

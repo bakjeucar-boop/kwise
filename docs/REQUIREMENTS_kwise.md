@@ -1531,7 +1531,7 @@ un_benchmark.py` 가 샘플 한 벌로 파이프라인 전
 | `MANUAL.md` | 사내 설계·영업 담당자 | **화면이 바뀔 때** |
 
 **md 가 원본이고 html 은 생성물이다.** 두 벌을 손으로 유지하면 반드시 어긋난다.
-`toolsuild_docs.py` 로 변환한다. docx 는 만들지 않는다.
+`tools\build_docs.py` 로 변환한다. docx 는 만들지 않는다.
 
 ### 13.1 중복 방지
 

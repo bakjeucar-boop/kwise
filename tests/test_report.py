@@ -324,7 +324,7 @@ def test_excel_dates_are_iso_not_english(sample_sections: ReportSections, tmp_pa
     path = export_report(sample_sections, output_dir=tmp_path)
     workbook = load_workbook(path, read_only=True)
     try:
-        english = re.compile(r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)")
+        english = re.compile(r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b")
         formats: set[str] = set()
         for name in workbook.sheetnames:
             for row in workbook[name].iter_rows(max_row=40):
