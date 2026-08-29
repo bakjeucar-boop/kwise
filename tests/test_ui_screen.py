@@ -4241,3 +4241,84 @@ def test_선택요금_전환은_최적_그대로다() -> None:
     ]
     assert '"최적"' in body, "선택요금 표식이 사라졌다"
     assert hasattr(frames, "tariff_option_frame")
+
+
+# ======================================================== AMI 계량 자료 기준 (64·65세션)
+
+
+#: `AMI_BASIS_NOTICE` 를 **쓰는** 자리. 정의·재수출은 세지 않는다.
+_AMI_ALLOWED_USERS: dict[str, str] = {
+    "ui/views/diagnose.py": "화면 — 1단계 「현재 요금 구조」 지표 넷 아래",
+    "report/slides.py": "PPT — 「현재 요금 구조」 장 각주 둘째 줄",
+}
+
+#: 그 문장에 **쓰지 않기로 한 말** (64세션 3절).
+#:
+#:     서비스 이름   도구는 올린 파일의 출처를 모른다
+#:     원인          62세션이 가설 일곱을 죽이고도 못 찾았다. 현상만 적는다
+_AMI_FORBIDDEN = ("파워플래너", "한전ON", "사이버지점", "통신", "누락", "지연")
+
+
+def _ami_users() -> dict[str, list[int]]:
+    """상수를 **쓰는** 자리를 파일별 줄 번호로 모은다.
+
+    **글자를 훑지 않고 AST 로 센다.** 훑으면 주석·독스트링·``__all__`` 의 이름과
+    진짜 쓰는 자리를 못 가른다 — 이 시험을 쓰면서 실제로 걸렸다. AST 는 이름
+    참조(:class:`ast.Name`)만 보므로 **지나가기만 하는 자리가 저절로 빠진다**:
+
+        import 줄        :class:`ast.alias` 라 이름 참조가 아니다
+        ``__all__``      문자열 상수라 이름 참조가 아니다
+        주석·독스트링    애초에 나무에 없다
+
+    정의한 곳(`tariff\\engine.py`)과 내보내기(`tariff\\__init__.py`)는 폴더째 뺀다.
+    """
+    root = Path("src") / "kwise"
+    home = root / "tariff"
+    found: dict[str, list[int]] = {}
+    for path in sorted(root.rglob("*.py")):
+        if home in path.parents:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        lines = [
+            node.lineno
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and node.id == "AMI_BASIS_NOTICE"
+        ]
+        if lines:
+            found[path.relative_to(root).as_posix()] = sorted(lines)
+    return found
+
+
+def test_AMI_기준_문장은_화면_한_자리_PPT_한_자리다() -> None:
+    """**한 자리에 한 번이다** (64세션 3절).
+
+    요금적용전력은 화면 스물세 자리, 기본요금은 마흔두 자리에 나온다 (64세션 2절).
+    툴팁으로 퍼뜨리면 그 전부가 후보가 되고, 늘어난 것을 아무도 못 센다.
+    **자리를 늘리려면 이 시험을 먼저 고쳐야 한다** — 그 자리에서 한 번 더 생각하게
+    하는 것이 이 못의 목적이다.
+    """
+    users = _ami_users()
+    assert set(users) == set(_AMI_ALLOWED_USERS), (
+        "AMI 기준 문장을 쓰는 자리가 달라졌습니다. "
+        f"지금 {sorted(users)} / 정한 것 {sorted(_AMI_ALLOWED_USERS)}"
+    )
+    for name, lines in users.items():
+        assert len(lines) == 1, (
+            f"{name} 안에서 {len(lines)}번 씁니다 (줄 {lines}) — {_AMI_ALLOWED_USERS[name]}"
+        )
+
+
+def test_AMI_기준_문장에_원인도_서비스_이름도_숫자도_없다() -> None:
+    """**현상만 적는다** (64세션 3절).
+
+    원인은 모른다 — 62세션이 경계 28 × 창 4 × 시간대 2 = 224 조합을 훑고도
+    못 갈랐고, 차이가 양방향이라 누락·지연으로 설명되지 않는다. 서비스 이름은
+    도구가 알 수 없는 것이고(올린 파일의 출처를 모른다), 숫자는 한 건물의 값이라
+    일반화하면 안 된다. 배경과 추정은 **매뉴얼**이 근거 수준과 함께 받는다.
+    """
+    from kwise.tariff import AMI_BASIS_NOTICE
+
+    for word in _AMI_FORBIDDEN:
+        assert word not in AMI_BASIS_NOTICE, f"「{word}」 는 화면·PPT 에 쓰지 않기로 했습니다."
+    assert not re.search(r"\d", AMI_BASIS_NOTICE), "한 건물의 수치를 일반화하지 않습니다."
+    assert "AMI" in AMI_BASIS_NOTICE, "괄호 풀이 없이 「AMI」 를 그대로 쓴다."

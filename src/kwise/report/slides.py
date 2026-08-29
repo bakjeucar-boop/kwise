@@ -52,13 +52,13 @@ from kwise.report.design import DesignGuide, load_design_guide
 from kwise.report.document import DocumentSections, MeasureEntry, MeasureFigure
 from kwise.report.narrative import GLOSSARY_KEYS
 from kwise.report.notices import (
+    AMI_BASIS_NOTICE,
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
     plain_text,
     rules_basis_line,
 )
 from kwise.report.worksheet import COLUMNS
-from kwise.tariff import AMI_BASIS_NOTICE
 from kwise.tariff.labels import SEASON_LABELS
 
 __all__ = [

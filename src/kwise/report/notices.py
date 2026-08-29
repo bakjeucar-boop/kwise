@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 
 __all__ = [
+    "AMI_BASIS_NOTICE",
     "CONTRACT_CHANGE_WARNING",
     "DATA_SOURCES",
     "KNOWN_LIMITS",
@@ -22,10 +23,20 @@ __all__ = [
     "rules_basis_line",
 ]
 
+# **보고서 쪽이 「반드시 싣는 문구」 를 얻는 문은 여기 하나다** (65세션 3절).
+# 정본은 요금 엔진에 있고 (`tariff\engine.py`) 이 파일이 그리로 낸다 —
+# 셋 다 「엔진이 낸 값을 어떻게 읽을 것인가」 라 같은 문으로 들어와야 한다.
+# 64세션에 `AMI_BASIS_NOTICE` 만 이 문을 지나치고 `slides.py` 가 `kwise.tariff`
+# 에서 바로 들여왔다. 한 파일 안에서 같은 갈래가 두 문으로 들어오면 다음 사람이
+# 셋째를 붙일 때 문을 아무 데나 고른다.
 from kwise import money
 from kwise.money import TRUNCATION_FOOTNOTE
 from kwise.rules import diff_from_defaults
-from kwise.tariff import NOT_INCLUDED_NOTICE, TENTATIVE_BASE_FEE_BASIS_WARNING
+from kwise.tariff import (
+    AMI_BASIS_NOTICE,
+    NOT_INCLUDED_NOTICE,
+    TENTATIVE_BASE_FEE_BASIS_WARNING,
+)
 
 #: 기준 데이터가 출고값 그대로일 때의 문구.
 RULES_UNCHANGED = "기준 데이터는 출고값 그대로입니다."
