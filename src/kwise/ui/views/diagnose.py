@@ -41,7 +41,7 @@ from kwise.quality import (
     monthly_longest_gaps,
 )
 from kwise.report import localize, narrative
-from kwise.tariff import TENTATIVE_BASE_FEE_BASIS_WARNING, TariffTable
+from kwise.tariff import AMI_BASIS_NOTICE, TENTATIVE_BASE_FEE_BASIS_WARNING, TariffTable
 from kwise.tariff.labels import SEASON_LABELS
 from kwise.ui import callout, charts
 from kwise.ui import text as fmt
@@ -868,6 +868,14 @@ def _structure_block(usage: UsageData, diagnosis: Diagnosis, building: BuildingI
         fmt.ratio_pct(base_won / total_won if total_won else None),
         help=manual_tip("charge-structure"),
     )
+    # **이 넷이 어느 자료에서 나왔는지를 여기서 한 번 적는다** (64세션 3절).
+    # 고객이 청구서와 맞춰 보는 값이 바로 위 지표 넷이라 **숫자 곁이 그 자리다**
+    # — 챕터 맨 아래 각주로 내리면 그림 둘과 도넛 넷을 지나야 나온다.
+    #
+    # **툴팁으로 두지 않는다.** 결과를 오독하게 하는 것은 화면에 남긴다는 규약
+    # (`CLAUDE.md` 「화면 문구」)에 걸리고, 툴팁은 펼쳐야 보인다.
+    # **여기 한 번뿐이다** — 같은 취지를 다른 화면·다른 수단 카드에 쓰지 않는다.
+    st.caption(AMI_BASIS_NOTICE)
     # **달마다 무엇이 달라지는지가 여기서 읽힌다** (27세션 3-2). 밑단(기본요금)이
     # 같은 높이로 이어지고 그 위 세 조각만 계절따라 움직이는 것이 이 요금제의
     # 모습이다. 33세션에 원으로 바꿨다가 **34세션에 되돌렸다** — 달의 높이를

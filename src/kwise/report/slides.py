@@ -58,6 +58,7 @@ from kwise.report.notices import (
     rules_basis_line,
 )
 from kwise.report.worksheet import COLUMNS
+from kwise.tariff import AMI_BASIS_NOTICE
 from kwise.tariff.labels import SEASON_LABELS
 
 __all__ = [
@@ -1359,11 +1360,19 @@ def _build_structure(
     top = _lead(slide, guide, narrative.structure_lead(structure), top=top)
     pattern = diagnosis.pattern if diagnosis is not None else None
     note = narrative.glossary_note(GLOSSARY_KEYS["structure"], pattern)
+    # **이 장의 값이 어느 자료에서 나왔는지를 각주 둘째 줄이 말한다** (64세션 3절).
+    # 화면은 지표 곁에 적지만 슬라이드는 지표 옆에 캡션을 놓을 자리가 없다 —
+    # 참고 한 줄이 앉는 자리가 각주이고, 용어 풀이 아래가 그 순서다
+    # (:func:`_note` — 용어 풀이가 먼저, 제도 각주가 그 아래).
+    #
+    # **줄이 하나 늘었으므로 `_note_top` 에도 같이 넘긴다** (60세션 1절).
+    # 한쪽에만 주면 각주가 두 줄로 흐르면서 그림 덩어리를 밑에서 밀어 올린다.
+    notes = (note, AMI_BASIS_NOTICE)
     gap = geometry.block_gap_in
     left_width = geometry.content_width_in * 0.56
     right_width = geometry.content_width_in - left_width - gap
     right_left = geometry.margin_in + left_width + gap
-    bottom_y = _note_top(guide, note)
+    bottom_y = _note_top(guide, *notes)
     height = bottom_y - top
 
     base_won = structure.base_won + structure.bill.total_power_factor_won
@@ -1405,7 +1414,7 @@ def _build_structure(
         width=right_width,
         height=height,
     )
-    _note(slide, guide, note)
+    _note(slide, guide, *notes)
 
 
 def _build_measure_summary(

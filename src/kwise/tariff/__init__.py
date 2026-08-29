@@ -20,6 +20,7 @@ from kwise.tariff.demand import (
     monthly_demand_basis,
 )
 from kwise.tariff.engine import (
+    AMI_BASIS_NOTICE,
     MISSING_LIMIT_RATIO,
     NOT_INCLUDED_NOTICE,
     TENTATIVE_BASE_FEE_BASIS_WARNING,
@@ -93,6 +94,7 @@ from kwise.tariff.validate import (
 )
 
 __all__ = [
+    "AMI_BASIS_NOTICE",
     "BANDS",
     "DEFAULT_COUNTRY",
     "DEFAULT_POLICY",
