@@ -165,6 +165,97 @@ playwright — **이미 있다** (`.venv\Lib\site-packages\playwright`). 깔 것
 
 **옮기지 않고 보고만 한다. 3절에서 정한다** (지시서 1절 지시).
 
+### 2절. `tools\capture_screen.py` — **화면 여는 절차를 코드로**
+
+64세션 5절이 손으로 짠 몰이를 도구로 세웠다. 이제 넷이 나란하다 —
+`render_deck.py`(PPT) · `run_casestudy.py`(판정) · `screen_audit.py`(문구) ·
+**`capture_screen.py`(화면)**.
+
+**`screen_audit.py` 와 하는 일이 다르다.** 그쪽은 `streamlit.testing` 으로 **문구를
+모으는 것**이라 글자만 보고, 이쪽은 **진짜 브라우저에 그려진 그림**을 본다 —
+잘림·겹침·자리는 그려 봐야 안다.
+
+#### 2-1. 무엇을 하나
+
+    .venv\Scripts\python.exe tools\capture_screen.py --list
+    .venv\Scripts\python.exe tools\capture_screen.py --spot 요금구조
+
+앱을 띄우고 · 사용량 파일을 올리고 · 계약 정보를 확정하고 · 지정한 자리를
+png 로 찍고 · **앱을 내린다.**
+
+| 지킨 규약 | 어떻게 |
+|---|---|
+| **하드코딩하지 않는다** | 입력 파일 · 찍을 자리 · 출력 경로 · 포트 · 창 크기를 전부 인자로 받는다 |
+| **포트를 고정하지 않는다** | 기본은 `_free_port()` 로 빈 포트를 얻는다 — 고정하면 앞 세션이 안 내린 앱과 부딪친다 |
+| **끝나면 반드시 내린다** | `finally` 안에서 `_stop_app()`. **포트가 닫혔는지 확인까지 도구가 한다** — 「앱을 내렸습니다 (포트 53045 닫힘 확인)」 를 찍는다. 안 닫히면 경고를 낸다 |
+| **요소 기준 스크롤** | `scrollIntoView({block:'start'})`. **`window.scrollTo` 가 왜 안 먹는지 주석에 남겼다** — Streamlit 은 창이 아니라 내부 컨테이너가 스크롤한다 (64세션 5절) |
+| `pathlib.Path` · `encoding=` | 경로는 전부 `Path`, 파일 읽기는 없다 (png 만 쓴다) |
+| **타임아웃** | 앱 기동 `BOOT_TIMEOUT_S=90`(넘으면 죽이고 그 사실을 말한다) · 화면 대기 `RENDER_TIMEOUT_MS=300_000` |
+| **타임스탬프 접미사** | `요금구조_20260829_2108.png` — 낡은 png 가 새것처럼 보이면 확인이 틀어진다 |
+| **`PROJECT_CACHE` 아래** | `cache_root() / "screens"`. `output\` 이 아니다 — 확인용 중간 산출물이다 |
+
+**`docs\CAPTURES.md` 와 엮지 않았다.** 매뉴얼에 캡처를 넣지 않기로 했고, 그 파일은
+시험이 읽는다 (`tests\test_docsite.py:292`). **한 글자도 안 건드렸다.**
+
+찍을 수 있는 자리는 넷이다 — `요금구조`(계약 정보 확정까지 한다) · `피크특성` ·
+`데이터품질` · `첫화면`. **`요금구조` 는 `render_deck.py` 의 `small-a2` 벌과 같은
+조건**(갑Ⅱ · 고압A · 290 kW · 선택Ⅱ)이라 **덱과 화면을 맞대 볼 수 있다.**
+
+#### 2-2. 실제로 돌렸다 — **png 를 열어 확인했다**
+
+    [요금구조] 1단계 · 진단 › 현재 요금 구조
+    앱을 내렸습니다 (포트 53045 닫힘 확인).
+      ...\cache\screens\요금구조_20260829_2108.png (120 KB)
+    [첫화면] 앱 첫 화면 (파일을 올리기 전)
+    앱을 내렸습니다 (포트 55043 닫힘 확인).
+      ...\cache\screens\첫화면_20260829_2108.png (87 KB)
+
+**두 자리 51초.** 열어 보니 64세션 5절이 손으로 본 그 화면이다 — 「현재 요금 구조」
+지표 넷(1,245만원 · 4,960만원 · 6,205만원 · 20.1%) 아래에 AMI 문장 한 줄,
+잘림·겹침 없음. 첫화면도 계약 정보 네 칸과 업로더가 그대로 나온다.
+
+**앱이 내려간 것을 도구 밖에서도 확인했다** — 포트 LISTENING 0건.
+
+#### 2-3. 곁가지 — **성공했는데 시끄러웠다. 고쳤다**
+
+처음 판은 브라우저 바이너리가 있는지 **떠보려고 드라이버를 띄웠다 내렸다.**
+그랬더니 **성공한 실행에서도** `Task was destroyed but it is pending!` 와
+`TargetClosedError` 가 섞여 나왔다 — 실패처럼 보인다.
+
+**떠보기 위해 켜지 않기로 했다.** 꾸러미가 있는지만 보고, 바이너리는
+`capture()` 가 **실제로 띄울 때** 걸려서 같은 말을 낸다. 고친 뒤 출력이 깨끗하다.
+
+#### 2-4. 없을 때 무슨 말이 나오나 — **둘 다 확인했다**
+
+**꾸러미가 없을 때** (import 를 막아 확인) —
+
+    playwright 가 없습니다. 개발용 선택 의존성입니다 —
+        .venv\Scripts\python.exe -m pip install -e ".[dev]"
+        .venv\Scripts\python.exe -m playwright install chromium
+
+**바이너리만 없을 때** (`PLAYWRIGHT_BROWSERS_PATH` 를 빈 곳으로 돌려 실물 확인) —
+playwright 자신의 안내 상자 뒤에 우리 한 줄이 붙는다.
+
+    크로미움을 못 띄웠습니다 (...Please run the following command...).
+        .venv\Scripts\python.exe -m playwright install chromium
+
+**종료 코드 1** 이고, **그 실패 경로에서도 앱을 내렸다** — 「앱을 내렸습니다
+(포트 53032 닫힘 확인)」 가 찍혔다. 조용히 실패하지 않는다.
+
+#### 2-5. 의존성 선언 — **앱 의존성이 아니다**
+
+`pyproject.toml` `[project.optional-dependencies].dev` 에 `playwright>=1.4`.
+
+| 확인 | 결과 |
+|---|---|
+| `[project.dependencies]` 안 | **없다** (tomllib 로 읽어 확인) |
+| `.dev` 안 | `playwright>=1.4` |
+| 배포 `requirements.txt` | **없다** |
+
+**Streamlit Cloud 가 읽는 자리에 넣지 않는다** — 앱 실행에 필요한 것이 아니다.
+넣는 이유는 **두 PC** 다. 선언이 없으면 다른 PC 에서 같은 대화를 다시 한다.
+**브라우저 바이너리는 pip 가 안 받아 준다** — 그래서 2-4 처럼 도구가 말한다.
+
 ---
 
 ## 지난 (2026-08-29) 64세션 — **요금 구조 챕터: AMI 계량 자료 기준 표시**

@@ -50,6 +50,14 @@ dev = [
     # **판을 못박는다.** 배분 방식(`--dist`)의 동작이 판마다 달라지면
     # 한 PC 에서만 시험이 갈라진다 — mypy 를 못박은 것과 같은 이유다.
     "pytest-xdist>=3.8,<4",
+    # 65세션 — `tools\capture_screen.py` 가 화면을 진짜 브라우저로 열어 찍는다.
+    # **앱이 쓰는 것이 아니므로 `[project.dependencies]` 에 두지 않는다** —
+    # 그쪽은 Streamlit Cloud 가 읽어 배포에 깔린다. 확인용 도구일 뿐이다.
+    #
+    # **꾸러미만으로는 안 돈다.** 브라우저 바이너리를 따로 받아야 한다 —
+    # `.venv\Scripts\python.exe -m playwright install chromium`.
+    # 도구가 없을 때 그 줄을 그대로 낸다 (조용히 실패하지 않게).
+    "playwright>=1.4",
 ]
 
 [tool.setuptools]
