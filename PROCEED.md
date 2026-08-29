@@ -74,7 +74,7 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 | 다음 작업 | **매뉴얼 — 요금적용전력이 청구서와 다를 수 있는 건** (64세션이 박아 둔 항목, 아래 6절). 화면·PPT 표시는 **64세션에 끝났다** — 원인 추정과 근거 수준, 그리고 64세션 4절이 남긴 **「매뉴얼 이송 대기」 여섯**을 매뉴얼이 받는다. 그 뒤가 **Excel 요금 구조 표시 여부 판단** (64세션 2절이 조사만 해 두었다 — 전용 시트가 없어 요약·진단·명세 중 어디에 적을지 정해야 한다). **캡처 아홉 장은 진행표에서 지웠다** — 매뉴얼에 화면 캡처를 넣지 않기로 했다 (64세션 6절) |
 | 공휴일 판정 | **라이브러리 + 사람.** 근로자의 날은 2026년부터 자동, 임시공휴일은 DR 판정에서 사용자가 뺀다 (29세션) |
 | 배포 | **동작 중** — github.com/bakjeucar-boop/kwise → Streamlit Cloud. 건물명부터 보고서 내려받기까지 확인 |
-| 테스트 상태 | pytest **1,493 passed** / **`ruff check .`** pass (`tools\` 포함) / **`mypy src`** pass (strict, 107 files). **소요는 PC 마다 다르다** — **2번 PC** `-n 4 --dist load` **9분 22초** (65세션 실측) · **1번 PC 모름.** **2번 PC 는 Bash 상한 10분까지 38초밖에 없어 갈래별로 나눠 돌린다** (`CLAUDE.md` 9항 · 아래 「pytest 분할 실행」) |
+| 테스트 상태 | pytest **1,493 passed** / **`ruff check .`** pass (`tools\` 포함) / **`mypy src`** pass (strict, 107 files). **`-n` 에 수를 박지 않는다 — `-n auto --dist load`** (66세션). **소요는 PC 마다 다르다** — **2번 PC** `auto` → 6 · **7분 45초** (66세션 실측 · `-n 4` 로는 9분 22초였다) · **1번 PC 모름.** 상한 10분까지 **2분 15초** 남아 앞단 전체가 기본이다 (`CLAUDE.md` 9항) |
 | 화면 감사 | `tools\screen_audit.py` — 실주행 문구 **973건**. 971 → 972 (57세션) → 973 (59세션) → 973 (60세션) → **973 (61세션 — 변화 없음.** 문구 셋을 사실에 맞추면서 문장 수는 오히려 줄었다**)**. 규칙 위반 **0건** · 예산 전 자리 한도 안 |
 | 화면 번호 | **화면은 1~6, 문서·산출물은 7.1~7.6** (41세션에 7.7 이 빠졌다). 낼 때만 `ui.labels.measure_title` 이 바꾼다 |
 | 확실성·감도 | **확실성은 어디에도 없다** (28세션 화면 · **53세션 산출물**). 계산(`Certainty`)과 매뉴얼 설명은 그대로 — 되살릴 때 열만 되돌리면 된다. 감도는 Excel 에 있다 |
@@ -177,6 +177,58 @@ small-a2` 와 `capture_screen.py --spot 요금구조` 가 **같은 조건**이�
 
 **③ 7절 도구 목록에 `capture_screen.py` 를 더했다.** 65세션이
 `collaboration.md` 에만 넣어 두 목록이 갈려 있었다 (결함 유형 ①).
+
+### 2절. 규약 둘 — 앞쪽에 둔다
+
+#### 2-1. pytest 를 `-n auto` 로
+
+**`-n` 에 수를 박지 않는다.** 65세션이 2번 PC(6코어)에서 `-n 4` 는 CPU 절반,
+`-n 6` 은 88.5% 를 쓴다는 것을 쟀다 — **두 코어가 놀고 있었다.** 그렇다고
+`-n 6` 을 박으면 **1번 PC 에서 틀린 수가 된다.** 지금 고치는 병이 「PC 를 빼고
+적은 수」인데 같은 병을 다시 앓는다.
+
+**이 PC 에서 `auto` 가 무엇을 고르는지 확인했다.**
+
+    psutil 없음 — xdist auto 는 os.cpu_count() 를 쓴다
+    os.cpu_count() = 6
+
+| 설정 | 건수 | 소요 | 언제 |
+|---|---|---|---|
+| `-n 4 --dist load` | 1,493 | 9분 22초 | 65세션 |
+| **`-n auto --dist load`** (`auto` → **6**) | 1,493 | **7분 45초** | **66세션 (오늘)** |
+
+**17% 빠르고 실패 없다.** `--dist load` 는 그대로 뒀다.
+**1번 PC 칸은 「모름 · 재면 이 칸을 채운다 — `auto` 가 고른 수도 함께 적는다」**
+로 비워 뒀다.
+
+**상한 갈림길이 저절로 풀렸다.** `-n 4` 때는 Bash 상한 10분까지 **38초**라
+65세션이 「2번 PC 에서는 갈래로 나눈다」 고 적었는데, `-n auto` 로 **2분 15초**가
+남아 **앞단 전체가 다시 기본**이 된다. 갈래는 「고친 자리만 빨리 확인할 때」 로
+돌아간다.
+
+**옛 판단 하나를 뒤집었다.** 「pytest 분할 실행」 절이 「`-n auto` 는 이 PC 에서
+권하지 않는다 — 9%만 빠르고 여유 메모리가 절반이 된다」 고 적고 있었다(43세션).
+**실측이 17% 빠르므로 그 문장을 그대로 둘 수 없다.** 다만 **메모리는 이번에
+다시 재지 않았다** — 옛 관찰이 그대로일 수 있다는 것을 그 자리에 적었다.
+
+고친 자리 — `CLAUDE.md` 9항 · `PROCEED.md` 「현재 상태」 테스트 상태 ·
+「pytest 분할 실행」 절(본문·갈래 넷 명령 넷·마무리). 갈래 표는 43세션 값이라
+**그 사실을 표 머리에 밝혔다** (다시 재지 않았다).
+
+#### 2-2. heredoc 금지를 규약에 박았다
+
+65세션에 **두 번 물렸고 그중 한 번은 조용히 안 먹었다.** `CLAUDE.md` 「금지」 에
+한 줄로 넣었다 —
+
+> **heredoc 으로 파이썬을 태워 파일을 고치지 않는다** — Windows 경로나 정규식이
+> 든 치환이면 특히 그렇다. **파일 수정은 편집 도구를 쓴다.**
+> 셸을 지나며 `\\` 가 한 개로 뭉개져 파이썬이 그것을 이스케이프로 읽는다.
+
+까닭과 실제로 당한 자리를 함께 적었다 — `"tools\\run_casestudy.py"` 가
+`tools`+CR+`un_...` 이 되어 **치환이 오류 없이 안 먹었고**, `\\b` 가
+**백스페이스로 박혀** `PROCEED.md` 를 오염시켰다. **33세션에 같은 일로 시험 둘이
+죽었다**(3절에서 되살린다)는 것도 붙였다 — 이 금지가 왜 값싼 규칙이 아닌지가
+거기 있다.
 
 ---
 
@@ -5834,17 +5886,27 @@ RAM 16 GB 이상인 PC 라면 `-n auto` 가 낫다. **판단 기준은 코어가
 
 ## pytest 분할 실행
 
-**기본은 병렬이다.** `-n 4 --dist load` — 43세션에 **1,358건이 5.3분**이었다 (순차 12.5분). **65세션 재측정은 1,493건 9분 22초다 (2번 PC).** 건수가 135건 늘고 소요는 두 배 가까이 됐다. **1번 PC 값은 모른다.**
+**기본은 병렬이고 `-n` 에 수를 박지 않는다** (66세션). 43세션에 `-n 4` 로
+**1,358건이 5.3분**이었다 (순차 12.5분). 그 뒤 건수가 늘고 PC 가 갈리면서 수가
+맞지 않게 됐다 — **2번 PC 실측은 `-n 4` 로 1,493건 9분 22초(65세션),
+`-n auto` 로 7분 45초(66세션)다.** `auto` 는 그 PC 의 `os.cpu_count()` 를
+쓰고 이 PC 에서는 **6** 을 골랐다. **1번 PC 값은 모른다.**
 
-> **2번 PC 에서는 전체 실행이 상한(10분)에 붙었다 — 38초 남는다.**
-> `CLAUDE.md` 9항의 갈림길(8분)을 이미 넘겼으므로 **이 PC 에서는 아래 갈래가**
-> **기본이다.** 갈래 소요도 43세션 값이라 지금은 더 길 것이다 — 재면 고친다.
+    .venv\Scripts\python.exe -m pytest -n auto --dist load
 
-    .venv\Scripts\python.exe -m pytest -n 4 --dist load
+> **2번 PC 는 `-n auto` 로 상한(10분) 안쪽에 다시 들어왔다** — 2분 15초 남는다.
+> `-n 4` 시절에는 38초였다. `CLAUDE.md` 9항의 갈림길(8분)을 아직 안 넘겼으므로
+> **아래 갈래는 「고친 자리만 빨리 확인할 때」 로 돌아간다.**
+> 갈래 소요는 43세션 값이라 지금은 더 길 것이다 — 재면 고친다.
 
 **`--dist loadfile` 은 쓰지 않는다** — 파일 단위로 배분해서 무거운 단일 파일
-(`test_ui_screen.py`)을 못 쪼갠다. **`-n auto` 도 이 PC 에서는 권하지 않는다** —
-9%만 빠르고 여유 메모리가 절반이 된다 (위 「시험이 왜 느린가」 6-4).
+(`test_ui_screen.py`)을 못 쪼갠다.
+
+> **`-n auto` 를 권하지 않던 옛 판단을 뒤집었다** (66세션). 43세션은 「9%만
+> 빠르고 여유 메모리가 절반이 된다」 고 적었는데(위 「시험이 왜 느린가」 6-4),
+> **65·66세션 실측은 17% 빠르다** (9분 22초 → 7분 45초). CPU 점유도 절반
+> 미만에서 88.5% 로 오른다. **다만 메모리는 이번에 다시 재지 않았다** —
+> 옛 관찰이 그대로일 수 있다. 재면 이 자리에 적는다.
 
 **나눠 돌리는 것은 그대로 살려 둔다** (`CLAUDE.md` 「백그라운드 실행」 7).
 절반이 먼저 나오고, 중단돼도 어디까지 됐는지 안다. 고친 자리에 해당하는 갈래
@@ -5862,7 +5924,9 @@ RAM 16 GB 이상인 PC 라면 `-n auto` 가 낫다. **판단 기준은 코어가
 
 ### 갈래 넷
 
-| 갈래 | 대상 | 건수 | 순차 | `-n 4` |
+**아래 갈래 표는 43세션 값(`-n 4`)이다. 66세션에 다시 재지 않았다.**
+
+| 갈래 | 대상 | 건수 | 순차 | `-n 4` (43세션) |
 |---|---|---:|---:|---:|
 | **① 엔진** | 아래 23파일 | 858 | 174초 | **72초** |
 | **② 산출물** | `test_casestudy` `test_slides` `test_document` `test_report` | 159 | 177초 | **100초** |
@@ -5870,21 +5934,21 @@ RAM 16 GB 이상인 PC 라면 `-n auto` 가 낫다. **판단 기준은 코어가
 | **④ 화면** | `test_ui_screen` `test_ui` | 284 | 242초 | **144초** |
 
     # ① 엔진 — 평소엔 이것만 돌린다. 코드 고치면 여기서 먼저 깨진다
-    .venv\Scripts\python.exe -m pytest tests -n 4 --dist load --ignore=tests\test_ui_screen.py --ignore=tests\test_ui.py --ignore=tests\test_integration.py --ignore=tests\test_casestudy.py --ignore=tests\test_slides.py --ignore=tests\test_document.py --ignore=tests\test_report.py
+    .venv\Scripts\python.exe -m pytest tests -n auto --dist load --ignore=tests\test_ui_screen.py --ignore=tests\test_ui.py --ignore=tests\test_integration.py --ignore=tests\test_casestudy.py --ignore=tests\test_slides.py --ignore=tests\test_document.py --ignore=tests\test_report.py
 
     # ② 산출물 (보고서·문서·슬라이드·케이스)
-    .venv\Scripts\python.exe -m pytest -n 4 --dist load tests\test_casestudy.py tests\test_slides.py tests\test_document.py tests\test_report.py
+    .venv\Scripts\python.exe -m pytest -n auto --dist load tests\test_casestudy.py tests\test_slides.py tests\test_document.py tests\test_report.py
 
     # ③ 통합
-    .venv\Scripts\python.exe -m pytest -n 4 --dist load tests\test_integration.py
+    .venv\Scripts\python.exe -m pytest -n auto --dist load tests\test_integration.py
 
     # ④ 화면
-    .venv\Scripts\python.exe -m pytest -n 4 --dist load tests\test_ui_screen.py tests\test_ui.py
+    .venv\Scripts\python.exe -m pytest -n auto --dist load tests\test_ui_screen.py tests\test_ui.py
 
-**커밋 전에는 전체를 한 번 돌린다.** 43세션에는 5.3분이라 나눌 까닭이
-없었는데 **65세션 실측이 9분 22초(2번 PC)라 다시 생겼다** — 상한까지 38초다.
-**2번 PC 에서는 갈래 넷을 이어 돌리는 것이 전체 한 번보다 안전하다.**
-중간에 끊겨도 어디까지 됐는지 알고, 갈래마다 상한에 한참 못 미친다.
+**커밋 전에는 전체를 한 번 돌린다.** 43세션에는 5.3분이라 나눌 까닭이 없었고,
+65세션에 `-n 4` 로 9분 22초까지 늘어 다시 생겼다가, **66세션에 `-n auto` 로
+7분 45초가 되어 다시 없어졌다 (2번 PC).** 상한까지 2분 15초다.
+**갈래는 「고친 자리만 빨리 확인할 때」 쓴다.**
 1번 PC 소요는 모르므로 그 PC 에서는 **먼저 한 번 재고 정한다.**
 
 ### 파일별 실측 (42세션, 2번 PC · 파일마다 따로 실행)
