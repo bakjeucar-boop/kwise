@@ -20,11 +20,15 @@ import datetime as dt
 import functools
 import inspect
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from streamlit.testing.v1 import AppTest
+
+if TYPE_CHECKING:  # 시험이 무거워지지 않게 형만 빌린다 (70세션 2절)
+    from kwise.measures.solar import CapacityVerdict, SolarCurve
 
 from kwise.compare import CombinationSpec
 from kwise.io import load_usage
@@ -519,12 +523,22 @@ TEST_PROVINCE = "강원도"
 TEST_REGION = "강원도/강릉시"
 
 
-def _running(*, option: str = "II", contract_kw: float = 6_000.0, **state: object) -> AppTest:
+def _running(
+    *, option: str = "II", contract_kw: float = 6_000.0, on: Iterable[str] = (), **state: object
+) -> AppTest:
     """실제 파일을 올린 상태로 앱을 띄운다.
 
     **화면 코드는 순수 모듈 시험으로 다 잡히지 않는다.** 배치를 바꾸다 이름 하나를
     빠뜨리면 여기서만 드러난다.
+
+    Args:
+        on: 켤 수단의 열쇠. 예전에는 부르는 쪽이
+            ``**{f"measure_on_{key}": True for key in keys}`` 를 풀어 넣었는데,
+            **사전을 풀면 mypy 가 그것을 `option`·`contract_kw` 자리에도 얹어 볼
+            수 있다고 본다** (70세션 2절). 열쇠 이름은 실행 때 정해지므로 형으로는
+            가릴 수 없다 — 짓는 일을 이 안으로 들여 부르는 쪽을 짧게 했다.
     """
+    state = {**{f"measure_on_{key}": True for key in on}, **state}
     running = AppTest.from_file(str(APP.resolve()), default_timeout=600)
     running.session_state["upload_bytes"] = SAMPLE.read_bytes()
     running.session_state["upload_name"] = SAMPLE.name
@@ -1326,7 +1340,8 @@ def test_화면에_계시별_원_넷이_그려진다(app: AppTest) -> None:
     )
 
     # 계시별 구성에 **탭이 없다.** 계절 탭은 시간대별 평균 부하 하나뿐이다.
-    labels = [str(item.label) for item in app.get("tab")]
+    # `get("tab")` 은 `Element | Block` 을 낸다 — 라벨은 `Element` 쪽에만 있다.
+    labels = [str(getattr(item, "label", "")) for item in app.get("tab")]
     assert labels.count("여름") == 1, labels
 
 
@@ -1852,9 +1867,10 @@ def test_체크만_바꾸면_계산이_돌지_않는다(monkeypatch: pytest.Monk
 
         return inner
 
-    monkeypatch.setattr(
-        cache, "compare_combinations", counted("compare", cache.compare_combinations)
-    )
+    # `cache` 는 `compare_combinations` 를 들여와 쓸 뿐 내보내지 않는다 —
+    # 갈아 끼우는 자리는 그 모듈의 이름이므로 글로 짚는다 (70세션 2절).
+    original = cache.compare_combinations  # type: ignore[attr-defined]
+    monkeypatch.setattr(cache, "compare_combinations", counted("compare", original))
     monkeypatch.setattr(
         combo, "evaluate_combination", counted("evaluate", combo.evaluate_combination)
     )
@@ -2114,7 +2130,7 @@ def test_같은_지문이_화면에_두_번_나오지_않는다() -> None:
     """
     from collections import Counter
 
-    screen = _running(**{f"measure_on_{key}": True for key in INDEPENDENT_MEASURES})
+    screen = _running(on=INDEPENDENT_MEASURES)
     assert not screen.exception, screen.exception
     lines = [
         str(item.value).strip()
@@ -2230,12 +2246,12 @@ def test_축이_0에서_시작하지_않는다는_문구가_없다() -> None:
 
 
 @pytest.fixture(scope="module")
-def budget_sections() -> list[object]:
+def budget_sections() -> list[Any]:
     """**앱을 한 번만 띄운다.** 수단 일곱을 다 켠 실행이라 무겁다 (ESS 곡선)."""
     import sys
 
     sys.path.insert(0, str(Path("tools").resolve()))
-    from screen_budget import measure  # type: ignore[import-not-found]
+    from screen_budget import measure
 
     return measure()
 
@@ -2245,7 +2261,7 @@ def test_예산_한도가_기준_데이터에서_온다() -> None:
     import sys
 
     sys.path.insert(0, str(Path("tools").resolve()))
-    from screen_budget import screen_budget  # type: ignore[import-not-found]
+    from screen_budget import screen_budget
 
     from kwise.rules import assumption
 
@@ -2254,7 +2270,7 @@ def test_예산_한도가_기준_데이터에서_온다() -> None:
     assert budget.notices == int(assumption("ui.notice_budget")) == 3
 
 
-def test_카드와_절이_예산을_지킨다(budget_sections: list[object]) -> None:
+def test_카드와_절이_예산을_지킨다(budget_sections: list[Any]) -> None:
     r"""본문 3줄 · 확인사항 3항목 (22세션 1절).
 
     **넘으면 옮긴다 — 한도를 고치지 않는다.** 한도를 넘었을 때 세는 규칙이나
@@ -2263,7 +2279,7 @@ def test_카드와_절이_예산을_지킨다(budget_sections: list[object]) -> 
     도구(``tools\screen_budget.py``)와 **같은 함수**를 쓴다. 잣대가 갈리면
     도구가 통과시킨 것이 여기서 깨진다.
     """
-    from screen_budget import over_budget  # type: ignore[import-not-found]
+    from screen_budget import over_budget
 
     assert len(budget_sections) >= 15, "화면을 못 읽었습니다. 측정기가 깨졌습니다."
     assert over_budget(budget_sections) == []
@@ -2565,13 +2581,13 @@ def _audit() -> Any:
     import sys
 
     sys.path.insert(0, str(Path("tools").resolve()))
-    import screen_audit  # type: ignore[import-not-found]
+    import screen_audit
 
     return screen_audit
 
 
 @pytest.fixture(scope="module")
-def screen_lines() -> tuple[object, ...]:
+def screen_lines() -> tuple[Any, ...]:
     """수단 일곱을 켠 화면 한 벌의 문구 전부. **앱을 한 번만 띄운다.**
 
     태양광 입력은 넣지 않는다 — 시험은 기상 사전 취득분에서 격리되어 있어
@@ -2581,14 +2597,14 @@ def screen_lines() -> tuple[object, ...]:
     return _audit().collect(solar=False)
 
 
-def test_화면_문구를_실주행으로_모은다(screen_lines: tuple[object, ...]) -> None:
+def test_화면_문구를_실주행으로_모은다(screen_lines: tuple[Any, ...]) -> None:
     """수집기가 깨지면 아래 시험이 **조용히 통과한다.** 먼저 잡는다."""
     slots = {getattr(item, "slot", "") for item in screen_lines}
     assert len(screen_lines) >= 300, "화면 문구를 못 모았습니다. 수집기가 깨졌습니다."
     assert {"본문", "툴팁", "라벨", "지표", "표"} <= slots, slots
 
 
-def test_툴팁까지_escape_한다(screen_lines: tuple[object, ...]) -> None:
+def test_툴팁까지_escape_한다(screen_lines: tuple[Any, ...]) -> None:
     """**렌더 직전 문자열에 맨 물결표가 없다** (25세션 2절).
 
     ``st.caption`` 만 escape 하고 그 옆 ``help=`` 를 빠뜨리면 물음표 안에서
@@ -2603,7 +2619,7 @@ def test_툴팁까지_escape_한다(screen_lines: tuple[object, ...]) -> None:
 @pytest.mark.parametrize(
     "rule", ["코드 식별자", "요구사항서 참조", "규정 이름 없는 조문", "규정 이름 없는 별표"]
 )
-def test_화면에_개발자_언어가_없다(rule: str, screen_lines: tuple[object, ...]) -> None:
+def test_화면에_개발자_언어가_없다(rule: str, screen_lines: tuple[Any, ...]) -> None:
     """코드 식별자·내부 문서 번호·규정 이름 없는 조문 (25세션 4절)."""
     offenders = _audit().offenders(screen_lines)
     assert not offenders.get(rule), [
@@ -2709,7 +2725,7 @@ def test_입력_끝값을_훑어도_화면이_죽지_않는다() -> None:
     """
     # 태양광만 뺀다 — 시험은 기상 사전 취득분에서 격리되어 있다.
     keys = ("tariff_switch", "contract", "demand_response", "power_factor", "ess", "surplus")
-    screen = _running(**{f"measure_on_{key}": True for key in keys})
+    screen = _running(on=keys)
     assert not screen.exception, screen.exception
 
     touched = 0
@@ -2726,14 +2742,14 @@ def test_입력_끝값을_훑어도_화면이_죽지_않는다() -> None:
     # **ESS 단가 계수는 기준 데이터 화면에 있다** (50세션 3-5). 거기서 0 을 넣고
     # 수단 화면으로 돌아와 카드가 죽지 않는지 본다 — 자리가 갈렸을 뿐 값은
     # 같은 세션 키를 타고 계산으로 들어간다.
-    rules = _running(nav_page="기준 데이터", **{f"measure_on_{key}": True for key in keys})
+    rules = _running(nav_page="기준 데이터", on=keys)
     assert not rules.exception, rules.exception
     for key, value in RULES_EDGE_VALUES:
         rules = rules.number_input(key=key).set_value(value).run(timeout=900)
         touched += 1
         assert not rules.exception, f"{key} = {value}: {rules.exception}"
     back = _running(
-        **{f"measure_on_{key}": True for key in keys},
+        on=keys,
         measure_ess_fixed_cost=0.0,
         measure_ess_per_kwh_cost=0.0,
     )
@@ -2936,7 +2952,7 @@ def test_체크를_켜고_끄면_카드와_조합이_따라온다() -> None:
     assert on.session_state["measure_on_tariff_switch"] is True
 
 
-def test_화면에_절_번호가_없다(screen_lines: tuple[object, ...]) -> None:
+def test_화면에_절_번호가_없다(screen_lines: tuple[Any, ...]) -> None:
     """**7.1~7.7 은 요구사항서 절 번호다** (27세션 2절).
 
     사용자에게는 뜻이 없고 화면 어디에도 7장이 없다. 순번 1~7 로만 적는다.
@@ -3393,7 +3409,7 @@ def test_잉여가_0이면_잉여_처리_절이_없다() -> None:
     assert body.index("if surplus.total_kwh <= 0:") < body.index("st.expander"), body
 
 
-def test_버리기라는_말이_값으로_남지_않았다(screen_lines: tuple[object, ...]) -> None:
+def test_버리기라는_말이_값으로_남지_않았다(screen_lines: tuple[Any, ...]) -> None:
     """**만들어서 버리는 것이 아니다** (57세션 3절).
 
     27세션에 화면에서 뺐다가 41세션에 되살아난 이력이 있어 **전수로 본다** —
@@ -3679,7 +3695,7 @@ def test_3단계_금액_열이_모두_12개월_환산이다() -> None:
     assert "annualize(" not in body, "환산이 필요한 줄이 남아 있습니다."
 
 
-def test_확실성이_화면에도_산출물에도_없다(screen_lines: tuple[object, ...]) -> None:
+def test_확실성이_화면에도_산출물에도_없다(screen_lines: tuple[Any, ...]) -> None:
     """**등급을 화면에서 뺐고**(28세션 4절) **산출물에서도 뺐다**(53세션 1-4)."""
     offenders = [
         f"[{item.slot}] {item.where} :: {item.text[:60]}"
@@ -3947,7 +3963,9 @@ def test_태양광_표식이_권장이고_판정_근거가_붙는다() -> None:
     assert "verdict.tie_note" in source, "판정 근거 각주가 화면에서 빠졌다"
 
 
-def _flat_curve(*, limit_kwp: float, best_kwp: float | None = None) -> tuple[object, object]:
+def _flat_curve(
+    *, limit_kwp: float, best_kwp: float | None = None
+) -> tuple[SolarCurve, CapacityVerdict]:
     """**회수기간이 거의 평평한** 용량 곡선을 손으로 짓는다 (51세션 1·2·4절).
 
     16세션이 실측에서 본 모양이다 — kWp당 단가면 투자비와 절감액이 함께 용량에

@@ -17,7 +17,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from pptx import Presentation
@@ -33,7 +33,7 @@ from kwise.quality import QualityReport
 from kwise.report import figures
 from kwise.report import slides as slides_module
 from kwise.report.appendix import APPENDIX_TITLES
-from kwise.report.design import DesignGuideError, design_path, load_design_guide
+from kwise.report.design import DesignGuide, DesignGuideError, design_path, load_design_guide
 from kwise.report.document import (
     DocumentSections,
     MeasureEntry,
@@ -136,9 +136,9 @@ def diagnosis_only(
     return DocumentSections(usage=sample_usage, bill=sample_bill, diagnosis=sample_diagnosis)
 
 
-def _slide_text(slide: object) -> str:
+def _slide_text(slide: Any) -> str:
     parts: list[str] = []
-    for shape in slide.shapes:  # type: ignore[attr-defined]
+    for shape in slide.shapes:
         if shape.has_text_frame:
             parts.append(shape.text_frame.text)
         if shape.has_table:
@@ -146,8 +146,8 @@ def _slide_text(slide: object) -> str:
     return "\n".join(parts)
 
 
-def _deck_text(deck: object) -> str:
-    return "\n".join(_slide_text(slide) for slide in deck.slides)  # type: ignore[attr-defined]
+def _deck_text(deck: Any) -> str:
+    return "\n".join(_slide_text(slide) for slide in deck.slides)
 
 
 def _all_measures(sections: DocumentSections) -> tuple[MeasureEntry, ...]:
@@ -174,20 +174,20 @@ def _all_measures(sections: DocumentSections) -> tuple[MeasureEntry, ...]:
     )
 
 
-def _slide_by_key(deck: object, sections: DocumentSections, key: str) -> object:
+def _slide_by_key(deck: Any, sections: DocumentSections, key: str) -> Any:
     """자리표의 열쇠로 실물 슬라이드를 찾는다.
 
     **차례에서 세지 않는다.** 「맨 뒤」 같은 자리 표현은 장이 하나 붙는 순간
     조용히 다른 슬라이드를 가리킨다 — 37세션에 마무리를 붙이며 겪었다.
     """
     index = [spec.key for spec in slide_specs(sections)].index(key)
-    return list(deck.slides)[index]  # type: ignore[attr-defined]
+    return list(deck.slides)[index]
 
 
-def _visual_shapes(slide: object) -> list[object]:
+def _visual_shapes(slide: Any) -> list[Any]:
     """**글자 상자가 아닌 것.** 그림·표·선이 시각 요소다 (36세션 5절)."""
     visual = {MSO_SHAPE_TYPE.PICTURE, MSO_SHAPE_TYPE.TABLE, MSO_SHAPE_TYPE.LINE}
-    return [shape for shape in slide.shapes if shape.shape_type in visual]  # type: ignore[attr-defined]
+    return [shape for shape in slide.shapes if shape.shape_type in visual]
 
 
 # ===================================================================== ① 차례
@@ -836,14 +836,14 @@ def test_6장_그림이_문장_차례와_같다(full_sections: DocumentSections)
     slide = _slide_by_key(build_slides(full_sections), full_sections, "peak_detail")
     captions = sorted(
         (Emu(shape.left).inches, shape.text_frame.text)
-        for shape in slide.shapes  # type: ignore[attr-defined]
+        for shape in slide.shapes
         if (shape.has_text_frame and "구간이 발생한 시각" in shape.text_frame.text)
         or (shape.has_text_frame and "평균 부하 모양" in shape.text_frame.text)
     )
     assert next(text for _left, text in captions).startswith("최대수요 상위")
     pictures = sorted(
         Emu(shape.left).inches
-        for shape in slide.shapes  # type: ignore[attr-defined]
+        for shape in slide.shapes
         if shape.shape_type is MSO_SHAPE_TYPE.PICTURE
     )
     assert len(pictures) == 2
@@ -1442,11 +1442,11 @@ def test_잉여가_0이면_태양광_장이_늘지_않는다(
 # ===================================================================== 53세션 · 공통 규약
 
 
-def _note_lines(slide: object, guide: object) -> list[str]:
+def _note_lines(slide: Any, guide: DesignGuide) -> list[str]:
     """슬라이드 아래쪽 작은 회색 글씨. **캡션과 각주가 여기 든다.**"""
-    size = guide.type_scale.caption  # type: ignore[attr-defined]
+    size = guide.type_scale.caption
     lines: list[str] = []
-    for shape in slide.shapes:  # type: ignore[attr-defined]
+    for shape in slide.shapes:
         if not shape.has_text_frame:
             continue
         for paragraph in shape.text_frame.paragraphs:
@@ -1583,7 +1583,7 @@ def test_사양_표가_아래_그림을_덮지_않는다(full_sections: Document
     slide = _slide_by_key(build_slides(sections), sections, f"measure_{entry.kind.key}")
     boxes = [
         (Emu(shape.top).inches, Emu(shape.top + shape.height).inches, shape)
-        for shape in slide.shapes  # type: ignore[attr-defined]
+        for shape in slide.shapes
         if shape.top is not None and shape.height
     ]
     from kwise.report.frames import ESS_SPEC_HEADER
@@ -2567,7 +2567,7 @@ def test_계약전력_장이_근거를_먼저_세운다(
     slide = _slide_by_key(build_slides(sections), sections, "measure_contract")
     tops = {
         shape.text_frame.text: Emu(shape.top).inches
-        for shape in slide.shapes  # type: ignore[attr-defined]
+        for shape in slide.shapes
         if shape.has_text_frame
     }
     assert tops["현재 계약전력"] < tops["절감액"], tops
@@ -2608,7 +2608,7 @@ def test_3장_해석이_각주로_내려갔다(full_sections: DocumentSections) 
     lead = narrative.building_lead(quality)
     found = [
         (Emu(shape.top).inches, shape.text_frame.text)
-        for shape in slide.shapes  # type: ignore[attr-defined]
+        for shape in slide.shapes
         if shape.has_text_frame and lead in shape.text_frame.text
     ]
     assert len(found) == 1, found
@@ -2616,7 +2616,7 @@ def test_3장_해석이_각주로_내려갔다(full_sections: DocumentSections) 
     assert text.startswith(NOTE_MARK.strip()), text
     # 슬라이드 아래쪽이다 — 제목 바로 아래가 아니다.
     assert top > guide.slide.height_in * 0.8, top
-    tables = [shape for shape in slide.shapes if shape.has_table]  # type: ignore[attr-defined]
+    tables = [shape for shape in slide.shapes if shape.has_table]
     assert tables and Emu(tables[0].top).inches < top
 
 
@@ -2750,13 +2750,13 @@ def _overlaps(first: tuple[float, float], second: tuple[float, float]) -> float:
 
 
 def _table_and_text_bands(
-    slide: object,
+    slide: Any,
 ) -> tuple[list[tuple[float, float]], list[tuple[float, float, str]]]:
     from pptx.util import Emu
 
     tables: list[tuple[float, float]] = []
     texts: list[tuple[float, float, str]] = []
-    for shape in slide.shapes:  # type: ignore[attr-defined]
+    for shape in slide.shapes:
         if shape.top is None or not shape.height:
             continue
         band = (Emu(shape.top).inches, Emu(shape.top + shape.height).inches)
@@ -2806,7 +2806,7 @@ _LONG_NOTE = " ".join(
 )
 
 
-def _note_bands(slide: object) -> tuple[float, list[tuple[float, float, str]]]:
+def _note_bands(slide: Any) -> tuple[float, list[tuple[float, float, str]]]:
     """각주 띠가 시작하는 y 와, 각주가 아닌 글의 세로 구간들."""
     from pptx.util import Emu
 
@@ -2814,7 +2814,7 @@ def _note_bands(slide: object) -> tuple[float, list[tuple[float, float, str]]]:
 
     note_top = float("inf")
     others: list[tuple[float, float, str]] = []
-    for shape in slide.shapes:  # type: ignore[attr-defined]
+    for shape in slide.shapes:
         if shape.top is None or not shape.height:
             continue
         top = Emu(shape.top).inches
@@ -3065,7 +3065,7 @@ def test_그림_없는_장은_지표_두_줄을_붙인다(
 
     boxes = [
         (Emu(shape.top).inches, Emu(shape.top + shape.height).inches, shape.text_frame.text.strip())
-        for shape in slide.shapes  # type: ignore[attr-defined]
+        for shape in slide.shapes
         if shape.has_text_frame and shape.top is not None and shape.height
     ]
     assert any(text in upper for _t, _b, text in boxes), "위 덩어리를 못 찾았습니다."
@@ -3100,8 +3100,8 @@ def _blind(sections: DocumentSections) -> DocumentSections:
     )
 
 
-def _caution_table(slide: object) -> object | None:
-    for shape in slide.shapes:  # type: ignore[attr-defined]
+def _caution_table(slide: Any) -> Any:
+    for shape in slide.shapes:
         if (
             getattr(shape, "has_table", False)
             and shape.has_table
