@@ -21,9 +21,16 @@ import functools
 import re
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from streamlit.testing.v1 import AppTest
+
+if TYPE_CHECKING:  # 시험이 무거워지지 않게 형만 빌린다 (70세션 2절)
+    from kwise.io import UsageData
+    from kwise.measures import DispatchResult, PowerFactorResult, TariffSwitchResult
+    from kwise.report.days import RepresentativeDay
+    from kwise.tariff import BillingResult, TariffTable
 
 from kwise.notices import texts
 from kwise.report import SHEET_ORDER
@@ -533,7 +540,11 @@ def test_잉여_활용_카드가_없다() -> None:
     from kwise.measures import MEASURE_CATALOG
 
     assert "surplus" not in [item.key for item in MEASURE_CATALOG]
-    app = _app(**_on(*MEASURES))
+    # **`_on` 은 열쇠를 받는다** (70세션 2절). 여기가 `_on(*MEASURES)` 라
+    # `MeasureSpec` 객체가 그대로 들어가 `measure_on_MeasureSpec(...)` 이라는
+    # 없는 열쇠가 됐다 — **수단이 하나도 안 켜진 채로 통과하고 있었다.**
+    # mypy 가 잡았다.
+    app = _app(**_on(*(item.key for item in MEASURES)))
     assert not app.exception, app.exception
     body = _text(app)
     assert "잉여 활용" not in body, body
@@ -686,7 +697,9 @@ def test_건물명이_없으면_산출물_제목이_미입력이다() -> None:
 
 
 @functools.cache
-def _material() -> tuple[object, object, object, object, object]:
+def _material() -> tuple[
+    UsageData, TariffSwitchResult, PowerFactorResult, RepresentativeDay, BillingResult
+]:
     """차트 재료 한 벌. **한 번만 만든다** — 요금 계산이 매번 돌면 시험이 느려진다."""
     from kwise.io import load_usage
     from kwise.measures import evaluate_power_factor, evaluate_tariff_switch
@@ -719,14 +732,19 @@ def _material() -> tuple[object, object, object, object, object]:
     return usage, switch, power_factor, day, baseline
 
 
-def _rows(spec: dict[str, object], layer: dict[str, object]) -> list[dict[str, object]]:
-    """altair 는 자료를 ``datasets`` 에 이름으로 담는다. 그것을 풀어 준다."""
+def _rows(spec: dict[str, Any], layer: dict[str, Any]) -> list[dict[str, Any]]:
+    """altair 는 자료를 ``datasets`` 에 이름으로 담는다. 그것을 풀어 준다.
+
+    **`object` 가 아니라 `Any` 다** (70세션 2절). 이것은 altair 가 낸 JSON 이라
+    속이 진짜로 정해져 있지 않다 — `object` 로 적으면 사실과 다르고, 꺼낼
+    때마다 억제를 붙이게 된다.
+    """
     data = layer.get("data", {})
     values = data.get("values")
     if values is not None:
         return list(values)
     datasets = spec.get("datasets", {})
-    return list(datasets.get(data.get("name"), []))  # type: ignore[union-attr]
+    return list(datasets.get(data.get("name"), []))
 
 
 def _fake_generation(usage: object) -> object:
@@ -1031,7 +1049,9 @@ def test_ESS_투자비_상세가_근거_툴팁에_있다() -> None:
 
 
 @functools.cache
-def _dispatch() -> tuple[object, object, object, object, object]:
+def _dispatch() -> tuple[
+    UsageData, TariffSwitchResult, PowerFactorResult, RepresentativeDay, DispatchResult
+]:
     """ESS 디스패치 한 벌. 그림만 보므로 목표는 관측 최대의 97% 로 잡는다."""
     from kwise.measures import EssCostInput, evaluate_ess
 
@@ -1040,9 +1060,9 @@ def _dispatch() -> tuple[object, object, object, object, object]:
         usage,
         _table(),
         _contract().selection,
-        target_kw=float(usage.kw.max()) * 0.97,  # type: ignore[attr-defined]
+        target_kw=float(usage.kw.max()) * 0.97,
         cost=EssCostInput(),
-        baseline=baseline,  # type: ignore[arg-type]
+        baseline=baseline,
         options=_contract().billing_options(),
     )
     return usage, switch, power_factor, day, result.dispatch
@@ -1055,7 +1075,7 @@ def _contract() -> ContractForm:
 
 
 @functools.cache
-def _table() -> object:
+def _table() -> TariffTable:
     from kwise.tariff import load_tariff
 
     return load_tariff()
