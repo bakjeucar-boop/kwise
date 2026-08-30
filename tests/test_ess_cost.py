@@ -11,7 +11,6 @@ import json
 import sys
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -52,6 +51,7 @@ from kwise.measures.ess_cost import load_ess_cost_model, reference_data_path
 from kwise.notices import texts
 from kwise.quality import QualityReport
 from kwise.report import frames
+from kwise.report.casestudy import CaseDefinition
 from kwise.tariff import BillingResult, TariffSelection, TariffTable
 
 from .conftest import SAMPLE_SELECTION
@@ -405,6 +405,9 @@ def test_arbitrage_potential_is_still_shown(sample_ess: EssResult) -> None:
     assert arbitrage is not None
     assert arbitrage.annual_won > 0
     assert sample_ess.payback_with_arbitrage_years is not None
+    # **오른쪽도 None 일 수 있다** (70세션 2절에 mypy 가 짚었다). 단언을 하나
+    # 더 두는 것이 맞다 — 없으면 값이 비었을 때 견주다가 터진다.
+    assert sample_ess.payback_years is not None
     assert sample_ess.payback_with_arbitrage_years < sample_ess.payback_years
 
 
@@ -928,7 +931,7 @@ def _case_material(
     tariff: TariffTable,
     *,
     min_power_kw: float | None = None,
-) -> tuple[object, ...]:
+) -> tuple[UsageData, QualityReport, BillingResult, EssTargetCurve]:
     """케이스 하나의 재료. **케이스 스터디와 같은 계약전력 가정을 쓴다.**
 
     Args:
@@ -1081,12 +1084,12 @@ def test_곡선과_정밀화가_같은_자리를_고른다(key: str, tariff: Tar
         definition.usage_path, definition.selection, tariff, min_power_kw=GATE_OFF
     )
     optimum = refine_ess_target(
-        usage,  # type: ignore[arg-type]
+        usage,
         tariff,
         definition.selection,
-        curve=curve,  # type: ignore[arg-type]
-        baseline=bill,  # type: ignore[arg-type]
-        quality=quality,  # type: ignore[arg-type]
+        curve=curve,
+        baseline=bill,
+        quality=quality,
         min_power_kw=GATE_OFF,
     )
     assert optimum.target_kw == CARD_BASIS_OPTIMUM[key]
@@ -1123,7 +1126,9 @@ def test_곡선과_카드가_같은_규격_용량에_투자비를_매긴다(
         assert point.investment_won == model.quote(point.grid_capacity_kwh).total_won
 
 
-def _c3_material(tariff: TariffTable) -> tuple[object, ...]:
+def _c3_material(
+    tariff: TariffTable,
+) -> tuple[UsageData, QualityReport, BillingResult, EssTargetCurve, CaseDefinition]:
     """C3 평탄형. 카드 기준 최소는 3,010 kW 다."""
     from kwise.report.casestudy import build_case_definitions
 
@@ -1165,12 +1170,12 @@ def test_창_가장자리면_넓혀_다시_찾는다(tariff: TariffTable) -> Non
     """
     usage, quality, bill, curve, definition = _c3_material(tariff)
     narrow = refine_ess_target(
-        usage,  # type: ignore[arg-type]
+        usage,
         tariff,
-        definition.selection,  # type: ignore[attr-defined]
-        curve=_anchored_at(curve, 3_045.0),  # type: ignore[arg-type]
-        baseline=bill,  # type: ignore[arg-type]
-        quality=quality,  # type: ignore[arg-type]
+        definition.selection,
+        curve=_anchored_at(curve, 3_045.0),
+        baseline=bill,
+        quality=quality,
         window_kw=10.0,
         max_widen=4,
         min_power_kw=GATE_OFF,
@@ -1185,12 +1190,12 @@ def test_넓히고도_가장자리면_경고를_남긴다(tariff: TariffTable) -
     """**조용히 자르지 않는다.** 자른 채 두면 「그 자리가 최적」 으로 읽힌다."""
     usage, quality, bill, curve, definition = _c3_material(tariff)
     stuck = refine_ess_target(
-        usage,  # type: ignore[arg-type]
+        usage,
         tariff,
-        definition.selection,  # type: ignore[attr-defined]
-        curve=_anchored_at(curve, 3_045.0),  # type: ignore[arg-type]
-        baseline=bill,  # type: ignore[arg-type]
-        quality=quality,  # type: ignore[arg-type]
+        definition.selection,
+        curve=_anchored_at(curve, 3_045.0),
+        baseline=bill,
+        quality=quality,
         window_kw=10.0,
         max_widen=0,
         min_power_kw=GATE_OFF,
@@ -1581,8 +1586,19 @@ def test_회수기간_50년_초과는_상한으로_적는다() -> None:
     # 화면 서식기도 같은 자리에서 자른다.
     assert ui_text.payback(578.2) == ">50년"
     assert ui_text.payback(31.7) == "31.7년"
-    # 3단계 개선안별 요약도 마찬가지다.
-    row = SimpleNamespace(payback_years=578.2)
+    # 3단계 개선안별 요약도 마찬가지다. **진짜 줄로 부른다** (70세션 2절) —
+    # `SimpleNamespace` 로 흉내 내면 필드 이름이 바뀌어도 시험이 안 걸린다.
+    from kwise.measures import Certainty, measure_kind
+    from kwise.report.standalone import StandaloneRow
+
+    row = StandaloneRow(
+        kind=measure_kind("ess"),
+        reduction="500 kW 설치",
+        annual_saving_won=1.0,
+        investment_won=1.0,
+        payback_years=578.2,
+        certainty=Certainty.MEDIUM_LOW,
+    )
     assert _payback(row) == ">50년"
 
 
@@ -1684,7 +1700,7 @@ def test_소형_사무빌딩에서_성립하지_않는_사양을_고르지_않�
 _NIGHT_CASE = PROJECT_ROOT / "input" / "cases" / "C6_야간 피크형.csv"
 
 
-def _night_optimum(tariff: TariffTable, *, scale: float) -> tuple[object, float]:
+def _night_optimum(tariff: TariffTable, *, scale: float) -> tuple[EssOptimum, float]:
     """야간 피크 자료를 **단가를 낮춰** 돌린다.
 
     단가를 낮추면 개략 곡선의 마진 조건이 통과해 48세션 갈래를 빠져나가고,
@@ -1886,7 +1902,7 @@ def test_케이스_스터디가_ESS_를_돌린다() -> None:
 _KAP_SELECTION = ("general_a_1", "high_a", "I")
 
 
-def _kap_optimum(tariff: TariffTable, contract_type: str = "general_a_1") -> object:
+def _kap_optimum(tariff: TariffTable, contract_type: str = "general_a_1") -> EssOptimum:
     from kwise.diagnose import ContractInfo, diagnose
     from kwise.io import load_usage
     from kwise.quality import check_quality
