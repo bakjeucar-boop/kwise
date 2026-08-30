@@ -24,6 +24,7 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
+from typing import NamedTuple
 
 # 한도는 **마지막 안전장치**다. 길면 그 자체가 비용이라 두되, 칸마다 자를지
 # 접을지를 먼저 정한다 (:func:`clip` 과 :func:`wrap`). 50 이던 것을 68세션에
@@ -152,25 +153,50 @@ def group_count(name: str, lines: int) -> int:
     return int(found.group(1)) if found else lines
 
 
-def total_items(items: list[tuple[str, str, str]]) -> int:
+class Item(NamedTuple):
+    """미해결 한 줄."""
+
+    sym: str
+    """갈래 표식 — ① ② ③."""
+    tag: str
+    """`①-1` 처럼 **갈래 안에서** 매긴 번호 (69세션 1절).
+
+    통번호는 앞 갈래에서 하나만 늘거나 줄어도 **뒤가 전부 밀린다.** 67세션의
+    「미해결 10번」(`ruff format`)과 68세션 지시서의 「미해결 10」(3단계 태양광
+    역률)이 서로 다른 것을 가리킨 까닭이다. `PROCEED.md` 는 이미 이 식을 쓰고
+    61세션도 「미해결 ①-3」 이라 적었다 — **브리핑이 원본을 따라간다.**
+    """
+    name: str
+    """갈래 이름 — 「자료를 기다리는 것 7건」."""
+    text: str
+    """항목 한 줄."""
+
+
+def total_items(items: list[Item]) -> int:
     """미해결 **건수.** 갈래 머리말이 말하는 수를 더한다.
 
     줄을 세면 ① 이 4가 되는데 머리말은 7이다 — 「청구서 4」 한 줄이 넷을
     담기 때문이다. **머리말이 7이면 총계도 그 7을 담아야 한다.**
     """
     counted: dict[str, tuple[str, int]] = {}
-    for sym, name, _ in items:
-        head, seen = counted.get(sym, (name, 0))
-        counted[sym] = (head, seen + 1)
+    for item in items:
+        head, seen = counted.get(item.sym, (item.name, 0))
+        counted[item.sym] = (head, seen + 1)
     return sum(group_count(name, seen) for name, seen in counted.values())
 
 
-def open_items(state: dict[str, str]) -> list[tuple[str, str, str]]:
-    """미해결 칸을 (갈래기호, 갈래이름, 한 줄) 로 편다."""
+def open_items(state: dict[str, str]) -> list[Item]:
+    """미해결 칸을 :class:`Item` 으로 편다."""
     raw = state.get("미해결", "")
     if not raw:
         return []
-    out: list[tuple[str, str, str]] = []
+    out: list[Item] = []
+    order: dict[str, int] = {}
+
+    def add(sym: str, name: str, text: str) -> None:
+        order[sym] = order.get(sym, 0) + 1
+        out.append(Item(sym, f"{sym}-{order[sym]}", name, text))
+
     # ① … ② … ③ … 로 자른다
     marks = list(GROUP.finditer(raw))
     for i, mk in enumerate(marks):
@@ -181,10 +207,10 @@ def open_items(state: dict[str, str]) -> list[tuple[str, str, str]]:
         # 「자료를 기다리는 것 7건 (청구서 4 · …)」 → 이름과 괄호 안을 가른다
         name, detail = first_paren(chunk)
         if not detail:
-            out.append((sym, name, ""))
+            add(sym, name, "")
             continue
-        for item in split_top(detail):
-            out.append((sym, name, item))
+        for text in split_top(detail):
+            add(sym, name, text)
     return out
 
 
@@ -264,11 +290,12 @@ def build() -> str:
     else:
         lines.append(f"## 미해결 {total_items(items)}건")
     seen: set[str] = set()
-    for n, (sym, name, one) in enumerate(items, 1):
-        if sym not in seen:
-            seen.add(sym)
-            lines.append(f"  {sym} {name}")
-        lines.extend(wrap(one or name, f"    {n:>2}. ", "        "))
+    for item in items:
+        if item.sym not in seen:
+            seen.add(item.sym)
+            lines.append(f"  {item.sym} {item.name}")
+        first = f"    {item.tag}. "
+        lines.extend(wrap(item.text or item.name, first, " " * len(first)))
     if state.get("블로커", "").strip(" —-"):
         lines.extend(wrap(strip_md(state["블로커"]).lstrip("— "), "  블로커 — ", "    "))
     else:
@@ -284,15 +311,17 @@ def build() -> str:
             lines.append(f"  근거 · {key} — {clip(strip_md(state[key]), WRAP_AT - 14)}")
     lines.append("")
 
-    # 내가 밟아야 할 것 — 사람이 움직여야 풀리는 갈래만
-    mine = [it for it in items if it[0] in ("①", "③")]
+    # 내가 밟아야 할 것 — 사람이 움직여야 풀리는 갈래만.
+    # **위 목록과 같은 표식을 쓴다** (69세션 1절). 예전에는 갈래 이름을 깎아
+    # 「[자료]」 를 붙였는데, 그것은 바로 위 머리말을 되풀이할 뿐이고 어느
+    # 항목인지는 못 가리켰다 — 한 문서에 표식이 두 벌이면 결함 유형 ③ 이다.
+    mine = [item for item in items if item.sym in ("①", "③")]
     if mine or "캡처" in nxt:
         lines.append("## 내가 밟아야 할 것")
         if "캡처" in nxt:
             lines.append(r"  · 화면 캡처를 떠 준다 (docs\CAPTURES.md 목록)")
-        for sym, name, one in mine:
-            tag = re.sub(r"[을를]\s*기다리는 것.*", "", name).strip() or sym
-            lines.append(f"  · [{tag}] {clip(one or name, WRAP_AT - 10)}")
+        for item in mine:
+            lines.append(f"  · {item.tag} {clip(item.text or item.name, WRAP_AT - 10)}")
 
     while lines and not lines[-1].strip():
         lines.pop()
