@@ -172,6 +172,21 @@ class Item(NamedTuple):
     """항목 한 줄."""
 
 
+def missing_groups(raw: str, items: list[Item]) -> list[str]:
+    """칸에 표식이 있는데 **갈래로 안 잡힌 것** (69세션 2절).
+
+    행 전체가 사라지면 항목이 0이 되어 눈에 띄지만, **갈래 하나만 사라지면
+    수만 줄어 조용하다.** :data:`GROUP` 이 「표식 뒤에 빈칸」 을 요구하므로
+    `**①자료를 기다리는 것**` 처럼 붙여 쓰면 그 갈래가 통째로 빠진다 —
+    68세션이 그 조건을 만들어 놓고 잡는 장치는 0 에만 걸어 두었다.
+
+    글에 보이는 표식과 잡은 표식을 맞대 본다. 본문이 「②-3 을 보라」 처럼
+    이미 잡힌 갈래를 가리키는 것은 걸리지 않는다 — 집합으로 견주기 때문이다.
+    """
+    on_page = set(re.findall(r"[①②③④⑤]", raw))
+    return sorted(on_page - {item.sym for item in items})
+
+
 def total_items(items: list[Item]) -> int:
     """미해결 **건수.** 갈래 머리말이 말하는 수를 더한다.
 
@@ -289,6 +304,12 @@ def build() -> str:
         lines.append("   (칸 안에 세로줄 | 이 있으면 그 행이 통째로 사라진다)")
     else:
         lines.append(f"## 미해결 {total_items(items)}건")
+        # **갈래 하나만 사라지면 수만 줄어 조용하다** (69세션 2절).
+        gone = missing_groups(state.get("미해결", ""), items)
+        if gone:
+            lines.append(
+                f"  **갈래 {' · '.join(gone)} 를 못 읽었다** — 표식 뒤에 빈칸이 있는지 보라"
+            )
     seen: set[str] = set()
     for item in items:
         if item.sym not in seen:
