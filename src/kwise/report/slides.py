@@ -2497,7 +2497,11 @@ def build_slides(
         if spec.key in _NEEDS_DIAGNOSIS and _missing_input(spec.key, sections):
             _title(slide, design, spec.title)
             continue
-        builder = _BUILDERS.get(spec.key, _build_measure)
+        # **수단 장인지로 가른다** (67세션 3절). 「열쇠가 없으면 수단 빌더」 였는데,
+        # 그러면 자리표가 **모르는 열쇠**를 내도 조용히 수단 쪽으로 흘러가
+        # `_build_measure` 안쪽 `assert spec.measure is not None` 에서 터진다 —
+        # 그 자리에서는 **어느 열쇠였는지도 안 나온다.** 여기서 이름과 함께 걸린다.
+        builder = _build_measure if spec.measure is not None else _BUILDERS[spec.key]
         builder(slide, design, sections, spec)
     return presentation
 

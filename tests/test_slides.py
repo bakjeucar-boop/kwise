@@ -28,6 +28,7 @@ from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
 from kwise.measures import MEASURE_CATALOG, TariffSwitchResult
 from kwise.report import figures
+from kwise.report import slides as slides_module
 from kwise.report.appendix import APPENDIX_TITLES
 from kwise.report.design import DesignGuideError, design_path, load_design_guide
 from kwise.report.document import (
@@ -44,6 +45,7 @@ from kwise.report.slides import (
     NEXT_STEPS,
     NEXT_STEPS_HEADLINE,
     SLIDE_TITLES,
+    SlideSpec,
     _cautions,
     agenda_items,
     appendix_pages,
@@ -3343,3 +3345,25 @@ def test_진단이_없으면_제목만_선다(full_sections: DocumentSections) -
             if shape.has_text_frame and shape.text_frame.text.strip()
         ]
         assert texts == [SLIDE_TITLES[key]], f"{key} 는 제목만 서야 합니다: {texts}"
+
+
+# ================================================= 67세션 3절 — 기본 빌더 (옛 T9)
+
+
+def test_자리표가_모르는_열쇠는_이름과_함께_걸린다(
+    full_sections: DocumentSections, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**조용히 수단 빌더로 흘러가지 않는다** (60세션이 남긴 A 의 뒷쪽).
+
+    옛 코드는 ``_BUILDERS.get(spec.key, _build_measure)`` 라 자리표가 모르는
+    열쇠를 내면 수단 빌더로 흘러가 그 안쪽 ``assert spec.measure is not None``
+    에서 터졌다 — **어느 열쇠였는지가 안 나온다.** 이제 열쇠 이름과 함께 걸린다.
+
+    수단 장인지는 ``spec.measure`` 가 가른다. 수단 장은 열쇠가
+    ``measure_{종류}`` 라 ``_BUILDERS`` 에 없는 것이 정상이다.
+    """
+    unknown = SlideSpec("모르는_열쇠", "제목", "table")
+    monkeypatch.setattr(slides_module, "slide_specs", lambda sections: (unknown,))
+
+    with pytest.raises(KeyError, match="모르는_열쇠"):
+        build_slides(full_sections)

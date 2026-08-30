@@ -675,6 +675,12 @@ def _surplus_remark(
 
     상계거래는 금액만으로는 무엇이 일어나는지 알 수 없다 — 당월 사용량에서
     얼마가 차감되는지가 그 방안의 실체다.
+
+    **조각은 :func:`~kwise.report.narrative.note_line` 이 잇는다** (67세션 3절).
+    60세션이 각주를 한 자리로 모으면서 여기만 ``" · ".join`` 으로 남았다 —
+    지금 조각들로는 결과가 같지만, **마침표로 끝나는 조각이 붙는 순간** 옛
+    자리는 「… 않았습니다**. ·** 다음」 으로 겹친다. 규칙이 한 자리에 있으면
+    그날 여기도 함께 고쳐진다.
     """
     parts: list[str] = []
     if scenario.name == surplus_module.OFFSET_SCENARIO and surplus.offset is not None:
@@ -688,7 +694,7 @@ def _surplus_remark(
         parts.append("판매 단가를 넣으면 산출됩니다")
     if chosen:
         parts.append(SURPLUS_CHOSEN_MARK)
-    return " · ".join(parts)
+    return narrative.note_line(*parts)
 
 
 #: 「하한이 요금적용전력에 걸리지 않아…」 안내의 사실 ID (48세션에 붙은 것).
