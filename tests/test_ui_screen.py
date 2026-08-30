@@ -1856,6 +1856,7 @@ def test_체크만_바꾸면_계산이_돌지_않는다(monkeypatch: pytest.Monk
     없다. 그때 **계산까지 도는지**가 다른 문제이고, 그것이 이 시험이 보는 것이다.
     """
     from kwise.compare import combination as combo
+    from kwise.compare import compare_combinations
     from kwise.ui import cache
 
     calls: list[str] = []
@@ -1867,10 +1868,14 @@ def test_체크만_바꾸면_계산이_돌지_않는다(monkeypatch: pytest.Monk
 
         return inner
 
-    # `cache` 는 `compare_combinations` 를 들여와 쓸 뿐 내보내지 않는다 —
-    # 갈아 끼우는 자리는 그 모듈의 이름이므로 글로 짚는다 (70세션 2절).
-    original = cache.compare_combinations  # type: ignore[attr-defined]
-    monkeypatch.setattr(cache, "compare_combinations", counted("compare", original))
+    # `cache` 는 `compare_combinations` 를 들여와 쓸 뿐 **내보내지 않는다** —
+    # 그 모듈의 `__all__` 은 제 것(`cached_*`·토큰)만 담고 들여온 이름은 하나도
+    # 담지 않는다. **일부러다.** 그래서 71세션은 `__all__` 을 넓히는 대신
+    # 원본을 원래 자리에서 집는다 — `cache` 의 이름은 그것을 가리킬 뿐이다.
+    #
+    # **갈아 끼우는 자리는 여전히 `cache` 다.** 캐시된 함수가 부르는 것이 그
+    # 모듈의 이름이므로, 원본을 어디서 집든 끼우는 곳은 여기여야 한다.
+    monkeypatch.setattr(cache, "compare_combinations", counted("compare", compare_combinations))
     monkeypatch.setattr(
         combo, "evaluate_combination", counted("evaluate", combo.evaluate_combination)
     )

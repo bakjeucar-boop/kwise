@@ -27,12 +27,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from kwise import money
-from kwise.diagnose import ChargeStructure, Diagnosis
+from kwise.diagnose import ChargeStructure, Diagnosis, PeakProfile
 from kwise.diagnose.dr import DrProfile
 from kwise.diagnose.summary import PvPotential
-from kwise.quality import DEFAULT_NIGHT_HOURS, DEFAULT_OPERATING_HOURS, LoadPattern, QualityReport
+from kwise.quality import (
+    DEFAULT_NIGHT_HOURS,
+    DEFAULT_OPERATING_HOURS,
+    LoadPattern,
+    MonthlyMissing,
+    QualityReport,
+)
 from kwise.rules import assumption
 from kwise.tariff import TariffTable
 from kwise.tariff.labels import season_label
@@ -44,6 +51,8 @@ __all__ = [
     "NOTE_JOIN",
     "NOTE_MARK",
     "SINGLE_MEASURE_LEAD",
+    "FlaggedMonthSource",
+    "PeakSource",
     "Term",
     "base_fee_share_high",
     "base_fee_share_low",
@@ -551,9 +560,37 @@ def _next_month(month: int) -> int:
     return 1 if month == 12 else month + 1
 
 
+# ============================================================= 5장이 읽는 것
+#
+# **요구하는 것과 쓰는 것을 맞춘다** (71세션 1절). :func:`peak_month_lead` 가
+# 실제로 읽는 것은 진단의 ``peak`` 하나와 품질의 ``flagged_months`` 하나뿐인데,
+# 서명은 :class:`~kwise.diagnose.Diagnosis` 와
+# :class:`~kwise.quality.QualityReport` 를 통째로 요구했다. 그래서 그 둘만 채운
+# 시험 대역이 형에 맞지 않아 ``cast`` 로 눌러야 했다 (70세션 2절).
+#
+# **시험을 위해 서명을 무르게 하는 것이 아니다** — 함수가 이미 이만큼만 쓴다.
+#
+# **형 모듈이 아니라 여기 둔다.** 「무엇을 읽는가」 는 부르는 쪽의 사정이고,
+# `Diagnosis` 가 자기를 쓰는 함수를 알 이유가 없다.
+
+
+class PeakSource(Protocol):
+    """:func:`peak_month_lead` 가 진단에서 읽는 것 — ``peak`` 뿐이다."""
+
+    @property
+    def peak(self) -> PeakProfile: ...
+
+
+class FlaggedMonthSource(Protocol):
+    """:func:`peak_month_lead` 가 품질에서 읽는 것 — ``flagged_months`` 뿐이다."""
+
+    @property
+    def flagged_months(self) -> tuple[MonthlyMissing, ...]: ...
+
+
 def peak_month_lead(
-    diagnosis: Diagnosis,
-    quality: QualityReport | None = None,
+    diagnosis: PeakSource,
+    quality: FlaggedMonthSource | None = None,
     table: TariffTable | None = None,
 ) -> str:
     """5장 — **월별 최대수요 그림이 말하는 것** (53세션 4-3).

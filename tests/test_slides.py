@@ -17,7 +17,8 @@ from __future__ import annotations
 import datetime as dt
 import re
 from pathlib import Path
-from typing import Any, cast
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from pptx import Presentation
@@ -1238,6 +1239,33 @@ def test_한글이_깨지지_않는다(full_sections: DocumentSections, tmp_path
     assert all(item.get("typeface") == name for item in eastasian if item is not None)
 
 
+def test_덱을_글자로_훑어_영문_날짜가_없는지_본다(full_sections: DocumentSections) -> None:
+    """**PPT 를 글자로 훑는 못** (71세션 2절 · 미해결 ②-8「PPT 를 글자로 훑는 못」).
+
+    Excel 은 `test_excel_dates_are_iso_not_english` 가 실물을 열어 셀을 훑고
+    화면은 65·66세션이 못을 박았는데 **PPT 만 없었다.** 그 Excel 못을 그대로
+    옮겼다 — 같은 정규식으로 **뽑힌 산출물의 글자**를 훑는다.
+
+    **`screen_audit` 과 하는 일이 다르다.** 그쪽은 `src\\` 의 **한글이 든
+    리터럴**을 세고, 이 못은 **뽑힌 덱에 실제로 박힌 글자**를 훑는다 — 그래서
+    ① 한글이 없는 글줄(영어 날짜는 정의상 한글이 없다)과 ② 실행 때 조립되는
+    글(「분석 기간 … · 작성일 …」)이 여기서만 보인다.
+
+    **지금 자리 수는 0 이다.** 그래서 그냥 돌리면 늘 깨끗해 못이 살아 있는지
+    알 수 없다 — 뒤에서 **일부러 심어** 걸리는 것을 함께 본다 (66세션이
+    `요약!B13` 에 `Jan` 을 심은 것과 같은 방식이다).
+    """
+    english = re.compile(r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b")
+    deck = build_slides(full_sections)
+    assert not english.findall(_deck_text(deck)), _deck_text(deck)
+
+    # **심어서 걸리는 것을 본다.** 새 글상자 하나를 얹을 뿐이라 위의 판정에는
+    # 닿지 않는다 — 심기 전에 이미 훑었다.
+    box = deck.slides[0].shapes.add_textbox(Inches(0), Inches(0), Inches(1), Inches(1))
+    box.text_frame.text = "작성일 30 Apr 2026"
+    assert english.findall(_deck_text(deck)) == ["Apr"]
+
+
 # ===================================================================== ⑧ 파일명
 
 
@@ -2420,17 +2448,14 @@ def test_조합_문장이_수단_수로_갈린다() -> None:
 
 def _peak_stub(
     values: dict[str, float], *, demand_months: tuple[int, ...] = (7, 8, 9, 12, 1, 2)
-) -> Diagnosis:
+) -> SimpleNamespace:
     """월별 최대수요만 채운 진단 대역. **갈래 시험은 계산이 아니라 문장을 본다.**
 
-    **`cast` 를 쓴다** (70세션 2절). 진짜 :class:`Diagnosis` 를 지으려면
-    `diagnose()` 를 돌려야 하는데 여기서 재는 것은 계산이 아니라 **문장이 어느
-    갈래를 타는가**다. `object` 로 두면 부르는 자리마다 오류가 나고, 억제를
-    붙여도 `SimpleNamespace` 의 속은 어차피 mypy 가 못 본다 —
-    **시험이 약해지는 것은 없고 정적 검사만 조용해진다.**
+    **`cast` 가 없다** (71세션 1절). :func:`~kwise.report.narrative.peak_month_lead`
+    가 요구하는 것이 :class:`~kwise.report.narrative.PeakSource` — ``peak`` 하나
+    뿐이라 이 대역이 **진짜로 그 형에 맞는다.** 70세션은 서명이 `Diagnosis` 를
+    통째로 요구해서 `cast` 로 눌렀다.
     """
-    from types import SimpleNamespace
-
     import pandas as pd
 
     index = pd.PeriodIndex(list(values), freq="M")
@@ -2439,22 +2464,15 @@ def _peak_stub(
         index=index,
     )
     peak = SimpleNamespace(monthly=frame, demand_months=demand_months, top_n=100)
-    return cast("Diagnosis", SimpleNamespace(peak=peak))
+    return SimpleNamespace(peak=peak)
 
 
-def _quality_stub(flagged: tuple[str, ...]) -> QualityReport:
-    """자격 대역만 채운 품질 대역. `cast` 를 쓰는 까닭은 :func:`_peak_stub` 과 같다."""
-    from types import SimpleNamespace
-
+def _quality_stub(flagged: tuple[str, ...]) -> SimpleNamespace:
+    """자격 대역만 채운 품질 대역. :class:`~kwise.report.narrative.FlaggedMonthSource` 에 맞는다."""
     import pandas as pd
 
-    return cast(
-        "QualityReport",
-        SimpleNamespace(
-            flagged_months=tuple(
-                SimpleNamespace(month=pd.Period(month, freq="M")) for month in flagged
-            )
-        ),
+    return SimpleNamespace(
+        flagged_months=tuple(SimpleNamespace(month=pd.Period(month, freq="M")) for month in flagged)
     )
 
 
