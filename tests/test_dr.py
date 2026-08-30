@@ -51,23 +51,29 @@ from kwise.measures.demand_response import UNPRICED_REASON
 from kwise.notices import texts
 from kwise.rules import rule_value
 from kwise.rules.schema import RuleDataError
-from kwise.tariff import BillingResult, TariffTable, build_calendar, classify_slots
+from kwise.tariff import (
+    BillingResult,
+    HolidayCalendar,
+    TariffTable,
+    build_calendar,
+    classify_slots,
+)
 
 # 2024-03: 01(금, 삼일절) 02(토) 03(일) … 30(토) 31(일)
 MARCH_INDEX = pd.date_range("2024-03-01 00:15", "2024-04-01 00:00", freq="15min")
 
 
 @pytest.fixture(scope="module")
-def calendar() -> object:
+def calendar() -> HolidayCalendar:
     return build_calendar(range(2023, 2026))
 
 
 # --------------------------------------------------------------------- 거래일 (제12.4.2.1조)
 
 
-def test_saturday_sunday_and_holiday_are_all_excluded(calendar: object) -> None:
+def test_saturday_sunday_and_holiday_are_all_excluded(calendar: HolidayCalendar) -> None:
     """토·일·공휴일이 **모두** 빠진다. 일요일은 공휴일 규정에 포함된다."""
-    days = dr_eligible_days(MARCH_INDEX, 15, calendar)  # type: ignore[arg-type]
+    days = dr_eligible_days(MARCH_INDEX, 15, calendar)
     assert pd.Timestamp("2024-03-01") not in days  # 금요일이지만 삼일절
     assert pd.Timestamp("2024-03-02") not in days  # 토요일
     assert pd.Timestamp("2024-03-03") not in days  # 일요일
@@ -78,13 +84,15 @@ def test_saturday_sunday_and_holiday_are_all_excluded(calendar: object) -> None:
     assert len(days) == 20
 
 
-def test_dr_weekday_differs_from_the_tariff_weekday(calendar: object, tariff: TariffTable) -> None:
+def test_dr_weekday_differs_from_the_tariff_weekday(
+    calendar: HolidayCalendar, tariff: TariffTable
+) -> None:
     """**토요일에서 갈린다.** 요금은 중간부하로 낮출 뿐 공휴일이 아니다.
 
     이 차이 때문에 DR 거래일 판정을 tariff 와 따로 둔다.
     """
     saturday = pd.date_range("2024-03-09 00:15", "2024-03-10 00:00", freq="15min")
-    slots = classify_slots(saturday, 15, tariff, calendar)  # type: ignore[arg-type]
+    slots = classify_slots(saturday, 15, tariff, calendar)
 
     # 요금 규칙에서 토요일은 공휴일이 아니다 (day_type 이 saturday 이고 경부하도 아니다).
     assert set(slots["day_type"]) == {"saturday"}
@@ -92,14 +100,14 @@ def test_dr_weekday_differs_from_the_tariff_weekday(calendar: object, tariff: Ta
     assert set(slots["band"]) != {"light"}  # 전량 경부하로 접히지 않는다
 
     # DR 에서는 통째로 빠진다.
-    assert len(dr_eligible_days(saturday, 15, calendar)) == 0  # type: ignore[arg-type]
-    assert not bool(dr_day_mask(saturday, 15, calendar).any())  # type: ignore[arg-type]
+    assert len(dr_eligible_days(saturday, 15, calendar)) == 0
+    assert not bool(dr_day_mask(saturday, 15, calendar).any())
 
 
-def test_dr_day_mask_follows_the_slot_start_convention(calendar: object) -> None:
+def test_dr_day_mask_follows_the_slot_start_convention(calendar: HolidayCalendar) -> None:
     """라벨은 구간 끝이다. ``03-05 00:00`` 슬롯은 04일 23:45~24:00 이라 4일에 속한다."""
     index = pd.DatetimeIndex(["2024-03-05 00:00", "2024-03-05 00:15", "2024-03-11 00:00"])
-    mask = dr_day_mask(index, 15, calendar)  # type: ignore[arg-type]
+    mask = dr_day_mask(index, 15, calendar)
     assert list(mask) == [True, True, False]  # 3번째는 10일(일요일) 소속
 
 
@@ -274,19 +282,21 @@ def test_감축_여력은_운영_시간대로만_잰다(sample_diagnosis: Diagno
     assert 8 not in hours
 
 
-def test_배수를_올리면_저부하일이_늘어난다(sample_usage: UsageData, calendar: object) -> None:
+def test_배수를_올리면_저부하일이_늘어난다(
+    sample_usage: UsageData, calendar: HolidayCalendar
+) -> None:
     """배수가 판정을 정한다. 값은 assumptions.json 에 있다."""
     loose = dr_profile(
         sample_usage.kw,
         15,
-        calendar,  # type: ignore[arg-type]
+        calendar,
         contract_type="general_b",
         low_load_ratio=1.6,
     )
     tight = dr_profile(
         sample_usage.kw,
         15,
-        calendar,  # type: ignore[arg-type]
+        calendar,
         contract_type="general_b",
         low_load_ratio=1.0,
     )
@@ -295,13 +305,13 @@ def test_배수를_올리면_저부하일이_늘어난다(sample_usage: UsageDat
 
 
 def test_저부하일이_없으면_영을_내고_이유를_적는다(
-    sample_usage: UsageData, calendar: object
+    sample_usage: UsageData, calendar: HolidayCalendar
 ) -> None:
     """**0 을 내되 빈칸으로 두지 않는다.**"""
     profile = dr_profile(
         sample_usage.kw,
         15,
-        calendar,  # type: ignore[arg-type]
+        calendar,
         contract_type="general_b",
         low_load_ratio=0.1,  # 아무 날도 걸리지 않는 문턱
     )
@@ -312,19 +322,19 @@ def test_저부하일이_없으면_영을_내고_이유를_적는다(
     assert any("저부하 평일이 없습니다" in message for message in texts(profile.notices))
 
 
-def test_정전일은_저부하_평일이_아니다(sample_usage: UsageData, calendar: object) -> None:
+def test_정전일은_저부하_평일이_아니다(sample_usage: UsageData, calendar: HolidayCalendar) -> None:
     """정전으로 부하가 낮았던 날은 감축 여력이 아니다."""
     without = dr_profile(
         sample_usage.kw,
         15,
-        calendar,  # type: ignore[arg-type]
+        calendar,
         contract_type="general_b",
     )
     blanket = pd.Series(True, index=sample_usage.kw.index)  # 전 구간을 정전으로 본다
     with_outage = dr_profile(
         sample_usage.kw,
         15,
-        calendar,  # type: ignore[arg-type]
+        calendar,
         contract_type="general_b",
         outage_mask=blanket,
     )
@@ -332,14 +342,14 @@ def test_정전일은_저부하_평일이_아니다(sample_usage: UsageData, cal
     assert with_outage.low_load_days_count == 0
 
 
-def test_참고_문턱은_자원_단위_기준이다(sample_usage: UsageData, calendar: object) -> None:
+def test_참고_문턱은_자원_단위_기준이다(sample_usage: UsageData, calendar: HolidayCalendar) -> None:
     """0.1 MW-h 문턱은 **자원 단위** 기준이다. 개별 고객 판정으로 쓰지 않는다."""
     assert dr_reference_capacity_kw() == 100.0
     tiny = sample_usage.kw * 0.02  # 등록 가능 용량이 문턱 아래로 내려간다
     profile = dr_profile(
         tiny,
         15,
-        calendar,  # type: ignore[arg-type]
+        calendar,
         contract_type="general_b",
         contract_kw=110.0,
     )
@@ -355,10 +365,10 @@ def test_적합성_등급은_등록_용량으로_매긴다(sample_diagnosis: Dia
     assert profile.meets_reference_capacity
 
 
-def test_관측치가_없으면_거부한다(calendar: object) -> None:
+def test_관측치가_없으면_거부한다(calendar: HolidayCalendar) -> None:
     empty = pd.Series(float("nan"), index=pd.date_range("2024-03-01", periods=8, freq="15min"))
     with pytest.raises(ValueError, match="관측된 수요가 없어"):
-        dr_profile(empty, 15, calendar)  # type: ignore[arg-type]
+        dr_profile(empty, 15, calendar)
 
 
 # --------------------------------------------------------------------- 7.3 수단
@@ -524,7 +534,9 @@ def test_수단_시트가_사유로_채워진다(sample_diagnosis: Diagnosis) ->
     assert "저부하 평일" in row["비고"]
 
 
-def test_시장_시간대와_건물_운영_시간대를_가른다(sample_usage: UsageData, calendar: object) -> None:
+def test_시장_시간대와_건물_운영_시간대를_가른다(
+    sample_usage: UsageData, calendar: HolidayCalendar
+) -> None:
     """**둘은 다른 값이다** (21세션 4절).
 
     시장 시간대는 제도가 정한 입찰 가능 시간(평일 09~12·13~20시)이고, 건물
@@ -543,14 +555,14 @@ def test_시장_시간대와_건물_운영_시간대를_가른다(sample_usage: 
     early = dr_profile(
         sample_usage.kw,
         15,
-        calendar,  # type: ignore[arg-type]
+        calendar,
         contract_type="general_b",
         operating_hours=(8, 20),
     )
     late = dr_profile(
         sample_usage.kw,
         15,
-        calendar,  # type: ignore[arg-type]
+        calendar,
         contract_type="general_b",
         operating_hours=(9, 18),
     )
@@ -588,7 +600,9 @@ def test_공휴일_라이브러리가_못_잡는_날이_있다() -> None:
     assert any("임시공휴일" in line for line in LIBRARY_HOLIDAY_GAPS)
 
 
-def test_쉬는_날을_빼면_감축량이_다시_계산된다(sample_usage: UsageData, calendar: object) -> None:
+def test_쉬는_날을_빼면_감축량이_다시_계산된다(
+    sample_usage: UsageData, calendar: HolidayCalendar
+) -> None:
     """**빼기만 하는 것이 아니다** (29세션).
 
     그 날은 거래 가능일에서 빠지고 **기준선 모집단(쉬는 날)으로 옮겨 간다** —
@@ -599,7 +613,7 @@ def test_쉬는_날을_빼면_감축량이_다시_계산된다(sample_usage: Usa
         return dr_profile(
             sample_usage.kw,
             15,
-            calendar,  # type: ignore[arg-type]
+            calendar,
             contract_type="general_b",
             off_days=off,
         )
@@ -625,7 +639,9 @@ def test_쉬는_날을_빼면_감축량이_다시_계산된다(sample_usage: Usa
     assert "2023-05-01" in reasons[0] and "2023-10-02" in reasons[0]
 
 
-def test_날짜_꼴이_섞여도_같은_날로_본다(sample_usage: UsageData, calendar: object) -> None:
+def test_날짜_꼴이_섞여도_같은_날로_본다(
+    sample_usage: UsageData, calendar: HolidayCalendar
+) -> None:
     """화면은 ``date``, 세션은 문자열, 프로파일은 ``Timestamp`` 를 쓴다 (29세션)."""
     import datetime as dt
 

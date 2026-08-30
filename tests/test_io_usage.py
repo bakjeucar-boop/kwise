@@ -327,7 +327,9 @@ def test_kwh_grid_partial_sum_is_blocked_too(tmp_path: Path) -> None:
     """슬라이스에도 장치가 따라붙는다. 월별·시간대별 부분합이 더 위험하다."""
     usage = off_grid_usage(tmp_path)
     with pytest.raises(OffGridEnergyError):
-        usage.kwh_grid.loc["2024-01-01 12:00":"2024-01-01 20:00"].sum()
+        usage.kwh_grid.loc[
+            pd.Timestamp("2024-01-01 12:00") : pd.Timestamp("2024-01-01 20:00")
+        ].sum()
 
 
 def test_grid_only_sum_is_allowed_when_declared(tmp_path: Path) -> None:
@@ -408,7 +410,9 @@ def test_energy_kwh_still_supports_normal_arithmetic(tmp_path: Path) -> None:
 
 def test_energy_kwh_guard_survives_slicing(tmp_path: Path) -> None:
     usage = off_grid_usage(tmp_path)
-    window = usage.energy_kwh().loc["2024-01-01 12:00":"2024-01-01 20:00"]
+    window = usage.energy_kwh().loc[
+        pd.Timestamp("2024-01-01 12:00") : pd.Timestamp("2024-01-01 20:00")
+    ]
     with pytest.raises(EnergyToDemandError):
         _ = window * 4
 

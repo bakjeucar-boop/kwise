@@ -182,7 +182,7 @@ def synthetic_load() -> pd.Series:
     """야간 기저 400 kW, 정오 스파이크 1,000 kW 인 사흘치."""
     index = pd.date_range("2024-03-01 00:15", periods=96 * 3, freq="15min")
     load = pd.Series(400.0, index=index)
-    load.loc["2024-03-01 12:00":"2024-03-01 13:00"] = 1_000.0
+    load.loc[pd.Timestamp("2024-03-01 12:00") : pd.Timestamp("2024-03-01 13:00")] = 1_000.0
     return load
 
 
@@ -531,7 +531,9 @@ def test_조합_비교_열쇠가_잉여_수익을_안_본다() -> None:
     """**요금과 무관한 값이 열쇠에 있으면 캐시가 죽는다** (57세션 2절)."""
     import inspect
 
-    from kwise.ui import cache
+    # **`from kwise.ui import cache` 가 아니다** (70세션 2절). `kwise.ui` 는
+    # 그 하위 모듈을 내보내지 않아 형이 안 잡힌다 — 모듈을 곧장 부른다.
+    import kwise.ui.cache as cache
 
     source = inspect.getsource(cache.cached_comparison)
     assert "stripped" in source

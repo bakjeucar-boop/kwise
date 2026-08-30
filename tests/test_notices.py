@@ -583,7 +583,7 @@ def test_안내를_문구_조각으로_거르지_않는다() -> None:
     assert offenders == [], "문구 조각으로 안내를 거르는 자리: " + " / ".join(offenders)
 
 
-def test_굵게가_겹치지_않는다() -> None:
+def test_굵게가_겹치지_않는다(monkeypatch: pytest.MonkeyPatch) -> None:
     """``**`` 를 두 번 감싸면 별표 넷이 그대로 나온다 (22세션 4절)."""
     from kwise.ui.callout import CAUTION_ICON, caution
 
@@ -594,15 +594,12 @@ def test_굵게가_겹치지_않는다() -> None:
         def markdown(text: str) -> None:
             rendered.append(text)
 
-    import kwise.ui.callout as module
-
-    original = module.st
-    module.st = _Stub()  # type: ignore[assignment]
-    try:
-        caution("**투자비는 0원이지만 리스크는 0이 아닙니다.** 감축계획량을 채우지 못하면…")
-        caution("평범한 경고입니다.")
-    finally:
-        module.st = original
+    # **`monkeypatch` 로 갈아 끼운다** (70세션 2절). 손으로 넣고 `finally` 로
+    # 되돌리던 것을 맡겼다 — 되돌리는 것을 잊을 자리가 없어지고, 이름을 글로
+    # 주므로 `kwise.ui.callout` 이 `st` 를 안 내보낸다는 오류도 사라진다.
+    monkeypatch.setattr("kwise.ui.callout.st", _Stub())
+    caution("**투자비는 0원이지만 리스크는 0이 아닙니다.** 감축계획량을 채우지 못하면…")
+    caution("평범한 경고입니다.")
 
     assert "****" not in rendered[0], rendered[0]
     assert rendered[0].startswith(f"{CAUTION_ICON} **투자비는")

@@ -163,7 +163,7 @@ def test_hourly_is_interpolated_to_quarter_hour(aligned_day: pd.Series) -> None:
     assert len(aligned_day) == 96
     assert aligned_day.index.freqstr == "15min"
     # 시간별 원자료보다 촘촘하므로 인접 15분 값이 서로 다르다
-    midday = aligned_day.loc[f"{DAY} 11:00" : f"{DAY} 13:00"]
+    midday = aligned_day.loc[pd.Timestamp(f"{DAY} 11:00") : pd.Timestamp(f"{DAY} 13:00")]
     assert midday.nunique() == len(midday)
 
 
@@ -481,7 +481,7 @@ def test_daily_total_is_preserved_to_machine_precision(aligned_day: pd.Series) -
 def test_noon_peak_widens_with_sharpness(aligned_day: pd.Series) -> None:
     """정오 최대 출력은 보수 < 기준 < 낙관 이어야 한다."""
     noon = [
-        float(adjusted.loc[f"{DAY} 11:00" : f"{DAY} 13:00"].max())
+        float(adjusted.loc[pd.Timestamp(f"{DAY} 11:00") : pd.Timestamp(f"{DAY} 13:00")].max())
         for _, _, adjusted in iter_scenarios(aligned_day)
     ]
     assert noon[0] < noon[1] < noon[2]

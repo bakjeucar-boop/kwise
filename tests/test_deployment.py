@@ -467,7 +467,7 @@ def _scan_ctrl() -> ModuleType:
     """``tools\\scan_ctrl.py`` 를 불러온다 (다른 시험이 도구를 쓰는 방식과 같다)."""
     sys.path.insert(0, str(PROJECT_ROOT / "tools"))
     try:
-        import scan_ctrl  # type: ignore[import-not-found]
+        import scan_ctrl
     finally:
         sys.path.pop(0)
     return scan_ctrl
