@@ -20,6 +20,7 @@ import sys
 import tomllib
 from collections.abc import Iterator
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -457,3 +458,56 @@ def test_documented_tool_paths_exist() -> None:
         referenced.update(re.findall(r"tools[\\/]([A-Za-z_][\w]*\.py)", text))
     missing = sorted(name for name in referenced if not (PROJECT_ROOT / "tools" / name).is_file())
     assert not missing, f"문서가 가리키는 도구가 없습니다: {missing}"
+
+
+# ============================================ 67세션 2절 — 셸을 한 겹 더 태우지 않는다
+
+
+def _scan_ctrl() -> ModuleType:
+    """``tools\\scan_ctrl.py`` 를 불러온다 (다른 시험이 도구를 쓰는 방식과 같다)."""
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    try:
+        import scan_ctrl  # type: ignore[import-not-found]
+    finally:
+        sys.path.pop(0)
+    return scan_ctrl
+
+
+def test_제어문자_검사가_심은_자리를_잡는다(tmp_path: Path) -> None:
+    """**검사가 살아 있는가.** 지금 저장소는 깨끗해서 그냥 돌리면 늘 0 이다 —
+    그것으로는 도구가 죽었는지 알 수 없다 (결함 유형 ②).
+
+    그래서 **일부러 심는다.** 65세션이 실제로 물린 두 글자다.
+
+    줄 번호가 **2·3** 이어야 한다. U+000C 를 줄바꿈으로 세면 3이 4가 되거나
+    자리 하나가 통째로 사라진다 — 65세션이 일곱을 다섯으로 센 바로 그 함정이다.
+    """
+    scan_ctrl = _scan_ctrl()
+    planted = tmp_path / "심은.md"
+    # **글자를 직접 넣지 않고 이스케이프로 적는다.** 이 원본에 진짜 제어문자가
+    # 박히면 아래 시험이 저장소를 훑다가 여기서 걸린다 — 67세션에 편집 도구를
+    # 지나며 실제로 한 번 박혔고, `scan_ctrl.py` 가 그 자리를 잡아냈다.
+    planted.write_text("첫 줄\n둘째 \u0008 줄\n셋째 \u000c 줄\n", encoding="utf-8")
+    (tmp_path / "깨끗한.md").write_text("아무것도 없다\n", encoding="utf-8")
+
+    hits = scan_ctrl.scan(tmp_path)
+
+    assert [(str(hit.path), hit.line, hit.code) for hit in hits] == [
+        ("심은.md", 2, 0x08),
+        ("심은.md", 3, 0x0C),
+    ], hits
+
+
+def test_저장소에_제어문자가_없다() -> None:
+    """**남은 자리 0.** 66세션이 일곱을 걷었고 그 뒤로 새어 들어간 것이 없다.
+
+    약관 원문(``data\\source``)의 U+000C 는 쪽 구분이라 정상이다. **거른 수도
+    함께 본다** — 0 이면 거르는 규칙이 죽은 것이지 원문이 깨끗해진 것이 아니다.
+    """
+    scan_ctrl = _scan_ctrl()
+    hits = scan_ctrl.scan(PROJECT_ROOT)
+    left = [hit for hit in hits if not scan_ctrl.is_source_text(hit.path)]
+    skipped = [hit for hit in hits if scan_ctrl.is_source_text(hit.path)]
+
+    assert not left, f"제어문자가 박힌 자리: {[str(hit) for hit in left]}"
+    assert skipped, "약관 원문을 거르는 규칙이 아무것도 안 걸렀습니다 — data\\source 를 보십시오."
