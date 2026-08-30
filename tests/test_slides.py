@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 from pathlib import Path
+from typing import cast
 
 import pytest
 from pptx import Presentation
@@ -27,6 +28,8 @@ from kwise.compare import ComparisonResult
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
 from kwise.measures import MEASURE_CATALOG, TariffSwitchResult
+from kwise.measures.surplus import SurplusResult
+from kwise.quality import QualityReport
 from kwise.report import figures
 from kwise.report import slides as slides_module
 from kwise.report.appendix import APPENDIX_TITLES
@@ -34,6 +37,7 @@ from kwise.report.design import DesignGuideError, design_path, load_design_guide
 from kwise.report.document import (
     DocumentSections,
     MeasureEntry,
+    SurplusPage,
     build_document,
     measure_entries,
 )
@@ -94,7 +98,7 @@ def entries(
     sample_switch: TariffSwitchResult,
     sample_bill: BillingResult,
     sample_usage: UsageData,
-) -> tuple[object, ...]:
+) -> tuple[MeasureEntry, ...]:
     from kwise.measures import evaluate_contract_adjustment
 
     contract = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=5_800.0)
@@ -108,7 +112,7 @@ def full_sections(
     sample_diagnosis: Diagnosis,
     sample_comparison: ComparisonResult,
     sample_switch: TariffSwitchResult,
-    entries: tuple[object, ...],
+    entries: tuple[MeasureEntry, ...],
 ) -> DocumentSections:
     from kwise.report.worksheet import tariff_switch_worksheet
 
@@ -117,7 +121,7 @@ def full_sections(
         bill=sample_bill,
         diagnosis=sample_diagnosis,
         comparison=sample_comparison,
-        measures=entries,  # type: ignore[arg-type]
+        measures=entries,
         worksheets=(tariff_switch_worksheet(sample_switch),),
         building_name="본사 사옥",
         prepared_on=dt.date(2026, 8, 11),
@@ -138,11 +142,7 @@ def _slide_text(slide: object) -> str:
         if shape.has_text_frame:
             parts.append(shape.text_frame.text)
         if shape.has_table:
-            parts.extend(
-                cell.text
-                for row in shape.table.rows
-                for cell in row.cells  # type: ignore[union-attr]
-            )
+            parts.extend(cell.text for row in shape.table.rows for cell in row.cells)
     return "\n".join(parts)
 
 
@@ -1633,7 +1633,7 @@ def test_사양_표_열이_고르게_나뉘지_않는다() -> None:
 # ===================================================================== 53세션 · 3절 잉여 장
 
 
-def _surplus_result(*, weekday: float, weekend: float, holiday: float) -> object:
+def _surplus_result(*, weekday: float, weekend: float, holiday: float) -> SurplusResult:
     """잉여 결과를 **값만 채워** 만든다. 갈래 시험은 계산이 아니라 문장을 본다."""
     import pandas as pd
 
@@ -1670,10 +1670,10 @@ def test_잉여가_있으면_장이_생기고_0이면_안_생긴다(full_section
 
     assert surplus_page(None, capacity_kwp=160.0) is None
     empty = _surplus_result(weekday=0.0, weekend=0.0, holiday=0.0)
-    assert surplus_page(empty, capacity_kwp=160.0) is None  # type: ignore[arg-type]
+    assert surplus_page(empty, capacity_kwp=160.0) is None
 
     page = surplus_page(
-        _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0),  # type: ignore[arg-type]
+        _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0),
         capacity_kwp=160.0,
         surplus_free_kwp=40.0,
     )
@@ -1700,7 +1700,7 @@ def test_잉여_문장이_평일_휴일_비중으로_갈린다() -> None:
     from kwise.report.document import surplus_page
 
     def lead(**parts: float) -> str:
-        page = surplus_page(_surplus_result(**parts), capacity_kwp=160.0)  # type: ignore[arg-type]
+        page = surplus_page(_surplus_result(**parts), capacity_kwp=160.0)
         assert page is not None
         return page.lead
 
@@ -1739,7 +1739,7 @@ def test_잉여_장이_셋을_다_싣고_금액_순으로_세운다(full_section
     base = _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0)
     # 58세션 뒤의 자리 — 두 줄 다 금액이 서고 **외부 판매가 더 크다.**
     priced = dataclasses.replace(
-        base,  # type: ignore[type-var]
+        base,
         scenarios=(
             SurplusScenario(OFFSET_SCENARIO, 2_283_732.0, "상계", "계약 변경"),
             SurplusScenario(EXTERNAL_SCENARIO, 2_947_148.0, "외부", "구매자 발굴"),
@@ -1786,7 +1786,7 @@ def test_금액을_못_낸_줄은_맨_뒤다() -> None:
 
     # ``_surplus_result`` 의 외부 판매는 단가 미입력(``None``)이다.
     page = surplus_page(
-        _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0),  # type: ignore[arg-type]
+        _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0),
         capacity_kwp=160.0,
         surplus_free_kwp=40.0,
     )
@@ -1813,7 +1813,7 @@ def test_상계거래_비고가_기간말_잔여를_늘_적는다() -> None:
 
     base = _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0)
     settled = dataclasses.replace(
-        base,  # type: ignore[type-var]
+        base,
         offset=OffsetSettlement(
             months=(),
             deducted_kwh=23_416.0,
@@ -1825,7 +1825,7 @@ def test_상계거래_비고가_기간말_잔여를_늘_적는다() -> None:
         ),
         scenarios=(
             SurplusScenario(OFFSET_SCENARIO, 2_283_732.0, "상계", "계약 변경"),
-            *base.scenarios[1:],  # type: ignore[attr-defined]
+            *base.scenarios[1:],
         ),
     )
     page = surplus_page(settled, capacity_kwp=160.0, surplus_free_kwp=40.0)
@@ -1853,12 +1853,12 @@ def test_잉여_장이_적용_단가를_밝힌다(full_sections: DocumentSection
 
     base = _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0)
     priced = dataclasses.replace(
-        base,  # type: ignore[type-var]
+        base,
         external_price_won_per_kwh=140.0,
         scenarios=(
             SurplusScenario(OFFSET_SCENARIO, 2_545_000.0, "상계", "계약 변경"),
             SurplusScenario(EXTERNAL_SCENARIO, 3_267_824.0, "외부", "구매자 발굴"),
-            base.scenarios[2],  # type: ignore[attr-defined]
+            base.scenarios[2],
         ),
     )
     page = surplus_page(priced, capacity_kwp=160.0, surplus_free_kwp=40.0)
@@ -1866,7 +1866,7 @@ def test_잉여_장이_적용_단가를_밝힌다(full_sections: DocumentSection
     assert "외부 판매 140원/kWh" in " ".join(page.notes)
     assert "참고용입니다" in " ".join(page.notes)
     # **단가가 없으면 그 문장도 없다** — 지어낸 단가를 밝히지 않는다.
-    plain = surplus_page(base, capacity_kwp=160.0, surplus_free_kwp=40.0)  # type: ignore[arg-type]
+    plain = surplus_page(base, capacity_kwp=160.0, surplus_free_kwp=40.0)
     assert plain is not None
     assert "원/kWh" not in " ".join(plain.notes)
 
@@ -1880,7 +1880,7 @@ def test_잉여_장이_적용_단가를_밝힌다(full_sections: DocumentSection
 # ===================================================================== 53세션 · 4절 갈래
 
 
-def test_결측_갈래가_셋이다(sample_report: object) -> None:
+def test_결측_갈래가_셋이다(sample_report: QualityReport) -> None:
     """**결측이 없으면 뒷문장이 없다** (53세션 4-1).
 
     39세션은 「가장 심한 달」 하나만 짚었다. 여러 달이 높으면 이름을 다 이어
@@ -1891,20 +1891,19 @@ def test_결측_갈래가_셋이다(sample_report: object) -> None:
     from kwise.report.narrative import building_lead
 
     assert "결측" in building_lead(None)
-    clean = replace(sample_report, missing_slots=0, missing_ratio=0.0, monthly=())  # type: ignore[type-var]
+    clean = replace(sample_report, missing_slots=0, missing_ratio=0.0, monthly=())
     text = building_lead(clean)
     assert "결측이 없어" in text
     assert "낮게 잡혔을" not in text, text
 
-    one = building_lead(sample_report)  # type: ignore[arg-type]
+    one = building_lead(sample_report)
     assert "낮게 잡혔을 수 있습니다" in one, one
     assert "개 달이" not in one, one
 
     heavy = replace(
-        sample_report,  # type: ignore[type-var]
+        sample_report,
         monthly=tuple(
-            replace(month, ratio=0.4, missing_slots=100)
-            for month in sample_report.monthly  # type: ignore[attr-defined]
+            replace(month, ratio=0.4, missing_slots=100) for month in sample_report.monthly
         ),
     )
     many = building_lead(heavy)
@@ -2421,8 +2420,15 @@ def test_조합_문장이_수단_수로_갈린다() -> None:
 
 def _peak_stub(
     values: dict[str, float], *, demand_months: tuple[int, ...] = (7, 8, 9, 12, 1, 2)
-) -> object:
-    """월별 최대수요만 채운 진단 대역. **갈래 시험은 계산이 아니라 문장을 본다.**"""
+) -> Diagnosis:
+    """월별 최대수요만 채운 진단 대역. **갈래 시험은 계산이 아니라 문장을 본다.**
+
+    **`cast` 를 쓴다** (70세션 2절). 진짜 :class:`Diagnosis` 를 지으려면
+    `diagnose()` 를 돌려야 하는데 여기서 재는 것은 계산이 아니라 **문장이 어느
+    갈래를 타는가**다. `object` 로 두면 부르는 자리마다 오류가 나고, 억제를
+    붙여도 `SimpleNamespace` 의 속은 어차피 mypy 가 못 본다 —
+    **시험이 약해지는 것은 없고 정적 검사만 조용해진다.**
+    """
     from types import SimpleNamespace
 
     import pandas as pd
@@ -2432,18 +2438,23 @@ def _peak_stub(
         {"max_demand_kw": list(values.values()), "demand_basis_kw": list(values.values())},
         index=index,
     )
-    return SimpleNamespace(
-        peak=SimpleNamespace(monthly=frame, demand_months=demand_months, top_n=100)
-    )
+    peak = SimpleNamespace(monthly=frame, demand_months=demand_months, top_n=100)
+    return cast("Diagnosis", SimpleNamespace(peak=peak))
 
 
-def _quality_stub(flagged: tuple[str, ...]) -> object:
+def _quality_stub(flagged: tuple[str, ...]) -> QualityReport:
+    """자격 대역만 채운 품질 대역. `cast` 를 쓰는 까닭은 :func:`_peak_stub` 과 같다."""
     from types import SimpleNamespace
 
     import pandas as pd
 
-    return SimpleNamespace(
-        flagged_months=tuple(SimpleNamespace(month=pd.Period(month, freq="M")) for month in flagged)
+    return cast(
+        "QualityReport",
+        SimpleNamespace(
+            flagged_months=tuple(
+                SimpleNamespace(month=pd.Period(month, freq="M")) for month in flagged
+            )
+        ),
     )
 
 
@@ -2498,8 +2509,8 @@ def test_DR_문장이_날_수로_세_갈래다(sample_diagnosis: Diagnosis) -> N
     assert dr_lead(None) == ""
     assert "내려오는 평일이 없어" in dr_lead(replace(profile, low_load_days=()))
     days = tuple(range(profile.eligible_days))
-    assert "전부가 부하가 쉬는 날" in dr_lead(replace(profile, low_load_days=days))  # type: ignore[arg-type]
-    assert "일만 부하가 쉬는 날" in dr_lead(replace(profile, low_load_days=days[:2]))  # type: ignore[arg-type]
+    assert "전부가 부하가 쉬는 날" in dr_lead(replace(profile, low_load_days=days))
+    assert "일만 부하가 쉬는 날" in dr_lead(replace(profile, low_load_days=days[:2]))
 
 
 # ===================================================================== 53세션 · 5절 차액 라벨
@@ -2827,10 +2838,13 @@ def test_각주가_세_줄로_흘러도_위를_덮지_않는다(
 
     실물에서는 지금 자료가 모두 한두 줄이라 보이지 않는다. **줄을 늘려 본다.**
     """
-    from kwise.report import slides as slides_module
+    # **모듈을 곧장 짚는다** (70세션 2절). `slides_module.narrative` 로 가면
+    # `slides` 가 그 이름을 내보내지 않는다고 mypy 가 짚는다 — 실제로 갈아 끼우는
+    # 자리는 `narrative` 모듈 자신이라 그쪽을 부르는 것이 사실에 맞다.
+    from kwise.report import narrative
 
     monkeypatch.setattr(
-        slides_module.narrative,
+        narrative,
         "glossary_note",
         lambda *args, **kwargs: _LONG_NOTE,
     )
@@ -2871,7 +2885,7 @@ def test_슬라이드_안에서_끝난다(full_sections: DocumentSections) -> No
 # ============================================================ 60세션 — 각주 조립
 
 
-def _priced_surplus_page() -> object:
+def _priced_surplus_page() -> SurplusPage:
     """**적용 단가가 붙은 잉여 장** — 각주가 두 줄이 되는 유일한 갈래다 (58세션).
 
     단가가 없으면 :meth:`SurplusResult.applied_price_note` 가 비어 각주가 한
@@ -2888,12 +2902,12 @@ def _priced_surplus_page() -> object:
 
     base = _surplus_result(weekday=105.0, weekend=20_000.0, holiday=3_311.0)
     priced = dataclasses.replace(
-        base,  # type: ignore[type-var]
+        base,
         external_price_won_per_kwh=140.0,
         scenarios=(
             SurplusScenario(OFFSET_SCENARIO, 2_545_000.0, "상계", "계약 변경"),
             SurplusScenario(EXTERNAL_SCENARIO, 3_267_824.0, "외부", "구매자 발굴"),
-            base.scenarios[2],  # type: ignore[attr-defined]
+            base.scenarios[2],
         ),
     )
     page = surplus_page(priced, capacity_kwp=160.0, surplus_free_kwp=40.0)
@@ -3229,7 +3243,7 @@ def test_덱_라벨이_그림_실패를_0_까지_적는다() -> None:
     import sys
 
     sys.path.insert(0, str(Path("tools").resolve()))
-    import render_deck  # type: ignore[import-not-found]
+    import render_deck
 
     case = render_deck.BY_KEY["small-b"]
     quiet = render_deck.label_text(case, ("표지", "목차"), ())
@@ -3274,11 +3288,11 @@ def test_기온_그림이_실패하면_사용량만_그리고_기록을_남긴�
 
     original = figures.daily_temperature_png
     try:
-        figures.daily_temperature_png = boom  # type: ignore[assignment]
+        figures.daily_temperature_png = boom
         with FigureFailureCollector() as collector:
             png, caption = _usage_figure(warm)
     finally:
-        figures.daily_temperature_png = original  # type: ignore[assignment]
+        figures.daily_temperature_png = original
 
     assert png, "기온이 없어도 사용량 그림은 나온다 — 장을 비우지 않는다."
     assert "기온" not in caption, f"캡션이 사용량만 말해야 합니다: {caption}"
