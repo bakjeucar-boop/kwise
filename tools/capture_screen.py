@@ -216,10 +216,7 @@ def _fill_contract(page: object, contract: Contract) -> None:
     """
     _pick(page, "계약종별", contract.contract_type)
     _pick(page, "전압구분", contract.voltage)
-    kw = (
-        page.locator('[data-testid="stNumberInput"]:has-text("계약전력")')  # type: ignore[attr-defined]
-        .first.locator("input")
-    )
+    kw = page.locator('[data-testid="stNumberInput"]:has-text("계약전력")').first.locator("input")  # type: ignore[attr-defined]
     kw.fill(f"{contract.contract_kw:.0f}")
     kw.press("Enter")
     page.wait_for_timeout(1_500)  # type: ignore[attr-defined]

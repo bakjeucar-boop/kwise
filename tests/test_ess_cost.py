@@ -1134,9 +1134,7 @@ def _c3_material(tariff: TariffTable) -> tuple[object, ...]:
     # **문지기를 끈다** (50세션). C3 는 필요 출력이 7 kW 라 기본 설정에서는 후보가
     # 없어 창을 훑는 일 자체가 일어나지 않는다 — 여기서 재는 것은 창 검증이다.
     return (
-        *_case_material(
-            definition.usage_path, definition.selection, tariff, min_power_kw=GATE_OFF
-        ),
+        *_case_material(definition.usage_path, definition.selection, tariff, min_power_kw=GATE_OFF),
         definition,
     )
 
@@ -1305,8 +1303,7 @@ def test_사양_표는_모두_카드_기준_참값이다(
     frame = ess_spec_frame(optimum, baseline_demand_kw=target_curve.baseline_demand_kw)
     # 뭉친 줄은 목표를 범위로 적으므로 **하한**으로 찾는다 (50세션 3-6).
     lows = [
-        float(str(label).split("~")[0].replace(",", ""))
-        for label in frame["목표 요금적용전력(kW)"]
+        float(str(label).split("~")[0].replace(",", "")) for label in frame["목표 요금적용전력(kW)"]
     ]
     row = frame.iloc[lows.index(optimum.target_kw)]
     card = evaluate_ess(
@@ -1976,9 +1973,7 @@ def test_을_종별은_그대로다(tariff: TariffTable) -> None:
     assert len(optimum.points) == 21
 
 
-def test_갑_종별_절감액은_왕복손실뿐이다(
-    sample_usage: UsageData, tariff: TariffTable
-) -> None:
+def test_갑_종별_절감액은_왕복손실뿐이다(sample_usage: UsageData, tariff: TariffTable) -> None:
     """**왜 음수인지** (56세션 1절). 사용자 실물의 −3,000원이 이 값이다.
 
     기본요금은 계약전력에 붙어 안 줄고, 갑Ⅰ 은 전력량요금이 단일 단가라

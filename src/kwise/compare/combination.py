@@ -236,9 +236,7 @@ class ComparisonResult:
         ]
         return pd.DataFrame(rows).set_index("조합")
 
-    def with_surplus_revenue(
-        self, revenue_won: float | None, scenario: str
-    ) -> ComparisonResult:
+    def with_surplus_revenue(self, revenue_won: float | None, scenario: str) -> ComparisonResult:
         """고른 잉여 처리를 **이미 계산한 비교에 얹는다** (57세션).
 
         잉여 수익은 **요금 계산 밖에서 붙는 몫**이라 부하도 청구서도 바꾸지

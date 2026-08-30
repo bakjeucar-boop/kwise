@@ -589,9 +589,7 @@ def _note_block(guide: DesignGuide, lines: Sequence[str]) -> tuple[list[str], fl
         return [], 0.0
     size = guide.type_scale.caption
     width = guide.slide.content_width_in
-    wrapped = sum(
-        max(1, math.ceil(_text_width_in(line, size) / width)) for line in kept
-    )
+    wrapped = sum(max(1, math.ceil(_text_width_in(line, size) / width)) for line in kept)
     return kept, 0.2 * wrapped
 
 
@@ -1648,6 +1646,7 @@ _SPEC_CAPTION_HEIGHT = 0.24
 #: 6.68in 에 앉는데 잘리지 않는다 — 그것이 이 값의 상한을 말해 준다.
 _BODY_TAIL = 0.1
 
+
 def _measure_stats_top(title_bottom: float, lead_height: float) -> float:
     """수단 장에서 **지표 셋(절감액·투자비·회수기간)이 앉는 y** (in) (60세션 10절).
 
@@ -1883,9 +1882,7 @@ def _build_measure(
     drawings = entry.slide_figures
     crowded = False
     if entry.spec_table:
-        body, height, drawings = _spec_block(
-            slide, guide, entry, drawings, top=body, height=height
-        )
+        body, height, drawings = _spec_block(slide, guide, entry, drawings, top=body, height=height)
         # **표가 자리를 다 썼으면 그것으로 끝이다** (53세션 2절·4-13). 남은
         # 틈에 주의사항 표를 밀어 넣으면 결론이 이미 한 말을 되풀이하면서
         # 줄이 눌린다 — ESS 가 그랬다.

@@ -668,9 +668,7 @@ def surplus_page(
 _SURPLUS_DAILY_CAPTION = "일별 잉여 — 토요일·일요일을 색으로 갈랐습니다."
 
 
-def _surplus_remark(
-    surplus: SurplusResult, scenario: SurplusScenario, *, chosen: bool
-) -> str:
+def _surplus_remark(surplus: SurplusResult, scenario: SurplusScenario, *, chosen: bool) -> str:
     """시나리오 한 줄의 비고. **고른 것에는 그 사실을 적는다** (48세션).
 
     상계거래는 금액만으로는 무엇이 일어나는지 알 수 없다 — 당월 사용량에서
@@ -945,9 +943,7 @@ def measure_entries(
         # 보인다.** Word 는 주의사항 목록이, PPT 는 각주가 받는다 —
         # **같은 문장**이다.
         power_factor_line = narrative.power_factor_adjusted_saving(
-            saving_won=(
-                solar.annual_saving_won if base_fee_months else solar.total_saving_won
-            ),
+            saving_won=(solar.annual_saving_won if base_fee_months else solar.total_saving_won),
             extra_won=(
                 annualize(solar.power_factor_extra_won, base_fee_months)
                 if base_fee_months

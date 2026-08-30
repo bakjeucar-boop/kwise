@@ -3947,9 +3947,7 @@ def test_태양광_표식이_권장이고_판정_근거가_붙는다() -> None:
     assert "verdict.tie_note" in source, "판정 근거 각주가 화면에서 빠졌다"
 
 
-def _flat_curve(
-    *, limit_kwp: float, best_kwp: float | None = None
-) -> tuple[object, object]:
+def _flat_curve(*, limit_kwp: float, best_kwp: float | None = None) -> tuple[object, object]:
     """**회수기간이 거의 평평한** 용량 곡선을 손으로 짓는다 (51세션 1·2·4절).
 
     16세션이 실측에서 본 모양이다 — kWp당 단가면 투자비와 절감액이 함께 용량에

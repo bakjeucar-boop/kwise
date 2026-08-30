@@ -468,9 +468,7 @@ class CapacityVerdict:
         # 읽히게 한다. 화면에 나가는 자릿수로 견준다 — 40.0 과 40.2 는 사용자
         # 눈에 같은 값이다.
         same = (
-            pick
-            and onset
-            and f"{self.best.capacity_kwp:,.0f}" == f"{surplus_free_kwp or 0.0:,.0f}"
+            pick and onset and f"{self.best.capacity_kwp:,.0f}" == f"{surplus_free_kwp or 0.0:,.0f}"
         )
         if same:
             return (

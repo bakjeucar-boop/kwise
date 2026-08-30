@@ -735,9 +735,7 @@ def test_저압이_있는_종별에_전압_전제_경고가_붙는다(
     assert "고압" in TENTATIVE_BASE_FEE_BASIS_WARNING
 
 
-def test_갑Ⅱ에는_전압_전제_경고가_붙지_않는다(
-    tariff: TariffTable, sample_usage: UsageData
-) -> None:
+def test_갑Ⅱ에는_전압_전제_경고가_붙지_않는다(tariff: TariffTable, sample_usage: UsageData) -> None:
     """**갑Ⅱ 는 저압이 없어 전제가 갈리지 않는다** (61세션 3절).
 
     60세션까지는 이 경고가 갑Ⅱ 에도 붙었다. 붙을 자리가 아니었다 — 기준이

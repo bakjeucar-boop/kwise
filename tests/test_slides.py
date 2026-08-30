@@ -835,12 +835,10 @@ def test_6장_그림이_문장_차례와_같다(full_sections: DocumentSections)
 
     slide = _slide_by_key(build_slides(full_sections), full_sections, "peak_detail")
     captions = sorted(
-
-            (Emu(shape.left).inches, shape.text_frame.text)
-            for shape in slide.shapes  # type: ignore[attr-defined]
-            if (shape.has_text_frame and "구간이 발생한 시각" in shape.text_frame.text)
-            or (shape.has_text_frame and "평균 부하 모양" in shape.text_frame.text)
-
+        (Emu(shape.left).inches, shape.text_frame.text)
+        for shape in slide.shapes  # type: ignore[attr-defined]
+        if (shape.has_text_frame and "구간이 발생한 시각" in shape.text_frame.text)
+        or (shape.has_text_frame and "평균 부하 모양" in shape.text_frame.text)
     )
     assert next(text for _left, text in captions).startswith("최대수요 상위")
     pictures = sorted(
@@ -1160,9 +1158,7 @@ def test_부록이_넘치면_장을_나눈다(full_sections: DocumentSections) -
     assert len(pages) > 1, "넘치면 장을 나눈다."
     # **빈 줄은 묶음을 가르는 자리다** (53세션 8-2) — 내용이 아니라 경계라
     # 장에는 싣지 않는다. 그 밖의 줄은 한 줄도 버리지 않는다.
-    records = [
-        tuple(str(value) for value in row) for row in many.frame().to_numpy()
-    ]
+    records = [tuple(str(value) for value in row) for row in many.frame().to_numpy()]
     kept = [record for record in records if any(value.strip() for value in record)]
     assert sum(len(page.rows) for page in pages) == len(kept), "한 줄도 버리지 않는다."
     assert all("(" in page.title for page in pages), "이어지는 장임을 제목이 밝힌다."
@@ -2032,9 +2028,7 @@ def test_갑_종별_ESS_장이_결론_한_줄로_선다(
         baseline_demand_kw=5_293.44,
         base_fee_won_per_kw=float(tariff.rates(selection).base_won_per_kw),
     )
-    optimum = refine_ess_target(
-        sample_usage, tariff, selection, curve=curve, baseline=sample_bill
-    )
+    optimum = refine_ess_target(sample_usage, tariff, selection, curve=curve, baseline=sample_bill)
     assert not optimum.viable and not optimum.points
 
     entry = next(
@@ -2120,9 +2114,7 @@ def test_장이_따로_적는_줄은_제_줄에_선다(full_sections: DocumentSe
     # 각주 본문에는 들어가지 않는다 — 슬라이드가 따로 한 줄로 깐다.
     assert "역률 영향" not in _measure_note(noted)
 
-    sections = dataclasses.replace(
-        full_sections, measures=tuple(_replace_solar(measures, noted))
-    )
+    sections = dataclasses.replace(full_sections, measures=tuple(_replace_solar(measures, noted)))
     slide = _slide_by_key(build_slides(sections), sections, "measure_solar")
     lines = [
         line
@@ -2134,9 +2126,7 @@ def test_장이_따로_적는_줄은_제_줄에_선다(full_sections: DocumentSe
     assert any(line.strip().startswith("※ 역률 영향 반영 시") for line in lines), lines
 
 
-def _replace_solar(
-    measures: tuple[MeasureEntry, ...], swapped: MeasureEntry
-) -> list[MeasureEntry]:
+def _replace_solar(measures: tuple[MeasureEntry, ...], swapped: MeasureEntry) -> list[MeasureEntry]:
     return [swapped if item.kind.key == "solar" else item for item in measures]
 
 
@@ -2340,15 +2330,13 @@ def test_계약전력_각주가_하한_미결착을_말한다(
     # 요금적용전력 5,293 kW 가 하한(계약전력의 30%)보다 훨씬 커서 안 걸린다.
     contract = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=6_000.0)
     assert not contract.saving_won
-    entry = next(
-        item for item in measure_entries(contract=contract) if item.kind.key == "contract"
-    )
+    entry = next(item for item in measure_entries(contract=contract) if item.kind.key == "contract")
     assert entry.slide_note == (
         "하한이 요금적용전력에 걸리지 않아 계약전력을 낮춰도 기본요금이 줄지 않습니다."
     )
-    assert any(
-        item.fact == CONTRACT_FLOOR_NOT_BINDING_FACT for item in contract.notices
-    ), "화면 산출 근거에 있던 안내다 — 문구를 새로 짓지 않았다."
+    assert any(item.fact == CONTRACT_FLOOR_NOT_BINDING_FACT for item in contract.notices), (
+        "화면 산출 근거에 있던 안내다 — 문구를 새로 짓지 않았다."
+    )
 
 
 def test_역률이_세_갈래다(
@@ -2371,9 +2359,7 @@ def test_역률이_세_갈래다(
             baseline=sample_bill,
         )
         entry = next(
-            item
-            for item in measure_entries(power_factor=result)
-            if item.kind.key == "power_factor"
+            item for item in measure_entries(power_factor=result) if item.kind.key == "power_factor"
         )
         return entry.conclusion
 
@@ -2457,9 +2443,7 @@ def _quality_stub(flagged: tuple[str, ...]) -> object:
     import pandas as pd
 
     return SimpleNamespace(
-        flagged_months=tuple(
-            SimpleNamespace(month=pd.Period(month, freq="M")) for month in flagged
-        )
+        flagged_months=tuple(SimpleNamespace(month=pd.Period(month, freq="M")) for month in flagged)
     )
 
 
@@ -2471,26 +2455,18 @@ def test_5장이_그림과_같은_것을_말하고_세_갈래를_탄다(tariff: 
     from kwise.report.narrative import peak_month_lead
 
     # 기본 — 대상월이고 다음 달과 벌어져 있다.
-    alone = peak_month_lead(
-        _peak_stub({"2023-08": 5_300.0, "2023-07": 4_000.0}), None, tariff
-    )
+    alone = peak_month_lead(_peak_stub({"2023-08": 5_300.0, "2023-07": 4_000.0}), None, tariff)
     assert alone == "8월에 최대수요가 가장 높고, 이 시기에 요금적용전력이 결정됩니다."
 
     # ③ 다음 달과 차이가 작으면 계절로 적는다.
-    season = peak_month_lead(
-        _peak_stub({"2023-08": 5_300.0, "2023-07": 5_290.0}), None, tariff
-    )
+    season = peak_month_lead(_peak_stub({"2023-08": 5_300.0, "2023-07": 5_290.0}), None, tariff)
     assert season.startswith("여름(6~8월)에 최대수요가 높고"), season
     # **한 해를 넘어가는 계절도 사람이 읽는 대로 적는다.**
-    winter = peak_month_lead(
-        _peak_stub({"2023-12": 6_100.0, "2024-01": 6_090.0}), None, tariff
-    )
+    winter = peak_month_lead(_peak_stub({"2023-12": 6_100.0, "2024-01": 6_090.0}), None, tariff)
     assert winter.startswith("겨울(11~2월)"), winter
 
     # ① 대상월이 아니면 이월되지 않는다 — 실제로 정한 달을 함께 적는다.
-    spring = peak_month_lead(
-        _peak_stub({"2023-05": 5_300.0, "2023-08": 4_000.0}), None, tariff
-    )
+    spring = peak_month_lead(_peak_stub({"2023-05": 5_300.0, "2023-08": 4_000.0}), None, tariff)
     assert "5월에 최대수요가 가장 높으나" in spring
     assert "요금적용전력은 8월 값으로 결정됩니다" in spring, spring
 
@@ -2566,9 +2542,7 @@ def test_계약전력_장이_근거를_먼저_세운다(
     from kwise.report.document import measure_entries
 
     contract = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=6_000.0)
-    entry = next(
-        item for item in measure_entries(contract=contract) if item.kind.key == "contract"
-    )
+    entry = next(item for item in measure_entries(contract=contract) if item.kind.key == "contract")
     assert entry.facts_first
     labels = [name for name, _value in entry.facts]
     assert labels == ["현재 계약전력", "요금적용전력", "여유", "하향 여지"]
@@ -2660,7 +2634,7 @@ def test_기온_그림은_범례가_아래다() -> None:
     body = source[
         source.index("def daily_temperature_png(") : source.index("def power_factor_day_png(")
     ]
-    assert 'bbox_to_anchor=(0.5, -0.28)' in body, "범례가 아래로 내려가 있지 않습니다."
+    assert "bbox_to_anchor=(0.5, -0.28)" in body, "범례가 아래로 내려가 있지 않습니다."
     assert "labelpad=8" in body, "기온 축 이름이 눈금에 붙어 있습니다."
     assert _Path(SRC_ROOT).is_dir()
 
@@ -2669,7 +2643,9 @@ def test_기온_그림은_범례가_아래다() -> None:
 
 
 def test_역률_장에_용어_각주가_있다(
-    sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult,
+    sample_usage: UsageData,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
     full_sections: DocumentSections,
 ) -> None:
     """**「지상역률」 을 세 번 말하면서 그것이 무엇인지는 없었다** (53세션 8-1)."""
@@ -2692,9 +2668,7 @@ def test_역률_장에_용어_각주가_있다(
         item for item in measure_entries(power_factor=result) if item.kind.key == "power_factor"
     )
     sections = dataclasses.replace(full_sections, measures=(entry,))
-    text = _slide_text(
-        _slide_by_key(build_slides(sections), sections, "measure_power_factor")
-    )
+    text = _slide_text(_slide_by_key(build_slides(sections), sections, "measure_power_factor"))
     table = terms()
     for key in GLOSSARY_KEYS["measure_power_factor"]:
         assert f"{table[key].name} = " in text, key
@@ -2948,9 +2922,7 @@ def _unviable_ess_entry(
         baseline_demand_kw=5_293.44,
         base_fee_won_per_kw=float(tariff.rates(selection).base_won_per_kw),
     )
-    optimum = refine_ess_target(
-        sample_usage, tariff, selection, curve=curve, baseline=sample_bill
-    )
+    optimum = refine_ess_target(sample_usage, tariff, selection, curve=curve, baseline=sample_bill)
     entry = next(
         item
         for item in measure_entries(ess_optimum=optimum, ess_curve=curve)
@@ -3133,9 +3105,7 @@ def test_그림이_안_구워지면_주의사항_표가_선다(full_sections: Do
     조건이 실제로 있으므로 시험이 그 조건을 세운다.
     """
     sections = _blind(full_sections)
-    entry = next(
-        item for item in sections.measures if item.actionable and item.cautions
-    )
+    entry = next(item for item in sections.measures if item.actionable and item.cautions)
     slide = _slide_by_key(build_slides(sections), sections, f"measure_{entry.kind.key}")
     table = _caution_table(slide)
     assert table is not None, f"{entry.kind.key} 장에 주의사항 표가 서야 합니다."

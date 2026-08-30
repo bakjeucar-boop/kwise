@@ -437,9 +437,7 @@ def cached_comparison(
         None,
     )
     scenario = next((spec.surplus_scenario for spec in specs if spec.surplus_scenario), "")
-    stripped = tuple(
-        replace(spec, surplus_revenue_won=None, surplus_scenario="") for spec in specs
-    )
+    stripped = tuple(replace(spec, surplus_revenue_won=None, surplus_scenario="") for spec in specs)
     key = f"compare|{token}|{stripped}|{options_key}|{stamp}"
     base = session_memo(
         key,
@@ -596,10 +594,7 @@ def cached_ess_optimum(
     한 점당 요금을 다시 계산하므로 **21점에 약 8초**다. 입력이 바뀌지 않으면
     다시 돌지 않는다.
     """
-    key = (
-        f"ess_optimum|{token}|{form_token(form)}|{fixed_won}|{per_kwh_won}"
-        f"|{pricing_path}|{stamp}"
-    )
+    key = f"ess_optimum|{token}|{form_token(form)}|{fixed_won}|{per_kwh_won}|{pricing_path}|{stamp}"
     return session_memo(
         key,
         lambda: refine_ess_target(

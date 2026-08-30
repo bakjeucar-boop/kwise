@@ -1177,7 +1177,7 @@ def _solar_saving_tip(point: SolarPoint, months: float) -> str:
     if not point.surplus_revenue_won:
         return fmt.markdown_safe(head)
     return fmt.markdown_safe(
-        head + '\n\n역송분은 요금 계산에서 빠져 있고, 상계 차감은 그 뒤에 남은 '
+        head + "\n\n역송분은 요금 계산에서 빠져 있고, 상계 차감은 그 뒤에 남은 "
         "순부하 사용량을 한도로 잽니다 — 겹쳐 세지 않았습니다."
     )
 

@@ -264,9 +264,7 @@ def slide_titles(pptx: Path) -> list[str]:
             (
                 shape
                 for shape in slide.shapes
-                if shape.has_text_frame
-                and shape.top is not None
-                and shape.text_frame.text.strip()
+                if shape.has_text_frame and shape.top is not None and shape.text_frame.text.strip()
             ),
             key=lambda shape: shape.top,
         )
@@ -274,9 +272,7 @@ def slide_titles(pptx: Path) -> list[str]:
     return titles
 
 
-def label_text(
-    case: Case, titles: Sequence[str] = (), failures: Sequence[str] = ()
-) -> str:
+def label_text(case: Case, titles: Sequence[str] = (), failures: Sequence[str] = ()) -> str:
     """이 덱이 무엇인지 사람이 읽을 한 벌 (60세션 곁가지).
 
     **이름만 봐서 모르는 산출물은 실물 확인이 안 된다.** ``large-b-over`` 가
@@ -396,11 +392,7 @@ def main(argv: list[str] | None = None) -> int:
             # Windows 는 glob 이 대소문자를 가리지 않아 `*.PNG` 와 `*.png` 가
             # 같은 파일을 둘 다 문다 — 세는 자리에서 겹치지 않게 한 번만 훑는다.
             count = len(
-                [
-                    item
-                    for item in (args.out / case.key).iterdir()
-                    if item.suffix.lower() == ".png"
-                ]
+                [item for item in (args.out / case.key).iterdir() if item.suffix.lower() == ".png"]
             )
             print(f"  png {count}장 → {args.out / case.key}")
     index = write_index(args.out, picked)

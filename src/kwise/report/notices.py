@@ -63,6 +63,7 @@ def rules_basis_line() -> str:
     tail = f" 외 {len(diffs) - _RULES_NAME_LIMIT}건" if len(diffs) > _RULES_NAME_LIMIT else ""
     return f"출고값과 다른 항목 {len(diffs)}건 — {names}{tail}."
 
+
 # 요구사항서 9.4 — 필수 경고
 CONTRACT_CHANGE_WARNING = (
     "기본요금은 직전 12개월 중 최대수요로 결정됩니다. 계약전력을 하향할 경우, "

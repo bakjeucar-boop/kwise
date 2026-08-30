@@ -493,9 +493,7 @@ def test_잉여_수익은_요금_재계산_없이_얹힌다(
     added = base.with_surplus_revenue(1_000_000.0, "상계거래(한전)")
 
     # **청구서는 그대로다** — 다시 계산하지 않았다는 뜻이다.
-    assert [item.bill for item in added.combinations] == [
-        item.bill for item in base.combinations
-    ]
+    assert [item.bill for item in added.combinations] == [item.bill for item in base.combinations]
     # 태양광을 켠 조합에만 붙는다.
     for before, after in zip(base.combinations, added.combinations, strict=True):
         expected = 1_000_000.0 if after.spec.has_pv else 0.0

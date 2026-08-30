@@ -782,9 +782,7 @@ def load_ess_cost_model(path: str | None = None) -> EssCostModel:
             min_kwh=float(item["min_kwh"]),
             max_kwh=float(item["max_kwh"]),
             active=bool(item.get("active", True)),
-            won_per_kwh=(
-                None if item.get("won_per_kwh") is None else float(item["won_per_kwh"])
-            ),
+            won_per_kwh=(None if item.get("won_per_kwh") is None else float(item["won_per_kwh"])),
             midpoint_kwh=float(item.get("midpoint_kwh", 0.0)),
             note=str(item.get("note", "")),
         )

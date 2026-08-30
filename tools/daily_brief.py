@@ -139,8 +139,13 @@ def split_top(text: str) -> list[str]:
 def git(*args: str) -> str:
     try:
         r = subprocess.run(
-            ["git", *args], cwd=ROOT, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=15,
+            ["git", *args],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
         )
         return r.stdout.strip() if r.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError):

@@ -183,9 +183,7 @@ def _ess_checks(result: CaseResult) -> list[Check]:
             Check(label, "ESS — 초과 구간이 없어 곡선을 그리지 못했다", True, "판정할 것이 없다")
         ]
     checks: list[Check] = []
-    chosen = next(
-        (item for item in optimum.points if item.target_kw == optimum.target_kw), None
-    )
+    chosen = next((item for item in optimum.points if item.target_kw == optimum.target_kw), None)
 
     # ① 성립하지 않으면 목표를 내지 않는다.
     checks.append(

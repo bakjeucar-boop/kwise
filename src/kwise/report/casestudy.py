@@ -291,9 +291,7 @@ def _case_ess(
 
 def _ess_point(optimum: EssOptimum) -> EssOptimumPoint | None:
     """고른 목표의 점. 성립하지 않으면 ``None``."""
-    return next(
-        (item for item in optimum.points if item.target_kw == optimum.target_kw), None
-    )
+    return next((item for item in optimum.points if item.target_kw == optimum.target_kw), None)
 
 
 def _ess_remark(optimum: EssOptimum | None, baseline_demand_kw: float) -> str:
@@ -308,8 +306,7 @@ def _ess_remark(optimum: EssOptimum | None, baseline_demand_kw: float) -> str:
     if not optimum.viable:
         negatives = sum(1 for item in optimum.points if item.annual_saving_won <= 0)
         return (
-            f"성립하는 목표 없음 — 참고 지점 {len(optimum.points)}개 중 "
-            f"절감액 0 이하 {negatives}개"
+            f"성립하는 목표 없음 — 참고 지점 {len(optimum.points)}개 중 절감액 0 이하 {negatives}개"
         )
     point = _ess_point(optimum)
     # **없을 때의 갈래를 걷어냈다** (60세션 12절). 고른 목표는 언제나 점 목록에

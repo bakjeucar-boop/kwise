@@ -308,11 +308,7 @@ def _capacity_rows(
     limit_rows = max(rows, len(marks))
     keep = list(ordered)
     while len(keep) > limit_rows:
-        loose = [
-            index
-            for index, point in enumerate(keep)
-            if not marks.get(point.capacity_kwp)
-        ]
+        loose = [index for index, point in enumerate(keep) if not marks.get(point.capacity_kwp)]
         if not loose:
             break  # 표식뿐이면 자르지 않는다 — 표식이 곧 세울 이유다
 

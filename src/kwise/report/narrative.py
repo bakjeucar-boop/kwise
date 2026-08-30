@@ -616,9 +616,7 @@ def peak_month_lead(
 
 #: 6장 앞문장 — **상위 구간을 왜 보는지.** 화면 그래프 툴팁에 있던 문장이다
 #: (``chart.top_hour``). 슬라이드에는 물음표를 달 자리가 없어 본문으로 낸다.
-PEAK_DETAIL_LEAD = (
-    "최대수요 상위 구간은 낮에 몰리면 태양광이, 밤에 몰리면 ESS 가 피크를 낮춥니다."
-)
+PEAK_DETAIL_LEAD = "최대수요 상위 구간은 낮에 몰리면 태양광이, 밤에 몰리면 ESS 가 피크를 낮춥니다."
 
 
 def peak_detail_lead(diagnosis: Diagnosis) -> str:
@@ -653,10 +651,7 @@ def structure_lead(structure: ChargeStructure) -> str:
         return "요금 구성을 산출하지 못했습니다."
     share = base_won / total
     if share > base_fee_share_high():
-        return (
-            f"기본요금이 {_pct(share)}로 큽니다 — "
-            "최대수요를 낮추는 방안을 먼저 검토합니다."
-        )
+        return f"기본요금이 {_pct(share)}로 큽니다 — 최대수요를 낮추는 방안을 먼저 검토합니다."
     if share >= base_fee_share_low():
         return (
             f"기본요금 {_pct(share)}와 전력량요금이 함께 큽니다 — "
@@ -705,8 +700,7 @@ def measure_summary_lead(diagnosis: Diagnosis, saving_text: str) -> str:
     if not priced:
         # **투자 없는 수단이 하나도 절감을 못 내면 문장이 달라야 한다.**
         return (
-            "설비 투자 없이 줄일 수 있는 몫은 없습니다 — "
-            "현행 요금제와 계약전력이 이미 적정합니다."
+            "설비 투자 없이 줄일 수 있는 몫은 없습니다 — 현행 요금제와 계약전력이 이미 적정합니다."
         )
     names = " · ".join(label for _won, label in priced[:2])
     return f"설비 투자 없이 {saving_text}을 줄일 수 있습니다 — {names}입니다."
@@ -723,8 +717,7 @@ COMBINATION_LEAD = (
 #: 「수단을 함께 쓰면 효과가 겹치므로」 는 조건절이라 거짓은 아니지만, 겹칠
 #: 것이 하나도 없는 덱에서 **겹침을 설명하는 것은 없는 이야기를 하는 것**이다.
 SINGLE_MEASURE_LEAD = (
-    "켠 수단이 하나라 겹치는 효과가 없습니다. "
-    "그래도 요금은 처음부터 다시 계산했습니다."
+    "켠 수단이 하나라 겹치는 효과가 없습니다. 그래도 요금은 처음부터 다시 계산했습니다."
 )
 
 
@@ -780,9 +773,7 @@ def dr_lead(profile: DrProfile | None) -> str:
     )
 
 
-def surplus_page_lead(
-    *, capacity_kwp: float, total_kwh: float, off_day_share: float | None
-) -> str:
+def surplus_page_lead(*, capacity_kwp: float, total_kwh: float, off_day_share: float | None) -> str:
     """잉여 활용 장 — **얼마가 언제 남는가** (53세션 3-2).
 
     뒷문장이 **비중으로 갈린다.** 소형 사무빌딩은 휴일이 99.6% 라 「대부분
@@ -791,9 +782,7 @@ def surplus_page_lead(
 
     갈림값은 :func:`surplus_off_day_high` · :func:`surplus_off_day_low` 다.
     """
-    head = (
-        f"태양광 {capacity_kwp:,.0f} kWp 에서 연 {total_kwh:,.0f} kWh 가 남습니다."
-    )
+    head = f"태양광 {capacity_kwp:,.0f} kWp 에서 연 {total_kwh:,.0f} kWh 가 남습니다."
     if off_day_share is None:
         return head
     if off_day_share >= surplus_off_day_high():

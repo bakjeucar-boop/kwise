@@ -1846,9 +1846,7 @@ def refine_ess_target(
             minimum_power_kw=minimum_kw,
             notices=(
                 warn(
-                    BELOW_MINIMUM_CONCLUSION.format(
-                        power=short.power_kw, minimum=minimum_kw
-                    ),
+                    BELOW_MINIMUM_CONCLUSION.format(power=short.power_kw, minimum=minimum_kw),
                     fact="ess.below_market_minimum",
                 ),
             ),
