@@ -7,6 +7,9 @@
     ③ 목차 링크가 실제 절로 연결된다 (죽은 링크가 없다)
     ④ 앵커 30개가 매뉴얼에 모두 있다
     ⑤ 화면의 [자세히] 링크가 살아나고 그 앵커가 매뉴얼과 일치한다
+    ⑥ **커밋된 html 이 원본과 같다** (74세션) — 나머지는 임시 폴더에 새로
+      만들어 보므로 **만드는 쪽만 지켰다.** 저장소의 것은 아무도 안 봤고,
+      그래서 둘이 **S58 판으로 열네 세션**을 서 있었다
 """
 
 from __future__ import annotations
@@ -62,6 +65,36 @@ def test_저장소에도_생성물이_있다() -> None:
     """``tools\\build_docs.py`` 를 돌린 결과가 커밋되어 있어야 한다."""
     for name in TARGETS:
         assert (DOCS / name).is_file(), f"{name} — tools\\build_docs.py 를 실행하십시오."
+
+
+def test_저장소의_생성물이_원본과_같다() -> None:
+    """**있는지가 아니라 최신인지를 본다** (74세션 1절).
+
+    바로 위 시험은 파일이 **있는지**만 봤다. 그래서 `docs\\*.html` 둘이
+    **S58 판으로 열네 세션**을 서 있었는데 아무것도 말하지 않았다 —
+    S61·S63·S66 이 원본만 고치고 `build_docs.py` 를 안 돌렸고, S73 이
+    다른 일로 그것을 돌리다가 알았다. **결함 유형 ⑤** — 시험은 통과하는데
+    실물이 낡아 있었다.
+
+    이 파일의 다른 시험들은 **임시 폴더에 새로 만들어** 본다("저장소 산출물을
+    건드리지 않는다"). 곧 **만드는 쪽은 지키는데 커밋된 것은 아무도 안 봤다.**
+
+    **장치는 `test_앵커_문서가_정본과_같다` 를 옮겨 썼다** — 다시 만들어
+    전문을 대조하고, 어긋나면 **무엇을 돌려야 하는지** 실패 메시지가 말한다.
+
+    **전문을 그대로 맞대도 된다.** :func:`render_html` 은 원본 글·제목·
+    묻어 둔 스타일·스크립트만으로 글을 짓는다 — 생성 시각도, 경로도, 환경도
+    안 들어간다. 그래서 같은 원본이면 언제 어디서 돌려도 같은 글이 나온다.
+    """
+    for source, target, title in DEFAULT_DOCS:
+        built_now, _headings = render_html((DOCS / source).read_text(encoding="utf-8"), title=title)
+        # **`assert` 로 맞대지 않는다.** 어긋나면 pytest 가 html 전문을 줄줄이
+        # 펴는데(심어 보니 577줄), 이 실패는 **손으로 고치는 것이 아니라 도구를
+        # 돌려 고치는 것**이라 그 diff 를 아무도 읽지 않는다. 할 일만 낸다.
+        if (DOCS / target).read_text(encoding="utf-8") != built_now:
+            pytest.fail(
+                f"{target} 이 {source} 보다 낡았습니다 — tools\\build_docs.py 를 실행하십시오."
+            )
 
 
 def test_원본이_없으면_만들지_않고_실패한다(tmp_path: Path) -> None:
