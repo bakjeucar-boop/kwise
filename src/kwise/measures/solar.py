@@ -64,6 +64,7 @@ __all__ = [
     "payback_tie_note",
     "payback_tie_ratio",
     "power_factor_after_pct",
+    "power_factor_drop_warning",
     "power_factor_floor_pct",
     "roof_capacity_limit_kwp",
     "solar_curve",
@@ -83,6 +84,32 @@ DEFAULT_STEPS = 20
 def power_factor_floor_pct() -> float:
     """약관 제41조의 유지 의무이자 제43조의 요금 기준. 이 아래로 떨어지면 돈이 나간다."""
     return lagging_standard_pct()
+
+
+def power_factor_drop_warning(
+    *, capacity_kwp: float, after_pct: float, detail: str = ""
+) -> str:
+    """PV 가 역률을 기준 아래로 떨어뜨렸다는 경고 문구 (78세션 1절).
+
+    **어휘를 한 곳에 둔다** (결함 유형 ③). 59세션까지 이 문장은 2단계 태양광
+    카드에만 있었는데, 78세션에 **3단계 조합도 같은 사실을 말하게 되면서**
+    두 자리가 됐다 — 흩어 놓으면 한쪽만 고쳐진다 (60세션 각주와 같은 병).
+
+    ``detail`` 은 **자리마다 다른 한 문장**이다. 2단계는 조정 전후 금액을
+    나란히 놓을 수 있고(그 수단만 도입했을 때다) 조합은 이미 떨어진 역률로
+    요금을 냈으므로 견줄 앞값이 없다.
+    """
+    return " ".join(
+        part
+        for part in (
+            f"PV {capacity_kwp:,.0f} kWp 도입 시 예상 주간(08~22시) 지상역률이 "
+            f"{after_pct:.1f}% 로 기준 {power_factor_floor_pct():.0f}% 를 밑돕니다. "
+            "무효전력은 그대로인데 유효전력만 상쇄되기 때문입니다.",
+            detail,
+            "역률 개선 설비 용량 조정이 필요합니다 (한전 기본공급약관 제41·43조).",
+        )
+        if part
+    )
 
 
 # 약관 제41조의 유지 의무이자 제43조의 요금 기준. 이 아래로 떨어지면 돈이 나간다.
@@ -832,15 +859,19 @@ def solar_curve(
     if largest.power_factor_after_pct < power_factor_floor_pct():
         notices.append(
             warn(
-                f"PV {largest.capacity_kwp:,.0f} kWp 도입 시 예상 주간(08~22시) 지상역률이 "
-                f"{largest.power_factor_after_pct:.1f}% 로 기준 "
-                f"{power_factor_floor_pct():.0f}% 를 밑돕니다. 무효전력은 그대로인데 "
-                "유효전력만 상쇄되기 때문입니다. 역률요금이 "
-                f"{money.won(largest.power_factor_extra_won, reason='—')} 늘어 절감액이 "
-                f"{money.won(largest.total_saving_won, reason='—')} → "
-                f"{money.won(largest.saving_after_power_factor_won, reason='—')} 이 됩니다. "
-                "역률 개선 설비 용량 조정이 필요합니다 "
-                "(한전 기본공급약관 제41·43조).",
+                power_factor_drop_warning(
+                    capacity_kwp=largest.capacity_kwp,
+                    after_pct=largest.power_factor_after_pct,
+                    # **금액은 2단계만 낸다.** 카드가 「그 수단만」 을 말하므로
+                    # 조정 전후를 나란히 놓을 수 있다 (31세션). 조합은 이미
+                    # 떨어진 역률로 요금을 냈으므로 견줄 앞값이 없다.
+                    detail=(
+                        "역률요금이 "
+                        f"{money.won(largest.power_factor_extra_won, reason='—')} 늘어 절감액이 "
+                        f"{money.won(largest.total_saving_won, reason='—')} → "
+                        f"{money.won(largest.saving_after_power_factor_won, reason='—')} 이 됩니다."
+                    ),
+                ),
                 fact="solar.power_factor_drop",
             )
         )

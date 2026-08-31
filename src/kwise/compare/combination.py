@@ -41,6 +41,11 @@ from kwise.measures import (
 from kwise.measures.contract import ContractAdjustment, evaluate_contract_adjustment
 from kwise.measures.ess import analyze_peak_excess
 from kwise.measures.pv_cost import PV_UNPRICED_REASON, PvCostInput
+from kwise.measures.solar import (
+    power_factor_after_pct,
+    power_factor_drop_warning,
+    power_factor_floor_pct,
+)
 from kwise.notices import Notice, basis, block, info, prefixed, warn
 from kwise.progress import ProgressReporter, record
 from kwise.pv import sharpen
@@ -51,6 +56,7 @@ from kwise.tariff import (
     TariffSelection,
     TariffTable,
     calculate_bill,
+    deemed_lagging_pct,
 )
 
 __all__ = [
@@ -324,6 +330,43 @@ def evaluate_combination(
         generated_kwh = net.generated_kwh
         surplus_kwh = net.surplus_kwh
         self_consumption = net.self_consumption_ratio
+
+        # ===== 태양광이 떨어뜨리는 역률 (78세션 2절 · 미해결 하나를 닫는다)
+        #
+        # **PV 는 무효전력을 만들지도 없애지도 않는다.** 유효전력만 상쇄하므로
+        # 같은 무효전력에 대해 역률이 떨어진다 (:func:`power_factor_after_pct`).
+        # 5세션에 그 함수가 섰는데 14세션이 조합을 지으며 잇지 않았다 — 뺀다는
+        # 결정은 기록에 없다 (76세션 조사).
+        #
+        # **떨어진 뒤에서 개선이 시작한다** (77세션에 사람이 정했다 — 갈래 ㄴ).
+        # 역률 수단을 켰으면 목표(97%)가 PV 전 값이고 **PV 가 그것을 끌어내린다**
+        # — 목표에 못 미칠 수 있고 그것이 정상이다. 도구는 설비 크기를 모르므로
+        # (투자비가 사용자 입력이다) 「악화분까지 끌어올린다」 로 두면 더 큰 설비를
+        # 값 없이 가정하는 셈이 된다. 역률 수단을 껐으면 끌어올릴 주체가 아예 없다.
+        #
+        # **조합마다 다시 잰다.** 조합마다 PV 용량이 달라 악화분도 다르므로
+        # 2단계 곡선의 한 점을 가져다 쓸 수 없다.
+        #
+        # **ESS 는 안 본다.** 원부하와 PV 발전량만 넘겨 2단계 카드와 같은 규칙을
+        # 쓴다 — ESS 도 계량 유효전력을 줄이므로 같은 이유로 역률을 떨어뜨리지만,
+        # 도구가 PCS 의 무효전력 거동을 모르고 여기서 범위를 넓히면 두 자리가
+        # 다른 규칙을 쓰게 된다. **봤다는 사실만 남긴다.**
+        before_pct = (
+            opts.power_factor_pct if opts.power_factor_pct is not None else deemed_lagging_pct()
+        )
+        after_pct = power_factor_after_pct(
+            usage.kw, generation, power_factor_pct=before_pct, interval_minutes=interval
+        )
+        opts = replace(opts, power_factor_pct=after_pct)
+        if after_pct < power_factor_floor_pct():
+            notices.append(
+                warn(
+                    power_factor_drop_warning(
+                        capacity_kwp=spec.pv_capacity_kwp, after_pct=after_pct
+                    ),
+                    fact="solar.power_factor_drop",
+                )
+            )
 
     dispatch: DispatchResult | None = None
     if spec.ess_target_kw is not None:
