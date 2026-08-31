@@ -397,7 +397,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  png {count}장 → {args.out / case.key}")
     index = write_index(args.out, picked)
     print(f"[목록] {index}")
-    # **끝에 다시 낸다.** 벌이 여섯이면 앞의 실패는 화면 밖으로 밀려 있다.
+    # **끝에 다시 낸다.** 여러 벌을 잇달아 뽑으면 앞의 실패는 화면 밖으로 밀려 있다.
+    # **수를 적지 않는다** — 「여섯」 이라 적어 두었더니 `small-a2` 가 붙은 뒤
+    # 열한 세션 동안 틀린 채 남아 있었다 (72세션).
     if failed:
         total = sum(len(items) for items in failed.values())
         print("")

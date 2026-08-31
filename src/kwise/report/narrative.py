@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from kwise import money
-from kwise.diagnose import ChargeStructure, Diagnosis, PeakProfile
+from kwise.diagnose import ChargeStructure, ImprovementSummary, PeakProfile
 from kwise.diagnose.dr import DrProfile
 from kwise.diagnose.summary import PvPotential
 from kwise.quality import (
@@ -52,7 +52,9 @@ __all__ = [
     "NOTE_MARK",
     "SINGLE_MEASURE_LEAD",
     "FlaggedMonthSource",
+    "PeakDetailSource",
     "PeakSource",
+    "SummarySource",
     "Term",
     "base_fee_share_high",
     "base_fee_share_low",
@@ -509,7 +511,26 @@ _PV_LEAD: dict[PvPotential, str] = {
 }
 
 
-def peak_summary_lead(diagnosis: Diagnosis) -> str:
+# ========================================================= 판정을 옮기는 자리
+#
+# **어제 것을 그대로 쓸 수 없다** (72세션 2절). :class:`PeakSource` 가 요구하는
+# 것은 ``peak`` 인데 아래 셋이 읽는 것은 ``summary`` 다 — **다른 것이라 새로
+# 세운다.** 둘을 다 요구하는 형 하나로 뭉쳐 셋에 돌려 쓰면 좁힌 뜻이 없어진다:
+# :func:`peak_summary_lead` 는 ``peak`` 를 읽지 않는다.
+#
+# **한 겹만 좁힌다** (71세션 판단 그대로). ``summary`` 아래는
+# :class:`~kwise.diagnose.ImprovementSummary` 가 그대로 받으므로 더 내려갈
+# 이유가 없다 — 짓기 전에 조각 시험으로 확인했다.
+
+
+class SummarySource(Protocol):
+    """:func:`peak_summary_lead`·:func:`measure_summary_lead` 가 읽는 것 — ``summary`` 뿐이다."""
+
+    @property
+    def summary(self) -> ImprovementSummary: ...
+
+
+def peak_summary_lead(diagnosis: SummarySource) -> str:
     """**53세션에 6장으로 옮겼다** — :func:`peak_detail_lead` 를 보라.
 
     39세션은 이 문장을 5장에 두었는데, 5장 그림은 **월별 최대수요**이고 문장은
@@ -656,7 +677,16 @@ def peak_month_lead(
 PEAK_DETAIL_LEAD = "최대수요 상위 구간은 낮에 몰리면 태양광이, 밤에 몰리면 ESS 가 피크를 낮춥니다."
 
 
-def peak_detail_lead(diagnosis: Diagnosis) -> str:
+class PeakDetailSource(PeakSource, SummarySource, Protocol):
+    """:func:`peak_detail_lead` 는 **둘 다** 읽는다 — ``peak.top_n`` 과, 속으로
+    부르는 :func:`peak_summary_lead` 가 쓰는 ``summary``.
+
+    **둘을 이어 붙일 뿐 새 요구는 없다.** 앞의 둘을 안 쓰고 여기에 다시 적으면
+    같은 것이 두 벌이 되어 한쪽만 고쳐진다.
+    """
+
+
+def peak_detail_lead(diagnosis: PeakDetailSource) -> str:
     """6장 — **설명 뒤에 판정이 온다** (53세션 4-4).
 
     39세션까지는 「무엇을 보는 그림인가」 만 적고 **이 건물이 어느 쪽인지는 적지
@@ -715,7 +745,7 @@ _FREE_MEASURE_LABELS: tuple[tuple[str, str], ...] = (
 )
 
 
-def measure_summary_lead(diagnosis: Diagnosis, saving_text: str) -> str:
+def measure_summary_lead(diagnosis: SummarySource, saving_text: str) -> str:
     """8장 — **투자 없이 가능한 절감액이 먼저다** (39세션 6-1).
 
     **근거로 드는 수단이 사실과 같아야 한다** (53세션 4-7). 39세션은 「요금제와

@@ -2018,7 +2018,9 @@ def test_요약_근거에_0원인_수단이_안_든다() -> None:
             contract_saving_won=contract,
             no_investment_saving_won=(switch or 0.0) + (contract or 0.0),
         )
-        return measure_summary_lead(SimpleNamespace(summary=summary), "5,358만원")  # type: ignore[arg-type]
+        # **억제가 없다** (72세션 2절). `measure_summary_lead` 가 요구하는 것이
+        # `SummarySource` — `summary` 하나뿐이라 이 대역이 진짜로 형에 맞는다.
+        return measure_summary_lead(SimpleNamespace(summary=summary), "5,358만원")
 
     only = lead(53_575_000.0, 0.0)
     assert "요금제 전환입니다" in only, only
