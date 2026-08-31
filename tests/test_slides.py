@@ -2279,21 +2279,11 @@ def test_역률_영향을_큰_글자에_녹이지_않는다(
     assert not [line for line in quiet.cautions if "역률 영향 반영 시" in line]
 
 
-def test_합산효과는_태양광_역률_영향을_반영하지_않는다() -> None:
-    """**이중 반영이 아니다** (59세션 12절). 오히려 아예 들어가지 않는다.
-
-    조합 요금은 :class:`BillingOptions` 의 ``power_factor_pct`` 하나로만 역률을
-    본다 — 켠 「역률 개선」 의 목표값이거나 기준선 값이다. 태양광이 떨어뜨리는
-    역률은 그 옵션에 들어가지 않으므로 2단계 카드가 참고로 내는 값이다.
-    **고치려면 계산을 바꿔야 하고, 그것은 이 세션의 범위가 아니다.**
-    """
-    import inspect
-
-    from kwise.compare import combination
-
-    source = inspect.getsource(combination)
-    assert "power_factor_after_pct" not in source
-    assert "power_factor_extra_won" not in source
+# **`test_합산효과는_태양광_역률_영향을_반영하지_않는다` 를 지웠다** (78세션).
+# 59세션 12절이 「고치려면 계산을 바꿔야 하고 그것은 이 세션의 범위가 아니다」 며
+# **그때의 상태를 못으로 박아 둔 것**인데, 78세션이 그 계산을 바꿔 사실이 뒤집혔다.
+# 소스에 이름이 있는지 보는 못이라 지금 자리도 아니다 — 조합이 **실제로 쓴 역률**을
+# 값으로 보는 시험 둘이 `tests\test_compare.py` 에 섰다.
 
 
 def test_각주에_미산출이_두_번_서지_않는다() -> None:

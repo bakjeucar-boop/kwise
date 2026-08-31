@@ -21,9 +21,10 @@ from kwise.compare import (
 )
 from kwise.io import UsageData
 from kwise.measures import Certainty, dispatch_peak_shaving, lowest_certainty
+from kwise.measures.solar import power_factor_after_pct, power_factor_floor_pct
 from kwise.notices import texts
 from kwise.quality import QualityReport
-from kwise.tariff import BillingResult, TariffSelection, TariffTable
+from kwise.tariff import BillingResult, TariffSelection, TariffTable, deemed_lagging_pct
 
 CURRENT = TariffSelection("general_b", "high_a", "I")
 BEST = TariffSelection("general_b", "high_a", "II")
@@ -74,6 +75,121 @@ def test_combination_saving_is_not_the_sum_of_measures(
     # 단순 합보다 작다 — 태양광이 사용량을 줄이면 선택요금 전환의 이득이 줄어든다
     assert both.saving_won < naive_sum
     assert abs(naive_sum - both.saving_won) > 1_000_000
+
+
+def _after_pct(usage: UsageData, unit: pd.Series, capacity: float, start: float) -> float:
+    """그 용량에서 PV 가 떨어뜨린 주간 지상역률."""
+    generation = unit.reindex(pd.DatetimeIndex(usage.kw.index)).fillna(0.0) * capacity
+    return power_factor_after_pct(
+        usage.kw,
+        generation,
+        power_factor_pct=start,
+        interval_minutes=usage.meta.interval_minutes,
+    )
+
+
+def test_조합이_태양광이_떨어뜨린_역률로_요금을_다시_계산한다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_unit_pv: pd.Series,
+) -> None:
+    """**PV 는 유효전력만 상쇄하므로 역률이 떨어진다** (78세션 2절).
+
+    5세션이 :func:`power_factor_after_pct` 를 세웠는데 14세션이 조합을 지으며
+    잇지 않았다 — 조합 요금은 ``BillingOptions.power_factor_pct`` 하나만 봤고
+    **뺀다는 결정은 기록에 없다** (76세션 조사). 대형 을 자료에서 조합 절감액이
+    2,095,077원/년(0.64%) 부풀어 있었다.
+
+    **떨어진 뒤에서 개선이 시작한다** (77세션에 사람이 정했다 — 갈래 ㄴ).
+    목표 97% 는 PV 전 값이고 PV 가 그것을 끌어내린다. 도구가 설비 크기를
+    모르므로(투자비가 사용자 입력이다) 「악화분까지 끌어올린다」 로 두면
+    **더 큰 설비를 값 없이** 가정하는 셈이 된다.
+
+    **이 시험은 조합이 실제로 쓴 역률을 본다** — 「돌아간다」 가 아니다.
+    59세션이 `test_slides.py` 에 박아 둔 못
+    (`test_합산효과는_태양광_역률_영향을_반영하지_않는다`)이 **그때의 상태**를
+    소스 글자로 기록한 것이라, 78세션에 사실이 뒤집히면서 지우고 이리로 옮겼다.
+    """
+    kwargs = {
+        "baseline_bill": sample_bill,
+        "unit_pv_kw_per_kwp": sample_unit_pv,
+        "quality": sample_report,
+    }
+    # ① 역률 수단을 끈 조합 — 끌어올릴 주체가 없다. 갈래가 아예 없는 자리다.
+    off = evaluate_combination(
+        sample_usage, tariff, CombinationSpec("태양광", CURRENT, pv_capacity_kwp=PV_KWP), **kwargs
+    )
+    start_off = deemed_lagging_pct()
+    after_off = _after_pct(sample_usage, sample_unit_pv, PV_KWP, start_off)
+    assert after_off < start_off, "PV 를 넣었는데 역률이 안 떨어졌습니다."
+    assert off.bill.power_factor.lagging_pct == pytest.approx(after_off)
+
+    # ② 역률 수단을 켠 조합 — 목표에서 시작해 PV 가 끌어내린다 (ㄴ).
+    on = evaluate_combination(
+        sample_usage,
+        tariff,
+        CombinationSpec("역률+태양광", CURRENT, pv_capacity_kwp=PV_KWP, power_factor_pct=97.0),
+        **kwargs,
+    )
+    after_on = _after_pct(sample_usage, sample_unit_pv, PV_KWP, 97.0)
+    assert 97.0 > after_on > after_off, "목표에서 떨어져 시작하는 것이 아닙니다."
+    assert on.bill.power_factor.lagging_pct == pytest.approx(after_on)
+    # **목표에 못 미쳐도 개선은 개선이다** — 켠 쪽이 그래도 돈이 된다.
+    assert on.saving_won > off.saving_won
+
+
+def test_역률이_기준_아래로_떨어지면_조합이_말한다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_unit_pv: pd.Series,
+) -> None:
+    """**뜨지 않는 경고는 없는 경고와 같다** (78세션 1절 · 46세션 가장자리 경고).
+
+    기준(92%) 아래로 내려가면 **추가요금이 실제로 붙는 구간**인데 조합이 그
+    사실을 말하지 않았다 — 결함 유형 ①·② 가 겹친 자리다.
+
+    **문구는 2단계 태양광 카드가 쓰던 것을 그대로 쓴다**
+    (:func:`~kwise.measures.solar.power_factor_drop_warning`). 어휘가 두 벌이면
+    한쪽만 고쳐진다 (결함 유형 ③).
+    """
+    kwargs = {
+        "baseline_bill": sample_bill,
+        "unit_pv_kw_per_kwp": sample_unit_pv,
+        "quality": sample_report,
+    }
+
+    def facts(capacity: float, target: float | None = None) -> list[str]:
+        result = evaluate_combination(
+            sample_usage,
+            tariff,
+            CombinationSpec(
+                "태양광", CURRENT, pv_capacity_kwp=capacity, power_factor_pct=target
+            ),
+            **kwargs,
+        )
+        return [item.text for item in result.notices if item.fact == "solar.power_factor_drop"]
+
+    # ① 기준 아래로 내려가면 말한다.
+    below = facts(PV_KWP)
+    assert _after_pct(sample_usage, sample_unit_pv, PV_KWP, deemed_lagging_pct()) < (
+        power_factor_floor_pct()
+    )
+    assert len(below) == 1, below
+    assert "밑돕니다" in below[0] and "역률 개선 설비" in below[0]
+    # **금액은 조합 쪽에 적지 않는다** — 이미 떨어진 역률로 요금을 냈으므로
+    # 견줄 앞값이 없다. 2단계 카드만 조정 전후를 나란히 놓는다 (31세션).
+    assert "절감액이" not in below[0]
+
+    # ② 태양광이 없으면 뜰 일이 없다.
+    assert facts(0.0) == []
+
+    # ③ **기준 위로 남으면 안 뜬다.** 뜨는 조건만 보면 늘 뜨는 경고가 된다.
+    assert _after_pct(sample_usage, sample_unit_pv, PV_KWP, 97.0) >= power_factor_floor_pct()
+    assert facts(PV_KWP, 97.0) == []
 
 
 def test_baseline_has_no_saving(sample_comparison: ComparisonResult) -> None:
