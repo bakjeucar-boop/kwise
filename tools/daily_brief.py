@@ -45,7 +45,29 @@ def strip_md(text: str) -> str:
     """굵게·기울임·링크·코드 표시를 걷어낸다. 붙여 쓸 때는 평문이 낫다."""
     text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)  # 링크
     text = text.replace("**", "").replace("`", "")
+    # **이스케이프한 세로줄을 되돌린다** (72세션 3절). 표 칸 안에서는 `\|` 로
+    # 적어야 행이 안 갈리는데, 사람이 읽을 때는 그냥 세로줄이어야 한다.
+    text = text.replace("\\|", "|")
     return re.sub(r"\s+", " ", text).strip()
+
+
+#: 표 칸 구분자. **이스케이프한 세로줄(``\|``)은 자르지 않는다** (72세션 3절).
+#:
+#: 68·70세션이 같은 자리에 물렸다 — `Diagnosis | None`·`QualityReport | None` 을
+#: 칸 안에 그냥 적어 그 표 행이 **통째로 사라졌다.** 그때까지는 「세로줄을 쓰지
+#: 마라」 말고 달리 쓸 방법이 없었다. `\|` 는 markdown 정본 표기이기도 해서
+#: **파서와 렌더러가 같은 것을 본다.**
+_CELL = re.compile(r"(?<!\\)\|")
+
+
+def _state_block(body: str) -> str:
+    """「현재 상태」 표가 든 덩어리. 없으면 빈 글."""
+    m = re.search(r"^## 현재 상태\s*$(.*?)^---", body, re.M | re.S)
+    return m.group(1) if m else ""
+
+
+def _cells(line: str) -> list[str]:
+    return [c.strip() for c in _CELL.split(line.strip().strip("|"))]
 
 
 def clip(text: str, width: int = WRAP_AT) -> str:
@@ -77,16 +99,33 @@ def read_proceed() -> str:
 
 def current_state(body: str) -> dict[str, str]:
     """「현재 상태」 표를 항목→값 으로 읽는다."""
-    m = re.search(r"^## 현재 상태\s*$(.*?)^---", body, re.M | re.S)
-    if not m:
-        return {}
     rows: dict[str, str] = {}
-    for line in m.group(1).splitlines():
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+    for line in _state_block(body).splitlines():
+        cells = _cells(line)
         if len(cells) == 2 and cells[0] and not set(cells[0]) <= set("-: "):
             rows[strip_md(cells[0])] = cells[1]
     rows.pop("항목", None)
     return rows
+
+
+def unread_rows(body: str) -> list[str]:
+    """「현재 상태」 표에서 **칸이 둘로 안 갈린 행의 이름** (72세션 3절).
+
+    칸 안의 세로줄 하나가 그 행을 **통째로** 지운다. 68세션은 미해결 칸에서,
+    70세션은 「다음 작업」 칸에서 물렸고 **70세션에는 경고조차 안 났다** —
+    사라진 자리에 그럴듯한 기본값이 떴다.
+
+    68세션이 만든 장치는 **미해결이 0건일 때만** 소리를 냈다. 어느 행이든
+    사라지면 말해야 한다 — **이름을 그대로 낸다.** 어느 줄을 고칠지가 곧 답이다.
+    """
+    gone: list[str] = []
+    for line in _state_block(body).splitlines():
+        if not line.strip().startswith("|"):
+            continue
+        cells = _cells(line)
+        if len(cells) != 2:
+            gone.append(strip_md(cells[0]) or "(이름 없는 행)")
+    return gone
 
 
 def latest_session(body: str) -> tuple[str, str]:
@@ -116,17 +155,22 @@ def latest_session(body: str) -> tuple[str, str]:
 GROUP = re.compile(r"[①②③④⑤](?=\s)")
 
 
-def first_paren(text: str) -> tuple[str, str]:
-    """이름과 **첫 괄호 짝 안**을 가른다 (68세션 2절).
+def first_paren(text: str) -> tuple[str, str, str]:
+    """이름 · **첫 괄호 짝 안** · **그 뒤에 남은 글** 로 가른다 (68세션 2절).
 
     `partition("(")` + `rsplit(")")` 는 **첫 여는 괄호부터 마지막 닫는 괄호
     까지**를 잡는다. ① 은 목록 괄호가 닫힌 뒤에도 서술이 이어지므로 그
     서술이 통째로 항목 안에 들어왔다 — 마지막 항목이
     「실측 1). ①-4 「실측」 은 …」 이 됐다. **짝을 세어 닫는 자리를 찾는다.**
+
+    **셋째를 72세션에 붙였다.** 그 뒤에 남는 글은 **조용히 버려진다** —
+    ① 의 곁가리 서술처럼 그래도 되는 것이 있고, 71세션처럼 **목록 자체가
+    거기로 밀려나** 항목이 여덟에서 하나로 준 것도 있다. 가르는 것은
+    :func:`hijacked_groups` 다.
     """
     start = text.find("(")
     if start < 0:
-        return text.strip(), ""
+        return text.strip(), "", ""
     depth = 0
     for i in range(start, len(text)):
         if text[i] in "(（":
@@ -134,8 +178,8 @@ def first_paren(text: str) -> tuple[str, str]:
         elif text[i] in ")）":
             depth -= 1
             if depth == 0:
-                return text[:start].strip(), text[start + 1 : i]
-    return text[:start].strip(), text[start + 1 :]  # 안 닫혔으면 끝까지
+                return text[:start].strip(), text[start + 1 : i], text[i + 1 :]
+    return text[:start].strip(), text[start + 1 :], ""  # 안 닫혔으면 끝까지
 
 
 #: 갈래 이름 끝의 「N건」. **줄이 아니라 건을 센다** (68세션 2절).
@@ -200,6 +244,40 @@ def total_items(items: list[Item]) -> int:
     return sum(group_count(name, seen) for name, seen in counted.values())
 
 
+def group_chunks(raw: str) -> list[tuple[str, str]]:
+    """미해결 칸을 갈래별 **(표식, 나머지)** 로 자른다 — ① … ② … ③ …"""
+    marks = list(GROUP.finditer(raw))
+    out: list[tuple[str, str]] = []
+    for i, mk in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(raw)
+        chunk = strip_md(raw[mk.start() : end]).strip(" ·")
+        out.append((chunk[0], chunk[1:].strip()))
+    return out
+
+
+def hijacked_groups(raw: str) -> list[str]:
+    """**목록이 괄호 밖으로 밀려난 갈래** (72세션 3절).
+
+    항목 목록은 갈래 이름 다음의 **첫 괄호 짝** 안이다. 그 앞에 딴 괄호를
+    하나 끼우면 **그것이 목록으로 읽히고 진짜 목록은 꼬리로 밀린다** —
+    71세션이 「② … 8건」 뒤에 종결 근거를 한 줄 붙였더니 ② 항목이 여덟에서
+    **하나**로 줄었다. 71세션은 돌려 보고서야 알았다.
+
+    **꼬리가 있다고 다 말하지 않는다.** ① 은 곁가리 서술(「①-4 「실측」 은 …」)
+    을 괄호 뒤에 두고 있고 그것은 68세션이 일부러 버리게 한 것이다. 가르는 것은
+    **꼬리가 또 괄호로 시작하는가** — 그러면 괄호 짝이 둘이라 **어느 쪽이
+    목록인지 글만 봐서는 모른다.** 서술은 괄호로 시작하지 않는다.
+
+    「괄호가 둘 이상」 으로 세면 ① 이 걸린다 — 곁가리 서술 **안**에
+    (`WeatherLabel` 로 바꿔 끼운다)가 들어 있다. **첫 글자를 본다.**
+    """
+    return [
+        sym
+        for sym, chunk in group_chunks(raw)
+        if first_paren(chunk)[2].lstrip(" ·.,").startswith(("(", "（"))
+    ]
+
+
 def open_items(state: dict[str, str]) -> list[Item]:
     """미해결 칸을 :class:`Item` 으로 편다."""
     raw = state.get("미해결", "")
@@ -212,15 +290,9 @@ def open_items(state: dict[str, str]) -> list[Item]:
         order[sym] = order.get(sym, 0) + 1
         out.append(Item(sym, f"{sym}-{order[sym]}", name, text))
 
-    # ① … ② … ③ … 로 자른다
-    marks = list(GROUP.finditer(raw))
-    for i, mk in enumerate(marks):
-        end = marks[i + 1].start() if i + 1 < len(marks) else len(raw)
-        chunk = strip_md(raw[mk.start() : end]).strip(" ·")
-        sym = chunk[0]
-        chunk = chunk[1:].strip()
+    for sym, chunk in group_chunks(raw):
         # 「자료를 기다리는 것 7건 (청구서 4 · …)」 → 이름과 괄호 안을 가른다
-        name, detail = first_paren(chunk)
+        name, detail, _tail = first_paren(chunk)
         if not detail:
             add(sym, name, "")
             continue
@@ -286,6 +358,10 @@ def build() -> str:
     mark = f"  (커밋 안 된 파일 {len(dirty.splitlines())}개)" if dirty else ""
     lines.append(f"# 오늘의 출발점 — HEAD {head}{mark}")
     lines.append(f"  {clip(subject)}")
+    # **행이 사라지면 어느 행인지 말한다** (72세션 3절). 68세션 장치는 미해결이
+    # 0건일 때만 걸려, 70세션에 「다음 작업」 이 사라졌을 때는 아무 소리도 안 났다.
+    for name in unread_rows(body):
+        lines.append(f"  **「{name}」 행을 못 읽었다** — 칸 안의 세로줄은 \\| 로 적는다")
     lines.append("")
 
     # 직전 세션이 무엇을 했나 — 세 줄. **「어제」 가 아니다** (68세션 2절) —
@@ -310,6 +386,11 @@ def build() -> str:
             lines.append(
                 f"  **갈래 {' · '.join(gone)} 를 못 읽었다** — 표식 뒤에 빈칸이 있는지 보라"
             )
+        # **목록이 괄호 밖으로 밀려나면 말한다** (72세션 3절).
+        for sym in hijacked_groups(state.get("미해결", "")):
+            lines.append(
+                f"  **갈래 {sym} 의 목록이 괄호 밖으로 밀렸다** — 머리말 다음 괄호가 목록이다"
+            )
     seen: set[str] = set()
     for item in items:
         if item.sym not in seen:
@@ -325,7 +406,13 @@ def build() -> str:
 
     # 오늘 첫 작업과 근거. **첫 작업은 자르지 않는다** — 후보 원문이 여기 있다.
     lines.append("## 오늘 첫 작업")
-    nxt = strip_md(state.get("다음 작업", "")) or "정해지지 않았다 — 지시서를 기다린다"
+    nxt = strip_md(state.get("다음 작업", ""))
+    if not nxt:
+        # **그럴듯한 기본값을 두지 않는다** (72세션 3절). 70세션에 이 행이
+        # 사라졌을 때 「정해지지 않았다 — 지시서를 기다린다」 가 떴다. 그 말은
+        # **읽히는 말**이라 아무도 이상하게 보지 않았다 — 네 사고 가운데 가장
+        # 나빴던 까닭이다. **없으면 없다고 말한다.**
+        nxt = "**「다음 작업」 을 못 읽었다** — PROCEED.md 「현재 상태」 의 그 행을 보라"
     lines.extend(wrap(nxt, "  ", "  "))
     for key in ("테스트 상태", "케이스 스터디", "화면 감사"):
         if key in state:

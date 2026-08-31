@@ -10,6 +10,8 @@ r"""아침 브리핑 시험 (69세션 3절).
     ② 건수          — 줄이 아니라 건. 「청구서 3」 같은 뭉침을 담는다
     ③ 자르지 않을 칸 셋이 온전히 나온다 (오늘 첫 작업 · 미해결 · 블로커)
     ④ 표 칸의 세로줄이 행을 지우면 **말한다** (68세션에 조용히 0을 냈다)
+    ⑤ 서식과 파서 (72세션 3절) — `\\|` 는 행을 안 지운다 · **어느 행**이
+      사라졌는지 말한다 · 목록이 괄호 밖으로 밀리면 말한다
 
 덧붙여 **갈래 번호가 앞 갈래에 안 밀리는 것**(69세션 1절)과 **갈래 하나만
 사라질 때 말하는 것**(69세션 2절)을 세운다.
@@ -219,3 +221,67 @@ def test_갈래_하나만_사라져도_말한다(monkeypatch: pytest.MonkeyPatch
     assert broken != SAMPLE
     out = _built(broken, monkeypatch)
     assert "갈래 ① 를 못 읽었다" in out, out
+
+
+# ============================================ ⑤ 서식과 파서 (72세션 3절)
+
+
+def test_이스케이프한_세로줄은_행을_안_지운다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**뿌리를 고쳤다** (72세션 3절). 68·70세션이 같은 자리에 물렸는데,
+    그때까지는 「세로줄을 쓰지 마라」 말고 달리 쓸 방법이 **없었다** —
+    `Diagnosis | None` 을 적을 길이 없으니 언젠가 또 적는다.
+
+    ``\\|`` 는 markdown 정본 표기라 **파서와 렌더러가 같은 것을 본다.**
+    """
+    fixed = SAMPLE.replace("(형 정리", "(형 \\| 정리")
+    assert fixed != SAMPLE
+    out = _built(fixed, monkeypatch)
+    assert "못 읽었다" not in out, out
+    # 사람이 읽을 때는 그냥 세로줄이다.
+    assert "형 | 정리" in out, out
+    assert TAIL_ITEM in out, "행은 살았는데 항목이 잘렸습니다"
+
+
+def test_어느_행이_사라지든_이름을_말한다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**70세션에는 경고조차 안 났다.**
+
+    68세션 장치는 **미해결이 0건일 때만** 걸렸다. 「다음 작업」 이 사라졌을
+    때는 그 자리에 「정해지지 않았다 — 지시서를 기다린다」 라는 **읽히는 말**이
+    떠서 아무도 이상하게 보지 않았다 — 네 사고 가운데 가장 나빴던 까닭이다.
+    """
+    broken = SAMPLE.replace("1. **첫째 후보**", "1. **첫째 | 후보**")
+    assert broken != SAMPLE
+    out = _built(broken, monkeypatch)
+    assert "「다음 작업」 행을 못 읽었다" in out, out
+    assert "「다음 작업」 을 못 읽었다" in out, out
+    # **그럴듯한 기본값을 두지 않는다.**
+    assert "정해지지 않았다" not in out, out
+    # 미해결은 멀쩡하다 — 사라진 행만 말한다.
+    assert "미해결 8건" in out, out
+
+
+def test_목록이_괄호_밖으로_밀리면_말한다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**71세션이 돌려 보고서야 알았다.**
+
+    항목 목록은 갈래 이름 다음의 **첫 괄호 짝** 안이다. 그 앞에 딴 괄호를
+    하나 끼우면 그것이 목록으로 읽히고 진짜 목록은 꼬리로 밀린다 —
+    「② … 8건」 뒤에 종결 근거를 한 줄 붙였더니 ② 가 여덟에서 **하나**로 줄었다.
+    """
+    broken = SAMPLE.replace("2건** (형 정리", "2건** (표본에서 하나 닫혔다) (형 정리")
+    assert broken != SAMPLE
+    out = _built(broken, monkeypatch)
+    assert "갈래 ② 의 목록이 괄호 밖으로 밀렸다" in out, out
+
+
+def test_괄호_뒤의_곁가리_서술에는_안_짖는다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**꼬리가 있다고 다 말하지 않는다.**
+
+    ① 은 곁가리 서술을 괄호 뒤에 두고 있고 68세션이 **일부러** 버리게 했다.
+    「괄호가 둘 이상」 으로 세면 그 서술 **안**의 괄호까지 걸려 매일 아침
+    거짓 경고가 뜬다 — 그러면 진짜 경고도 안 읽힌다.
+    """
+    brief = _brief()
+    tailed = "자료를 기다리는 것 5건 (청구서 3) 곁가리다 — 딴말 (괄호 안 딴말) 이다"
+    assert brief.first_paren(tailed)[1] == "청구서 3"
+    assert brief.hijacked_groups(f"① {tailed}") == []
+    assert brief.hijacked_groups("① 이름 2건 (주석) (가 · 나)") == ["①"]
