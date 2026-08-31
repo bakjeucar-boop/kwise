@@ -12,6 +12,9 @@ r"""아침 브리핑 시험 (69세션 3절).
     ④ 표 칸의 세로줄이 행을 지우면 **말한다** (68세션에 조용히 0을 냈다)
     ⑤ 서식과 파서 (72세션 3절) — `\\|` 는 행을 안 지운다 · **어느 행**이
       사라졌는지 말한다 · 목록이 괄호 밖으로 밀리면 말한다
+    ⑥ **조문 번호는 갈래가 아니다** (74세션 2절) — 「제43조 ③」 을 적어도
+      갈래가 안 생긴다. 가르는 표지는 「N건」 이고, 삼켜지는 위험은
+      69세션 장치가 받는다
 
 덧붙여 **갈래 번호가 앞 갈래에 안 밀리는 것**(69세션 1절)과 **갈래 하나만
 사라질 때 말하는 것**(69세션 2절)을 세운다.
@@ -285,3 +288,47 @@ def test_괄호_뒤의_곁가리_서술에는_안_짖는다(monkeypatch: pytest.
     assert brief.first_paren(tailed)[1] == "청구서 3"
     assert brief.hijacked_groups(f"① {tailed}") == []
     assert brief.hijacked_groups("① 이름 2건 (주석) (가 · 나)") == ["①"]
+
+
+# ================================== ⑥ 조문 번호는 갈래가 아니다 (74세션 2절)
+
+
+def test_조문_번호를_적어도_갈래가_안_생긴다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**73세션이 「제43조 ③」 을 적었더니 17건이 18건이 됐다.**
+
+    ``GROUP`` 이 「표식 + 빈칸」 을 머리말로 보는데 **조문 번호가 그 조건을
+    그대로 만족한다.** 67세션 유령과 같은 자리인데 ``missing_groups`` 도
+    ``hijacked_groups`` 도 안 짖는다 — **이미 있는 표식**이라서다.
+
+    73세션은 조문을 「제3항」 으로 바꿔 피했다. **그건 회피다** — 이 프로젝트는
+    조문을 인용하는 프로젝트다. **가르는 표지는 「N건」 이다.**
+    """
+    brief = _brief()
+    planted = SAMPLE.replace("(형 정리", "(제43조 ③ 형 정리")
+    assert planted != SAMPLE
+
+    items = _items(planted)
+    # 갈래는 여전히 셋이고 건수도 그대로다 (5 + 2 + 1).
+    assert [item.sym for item in items] == ["①", "①", "②", "②", "③"]  # type: ignore[attr-defined]
+    assert brief.total_items(items) == 8
+    # **글자가 안 없어졌다** — 표식째로 앞 갈래에 도로 붙는다.
+    assert items[2].text == "제43조 ③ 형 정리"  # type: ignore[attr-defined]
+    out = _built(planted, monkeypatch)
+    assert "미해결 8건" in out, out
+    assert "못 읽었다" not in out, out
+
+
+def test_N건_없는_갈래를_새로_열면_말한다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**막는 쪽을 골랐으니 삼켜지는 위험을 누가 받는지 세운다.**
+
+    「N건」 이 없으면 앞 갈래에 붙이므로, **진짜 새 갈래를 「N건」 없이 열면
+    조용히 사라질 수 있다.** 그 자리는 69세션이 만든 :func:`missing_groups` 가
+    이미 받는다 — 글에는 표식이 보이는데 항목에는 없기 때문이다.
+
+    **그래서 새 경고를 안 붙였다.** 「제43조 ③」 은 바르게 쓴 글이라 그때마다
+    짖으면 매일 뜨고, 매일 뜨는 경고는 안 읽힌다 (72세션 잣대).
+    """
+    broken = SAMPLE.replace("**③ 실물을", "**④ 새 갈래** · **③ 실물을")
+    assert broken != SAMPLE
+    out = _built(broken, monkeypatch)
+    assert "갈래 ④ 를 못 읽었다" in out, out

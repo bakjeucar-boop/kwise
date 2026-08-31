@@ -245,13 +245,36 @@ def total_items(items: list[Item]) -> int:
 
 
 def group_chunks(raw: str) -> list[tuple[str, str]]:
-    """미해결 칸을 갈래별 **(표식, 나머지)** 로 자른다 — ① … ② … ③ …"""
+    """미해결 칸을 갈래별 **(표식, 나머지)** 로 자른다 — ① … ② … ③ …
+
+    **머리말이 아닌 표식은 앞 갈래에 도로 붙인다** (74세션 2절). 68세션이
+    「표식 뒤에 빈칸」 으로 좁혔는데 **조문 번호가 그 조건을 그대로 만족한다** —
+    73세션이 「제43조 ③ 역률…」 이라 적었더니 그 자리에서 갈래가 하나 생겨
+    **17건이 18건이 되고 ② 목록 가운데가 갈렸다.** 67세션 유령과 같은 자리다.
+
+    73세션은 조문을 「제3항」 으로 바꿔 피했다. **그건 회피다** — 이 프로젝트는
+    조문을 인용하는 프로젝트이고, 다음에 누가 또 적으면 또 난다.
+
+    **가르는 표지는 글 안에 이미 있다 — 「N건」.** 세 갈래 머리말이 모두 달고
+    있고(「자료를 기다리는 것 7건」) 유령은 안 단다. **서식을 바꾸지 않는다.**
+
+    **짖지 않고 막는다.** 「제43조 ③」 은 **바르게 쓴 글**이지 실수가 아니다 —
+    쓸 때마다 경고를 내면 매일 뜨고, 매일 뜨는 경고는 안 읽힌다 (72세션 잣대).
+    **진짜 갈래가 삼켜지는 위험은 :func:`missing_groups` 가 이미 받는다** —
+    「N건」 없는 ④ 를 새로 열면 글에는 있고 항목에는 없으므로 그쪽이 짖는다.
+    """
     marks = list(GROUP.finditer(raw))
     out: list[tuple[str, str]] = []
     for i, mk in enumerate(marks):
         end = marks[i + 1].start() if i + 1 < len(marks) else len(raw)
         chunk = strip_md(raw[mk.start() : end]).strip(" ·")
-        out.append((chunk[0], chunk[1:].strip()))
+        body = chunk[1:].strip()
+        if out and not COUNT.search(first_paren(body)[0]):
+            # 머리말이 아니다 — 표식째로 앞 갈래 글에 도로 넣는다.
+            prev_sym, prev_body = out[-1]
+            out[-1] = (prev_sym, f"{prev_body} {chunk}")
+            continue
+        out.append((chunk[0], body))
     return out
 
 
