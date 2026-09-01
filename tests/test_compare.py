@@ -166,9 +166,7 @@ def test_역률이_기준_아래로_떨어지면_조합이_말한다(
         result = evaluate_combination(
             sample_usage,
             tariff,
-            CombinationSpec(
-                "태양광", CURRENT, pv_capacity_kwp=capacity, power_factor_pct=target
-            ),
+            CombinationSpec("태양광", CURRENT, pv_capacity_kwp=capacity, power_factor_pct=target),
             **kwargs,
         )
         return [item.text for item in result.notices if item.fact == "solar.power_factor_drop"]

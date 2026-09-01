@@ -86,9 +86,7 @@ def power_factor_floor_pct() -> float:
     return lagging_standard_pct()
 
 
-def power_factor_drop_warning(
-    *, capacity_kwp: float, after_pct: float, detail: str = ""
-) -> str:
+def power_factor_drop_warning(*, capacity_kwp: float, after_pct: float, detail: str = "") -> str:
     """PV 가 역률을 기준 아래로 떨어뜨렸다는 경고 문구 (78세션 1절).
 
     **어휘를 한 곳에 둔다** (결함 유형 ③). 59세션까지 이 문장은 2단계 태양광
