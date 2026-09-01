@@ -455,22 +455,26 @@ ESS_SPEC_ROWS = SPEC_TABLE_ROWS
 
 
 def contract_headroom_frame(contract: ContractAdjustment) -> pd.DataFrame:
-    """계약전력과 요금적용전력의 **틈** (53세션 6-3).
+    """계약전력·최대수요·하한 (53세션 6-3 · 83세션에 하한을 넣었다).
 
     한 줄짜리 표다 — 그림 하나를 그리는 데 필요한 값만 든다. **여기서 다시
-    계산하지 않는다**: 화면 카드가 쓰는 것과 같은 셋(계약전력·요금적용전력·
-    권장)에 그 차이를 더할 뿐이다.
+    계산하지 않는다**: 화면 카드가 쓰는 것과 같은 셋(계약전력·최대수요·하한)에
+    그 차이를 더할 뿐이다.
 
-    ``여유(kW)`` 는 음수일 수 있다 — 요금적용전력이 계약전력을 넘은 자료다
+    ``여유(kW)`` 는 음수일 수 있다 — 최대수요가 계약전력을 넘은 자료다
     (초과 위약). 그림이 그 사실을 감추지 않게 그대로 둔다.
+
+    ``하한(kW)`` 는 하한 비율을 모르는 종별에서 ``NaN`` 이다. **0 으로 채우지
+    않는다** — 그림이 0 자리에 선을 그어 「하한이 0」 이라고 말하게 된다.
     """
+    demand = contract.demand_before_floor_kw
     return pd.DataFrame(
         {
             "구분": ["계약전력"],
-            "요금적용전력(kW)": [contract.billing_demand_kw],
-            "여유(kW)": [contract.contract_kw - contract.billing_demand_kw],
+            "최대수요(kW)": [demand],
+            "여유(kW)": [contract.contract_kw - demand],
             "계약전력(kW)": [contract.contract_kw],
-            "권장 계약전력(kW)": [contract.suggested_contract_kw],
+            "하한(kW)": [contract.floor_kw if contract.floor_kw is not None else float("nan")],
         }
     )
 

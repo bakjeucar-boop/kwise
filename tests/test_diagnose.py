@@ -12,6 +12,7 @@ import pandas as pd
 import pytest
 
 from kwise.diagnose import (
+    ContractAdequacy,
     ContractInfo,
     Diagnosis,
     PvPotential,
@@ -162,7 +163,6 @@ def test_diagnose_takes_no_pv_input() -> None:
         "quality",
         "options",
         "top_n",
-        "margin_ratio",
         "operating_hours",
         "contract_floor_ratio",
         # 사용자가 지목한 「쉬는 날」 (29세션). 설비가 아니라 달력 보정이고
@@ -241,17 +241,22 @@ def test_monthly_statement_comes_from_the_tariff_engine(sample_diagnosis: Diagno
 
 
 def test_sample_contract_has_little_headroom(sample_diagnosis: Diagnosis) -> None:
-    """계약 5,500 kW 에 요금적용전력 5,293 kW — 여유가 10% 도 없다."""
+    """계약 5,500 kW 에 최대수요 5,293 kW — 하한 1,650 kW 는 걸리지 않는다."""
     adequacy = sample_diagnosis.contract
     assert adequacy is not None
     assert adequacy.utilization == pytest.approx(0.962, abs=0.001)
     assert adequacy.headroom_kw == pytest.approx(206.56, abs=0.1)
-    assert adequacy.reduction_kw == 0.0
-    assert not adequacy.is_over_contracted
+    assert adequacy.floor_kw == pytest.approx(1_650.0)
+    assert adequacy.target_contract_kw is None
+    assert not adequacy.floor_binding
 
 
-def test_over_contracted_case_shows_reduction(sample_usage: UsageData) -> None:
-    """계약 7,000 kW 면 여유율을 얹고도 1,177 kW 를 내릴 수 있다."""
+def test_over_contracted_case_needs_the_floor_ratio(sample_usage: UsageData) -> None:
+    """**하한 비율을 모르면 목표도 금액도 없다** (83세션).
+
+    옛 판은 여유율을 얹은 「권장 계약전력」 을 비율 없이도 냈다 — 근거가 없는
+    수였다. 목표는 하한비율에서만 나온다.
+    """
     adequacy = assess_contract(
         sample_usage.kw,
         contract_kw=7_000.0,
@@ -259,15 +264,14 @@ def test_over_contracted_case_shows_reduction(sample_usage: UsageData) -> None:
         base_rate_won_per_kw=7_220.0,
         base_fee_months=12.0,
     )
-    assert adequacy.suggested_contract_kw == 5_823.0  # 5,293.44 × 1.10 올림
-    assert adequacy.reduction_kw == pytest.approx(1_177.0)
-    assert adequacy.is_over_contracted
+    assert adequacy.floor_kw is None
+    assert adequacy.target_contract_kw is None
     assert adequacy.saving_won is None  # 하한 비율이 없으면 금액을 만들지 않는다
     assert "미산출" in adequacy.saving_basis
 
 
 def test_saving_is_recalculated_when_the_floor_rule_is_known(sample_usage: UsageData) -> None:
-    """하한 비율을 주면 두 계약전력에서 요금적용전력을 각각 다시 구해 뺀다."""
+    """하한이 이기면 목표는 최대수요 ÷ 하한비율이고 금액이 그 차이만큼 난다."""
     adequacy = assess_contract(
         sample_usage.kw,
         contract_kw=7_000.0,
@@ -276,14 +280,15 @@ def test_saving_is_recalculated_when_the_floor_rule_is_known(sample_usage: Usage
         base_fee_months=12.0,
         contract_floor_ratio=1.0,  # 요금적용전력 하한 = 계약전력
     )
-    # 7,000 kW → 5,823 kW, 12개월분
-    expected = (7_000.0 - 5_823.0) * 7_220.0 * 12.0
+    assert adequacy.floor_binding
+    assert adequacy.target_contract_kw == 5_294.0  # 5,293.44 ÷ 1.0 올림
+    expected = (7_000.0 - 5_294.0) * 7_220.0 * 12.0
     assert adequacy.saving_won == pytest.approx(expected)
     assert "하한 100%" in adequacy.saving_basis
 
 
 def test_floor_rule_below_demand_yields_no_saving(sample_usage: UsageData) -> None:
-    """하한이 낮아 요금적용전력에 걸리지 않으면 계약을 내려도 요금은 그대로다."""
+    """하한이 낮아 최대수요에 걸리지 않으면 계약을 내려도 요금은 그대로다."""
     adequacy = assess_contract(
         sample_usage.kw,
         contract_kw=7_000.0,
@@ -292,16 +297,33 @@ def test_floor_rule_below_demand_yields_no_saving(sample_usage: UsageData) -> No
         base_fee_months=12.0,
         contract_floor_ratio=0.3,
     )
+    assert not adequacy.floor_binding
+    assert adequacy.target_contract_kw is None
     assert adequacy.saving_won == pytest.approx(0.0)
 
 
-def test_contract_warnings_include_the_penalty_notice(sample_diagnosis: Diagnosis) -> None:
-    """하향은 되돌리기 어렵고 초과 시 위약금이 있다. 여유 확보 권고를 함께 낸다."""
-    adequacy = sample_diagnosis.contract
-    assert adequacy is not None
-    assert any("여유를 확보" in message for message in texts(adequacy.notices))
-    assert any("12개월간 적용" in message for message in texts(adequacy.notices))
-    assert any("여유를 확보" in message for message in texts(sample_diagnosis.notices))
+def test_contract_warnings_only_when_lowering_helps(sample_usage: UsageData) -> None:
+    """**낮출 자리가 있을 때만 하향 경고를 낸다** (83세션).
+
+    낮춰도 한 푼 안 주는 자료에서 「되돌리기 어렵다」 를 읽히면 하지도 못할
+    일을 조심하라는 말이 된다. 하한이 이기는 자료에서는 그대로 나온다.
+    """
+
+    def assess(ratio: float) -> ContractAdequacy:
+        return assess_contract(
+            sample_usage.kw,
+            contract_kw=7_000.0,
+            billing_demand_kw=5_293.44,
+            base_rate_won_per_kw=7_220.0,
+            base_fee_months=12.0,
+            contract_floor_ratio=ratio,
+        )
+
+    binding = assess(1.0)
+    assert any("여유를 확보" in message for message in texts(binding.notices))
+    assert any("12개월간 적용" in message for message in texts(binding.notices))
+
+    assert not any("여유를 확보" in message for message in texts(assess(0.3).notices))
 
 
 def test_over_contract_slots_are_flagged(sample_usage: UsageData) -> None:

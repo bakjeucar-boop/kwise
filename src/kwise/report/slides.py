@@ -46,7 +46,7 @@ from pptx.util import Emu, Inches, Pt
 
 from kwise import money
 from kwise.diagnose import ChargeStructure
-from kwise.measures import BASE_FEE_UNCHANGED
+from kwise.measures import NO_SAVING
 from kwise.report import figures, narrative
 from kwise.report.design import DesignGuide, load_design_guide
 from kwise.report.document import DocumentSections, MeasureEntry, MeasureFigure
@@ -167,7 +167,7 @@ _REASON_MARK = " — "
 #: 「기본요금 변화없음」 이 53세션에 붙었다 — 48세션이 「0원」 대신 이 말을
 #: 세우면서 사유가 통째로 큰 글씨 자리에 들어와, 계약전력 장의 지표 칸 하나가
 #: **두 줄로 흘러** 옆 셋과 위계가 어긋났다.
-_REASON_HEADS: tuple[str, ...] = (_UNPRICED, BASE_FEE_UNCHANGED)
+_REASON_HEADS: tuple[str, ...] = (_UNPRICED, NO_SAVING)
 
 
 def split_reason(value: str) -> tuple[str, str]:

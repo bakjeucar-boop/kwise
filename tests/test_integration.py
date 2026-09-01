@@ -550,8 +550,14 @@ def test_잉여_활용_카드가_없다() -> None:
     assert "잉여 활용" not in body, body
 
 
-def test_하향_여지가_없으면_여유율_입력을_감춘다() -> None:
-    """움직여도 0% 인 입력칸은 고장으로 보인다 (13세션)."""
+def test_여유율_입력이_화면에서_사라졌다() -> None:
+    """**움직여도 0% 인 입력칸은 고장으로 보인다** (13세션 → 83세션).
+
+    그 값이 판정에 쓰이지도 않는다는 것이 근본이었다 — 걷어냈다. 판정은
+    하한이 하고, 왜 줄 것이 없는지를 본문 한 줄이 말한다.
+    """
+    from kwise.measures.contract import FLOOR_NOT_BINDING_NOTICE
+
     running = AppTest.from_file(str(APP), default_timeout=900)
     running.session_state["upload_bytes"] = SAMPLE.read_bytes()
     running.session_state["upload_name"] = SAMPLE.name
@@ -561,7 +567,7 @@ def test_하향_여지가_없으면_여유율_입력을_감춘다() -> None:
     running.session_state["measure_on_contract"] = True
     app = running.run()
     assert not app.exception, app.exception
-    assert "하향 여지가 없습니다" in _text(app)
+    assert FLOOR_NOT_BINDING_NOTICE in _text(app)
     assert not [item for item in app.number_input if "여유율" in str(item.label)]
 
 

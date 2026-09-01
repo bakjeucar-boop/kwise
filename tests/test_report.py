@@ -23,7 +23,14 @@ from kwise.cli import app
 from kwise.compare import CombinationSpec, ComparisonResult, evaluate_combination
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
-from kwise.measures import Certainty, EssResult, TariffSwitchResult, evaluate_contract_adjustment
+from kwise.measures import (
+    NO_SAVING,
+    Certainty,
+    ContractStatus,
+    EssResult,
+    TariffSwitchResult,
+    evaluate_contract_adjustment,
+)
 from kwise.quality import QualityReport
 from kwise.report import (
     CONTRACT_CHANGE_WARNING,
@@ -364,16 +371,18 @@ def test_format_won_writes_a_reason_instead_of_a_blank() -> None:
 def test_contract_row_states_the_basis_of_its_number(
     sample_usage: UsageData, sample_bill: BillingResult
 ) -> None:
-    """하한 30% 가 확인된 종별이라 금액이 나온다. 근거를 함께 적는다 (6.4).
+    """하한 30% 가 확인된 종별이라 판정이 난다. 근거를 함께 적는다 (6.4).
 
-    이 건물은 하한 2,100 kW 가 요금적용전력 5,293 kW 에 걸리지 않아 0 원이다.
+    이 건물은 하한 2,100 kW 가 최대수요 5,293 kW 에 걸리지 않아 **줄 것이 없다.**
+    「0」 은 계산해서 0원이 나온 것과 구별되지 않으므로 「없음」 이라 적는다.
     """
     adjustment = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=7_000.0)
     assert adjustment.saving_won == pytest.approx(0.0)
     row = measure_summary_frame(contract=adjustment).iloc[0]
-    assert row["절감액(원)"] == "0"
-    assert "하한 30%" in row["비고"]
-    assert "하향 여지" in row["비고"]
+    assert row["절감액(원)"] == NO_SAVING
+    assert row["12개월 환산(원)"] == NO_SAVING
+    assert "하한 30% 미적용" in row["비고"]
+    assert "유지" in str(row.name)  # 「7,000 → 5,823 kW」 라는 근거 없는 목표가 사라졌다
 
 
 def test_contract_row_shows_the_reason_when_the_floor_is_unknown(
@@ -386,7 +395,7 @@ def test_contract_row_shows_the_reason_when_the_floor_is_unknown(
     from dataclasses import replace
 
     known = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=7_000.0)
-    unknown = replace(known, saving_won=None, annual_saving_won=None)
+    unknown = replace(known, status=ContractStatus.UNKNOWN, saving_won=None, annual_saving_won=None)
     row = measure_summary_frame(contract=unknown).iloc[0]
     assert row["절감액(원)"] == UNPRICED_REASONS["contract"]
     assert row["12개월 환산(원)"] == UNPRICED_REASONS["contract"]

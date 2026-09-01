@@ -25,13 +25,13 @@ import math
 import pandas as pd
 import streamlit as st
 
-from kwise.diagnose import Diagnosis, default_margin_ratio, margin_range
+from kwise.diagnose import Diagnosis
 from kwise.diagnose.dr import dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData
 from kwise.measures import (
-    BASE_FEE_UNCHANGED,
     CURTAIL_SCENARIO,
     EXTERNAL_SCENARIO,
+    NO_SAVING,
     OFFSET_SCENARIO,
     SHORTEST_PAYBACK,
     SolarPoint,
@@ -365,6 +365,9 @@ def _tariff_switch(
 
 # --------------------------------------------------------------------- 7.2
 
+#: 하한 판정 결론의 사실 ID. 본문이 직접 쓰므로 툴팁에서는 뺀다.
+_FLOOR_VERDICT = "contract.floor_not_binding"
+
 
 def _contract(
     spec: MeasureSpec,
@@ -381,34 +384,6 @@ def _contract(
         _overview(spec)
         _caution("계약전력을 입력해야 조정 여지를 봅니다 (1단계 계약 정보).")
         return
-    # **여유가 없으면 입력칸을 감춘다** (13세션). 움직여도 0% 라 고장으로 보인다.
-    peak = diagnosis.peak.billing_demand_kw
-    headroom = (form.contract_kw - peak) / form.contract_kw if form.contract_kw else 0.0
-    low, high = margin_range()
-    if headroom <= low:
-        # **여유율을 세션에 남긴다.** 입력칸을 감춘 경우에도 3단계가 같은 값을
-        # 읽어야 2단계 카드와 숫자가 어긋나지 않는다 (14세션 5-1). 위젯이 이번
-        # 실행에서 만들어지지 않았으므로 키를 직접 써도 된다.
-        margin = default_margin_ratio()
-        st.session_state[input_key("contract", "margin")] = margin
-    else:
-        _adequacy(diagnosis)
-        # **슬라이더가 아니라 수치 입력이다** (16세션 0-2). 슬라이더는 끄는 동안
-        # 실행이 이어져 화면이 계속 다시 그려진다 — ± 한 번에 한 번만 돈다.
-        margin = st.number_input(
-            "확보할 여유율",
-            min_value=0.0,
-            max_value=0.3,
-            value=default_margin_ratio(),
-            step=0.01,
-            format="%.2f",
-            key=input_key("contract", "margin"),
-            help=fmt.tip("contract_margin"),
-        )
-        st.caption(
-            f"권장 {fmt.ratio_pct(low, decimals=0)}–{fmt.ratio_pct(high, decimals=0)}.",
-            help=manual_tip("contract-adequacy"),
-        )
     result = cached_contract_adjustment(
         usage,
         baseline,  # type: ignore[arg-type]
@@ -418,88 +393,60 @@ def _contract(
         form,
         form.contract_kw,
         None,
-        margin,
         rules_stamp(),
     )
     _overview(spec)
-    if result.reduction_kw <= 0:
-        # **지표는 되살리고 경고·근거는 계속 감춘다** (31세션 2절).
-        #
-        # 27세션에 이 자리를 한 줄로 줄였다 — 지표 넷이 모두 「0」 을 말하고 경고
-        # 둘은 하지도 못할 하향을 조심하라는 말이었기 때문이다. 줄이고 보니 이
-        # 카드만 큰 글자 숫자가 없어 **다른 개선안과 나란히 훑을 수가 없었다.**
-        # 「할 일이 없다」 와 「값을 알 수 없다」 는 다르다.
-        #
-        # 그래서 **무엇을 보이느냐를 바꿨다.** 현행·권장·절감액(전부 0)이 아니라
-        # **왜 여지가 없는지 말하는 넷**을 세운다 — 계약전력과 요금적용전력이
-        # 얼마나 붙어 있는지가 그 이유다. 경고와 산출 근거는 그대로 감춘다.
-        columns = st.columns(4)
-        columns[0].metric("현재 계약전력", fmt.kw(result.contract_kw))
-        columns[1].metric("요금적용전력", fmt.kw(peak))
-        columns[2].metric(
-            "여유",
-            fmt.ratio_pct(headroom),
-            help=fmt.markdown_safe(
-                "(계약전력 − 요금적용전력) ÷ 계약전력.\n\n"
-                "이 값이 확보할 여유율보다 작으면 낮출 자리가 없습니다."
-            ),
-        )
-        columns[3].metric("하향 여지", fmt.kw(result.reduction_kw))
-        st.write(
-            f"현재 계약전력 {fmt.kw(result.contract_kw, decimals=0)} 는 요금적용전력 "
-            f"{fmt.kw(peak)} 대비 여유가 {fmt.ratio_pct(headroom)} 입니다. "
-            "하향 여지가 없습니다."
-        )
-        return
-    columns = st.columns(4)
-    columns[0].metric("현행 계약전력", fmt.kw(result.contract_kw))
-    columns[1].metric("권장", fmt.kw(result.suggested_contract_kw))
-    columns[2].metric("하향 여지", fmt.kw(result.reduction_kw))
-    # **「0원」 이 아니라 「기본요금 변화없음」 이다** (48세션). 여지 8 kW 옆의 0원은
-    # 계산이 덜 된 것처럼 읽힌다 — 둘은 다른 물음이고, 왜 안 바뀌는지는 아래
-    # 근거(`contract.floor_not_binding`)가 이미 낸다. 문구를 새로 만들지 않았다.
-    columns[3].metric(
+    # **판정을 가르는 수를 화면에 세운다** (83세션). 화면에 하한이 없어서
+    # 「변화없음」 이 까닭 없는 결론이 되어 있었다 — 세 수를 나란히 놓으면
+    # 어느 쪽이 큰가로 갈리는 것이 그 자리에서 읽힌다.
+    #
+    # **두 갈래가 같은 자리를 쓴다.** 하한이 이길 때만 목표 계약전력이 한 칸
+    # 더 선다 — 화면이 두 벌이 아니라 한 벌이다.
+    ratio = result.contract_floor_ratio
+    columns = st.columns(5 if result.floor_binding else 4)
+    columns[0].metric("계약전력", fmt.kw(result.contract_kw))
+    columns[1].metric(
+        f"계약전력의 {fmt.ratio_pct(ratio, decimals=0)}" if ratio is not None else "하한",
+        fmt.kw(result.floor_kw) if result.floor_kw is not None else "—",
+        help=manual_tip("contract-adequacy"),
+    )
+    # **「요금적용전력」 이 아니라 「최대수요」 다.** 약관의 식이
+    # `요금적용전력 = max(최대수요, 계약전력 × 하한비율)` 이므로, 하한과 견주는
+    # 상대는 최대수요다 — 하한이 이기면 요금적용전력은 하한과 같은 수가 되어
+    # 두 칸이 같은 값을 말하게 된다.
+    columns[2].metric("최대수요", fmt.kw(result.demand_before_floor_kw))
+    if result.target_contract_kw is not None:
+        columns[3].metric("목표 계약전력", fmt.kw(result.target_contract_kw, decimals=0))
+    # **「0원」 이 아니라 「없음」 이다** (48세션 · 83세션에 말을 줄였다). 까닭은
+    # 위 세 수와 아래 판정 줄이 말한다 — 표기를 늘려 메우지 않는다.
+    columns[-1].metric(
         "절감액",
         fmt.won_year(
             result.annual_saving_won,
             reason=result.saving_basis,
-            zero_reason=BASE_FEE_UNCHANGED if result.base_fee_unchanged else None,
+            zero_reason=NO_SAVING if result.no_saving else None,
         ),
     )
-    # **이 숫자는 현재 부하 기준이다** (14세션 2-4). 다른 수단을 켰다고 바뀌지
-    # 않으며, 조합 기준의 추가 하향 여지는 3단계에서 따로 낸다.
-    st.caption(
-        "현재 부하 기준의 하향 여지입니다. 다른 수단을 함께 켜면 3단계 합산효과에서 "
-        "추가 하향 여지가 계산됩니다."
+    # **판정 줄은 본문이다.** 산출물(3단계·PPT)이 쓰는 것과 같은 문장이라
+    # 툴팁으로 접으면 화면만 결론을 잃는다.
+    verdict = next((item for item in result.notices if item.fact == _FLOOR_VERDICT), None)
+    if verdict is not None:
+        st.write(verdict.text)
+    if result.floor_binding:
+        # **이 숫자는 현재 부하 기준이다** (14세션 2-4). 다른 수단을 켰다고 바뀌지
+        # 않으며, 조합 기준의 목표 계약전력은 3단계에서 따로 낸다.
+        st.caption("현재 부하 기준입니다. 다른 수단을 함께 켜면 3단계에서 다시 계산됩니다.")
+        # **계약전력 변경 경고는 이 카드에 둔다** (16세션 3절). 1단계에 있을 때는
+        # 계약전력을 바꿀 생각을 하기 전에 읽혀 지나쳤다 — 바꾸자고 제안하는 자리가
+        # 이 경고의 제자리다. **문구는 산출물과 같은 원문 그대로다.**
+        _caution(CONTRACT_CHANGE_WARNING)
+    _notices(
+        tuple(
+            item
+            for item in result.notices
+            if item.text != CONTRACT_CHANGE_WARNING and item.fact != _FLOOR_VERDICT
+        )
     )
-    # **계약전력 변경 경고는 이 카드에 둔다** (16세션 3절). 1단계에 있을 때는
-    # 계약전력을 바꿀 생각을 하기 전에 읽혀 지나쳤다 — 바꾸자고 제안하는 자리가
-    # 이 경고의 제자리다. **문구는 산출물과 같은 원문 그대로다.**
-    _caution(CONTRACT_CHANGE_WARNING)
-    _notices(tuple(item for item in result.notices if item.text != CONTRACT_CHANGE_WARNING))
-
-
-def _adequacy(diagnosis: Diagnosis) -> None:
-    """계약전력 적정성 — **1단계에서 이리로 옮겼다** (16세션 3절).
-
-    같은 금액이 1단계 「계약전력 적정성」과 이 카드에 다른 이름으로 있었다.
-    둘을 나란히 놓고 보면 어느 쪽을 믿어야 할지 알 수 없으므로, **바꿀지 말지를
-    정하는 자리** 하나에 모은다.
-    """
-    adequacy = diagnosis.contract
-    if adequacy is None:
-        return
-    st.markdown("**적정성**")
-    columns = st.columns(3)
-    columns[0].metric("계약전력", fmt.kw(adequacy.contract_kw))
-    columns[1].metric(
-        "이용률",
-        fmt.ratio_pct(adequacy.utilization),
-        help=(
-            "요금적용전력 ÷ 계약전력.\n\n낮을수록 계약을 과하게 잡아 둔 것이라 하향 여지가 큽니다."
-        ),
-    )
-    columns[2].metric("하향 여지", fmt.kw(adequacy.reduction_kw))
 
 
 # --------------------------------------------------------------------- 7.3

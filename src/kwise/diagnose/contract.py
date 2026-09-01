@@ -8,7 +8,12 @@
 (을 · 갑Ⅱ)은 계약전력을 낮춰도 요금적용전력이 그대로면 요금이 그대로다.
 줄어드는 경우는 요금적용전력이 계약전력의 일정 비율(30%, 교육용(을) 15% 특례)
 아래로 못 내려가는 **하한 규정**에 걸려 있을 때뿐이다 (약관 제68조 제1항).
-비율을 받지 못하면 금액을 만들어내지 않고 하향 여지(kW)만 낸다.
+비율을 받지 못하면 금액을 만들어내지 않는다.
+
+**목표 계약전력은 최대수요 ÷ 하한비율이다** (83세션). 여유율을 얹은 「권장
+계약전력」 은 걷어냈다 — 근거가 붙어 있지 않았고, 기본요금이 계약전력에 붙는
+종별의 산식이라 여기서는 전제가 서지 않는다. 자세한 사정은
+:mod:`kwise.measures.contract` 의 머리글에 적었다.
 """
 
 from __future__ import annotations
@@ -19,7 +24,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from kwise.notices import Notice, block, warn
-from kwise.rules import assumption, rule_value
+from kwise.rules import rule_value
 from kwise.tariff import TariffSelection
 
 __all__ = [
@@ -27,7 +32,6 @@ __all__ = [
     "ContractInfo",
     "assess_contract",
     "deemed_power_factor_pct",
-    "default_margin_ratio",
 ]
 
 
@@ -40,21 +44,6 @@ def deemed_power_factor_pct() -> float:
     return float(rule_value("power_factor.deemed_lagging_pct"))
 
 
-def default_margin_ratio() -> float:
-    """계약전력 권장 여유율. 판단값이다 (``assumptions.json``)."""
-    return float(assumption("contract.margin_ratio"))
-
-
-def margin_range() -> tuple[float, float]:
-    """권장 여유율 범위. **근거는 기준 데이터의 note 에 있다** (13세션).
-
-    하한은 월 최대수요의 통상 진폭, 상한은 그 이상 확보하면 절감이 사라지는
-    지점이다. 화면 슬라이더의 권장 구간 표시에 쓴다.
-    """
-    low, high = assumption("contract.margin_range")
-    return (float(low), float(high))
-
-
 _MARGIN_NOTICE = (
     "기본요금은 직전 12개월 중 최대수요로 결정됩니다. 계약전력을 하향할 경우, "
     "예측 오차와 기상 변동을 고려하여 충분한 여유를 확보하십시오. "
@@ -62,8 +51,8 @@ _MARGIN_NOTICE = (
 )
 _FLOOR_UNKNOWN = (
     "요금적용전력 하한 비율이 요금 데이터에 없어 절감액을 산출하지 않았습니다. "
-    "하향 여지(kW)만 참고하십시오. 기본요금이 계약전력에 붙는 종별이면 "
-    "저압·고압 전제부터 청구서로 확인하십시오."
+    "기본요금이 계약전력에 붙는 종별이면 저압·고압 전제부터 청구서로 "
+    "확인하십시오."
 )
 
 
@@ -91,8 +80,11 @@ class ContractAdequacy:
     """계약전력 적정성.
 
     Attributes:
+        billing_demand_kw: 직전 12개월 최대수요 (하한 적용 **전**).
         utilization: 최대수요 ÷ 계약전력. 낮으면 과계약이다.
-        suggested_contract_kw: 여유율을 얹은 권장 계약전력.
+        floor_kw: 계약전력 × 하한비율. 비율을 모르면 None.
+        target_contract_kw: 목표 계약전력 (최대수요 ÷ 하한비율).
+            **하한이 이길 때만 값이 있다.**
         saving_won: 하한 규정을 아는 경우에만 값이 있다. 모르면 None.
     """
 
@@ -102,16 +94,17 @@ class ContractAdequacy:
     utilization: float
     headroom_kw: float
     over_contract_slots: int
-    margin_ratio: float
-    suggested_contract_kw: float
-    reduction_kw: float
+    contract_floor_ratio: float | None
+    floor_kw: float | None
+    target_contract_kw: float | None
     saving_won: float | None
     saving_basis: str
     notices: tuple[Notice, ...] = field(default=())
 
     @property
-    def is_over_contracted(self) -> bool:
-        return self.reduction_kw > 0
+    def floor_binding(self) -> bool:
+        """**하한이 이기는가.** 참일 때만 낮출 이유가 있다."""
+        return self.target_contract_kw is not None
 
 
 def assess_contract(
@@ -121,32 +114,38 @@ def assess_contract(
     billing_demand_kw: float,
     base_rate_won_per_kw: float,
     base_fee_months: float,
-    margin_ratio: float | None = None,
     contract_floor_ratio: float | None = None,
     step_kw: float = 1.0,
 ) -> ContractAdequacy:
     """계약전력 적정성을 본다.
 
     Args:
-        billing_demand_kw: 요금적용전력 (12개월 규칙 적용값).
-        margin_ratio: 권장 계약전력에 얹을 여유율. None 이면 판단값을 읽는다.
+        billing_demand_kw: 직전 12개월 최대수요 (하한 적용 **전** 값).
         contract_floor_ratio: 요금적용전력의 계약전력 대비 하한 비율.
             None 이면 절감액을 산출하지 않는다.
         step_kw: 계약전력 조정 단위.
     """
     if contract_kw <= 0:
         raise ValueError(f"계약전력은 양수여야 합니다: {contract_kw}")
-    margin_ratio = default_margin_ratio() if margin_ratio is None else margin_ratio
 
     observed = kw.dropna()
     max_demand = float(observed.max()) if len(observed) else 0.0
     over_slots = int((observed > contract_kw).sum())
 
-    target = billing_demand_kw * (1.0 + margin_ratio)
-    suggested = min(contract_kw, math.ceil(target / step_kw) * step_kw)
-    reduction = max(0.0, contract_kw - suggested)
+    floor_kw = contract_kw * contract_floor_ratio if contract_floor_ratio is not None else None
+    # **판정은 이 한 줄이다** (83세션). 하한이 최대수요를 넘어야 낮출 이유가 있다.
+    target = (
+        min(
+            contract_kw,
+            math.ceil(billing_demand_kw / contract_floor_ratio / step_kw) * step_kw,
+        )
+        if floor_kw is not None and contract_floor_ratio and floor_kw > billing_demand_kw
+        else None
+    )
 
-    notices: list[Notice] = [warn(_MARGIN_NOTICE, fact="contract.margin")]
+    notices: list[Notice] = []
+    if target is not None:
+        notices.append(warn(_MARGIN_NOTICE, fact="contract.margin"))
     if over_slots:
         # **개선 수단 쪽과 같은 사실이다** (measures\contract.py). 문구가 세 글자
         # 다른 탓에 지문으로는 안 잡혀 화면에 두 번 나왔다 (20세션 2절).
@@ -159,15 +158,17 @@ def assess_contract(
         )
 
     saving: float | None = None
-    if contract_floor_ratio is None:
+    if contract_floor_ratio is None or floor_kw is None:
         basis_text = "하한 비율 없음 — 미산출"
         # **차단** — 금액을 만들지 않는다.
         notices.append(block(_FLOOR_UNKNOWN, fact="contract.floor_unknown"))
+    elif target is None:
+        saving = 0.0
+        basis_text = f"요금적용전력 하한 {contract_floor_ratio:.0%} 미적용 — 최대수요가 기준"
     else:
         # 재계산한다. 두 계약전력 각각에서 요금적용전력을 다시 구해 기본요금을 낸다.
-        current_demand = max(billing_demand_kw, contract_kw * contract_floor_ratio)
-        target_demand = max(billing_demand_kw, suggested * contract_floor_ratio)
-        saving = (current_demand - target_demand) * base_rate_won_per_kw * base_fee_months
+        target_demand = max(billing_demand_kw, target * contract_floor_ratio)
+        saving = (floor_kw - target_demand) * base_rate_won_per_kw * base_fee_months
         basis_text = (
             f"요금적용전력 하한 {contract_floor_ratio:.0%} 가정, "
             f"기본요금 {base_fee_months:.2f}개월분 기준"
@@ -184,9 +185,9 @@ def assess_contract(
         utilization=billing_demand_kw / contract_kw,
         headroom_kw=contract_kw - billing_demand_kw,
         over_contract_slots=over_slots,
-        margin_ratio=margin_ratio,
-        suggested_contract_kw=suggested,
-        reduction_kw=reduction,
+        contract_floor_ratio=contract_floor_ratio,
+        floor_kw=floor_kw,
+        target_contract_kw=target,
         saving_won=saving,
         saving_basis=basis_text,
         notices=tuple(notices),

@@ -554,7 +554,8 @@ def test_실제_항목_전부에_원문_확인처가_붙는다() -> None:
     items = describe_items()
     rows = build_rows(items, expiry_warnings(include_weather=False))
     # 항목이 조용히 사라지는 것을 막는 잣대다. 늘리는 것은 정상, 줄면 확인한다.
-    assert len(rows) == len(items) == 80  # rules_kr 31 + assumptions 49
+    # 83세션에 근거 없는 여유율 둘(`contract.margin_ratio`·`margin_range`)이 빠졌다.
+    assert len(rows) == len(items) == 78  # rules_kr 31 + assumptions 47
     assert all(row.link.startswith(("한국", "국가", "에너지", "Open", "기술서")) for row in rows)
     # **바깥에 원문이 없는 값도 있다** (22세션). 화면 예산은 우리가 정한 규약이라
     # 확인처가 기술서다 — 그래도 따라갈 데는 있어야 한다.
@@ -898,19 +899,18 @@ def test_운영_시간대가_운영시간_외_부하_진단에_닿는다(usage: 
 # ===================================================================== 48세션 · 0 이 결론인 자리
 
 
-def test_기본요금_변화없음은_0원이_아니다() -> None:
-    """**「하향 여지 8 kW · 0원」 은 계산이 덜 된 것처럼 읽힌다** (48세션).
+def test_줄_것이_없으면_0원이_아니다() -> None:
+    """**「0원」 은 계산이 덜 된 것처럼 읽힌다** (48세션 · 83세션에 말을 줄였다).
 
-    둘은 다른 물음이다 — 여지는 「낮출 수 있는가」 이고 절감액은 「낮추면 돈이
-    주는가」 다. 요금적용전력이 하한(계약전력의 30%)보다 훨씬 크면 계약전력을
-    낮춰도 기본요금 기준이 그대로다. **여지를 0 으로 내리지 않는다.**
+    하한이 요금적용전력에 걸리지 않으면 계약전력을 낮춰도 기본요금 기준이
+    그대로다 — 줄어들 몫 자체가 없다. 계산해서 0원이 나온 것과 다르다.
     """
-    from kwise.measures import BASE_FEE_UNCHANGED
+    from kwise.measures import NO_SAVING
     from kwise.ui.text import won_year
 
     assert won_year(0.0) == "0원/년", "옵트인이 없으면 0 은 그대로 0 이다"
-    assert won_year(0.0, zero_reason=BASE_FEE_UNCHANGED) == BASE_FEE_UNCHANGED
+    assert won_year(0.0, zero_reason=NO_SAVING) == NO_SAVING
     # 값이 있으면 결론이 이기지 않는다.
-    assert won_year(1_000_000.0, zero_reason=BASE_FEE_UNCHANGED).endswith("/년")
-    # 미산출은 여전히 사유다 — 「변화없음」 과 「모른다」 는 다르다.
+    assert won_year(1_000_000.0, zero_reason=NO_SAVING).endswith("/년")
+    # 미산출은 여전히 사유다 — 「없음」 과 「모른다」 는 다르다.
     assert won_year(None, reason="미산출 — 하한 미확인").startswith("미산출")

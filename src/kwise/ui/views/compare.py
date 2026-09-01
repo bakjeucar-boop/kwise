@@ -32,7 +32,7 @@ from kwise.compare import (
     ComparisonResult,
     SensitivityRange,
 )
-from kwise.diagnose import Diagnosis, default_margin_ratio
+from kwise.diagnose import Diagnosis
 from kwise.diagnose.dr import DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
@@ -118,7 +118,6 @@ from kwise.ui.state import (
     ess_pricing,
     get_combination_pick,
     get_solar_inputs,
-    input_key,
     measure_float,
     reference_day,
     session_id,
@@ -540,7 +539,7 @@ def _interaction_reasons(
     if "contract" in keys and ("solar" in keys or "ess" in keys):
         reasons.append(
             "**계약전력을 더 낮출 수 있습니다.** 태양광·ESS 로 요금적용전력이 "
-            "내려가면 계약전력 하향 여지가 커집니다 (아래 참조)."
+            "내려가면 하한에 걸리는 계약전력도 함께 내려갑니다 (아래 참조)."
         )
     return reasons
 
@@ -551,48 +550,40 @@ def _contract_headroom(
     combined: CombinationResult,
     standalone: ContractAdjustment | None,
 ) -> float | None:
-    """**계약전력 추가 하향 여지** — 조합 기준으로 여기서 낸다 (14세션 5-2).
+    """**계약전력 추가 하향** — 조합 기준으로 여기서 낸다 (14세션 5-2).
 
     2단계 7.2 카드는 **현재 부하** 기준이라 다른 수단을 켜도 값이 바뀌지 않는다.
     조합 부하에서 얼마나 더 낮출 수 있는지는 이 자리에서만 계산한다.
     """
     if form.contract_kw is None:
         return None
-    margin = float(st.session_state.get(input_key("contract", "margin"), default_margin_ratio()))
     adjustment = evaluate_contract_adjustment(
         usage,
         combined.bill,
         contract_kw=form.contract_kw,
-        margin_ratio=margin,
     )
     already = (standalone.annual_saving_won or 0.0) if standalone is not None else 0.0
     extra = (adjustment.annual_saving_won or 0.0) - already
 
     # **소제목을 두지 않는다** (22세션 1절). 한 줄이면 되는 사실에 머리글을 얹으면
     # 본문이 두 줄이 된다.
-    if adjustment.reduction_kw <= 0:
-        st.write("계약전력 추가 하향 여지 — 이 조합에서도 더 낮출 여지가 없습니다.")
+    if adjustment.target_contract_kw is None:
+        st.write("계약전력 추가 하향 — 이 조합에서도 하한에 걸리지 않아 낮출 이유가 없습니다.")
         return None
     text = (
-        f"**계약전력 추가 하향 여지** — 이 조합이면 "
-        f"**{fmt.kw(adjustment.suggested_contract_kw, decimals=0)}** 로 "
-        f"낮출 수 있습니다 (현행 {fmt.kw(form.contract_kw, decimals=0)}, 여유율 "
-        f"{fmt.ratio_pct(margin, decimals=0)} 반영)."
+        f"**계약전력 추가 하향** — 이 조합이면 "
+        f"**{fmt.kw(adjustment.target_contract_kw, decimals=0)}** 까지 "
+        f"낮출 수 있습니다 (현행 {fmt.kw(form.contract_kw, decimals=0)})."
     )
-    if standalone is not None:
+    if standalone is not None and standalone.target_contract_kw is not None:
         text += (
-            f" 현재 부하만 볼 때의 권장값은 "
-            f"{fmt.kw(standalone.suggested_contract_kw, decimals=0)} 였습니다."
+            f" 현재 부하만 볼 때의 목표는 "
+            f"{fmt.kw(standalone.target_contract_kw, decimals=0)} 였습니다."
         )
     if adjustment.annual_saving_won is None:
         text += f" 금액은 {adjustment.saving_basis}."
     elif extra > 0:
         text += f" 추가 절감 **{fmt.won_short(extra)}/년**."
-    else:
-        text += (
-            " 다만 기본요금이 요금적용전력 기준이라 계약전력을 낮춰도 요금은 "
-            "줄지 않습니다 — 하한 규정에 걸리지 않습니다."
-        )
     st.write(text)
     return extra if extra > 0 else None
 
@@ -900,9 +891,6 @@ def _measure_results(
             form,
             form.contract_kw,
             None,
-            # **2단계와 같은 여유율을 읽는다.** 슬라이더를 감춘 경우에도 2단계가
-            # 세션에 남겨 두므로 두 화면의 값이 어긋나지 않는다 (14세션 5-1).
-            float(st.session_state.get(input_key("contract", "margin"), default_margin_ratio())),
             stamp,
         )
 

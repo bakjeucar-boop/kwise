@@ -293,10 +293,17 @@ li.task input { margin-right:.5rem; }
 </ul>
 <h4 id="contract-adequacy">계약전력 적정성 — 2단계 계약전력 조정 카드에 있다</h4>
 <p><strong>1단계에서 2단계 계약전력 조정 카드로 옮겼다</strong> (16세션). 바꿀지 말지를 정하는 자리에 적정성과 경고가 함께 있어야 한다 — 1단계에서 미리 읽으면 무엇을 조심하라는 말인지 알 수 없어 그냥 지나쳤다.</p>
-<div class="table-wrap"><table><thead><tr><th>항목</th><th>뜻</th></tr></thead><tbody><tr><td>이용률</td><td>요금적용전력 ÷ 계약전력. 낮으면 과계약이다</td></tr><tr><td>권장 계약전력</td><td>요금적용전력에 여유율(기본 10%)을 얹은 값</td></tr><tr><td>하향 여지</td><td>현행 − 권장</td></tr><tr><td>예상 절감액</td><td><strong>하한 규정에 걸려 있을 때만 금액이 난다</strong></td></tr></tbody></table></div>
+<p><strong>판정은 하한 하나로 갈린다</strong> (83세션). 기본요금이 요금적용전력에 붙는 종별 (일반용(을) · 갑Ⅱ 등)에서 요금적용전력은 한전 기본공급약관 제68조 제1항이 이렇게 정한다.</p>
+<p>요금적용전력 = max(직전 12개월 최대수요, 계약전력 × 하한비율)</p>
+<p>하한비율은 30%(교육용(을)은 15% 특례)다. 여기서 갈래가 둘 나온다.</p>
+<div class="table-wrap"><table><thead><tr><th></th><th>하한이 진다</th><th>하한이 이긴다</th></tr></thead><tbody><tr><td>조건</td><td>하한 ≤ 최대수요</td><td>하한 &gt; 최대수요</td></tr><tr><td>기본요금 기준</td><td>최대수요</td><td>하한</td></tr><tr><td>목표 계약전력</td><td><strong>없다</strong></td><td><strong>최대수요 ÷ 하한비율</strong></td></tr><tr><td>절감액</td><td><strong>없음</strong></td><td>(하한 − 최대수요) × 기본요금 단가 × 개월</td></tr></tbody></table></div>
+<p>화면은 두 갈래가 <strong>같은 자리에 같은 세 수</strong>를 쓴다 — 계약전력 · 계약전력의 30% · 최대수요. 어느 쪽이 큰가로 판정이 갈리고, 하한이 이길 때만 목표 계약전력이 한 칸 더 선다.</p>
 <blockquote><strong>하향은 되돌리기 어렵습니다.</strong> 기본요금은 직전 12개월 중 최대수요로 결정되므로 <strong>한 번의 초과가 12개월간 적용됩니다.</strong> 예측 오차와 기상 변동을 고려해 충분한 여유를 확보하십시오.</blockquote>
-<p>절감액이 &quot;미산출&quot;로 나오면 하한 규정을 모르는 종별이라는 뜻이다. 하향 여지(kW)만 참고하십시오.</p>
-<p><strong>하향 여지가 0 kW 면 카드에 이유 한 줄만 나온다</strong> (27세션). 지표도 경고도 산출 근거도 감춘다 — 할 수 없는 일에 대한 주의는 읽는 사람이 할 일을 만들지 않는다. 여유율을 낮춰도 여지가 생기지 않는 경우가 여기 해당한다.</p>
+<p>이 경고는 <strong>하한이 이길 때만 나온다</strong> (83세션). 낮출 자리가 없는 자료에서 읽히면 하지도 못할 일을 조심하라는 말이 된다.</p>
+<p><strong>금액 칸이 셋으로 갈린다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>표기</th><th>뜻</th></tr></thead><tbody><tr><td>금액</td><td>실제로 준다</td></tr><tr><td>없음</td><td>하한이 안 걸려 <strong>줄어들 몫 자체가 없다</strong></td></tr><tr><td>미산출 (—)</td><td>하한 비율을 모르는 종별이라 <strong>산출하지 않았다</strong></td></tr></tbody></table></div>
+<p><strong>「권장 계약전력」 과 「하향 여지」 는 83세션에 걷어냈다.</strong> 「요금적용전력 × (1 + 여유율)」 은 기본요금이 <strong>계약전력</strong>에 붙는 종별(갑Ⅰ · 교육용(갑))의 산식이라 을 · 갑Ⅱ 에서는 전제가 서지 않았고, 여유율 10~30% 라는 폭에도 붙은 근거가 없었다. 목표는 약관에서 바로 나오는 <strong>최대수요 ÷ 하한비율</strong> 하나다 — 그 아래로 내려도 더 얻을 것이 없는 상한이다.</p>
+<p><strong>이용률(요금적용전력 ÷ 계약전력)은 판정에 쓰지 않는다.</strong> 판정의 기준선은 계약전력의 <strong>30%</strong> 인데 이용률의 기준선은 <strong>100%</strong> 다 — 이용률 45.6% 인 자료에서 절감액이 0 이면 「여유가 있는데 왜 0인가」 를 되묻게 된다. 이용률은 1단계 진단 결과(Excel 「진단」 시트)에 그대로 남는다.</p>
 <hr>
 <h2 id="manual-measures">4. 2단계 · 개선 수단</h2>
 <p>카드로 켜고 끈다. <strong>1번부터 7번까지</strong> 놓여 있고 접힌 상태로 시작한다. <strong>제목 앞 체크박스로 고른다</strong> (27세션) — 제목 줄 전체가 누를 자리라 손가락으로도 맞힐 수 있다. <strong>켠 카드는 펼쳐진 채로 남는다</strong> (16세션) — ± 단추로 값을 몇 번 고쳐도 다시 접히지 않는다. 접어 두고 싶으면 체크를 푼다. <strong>켠 수단만</strong> 3단계 비교와 산출물에 들어간다.</p>
@@ -325,15 +332,15 @@ li.task input { margin-right:.5rem; }
 <li>산출물 확실성 <strong>높음</strong> — 실측과 요금표만으로 확정된다.</li>
 </ul>
 <h3 id="measure-contract">4.2 계약전력 조정 (투자 0원)</h3>
-<p><strong>하향 여지가 없어도 지표 넷은 나온다</strong> (31세션). 현재 계약전력 · 요금적용전력 · 여유 · 하향 여지(0 kW)이고, 그 아래 한 줄이 이유를 적는다. 「할 일이 없다」 와 「값을 알 수 없다」 는 다르므로, 여지가 0 일 때도 <strong>왜 0 인지 말하는 값</strong>을 세운다. 다만 하지도 못할 하향을 조심하라는 경고와 산출 근거는 그대로 감춘다.</p>
-<p><strong>무엇인가.</strong> 계약전력이 실제 사용보다 크면 기본요금을 더 내고 있을 수 있다.</p>
-<p><strong>무엇을 입력하나.</strong> 확보할 여유율(기본 10%).</p>
-<p><strong>결과 읽는 법.</strong> 권장 계약전력과 하향 여지(kW), 그리고 하한 규정에 걸릴 때만 절감액이 나온다.</p>
+<p><strong>낮출 자리가 없어도 지표 넷은 나온다</strong> (31세션 · 83세션). 계약전력 · 계약전력의 30% · 최대수요 · 절감액이고, 그 아래 한 줄이 판정을 적는다. 「할 일이 없다」 와 「값을 알 수 없다」 는 다르므로, 줄 것이 없을 때도 <strong>왜 없는지 말하는 값</strong>을 세운다. 다만 하지도 못할 하향을 조심하라는 경고와 산출 근거는 그대로 감춘다.</p>
+<p><strong>무엇인가.</strong> 계약전력이 요금적용전력 하한을 밀어 올리고 있으면 기본요금을 더 내고 있는 것이다. 판정 이치는 <a href="#contract-adequacy">계약전력 적정성</a>에 있다.</p>
+<p><strong>무엇을 입력하나.</strong> 없다. 1단계의 계약전력과 계약종별만으로 판정한다.</p>
+<p><strong>결과 읽는 법.</strong> 세 수 가운데 「계약전력의 30%」 가 「최대수요」 보다 크면 낮출 자리가 있다 — 그때만 목표 계약전력과 절감액이 나온다.</p>
 <p><strong>주의사항.</strong></p>
 <ul>
 <li><strong>한 번의 초과가 12개월간 기본요금을 올린다.</strong> 여유를 넉넉히 두십시오.</li>
 <li>계약 변경에는 한전 절차와 비용이 따를 수 있다.</li>
-<li>절감액이 &quot;미산출&quot;이면 하한 규정을 모르는 종별이다. 없는 절감을 만들어내지 않으려고 비워 둔 것이다.</li>
+<li>절감액이 &quot;미산출&quot;이면 하한 규정을 모르는 종별이다. &quot;없음&quot;과 다르다 — 없는 절감을 만들어내지 않으려고 비워 둔 것이다.</li>
 <li>산출물 확실성 <strong>높음</strong>.</li>
 </ul>
 <h3 id="measure-dr">4.3 경제성DR (투자 0원)</h3>
@@ -435,7 +442,7 @@ li.task input { margin-right:.5rem; }
 <div class="table-wrap"><table><thead><tr><th>밀도</th><th>1,000 m² 환산</th><th>상충 관계</th></tr></thead><tbody><tr><td>높음</td><td><strong>110 kWp</strong></td><td>면적당 용량이 가장 크다. 대신 앞열 그림자가 늘어 kWp당 발전량은 가장 작다</td></tr><tr><td><strong>보통</strong></td><td><strong>80 kWp</strong></td><td>균형점. 국내 옥상 설치의 일반적인 배치다 (기본값)</td></tr><tr><td>낮음</td><td><strong>60 kWp</strong></td><td>kWp당 발전량이 가장 크다. 대신 같은 면적의 용량이 가장 작다</td></tr></tbody></table></div>
 <p><strong>환산 용량은 선택지 라벨에 붙어 있고, 상충 관계는 물음표에 있다.</strong> 「높음 — 110 kWp」 처럼 보이고 동그라미 물음표에 마우스를 올리면 위 표의 설명이 나온다. 선택지와 설명이 화면상 떨어져 있으면 고르는 순간에 읽히지 않는다.</p>
 <p><strong>&quot;높음이 좋다&quot;가 아니다</strong> — 면적이 부족하면 높음, 여유가 있으면 낮음이다.</p>
-<p>같은 방식으로 <strong>방전시간·계약전력 여유율</strong>에도 물음표에 설명을 붙였다.</p>
+<p>같은 방식으로 <strong>방전시간</strong>에도 물음표에 설명을 붙였다.</p>
 <p>용량을 이미 알고 있으면 상세 패널에서 직접 넣을 수 있다. 그때는 면적 환산을 덮어쓴다.</p>
 <h4 id="pv-cost">투자비를 넣지 않으면</h4>
 <p><strong>투자비 칸에 0원이 아니라 &quot;미산출 — 사유&quot;가 들어간다.</strong></p>
@@ -575,7 +582,7 @@ li.task input { margin-right:.5rem; }
 <li>역률 감액은 기본요금에 비례하므로 기본요금이 줄면 감액도 준다</li>
 <li>태양광·ESS 로 요금적용전력이 내려가면 계약전력을 추가로 낮출 수 있다</li>
 </ul>
-<p><strong>계약전력 추가 하향 여지도 여기서 낸다.</strong> 2단계 7.2 카드는 현재 부하 기준이라 다른 수단을 켜도 값이 바뀌지 않는다 — 조합 부하에서 얼마나 더 낮출 수 있는지는 이 자리에서만 계산한다.</p>
+<p><strong>계약전력 추가 하향 판정도 여기서 낸다.</strong> 2단계 7.2 카드는 현재 부하 기준이라 다른 수단을 켜도 값이 바뀌지 않는다 — 조합 부하에서 얼마나 더 낮출 수 있는지는 이 자리에서만 계산한다.</p>
 <p><strong>경제성DR 과 잉여 처리는 합산효과에 넣지 않는다.</strong> 요금이 아니라 별도 정산·수익이라 조합 부하에 얹을 수 없다. 개선안별 요약에는 그대로 있고, 합산효과 아래에 그 사실을 적는다.</p>
 <p><strong>합산효과의 절감액도 단순 합이 아니다.</strong> 고른 수단을 모두 물린 부하를 처음부터 다시 만들어 요금을 <strong>한 번</strong> 계산한다.</p>
 <div class="code"><pre><code>선택요금 전환 (II) + 계약전력 조정 + 역률 97% + 태양광 960 kWp + ESS 목표 5,170 kW</code></pre></div>
@@ -723,7 +730,7 @@ li.task input { margin-right:.5rem; }
 <h3 id="manual-trouble-file">파일을 못 읽는다</h3>
 <div class="table-wrap"><table><thead><tr><th>증상</th><th>원인과 대처</th></tr></thead><tbody><tr><td>&quot;검침일 또는 전력량 열을 판독하지 못했습니다&quot;</td><td>두 열이 있는 파일인지 확인. 제목 행이 여러 줄이면 그대로 두어도 된다 (자동으로 건너뛴다)</td></tr><tr><td>&quot;유효한 검침 데이터가 없습니다&quot;</td><td>숫자 열에 문자가 섞였거나 전부 0 이다</td></tr><tr><td>한글이 깨져 보인다</td><td>인코딩 4종을 자동 시도한다. 그래도 깨지면 Excel 에서 <strong>CSV UTF-8</strong> 로 다시 저장</td></tr><tr><td>엉뚱한 열을 골랐다</td><td>「열 인식 결과」에서 드롭다운으로 고친다 → <a href="#column-detection">3.1</a></td></tr></tbody></table></div>
 <h3 id="manual-trouble-amount">금액이 안 나온다</h3>
-<div class="table-wrap"><table><thead><tr><th>증상</th><th>원인</th></tr></thead><tbody><tr><td>진단에 금액이 없다</td><td><strong>계약 정보를 확정하지 않았다.</strong> 「계약 정보 확정」을 누르십시오</td></tr><tr><td>계약전력 조정 절감액이 &quot;미산출&quot;</td><td>하한 규정을 모르는 종별이다. 하향 여지(kW)만 참고</td></tr><tr><td>태양광 투자비가 &quot;미산출&quot;</td><td>단가를 넣지 않았다 → <a href="#pv-cost">4.5</a></td></tr><tr><td>DR 정산금이 &quot;미산출&quot;</td><td>정산 단가를 넣지 않았다. 사업자 상담이 필요하다</td></tr><tr><td>회수기간이 &quot;미산출&quot;</td><td>투자비를 모른다. <strong>0년이 아니다</strong></td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>증상</th><th>원인</th></tr></thead><tbody><tr><td>진단에 금액이 없다</td><td><strong>계약 정보를 확정하지 않았다.</strong> 「계약 정보 확정」을 누르십시오</td></tr><tr><td>계약전력 조정 절감액이 &quot;미산출&quot;</td><td>하한 규정을 모르는 종별이다. &quot;없음&quot;과 다르다</td></tr><tr><td>태양광 투자비가 &quot;미산출&quot;</td><td>단가를 넣지 않았다 → <a href="#pv-cost">4.5</a></td></tr><tr><td>DR 정산금이 &quot;미산출&quot;</td><td>정산 단가를 넣지 않았다. 사업자 상담이 필요하다</td></tr><tr><td>회수기간이 &quot;미산출&quot;</td><td>투자비를 모른다. <strong>0년이 아니다</strong></td></tr></tbody></table></div>
 <h3 id="manual-trouble-solar">태양광이 계산되지 않는다</h3>
 <div class="table-wrap"><table><thead><tr><th>증상</th><th>원인</th></tr></thead><tbody><tr><td>&quot;기상 자료를 얻지 못했습니다&quot;</td><td>사전 취득 범위(2023~2025) 밖이거나 접속이 막혔다. <code>fetch_weather.py</code> 로 먼저 받으십시오</td></tr><tr><td>잉여 처리 접힘이 안 보인다</td><td>잉여가 0 이다 — 태양광 용량을 키워야 나온다</td></tr><tr><td>면적을 넣었는데 용량이 0</td><td>밀도를 고르지 않았거나 면적이 0 이다</td></tr></tbody></table></div>
 <h3 id="manual-trouble-result">결과가 이상해 보인다</h3>
@@ -762,11 +769,11 @@ li.task input { margin-right:.5rem; }
 계약전력 조정    여유 없음      투자 불필요
 태양광 검토      피크 기여 가능성 높음 (상위 구간의 66%가 정오 시간대)</code></pre></div>
 <p><strong>투자 없이 5,358만원.</strong> 이것이 이 건물의 첫 결론이다.</p>
-<div class="table-wrap"><table><thead><tr><th>진단</th><th>값</th><th>해석</th></tr></thead><tbody><tr><td>요금적용전력</td><td>5,293.4 kW</td><td>관측 최대와 같다 → <strong>낮 피크형</strong>이다</td></tr><tr><td>기본요금 비중</td><td>13.5%</td><td>전력량요금이 지배한다</td></tr><tr><td>상위 100구간 시각</td><td><strong>10·12·9·11시</strong>에 집중</td><td>태양광이 정확히 그 시간에 발전한다</td></tr><tr><td>계약전력 이용률</td><td>91%</td><td>하향 여지가 없다</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>진단</th><th>값</th><th>해석</th></tr></thead><tbody><tr><td>요금적용전력</td><td>5,293.4 kW</td><td>관측 최대와 같다 → <strong>낮 피크형</strong>이다</td></tr><tr><td>기본요금 비중</td><td>13.5%</td><td>전력량요금이 지배한다</td></tr><tr><td>상위 100구간 시각</td><td><strong>10·12·9·11시</strong>에 집중</td><td>태양광이 정확히 그 시간에 발전한다</td></tr><tr><td>계약전력의 30%</td><td>1,740 kW</td><td>최대수요 5,293 kW 아래다 → <strong>낮출 자리가 없다</strong></td></tr></tbody></table></div>
 <p><strong>상위 구간 시각 분포가 결정적이었다.</strong> 66%가 정오 시간대라 태양광 검토가 바로 정당화된다. 저녁 피크형 건물이었으면 여기서 태양광을 접었을 것이다.</p>
 <h3 id="manual-case-measures">2단계에서 켠 것</h3>
 <p><strong>투자 0원부터.</strong></p>
-<div class="table-wrap"><table><thead><tr><th>수단</th><th>결과</th></tr></thead><tbody><tr><td>7.1 선택요금 전환</td><td>선택Ⅰ → <strong>선택Ⅱ</strong>, 5,358만원</td></tr><tr><td>7.2 계약전력 조정</td><td>이용률 91% → <strong>하향 여지 없음</strong></td></tr><tr><td>7.4 역률 개선</td><td>92% → 97% 가정. 기본요금 감액분</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>수단</th><th>결과</th></tr></thead><tbody><tr><td>7.1 선택요금 전환</td><td>선택Ⅰ → <strong>선택Ⅱ</strong>, 5,358만원</td></tr><tr><td>7.2 계약전력 조정</td><td>하한 1,740 kW 가 최대수요 아래 → <strong>절감액 없음</strong></td></tr><tr><td>7.4 역률 개선</td><td>92% → 97% 가정. 기본요금 감액분</td></tr></tbody></table></div>
 <p><strong>태양광.</strong> 지붕 12,000 m² · 밀도 보통 → <strong>960 kWp</strong> (12,000 × 0.4 ÷ 5). 서울 강남구. 단가 130만원/kWp 로 가정했다.</p>
 <ul>
 <li>발전량 연 1,125 MWh</li>
@@ -786,7 +793,7 @@ li.task input { margin-right:.5rem; }
 <ol>
 <li><strong>선택Ⅱ 로 바꾸십시오.</strong> 5,358만원, 투자 0원, 즉시 회수. 먼저 할 일이다.</li>
 <li><strong>태양광 960 kWp 는 검토할 만하다.</strong> 회수 5.7년. 다만 <strong>12.48억원은 가정 단가</strong>이므로 실제 견적을 받아 다시 넣으십시오.</li>
-<li><strong>계약전력은 손대지 마십시오.</strong> 이용률 91% 라 여유가 없다.</li>
+<li><strong>계약전력은 손대지 마십시오.</strong> 하한(계약전력의 30%)이 최대수요에 걸리지 않아 낮춰도 기본요금이 줄지 않는다.</li>
 <li><strong>미검토</strong> — 경제성DR, ESS. 검토하지 않았을 뿐 효과가 없다는 뜻이 아니다.</li>
 </ol>
 <p><strong>주의로 함께 적을 것.</strong></p>

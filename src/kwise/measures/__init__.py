@@ -62,8 +62,8 @@ from kwise.measures.catalog import (
     measure_numbers,
 )
 from kwise.measures.contract import (
-    BASE_FEE_UNCHANGED,
     MARGIN_NOTICE,
+    NO_SAVING,
     ContractAdjustment,
     ContractStatus,
     evaluate_contract_adjustment,
@@ -195,7 +195,6 @@ from kwise.measures.tariff_switch import (
 __all__ = [
     "APPLIED_PRICE_TAIL",
     "AREA_EXCEEDED",
-    "BASE_FEE_UNCHANGED",
     "BELOW_MINIMUM_CONCLUSION",
     "CAPACITY_MARKS",
     "CURTAIL_SCENARIO",
@@ -210,6 +209,7 @@ __all__ = [
     "MARGIN_SHORT",
     "MEASURE_CATALOG",
     "NOT_VIABLE_CONCLUSION",
+    "NO_SAVING",
     "OFFSET_SCENARIO",
     "PRICING_BANDS",
     "PRICING_FORMULA",

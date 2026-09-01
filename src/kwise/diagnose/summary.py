@@ -109,7 +109,6 @@ class ImprovementSummary:
     best_total_won: float | None
     tariff_switch_saving_won: float | None
     contract_saving_won: float | None
-    contract_reduction_kw: float | None
     pv_potential: PvPotential
     pv_midday_share: float
     pv_basis: str = ""
@@ -133,8 +132,10 @@ def build_lines(summary: ImprovementSummary) -> tuple[str, ...]:
     if summary.best_selection is not None and summary.tariff_switch_saving_won == 0.0:
         switch = "현행이 최적"
     contract = _won(summary.contract_saving_won)
-    if summary.contract_reduction_kw is not None and summary.contract_reduction_kw <= 0:
-        contract = "여유 없음"
+    if summary.contract_saving_won == 0.0:
+        # **하한이 안 걸리면 줄 것이 없다** (83세션). 「0원」 은 계산이 덜 된
+        # 것처럼 읽히고, 「여유 없음」 은 이용률 이야기라 판정과 어긋났다.
+        contract = money.NO_SAVING
     return (
         f"선택요금 전환    {switch}      투자 불필요",
         f"계약전력 조정    {contract}      투자 불필요",

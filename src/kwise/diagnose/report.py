@@ -82,7 +82,6 @@ def diagnose(
     quality: QualityReport | None = None,
     options: BillingOptions | None = None,
     top_n: int = DEFAULT_TOP_N,
-    margin_ratio: float | None = None,
     contract_floor_ratio: float | None = None,
     operating_hours: tuple[int, int] = DEFAULT_OPERATING_HOURS,
     dr_off_days: Iterable[DateLike] = (),
@@ -91,7 +90,6 @@ def diagnose(
 
     Args:
         contract: 계약 정보. None 이면 요금 관련 항목을 비우고 부하·피크만 낸다.
-        margin_ratio: 권장 계약전력에 얹을 여유율. None 이면 판단값을 읽는다.
         contract_floor_ratio: 요금적용전력의 계약전력 대비 하한 비율.
             None 이면 요금표의 종별 속성(일반용(을) 30%)을 쓴다 (요구사항서 5.2 ③).
         operating_hours: **건물** 운영 시간대 ``(시작, 끝)``. 운영시간 외 부하 진단과
@@ -174,7 +172,6 @@ def diagnose(
             best_total_won=None,
             tariff_switch_saving_won=None,
             contract_saving_won=None,
-            contract_reduction_kw=None,
             pv_potential=potential,
             pv_midday_share=midday_share,
             pv_basis=pv_basis,
@@ -224,7 +221,6 @@ def diagnose(
             billing_demand_kw=peak.billing_demand_before_floor_kw,
             base_rate_won_per_kw=current_bill.base_rate_won_per_kw,
             base_fee_months=current_bill.base_fee_months,
-            margin_ratio=margin_ratio,
             contract_floor_ratio=(
                 contract_floor_ratio
                 if contract_floor_ratio is not None
@@ -247,7 +243,6 @@ def diagnose(
         best_total_won=totals[best_key],
         tariff_switch_saving_won=switch_saving,
         contract_saving_won=adequacy.saving_won if adequacy else None,
-        contract_reduction_kw=adequacy.reduction_kw if adequacy else None,
         pv_potential=potential,
         pv_midday_share=midday_share,
         pv_basis=pv_basis,

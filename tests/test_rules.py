@@ -451,12 +451,11 @@ def test_계약_기본값이_코드에_남아_있지_않다() -> None:
     assert not hasattr(module, "DEFAULT_MARGIN_RATIO")
 
 
-def test_간주_역률과_여유율을_파일에서_읽는다() -> None:
-    from kwise.diagnose import deemed_power_factor_pct, default_margin_ratio
-    from kwise.rules import assumption, rule_value
+def test_간주_역률을_파일에서_읽는다() -> None:
+    from kwise.diagnose import deemed_power_factor_pct
+    from kwise.rules import rule_value
 
     assert deemed_power_factor_pct() == float(rule_value("power_factor.deemed_lagging_pct"))
-    assert default_margin_ratio() == float(assumption("contract.margin_ratio"))
 
 
 def test_간주_역률은_기준과_별개_항목이다() -> None:
@@ -500,12 +499,18 @@ def test_계약_정보_기본_역률이_생성_시점에_읽힌다(sandbox: Path
     assert ContractInfo(selection).power_factor_pct == 88.0
 
 
-def test_여유율_기본값이_호출_시점에_읽힌다(sandbox: Path) -> None:
-    from kwise.diagnose import default_margin_ratio
-    from kwise.measures import evaluate_contract_adjustment
-    from kwise.rules import set_value
+def test_여유율은_기준_데이터에서_사라졌다() -> None:
+    """**근거 없는 판단값을 걷어냈다** (83세션).
 
-    assert default_margin_ratio() == 0.1
-    assert set_value("contract.margin_ratio", 0.25).ok
-    assert default_margin_ratio() == 0.25
-    _ = evaluate_contract_adjustment  # 서명이 None 기본값을 받는지는 mypy 가 본다
+    「권장 계약전력 = 요금적용전력 × (1+여유율)」 은 기본요금이 **계약전력**에
+    붙는 종별의 산식이라 을·갑Ⅱ 에서는 전제가 서지 않았고, 10~30% 라는 폭에도
+    근거가 붙어 있지 않았다. **지운 자리가 되살아나면 여기서 빨개진다.**
+    """
+    import kwise.diagnose.contract as module
+    from kwise.rules import assumptions
+
+    assert not hasattr(module, "default_margin_ratio")
+    assert not hasattr(module, "margin_range")
+    keys = set(assumptions().items)
+    assert "contract.margin_ratio" not in keys
+    assert "contract.margin_range" not in keys

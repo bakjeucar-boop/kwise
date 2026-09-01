@@ -2126,7 +2126,11 @@ def test_계약전력이_세_갈래다(sample_usage: UsageData, sample_bill: Bil
     over = conclusion(3_000.0)
     assert "초과 위약 검토 대상입니다" in over, over
     assert "상향을 검토해야 합니다" in over
-    assert "낮출 여지가" in conclusion(6_500.0)
+    # **하한이 지면 「이미 적정」 이다** (83세션 11). 6,500 kW 의 30% 는
+    # 1,950 kW 로 최대수요 5,293 kW 에 못 미친다 — 낮출 자리가 없다.
+    assert "이미 적정합니다" in conclusion(6_500.0)
+    # 20,000 kW 의 30% 는 6,000 kW 라 하한이 이긴다 — 그때만 목표가 선다.
+    assert "낮추면 그만큼 기본요금이 줄어듭니다" in conclusion(20_000.0)
 
 
 def test_장이_따로_적는_줄은_제_줄에_선다(full_sections: DocumentSections) -> None:
@@ -2631,10 +2635,11 @@ def test_차액_라벨이_0선_반대쪽에_선다() -> None:
 def test_계약전력_장이_근거를_먼저_세운다(
     sample_usage: UsageData, sample_bill: BillingResult, full_sections: DocumentSections
 ) -> None:
-    """**근거가 결과보다 먼저다** (53세션 6-1·6-2·6-3).
+    """**근거가 결과보다 먼저다** (53세션 6-1·6-2·6-3 · 83세션 7).
 
-    「6,000 kW 를 5,823 kW 로」 는 여유가 얼마나 있는지를 보고 나서야 판단할 수
-    있는 값인데, 절감액·투자비·회수기간이 위에 서 있었다.
+    「6,000 kW 를 5,823 kW 로」 는 판정을 보고 나서야 판단할 수 있는 값인데,
+    절감액·투자비·회수기간이 위에 서 있었다. **근거 셋은 판정을 가르는 수다** —
+    「여유 %」 와 「하향 여지」 는 여유율을 잣대로 삼는 값이라 걷어냈다.
     """
     import dataclasses
 
@@ -2647,12 +2652,14 @@ def test_계약전력_장이_근거를_먼저_세운다(
     entry = next(item for item in measure_entries(contract=contract) if item.kind.key == "contract")
     assert entry.facts_first
     labels = [name for name, _value in entry.facts]
-    assert labels == ["현재 계약전력", "요금적용전력", "여유", "하향 여지"]
-    # **여유는 %다** — 화면과 같은 산식이다.
-    assert dict(entry.facts)["여유"].endswith("%"), entry.facts
+    assert labels == ["현재 계약전력", "계약전력의 30%", "최대수요"]
+    # 하한이 이길 때만 목표가 한 칸 더 선다.
+    binding = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=20_000.0)
+    wide = next(item for item in measure_entries(contract=binding) if item.kind.key == "contract")
+    assert [name for name, _value in wide.facts][-1] == "목표 계약전력"
     # **그림이 생겼다.**
     assert entry.figure is not None
-    assert "계약전력과 요금적용전력의 틈" in entry.figure_caption
+    assert "점선이 요금적용전력 하한" in entry.figure_caption
 
     sections = dataclasses.replace(full_sections, measures=(entry,))
     slide = _slide_by_key(build_slides(sections), sections, "measure_contract")
@@ -2662,18 +2669,18 @@ def test_계약전력_장이_근거를_먼저_세운다(
         if shape.has_text_frame
     }
     assert tops["현재 계약전력"] < tops["절감액"], tops
-    assert tops["하향 여지"] < tops["회수기간"], tops
+    assert tops["최대수요"] < tops["회수기간"], tops
 
 
-def test_기본요금_변화없음도_사유를_각주로_내린다() -> None:
+def test_절감액_없음도_사유를_각주로_내린다() -> None:
     """**큰 글씨 자리에 사유가 들어가 두 줄로 흘렀다** (53세션 6절).
 
     48세션이 「0원」 대신 이 말을 세우면서 사유가 통째로 지표 칸에 들어왔다.
     """
-    from kwise.measures import BASE_FEE_UNCHANGED
+    from kwise.measures import NO_SAVING
 
-    head, reason = split_reason(f"{BASE_FEE_UNCHANGED} — 요금적용전력 하한 30% 적용")
-    assert head == BASE_FEE_UNCHANGED
+    head, reason = split_reason(f"{NO_SAVING} — 요금적용전력 하한 30% 적용")
+    assert head == NO_SAVING
     assert reason == "요금적용전력 하한 30% 적용"
     # 관계없는 값은 그대로 둔다.
     assert split_reason("53,575,000원") == ("53,575,000원", "")

@@ -171,8 +171,6 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     # 잉여가 어느 날에 몰렸는지로 문장이 갈린다 (53세션 3절).
     "narrative.surplus_off_day_high": _ratio,
     "narrative.surplus_off_day_low": _ratio,
-    "contract.margin_ratio": _ratio,
-    "contract.margin_range": _ratio_range,
     "dr.bid_restriction_months": _positive,
     "dr.max_events_per_day": _positive,
     "dr.market_hours": _hour_windows,

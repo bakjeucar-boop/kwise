@@ -16,6 +16,7 @@ from __future__ import annotations
 import datetime as dt
 import io
 import logging
+import math
 from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
@@ -494,41 +495,43 @@ def combination_png(comparison: ComparisonResult) -> bytes:
 def contract_headroom_png(
     contract: ContractAdjustment, *, size: tuple[float, float] | None = None
 ) -> bytes:
-    """계약전력과 요금적용전력의 **틈** (53세션 6-3).
+    """계약전력·최대수요·**하한** (53세션 6-3 · 83세션에 하한 선을 넣었다).
 
     **가로 누적 막대 하나에 기준선을 얹는다.** 견줄 것이 두 값(계약전력·
-    요금적용전력)뿐이라 막대를 여럿 세울 까닭이 없고, 하나를 쌓으면 「얼마나
+    최대수요)뿐이라 막대를 여럿 세울 까닭이 없고, 하나를 쌓으면 「얼마나
     남았나」 가 길이 그대로 읽힌다. 세로로 세우면 kW 값 라벨이 막대 폭보다 길어
     겹친다 — 가로가 자리를 준다.
 
     **월별로 그리지 않는다.** 그 그림은 5장(월별 최대수요)이 이미 낸다 — 같은
     이야기를 두 번 하면 어느 쪽을 보아야 하는지 알 수 없어진다 (36세션 5절).
 
-    권장 계약전력이 계약전력과 다를 때만 그 기준선을 긋는다 — 겹쳐 그으면
-    「둘이 같다」 를 두 선으로 말하게 된다.
+    **점선은 권장이 아니라 하한이다** (83세션). 붉은 선과 점선이 「현행」 과
+    「권장」 이던 동안 이 그림은 「그 틈만큼 낮출 여지가 있다」 로 읽혔다 —
+    낮춰도 한 푼 안 주는 자료에서도 그랬다. 하한을 그으면 **점선이 막대 끝보다
+    오른쪽일 때만 낮출 자리가 있다**는 것이 선 셋으로 읽힌다.
     """
     apply_style()
     marks = chart_palette()
     frame = contract_headroom_frame(contract)
-    demand = float(frame["요금적용전력(kW)"].iloc[0])
+    demand = float(frame["최대수요(kW)"].iloc[0])
     room = float(frame["여유(kW)"].iloc[0])
     contracted = float(frame["계약전력(kW)"].iloc[0])
-    suggested = float(frame["권장 계약전력(kW)"].iloc[0])
+    floor = float(frame["하한(kW)"].iloc[0])
 
     figure, axes = plt.subplots(figsize=size or (_SIZE[0], _SIZE[1] * 0.6))
-    axes.barh([0], [demand], height=0.4, color=_series()[0], label="요금적용전력")
+    axes.barh([0], [demand], height=0.4, color=_series()[0], label="최대수요")
     if room > 0:
         axes.barh(
             [0], [room], left=[demand], height=0.4, color=marks.fill, alpha=0.45, label="여유"
         )
     axes.axvline(contracted, color=marks.increase, linewidth=1.6, label="계약전력")
-    if abs(suggested - contracted) > 0.5:
+    if not math.isnan(floor):
         axes.axvline(
-            suggested,
+            floor,
             color=marks.saving,
             linewidth=1.4,
             linestyle="--",
-            label="권장 계약전력",
+            label="요금적용전력 하한",
         )
     axes.set_yticks([])
     axes.set_xlabel("kW")

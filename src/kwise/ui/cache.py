@@ -483,7 +483,6 @@ def cached_contract_adjustment(
     form: ContractForm,
     contract_kw: float,
     contract_floor_ratio: float | None,
-    margin_ratio: float,
     stamp: str,
 ) -> ContractAdjustment:
     """**계약종별이 열쇠에 있어야 한다** (59세션 8절).
@@ -492,15 +491,14 @@ def cached_contract_adjustment(
     ``_bill`` 이라 열쇠에서 빠진다. 다른 캐시 함수는 모두 ``form`` 을 열쇠에
     두는데 여기만 없어, **한 세션에서 계약종별을 바꾸면 앞 종별의 결과가 그대로
     다시 나왔다** — 일반용(을) 로 한 번 계산한 뒤 일반용(갑)Ⅰ 로 바꾸니
-    「하한 규정 미확인 — 미산출」 이어야 할 자리에 「기본요금 변화없음 —
-    하한 30% 적용」 이 섰다. 덱 여섯을 한 프로세스에서 뽑다가 드러났다.
+    「하한 규정 미확인 — 미산출」 이어야 할 자리에 「없음 — 하한 30% 적용」 이
+    섰다. 덱 여섯을 한 프로세스에서 뽑다가 드러났다.
     """
     return evaluate_contract_adjustment(
         _usage,
         _bill,
         contract_kw=contract_kw,
         contract_floor_ratio=contract_floor_ratio,
-        margin_ratio=margin_ratio,
     )
 
 

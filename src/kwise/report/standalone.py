@@ -28,7 +28,7 @@ import pandas as pd
 
 from kwise import money
 from kwise.measures import (
-    BASE_FEE_UNCHANGED,
+    NO_SAVING,
     Certainty,
     ContractAdjustment,
     DemandResponseResult,
@@ -156,13 +156,19 @@ def standalone_rows(
         rows.append(
             StandaloneRow(
                 kind=measure_kind("contract"),
-                reduction=f"{contract.reduction_kw:,.0f} kW 하향",
+                # **동사가 붙는다** (28세션 1-2). 두 갈래가 각각 무엇을 하는
+                # 것인지 드러나야 한다 — 「유지」 도 하나의 결정이다.
+                reduction=(
+                    f"{contract.contract_kw:,.0f} → {contract.target_contract_kw:,.0f} kW 하향"
+                    if contract.target_contract_kw is not None
+                    else f"{contract.contract_kw:,.0f} kW 유지"
+                ),
                 annual_saving_won=contract.annual_saving_won,
                 investment_won=0.0,
                 payback_years=0.0 if contract.saving_won else None,
                 certainty=contract.certainty,
                 saving_reason=contract.saving_basis,
-                zero_reason=BASE_FEE_UNCHANGED if contract.base_fee_unchanged else "",
+                zero_reason=NO_SAVING if contract.no_saving else "",
             )
         )
     if demand_response is not None:

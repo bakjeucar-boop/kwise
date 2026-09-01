@@ -23,6 +23,7 @@ from __future__ import annotations
 import math
 
 __all__ = [
+    "NO_SAVING",
     "ROUNDING_FOOTNOTE",
     "TRUNCATION_FOOTNOTE",
     "TRUNCATION_UNIT_WON",
@@ -31,6 +32,17 @@ __all__ = [
     "won_plain",
     "won_short",
 ]
+
+NO_SAVING = "없음"
+"""금액 칸의 **셋째 값** (83세션). 「줄 것이 없다」 는 결론이다.
+
+    없음   따져 보니 줄어들 몫 자체가 없다 (계약전력 조정의 하한 미적용)
+    0      계산해서 0원이 나왔다 (선택요금 전환의 「현행이 최적」)
+    —      산출하지 못했다 (단가 미입력 · 하한 비율 미확인)
+
+**셋이 다른 것을 뜻하므로 서로 대신 쓰지 않는다.** 여기 두는 까닭은 화면·
+Excel·PPT 가 같은 자리에 같은 말을 적어야 하기 때문이다 — 금액 표기와 같은 문.
+"""
 
 TRUNCATION_UNIT_WON = 1_000
 """표시 절사 단위. 천 원."""

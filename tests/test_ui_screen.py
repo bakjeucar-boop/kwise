@@ -32,7 +32,7 @@ if TYPE_CHECKING:  # 시험이 무거워지지 않게 형만 빌린다 (70세션
 
 from kwise.compare import CombinationSpec
 from kwise.io import load_usage
-from kwise.measures import BASE_FEE_UNCHANGED, AppliedMeasure, EssResult, measure_kind
+from kwise.measures import NO_SAVING, AppliedMeasure, EssResult, measure_kind
 from kwise.notices import Notice, basis, block, dedupe, info, warn
 from kwise.report.excel import SHEET_ORDER
 from kwise.tariff import TariffSelection, TariffTable, load_tariff
@@ -1509,14 +1509,21 @@ def test_같은_값이면_피크_지표를_한_줄로_접는다(app: AppTest) ->
     assert "관측 최대수요" not in labels
 
 
-def test_계약전력_여유가_없으면_슬라이더를_감춘다() -> None:
-    """움직여도 0% 인 슬라이더는 고장으로 보인다 (13세션)."""
-    # 샘플의 실제 계약전력 5,500 kW 는 요금적용전력 5,293 kW 대비 여유가 3.8% 다.
+def test_하한이_지면_판정_줄이_선다() -> None:
+    """**여유율 입력을 걷어냈다** (13세션 → 83세션).
+
+    움직여도 0% 인 슬라이더는 고장으로 보였고, 근본은 그 값이 판정에 쓰이지도
+    않는다는 것이었다. 지금은 하한이 판정하고, 왜 줄 것이 없는지를 본문 한 줄이
+    말한다 — 3단계·PPT 가 쓰는 것과 **같은 문장**이다.
+    """
+    from kwise.measures.contract import FLOOR_NOT_BINDING_NOTICE
+
+    # 샘플의 계약전력 5,500 kW 의 30% 는 1,650 kW 로 최대수요 5,293 kW 에 못 미친다.
     screen = _running(contract_kw=5_500.0, nav_page="2단계 · 개선 수단", measure_on_contract=True)
     assert not screen.exception, screen.exception
-    assert not [item for item in screen.slider if "여유율" in item.label]
+    assert not [item for item in screen.number_input if "여유율" in str(item.label)]
     body = " ".join(item.value for item in screen.markdown)
-    assert "하향 여지가 없습니다" in body
+    assert FLOOR_NOT_BINDING_NOTICE in body
 
 
 def test_태양광에_계산_단추가_있다() -> None:
@@ -1572,12 +1579,16 @@ def test_카드_개요가_결과_위에_나온다() -> None:
 
 
 def test_계약전력_카드가_3단계를_가리킨다() -> None:
-    """7.2 는 현재 부하 기준이고, 조합 기준 추가 하향은 3단계다 (14세션 2-4)."""
-    screen = _running(nav_page="2단계 · 개선 수단", measure_on_contract=True)
+    """7.2 는 현재 부하 기준이고, 조합 기준 추가 하향은 3단계다 (14세션 2-4).
+
+    **낮출 자리가 있을 때만 가리킨다** (83세션). 계약 20,000 kW 의 30% 는
+    6,000 kW 로 최대수요 5,293 kW 를 넘어 하한이 기준이 된다.
+    """
+    screen = _running(contract_kw=20_000.0, nav_page="2단계 · 개선 수단", measure_on_contract=True)
     assert not screen.exception, screen.exception
     body = " ".join(str(item.value) for item in screen.caption)
-    assert "현재 부하 기준의 하향 여지" in body, body
-    assert "3단계 합산효과에서 추가 하향 여지가 계산됩니다" in body, body
+    assert "현재 부하 기준입니다" in body, body
+    assert "3단계에서 다시 계산됩니다" in body, body
 
 
 def test_폐기된_배치_지시가_코드에_없다() -> None:
@@ -2024,13 +2035,16 @@ def test_차이가_생기는_이유를_적는다(stage3: AppTest) -> None:
     assert "이유 1" in tables
 
 
-def test_계약전력_추가_하향_여지가_나온다(stage3: AppTest) -> None:
-    """2단계 7.2 는 현재 부하 기준이고, 조합 기준 추가 여지는 여기서만 낸다 (5-2)."""
+def test_계약전력_추가_하향을_조합_기준으로_판정한다(stage3: AppTest) -> None:
+    """2단계 7.2 는 현재 부하 기준이고, 조합 기준 판정은 여기서만 낸다 (5-2).
+
+    이 자료는 조합으로 피크를 낮춰도 하한(계약전력의 30%)에 닿지 않는다 —
+    **그 사실을 한 줄로 적는다** (83세션. 22세션 1절이 소제목을 없앤 자리다).
+    """
     assert not stage3.exception, stage3.exception
     body = " ".join(str(item.value) for item in stage3.markdown)
-    # **소제목을 없애고 한 줄로 합쳤다** (22세션 1절).
-    assert "계약전력 추가 하향 여지" in body
-    assert "이 조합이면" in body
+    assert "계약전력 추가 하향" in body
+    assert "하한에 걸리지 않아 낮출 이유가 없습니다" in body
 
 
 def _after(metrics: list[tuple[str, str]], anchor: str, offset: int) -> str:
@@ -2113,14 +2127,14 @@ def test_반올림_각주가_화면에_있다(stage3: AppTest) -> None:
     assert text.TRUNCATION_FOOTNOTE not in body
 
 
-def test_조합_기준_하향_여지를_합산효과에서_낸다(stage3: AppTest) -> None:
-    """조합이 피크를 얼마나 낮추느냐에 따라 여지가 달라진다 (14세션 5-2·5-3).
+def test_조합_기준_하향_판정을_합산효과에서_낸다(stage3: AppTest) -> None:
+    """조합이 피크를 얼마나 낮추느냐에 따라 판정이 달라진다 (14세션 5-2·5-3).
 
     조합 비교 표를 없앴으므로(16세션 5절) 이 사실은 합산효과 절의 글로 남는다.
     """
     assert not stage3.exception, stage3.exception
     body = " ".join(str(item.value) for item in stage3.markdown)
-    assert "계약전력 추가 하향 여지" in body
+    assert "계약전력 추가 하향" in body
     assert "kW" in body
 
 
@@ -2168,7 +2182,8 @@ def test_계약전력_변경_경고가_7_2_카드에_있다() -> None:
     """**바꾸자고 제안하는 자리가 이 경고의 제자리다** (16세션 3절)."""
     from kwise.report import CONTRACT_CHANGE_WARNING
 
-    screen = _running(measure_on_contract=True)
+    # **낮출 자리가 있을 때만 낸다** (83세션). 계약 20,000 kW 면 하한이 이긴다.
+    screen = _running(contract_kw=20_000.0, measure_on_contract=True)
     assert not screen.exception, screen.exception
     body = " ".join(
         str(item.value) for group in (screen.markdown, screen.caption) for item in group
@@ -2181,11 +2196,18 @@ def test_계약전력_변경_경고가_7_2_카드에_있다() -> None:
     )
 
 
-def test_적정성_지표가_7_2_카드로_옮겨왔다() -> None:
+def test_판정을_가르는_수가_7_2_카드에_선다() -> None:
+    """**하한이 화면에 없어 「없음」 이 까닭 없는 결론이었다** (83세션 7).
+
+    이용률·하향 여지를 뺐다 — 둘 다 여유율을 잣대로 삼는 값이라 판정과
+    어긋났다. 이용률 45.6% 는 「여유가 있는데 왜 0인가」 를 되묻게 했다.
+    """
     screen = _running(measure_on_contract=True)
     labels = [label for label, _ in _stage2_metrics(screen)]
-    assert "이용률" in labels
-    assert "하향 여지" in labels
+    assert "계약전력의 30%" in labels
+    assert "최대수요" in labels
+    assert "이용률" not in labels
+    assert "하향 여지" not in labels
 
 
 BANNED_WORDS = ("콘덴서", "APFR")
@@ -2705,8 +2727,7 @@ EDGE_VALUES: tuple[tuple[str, float], ...] = (
     ("measure_power_factor_target", 92.0),  # 하한 — 기준 역률
     ("measure_power_factor_target", 100.0),  # 상한 — 감액 상한을 넘는다
     ("measure_power_factor_investment", 0.0),
-    ("measure_contract_margin", 0.0),  # 여유율 하한
-    ("measure_contract_margin", 0.3),  # 여유율 상한
+    # 여유율 입력 둘은 83세션에 사라졌다 — 근거 없는 판단값이었다.
     ("measure_ess_total_cost", 1_000_000_000.0),
     ("measure_surplus_price", 0.0),
 )
@@ -2742,7 +2763,7 @@ def test_입력_끝값을_훑어도_화면이_죽지_않는다() -> None:
         screen = widget.set_value(value).run(timeout=900)
         touched += 1
         assert not screen.exception, f"{key} = {value}: {screen.exception}"
-    assert touched >= 5, f"끝값을 넣은 입력이 {touched}개뿐입니다. 키가 바뀌었습니다."
+    assert touched >= 4, f"끝값을 넣은 입력이 {touched}개뿐입니다. 키가 바뀌었습니다."
 
     # **ESS 단가 계수는 기준 데이터 화면에 있다** (50세션 3-5). 거기서 0 을 넣고
     # 수단 화면으로 돌아와 카드가 죽지 않는지 본다 — 자리가 갈렸을 뿐 값은
@@ -2759,7 +2780,7 @@ def test_입력_끝값을_훑어도_화면이_죽지_않는다() -> None:
         measure_ess_per_kwh_cost=0.0,
     )
     assert not back.exception, back.exception
-    assert touched >= 7, f"끝값을 넣은 입력이 {touched}개뿐입니다. 키가 바뀌었습니다."
+    assert touched >= 6, f"끝값을 넣은 입력이 {touched}개뿐입니다. 키가 바뀌었습니다."
 
 
 # ======================================================== 26세션 · 용어와 단위
@@ -2827,10 +2848,10 @@ def test_카드_절감액이_3단계_표와_같은_기준이다() -> None:
     savings = [value for label, value in _stage2_metrics(screen) if label == "절감액"]
     assert savings, "카드 절감액을 못 찾았습니다."
     for value in savings:
-        # **0 이 결론인 자리는 금액이 아니라 결론이다** (48세션). 이 자료는 여유
-        # 11.8% 라 하향 여지가 있는데 요금적용전력이 하한(계약전력의 30%)보다
-        # 훨씬 커서 기본요금이 안 바뀐다 — 「0원/년」 은 계산이 덜 된 것처럼 읽힌다.
-        assert value.endswith("/년") or value == BASE_FEE_UNCHANGED, value
+        # **0 이 결론인 자리는 금액이 아니라 결론이다** (48세션). 이 자료는
+        # 최대수요가 하한(계약전력의 30%)보다 훨씬 커서 계약전력을 낮춰도
+        # 기본요금이 안 바뀐다 — 「0원/년」 은 계산이 덜 된 것처럼 읽힌다.
+        assert value.endswith("/년") or value == NO_SAVING, value
 
     frame = next(item.value for item in screen.dataframe if "수단" in list(item.value.columns))
     rows = {str(row["수단"]): str(row["연간 절감액"]) for _, row in frame.iterrows()}
@@ -3064,15 +3085,15 @@ def test_최적_요금제_안내가_한_문장이다() -> None:
     assert "다른 수단의 기준선을" not in body, "문구가 남아 있습니다."
 
 
-def test_하향_여지가_없어도_지표는_낸다() -> None:
-    """**경고는 감추고 지표는 되살린다** (27세션 5절 → 31세션 2절).
+def test_낮출_자리가_없어도_지표는_낸다() -> None:
+    """**경고는 감추고 지표는 되살린다** (27세션 5절 → 31세션 2절 → 83세션 7).
 
-    샘플의 실제 계약전력 5,500 kW 는 요금적용전력 5,293 kW 대비 여유가 3.8% 라
-    하향 여지가 0 kW 다. 27세션에 한 줄로 줄였더니 이 카드만 큰 글자 숫자가 없어
-    대시보드 구실을 못 했다 — 「할 일이 없다」 와 「값을 알 수 없다」 는 다르다.
+    27세션에 한 줄로 줄였더니 이 카드만 큰 글자 숫자가 없어 대시보드 구실을
+    못 했다 — 「할 일이 없다」 와 「값을 알 수 없다」 는 다르다.
 
-    보이는 넷은 **왜 여지가 없는지 말하는 값들**이다. 하지도 못할 하향을 조심하라는
-    경고와 산출 근거는 그대로 감춘다.
+    보이는 넷은 **왜 줄 것이 없는지 말하는 값들**이다. 계약전력 5,500 kW 의
+    30% 는 1,650 kW 로 최대수요 5,293 kW 에 못 미친다 — 그 셋이 나란히 서면
+    어느 쪽이 큰가로 판정이 읽힌다. 하지도 못할 하향을 조심하라는 경고는 감춘다.
     """
     from kwise.report import CONTRACT_CHANGE_WARNING
 
@@ -3081,22 +3102,21 @@ def test_하향_여지가_없어도_지표는_낸다() -> None:
     body = " ".join(
         str(item.value) for group in (screen.markdown, screen.caption) for item in group
     )
-    assert "하향 여지가 없습니다" in body
     assert CONTRACT_CHANGE_WARNING not in body
-    assert "현재 부하 기준의 하향 여지" not in body
+    assert "현재 부하 기준입니다" not in body
 
     labels = [label for label, _ in _stage2_metrics(screen)]
-    assert labels == ["현재 계약전력", "요금적용전력", "여유", "하향 여지"], labels
+    assert labels == ["계약전력", "계약전력의 30%", "최대수요", "절감액"], labels
     values = dict(_stage2_metrics(screen))
-    assert values["하향 여지"] == "0.0 kW"
-    # 여지가 0 일 때는 적정성 지표(권장·이용률)와 절감액을 내지 않는다 — 셋 다
-    # 같은 사실을 다른 이름으로 되풀이한다.
-    for banned in ("권장", "이용률", "절감액"):
+    assert values["계약전력의 30%"] == "1,650.0 kW"
+    assert values["절감액"] == "없음"
+    # **여유율에 기대던 이름들은 사라졌다** (83세션 5).
+    for banned in ("권장", "이용률", "하향 여지", "여유"):
         assert banned not in labels, labels
 
-    # 여유가 있으면 권장·절감액까지 그대로 나온다.
-    wide = [label for label, _ in _stage2_metrics(_running(measure_on_contract=True))]
-    assert "권장" in wide and "하향 여지" in wide
+    # 하한이 이기면 목표 계약전력이 한 칸 더 선다 — 화면은 한 벌이다.
+    wide = [label for label, _ in _stage2_metrics(_running(contract_kw=20_000.0, on=("contract",)))]
+    assert wide == ["계약전력", "계약전력의 30%", "최대수요", "목표 계약전력", "절감액"], wide
 
 
 def test_버린_행_안내가_결측_옆에_나온다(tmp_path: Path) -> None:
@@ -3593,7 +3613,8 @@ def test_개선_방안에_동사가_붙는다() -> None:
     frame = next(item.value for item in screen.dataframe if "수단" in list(item.value.columns))
     plans = {str(row["수단"]): str(row["개선 방안"]) for _, row in frame.iterrows()}
     assert plans["1. 선택요금 전환"].endswith("전환"), plans
-    assert plans["2. 계약전력 조정"].endswith("하향"), plans
+    # 이 자료는 하한이 지므로 「유지」 다 — 그것도 하나의 결정이다 (83세션).
+    assert plans["2. 계약전력 조정"].endswith(("하향", "유지")), plans
     assert plans["3. 경제성DR"].endswith("입찰"), plans
     assert plans["4. 역률 개선"].endswith("개선"), plans
     assert "설치" in plans["6. ESS"], plans
@@ -3617,9 +3638,7 @@ def test_요약표_금액이_만원_단위다(stage3: AppTest) -> None:
         str(row[column]) for _, row in frame.iterrows() for column in ("연간 절감액", "투자비")
     ]
     # **0 이 결론인 줄은 금액 자리에 결론이 온다** (48세션 — 계약전력 조정).
-    shown = [
-        item for item in values if not item.startswith("미산출") and item != BASE_FEE_UNCHANGED
-    ]
+    shown = [item for item in values if not item.startswith("미산출") and item != NO_SAVING]
     assert shown, values
     for item in shown:
         assert item.endswith(("만원", "억원", "원")), item

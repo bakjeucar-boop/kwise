@@ -32,12 +32,12 @@ from docx.shared import Inches, Pt
 from docx.text.paragraph import Paragraph
 
 from kwise.compare import SCENARIO_NAME_CAVEAT, ComparisonResult, SensitivityRange
-from kwise.diagnose import Diagnosis
+from kwise.diagnose import ContractAdequacy, Diagnosis
 from kwise.diagnose.dr import DR_OFF_DAYS_FACT, DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
-    BASE_FEE_UNCHANGED,
     MEASURE_CATALOG,
+    NO_SAVING,
     NOT_VIABLE_CONCLUSION,
     Certainty,
     ContractAdjustment,
@@ -66,6 +66,7 @@ from kwise.report.notices import (
     DATA_SOURCES,
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
+    UNPRICED_REASONS,
     format_won,
     plain_text,
 )
@@ -274,17 +275,31 @@ _ESS_DAY_CAPTION = "대표일의 부하 — 두 선 사이가 ESS 로 깎은 몫
 
 
 def _contract_saving(contract: ContractAdjustment, value: float | None) -> str:
-    """계약전력 조정의 절감액 칸 — **셋으로 갈린다** (48세션).
+    """계약전력 조정의 절감액 칸 — **셋으로 갈린다** (48세션 · 83세션).
 
-    미산출        하한 규정을 모른다
-    기본요금 변화없음  하향 여지는 있는데 하한에 걸리지 않는다
-    금액          실제로 준다
+    미산출  하한 규정을 모른다
+    없음    하한이 요금적용전력에 걸리지 않아 줄 것이 없다
+    금액    실제로 준다
+
+    **「없음」 에는 사유를 붙이지 않는다** (83세션). 같은 장의 각주가
+    ``contract.floor_not_binding`` 로 이미 그 까닭을 적는다 — 사유를 함께
+    적으면 「하한 30% 적용」 이라는 각주가 하나 더 서서, **걸리지도 않은 하한을
+    적용했다고 읽힌다.**
     """
     if value is None:
         return f"{_UNPRICED} — {contract.saving_basis}"
-    if contract.base_fee_unchanged:
-        return f"{BASE_FEE_UNCHANGED} — {contract.saving_basis}"
+    if contract.no_saving:
+        return NO_SAVING
     return _won(value)
+
+
+def _contract_adequacy_saving(adequacy: ContractAdequacy) -> str:
+    """1단계 계약전력 적정성의 절감액 칸. 수단 쪽과 **같은 세 갈래다.**"""
+    if adequacy.saving_won is None:
+        return f"{_UNPRICED} — {adequacy.saving_basis}"
+    if not adequacy.floor_binding:
+        return NO_SAVING
+    return _won(adequacy.saving_won)
 
 
 #: ESS 결론의 앞부분. **「회수기간이 가장 짧은 지점」 은 그대로 둔다** —
@@ -339,34 +354,41 @@ def _power_factor_conclusion(result: PowerFactorResult) -> str:
     return f"지상역률을 {current} → {target} 로 올리면 {_won(result.saving_won)} 줄어듭니다."
 
 
-#: 계약전력 그림의 캡션 (53세션 6-3).
-_CONTRACT_HEADROOM_CAPTION = (
-    "계약전력과 요금적용전력의 틈 — 붉은 선이 현재 계약전력, 점선이 권장입니다."
-)
+#: 계약전력 그림의 캡션 (53세션 6-3 · 83세션에 하한 선을 넣으며 고쳤다).
+#: **「틈」 이라 부르지 않는다** — 틈은 기회를 암시하는데, 하한 아래의 틈은
+#: 낮춰도 아무것도 주지 않는다.
+_CONTRACT_HEADROOM_CAPTION = "붉은 선이 계약전력, 점선이 요금적용전력 하한입니다."
 
 
-def _headroom_share(contract: ContractAdjustment) -> str:
-    """여유율 — **화면과 같은 산식이다** (53세션 6-2).
+def _contract_facts(contract: ContractAdjustment) -> tuple[tuple[str, str], ...]:
+    """판정을 가르는 수 — **화면 2단계와 같은 셋**이다 (83세션 7).
 
-    (계약전력 − 요금적용전력) ÷ 계약전력. 확보할 여유율과 같은 잣대라야
-    「낮출 자리가 있나」 를 그 자리에서 판단할 수 있다.
+    하한이 이길 때만 목표 계약전력이 한 칸 더 선다. 「여유 %」 와 「하향 여지」
+    는 뺐다 — 둘 다 여유율을 잣대로 삼는 값이라 판정과 어긋났다.
     """
-    if not contract.contract_kw:
-        return "—"
-    return f"{contract.headroom_kw / contract.contract_kw * 100:,.1f}%"
+    ratio = contract.contract_floor_ratio
+    facts = [
+        ("현재 계약전력", f"{contract.contract_kw:,.0f} kW"),
+        (
+            f"계약전력의 {ratio:.0%}" if ratio is not None else "하한",
+            f"{contract.floor_kw:,.0f} kW" if contract.floor_kw is not None else "—",
+        ),
+        ("최대수요", f"{contract.demand_before_floor_kw:,.0f} kW"),
+    ]
+    if contract.target_contract_kw is not None:
+        facts.append(("목표 계약전력", f"{contract.target_contract_kw:,.0f} kW"))
+    return tuple(facts)
 
 
 def _contract_conclusion(contract: ContractAdjustment) -> str:
-    """계약전력 결론 — **세 갈래다** (53세션 4-9).
+    """계약전력 결론 — **세 갈래다** (53세션 4-9 · 83세션에 판정을 하한으로 옮겼다).
 
-    39세션까지는 둘이었다 — 「하향 여지 있음」 과 「적정」. 그런데 **계약전력을
-    넘긴 자료**에서는 둘 다 거짓이다: 하향할 여지도 없고 적정하지도 않다.
-    계산은 그 사실을 이미 알고 있었다 (``contract.over_limit`` 경고) — 결론
-    문장만 그것을 안 읽고 있었다.
+        초과 위약  계약전력을 넘은 구간이 있다. **상향을 검토할 자리다**
+        하한이 이긴다  하한이 요금적용전력 위에 있다. 낮추면 그만큼 준다
+        하한이 진다   최대수요가 기준이라 낮춰도 줄지 않는다
 
-        초과 위약   계약전력을 넘은 구간이 있다. **상향을 검토할 자리다**
-        하향 여지   요금적용전력에 여유가 있다
-        적정        여유가 하한 규정 안이라 낮출 것이 없다
+    39세션까지는 「하향 여지 있음」 과 「적정」 둘이었고 여유율이 그 둘을 갈랐다.
+    **여유율은 이 판정에 쓸 잣대가 아니다** — 이득이 있느냐는 하한이 정한다.
     """
     if contract.over_contract_slots:
         return (
@@ -374,13 +396,20 @@ def _contract_conclusion(contract: ContractAdjustment) -> str:
             f"{contract.over_contract_slots:,}건 있어 초과 위약 검토 대상입니다. "
             "하향이 아니라 상향을 검토해야 합니다."
         )
-    if contract.is_over_contracted:
+    if contract.target_contract_kw is not None:
         return (
-            f"계약전력을 {contract.contract_kw:,.0f} → "
-            f"{contract.suggested_contract_kw:,.0f} kW 로 낮출 여지가 "
-            f"{contract.reduction_kw:,.0f} kW 있습니다."
+            f"요금적용전력 하한 {contract.floor_kw:,.0f} kW 가 최대수요 "
+            f"{contract.demand_before_floor_kw:,.0f} kW 보다 높아, 계약전력을 "
+            f"{contract.contract_kw:,.0f} → {contract.target_contract_kw:,.0f} kW 로 "
+            "낮추면 그만큼 기본요금이 줄어듭니다."
         )
-    return f"계약전력 {contract.contract_kw:,.0f} kW 는 적정합니다. 하향 여지가 없습니다."
+    if contract.floor_kw is None:
+        return f"계약전력 {contract.contract_kw:,.0f} kW 의 하한 비율을 알 수 없습니다."
+    return (
+        f"계약전력 {contract.contract_kw:,.0f} kW 는 이미 적정합니다. 최대수요 "
+        f"{contract.demand_before_floor_kw:,.0f} kW 가 하한 "
+        f"{contract.floor_kw:,.0f} kW 위에 있어 낮출 자리가 없습니다."
+    )
 
 
 def _shortest_discharge_hours(curve: EssTargetCurve) -> float:
@@ -773,33 +802,27 @@ def measure_entries(
             saving_annual=_contract_saving(contract, contract.annual_saving_won),
             has_saving=bool(contract.saving_won),
             investment=_won(0.0),
-            payback=_payback_text(0.0, 0.0),
+            # **회수기간은 Excel 과 같은 말이다** (83세션 13). 절감이 없는데
+            # 「즉시」 라 적으면 즉시 회수된다고 읽힌다.
+            payback=_payback_text(0.0, 0.0) if contract.saving_won else "—",
             certainty=str(contract.certainty),
             cautions=(CONTRACT_CHANGE_WARNING, *body_lines(contract.notices)),
             notices=contract.notices,
-            # **여지가 없으면 왜 없는지 보인다** (39세션 4-2). 화면이 31세션에
-            # 세운 지표 넷과 같은 값이다.
-            actionable=contract.is_over_contracted,
+            # **여지가 없으면 왜 없는지 보인다** (39세션 4-2). 화면이 83세션에
+            # 세운 지표와 같은 값이다.
+            actionable=contract.floor_binding,
             # **근거가 결과보다 먼저다** (53세션 6-1).
             facts_first=True,
-            facts=(
-                ("현재 계약전력", f"{contract.contract_kw:,.0f} kW"),
-                ("요금적용전력", f"{contract.billing_demand_kw:,.0f} kW"),
-                # **여유는 %다** (53세션 6-2). 화면이 그렇게 낸다 —
-                # (계약전력 − 요금적용전력) ÷ 계약전력. kW 로 적으면 그 값이
-                # 확보할 여유율과 견줄 수 있는 수인지 알 수 없다.
-                ("여유", _headroom_share(contract)),
-                ("하향 여지", f"{contract.reduction_kw:,.0f} kW"),
-            ),
+            # **판정을 가르는 세 수다** (83세션). 화면과 같은 자리·같은 이름이다.
+            facts=_contract_facts(contract),
             figure=_safe_figure(
                 lambda: figures.contract_headroom_png(contract, size=MEASURE_STRIP_FIGURE),
-                "계약전력 조정 · 여유율",
+                "계약전력 조정 · 하한 판정",
             ),
             figure_caption=_CONTRACT_HEADROOM_CAPTION,
-            # **「하향 여지 8 kW」 옆의 0원이 설명 없이 서 있었다** (59세션 9절).
-            # 여지는 「낮출 수 있는가」 이고 절감액은 「낮추면 돈이 주는가」 다 —
-            # 둘이 갈리는 까닭을 계산이 이미 안내로 내고 있었고(화면 산출 근거에
-            # 있다), 슬라이드만 그것을 안 읽었다. **문장을 새로 짓지 않는다.**
+            # **「없음」 옆에 까닭이 서야 한다** (59세션 9절). 왜 안 주는지를
+            # 계산이 이미 안내로 내고 있었고(화면 판정 줄에 있다), 슬라이드만
+            # 그것을 안 읽었다. **문장을 새로 짓지 않는다.**
             slide_note=_notice_text(contract.notices, CONTRACT_FLOOR_NOT_BINDING_FACT),
         )
 
@@ -815,7 +838,13 @@ def measure_entries(
                 else demand_response.settlement_label
             ),
             investment=_won(0.0),
-            payback=_payback_text(0.0, 0.0),
+            # **Excel 과 같은 말이다** (83세션 13). 절감이 없는데 「즉시」 라
+            # 적으면 즉시 회수된다고 읽힌다 — 같은 표의 같은 칸이므로 함께 맞췄다.
+            payback=(
+                _payback_text(0.0, 0.0)
+                if demand_response.is_priced
+                else UNPRICED_REASONS["no_saving"]
+            ),
             certainty=str(demand_response.certainty),
             has_saving=demand_response.is_priced and bool(demand_response.settlement_won),
             cautions=(
@@ -1495,13 +1524,14 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
     adequacy = diagnosis.contract
     if adequacy is not None:
         _heading(document, f"{number}.5 계약전력 적정성", level=2)
+        floor_ratio = adequacy.contract_floor_ratio
         _conclusion(
             document,
             (
-                f"계약전력 {adequacy.contract_kw:,.0f} kW 대비 이용률이 "
-                f"{adequacy.utilization:.1%} 이고 "
-                f"{adequacy.reduction_kw:,.0f} kW 하향 여지가 있습니다."
-                if adequacy.is_over_contracted
+                f"요금적용전력 하한 {adequacy.floor_kw:,.1f} kW 가 최대수요 "
+                f"{adequacy.billing_demand_kw:,.1f} kW 보다 높아 계약전력을 "
+                f"{adequacy.target_contract_kw:,.0f} kW 까지 낮출 수 있습니다."
+                if adequacy.floor_binding
                 else f"계약전력 {adequacy.contract_kw:,.0f} kW 는 적정합니다 "
                 f"(이용률 {adequacy.utilization:.1%})."
             ),
@@ -1511,19 +1541,26 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
             [
                 ["항목", "값"],
                 ["계약전력", f"{adequacy.contract_kw:,.0f} kW"],
-                ["요금적용전력", f"{adequacy.billing_demand_kw:,.1f} kW"],
+                [
+                    f"계약전력의 {floor_ratio:.0%}" if floor_ratio is not None else "하한",
+                    f"{adequacy.floor_kw:,.1f} kW" if adequacy.floor_kw is not None else "—",
+                ],
+                ["최대수요", f"{adequacy.billing_demand_kw:,.1f} kW"],
                 ["이용률", f"{adequacy.utilization:.1%}"],
-                ["권장 계약전력", f"{adequacy.suggested_contract_kw:,.0f} kW"],
-                ["하향 여지", f"{adequacy.reduction_kw:,.0f} kW"],
+                [
+                    "목표 계약전력",
+                    f"{adequacy.target_contract_kw:,.0f} kW"
+                    if adequacy.target_contract_kw is not None
+                    else NO_SAVING,
+                ],
                 [
                     "예상 절감액",
-                    _won(adequacy.saving_won)
-                    if adequacy.saving_won is not None
-                    else f"{_UNPRICED} — {adequacy.saving_basis}",
+                    _contract_adequacy_saving(adequacy),
                 ],
             ],
         )
-        _para(document, CONTRACT_CHANGE_WARNING)
+        if adequacy.floor_binding:
+            _para(document, CONTRACT_CHANGE_WARNING)
     document.add_page_break()
 
 

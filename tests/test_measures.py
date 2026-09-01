@@ -180,10 +180,11 @@ def test_floor_ratio_defaults_to_the_contract_type(
     result = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=7_000.0)
     assert result.status is ContractStatus.CONFIRMED
     assert result.contract_floor_ratio == pytest.approx(0.30)
-    assert result.reduction_kw == pytest.approx(1_177.0)
-    assert result.suggested_contract_kw == 5_823.0
-    assert result.is_over_contracted
-    # 7,000 × 30% = 2,100 kW 로 요금적용전력 5,293 kW 에 못 미친다 → 절감 없음
+    assert result.floor_kw == pytest.approx(2_100.0)
+    # 7,000 × 30% = 2,100 kW 로 최대수요 5,293 kW 에 못 미친다 → 낮출 이유가 없다
+    assert not result.floor_binding
+    assert result.target_contract_kw is None
+    assert result.no_saving
     assert result.saving_won == pytest.approx(0.0)
 
 
@@ -213,10 +214,11 @@ def test_갑Ⅱ도_계약전력_조정_금액을_낸다(
     assert result.contract_floor_ratio == pytest.approx(0.30)
     assert result.saving_won is not None and result.saving_won > 0
 
+    assert result.target_contract_kw is not None
     rate = bill.base_rate_won_per_kw
     monthly = bill.monthly
     floor_now = 20_000.0 * 0.30
-    floor_then = result.suggested_contract_kw * 0.30
+    floor_then = result.target_contract_kw * 0.30
     expected = float(
         (
             (monthly["demand_before_floor_kw"].clip(lower=floor_now))
@@ -229,11 +231,11 @@ def test_갑Ⅱ도_계약전력_조정_금액을_낸다(
     assert result.saving_won == pytest.approx(expected)
 
     # **하한을 안 씌우면 이만큼 과다 산출된다.** 계약전력 차이로 곧장 곱한 값이다.
-    naive = (20_000.0 - result.suggested_contract_kw) * rate * bill.base_fee_months
+    naive = (20_000.0 - result.target_contract_kw) * rate * bill.base_fee_months
     assert result.saving_won < naive
 
 
-def test_unknown_floor_rule_reports_headroom_without_money(
+def test_unknown_floor_rule_makes_no_money(
     sample_usage: UsageData, tariff: TariffTable, sample_report: QualityReport
 ) -> None:
     """종별 하한 비율이 요금 데이터에 없으면 금액을 만들지 않는다."""
@@ -253,9 +255,10 @@ def test_unknown_floor_rule_reports_headroom_without_money(
     assert result.saving_won is None
     assert result.annual_saving_won is None
     assert result.adjusted_base_won is None
-    # 여지와 경고는 언제나 나온다
-    assert result.reduction_kw == pytest.approx(1_177.0)
-    assert result.is_over_contracted
+    # **목표도 없다** — 하한비율이 없으면 목표를 낼 근거 자체가 없다 (83세션).
+    assert result.floor_kw is None
+    assert result.target_contract_kw is None
+    assert not result.no_saving  # 「없음」 이 아니라 「미산출」 이다
     assert any("하한 비율" in message for message in texts(result.notices))
 
 
@@ -267,11 +270,12 @@ def test_confirmed_floor_rule_recalculates_the_base_fee(
         sample_usage, sample_bill, contract_kw=7_000.0, contract_floor_ratio=1.0
     )
     assert result.status is ContractStatus.CONFIRMED
-    # 하한이 모든 달에 걸리므로 (7,000 − 5,823) × 7,220 원 × 12개월
-    expected = (7_000.0 - 5_823.0) * 7_220.0 * 12.0
+    # 목표는 최대수요 ÷ 100% = 5,294 kW (올림). 하한이 모든 달에 걸린다.
+    assert result.target_contract_kw == 5_294.0
+    expected = (7_000.0 - 5_294.0) * 7_220.0 * 12.0
     assert result.saving_won == pytest.approx(expected)
     assert result.current_base_won == pytest.approx(7_000.0 * 7_220.0 * 12.0)
-    assert result.adjusted_base_won == pytest.approx(5_823.0 * 7_220.0 * 12.0)
+    assert result.adjusted_base_won == pytest.approx(5_294.0 * 7_220.0 * 12.0)
     assert "하한 100%" in result.saving_basis
 
 
@@ -286,15 +290,24 @@ def test_floor_below_the_demand_yields_no_saving(
     assert any("걸리지 않아" in note for note in texts(result.notices))
 
 
-def test_penalty_warning_is_always_returned(
+def test_penalty_warning_only_when_lowering_helps(
     sample_usage: UsageData, sample_bill: BillingResult
 ) -> None:
-    for ratio in (None, 1.0):
-        result = evaluate_contract_adjustment(
-            sample_usage, sample_bill, contract_kw=7_000.0, contract_floor_ratio=ratio
-        )
-        assert any("위약금" in message for message in texts(result.notices))
-        assert any("12개월간 적용" in message for message in texts(result.notices))
+    """**낮출 자리가 있을 때만 낸다** (83세션).
+
+    하한이 지는 갈래에서는 낮출 이유가 없다 — 그 자리에서 「하향은 되돌리기
+    어렵다」 를 읽히면 하지도 못할 일을 조심하라는 말이 된다.
+    """
+    binding = evaluate_contract_adjustment(
+        sample_usage, sample_bill, contract_kw=7_000.0, contract_floor_ratio=1.0
+    )
+    assert any("위약금" in message for message in texts(binding.notices))
+    assert any("12개월간 적용" in message for message in texts(binding.notices))
+
+    slack = evaluate_contract_adjustment(
+        sample_usage, sample_bill, contract_kw=7_000.0, contract_floor_ratio=0.3
+    )
+    assert not any("위약금" in message for message in texts(slack.notices))
 
 
 def test_invalid_floor_ratio_raises(sample_usage: UsageData, sample_bill: BillingResult) -> None:

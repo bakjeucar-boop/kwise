@@ -29,8 +29,8 @@ from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
 from kwise.magnitude import magnitude
 from kwise.measures import (
-    BASE_FEE_UNCHANGED,
     DR_ADVISORY,
+    NO_SAVING,
     OFFSET_SCENARIO,
     ContractAdjustment,
     DemandResponseResult,
@@ -247,7 +247,11 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
             (
                 "개선 여지",
                 "계약전력 조정",
-                format_won(summary.contract_saving_won, reason=UNPRICED_REASONS["contract"]),
+                # **단위 없는 맨 「0」 이 서 있었다** (83세션 6). 다섯 자리를
+                # 같은 말로 맞춘다.
+                NO_SAVING
+                if summary.contract_saving_won == 0.0
+                else format_won(summary.contract_saving_won, reason=UNPRICED_REASONS["contract"]),
             )
         )
         rows.append(
@@ -330,22 +334,25 @@ def measure_summary_frame(
             {
                 "수단": (
                     f"계약전력 조정 ({contract.contract_kw:,.0f} → "
-                    f"{contract.suggested_contract_kw:,.0f} kW)"
+                    f"{contract.target_contract_kw:,.0f} kW)"
+                    if contract.target_contract_kw is not None
+                    else f"계약전력 조정 ({contract.contract_kw:,.0f} kW 유지)"
                 ),
                 "투자비(원)": format_won(0.0),
-                "절감액(원)": format_won(contract.saving_won, reason=UNPRICED_REASONS["contract"]),
-                "12개월 환산(원)": format_won(
-                    contract.annual_saving_won, reason=UNPRICED_REASONS["contract"]
+                # **0 이 아니라 「없음」 이다** (48세션 · 83세션). 하한이 안 걸리면
+                # 줄어들 몫 자체가 없다 — 계산해서 0원이 나온 것과 다르다.
+                "절감액(원)": (
+                    NO_SAVING
+                    if contract.no_saving
+                    else format_won(contract.saving_won, reason=UNPRICED_REASONS["contract"])
+                ),
+                "12개월 환산(원)": (
+                    NO_SAVING
+                    if contract.no_saving
+                    else format_won(contract.annual_saving_won, reason=UNPRICED_REASONS["contract"])
                 ),
                 "회수기간": "즉시" if contract.saving_won else "—",
-                # **0 이 결론인 줄이라는 것을 비고가 말한다** (48세션). 시트의
-                # 금액 칸은 숫자 자리라 0 을 그대로 두되, 그것이 「덜 계산된 0」
-                # 이 아니라는 것은 적어야 한다.
-                "비고": (
-                    f"하향 여지 {contract.reduction_kw:,.0f} kW. "
-                    + (f"{BASE_FEE_UNCHANGED} — " if contract.base_fee_unchanged else "")
-                    + contract.saving_basis
-                ),
+                "비고": contract.saving_basis,
             }
         )
     if demand_response is not None:
@@ -603,11 +610,24 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
         rows.extend(
             [
                 ("계약전력", f"{contract.contract_kw:,.0f} kW"),
-                ("계약 대비 여유율", f"{contract.utilization:.1%}"),
-                ("하향 여지", f"{contract.reduction_kw:,.0f} kW"),
+                # **「여유율」 이 아니라 「이용률」 이다** (83세션). 값은
+                # 요금적용전력 ÷ 계약전력이라 이름이 값과 반대였다.
+                ("계약전력 이용률", f"{contract.utilization:.1%}"),
+                (
+                    "요금적용전력 하한",
+                    f"{contract.floor_kw:,.1f} kW" if contract.floor_kw is not None else "—",
+                ),
+                (
+                    "목표 계약전력",
+                    f"{contract.target_contract_kw:,.0f} kW"
+                    if contract.target_contract_kw is not None
+                    else NO_SAVING,
+                ),
                 (
                     "계약전력 조정 절감액",
-                    format_won(contract.saving_won, reason=UNPRICED_REASONS["contract"]),
+                    NO_SAVING
+                    if contract.saving_won == 0.0
+                    else format_won(contract.saving_won, reason=UNPRICED_REASONS["contract"]),
                 ),
             ]
         )

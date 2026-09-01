@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from kwise import money
-from kwise.measures.contract import ContractAdjustment
+from kwise.measures.contract import NO_SAVING, ContractAdjustment
 from kwise.measures.demand_response import DemandResponseResult
 from kwise.measures.ess import EssResult, payback_text
 from kwise.measures.power_factor import PowerFactorResult
@@ -195,25 +195,24 @@ def contract_worksheet(result: ContractAdjustment) -> Worksheet:
     ratio = result.contract_floor_ratio
     rows: list[WorkRow] = [
         WorkRow("현재 계약전력", "", _kw(result.contract_kw, decimals=0)),
-        WorkRow("요금적용전력", "", _kw(result.billing_demand_kw)),
-        WorkRow(
-            "권장 계약전력",
-            f"요금적용전력 × (1 + 여유율 {result.margin_ratio:.0%})",
-            _kw(result.suggested_contract_kw, decimals=0),
-        ),
+        WorkRow("최대수요", "직전 12개월 최대 (하한 적용 전)", _kw(result.demand_before_floor_kw)),
     ]
-    if ratio is not None:
-        floor_kw = result.contract_kw * ratio
+    if ratio is not None and result.floor_kw is not None:
         rows.append(
             WorkRow(
                 f"하한 판정 ({ratio:.0%})",
                 f"계약전력 {result.contract_kw:,.0f} kW × {ratio:.0%}",
-                f"{floor_kw:,.1f} kW"
-                + (
-                    " — 하한이 걸린다"
-                    if floor_kw > result.billing_demand_kw
-                    else " — 걸리지 않는다"
-                ),
+                f"{result.floor_kw:,.1f} kW"
+                + (" — 하한이 걸린다" if result.floor_binding else " — 걸리지 않는다"),
+            )
+        )
+        rows.append(
+            WorkRow(
+                "목표 계약전력",
+                f"최대수요 ÷ {ratio:.0%}",
+                _kw(result.target_contract_kw, decimals=0)
+                if result.target_contract_kw is not None
+                else NO_SAVING,
             )
         )
     if result.current_base_won is not None and result.adjusted_base_won is not None:
