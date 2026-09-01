@@ -3179,14 +3179,19 @@ def _blind(sections: DocumentSections) -> DocumentSections:
     13세션이 「차트 하나 때문에 문서 전체를 잃는 편보다 그림 없이 표만 내는 편이
     낫다」 로 만든 폴백이다. 자료로는 못 만든다 — 그림이 성공하는 한 수단 장은
     늘 그림 갈래로 돌아가기 때문이다.
+
+    **사양 표는 지우지 않는다** (81세션). 60세션판은 ``spec_table=()`` 을 함께
+    넣었는데 **그림 굽기가 실패해도 사양 표는 남는다** — 표는 그림이 아니라
+    문자열이라 ``_safe_figure`` 를 타지 않는다. 지운 채로 보면 실물이 아닌 것을
+    보게 되고, 실제로 그 조합에서 덱이 죽는다 —
+    :func:`test_사양_표가_있는_수단은_그림이_다_실패하면_덱이_못_만들어진다` 가 그 못이다.
     """
     import dataclasses
 
     return dataclasses.replace(
         sections,
         measures=tuple(
-            dataclasses.replace(entry, figure=None, figures=(), spec_table=())
-            for entry in _all_measures(sections)
+            dataclasses.replace(entry, figure=None, figures=()) for entry in _all_measures(sections)
         ),
     )
 
@@ -3208,6 +3213,10 @@ def test_그림이_안_구워지면_주의사항_표가_선다(full_sections: Do
     벌 여섯 어디에도 이 표가 서지 않아 「죽은 갈래인가」 를 물었다. 죽지
     않았다 — **그림 굽기 실패 폴백**이라 정상 경로에서 안 설 뿐이다.
     조건이 실제로 있으므로 시험이 그 조건을 세운다.
+
+    **여기가 참인 범위는 사양 표가 없는 수단이다** (81세션). 사양 표를 가진
+    수단(ESS)은 같은 상태에서 표가 서지 못하고 덱을 죽인다 —
+    :func:`test_사양_표가_있는_수단은_그림이_다_실패하면_덱이_못_만들어진다`.
     """
     sections = _blind(full_sections)
     entry = next(item for item in sections.measures if item.actionable and item.cautions)
@@ -3240,6 +3249,66 @@ def test_실행할_것이_없으면_빈_주의사항_표를_그리지_않는다(
     # 지표는 위에서 이미 섰다 — 볼 것이 사라진 것이 아니다.
     text = _slide_text(slide)
     assert any(label in text for label, _value in entry.facts)
+
+
+def test_사양_표가_있는_수단은_그림이_다_실패하면_덱이_못_만들어진다(
+    full_sections: DocumentSections,
+) -> None:
+    """**빠짐을 못으로 박는다** (78세션 규약). 81세션에 값으로 봤다.
+
+    60세션은 「폴백은 죽은 갈래가 아니다 — 뜰 수 있다」 로 판정했다. **닿기는
+    한다. 다만 사양 표가 있는 수단에서는 표가 서지 못하고 덱을 통째로 죽인다.**
+
+    까닭은 높이다. `_spec_block` 이 자리가 모자라면 그림을 빼고 **남은 높이를
+    사양 표에 다 준다.** 그때 돌려주는 잔여 높이가 음수가 되는데, 그 뒤
+    ``crowded`` 판정이 ``bool(entry.slide_figures) and not drawings`` 라
+    **그림이 애초에 다 실패한 자리를 못 잡는다**(빈 것은 참이 아니다). 그대로
+    주의사항 갈래로 흘러 음수 높이로 표를 그리려 하고, python-pptx 가 거부한다.
+
+    81세션이 실물 한 벌(`large-b`)에서 잰 값 — 수단 여섯 가운데 다섯은 표가
+    **2.75~2.80in**(계약전력만 1.995in)로 멀쩡히 서고, **ESS 한 장만 −0.175in**
+    (줄당 −0.044in = −164,020 EMU)이다. 사양 표를 가진 수단이 ESS 뿐이다.
+    한 장이 덱 스물한 장을 다 잃는다 — 화면에는 「PPT 보고서 — 만들지
+    못했습니다」 만 뜬다.
+
+    **고치려면 `_build_measure` 의 갈림을 바꿔야 하고 그것은 이 세션의 범위가
+    아니다**(81세션은 판정까지가 몫이었다). 고쳐지는 날 이 시험이 빨개진다 —
+    그때 지우고 「표가 선다」 를 보는 시험으로 옮긴다.
+    """
+    import dataclasses
+
+    # **값은 실물 한 벌(`large-b`)에서 그대로 가져왔다.** 자리를 먹는 것이
+    # 넷이다 — 두 줄로 흐르는 결론 · 아홉 열 여섯 줄짜리 사양 표 · 표 아래
+    # 두 줄(설명 + 표식 뜻) · 주의사항 셋. 하나라도 짧으면 자리가 남아
+    # 음수가 되지 않는다.
+    entry = dataclasses.replace(
+        _ess_entry_with_spec(),
+        conclusion=(
+            "피크를 5,180 kW 까지 낮추려면 ESS 150 kW / 100 kWh 가 필요합니다. "
+            "회수기간이 가장 짧은 지점을 목표로 잡았습니다. "
+            "회수기간 31.7년 — 배터리 보증 수명 10년을 초과합니다."
+        ),
+        spec_note=(
+            "표식 — 최단 회수기간: 회수기간이 가장 짧은 줄 · "
+            "마진 미달: 어떤 규모로도 보증 수명 안에 회수되지 않는 줄"
+        ),
+        cautions=(
+            "규칙기반 단일 디스패치이며 OPEX·열화·교체비를 넣지 않은 단순 회수기간입니다.",
+            "현재 사양(방전 0.67시간)에서 10년 회수에 필요한 저감량은 581 kW 이고, "
+            "산출된 저감량은 113 kW 입니다.",
+            "회수기간 31.7년 — 배터리 보증 수명 10년을 초과합니다.",
+        ),
+    )
+    assert entry.spec_table, "사양 표가 있어야 이 갈래가 선다"
+    assert entry.slide_figures == (), "그림이 다 실패한 자리를 본다"
+    sections = dataclasses.replace(full_sections, measures=(entry,))
+    with pytest.raises(ValueError, match="value must be in range"):
+        build_slides(sections)
+    # **죽인 것이 주의사항 표라는 것을 함께 본다.** 주의사항만 비우면 60세션이
+    # 세운 「빈 표를 그리지 않는다」 가 받아 덱이 멀쩡히 선다 — 사양 표나 결론이
+    # 죽인 것이 아니다.
+    spared = dataclasses.replace(sections, measures=(dataclasses.replace(entry, cautions=()),))
+    assert build_slides(spared) is not None
 
 
 def test_지표_셋은_수단_장마다_같은_높이에_선다(full_sections: DocumentSections) -> None:
