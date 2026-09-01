@@ -2,7 +2,7 @@
   "schema_version": "0.2",
   "region": "kr",
   "source": "한국전력공사 전기요금표(종합)",
-  "source_file": "2026_KEPCO_Electricity_Tariff.xlsx",
+  "source_file": "2026-06-01_KEPCO_Electricity_Tariff.xlsx",
   "effective_date": "2026-06-01",
   "verified": false,
   "season_definition": {

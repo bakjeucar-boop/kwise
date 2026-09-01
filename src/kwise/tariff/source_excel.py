@@ -1,6 +1,6 @@
 """요금표 엑셀 → JSON 변환 (요구사항서 부록 A.1·A.4).
 
-``data\\source\\2026_KEPCO_Electricity_Tariff.xlsx`` 를 읽어
+``data\\source\\2026-06-01_KEPCO_Electricity_Tariff.xlsx`` 를 읽어
 ``data\\tariff_*.json`` 을 만든다. **단가를 수기로 옮기지 않는다.**
 
 시트 하나를 그대로 믿으면 안 되는 이유가 둘 있다.

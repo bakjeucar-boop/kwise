@@ -48,7 +48,7 @@ from kwise.tariff.source_excel import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SOURCE_XLSX = PROJECT_ROOT / "data" / "source" / "2026_KEPCO_Electricity_Tariff.xlsx"
+SOURCE_XLSX = PROJECT_ROOT / "data" / "source" / "2026-06-01_KEPCO_Electricity_Tariff.xlsx"
 EFFECTIVE_DATE = "2026-06-01"
 
 

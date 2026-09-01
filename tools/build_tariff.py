@@ -31,7 +31,7 @@ from kwise.tariff.schema import BANDS, TariffTable, parse_tariff  # noqa: E402
 from kwise.tariff.source_excel import CONTRACT_RULES, build_payload  # noqa: E402
 from kwise.tariff.validate import validate_tariff  # noqa: E402
 
-DEFAULT_SOURCE = PROJECT_ROOT / "data" / "source" / "2026_KEPCO_Electricity_Tariff.xlsx"
+DEFAULT_SOURCE = PROJECT_ROOT / "data" / "source" / "2026-06-01_KEPCO_Electricity_Tariff.xlsx"
 DEFAULT_EFFECTIVE_DATE = "2026-06-01"
 
 # 정정이 아닌 이상 바뀌어서는 안 되는 회귀 기준. 3세션 이후 이 값으로 요금을 냈다.
