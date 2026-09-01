@@ -1886,7 +1886,18 @@ def _build_measure(
         # **표가 자리를 다 썼으면 그것으로 끝이다** (53세션 2절·4-13). 남은
         # 틈에 주의사항 표를 밀어 넣으면 결론이 이미 한 말을 되풀이하면서
         # 줄이 눌린다 — ESS 가 그랬다.
-        crowded = bool(entry.slide_figures) and not drawings
+        #
+        # **「빼앗겼나」 가 아니라 「자리가 남았나」 로 묻는다** (82세션 2절).
+        # 앞서는 ``bool(entry.slide_figures) and not drawings`` 였는데, 그림이
+        # **애초에 다 실패한** 자리는 빈 튜플이라 참이 되지 못했다. 그 자리도
+        # `_spec_block` 은 똑같이 남은 높이를 표에 다 주므로 잔여가 음수인데,
+        # 못 잡힌 채 흘러 주의사항 표를 음수 높이로 그리려다 **덱 스물한 장이
+        # 통째로 죽었다** (81세션이 ESS 장에서 −0.175in 을 쟀다).
+        #
+        # 뜻은 그대로다 — `_spec_block` 이 자리를 넘겨받는 조건이 곧
+        # ``room < _MIN_FIGURE_BLOCK`` 이고, 그때 돌려주는 잔여가 그 ``room``
+        # 이다. 아래 그림 갈래가 쓰는 잣대와도 같은 것이라 둘이 어긋나지 않는다.
+        crowded = height < _MIN_FIGURE_BLOCK
     if drawings and height > _MIN_FIGURE_BLOCK:
         _measure_pictures(slide, guide, drawings, top=body, height=height)
         _note(slide, guide, terms_note, note, extra)

@@ -3183,8 +3183,8 @@ def _blind(sections: DocumentSections) -> DocumentSections:
     **사양 표는 지우지 않는다** (81세션). 60세션판은 ``spec_table=()`` 을 함께
     넣었는데 **그림 굽기가 실패해도 사양 표는 남는다** — 표는 그림이 아니라
     문자열이라 ``_safe_figure`` 를 타지 않는다. 지운 채로 보면 실물이 아닌 것을
-    보게 되고, 실제로 그 조합에서 덱이 죽는다 —
-    :func:`test_사양_표가_있는_수단은_그림이_다_실패하면_덱이_못_만들어진다` 가 그 못이다.
+    보게 되고, 실제로 그 조합에서 덱이 죽었다 (82세션에 고쳤다) —
+    :func:`test_사양_표가_있는_수단은_그림이_다_실패해도_덱이_선다` 가 그 못이다.
     """
     import dataclasses
 
@@ -3215,8 +3215,9 @@ def test_그림이_안_구워지면_주의사항_표가_선다(full_sections: Do
     조건이 실제로 있으므로 시험이 그 조건을 세운다.
 
     **여기가 참인 범위는 사양 표가 없는 수단이다** (81세션). 사양 표를 가진
-    수단(ESS)은 같은 상태에서 표가 서지 못하고 덱을 죽인다 —
-    :func:`test_사양_표가_있는_수단은_그림이_다_실패하면_덱이_못_만들어진다`.
+    수단(ESS)은 같은 상태에서 표가 설 자리가 없다 — 82세션에 `crowded` 가 그
+    자리를 잡게 되어 **표를 안 싣고 넘어간다** (덱은 선다) —
+    :func:`test_사양_표가_있는_수단은_그림이_다_실패해도_덱이_선다`.
     """
     sections = _blind(full_sections)
     entry = next(item for item in sections.measures if item.actionable and item.cautions)
@@ -3251,29 +3252,27 @@ def test_실행할_것이_없으면_빈_주의사항_표를_그리지_않는다(
     assert any(label in text for label, _value in entry.facts)
 
 
-def test_사양_표가_있는_수단은_그림이_다_실패하면_덱이_못_만들어진다(
+def test_사양_표가_있는_수단은_그림이_다_실패해도_덱이_선다(
     full_sections: DocumentSections,
 ) -> None:
-    """**빠짐을 못으로 박는다** (78세션 규약). 81세션에 값으로 봤다.
+    """**81세션이 박은 못을 82세션이 뒤집어 다시 박았다.**
 
-    60세션은 「폴백은 죽은 갈래가 아니다 — 뜰 수 있다」 로 판정했다. **닿기는
-    한다. 다만 사양 표가 있는 수단에서는 표가 서지 못하고 덱을 통째로 죽인다.**
+    81세션판은 「덱이 못 만들어진다」 를 ``pytest.raises`` 로 잡아 두고 「고쳐지는
+    날 빨개진다」 고 적었다. 오늘 빨개졌다 — 여기서는 **고쳐진 뒤의 사실**을 본다.
 
-    까닭은 높이다. `_spec_block` 이 자리가 모자라면 그림을 빼고 **남은 높이를
-    사양 표에 다 준다.** 그때 돌려주는 잔여 높이가 음수가 되는데, 그 뒤
-    ``crowded`` 판정이 ``bool(entry.slide_figures) and not drawings`` 라
-    **그림이 애초에 다 실패한 자리를 못 잡는다**(빈 것은 참이 아니다). 그대로
-    주의사항 갈래로 흘러 음수 높이로 표를 그리려 하고, python-pptx 가 거부한다.
+    까닭은 높이였다. `_spec_block` 이 자리가 모자라면 그림을 빼고 **남은 높이를
+    사양 표에 다 주는데**, 그 뒤 ``crowded`` 판정이 ``bool(entry.slide_figures)
+    and not drawings`` 라 **그림이 애초에 다 실패한 자리를 못 잡았다**(빈 것은
+    참이 아니다). 그대로 주의사항 갈래로 흘러 음수 높이로 표를 그리려 했고,
+    python-pptx 가 거부했다. 82세션에 ``height < _MIN_FIGURE_BLOCK`` 으로 바꿨다
+    — 「빼앗겼나」 가 아니라 **「자리가 남았나」** 를 묻는다.
 
     81세션이 실물 한 벌(`large-b`)에서 잰 값 — 수단 여섯 가운데 다섯은 표가
     **2.75~2.80in**(계약전력만 1.995in)로 멀쩡히 서고, **ESS 한 장만 −0.175in**
     (줄당 −0.044in = −164,020 EMU)이다. 사양 표를 가진 수단이 ESS 뿐이다.
-    한 장이 덱 스물한 장을 다 잃는다 — 화면에는 「PPT 보고서 — 만들지
-    못했습니다」 만 뜬다.
-
-    **고치려면 `_build_measure` 의 갈림을 바꿔야 하고 그것은 이 세션의 범위가
-    아니다**(81세션은 판정까지가 몫이었다). 고쳐지는 날 이 시험이 빨개진다 —
-    그때 지우고 「표가 선다」 를 보는 시험으로 옮긴다.
+    82세션에 같은 벌을 다시 뽑으니 **덱 21장이 서고 주의사항 표는 다섯 수단에
+    세 줄씩** 선다 — ESS 장만 안 싣는다. 잔여 −0.175in 은 그대로이나 **그 값을
+    쓰는 자리가 없어졌다.**
     """
     import dataclasses
 
@@ -3302,13 +3301,15 @@ def test_사양_표가_있는_수단은_그림이_다_실패하면_덱이_못_�
     assert entry.spec_table, "사양 표가 있어야 이 갈래가 선다"
     assert entry.slide_figures == (), "그림이 다 실패한 자리를 본다"
     sections = dataclasses.replace(full_sections, measures=(entry,))
-    with pytest.raises(ValueError, match="value must be in range"):
-        build_slides(sections)
-    # **죽인 것이 주의사항 표라는 것을 함께 본다.** 주의사항만 비우면 60세션이
-    # 세운 「빈 표를 그리지 않는다」 가 받아 덱이 멀쩡히 선다 — 사양 표나 결론이
-    # 죽인 것이 아니다.
-    spared = dataclasses.replace(sections, measures=(dataclasses.replace(entry, cautions=()),))
-    assert build_slides(spared) is not None
+    slide = _slide_by_key(build_slides(sections), sections, f"measure_{entry.kind.key}")
+    # **주의사항을 안 싣는다.** 밀어 넣으려 한 것이 음수 높이의 정체였다.
+    assert _caution_table(slide) is None, "사양 표가 자리를 다 쓴 장에는 주의사항을 싣지 않는다."
+    # **장이 빈 것이 아니다** — 사양 표는 그대로 선다.
+    tables = [
+        shape for shape in slide.shapes if getattr(shape, "has_table", False) and shape.has_table
+    ]
+    assert len(tables) == 1, f"사양 표 하나만 서야 합니다 — 지금 {len(tables)}개."
+    assert tables[0].table.rows[0].cells[0].text.strip() == entry.spec_table[0][0]
 
 
 def test_지표_셋은_수단_장마다_같은_높이에_선다(full_sections: DocumentSections) -> None:
