@@ -160,6 +160,27 @@ CASES: tuple[Case, ...] = (
         province="경기도",
         sigungu="경기도/용인시",
     ),
+    Case(
+        key="small-a2-was",
+        title="용인 소규모 · 갑Ⅱ 고압A 선택Ⅱ · 옛 계약전력 700 kW",
+        csv=YONGIN_XLSX,
+        contract_type="general_a_2",
+        voltage="high_a",
+        option="II",
+        # **하한이 이기는 갈래가 뜨는 유일한 실측 벌이다** (83세션 14).
+        # 시험 자료 셋(용인 290 · 대형 6,000 · 소형 300)이 전부 하한이 지는
+        # 쪽이라 그 갈래가 실물에 한 번도 서지 않았다 — **뜨지 않는 갈래는
+        # 없는 갈래와 같다.** 700 은 지어낸 값이 아니라 **이 건물이 실제로
+        # 쓰던 계약전력**이고, 290 으로 내리면서 77.7 kW 어치가 사라졌다.
+        #
+        #     하한 700 × 30% = 210 kW  >  최대수요 132.3 kW  → 하한이 기준
+        #     목표 132.3 ÷ 0.3 = 441 kW
+        contract_kw=700.0,
+        area_m2=1_000.0,
+        building_name="용인 소규모 건물(옛 계약 700)",
+        province="경기도",
+        sigungu="경기도/용인시",
+    ),
 )
 
 BY_KEY = {case.key: case for case in CASES}

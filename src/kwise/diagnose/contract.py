@@ -32,7 +32,21 @@ __all__ = [
     "ContractInfo",
     "assess_contract",
     "deemed_power_factor_pct",
+    "target_contract_kw",
 ]
+
+
+def target_contract_kw(demand_kw: float, floor_ratio: float, step_kw: float = 1.0) -> float:
+    """목표 계약전력 — **최대수요 ÷ 하한비율을 올림**한다.
+
+    **산식이 한 자리에 있어야 한다** (83세션). 1단계 적정성과 7.2 카드가 각자
+    올리면 같은 자료에서 두 값이 나온다.
+
+    ``1e-9`` 를 빼고 올리는 까닭은 **부동소수 부스러기** 때문이다 —
+    ``132.3 / 0.3`` 이 ``441.00000000000006`` 이라 그대로 올리면 442 가 되고,
+    화면·PPT·Excel 이 1 kW 어긋난 목표를 적는다.
+    """
+    return math.ceil(demand_kw / floor_ratio / step_kw - 1e-9) * step_kw
 
 
 def deemed_power_factor_pct() -> float:
@@ -135,10 +149,7 @@ def assess_contract(
     floor_kw = contract_kw * contract_floor_ratio if contract_floor_ratio is not None else None
     # **판정은 이 한 줄이다** (83세션). 하한이 최대수요를 넘어야 낮출 이유가 있다.
     target = (
-        min(
-            contract_kw,
-            math.ceil(billing_demand_kw / contract_floor_ratio / step_kw) * step_kw,
-        )
+        min(contract_kw, target_contract_kw(billing_demand_kw, contract_floor_ratio, step_kw))
         if floor_kw is not None and contract_floor_ratio and floor_kw > billing_demand_kw
         else None
     )

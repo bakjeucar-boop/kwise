@@ -267,8 +267,9 @@ def won_year(
 
     Args:
         zero_reason: **0 이 결론인 자리**에 0원 대신 적을 말 (48세션). 주지 않으면
-            0 은 그대로 ``0원/년`` 이다 — 대개는 그것이 맞다. 옆 지표가 0 과
-            어긋나 보이는 자리에서만 쓴다 (계약전력 「하향 여지 8 kW · 0원」).
+            0 은 그대로 ``0원/년`` 이다 — 대개는 그것이 맞다. **줄어들 몫 자체가
+            없는 자리**에서만 쓴다 (계약전력 조정의 하한 미적용 —
+            :data:`kwise.money.NO_SAVING`).
     """
     if value is None:
         return won_short(value, reason=reason)

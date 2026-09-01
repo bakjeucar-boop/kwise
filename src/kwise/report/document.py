@@ -795,9 +795,9 @@ def measure_entries(
         entries["contract"] = MeasureEntry(
             kind=measure_kind("contract"),
             conclusion=_contract_conclusion(contract),
-            # **0원이 아니라 결론이다** (48세션). 하향 여지가 있는데 기본요금이
-            # 안 바뀌는 자리는 「0원」 이 계산이 덜 된 것처럼 읽힌다 — 화면과
-            # 같은 말을 쓴다.
+            # **0원이 아니라 결론이다** (48세션). 하한이 안 걸려 줄어들 몫 자체가
+            # 없는 자리는 「0원」 이 계산이 덜 된 것처럼 읽힌다 — 화면과 같은
+            # 말을 쓴다.
             saving=_contract_saving(contract, contract.saving_won),
             saving_annual=_contract_saving(contract, contract.annual_saving_won),
             has_saving=bool(contract.saving_won),

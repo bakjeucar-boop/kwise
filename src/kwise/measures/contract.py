@@ -25,12 +25,12 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 
 import pandas as pd
 
+from kwise.diagnose.contract import target_contract_kw
 from kwise.io import UsageData
 from kwise.measures.base import Certainty, annualize
 from kwise.money import NO_SAVING
@@ -199,8 +199,10 @@ def evaluate_contract_adjustment(
 
     floor_kw = contract_kw * ratio
     # **판정은 이 한 줄이다.** 하한이 최대수요를 넘어야 낮출 이유가 생긴다.
+    # 목표 산식은 1단계 적정성과 **같은 함수**를 쓴다 — 각자 올리면 같은
+    # 자료에서 두 값이 나온다.
     target = (
-        min(contract_kw, math.ceil(before_floor / ratio / step_kw) * step_kw)
+        min(contract_kw, target_contract_kw(before_floor, ratio, step_kw))
         if floor_kw > before_floor
         else None
     )

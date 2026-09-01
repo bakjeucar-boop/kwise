@@ -302,6 +302,48 @@ def test_floor_rule_below_demand_yields_no_saving(sample_usage: UsageData) -> No
     assert adequacy.saving_won == pytest.approx(0.0)
 
 
+def test_용인_계약_700이면_하한이_이긴다() -> None:
+    """**하한이 이기는 갈래가 뜨는 시험 자료가 하나도 없었다** (83세션 14).
+
+    시험 자료 셋(용인 290 · 대형 6,000 · 소형 300)이 전부 하한이 지는 쪽이라,
+    만든 갈래가 실물에 한 번도 서지 않았다 — **뜨지 않는 갈래는 없는 갈래와
+    같다.** 여기 박는 수는 **실제로 있었던 상황**이다: 용인 건물은 계약전력
+    700 kW 였고 290 으로 내리면서 77.7 kW 어치가 사라졌다.
+
+        하한 700 × 30% = 210 kW  >  최대수요 132.3 kW  → 하한이 기준
+        목표 132.3 ÷ 0.3 = 441 kW
+        절감 (210 − 132.3) × 8,230원 × 12개월
+    """
+    # 부하는 판정에 쓰이지 않는다 — 계약 초과 슬롯을 세는 데만 쓴다.
+    kw = pd.Series(120.0, index=pd.date_range("2025-01-01", periods=96, freq="15min"))
+    adequacy = assess_contract(
+        kw,
+        contract_kw=700.0,
+        billing_demand_kw=132.3,
+        base_rate_won_per_kw=8_230.0,
+        base_fee_months=12.0,
+        contract_floor_ratio=0.3,
+    )
+    assert adequacy.floor_binding
+    assert adequacy.floor_kw == pytest.approx(210.0)
+    assert adequacy.target_contract_kw == 441.0
+    assert adequacy.saving_won == pytest.approx((210.0 - 132.3) * 8_230.0 * 12.0)
+    assert adequacy.over_contract_slots == 0
+
+    # **290 으로 내리면 그 몫이 사라진다.** 같은 부하·같은 단가에서 갈래가 뒤집힌다.
+    now = assess_contract(
+        kw,
+        contract_kw=290.0,
+        billing_demand_kw=132.3,
+        base_rate_won_per_kw=8_230.0,
+        base_fee_months=12.0,
+        contract_floor_ratio=0.3,
+    )
+    assert not now.floor_binding
+    assert now.target_contract_kw is None
+    assert now.saving_won == pytest.approx(0.0)
+
+
 def test_contract_warnings_only_when_lowering_helps(sample_usage: UsageData) -> None:
     """**낮출 자리가 있을 때만 하향 경고를 낸다** (83세션).
 

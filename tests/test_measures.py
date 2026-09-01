@@ -290,6 +290,27 @@ def test_floor_below_the_demand_yields_no_saving(
     assert any("걸리지 않아" in note for note in texts(result.notices))
 
 
+def test_목표는_최대수요를_하한비율로_나눈_값이다(
+    sample_usage: UsageData, sample_bill: BillingResult
+) -> None:
+    """**여유율을 곱하지 않는다** (83세션 4).
+
+    최대수요 ÷ 하한비율은 약관에서 바로 나오는 수이고, 그 아래로 내려도 더
+    얻을 것이 없는 상한이다. 20,000 kW 의 30% 는 6,000 kW 로 최대수요
+    5,293.44 kW 를 넘으므로 하한이 기준이 된다.
+    """
+    result = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=20_000.0)
+    assert result.floor_binding
+    ratio = result.contract_floor_ratio
+    assert ratio is not None
+    assert result.target_contract_kw == math.ceil(result.demand_before_floor_kw / ratio)
+    # 목표에서 다시 씌운 하한은 최대수요 바로 위다 — 더 내려도 얻을 것이 없다.
+    assert result.target_contract_kw is not None
+    assert result.target_contract_kw * ratio == pytest.approx(
+        result.demand_before_floor_kw, abs=1.0
+    )
+
+
 def test_penalty_warning_only_when_lowering_helps(
     sample_usage: UsageData, sample_bill: BillingResult
 ) -> None:

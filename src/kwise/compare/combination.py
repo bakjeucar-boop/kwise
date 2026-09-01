@@ -198,7 +198,7 @@ class CombinationResult:
     """절감액에 더한 잉여 처리 수익 (관측 기간, 원) — 48세션. 안 골랐으면 0 이다."""
     contract_saving_won: float | None = None
     contract_adjustment: ContractAdjustment | None = None
-    """조합 부하 기준의 계약전력 조정. **추가 하향 여지가 여기서 나온다** (14세션 5-2)."""
+    """조합 부하 기준의 계약전력 조정. **추가 하향 판정이 여기서 나온다** (14세션 5-2)."""
     notices: tuple[Notice, ...] = field(default=())
 
     @property

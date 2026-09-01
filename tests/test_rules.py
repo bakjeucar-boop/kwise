@@ -506,6 +506,8 @@ def test_여유율은_기준_데이터에서_사라졌다() -> None:
     붙는 종별의 산식이라 을·갑Ⅱ 에서는 전제가 서지 않았고, 10~30% 라는 폭에도
     근거가 붙어 있지 않았다. **지운 자리가 되살아나면 여기서 빨개진다.**
     """
+    from pathlib import Path
+
     import kwise.diagnose.contract as module
     from kwise.rules import assumptions
 
@@ -514,3 +516,14 @@ def test_여유율은_기준_데이터에서_사라졌다() -> None:
     keys = set(assumptions().items)
     assert "contract.margin_ratio" not in keys
     assert "contract.margin_range" not in keys
+
+    # **소스에 이름이 남아 있으면 여기서 빨개진다.** 화면에서만 감추면 Excel·PPT
+    # 에 남는다 — 지운 자리는 이름으로 지킨다.
+    banned = ("margin_ratio", "margin_range", "suggested_contract_kw")
+    offenders = [
+        f"{path}: {word}"
+        for path in sorted(Path("src").rglob("*.py"))
+        for word in banned
+        if word in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == [], offenders
