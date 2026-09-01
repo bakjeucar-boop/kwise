@@ -8,6 +8,12 @@ r"""아침 브리핑을 만든다.
 자르지 않는다: **오늘 첫 작업 · 미해결 항목 · 블로커.** 나머지(직전 세션 요약 ·
 근거 넷)는 그대로 자른다.
 
+**예산도 칸마다 따로다** (85세션 1절). 전역 한도 하나를 두면 앞 칸이 다 먹었을
+때 뒤 칸이 통째로 죽는다 — 09-02 아침에 71줄이 그렇게 사라졌다. 지금 한도는
+**미해결 한 항목의 본문**에만 있고(:data:`ITEM_BODY_LINES`), 갈래 제목 ·
+항목 이름 · 뒤 칸 넷(블로커 · 오늘 첫 작업 · 근거 셋 · 「내가 밟아야 할 것」)은
+어떤 경우에도 온전히 나온다.
+
     .venv\Scripts\python.exe tools\daily_brief.py
     .venv\Scripts\python.exe tools\daily_brief.py --no-clip   클립보드 복사 생략
     .venv\Scripts\python.exe tools\daily_brief.py --out brief.md
@@ -26,11 +32,16 @@ import textwrap
 from pathlib import Path
 from typing import NamedTuple
 
-# 한도는 **마지막 안전장치**다. 길면 그 자체가 비용이라 두되, 칸마다 자를지
-# 접을지를 먼저 정한다 (:func:`clip` 과 :func:`wrap`). 50 이던 것을 68세션에
-# 90 으로 올렸다 — 자르지 않을 칸 셋을 온전히 실으면서 **43줄 → 52줄**이 됐고,
-# 50 이 그 뒤를 잘라 「내가 밟아야 할 것」 을 도로 지웠다.
-MAX_LINES = 90
+# **예산은 칸마다 따로 둔다** (85세션 1절). 전에는 전역 한도 하나(`MAX_LINES`)가
+# 문서 전체에 걸려 있었다 — **앞 칸이 예산을 다 먹으면 뒤 칸이 통째로 죽는다.**
+# 09-02 아침에 그렇게 됐다: 미해결 ②-13 이 문장 한가운데서 끊기고 그 뒤 71줄이
+# 사라졌다(②-14~②-20 일곱 · ③ 갈래 · 블로커 · 오늘 첫 작업 · 근거 셋 ·
+# 「내가 밟아야 할 것」). 50 → 90 으로 올린 것이 68세션인데, **올리는 것으로는
+# 안 낫는다** — 항목이 느는 날 같은 자리에서 다시 죽는다. 자리를 옮겨야 낫는다.
+#
+# 그래서 한도가 **미해결 한 항목의 본문**에만 걸린다. 잘리는 것은 그 본문뿐이고
+# 갈래 제목 · 항목 이름 · 뒤 칸 넷은 어떤 경우에도 온전히 나온다.
+ITEM_BODY_LINES = 3
 # 한 줄이 길면 터미널에서 접혀 줄 수가 어긋난다.
 WRAP_AT = 96
 
@@ -348,6 +359,67 @@ def split_top(text: str) -> list[str]:
     return [p for p in parts if p]
 
 
+def item_parts(text: str) -> tuple[str, str]:
+    """미해결 한 항목을 **이름 · 본문**으로 가른다 (85세션 1절).
+
+    등재 서술은 언제나 **항목 끝의 괄호**에 담긴다. 그래서 끝에서 찾는다 —
+    :func:`first_paren` 처럼 앞에서 찾으면 **이름 안의 괄호**를 본문으로
+    오인한다. ②-6 「갑Ⅰ·교육용(갑)의 전압별 기본요금 기준」 이 그 자리다:
+    앞에서 찾으면 본문이 「갑」 한 자가 되고 **이름의 뒤 절반이 통째로
+    사라진다.** 서술이 없는 항목(「청구서 4」)은 본문이 빈 글이다.
+
+    :func:`first_paren` 을 고치지 않는다 — 갈래 머리말은 **앞** 괄호가 목록이
+    맞고, 71·72세션이 그 자리에 못을 박아 두었다.
+    """
+    text = text.strip()
+    if not text.endswith((")", "）")):
+        return text, ""
+    depth = 0
+    for i in range(len(text) - 1, -1, -1):
+        if text[i] in ")）":
+            depth += 1
+        elif text[i] in "(（":
+            depth -= 1
+            if depth == 0:
+                return text[:i].strip(), text[i + 1 : -1].strip()
+    return text, ""
+
+
+#: 문장 끝. **한가운데서 끊지 않으려고** 문장 단위로 담는다 (85세션 1절).
+_SENTENCE = re.compile(r"(?<=\.)\s+")
+
+
+def clip_body(text: str, first: str, rest: str, tag: str) -> list[str]:
+    """미해결 항목 **본문**을 :data:`ITEM_BODY_LINES` 줄까지 담는다 (85세션 1절).
+
+    **자르는 것은 본문뿐이다.** 이름 줄은 부르는 쪽이 이미 온전히 실었다.
+
+    **문장 한가운데서 끊지 않는다.** 줄 수가 상한을 넘지 않는 데까지 문장을
+    담는다 — 09-02 브리핑은 ②-13 을 「여덟 종별 단가 · 계절 구분 ·」 에서
+    끊었고, 그 조각만 읽으면 무슨 말인지 알 수 없다. 첫 문장 하나가 이미
+    상한을 넘으면 그것만 낱말 자리에서 접어 싣는다.
+
+    **자른 자리에 무엇이 잘렸는지와 전문이 어디 있는지를 남긴다.** 잘린 줄
+    자체가 없으면 브리핑을 읽는 쪽은 **본문이 원래 그만큼인 줄 안다.**
+    """
+    text = text.strip()
+    if not text:
+        return []
+    kept = ""
+    for sentence in _SENTENCE.split(text):
+        trial = f"{kept} {sentence}".strip()
+        if kept and len(wrap(trial, first, rest)) > ITEM_BODY_LINES:
+            break
+        kept = trial
+    if not kept:  # 첫 문장 하나가 이미 상한을 넘는다 — 낱말 자리에서 접는다
+        kept = " ".join(line.strip() for line in wrap(text, first, rest)[:ITEM_BODY_LINES])
+    lines = wrap(kept, first, rest)[:ITEM_BODY_LINES]
+    left = len(text) - len(kept)
+    if left > 0:
+        lines.append(f"{rest}… {tag} 본문 {left}자를 줄였다. 전문은 PROCEED.md 「현재 상태」")
+    return lines
+
+
 # ── 브리핑 조립 ──────────────────────────────────────────────────────────
 
 
@@ -420,7 +492,11 @@ def build() -> str:
             seen.add(item.sym)
             lines.append(f"  {item.sym} {item.name}")
         first = f"    {item.tag}. "
-        lines.extend(wrap(item.text or item.name, first, " " * len(first)))
+        rest = " " * len(first)
+        # **이름은 온전히 · 본문만 줄인다** (85세션 1절).
+        name, body = item_parts(item.text or item.name)
+        lines.extend(wrap(name, first, rest))
+        lines.extend(clip_body(body, rest, rest, item.tag))
     if state.get("블로커", "").strip(" —-"):
         lines.extend(wrap(strip_md(state["블로커"]).lstrip("— "), "  블로커 — ", "    "))
     else:
@@ -457,10 +533,8 @@ def build() -> str:
     while lines and not lines[-1].strip():
         lines.pop()
 
-    if len(lines) > MAX_LINES:
-        cut = len(lines) - (MAX_LINES - 1)
-        lines = lines[: MAX_LINES - 1]
-        lines.append(f"  … {cut}줄 줄였다. 전문은 PROCEED.md 「현재 상태」")
+    # **전역 한도를 두지 않는다** (85세션 1절). 여기서 자르면 그것이 곧 뒤 칸을
+    # 죽이는 자리다 — 예산은 :data:`ITEM_BODY_LINES` 로 미해결 항목 본문에만 있다.
     return "\n".join(lines) + "\n"
 
 

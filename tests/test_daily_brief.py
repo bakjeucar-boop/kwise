@@ -15,6 +15,9 @@ r"""아침 브리핑 시험 (69세션 3절).
     ⑥ **조문 번호는 갈래가 아니다** (74세션 2절) — 「제43조 ③」 을 적어도
       갈래가 안 생긴다. 가르는 표지는 「N건」 이고, 삼켜지는 위험은
       69세션 장치가 받는다
+    ⑦ **칸별 예산** (85세션 1절) — 갈래 제목과 항목 이름은 하나도 안 빠지고,
+      **미해결이 부풀어도 뒤 칸이 다 나온다.** 셋째가 09-02 의 병을 잡는
+      못이다: 전역 한도 하나에 걸려 뒤 71줄이 통째로 죽은 자리다
 
 덧붙여 **갈래 번호가 앞 갈래에 안 밀리는 것**(69세션 1절)과 **갈래 하나만
 사라질 때 말하는 것**(69세션 2절)을 세운다.
@@ -25,6 +28,7 @@ r"""아침 브리핑 시험 (69세션 3절).
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -180,6 +184,10 @@ def test_자르지_않을_칸_셋이_온전히_나온다(monkeypatch: pytest.Mon
     """오늘 첫 작업 · 미해결 항목 · 블로커는 **접기만 하고 자르지 않는다**.
 
     이틀 연속 이 셋이 잘려 원문을 다시 물어야 했다 (67·68세션).
+
+    **85세션에 미해결만 갈라졌다** — 갈래 제목과 항목 **이름**은 그대로
+    안 자르고, 항목 **본문**만 :data:`daily_brief.ITEM_BODY_LINES` 로 줄인다.
+    여기 ``TAIL_ITEM`` 은 서술 괄호가 없는 항목의 꼬리라 그대로 남는다.
     """
     out = _built(SAMPLE, monkeypatch)
     for tail in (TAIL_NEXT, TAIL_ITEM, TAIL_BLOCKER):
@@ -316,6 +324,85 @@ def test_조문_번호를_적어도_갈래가_안_생긴다(monkeypatch: pytest.
     out = _built(planted, monkeypatch)
     assert "미해결 8건" in out, out
     assert "못 읽었다" not in out, out
+
+
+# ================================ ⑦ 칸별 예산 (85세션 1절)
+
+#: 갈래 제목 줄 — `  ① 자료를 기다리는 것 5건`.
+_GROUP_LINE = re.compile(r"^  [①②③④⑤] ")
+#: 항목 이름 줄 — `    ①-1. 청구서 3`.
+_ITEM_LINE = re.compile(r"^    [①②③④⑤]-\d+\. ")
+
+
+def _inflate(count: int = 40) -> str:
+    """미해결 칸을 인위로 부풀린다 — 항목마다 긴 서술을 단다."""
+    body = "이 서술은 아흔여섯 글자를 훌쩍 넘도록 길게 이어진다. " * 12
+    swollen = " · ".join(f"부푼 항목 {i} ({body.strip()})" for i in range(1, count + 1))
+    return SAMPLE.replace("(형 정리", f"({swollen} · 형 정리")
+
+
+def test_갈래_제목은_하나도_안_빠진다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**원본의 갈래 수 = 브리핑에 찍힌 갈래 제목 수.**
+
+    69세션이 「갈래 하나만 사라지면 수만 줄어 조용하다」 를 잡았는데, 그것은
+    **읽는 쪽**의 실종이었다. 이것은 **쓰는 쪽**이다 — 다 읽어 놓고 한도에
+    걸려 안 찍히면 결과는 같다.
+    """
+    brief = _brief()
+    for text in (SAMPLE, _inflate()):
+        out = _built(text, monkeypatch)
+        printed = [line for line in out.splitlines() if _GROUP_LINE.match(line)]
+        expected = {sym for sym, _ in brief.group_chunks(brief.current_state(text)["미해결"])}
+        assert len(printed) == len(expected), printed
+
+
+def test_항목_이름_줄은_하나도_안_빠지고_안_잘린다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**원본의 항목 수 = 브리핑에 찍힌 항목 이름 줄 수.** 이름은 안 자른다.
+
+    이름 안의 괄호를 본문으로 오인하면 **이름의 뒤 절반이 사라진다** —
+    ②-6 「갑Ⅰ·교육용(갑)의 전압별 기본요금 기준」 이 그 자리다. 그래서
+    본문은 **끝에서** 찾는다 (:func:`daily_brief.item_parts`).
+    """
+    brief = _brief()
+    for text in (SAMPLE, _inflate()):
+        out = _built(text, monkeypatch)
+        printed = [line for line in out.splitlines() if _ITEM_LINE.match(line)]
+        items = brief.open_items(brief.current_state(text))
+        assert len(printed) == len(items), printed
+        for item in items:
+            assert f"{item.tag}. " in out, f"{item.tag} 이 안 찍혔습니다"
+
+    planted = SAMPLE.replace("형 정리", "갑Ⅰ·교육용(갑)의 전압별 기준")
+    assert planted != SAMPLE
+    assert "갑Ⅰ·교육용(갑)의 전압별 기준" in _built(planted, monkeypatch)
+
+
+def test_미해결이_부풀어도_뒤_칸이_다_나온다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**이것이 09-02 의 병을 잡는 못이다.**
+
+    전역 한도 하나(`MAX_LINES` 90)가 문서 전체에 걸려 있어 **앞 칸이 예산을
+    다 먹으면 뒤 칸이 통째로 죽었다** — 미해결 ②-13 이 문장 한가운데서 끊기고
+    그 뒤 71줄이 사라졌다(②-14~②-20 · ③ 갈래 · 블로커 · 오늘 첫 작업 ·
+    근거 셋 · 「내가 밟아야 할 것」). 한도를 올려도 항목이 느는 날 같은 자리에서
+    다시 죽으므로 **자리를 옮겼다.**
+
+    앞의 두 시험은 이 죽음을 못 본다 — 갈래도 이름도 **앞 칸 안**의 것이다.
+    """
+    out = _built(_inflate(), monkeypatch)
+    for tail in (TAIL_NEXT, TAIL_BLOCKER):
+        assert tail in out, f"{tail} 가 잘렸습니다 — 뒤 칸이 앞 칸에 희생됐습니다"
+    assert "  근거 · 테스트 상태" in out, out
+    assert "## 내가 밟아야 할 것" in out, out
+    assert "③-1 1시간 자료" in out, out
+
+    # **자른 자리는 무엇이 잘렸는지와 전문이 어디 있는지를 남긴다.**
+    # 잘린 줄이 없으면 읽는 쪽은 **본문이 원래 그만큼인 줄 안다.**
+    rows = out.splitlines()
+    cut = [i for i, line in enumerate(rows) if "본문" in line and "줄였다" in line]
+    assert cut, "본문을 줄였는데 말하지 않았습니다"
+    assert all("전문은 PROCEED.md" in rows[i] for i in cut), cut
+    # **문장 한가운데서 끊지 않는다** — 09-02 는 「계절 구분 ·」 에서 끊었다.
+    assert all(rows[i - 1].rstrip().endswith("다.") for i in cut), [rows[i - 1] for i in cut]
 
 
 def test_N건_없는_갈래를_새로_열면_말한다(monkeypatch: pytest.MonkeyPatch) -> None:
