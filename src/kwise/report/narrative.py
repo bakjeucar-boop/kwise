@@ -43,6 +43,7 @@ from kwise.quality import (
 from kwise.rules import assumption
 from kwise.tariff import TariffTable
 from kwise.tariff.labels import season_label
+from kwise.tariff.power_factor import lagging_standard_pct
 
 __all__ = [
     "COMBINATION_LEAD",
@@ -433,7 +434,9 @@ def building_lead(quality: QualityReport | None) -> str:
     )
 
 
-def power_factor_adjusted_saving(*, saving_won: float, extra_won: float) -> str:
+def power_factor_adjusted_saving(
+    *, saving_won: float, extra_won: float, after_pct: float | None = None
+) -> str:
     """역률 영향을 반영한 절감액 한 줄 (59세션 12절 · 목록 P6).
 
     **큰 글자는 조정 전 값이다.** 2단계 카드의 절감액은 「그 수단만 적용했을 때」
@@ -446,10 +449,25 @@ def power_factor_adjusted_saving(*, saving_won: float, extra_won: float) -> str:
 
     금액은 부르는 쪽이 **같은 기준으로** 넘긴다 (둘 다 관측 기간이거나 둘 다
     12개월 환산). 이 함수는 서식만 잡는다.
+
+    ``after_pct`` 를 주면 **기준 미달일 때만** 그 사실을 앞에 붙인다 (79세션 1절).
+    금액만으로는 「왜 역률요금이 늘었나」 를 못 말한다 — 덱은 이 한 줄이 태양광
+    장에서 역률을 말하는 **유일한 자리**다. 수단 장의 주의사항 표는 그림 굽기가
+    실패했을 때의 폴백이라(60세션 10절) 정상 경로에서는 서지 않고, 그래서 78세션이
+    덱 전문을 훑어 0건을 셌다.
+
+    **줄을 더하지 않고 있는 줄에 붙인다.** 전문(무효전력 설명·약관 조문)은
+    :func:`kwise.measures.solar.power_factor_drop_warning` 이 화면 2단계와 Excel
+    부록에 이미 내고 있다 — 덱은 보는 자리라 같은 말을 세 문장으로 늘리지 않는다.
+    부르는 쪽이 값을 안 주면 **문장은 예전 그대로다** (화면·Excel 이 그 자리다).
     """
     if round(extra_won) == 0:
         return ""
-    return f"역률 영향 반영 시 {money.won(saving_won - extra_won, reason='—')}"
+    adjusted = f"역률 영향 반영 시 {money.won(saving_won - extra_won, reason='—')}"
+    standard = lagging_standard_pct()
+    if after_pct is None or after_pct >= standard:
+        return adjusted
+    return f"예상 역률 {after_pct:.1f}% 로 기준 {standard:.0f}% 미달, {adjusted}"
 
 
 def solar_saving_breakdown(

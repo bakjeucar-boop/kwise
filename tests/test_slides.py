@@ -1398,7 +1398,9 @@ def test_ppt_에_잉여_장이_없고_태양광_장이_진다(
     # 고른 시나리오가 없는 점(``solar_point`` 원본)이라 잉여 조각은 없다 —
     # 남는 것은 역률 조정 한 줄뿐이다 (59세션 12절).
     assert "자가소비로 줄인 요금" not in solar.slide_note, solar.slide_note
-    assert solar.slide_note.startswith("역률 영향 반영 시"), solar.slide_note
+    # **역률이 기준을 밑돌면 그 사실이 앞에 선다** (79세션 1절). 이 점은 74.2% 다.
+    assert solar.slide_note.startswith("예상 역률 "), solar.slide_note
+    assert "역률 영향 반영 시" in solar.slide_note, solar.slide_note
 
     # **고르면 절감액이 무엇의 합인지 한 줄 적는다** (59세션 5절). 화면은 절감액
     # 물음표가 늘 이 줄을 낸다 (57세션) — PPT 에만 없었다.
@@ -2248,6 +2250,13 @@ def test_역률_영향을_큰_글자에_녹이지_않는다(
     )
     line = power_factor_adjusted_saving(saving_won=29_564_000.0, extra_won=156_000.0)
     assert line == "역률 영향 반영 시 29,408,000원"
+    # **값을 주면 왜 늘었는지도 적는다** (79세션 1절). 덱에서는 이 한 줄이
+    # 태양광 장이 역률을 말하는 유일한 자리다 — 주의사항 표는 그림 굽기가
+    # 실패했을 때만 서기 때문이다 (60세션 10절).
+    flagged = power_factor_adjusted_saving(
+        saving_won=29_564_000.0, extra_won=156_000.0, after_pct=91.8
+    )
+    assert flagged == "예상 역률 91.8% 로 기준 92% 미달, 역률 영향 반영 시 29,408,000원"
 
     entry = next(
         item
@@ -2258,10 +2267,22 @@ def test_역률_영향을_큰_글자에_녹이지_않는다(
     assert entry.saving_annual.startswith("29,564,000원"), entry.saving_annual
     assert "역률" not in entry.saving_annual
     # 곁에 적는다 — PPT 는 각주, Word 는 주의사항 목록. **같은 문장이다.**
-    assert line in entry.slide_note
-    assert line in entry.cautions
+    assert flagged in entry.slide_note
+    assert flagged in entry.cautions
 
-    # Excel 도 같은 문장을 쓴다.
+    # **기준을 넘으면 앞의 사실이 붙지 않는다** (79세션 1절). 없는 경고를
+    # 적지 않는다 — 금액 줄만 남는다.
+    kept = dataclasses.replace(dropped, power_factor_after_pct=93.4)
+    fine = next(
+        item
+        for item in measure_entries(solar=kept, base_fee_months=12.0)
+        if item.kind.key == "solar"
+    )
+    assert "예상 역률" not in fine.slide_note, fine.slide_note
+    assert line in fine.slide_note
+
+    # Excel 도 같은 문장을 쓴다. **값을 주지 않아 예전 그대로다** — 「도입 후
+    # 역률 91.8%」 를 이미 제 조각으로 적고 있어 같은 말이 두 번 서지 않는다.
     frame = measure_summary_frame(solar=dropped, base_fee_months=12.0)
     key = next(name for name in frame.index if str(name).startswith("태양광"))
     row = frame.loc[key]
@@ -2277,6 +2298,66 @@ def test_역률_영향을_큰_글자에_녹이지_않는다(
     )
     assert "역률 영향 반영 시" not in quiet.slide_note
     assert not [line for line in quiet.cautions if "역률 영향 반영 시" in line]
+
+
+def test_덱이_태양광_역률_미달을_싣는다(
+    sample_usage: UsageData,
+    sample_bill: BillingResult,
+    sample_diagnosis: Diagnosis,
+    tariff: TariffTable,
+    tmp_path: Path,
+) -> None:
+    """**뜨지 않는 경고는 없는 경고와 같다** (79세션 1절).
+
+    78세션이 조합의 역률을 실제 값으로 고치고도 **덱 전문에서 0건**을 셌다.
+    까닭은 주의사항 표가 아니라 **자리**였다 — 수단 장의 주의사항 표는 그림
+    굽기가 실패했을 때의 폴백이라(60세션 10절) 정상 경로에서는 서지 않는다.
+    벌 일곱을 뽑아 보니 **어느 수단 장에도 그 표가 없었다.** 덱에서 태양광 장이
+    역률을 말할 수 있는 자리는 각주뿐이다.
+
+    **덱을 실제로 구워 전문을 훑는다.** 항목의 밭을 보는 것으로는 이 결함이
+    잡히지 않았다 — 78세션까지 ``entry.slide_note`` 는 늘 값을 갖고 있었다.
+    """
+    import dataclasses
+
+    import pandas as pd
+
+    from kwise.measures import solar_point
+    from kwise.measures.solar import SolarPoint
+    from kwise.report.document import measure_entries
+    from kwise.tariff import TariffSelection
+
+    selection = TariffSelection("general_b", "high_a", "I")
+    unit = pd.Series(0.0, index=pd.DatetimeIndex(sample_usage.kw.index), name="kw")
+    point = solar_point(sample_usage, tariff, selection, unit, 100.0, baseline=sample_bill)
+    dropped = dataclasses.replace(
+        point,
+        generation_kwh=1_940_781.0,
+        self_consumed_kwh=1_940_781.0,
+        self_consumption_ratio=1.0,
+        total_saving_won=29_564_000.0,
+        annual_saving_won=29_564_000.0,
+        power_factor_extra_won=156_000.0,
+        power_factor_after_pct=91.8,
+    )
+
+    def deck_text(solar: SolarPoint) -> str:
+        sections = DocumentSections(
+            usage=sample_usage,
+            bill=sample_bill,
+            diagnosis=sample_diagnosis,
+            measures=measure_entries(solar=solar, base_fee_months=12.0),
+        )
+        return _deck_text(Presentation(str(export_slides(sections, output_dir=tmp_path))))
+
+    body = deck_text(dropped)
+    assert "예상 역률 91.8% 로 기준 92% 미달" in body, body
+    assert "역률 영향 반영 시 29,408,000원" in body
+
+    # **기준을 넘는 벌에는 뜨지 않는다.** 둘 다 보지 않으면 못이 아니다.
+    kept = deck_text(dataclasses.replace(dropped, power_factor_after_pct=93.4))
+    assert "예상 역률" not in kept
+    assert "역률 영향 반영 시 29,408,000원" in kept
 
 
 # **`test_합산효과는_태양광_역률_영향을_반영하지_않는다` 를 지웠다** (78세션).

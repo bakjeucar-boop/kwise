@@ -894,6 +894,12 @@ def measure_entries(
                     ),
                     "태양광 · 대표일 부하",
                 )
+        # **19세션이 다섯 수단에 붙인 ``*body_lines(*.notices)`` 가 여기만 빠져
+        # 있었다** (79세션 1절). 그때 다섯은 옮길 ``*warnings`` 가 있었는데
+        # 태양광은 9세션에 선 손수 만든 목록이라 손이 안 갔고, 41세션이 잉여
+        # 항목을 태양광 안으로 들이면서 그 항목이 갖고 있던
+        # ``*body_lines(surplus.notices)`` 마저 사라졌다. **의도가 아니라 이관
+        # 누락이다** — 이 목록은 39세션 4-2 보다 앞선다.
         cautions = [
             "발전량 예측은 피크 발전량을 과소 산출하는 경향이 있어 피크 절감량이 "
             "보수적으로 나옵니다.",
@@ -942,6 +948,11 @@ def measure_entries(
         # 절감액은 「그 수단만 적용했을 때」 여야 하므로(31세션) **둘을 나눠
         # 보인다.** Word 는 주의사항 목록이, PPT 는 각주가 받는다 —
         # **같은 문장**이다.
+        #
+        # **역률을 함께 넘긴다** (79세션 1절). 금액만으로는 「왜 늘었나」 를 못
+        # 말하는데, 덱에서 이 각주가 태양광 장이 역률을 말하는 유일한 자리다 —
+        # 주의사항 표는 그림 굽기 실패 시의 폴백이라 서지 않는다 (60세션 10절).
+        # 화면 2단계와 Excel 은 이미 제 자리에서 내고 있어 값을 주지 않는다.
         power_factor_line = narrative.power_factor_adjusted_saving(
             saving_won=(solar.annual_saving_won if base_fee_months else solar.total_saving_won),
             extra_won=(
@@ -949,6 +960,7 @@ def measure_entries(
                 if base_fee_months
                 else solar.power_factor_extra_won
             ),
+            after_pct=solar.power_factor_after_pct,
         )
         if power_factor_line:
             cautions.append(power_factor_line)
@@ -974,7 +986,7 @@ def measure_entries(
             certainty=str(solar_certainty)
             if solar_certainty is not None
             else str(Certainty.MEDIUM),
-            cautions=tuple(cautions),
+            cautions=(*cautions, *body_lines(solar_notices)),
             notices=(*solar_notices, *(surplus.notices if surplus is not None else ())),
             figure=solar_day,
             figure_caption=_SOLAR_DAY_CAPTION,
