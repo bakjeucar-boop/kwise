@@ -4343,3 +4343,41 @@ def test_AMI_기준_문장에_원인도_서비스_이름도_숫자도_없다() -
         assert word not in AMI_BASIS_NOTICE, f"「{word}」 는 화면·PPT 에 쓰지 않기로 했습니다."
     assert not re.search(r"\d", AMI_BASIS_NOTICE), "한 건물의 수치를 일반화하지 않습니다."
     assert "AMI" in AMI_BASIS_NOTICE, "괄호 풀이 없이 「AMI」 를 그대로 쓴다."
+
+
+# ======================================================== 82세션 · 삼킨 예외
+
+
+def test_산출물을_못_만들면_예외가_traceback_까지_남는다(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**삼키되 남긴다** (82세션 1절).
+
+    화면 문구는 ``str(exc)`` 까지만 싣는다 — 종류도 자리도 안 담는다. 그래서
+    80·81세션이 「덱이 죽었다」 에서 「``slides.py`` 의 주의사항 표가 음수 높이를
+    냈다」 까지 가는 데 두 세션을 썼다. 폴백은 그대로 두고 traceback 을 남긴다.
+    """
+    import logging
+    import traceback
+
+    from kwise.ui import callout
+    from kwise.ui.views import compare
+
+    shown: list[str] = []
+    monkeypatch.setattr(callout, "blocked", shown.append)
+
+    def 음수_높이로_터진다() -> tuple[bytes, str]:
+        raise ValueError("height must be positive, got -164020")
+
+    with caplog.at_level(logging.ERROR, logger="kwise.ui.views.compare"):
+        compare._build(음수_높이로_터진다, slot="ppt", label="PPT 보고서", token="아무거나")
+
+    assert shown == ["PPT 보고서 — 만들지 못했습니다. height must be positive, got -164020"], (
+        "화면 문구는 늘리지도 줄이지도 않는다."
+    )
+    records = [record for record in caplog.records if record.name == "kwise.ui.views.compare"]
+    assert len(records) == 1, f"기록이 {len(records)}건입니다 — 삼킨 자리마다 한 번이어야 합니다."
+    assert records[0].exc_info is not None, "traceback 이 없으면 어디서 터졌는지 모른다."
+    assert records[0].exc_info[0] is ValueError, "예외 종류가 남아야 한다."
+    dump = "".join(traceback.format_exception(*records[0].exc_info))
+    assert "음수_높이로_터진다" in dump, "터진 자리가 traceback 에 있어야 한다."

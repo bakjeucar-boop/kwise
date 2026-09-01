@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -135,6 +136,20 @@ __all__ = ["render"]
 #: 화면에서만 가리던 것을 만드는 자리에서 지웠다. 장치는 남긴다: 화면에 없는
 #: 사실을 계산이 또 낼 수 있다.
 _HIDDEN_FACTS: frozenset[str] = frozenset()
+
+#: **산출물 만들기가 실패했을 때 기록이 나가는 자리** (82세션 1절).
+#:
+#: :func:`_build` 는 예외를 잡아 화면 문구로 바꾼다. 화면에는 ``str(exc)`` 가
+#: 실리지만 **종류도 자리도 남지 않아**, 80·81세션이 「덱이 죽었다」 에서
+#: 「``slides.py`` 의 주의사항 표가 음수 높이를 냈다」 까지 가는 데 두 세션을
+#: 썼다. 폴백은 그대로 두고 **traceback 을 남긴다** —
+#: :func:`~kwise.report.document._safe_figure` 가 그림 하나에 대해 하는 것과
+#: 같은 규약이다(21세션 「조용한 폴백」 금지).
+#:
+#: **그림 로거를 빌리지 않는다.** :data:`~kwise.report.figures.FIGURE_LOGGER`
+#: 는 「그림 실패」 를 세는 손잡이라(``FigureFailureCollector``) 산출물 하나가
+#: 통째로 죽은 것을 거기에 실으면 도구가 그림 실패로 센다.
+_log = logging.getLogger(__name__)
 
 
 def render(
@@ -1221,10 +1236,14 @@ def _build(make: Callable[[], tuple[bytes, str]], *, slot: str, label: str, toke
 
     바이트를 담지 않고 만들기 분기 안에서 단추를 그리면, 그 단추를 누른 rerun 에서
     만들기 분기가 다시 타지 않아 **단추도 화면 결과도 사라진다** (12세션).
+
+    **삼키되 남긴다** (82세션 1절). 화면 문구는 ``str(exc)`` 까지만 싣고 종류도
+    자리도 안 담는다 — 개발자가 무엇이 터졌는지 알 길이 :data:`_log` 다.
     """
     try:
         payload, filename = make()
     except Exception as exc:
+        _log.exception("%s 를 만들지 못했다", label)
         callout.blocked(f"{label} — 만들지 못했습니다. {exc}")
         return
     remember(slot, payload, filename, token=token)
