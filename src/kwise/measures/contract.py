@@ -147,7 +147,7 @@ def evaluate_contract_adjustment(
 
     Args:
         contract_floor_ratio: 요금적용전력의 계약전력 대비 하한 비율.
-            None 이면 요금표의 종별 속성(30%, 교육용(을) 15%)을 쓴다. 종별
+            None 이면 요금표의 종별 속성(제68조 ①의 30%)을 쓴다. 종별
             속성마저 비어 있으면 '미확인' 을 돌려주고 금액을 만들지 않는다.
         step_kw: 계약전력 조정 단위.
     """

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -21,7 +22,7 @@ from kwise.diagnose import (
     judge_pv_potential,
     peak_profile,
 )
-from kwise.io import UsageData
+from kwise.io import UsageData, load_usage
 from kwise.notices import texts
 from kwise.quality import QualityReport
 from kwise.tariff import (
@@ -32,6 +33,7 @@ from kwise.tariff import (
     demand_eligible_mask,
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CURRENT = TariffSelection("general_b", "high_a", "I")
 CONTRACT_KW = 5_500.0
 
@@ -342,6 +344,39 @@ def test_용인_계약_700이면_하한이_이긴다() -> None:
     assert not now.floor_binding
     assert now.target_contract_kw is None
     assert now.saving_won == pytest.approx(0.0)
+
+
+def test_교육용_덱_벌에_하한이_이기는_자리가_있다(tariff: TariffTable) -> None:
+    """**교육용에는 하한이 이기는 벌이 하나도 없었다** (91세션 1절).
+
+    90세션이 교육용 둘의 하한을 0.3 으로 세웠는데 덱 벌 아홉 가운데 하한이
+    이기는 것은 `large-b-over`(을)와 `small-a2-was`(갑Ⅱ) 둘뿐이었다 —
+    교육용에서는 그 갈래의 글과 그림이 **한 번도 그려진 적이 없다.** 83세션이
+    갑Ⅱ 에 `small-a2-was` 를 지은 자리와 같은 병이다.
+
+    벌을 지웠거나 계약전력을 만지면 여기서 걸린다. **성립 여부도 함께 본다** —
+    교육용전력(갑)은 계약전력 1,000 kW 미만이라(약관 제58조 ② 1.) 하한을
+    이기려고 계약전력을 올리다 보면 종별 자체가 성립하지 않게 된다.
+    """
+    import sys
+
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    import render_deck
+
+    case = render_deck.BY_KEY["small-edu-a-over"]
+    contract_type = tariff.contract_types[case.contract_type]
+    assert not contract_type.base_fee_on_contract_at(case.voltage), "요금적용전력 기준이어야 한다"
+    threshold_kw = contract_type.threshold_kw
+    assert threshold_kw is not None
+    assert case.contract_kw < threshold_kw, "교육용(갑)은 1,000 kW 미만이다"
+
+    ratio = contract_type.contract_floor_ratio
+    assert ratio is not None
+    floor_kw = case.contract_kw * ratio
+    # **전체 최대수요를 넘으면 요금적용전력도 반드시 넘는다** — 대상 시간대·대상월을
+    # 다시 고르지 않아도 판정이 선다.
+    peak_kw = float(load_usage(case.csv).kw.max())
+    assert floor_kw > peak_kw, f"하한 {floor_kw} kW 가 최대수요 {peak_kw} kW 를 못 넘는다"
 
 
 def test_contract_warnings_only_when_lowering_helps(sample_usage: UsageData) -> None:
