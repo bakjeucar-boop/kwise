@@ -326,6 +326,28 @@ def test_조문_번호를_적어도_갈래가_안_생긴다(monkeypatch: pytest.
     assert "못 읽었다" not in out, out
 
 
+def test_조문_번호가_실종_경고를_안_낸다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**89세션이 「제57조 ④·제59조 ⑤」 를 적은 뒤로 날마다 헛경고가 떴다.**
+
+    앞 시험은 갈래가 **생기는** 쪽을 막았고 이것은 **없다고 짖는** 쪽을 막는다
+    — 같은 조문 번호가 :func:`daily_brief.missing_groups` 에서는 「글에는 있는데
+    안 잡힌 표식」 으로 읽혔다. 아무것도 안 막지만 **매일 뜨는 경고는 안
+    읽힌다**(72세션 잣대).
+
+    **막으려던 것은 그대로 잡아야 한다** — 표식이 이름에 붙어
+    ``GROUP`` 이 놓치는 꼴은 여전히 짖는다.
+    """
+    planted = SAMPLE.replace("(형 정리", "(제57조 ④·제59조 ⑤ 형 정리")
+    assert planted != SAMPLE
+    out = _built(planted, monkeypatch)
+    assert "미해결 8건" in out, out
+    assert "못 읽었다" not in out, out
+
+    glued = SAMPLE.replace("**③ 실물을", "**③실물을")
+    assert glued != SAMPLE
+    assert "갈래 ③ 를 못 읽었다" in _built(glued, monkeypatch)
+
+
 # ================================ ⑦ 칸별 예산 (85세션 1절)
 
 #: 갈래 제목 줄 — `  ① 자료를 기다리는 것 5건`.

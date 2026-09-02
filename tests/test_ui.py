@@ -555,7 +555,8 @@ def test_실제_항목_전부에_원문_확인처가_붙는다() -> None:
     rows = build_rows(items, expiry_warnings(include_weather=False))
     # 항목이 조용히 사라지는 것을 막는 잣대다. 늘리는 것은 정상, 줄면 확인한다.
     # 83세션에 근거 없는 여유율 둘(`contract.margin_ratio`·`margin_range`)이 빠졌다.
-    assert len(rows) == len(items) == 78  # rules_kr 31 + assumptions 47
+    # 89세션에 둘이 파일을 건너갔다 — 31+47 에서 29+49 가 됐고 합은 안 바뀐다.
+    assert len(rows) == len(items) == 78  # rules_kr 29 + assumptions 49
     assert all(row.link.startswith(("한국", "국가", "에너지", "Open", "기술서")) for row in rows)
     # **바깥에 원문이 없는 값도 있다** (22세션). 화면 예산은 우리가 정한 규약이라
     # 확인처가 기술서다 — 그래도 따라갈 데는 있어야 한다.
