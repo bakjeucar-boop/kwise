@@ -511,3 +511,48 @@ def test_저장소에_제어문자가_없다() -> None:
 
     assert not left, f"제어문자가 박힌 자리: {[str(hit) for hit in left]}"
     assert skipped, "약관 원문을 거르는 규칙이 아무것도 안 걸렀습니다 — data\\source 를 보십시오."
+
+
+# ------------------------------------------------- 88세션 — skip 은 초록으로 보인다
+
+
+TARIFF_SOURCE_TEST = PROJECT_ROOT / "tests" / "test_tariff_source.py"
+BUILD_TARIFF_TOOL = PROJECT_ROOT / "tools" / "build_tariff.py"
+_XLSX_PATH_RE = r'^{name} = .*"source" / "([^"]+)"'
+
+
+def _source_xlsx_name(path: Path, variable: str) -> str:
+    """``… / "data" / "source" / "<이름>"`` 꼴에서 파일 이름만 뽑는다."""
+    match = re.search(
+        _XLSX_PATH_RE.format(name=variable),
+        path.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert match is not None, f"{path.name} 에서 {variable} 를 못 찾았습니다."
+    return match.group(1)
+
+
+def test_요금표_엑셀은_두_자리가_같은_실물을_가리킨다() -> None:
+    """**이름을 바꾸면 시험 여덟이 실패가 아니라 skip 이 된다** (88세션 4절).
+
+    ``tests\\test_tariff_source.py`` 의 ``source_path`` 픽스처는 파일이 없으면
+    ``pytest.skip`` 을 부른다. 그러면 32건 가운데 8건이 조용히 빠지고 나머지는
+    통과해 **초록으로 보인다** — 빠지는 여덟에 납품 JSON 이 엑셀과 같은지 맞대는
+    유일한 못(``test_shipped_json_equals_a_fresh_conversion``)이 들어 있다.
+
+    **그 자리를 여기서 실패로 바꾼다.** 엑셀 이름을 바꾸면서 두 상수 가운데
+    하나만 고치거나 둘 다 안 고치면 이 시험이 **빨갛게** 알린다.
+    """
+    in_test = _source_xlsx_name(TARIFF_SOURCE_TEST, "SOURCE_XLSX")
+    in_tool = _source_xlsx_name(BUILD_TARIFF_TOOL, "DEFAULT_SOURCE")
+
+    assert in_test == in_tool, (
+        f"엑셀 이름이 갈렸습니다 — 시험 {in_test!r} · 변환기 {in_tool!r}. "
+        "둘을 같은 커밋에서 고치십시오."
+    )
+    target = PROJECT_ROOT / "data" / "source" / in_test
+    assert target.is_file(), (
+        f"요금표 엑셀이 없습니다: {target}. 이름을 바꿨다면 "
+        "tools\\build_tariff.py 와 tests\\test_tariff_source.py 를 함께 고치십시오 "
+        "— 안 고치면 시험 여덟이 실패가 아니라 skip 이 됩니다."
+    )
