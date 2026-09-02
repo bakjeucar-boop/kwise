@@ -180,6 +180,23 @@ pip install -e ".[dev]"
 | 캐시 | pyarrow |
 | CLI | typer, rich |
 | 테스트 | pytest, ruff, mypy |
+| 화면 실물 확인 | playwright (개발 전용) |
+| 규정 원문 확인 | pypdf (개발 전용) |
+
+### 4.4 브라우저 바이너리는 따로 받는다
+
+`playwright` 는 **꾸러미만으로는 안 돈다.** `tools\capture_screen.py` 가 앱을
+진짜 브라우저로 열어 찍으므로 크로미움을 한 번 받아야 한다.
+
+```powershell
+.venv\Scripts\python.exe -m playwright install chromium
+```
+
+받는 곳은 `%LOCALAPPDATA%\ms-playwright\` 이고 `.venv` 밖이다 — **가상환경을
+지웠다 다시 만들어도 남는다.** 115 MB 이고 **1번 PC 에서 36초** 걸렸다.
+
+**2번 PC 에서는 아직 안 받았다.** 그 PC 를 처음 쓰는 세션이 위 한 줄을 돌리고
+소요를 여기 적는다.
 
 ---
 
