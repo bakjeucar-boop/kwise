@@ -2678,7 +2678,7 @@ def test_보고서와_excel_문구도_같은_잣대다(rule: str) -> None:
 # 감사가 못 잡은 까닭이다.
 
 #: 기준선 밖의 조건. `screen_audit.CASES` 와 어긋나면 아래 시험이 잡는다.
-OTHER_AUDIT_CASES = ("갑Ⅰ", "교육갑")
+OTHER_AUDIT_CASES = ("갑Ⅰ", "교육갑", "교육갑저압")
 
 
 def test_감사_조건을_시험이_전부_돈다() -> None:
@@ -2689,6 +2689,37 @@ def test_감사_조건을_시험이_전부_돈다() -> None:
     """
     audit = _audit()
     assert set(audit.CASES) == {audit.BASELINE_CASE, *OTHER_AUDIT_CASES}
+
+
+def test_감사_조건이_화면을_가르는_축을_전부_덮는다(table: TariffTable) -> None:
+    """**조건이 몇 개면 되는지를 사람이 세지 않는다** (91세션 3절).
+
+    화면이 다른 글을 쓰게 하는 축은 셋이다 — 기본요금 기준(계약전력이냐
+    요금적용전력이냐) · 시간대별 요금제 여부 · 하한 비율 유무. 여덟 종별의
+    전압을 다 펼쳐도 이 셋의 조합은 **넷**이고 `screen_audit.CASES` 넷이
+    하나씩 맡는다.
+
+    **종별을 더 늘려도 문구가 안 는다** — 91세션 3절이 안 덮는 여섯을 통째로
+    떠서 맞댄 결과다. 그러니 늘려야 할 때는 종별이 늘 때가 아니라 **이 조합이
+    늘 때**이고, 그것을 여기서 잡는다.
+    """
+    audit = _audit()
+
+    def axis(contract_type: str, voltage: str) -> tuple[bool, bool, bool]:
+        contract = table.contract_types[contract_type]
+        return (
+            contract.base_fee_on_contract_at(voltage),
+            contract.time_of_use,
+            contract.contract_floor_ratio is None,
+        )
+
+    covered = {axis(form.contract_type, form.voltage) for form in audit.CASES.values()}
+    every = {
+        axis(name, voltage)
+        for name, contract in table.contract_types.items()
+        for voltage in contract.voltages
+    }
+    assert every <= covered, f"감사가 안 도는 조합입니다: {sorted(every - covered)}"
 
 
 @pytest.fixture(scope="module", params=OTHER_AUDIT_CASES)
