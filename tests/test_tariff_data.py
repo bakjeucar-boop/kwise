@@ -77,7 +77,9 @@ def test_every_option_declares_its_own_effective_date(tariff: TariffTable) -> No
             for option in voltage.options.values():
                 assert option.effective_date, (contract.key, voltage.voltage, option.option)
                 counted += 1
-    assert counted == 42  # 종별 여덟의 (전압·선택요금) 칸 전부
+    # 종별 여덟의 (전압·선택요금) 칸 전부. 42 였다가 93세션에 갑Ⅱ 선택Ⅲ·Ⅳ
+    # 넷(고압A·B × Ⅲ·Ⅳ)이 붙어 46 이 됐다.
+    assert counted == 46
 
 
 def test_an_option_without_an_effective_date_fails(payload: dict[str, Any]) -> None:

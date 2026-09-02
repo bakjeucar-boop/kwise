@@ -36,6 +36,7 @@ OPTION_LABELS: dict[str, str] = {
     "I": "선택Ⅰ",
     "II": "선택Ⅱ",
     "III": "선택Ⅲ",
+    "IV": "선택Ⅳ",
     "single": "전체시간",
 }
 
@@ -43,7 +44,7 @@ OPTION_LABELS: dict[str, str] = {
 #: 선택요금을 **제도 순서대로** 늘어놓는다 (17세션 1-1). 절감액 순으로 정렬하면
 #: 자료마다 Ⅱ·Ⅲ·Ⅰ 처럼 뒤섞여, 읽는 사람이 "왜 이 순서인가" 를 먼저 묻는다.
 #: 어느 쪽이 유리한지는 표식과 차액 차트가 말한다.
-OPTION_ORDER: tuple[str, ...] = ("I", "II", "III", "single")
+OPTION_ORDER: tuple[str, ...] = ("I", "II", "III", "IV", "single")
 
 
 #: 계절 표기. **계산 모듈의 문구에도 들어간다** (25세션 4-1) — 차익거래 근거가

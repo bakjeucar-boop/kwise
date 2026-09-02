@@ -308,6 +308,71 @@ def test_flat_rate_types_have_equal_band_rates(tariff: TariffTable) -> None:
                     assert energy.light == energy.mid == energy.peak, (key, season)
 
 
+def test_general_a_2_carries_the_two_flat_options(tariff: TariffTable) -> None:
+    """갑Ⅱ 선택Ⅲ·Ⅳ — **8월 요금표 원문 1쪽의 열여섯 자리를 그대로 못 박는다.**
+
+    엑셀(6-01 판)에 없는 값이라 :class:`BorrowedOption` 이 갑Ⅰ 고압 행에서
+    가져온다. **두 자리가 갈라지면 여기가 먼저 알린다** — 옮겨 적은 값이
+    아니라 같은 행을 쓰기 때문에, 요금표가 한쪽만 고치면 이 시험이 깨진다.
+
+        data\\source\\2026-08-01_전기요금표(종합).pdf 1쪽
+        고압A 선택Ⅲ 7,170 전체시간 142.6 / 98.6 / 130.3
+        고압A 선택Ⅳ 8,230 전체시간 138.6 / 94.3 / 125.0
+        고압B 선택Ⅲ 7,170 전체시간 140.5 / 97.5 / 127.3
+        고압B 선택Ⅳ 8,230 전체시간 135.2 / 92.2 / 122.0
+    """
+    expected = {
+        ("high_a", "III"): (7_170.0, 142.6, 98.6, 130.3),
+        ("high_a", "IV"): (8_230.0, 138.6, 94.3, 125.0),
+        ("high_b", "III"): (7_170.0, 140.5, 97.5, 127.3),
+        ("high_b", "IV"): (8_230.0, 135.2, 92.2, 122.0),
+    }
+    contract = tariff.contract("general_a_2")
+    assert contract.options == ("I", "II", "III", "IV")
+    places = 0
+    for (voltage, option), (base, summer, spring_fall, winter) in expected.items():
+        rates = tariff.rates(TariffSelection("general_a_2", voltage, option))
+        assert rates.base_won_per_kw == pytest.approx(base), (voltage, option)
+        places += 1
+        # '전체시간' 이므로 세 시간대가 같은 값이어야 한다.
+        for season, value in (
+            ("summer", summer),
+            ("spring_fall", spring_fall),
+            ("winter", winter),
+        ):
+            for band in BANDS:
+                assert rates.rate(season, band) == pytest.approx(value), (voltage, option, season)
+            places += 1
+        assert not rates.time_of_use, (voltage, option)
+        # 부칙 (2026. 5. 22) 제2항 제3호 — 「2026년 12월분 요금부터 적용」.
+        assert rates.effective_date == "2026-12-01", (voltage, option)
+    assert places == 16
+
+    # 종별은 6-01 시행 그대로다. 선택요금이 종별 시행일을 물려받지 않는다.
+    assert contract.effective_date == "2026-06-01"
+    for option in ("I", "II"):
+        assert tariff.rates(
+            TariffSelection("general_a_2", "high_a", option)
+        ).effective_date == "2026-06-01"
+
+
+def test_flat_options_match_the_type_a_1_high_voltage_rows(tariff: TariffTable) -> None:
+    """갑Ⅱ 선택Ⅲ·Ⅳ 는 갑Ⅰ 고압 선택Ⅰ·Ⅱ 와 **한 자리도 다르지 않다.**"""
+    for voltage in ("high_a", "high_b"):
+        for borrowed, source in (("III", "I"), ("IV", "II")):
+            here = tariff.rates(TariffSelection("general_a_2", voltage, borrowed))
+            there = tariff.rates(TariffSelection("general_a_1", voltage, source))
+            assert here.base_won_per_kw == there.base_won_per_kw, (voltage, borrowed)
+            for season in sorted(there.energy):
+                for band in BANDS:
+                    assert here.rate(season, band) == there.rate(season, band), (
+                        voltage,
+                        borrowed,
+                        season,
+                        band,
+                    )
+
+
 def test_time_of_use_types_are_marked(tariff: TariffTable) -> None:
     for key in ("general_a_2", "general_b", "industrial_a_2", "industrial_b", "education_b"):
         assert tariff.contract(key).time_of_use, key

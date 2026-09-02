@@ -438,7 +438,9 @@
       "time_of_use": true,
       "options": [
         "I",
-        "II"
+        "II",
+        "III",
+        "IV"
       ],
       "demand_bands": [
         "mid",
@@ -499,6 +501,50 @@
                 "peak": 138.0
               }
             }
+          },
+          "III": {
+            "base_won_per_kw": 7170.0,
+            "effective_date": "2026-12-01",
+            "time_of_use": false,
+            "energy": {
+              "summer": {
+                "light": 142.6,
+                "mid": 142.6,
+                "peak": 142.6
+              },
+              "spring_fall": {
+                "light": 98.6,
+                "mid": 98.6,
+                "peak": 98.6
+              },
+              "winter": {
+                "light": 130.3,
+                "mid": 130.3,
+                "peak": 130.3
+              }
+            }
+          },
+          "IV": {
+            "base_won_per_kw": 8230.0,
+            "effective_date": "2026-12-01",
+            "time_of_use": false,
+            "energy": {
+              "summer": {
+                "light": 138.6,
+                "mid": 138.6,
+                "peak": 138.6
+              },
+              "spring_fall": {
+                "light": 94.3,
+                "mid": 94.3,
+                "peak": 94.3
+              },
+              "winter": {
+                "light": 125.0,
+                "mid": 125.0,
+                "peak": 125.0
+              }
+            }
           }
         },
         "high_b": {
@@ -544,6 +590,50 @@
                 "light": 92.5,
                 "mid": 119.8,
                 "peak": 134.0
+              }
+            }
+          },
+          "III": {
+            "base_won_per_kw": 7170.0,
+            "effective_date": "2026-12-01",
+            "time_of_use": false,
+            "energy": {
+              "summer": {
+                "light": 140.5,
+                "mid": 140.5,
+                "peak": 140.5
+              },
+              "spring_fall": {
+                "light": 97.5,
+                "mid": 97.5,
+                "peak": 97.5
+              },
+              "winter": {
+                "light": 127.3,
+                "mid": 127.3,
+                "peak": 127.3
+              }
+            }
+          },
+          "IV": {
+            "base_won_per_kw": 8230.0,
+            "effective_date": "2026-12-01",
+            "time_of_use": false,
+            "energy": {
+              "summer": {
+                "light": 135.2,
+                "mid": 135.2,
+                "peak": 135.2
+              },
+              "spring_fall": {
+                "light": 92.2,
+                "mid": 92.2,
+                "peak": 92.2
+              },
+              "winter": {
+                "light": 122.0,
+                "mid": 122.0,
+                "peak": 122.0
               }
             }
           }

@@ -37,6 +37,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -55,6 +56,7 @@ __all__ = [
     "SEASON_ALIASES",
     "SPECIAL_RULES",
     "VOLTAGE_ALIASES",
+    "BorrowedOption",
     "ContractRule",
     "RateRow",
     "TariffSourceError",
@@ -121,6 +123,36 @@ class TariffSourceError(ValueError):
 
 
 @dataclass(frozen=True)
+class BorrowedOption:
+    """엑셀에 없는 선택요금. **단가를 코드에 적지 않고 같은 엑셀의 다른 행을 쓴다.**
+
+    일반용(갑)Ⅱ 선택Ⅲ·Ⅳ 가 그렇다. 약관 부칙 (2026. 5. 22) 로 신설됐는데
+    우리가 읽는 6-01 판 엑셀에는 행이 없다. 8월 요금표 원문(정본,
+    ``data\\source\\2026-08-01_전기요금표(종합).pdf`` 1쪽)에서 값을 확인해 보니
+    **일반용(갑)Ⅰ 고압 선택Ⅰ·Ⅱ 와 열여섯 자리가 모두 같다** — 기본요금
+    7,170 / 8,230 원, 전체시간 단가가 고압A 142.6·98.6·130.3 과
+    138.6·94.3·125.0, 고압B 140.5·97.5·127.3 과 135.2·92.2·122.0 이다.
+    제도로도 같은 자리다. 갑Ⅱ 는 시간대별 계량 고객이고 선택Ⅲ·Ⅳ 는 그
+    고객에게 **전체시간 단가**를 주는 요금제라 갑Ⅰ 고압과 겹친다.
+
+    그래서 값을 옮겨 적지 않고 **그 행을 그대로 쓴다.** 옮겨 적으면 요금표가
+    바뀔 때 한쪽만 고쳐진다. 두 자리가 갈라지면
+    ``tests\\test_tariff_source.py`` 의 못이 그것을 알린다.
+
+    Attributes:
+        effective_date: **이 선택요금**의 시행일. 「2026년 12월분 요금부터」
+            (부칙 제2항 제3호)를 그 달 1일로 적는다 — 스키마 0.3 의 규약이다.
+        from_contract: 값을 가져올 종별의 **엑셀 표기**.
+        from_option: 그 종별 안의 선택요금 키.
+    """
+
+    option: str
+    from_contract: str
+    from_option: str
+    effective_date: str
+
+
+@dataclass(frozen=True)
 class ContractRule:
     """엑셀에 없는 종별 속성. **변환이 이 값을 만들어내지 않는다.**
 
@@ -153,6 +185,7 @@ class ContractRule:
     demand_bands: tuple[str, ...] = ("mid", "peak")
     demand_months: tuple[int, ...] = (7, 8, 9, 12, 1, 2)
     voltage_base_fee_basis: tuple[tuple[str, str], ...] = ()
+    borrowed_options: tuple[BorrowedOption, ...] = ()
 
 
 # 엑셀의 종별 표기 → 종별 규칙. 부록 A.4 의 확장 순서대로 적었다.
@@ -192,6 +225,13 @@ CONTRACT_RULES: Mapping[str, ContractRule] = {
         base_fee_basis="billing_demand",
         time_of_use=True,
         contract_floor_ratio=0.3,
+        # 선택Ⅲ·Ⅳ 는 6-01 판 엑셀에 없다. :class:`BorrowedOption` 을 본다.
+        # **시행일로 후보를 막지 않는다** — 고객은 고를 수 있고, 계산은 고른
+        # 하나로 기간 전체를 간다. 그 오차는 안내로 낸다.
+        borrowed_options=(
+            BorrowedOption("III", "일반용(갑) I", "I", "2026-12-01"),
+            BorrowedOption("IV", "일반용(갑) I", "II", "2026-12-01"),
+        ),
     ),
     "산업용(갑) I": ContractRule(
         key="industrial_a_1",
@@ -527,6 +567,39 @@ def _contract_payload(
     }
 
 
+def _add_borrowed_options(contract_types: dict[str, Any]) -> None:
+    """엑셀에 없는 선택요금을 **같은 엑셀의 다른 종별 행에서** 채운다.
+
+    없는 것을 지어내지 않는다 — 가져올 종별이 이번 변환에 없으면 멈춘다.
+    """
+    for rule in CONTRACT_RULES.values():
+        target = contract_types.get(rule.key)
+        if target is None:
+            continue
+        for borrowed in rule.borrowed_options:
+            source_key = CONTRACT_RULES[borrowed.from_contract].key
+            source = contract_types.get(source_key)
+            if source is None:
+                raise TariffSourceError(
+                    f"{rule.key}/{borrowed.option}: 값을 가져올 종별이 "
+                    f"이번 변환에 없습니다: {borrowed.from_contract!r}"
+                )
+            for voltage, payload in target["voltages"].items():
+                rates = source["voltages"].get(voltage, {}).get(borrowed.from_option)
+                if rates is None:
+                    raise TariffSourceError(
+                        f"{rule.key}/{voltage}/{borrowed.option}: "
+                        f"{source_key}/{voltage}/{borrowed.from_option} 이 없습니다."
+                    )
+                payload[borrowed.option] = {
+                    "base_won_per_kw": rates["base_won_per_kw"],
+                    "effective_date": borrowed.effective_date,
+                    "time_of_use": rates["time_of_use"],
+                    "energy": deepcopy(rates["energy"]),
+                }
+            target["options"].append(borrowed.option)
+
+
 def build_payload(
     path: Path,
     *,
@@ -563,6 +636,7 @@ def build_payload(
         )
         for name in wanted
     }
+    _add_borrowed_options(contract_types)
     return {
         "schema_version": schema_version,
         "region": "kr",
