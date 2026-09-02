@@ -30,6 +30,7 @@ from kwise.tariff import (
     TariffSelection,
     TariffTable,
     calculate_bill,
+    pending_option_notices,
     selection_label,
     switchable_selections,
 )
@@ -186,6 +187,15 @@ def evaluate_tariff_switch(
                 fact="tariff_switch.best_selection",
             )
         )
+    # **산출물에 등장하는 것은 현행과 권고 둘이다.** 아직 못 쓰는 요금제가
+    # 그 안에 있고 분석 기간이 시행 시점 이전을 포함하면 오차를 알린다.
+    notices.extend(
+        pending_option_notices(
+            table,
+            (current_selection, best_selection),
+            period_start=current_bill.period_start.date(),
+        )
+    )
     return TariffSwitchResult(
         current=quote_by_key[str(current_selection)],
         best=quote_by_key[best_key],

@@ -351,9 +351,10 @@ def test_general_a_2_carries_the_two_flat_options(tariff: TariffTable) -> None:
     # 종별은 6-01 시행 그대로다. 선택요금이 종별 시행일을 물려받지 않는다.
     assert contract.effective_date == "2026-06-01"
     for option in ("I", "II"):
-        assert tariff.rates(
-            TariffSelection("general_a_2", "high_a", option)
-        ).effective_date == "2026-06-01"
+        assert (
+            tariff.rates(TariffSelection("general_a_2", "high_a", option)).effective_date
+            == "2026-06-01"
+        )
 
 
 def test_flat_options_match_the_type_a_1_high_voltage_rows(tariff: TariffTable) -> None:

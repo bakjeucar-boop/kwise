@@ -48,6 +48,7 @@ from kwise.tariff import (
     classify_slots,
     default_demand_months,
     demand_eligible_mask,
+    pending_option_notices,
     switchable_selections,
 )
 
@@ -235,6 +236,15 @@ def diagnose(
                 fact="diagnose.no_contract_kw",
             )
         )
+
+    # 현행과 권고 둘 다 산출물에 등장한다. 아직 못 쓰는 요금제면 오차를 알린다.
+    notices.extend(
+        pending_option_notices(
+            table,
+            (contract.selection, best_selection),
+            period_start=current_bill.period_start.date(),
+        )
+    )
 
     summary = ImprovementSummary(
         current_selection=contract.selection,

@@ -160,6 +160,63 @@ def test_switch_rejects_a_selection_outside_the_table(
         evaluate_tariff_switch(sample_usage, tariff, TariffSelection("general_b", "high_a", "IV"))
 
 
+PENDING = TariffSelection("general_a_2", "high_a", "III")
+PENDING_TEXT = "2026년 12월분 요금부터"
+
+
+def _small_usage(tmp_path: Path, year: int, month: int) -> UsageData:
+    """한 달치 균일 부하 (15분 25 kWh = 100 kW). 갑Ⅱ 규모다."""
+    return load_usage(write_month(tmp_path / f"{year}-{month:02d}.csv", year, month, kwh=25.0))
+
+
+def test_a_pending_option_warns_when_the_period_starts_before_it(
+    tmp_path: Path, tariff: TariffTable
+) -> None:
+    """**서는 판** — 갑Ⅱ 선택Ⅲ 은 2026년 12월분부터인데 기간이 그 앞이다.
+
+    도구는 고른 선택요금 하나로 기간 전체를 간다. 그 오차를 산출물에 낸다.
+    """
+    result = evaluate_tariff_switch(
+        _small_usage(tmp_path, 2026, 3),
+        tariff,
+        PENDING,
+        options=BillingOptions(contract_kw=200.0),
+    )
+    pending = [item for item in texts(result.notices) if PENDING_TEXT in item]
+    assert len(pending) == 1
+    assert "실제 청구와 다를 수 있습니다" in pending[0]
+    # 조문·부칙 번호는 매뉴얼로 간다. 화면 문구에 넣지 않는다.
+    assert "부칙" not in pending[0] and "제2항" not in pending[0]
+
+
+def test_a_pending_option_is_silent_once_the_period_starts_after_it(
+    tmp_path: Path, tariff: TariffTable
+) -> None:
+    """**안 서는 판** — 기간 전체가 시행 뒤면 오차가 없다. 없는 오차는 안 알린다."""
+    result = evaluate_tariff_switch(
+        _small_usage(tmp_path, 2027, 3),
+        tariff,
+        PENDING,
+        options=BillingOptions(contract_kw=200.0),
+    )
+    assert not [item for item in texts(result.notices) if PENDING_TEXT in item]
+
+
+def test_options_that_are_already_in_force_never_warn(tmp_path: Path, tariff: TariffTable) -> None:
+    """**요금표 판과 함께 선 선택요금은 안 알린다.**
+
+    분석 기간은 대개 요금표 시행일보다 앞서 시작한다. 그것만으로 걸리게 두면
+    안내가 선택Ⅰ·Ⅱ 까지 전부에 뜬다 — 만들자마자 값으로 보고 잡은 자리다.
+    """
+    result = evaluate_tariff_switch(
+        _small_usage(tmp_path, 2026, 3),
+        tariff,
+        TariffSelection("general_a_2", "high_a", "II"),
+        options=BillingOptions(contract_kw=200.0),
+    )
+    assert not [item for item in texts(result.notices) if "요금부터 쓸 수 있습니다" in item]
+
+
 # --------------------------------------------------------------------- 7.2 계약전력 조정
 
 

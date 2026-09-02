@@ -189,6 +189,24 @@ def test_diagnose_works_without_contract_info(
     assert len(result.summary.lines) == 3
 
 
+def test_diagnose_warns_about_a_pending_option(tmp_path: Path, tariff: TariffTable) -> None:
+    """**1단계 산출물에도 같은 안내가 선다** — 고객이 현행으로 고른 경우다.
+
+    안내를 내는 자리는 둘이다(진단과 선택요금 전환). 한쪽만 붙이면 계약 정보만
+    확정하고 2단계로 안 간 사람이 오차를 모른 채 금액을 읽는다.
+    """
+    from tests._synthetic import write_month
+
+    usage = load_usage(write_month(tmp_path / "2026-03.csv", 2026, 3, kwh=25.0))
+    result = diagnose(
+        usage,
+        tariff,
+        ContractInfo(TariffSelection("general_a_2", "high_a", "III"), contract_kw=200.0),
+    )
+    pending = [item for item in texts(result.notices) if "2026년 12월분 요금부터" in item]
+    assert len(pending) == 1
+
+
 def test_diagnose_without_contract_kw_still_prices(
     sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
 ) -> None:

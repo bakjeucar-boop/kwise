@@ -45,6 +45,9 @@ from kwise.tariff.labels import (
     selection_label,
     voltage_label,
 )
+from kwise.tariff.pending import (
+    pending_option_notices,
+)
 from kwise.tariff.power_factor import (
     PowerFactorCharge,
     adjustment_per_percent,
@@ -160,6 +163,7 @@ __all__ = [
     "option_pair_diffs",
     "option_sort_key",
     "parse_tariff",
+    "pending_option_notices",
     "power_factor_charge",
     "selection_label",
     "switchable_selections",
