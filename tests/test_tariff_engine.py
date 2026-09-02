@@ -30,7 +30,7 @@ from kwise.tariff import (
     is_demand_month,
     list_selections,
 )
-from tests._synthetic import write_month
+from tests._synthetic import make_labels, month_dates, write_csv, write_month
 
 HIGH_A_I = TariffSelection("general_b", "high_a", "I")
 HIGH_B_II = TariffSelection("general_b", "high_b", "II")
@@ -908,3 +908,62 @@ def test_갑Ⅰ_고압_행은_저압계량_예외_경로다(
     assert tariff.contract(contract_type).base_fee_on_contract_at("high_a")
     assert row["base_won"] == pytest.approx(280.0 * rate)
     assert TENTATIVE_BASE_FEE_BASIS_WARNING in texts(bill.notices)
+
+
+# ------------------------------------------------- 부칙 (2026. 5. 22) 제2항 제1호
+#
+# **아직 하지 않은 일에 박는 못이다** (93세션 6절).
+#
+# 그 조항은 일반용전력(갑)Ⅱ 고객의 2026년 6월분~11월분 요금에 대해, 선택(Ⅰ)을
+# 쓰고 있으면 선택(Ⅲ)으로도 계산해 **낮은 쪽을 적용**하고 선택(Ⅱ)와 선택(Ⅳ)도
+# 같게 하라고 정한다. 도구는 그 자동 비교를 하지 않는다 — 고객이 고른 하나로
+# 간다. **미해결 목록에만 두면 사람이 읽어야 살아나므로**, 고쳐지는 날 스스로
+# 빨개지는 못을 여기 박는다.
+#
+# 아래 두 시험은 짝이다. 앞엣것이 「선택Ⅲ 가 더 싼 달」 이라는 전제를 지키고
+# (전제가 죽으면 뒤엣것의 xfail 이 뜻을 잃는다), 뒤엣것이 그 달에 자동 비교가
+# 없다는 사실을 지킨다.
+
+TRANSITION_MONTH = (2026, 7)  # 부칙 1호의 6월분~11월분 안이다
+A2_OPTION_I = TariffSelection("general_a_2", "high_a", "I")
+A2_OPTION_III = TariffSelection("general_a_2", "high_a", "III")
+
+
+def peak_heavy_month(path: Path, year: int, month: int) -> UsageData:
+    """여름철 최대부하(15~21시)에만 부하가 몰린 한 달치.
+
+    균일 부하로는 안 된다 — 24시간 평균이 전체시간 단가보다 싸서 선택Ⅰ 이
+    언제나 이긴다. 부칙 1호가 무는 자리는 **최대부하가 몰린 달**이다.
+    """
+    rows: list[tuple[str, float]] = []
+    for day in month_dates(year, month):
+        for label in make_labels(day):
+            hour = pd.Timestamp(label.replace(" 24:00", " 00:00")).hour
+            rows.append((label, 25.0 if 15 <= hour < 21 else 1.0))
+    return load_usage(write_csv(path / f"peak-{year}-{month:02d}.csv", rows))
+
+
+def test_최대부하가_몰린_달에는_선택Ⅲ_가_더_싸다(tmp_path: Path, tariff: TariffTable) -> None:
+    """아래 못의 **전제**다. 이것이 깨지면 아래 xfail 은 아무것도 안 지킨다."""
+    usage = peak_heavy_month(tmp_path, *TRANSITION_MONTH)
+    opts = BillingOptions(contract_kw=200.0)
+    on_i = calculate_bill(usage, tariff, A2_OPTION_I, options=opts).total_won
+    on_iii = calculate_bill(usage, tariff, A2_OPTION_III, options=opts).total_won
+    assert on_iii < on_i
+    # 기본요금 단가가 같으므로(둘 다 7,170원/kW) 차이는 전력량요금에서만 온다.
+    assert tariff.rates(A2_OPTION_I).base_won_per_kw == tariff.rates(A2_OPTION_III).base_won_per_kw
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="부칙 (2026. 5. 22) 제2항 제1호의 자동 최저요금이 도구에 없다 (93세션에 안 했다)",
+)
+def test_전환기간_요금은_선택Ⅰ_과_선택Ⅲ_중_낮은_쪽이어야_한다(
+    tmp_path: Path, tariff: TariffTable
+) -> None:
+    """**고쳐지면 이 못이 XPASS 로 깨져 알린다.** 그때 xfail 표를 걷는다."""
+    usage = peak_heavy_month(tmp_path, *TRANSITION_MONTH)
+    opts = BillingOptions(contract_kw=200.0)
+    on_i = calculate_bill(usage, tariff, A2_OPTION_I, options=opts).total_won
+    on_iii = calculate_bill(usage, tariff, A2_OPTION_III, options=opts).total_won
+    assert on_i == pytest.approx(min(on_i, on_iii))
