@@ -2670,6 +2670,58 @@ def test_보고서와_excel_문구도_같은_잣대다(rule: str) -> None:
     ]
 
 
+# ======================================================== 90세션 · 감사가 도는 조건
+#
+# **감사가 한 조건으로만 돌면 안 도는 갈래의 문구는 아무도 안 센다** (90세션 4절).
+# 89세션까지 위 감사는 `을` 하나로만 돌았고, 그래서 **계약전력 기준 종별에서만
+# 뜨는 문구**가 규칙 검사 밖에 있었다 — 잠정 경고가 한 화면에 세 번 뜨는 것을
+# 감사가 못 잡은 까닭이다.
+
+#: 기준선 밖의 조건. `screen_audit.CASES` 와 어긋나면 아래 시험이 잡는다.
+OTHER_AUDIT_CASES = ("갑Ⅰ", "교육갑")
+
+
+def test_감사_조건을_시험이_전부_돈다() -> None:
+    """**조건을 더하고 시험을 안 늘리면 여기가 빨개진다.**
+
+    도구에만 조건을 더하면 사람이 손으로 돌 때만 새 갈래가 보인다 — 그것이
+    89세션까지의 상태였다.
+    """
+    audit = _audit()
+    assert set(audit.CASES) == {audit.BASELINE_CASE, *OTHER_AUDIT_CASES}
+
+
+@pytest.fixture(scope="module", params=OTHER_AUDIT_CASES)
+def other_case_lines(request: pytest.FixtureRequest) -> tuple[Any, ...]:
+    """기준선 밖 조건의 화면 문구 한 벌. **조건마다 앱을 한 번만 띄운다.**"""
+    return _audit().collect(solar=False, case=request.param)
+
+
+@pytest.mark.parametrize(
+    "rule",
+    ["맨 물결표", "코드 식별자", "요구사항서 참조", "규정 이름 없는 조문", "규정 이름 없는 별표"],
+)
+def test_다른_종별_화면도_같은_잣대다(rule: str, other_case_lines: tuple[Any, ...]) -> None:
+    offenders = _audit().offenders(other_case_lines)
+    assert not offenders.get(rule), [
+        f"[{item.slot}] {item.where} :: {item.text[:80]}" for item in offenders[rule]
+    ]
+
+
+def test_잠정_경고는_한_번만_뜬다(other_case_lines: tuple[Any, ...]) -> None:
+    """**같은 문장이 한 화면에 셋이었다** (90세션 3절).
+
+    1단계 「계약 정보」 아래 · 1단계 안내 목록 · 2단계 「선택요금 전환」 카드.
+    남긴 것은 첫째다 — 파일을 올리기 전에도 뜨고 종별 이름과 계약전력을 함께
+    말한다. 나머지 둘은 `TENTATIVE_FACTS` 와 `_TARIFF_HIDDEN_FACTS` 가 내린다.
+    **산출물에서는 안 내린다** — 보고서는 `result.notices` 를 그대로 쓴다.
+    """
+    from kwise.tariff import TENTATIVE_BASE_FEE_BASIS_WARNING
+
+    hits = [item for item in other_case_lines if TENTATIVE_BASE_FEE_BASIS_WARNING in item.text]
+    assert len(hits) <= 1, [f"{item.where} :: {item.text[:60]}" for item in hits]
+
+
 # ======================================================== 25세션 · 입력 끝값
 
 

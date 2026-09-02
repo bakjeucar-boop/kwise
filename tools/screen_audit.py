@@ -38,7 +38,7 @@ import json
 import re
 import sys
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -55,6 +55,8 @@ from kwise.ui.pipeline import ContractForm, SolarInputs  # noqa: E402
 __all__ = [
     "BARE_ARTICLE",
     "BARE_SCHEDULE",
+    "BASELINE_CASE",
+    "CASES",
     "CODE_WORDS",
     "REQUIREMENT_REF",
     "TILDE",
@@ -241,19 +243,47 @@ def _walk(node: object, where: str) -> Iterator[Line]:
         yield from _walk(child, path)
 
 
-def run(*, solar: bool = True, steps: int = 4) -> AppTest:
+#: 감사가 도는 조건. **한 벌이 아니다** (90세션).
+#:
+#: 89세션까지 감사는 `을` 하나로만 돌았다. 그런데 화면은 **기본요금 기준**으로
+#: 크게 갈린다 — 계약전력 기준(제68조 ②) 종별에는 요금적용전력 갈래에 없는
+#: 문구가 뜨고, 그 갈래의 문구는 **아무도 세지 않았다.** 잠정 경고가 화면에
+#: 두 번 뜨는 것을 감사가 못 잡은 까닭이 그것이다.
+#:
+#: 셋을 고른 잣대는 「같은 화면이 다른 글을 쓰게 하는 축」 이다 —
+#: 기본요금 기준 · 시간대별 요금제 여부 · 요금적용전력 하한이 그 축이다.
+CASES: Mapping[str, ContractForm] = {
+    "을": ContractForm(
+        contract_type="general_b", voltage="high_a", option="II", contract_kw=6_000.0
+    ),
+    # 계약전력 기준(제68조 ②) · 단일 단가. **잠정 경고가 여기서만 뜬다.**
+    "갑Ⅰ": ContractForm(
+        contract_type="general_a_1", voltage="low", option="single", contract_kw=200.0
+    ),
+    # 요금적용전력 기준인데 단일 단가다. 89·90세션이 고친 자리다.
+    "교육갑": ContractForm(
+        contract_type="education_a", voltage="high_a", option="I", contract_kw=300.0
+    ),
+}
+
+#: 89세션까지의 유일한 조건. **수를 견줄 때의 기준선**이라 이름을 남긴다.
+BASELINE_CASE = "을"
+
+
+def run(*, solar: bool = True, steps: int = 4, case: str = BASELINE_CASE) -> AppTest:
     """수단 일곱을 모두 켠 화면 한 벌.
 
     ``solar`` 를 켜면 태양광 입력까지 세션에 넣어 **결과가 나온 상태**로 띄운다 —
     기상 사전 취득분(``data\\weather\\``)이나 네트워크가 필요하다. 시험은 기상에서
     격리되므로 끄고 부른다.
+
+    ``case`` 는 :data:`CASES` 의 이름이다. 기본값은 89세션까지 유일했던 조건이라
+    **옛 수와 그대로 견줄 수 있다.**
     """
     app = AppTest.from_file(str(APP), default_timeout=900)
     app.session_state["upload_bytes"] = SAMPLE.read_bytes()
     app.session_state["upload_name"] = SAMPLE.name
-    app.session_state["contract_form"] = ContractForm(
-        contract_type="general_b", voltage="high_a", option="II", contract_kw=6_000.0
-    )
+    app.session_state["contract_form"] = CASES[case]
     for key in MEASURE_KEYS:
         app.session_state[f"measure_on_{key}"] = True
     # **3단계는 「합산효과 계산」 을 누른 뒤에 그린다** (33세션 5절). 누르지 않으면
@@ -460,22 +490,20 @@ def _print_offenders(found: dict[str, list[Line]]) -> None:
             print(f"              {item.text[:120]}")
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="화면 문구 실주행 감사")
-    parser.add_argument("--list", action="store_true", help="모은 문구를 전부 낸다")
-    parser.add_argument("--pairs", type=int, default=25, help="중복 후보를 몇 쌍까지 낼지")
-    parser.add_argument("--threshold", type=float, default=0.45, help="중복 판정 문턱")
-    parser.add_argument("--no-solar", action="store_true", help="태양광 입력을 넣지 않는다")
-    args = parser.parse_args()
+def _audit_case(case: str, args: argparse.Namespace) -> tuple[int, dict[str, list[Line]]] | None:
+    """조건 하나를 돌고 **화면 쪽 결과만** 낸다. 화면이 죽으면 None 이다.
 
-    screen = run(solar=not args.no_solar)
+    소스 훑기는 조건과 무관하므로 :func:`main` 이 한 번만 돌린다.
+    """
+    screen = run(solar=not args.no_solar, case=case)
     if screen.exception:
-        print("화면이 죽었습니다:")
+        print(f"[{case}] 화면이 죽었습니다:")
         for failure in screen.exception:
             print(f"    {failure.value}")
-        return 2
+        return None
     lines = collect(screen)
     korean = [item for item in lines if item.korean]
+    print(f"\n━━━ {case}  {_case_label(case)}")
     print(f"모은 문구 {len(lines)}건 (한글 {len(korean)}건)")
 
     print("\n자리별 · 갈래별 건수")
@@ -494,9 +522,6 @@ def main() -> int:
     print("\n① · ② 규칙 위반 — 화면")
     on_screen = offenders(lines)
     _print_offenders(on_screen)
-    print("\n① · ② 규칙 위반 — 소스 (보고서·Excel 포함)")
-    in_source = offenders(source_lines())
-    _print_offenders(in_source)
 
     same = repeated(lines)
     if same:
@@ -513,7 +538,53 @@ def main() -> int:
         print(f"        [{right.slot}] {right.where}")
         print(f"              {right.text[:120]}")
 
-    return 1 if (on_screen or in_source) else 0
+    return len(lines), on_screen
+
+
+def _case_label(case: str) -> str:
+    form = CASES[case]
+    return f"{form.contract_type} · {form.voltage} · {form.option} · {form.contract_kw:,.0f} kW"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="화면 문구 실주행 감사")
+    parser.add_argument("--list", action="store_true", help="모은 문구를 전부 낸다")
+    parser.add_argument("--pairs", type=int, default=25, help="중복 후보를 몇 쌍까지 낼지")
+    parser.add_argument("--threshold", type=float, default=0.45, help="중복 판정 문턱")
+    parser.add_argument("--no-solar", action="store_true", help="태양광 입력을 넣지 않는다")
+    parser.add_argument(
+        "--case",
+        action="append",
+        choices=sorted(CASES),
+        help=f"돌 조건. 여러 번 줄 수 있다. 없으면 {len(CASES)} 조건을 모두 돈다",
+    )
+    args = parser.parse_args()
+
+    # **기본값이 전부다** (90세션). 하나만 돌면 안 도는 갈래의 문구를 아무도
+    # 세지 않는다 — 그것을 고치려고 조건을 늘렸는데 기본값이 하나면 도로 같다.
+    cases = args.case or list(CASES)
+    counts: dict[str, int] = {}
+    failed = False
+    for case in cases:
+        result = _audit_case(case, args)
+        if result is None:
+            failed = True
+            continue
+        total, on_screen = result
+        counts[case] = total
+        failed = failed or bool(on_screen)
+
+    print("\n━━━ 소스 (보고서·Excel 포함) — 조건과 무관하다")
+    print("\n① · ② 규칙 위반")
+    in_source = offenders(source_lines())
+    _print_offenders(in_source)
+
+    if len(counts) > 1:
+        print("\n━━━ 조건별 문구 수")
+        for case, total in counts.items():
+            print(f"    {total:5d}  {case}  {_case_label(case)}")
+
+    return 1 if (failed or in_source) else 0
 
 
 if __name__ == "__main__":
