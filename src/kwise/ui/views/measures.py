@@ -237,9 +237,15 @@ def _open_key(measure_key: str) -> str:
 #:                     없다 — 산출물에도 그대로 실린다
 #:
 #: **화면에서만 내린다.** 보고서·부록은 :attr:`result.notices` 를 그대로 쓴다.
+#:     잠정 경고     **1단계 「계약 정보」 아래가 낸다** (90세션). 요금적용전력
+#:                     규칙과 똑같은 모양이다 — 기본요금 기준이 잠정이라는 말은
+#:                     요금제를 바꿔도 그대로라 **여기서 요금제를 고르는 데
+#:                     쓰이지 않는다.** 계약전력 기준 종별에서만 뜨는 문장이라
+#:                     을 종별로만 돌던 감사가 이것을 못 세고 있었다 (4절)
 _TARIFF_HIDDEN_FACTS: tuple[str, ...] = (
     "quality.month_missing_rate",
     "tariff.billing_demand_rule",
+    "tariff.tentative_base_fee_basis",
     "tariff_switch.best_selection",
 )
 

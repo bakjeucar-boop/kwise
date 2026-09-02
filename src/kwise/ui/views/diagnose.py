@@ -209,6 +209,15 @@ CONTRACT_FACTS = (
 )
 
 
+#: 잠정 경고는 **화면 위 「계약 정보」 바로 아래**가 제자리다 (90세션).
+#: :func:`_tentative_basis_block` 이 종별 이름과 계약전력을 얹어 같은 문장을
+#: 이미 내고 있는데 여기서 한 번 더 내고 있었다 — **글자까지 같은 문장이 한
+#: 화면에 둘이었다.** 위쪽을 남긴 까닭은 그것이 **파일을 올리기 전에도** 뜨고
+#: 어느 종별의 얼마짜리 계약인지까지 말하기 때문이다.
+#: `_TARIFF_HIDDEN_FACTS` 가 `tariff.billing_demand_rule` 에 한 것과 같은 처리다.
+TENTATIVE_FACTS = ("tariff.tentative_base_fee_basis",)
+
+
 def _notice_block(quality: QualityReport, diagnosis: Diagnosis) -> None:
     """등급대로 자리를 나눈다 (19세션 1절).
 
@@ -218,6 +227,7 @@ def _notice_block(quality: QualityReport, diagnosis: Diagnosis) -> None:
     merged = (*quality.notices, *diagnosis.notices)
     _missing, rest = partition_facts(screen_notices(merged), MISSING_FACTS)
     _contract, rest = partition_facts(rest, CONTRACT_FACTS)
+    _tentative, rest = partition_facts(rest, TENTATIVE_FACTS)
     # **배경색 상자를 쓰지 않는다** (15세션 4절). 차단만 색을 남긴다.
     for notice in rest:
         callout.render_notice(notice)
