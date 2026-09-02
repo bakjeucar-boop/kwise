@@ -3,42 +3,42 @@
     "contract_type.threshold_kw.education": {
       "label": "교육용 갑·을 임계 계약전력 (kW)",
       "note": "교육용만 1,000 kW 다. 일반용·산업용과 다르다.",
-      "source": "기본공급약관 제57조",
-      "source_date": "2024-10-24",
+      "source": "기본공급약관 제58조 ②",
+      "source_date": "2026-06-01",
       "value": 1000,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "contract_type.threshold_kw.general": {
       "label": "일반용 갑·을 임계 계약전력 (kW)",
       "note": "300 kW 이상이 을이다.",
-      "source": "기본공급약관 제56조",
-      "source_date": "2024-10-24",
+      "source": "기본공급약관 제57조 ②",
+      "source_date": "2026-06-01",
       "value": 300,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "contract_type.threshold_kw.industrial": {
       "label": "산업용 갑·을 임계 계약전력 (kW)",
       "note": "300 kW 이상이 을이다.",
-      "source": "기본공급약관 제58조",
-      "source_date": "2024-10-24",
+      "source": "기본공급약관 제59조 ②",
+      "source_date": "2026-06-01",
       "value": 300,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "day_rules.exclude_temporary_holiday": {
       "label": "임시공휴일 제외 여부",
       "note": "기본은 제외. 사용자가 개별 지정으로 추가할 수 있다.",
-      "source": "관공서의 공휴일에 관한 규정",
-      "source_date": "2024-10-24",
+      "source": "기본공급약관 별표3 단서 3호",
+      "source_date": "2026-06-01",
       "value": true,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "day_rules.holiday": {
       "label": "공휴일 계량 규칙",
       "note": "전량 경부하다.",
-      "source": "관공서의 공휴일에 관한 규정",
-      "source_date": "2024-10-24",
+      "source": "기본공급약관 별표3 단서 1호",
+      "source_date": "2026-06-01",
       "value": "all_to_light",
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "day_rules.saturday": {
       "label": "토요일 계량 규칙",
@@ -59,35 +59,35 @@
     "demand.bands": {
       "label": "요금적용전력 대상 시간대",
       "note": "경부하는 대상이 아니다. 야간 피크가 요금적용전력이 되지 않는 근거다.",
-      "source": "기본공급약관 제68조 ②",
-      "source_date": "2024-10-24",
+      "source": "기본공급약관 별표3 단서 2호",
+      "source_date": "2026-06-01",
       "value": [
         "mid",
         "peak"
       ],
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "demand.contract_floor_ratio.default": {
       "label": "요금적용전력 하한 비율 (일반)",
       "note": "계약전력의 30%. 일반용(을)·산업용(을)에 적용한다.",
-      "source": "기본공급약관 제68조 ②",
-      "source_date": "2024-10-24",
+      "source": "기본공급약관 제68조 ①",
+      "source_date": "2026-06-01",
       "value": 0.3,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "demand.contract_floor_ratio.education_b": {
       "label": "요금적용전력 하한 비율 (교육용을 특례)",
       "note": "교육용(을)은 15% 특례다.",
-      "source": "기본공급약관 제68조 ② 단서",
-      "source_date": "2024-10-24",
+      "source": "기본공급약관시행세칙 별표4 (기본공급약관 특례) 8. 나.(1)",
+      "source_date": "2026-06-01",
       "value": 0.15,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "demand.months": {
       "label": "요금적용전력 대상월",
       "note": "전력량요금의 계절 정의와 다르다. 9월은 봄·가을철 단가를 쓰지만 대상월이고, 6월·11월은 여름·겨울 단가를 쓰지만 대상월이 아니다.",
-      "source": "기본공급약관 제68조 ②",
-      "source_date": "2024-10-24",
+      "source": "기본공급약관 제68조 ①",
+      "source_date": "2026-06-01",
       "value": [
         7,
         8,
@@ -96,23 +96,23 @@
         1,
         2
       ],
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "demand.window_months": {
       "label": "요금적용전력 판정 창 (개월)",
       "note": "직전 12개월 중 최대. 한 번의 초과가 12개월간 적용된다.",
-      "source": "기본공급약관 제68조 ②",
-      "source_date": "2024-10-24",
+      "source": "기본공급약관 제68조 ①",
+      "source_date": "2026-06-01",
       "value": 12,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "dr.bid_restriction_months": {
       "label": "경제성DR 미이행 시 입찰 제한 기간 (개월)",
       "note": "낙찰 후 감축을 이행하지 못하면 이 기간 동안 입찰이 제한된다. **이 제재가 보수적 산정의 근거다** — 과대 산정의 대가가 크다.",
-      "source": "전력시장운영규칙 제12장 · 전력거래소 확인",
-      "source_date": "2026-08-12",
+      "source": "전력시장운영규칙 제12.4.2.6조 ②",
+      "source_date": "2024-02-13",
       "value": 6,
-      "verified_on": "2026-08-12"
+      "verified_on": "2026-09-02"
     },
     "dr.event_hours": {
       "label": "경제성DR 1회 지속시간 범위 (시간)",
@@ -129,19 +129,19 @@
       "label": "DR 거래일 제외 요일",
       "note": "요금 계량의 '평일' 과 다르다. 요금은 토요일을 중간부하로 낮출 뿐 공휴일로 보지 않지만 DR 은 토요일도 제외다.",
       "source": "전력시장운영규칙 제12.4.2.1조 제1항 1호",
-      "source_date": "2024-10-24",
+      "source_date": "2024-02-13",
       "value": [
         "saturday",
         "sunday",
         "holiday"
       ],
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "dr.market_hours": {
       "label": "경제성DR 시장 운영 시간대 (시)",
       "note": "평일 09:00~20:00 중 점심(12:00~13:00)을 뺀 두 구간이다. 제도 규정이며 건물 운영 시간대와 다른 값이다 — 감축 여력은 두 구간이 겹치는 시간대로 본다.",
-      "source": "전력시장운영규칙 제12장 · 전력거래소 확인",
-      "source_date": "2026-08-12",
+      "source": "전력시장운영규칙 제12.4.1.2조 (DRT 정의)",
+      "source_date": "2024-02-13",
       "value": [
         [
           9,
@@ -152,114 +152,114 @@
           20
         ]
       ],
-      "verified_on": "2026-08-12"
+      "verified_on": "2026-09-02"
     },
     "dr.max_events_per_day": {
       "label": "경제성DR 하루 최대 발령 횟수",
       "note": "하루 한도. 1회당 지속시간과 곱해 하루 상한 8시간이 된다. **연간 참여 일수 제한은 없다** — 13세션에 넣었던 연 60시간 한도는 경제성DR 의 제약이 아니어서 14세션에 지웠다.",
-      "source": "전력시장운영규칙 제12장 · 전력거래소 확인",
+      "source": "전력거래소 확인 — 전력시장운영규칙에 상한 조문이 없다",
       "source_date": "2026-08-12",
       "value": 2,
-      "verified_on": "2026-08-12"
+      "verified_on": "2026-09-02"
     },
     "dr.national_max_contract_kw": {
       "label": "국민DR 계약전력 상한 (kW)",
       "note": "자원 유형 판정 임계.",
-      "source": "전력시장운영규칙 제12.1.1조",
-      "source_date": "2024-10-24",
+      "source": "전력시장운영규칙 제12.1.1조 제11호",
+      "source_date": "2024-02-13",
       "value": 200.0,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "dr.reference_capacity_kw": {
       "label": "DR 최소 입찰 용량 (kW, 0.1 MW-h)",
       "note": "수요관리사업자가 묶은 **자원 단위** 기준이라 개별 고객 판정이 아니다. 참고 문턱으로만 표시한다.",
       "source": "전력시장운영규칙 제12.4.2.1조 제1항 2호",
-      "source_date": "2024-10-24",
+      "source_date": "2024-02-13",
       "value": 100.0,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "dr.small_medium_industrial_max_kw": {
       "label": "중소형DR 산업체 계약전력 상한 (kW)",
       "note": "자원 유형 판정 임계.",
-      "source": "전력시장운영규칙 제12.1.1조",
-      "source_date": "2024-10-24",
+      "source": "전력시장운영규칙 제12.1.1조 제10호",
+      "source_date": "2024-02-13",
       "value": 2000.0,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "power_factor.adjustment_per_percent": {
       "label": "역률 1%p 당 기본요금 조정률",
       "note": "매 1%당 기본요금의 0.2%.",
       "source": "기본공급약관 제43조 ②",
-      "source_date": "2024-10-24",
+      "source_date": "2026-06-01",
       "value": 0.002,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "power_factor.day_window": {
       "label": "지상역률 판정 창 (시)",
       "note": "구간 시작 시각 기준. 발전 시간대가 아니라 약관이 정한 창이다.",
       "source": "기본공급약관 제43조 ②",
-      "source_date": "2024-10-24",
+      "source_date": "2026-06-01",
       "value": [
         8,
         22
       ],
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "power_factor.deemed_lagging_pct": {
       "label": "무효전력계 미설치 시 간주 지상역률 (%)",
       "note": "역률을 입력하지 않았을 때 쓰는 값이다. 기준(제41조)과 우연히 같은 92% 라 이 값에서 추가·감액이 0원이 되지만, 근거 조문이 다르므로 따로 둔다 — 기준만 바뀌면 여기는 따라 바뀌지 않는다.",
       "source": "기본공급약관 제42조",
-      "source_date": "2024-10-24",
+      "source_date": "2026-06-01",
       "value": 92.0,
-      "verified_on": "2026-08-11"
+      "verified_on": "2026-09-02"
     },
     "power_factor.lagging_floor_pct": {
       "label": "지상역률 하한 (%)",
       "note": "이보다 낮아도 60%로 본다 → 추가 상한 6.4%.",
       "source": "기본공급약관 제43조 ②",
-      "source_date": "2024-10-24",
+      "source_date": "2026-06-01",
       "value": 60.0,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "power_factor.lagging_rebate_cap_pct": {
       "label": "지상역률 감액 상한 (%)",
       "note": "이보다 높아도 97%로 본다 → 감액 상한 1.0%.",
       "source": "기본공급약관 제43조 ②",
-      "source_date": "2024-10-24",
+      "source_date": "2026-06-01",
       "value": 97.0,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "power_factor.lagging_standard_pct": {
       "label": "지상역률 기준 (%)",
       "note": "제42조가 무효전력계 미설치 고객에게 적용하는 간주값이기도 하다.",
       "source": "기본공급약관 제41조·제43조 ②",
-      "source_date": "2024-10-24",
+      "source_date": "2026-06-01",
       "value": 92.0,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "power_factor.leading_floor_pct": {
       "label": "야간 진상역률 하한 (%)",
       "note": "추정이 아니라 원문에 명시된 하한이다.",
       "source": "기본공급약관 제43조 ② 2호 나목",
-      "source_date": "2024-10-24",
+      "source_date": "2026-06-01",
       "value": 60.0,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "power_factor.leading_lagging_deemed_pct": {
       "label": "야간 지상 시 간주 역률 (%)",
       "note": "야간에 지상이면 100%로 간주해 추가요금이 0이 된다. 대부분의 건물이 여기 해당한다.",
       "source": "기본공급약관 제43조 ② 2호 나목",
-      "source_date": "2024-10-24",
+      "source_date": "2026-06-01",
       "value": 100.0,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "power_factor.leading_standard_pct": {
       "label": "야간 진상역률 기준 (%)",
       "note": "22~08시에 적용한다.",
       "source": "기본공급약관 제43조 ② 2호",
-      "source_date": "2024-10-24",
+      "source_date": "2026-06-01",
       "value": 95.0,
-      "verified_on": "2026-08-07"
+      "verified_on": "2026-09-02"
     },
     "season.months": {
       "label": "전력량요금 계절 구분",
