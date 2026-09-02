@@ -86,6 +86,16 @@ YONGIN_A2 = Contract(
     option="선택Ⅱ",
 )
 
+#: 교육용(갑) 고압A 선택Ⅰ. `render_deck.py` 의 `small-edu-a` 벌과 **같은 조건**이다.
+#: **89세션이 고친 자리를 화면으로 보는 자리** — 고치기 전에는 기본요금이
+#: 계약전력 300 kW 로 매겨지고 「계약전력 … kW 기준입니다」 가 붙었다.
+EDUCATION_A_HIGH = Contract(
+    contract_type="교육용전력(갑)",
+    voltage="고압A",
+    contract_kw=300.0,
+    option="선택Ⅰ",
+)
+
 SPOTS: tuple[Spot, ...] = (
     Spot(
         key="요금구조",
@@ -93,6 +103,13 @@ SPOTS: tuple[Spot, ...] = (
         anchor="현재 요금 구조",
         wait_for="피크 특성",
         contract=YONGIN_A2,
+    ),
+    Spot(
+        key="요금구조-교육갑",
+        title="1단계 · 진단 › 현재 요금 구조 (교육용(갑) 고압A)",
+        anchor="현재 요금 구조",
+        wait_for="피크 특성",
+        contract=EDUCATION_A_HIGH,
     ),
     Spot(
         key="피크특성",

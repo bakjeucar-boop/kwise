@@ -181,6 +181,22 @@ CASES: tuple[Case, ...] = (
         province="경기도",
         sigungu="경기도/용인시",
     ),
+    Case(
+        key="small-edu-a",
+        title="소형 · 교육용(갑) 고압A 선택Ⅰ · 계약전력 300 kW",
+        csv=SMALL_CSV,
+        contract_type="education_a",
+        voltage="high_a",
+        option="I",
+        # **89세션이 고친 자리를 실물로 보는 벌이다.** 교육용(갑) 고압은
+        # 제38조 ②로 최대수요전력계가 서므로 기본요금이 요금적용전력에 붙는다
+        # (제68조 ①) — 고치기 전에는 계약전력 300 kW 로 매겨졌다.
+        # **ESS 장이 서는지도 여기서 본다** — 88세션까지는 종별만 보고 막혀
+        # 「성립하지 않는다」 장이 나왔다.
+        contract_kw=300.0,
+        area_m2=1_000.0,
+        building_name="소형 학교(교육용 갑)",
+    ),
 )
 
 BY_KEY = {case.key: case for case in CASES}
