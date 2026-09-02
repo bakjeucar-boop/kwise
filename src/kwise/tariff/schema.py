@@ -79,11 +79,25 @@ class EnergyRates:
 
 @dataclass(frozen=True)
 class OptionRates:
-    """선택요금 하나의 기본요금·전력량요금."""
+    """선택요금 하나의 기본요금·전력량요금.
+
+    Attributes:
+        effective_date: **이 선택요금**의 시행일. 종별 시행일과 다를 수 있다 —
+            일반용(갑)Ⅱ 선택Ⅲ·Ⅳ 는 종별이 2026-06-01 인데 부칙 (2026. 5. 22)
+            제2항 제3호가 「2026년 12월분 요금부터 적용」 이라 따로 선다
+            (스키마 0.3). **종별 값으로 채우는 폴백을 두지 않는다** — 없으면
+            :class:`TariffDataError` 다. 21세션에 걷어낸 폴백을 다시 들이지
+            않는다.
+        time_of_use: **이 선택요금**이 시간대별인지. 종별 안에서 갈린다 —
+            갑Ⅱ 선택Ⅰ·Ⅱ 는 경·중간·최대가 갈리고 선택Ⅲ·Ⅳ 는 '전체시간'
+            단일 단가다. 검증 규칙 1·2 가 이 값으로 갈래를 나눈다.
+    """
 
     option: str
     base_won_per_kw: float
     energy: Mapping[str, EnergyRates]
+    effective_date: str
+    time_of_use: bool
 
     def rate(self, season: str, band: str) -> float:
         if season not in self.energy:
@@ -319,6 +333,9 @@ def _parse_option(option: str, payload: Mapping[str, Any], context: str) -> Opti
         option=option,
         base_won_per_kw=float(_require(payload, "base_won_per_kw", context)),
         energy=energy,
+        # 둘 다 **필수다.** 종별 값으로 채우지 않는다 (스키마 0.3).
+        effective_date=str(_require(payload, "effective_date", context)),
+        time_of_use=bool(_require(payload, "time_of_use", context)),
     )
 
 

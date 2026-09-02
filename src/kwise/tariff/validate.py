@@ -22,7 +22,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import pairwise
 
-from kwise.tariff.schema import BANDS, TariffTable
+from kwise.tariff.schema import BANDS, ContractType, TariffTable, VoltageRates
 
 __all__ = [
     "DEFAULT_POLICY",
@@ -121,17 +121,39 @@ def option_pair_diffs(
     }
 
 
+def _ordered_options(contract: ContractType, voltage: VoltageRates) -> list[str]:
+    return [option for option in contract.options if option in voltage.options]
+
+
+def _comparable_pairs(contract: ContractType, voltage: VoltageRates) -> list[tuple[str, str]]:
+    """견줄 수 있는 선택요금 쌍. **갈래가 다르면 번호가 잇달아도 안 견준다.**
+
+    갑Ⅱ 는 선택Ⅰ·Ⅱ 가 시간대별이고 선택Ⅲ·Ⅳ 가 전체시간이다. 번호순으로
+    Ⅱ→Ⅲ 를 견주면 「기본요금은 오름차순」(8,230 → 7,170)과 「전력량요금은
+    내림차순」(84.1 → 142.6)이 둘 다 깨진다 — **깨진 것은 요금표가 아니라
+    견주는 방법이다.** 갈래 안에서 Ⅰ→Ⅱ 와 Ⅲ→Ⅳ 만 본다.
+    """
+    ordered = _ordered_options(contract, voltage)
+    pairs: list[tuple[str, str]] = []
+    for time_of_use in (True, False):
+        family = [
+            option for option in ordered if voltage.options[option].time_of_use is time_of_use
+        ]
+        pairs.extend(pairwise(family))
+    return pairs
+
+
 def _check_order(table: TariffTable) -> list[ValidationFinding]:
     findings: list[ValidationFinding] = []
     for contract_key, contract in table.contract_types.items():
         for voltage_key, voltage in contract.voltages.items():
-            ordered = [option for option in contract.options if option in voltage.options]
+            ordered = _ordered_options(contract, voltage)
             target = f"{contract_key}/{voltage_key}"
 
             for option in ordered:
                 rates = voltage.options[option]
                 for season, energy in rates.energy.items():
-                    if contract.time_of_use:
+                    if rates.time_of_use:
                         if not energy.light < energy.mid < energy.peak:
                             findings.append(
                                 ValidationFinding(
@@ -152,7 +174,7 @@ def _check_order(table: TariffTable) -> list[ValidationFinding]:
                             )
                         )
 
-            for lower, upper in pairwise(ordered):
+            for lower, upper in _comparable_pairs(contract, voltage):
                 low, high = voltage.options[lower], voltage.options[upper]
                 if not low.base_won_per_kw < high.base_won_per_kw:
                     findings.append(
@@ -198,9 +220,12 @@ def _check_option_pairs(
     findings: list[ValidationFinding] = []
     for contract_key, contract in table.contract_types.items():
         for voltage_key, voltage in contract.voltages.items():
-            ordered = [option for option in contract.options if option in voltage.options]
-            fallback = OptionPairPolicy() if contract.time_of_use else FLAT_RATE_POLICY
-            for lower, upper in pairwise(ordered):
+            for lower, upper in _comparable_pairs(contract, voltage):
+                # **정책도 선택요금의 갈래로 고른다** — 갑Ⅱ 안에 시간대별 쌍과
+                # 전체시간 쌍이 함께 산다.
+                fallback = (
+                    OptionPairPolicy() if voltage.options[lower].time_of_use else FLAT_RATE_POLICY
+                )
                 key = (contract_key, voltage_key, lower, upper)
                 rule = policy.get(key, fallback)
                 target = f"{contract_key}/{voltage_key}/{lower}→{upper}"

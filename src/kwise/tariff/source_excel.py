@@ -506,6 +506,9 @@ def _contract_payload(
                 )
             payload[option] = {
                 "base_won_per_kw": bases.pop(),
+                # 선택요금별 시행일 (스키마 0.3). 엑셀에 없는 값이라 규칙이 든다.
+                "effective_date": effective_date,
+                "time_of_use": rule.time_of_use,
                 "energy": _energy_block(option_rows, rule),
             }
 
@@ -529,7 +532,7 @@ def build_payload(
     *,
     effective_date: str,
     source: str = "한국전력공사 전기요금표(종합)",
-    schema_version: str = "0.2",
+    schema_version: str = "0.3",
     contracts: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """엑셀 한 권을 요금 데이터 JSON 페이로드로 바꾼다.

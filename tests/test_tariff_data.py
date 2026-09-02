@@ -65,8 +65,27 @@ def test_shipped_file_is_found_and_loaded(tariff: TariffTable) -> None:
     assert tariff.source_path is not None
     assert tariff.source_path.name == "tariff_kr_20260601.json"
     assert tariff.effective_date == "2026-06-01"
-    assert tariff.schema_version == "0.2"  # 6세션 준비 — 엑셀 변환·종별 확장
+    assert tariff.schema_version == "0.3"  # 93세션 — 선택요금별 시행일
     assert not tariff.verified  # 청구서 대조 전이다
+
+
+def test_every_option_declares_its_own_effective_date(tariff: TariffTable) -> None:
+    """스키마 0.3 — **선택요금마다 시행일이 있다.** 종별 값을 물려받지 않는다."""
+    counted = 0
+    for contract in tariff.contract_types.values():
+        for voltage in contract.voltages.values():
+            for option in voltage.options.values():
+                assert option.effective_date, (contract.key, voltage.voltage, option.option)
+                counted += 1
+    assert counted == 42  # 종별 여덟의 (전압·선택요금) 칸 전부
+
+
+def test_an_option_without_an_effective_date_fails(payload: dict[str, Any]) -> None:
+    """**폴백을 두지 않는다** (21세션에 걷어낸 것). 없으면 읽기가 실패한다."""
+    copied = copy.deepcopy(payload)
+    del copied["contract_types"]["general_b"]["voltages"]["high_a"]["I"]["effective_date"]
+    with pytest.raises(TariffDataError, match="effective_date"):
+        parse_tariff(copied)
 
 
 def test_available_files_are_sorted() -> None:
