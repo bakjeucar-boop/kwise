@@ -1011,7 +1011,7 @@
         1,
         2
       ],
-      "contract_floor_ratio": null,
+      "contract_floor_ratio": 0.3,
       "voltages": {
         "low": {
           "label": "저압",
@@ -1148,7 +1148,7 @@
         1,
         2
       ],
-      "contract_floor_ratio": 0.15,
+      "contract_floor_ratio": 0.3,
       "voltages": {
         "high_a": {
           "label": "고압A",

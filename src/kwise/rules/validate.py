@@ -127,7 +127,7 @@ def _ratio_range(key: str, value: Any) -> list[ValidationIssue]:
 # 항목별 단일 검사. 키가 없으면 그 검사는 건너뛴다 (항목이 늘어도 깨지지 않는다).
 _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "demand.contract_floor_ratio.default": _ratio,
-    "demand.contract_floor_ratio.education_b": _ratio,
+    "demand.contract_floor_ratio.school_exception": _ratio,
     "demand.months": _months,
     "demand.window_months": _positive,
     "power_factor.lagging_standard_pct": _percent,

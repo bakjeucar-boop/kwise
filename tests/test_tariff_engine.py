@@ -813,11 +813,16 @@ def test_교육용갑_고압이_얼마나_움직였나(tmp_path: Path, tariff: T
 
     88세션에는 이 시험이 「지금은 계약전력으로 매겨진다」 를 지켰다. 89세션에
     고쳤으므로 **사실이 뒤집혔다** — 못을 지우지 않고 뜻을 갈아 끼웠다.
+    **90세션에 한 번 더 움직였다** — 89세션은 기준만 옮기고 하한을 안 걸었다.
 
-        종전  5,800 kW × 5,550원 = 32,190,000원   (계약전력 · 틀렸다)
-        지금    400 kW × 5,550원 =  2,220,000원   (요금적용전력 · 제68조 ①)
+        88세션까지  5,800 kW × 5,550원 = 32,190,000원   (계약전력 · 틀렸다)
+        89세션        400 kW × 5,550원 =  2,220,000원   (하한이 비어 있었다)
+        90세션      1,740 kW × 5,550원 =  9,657,000원   (하한 30% 가 이긴다)
 
-    균일 400 kW · 계약전력 5,800 kW 에서 **14.5배**였다. 되돌리면 여기가 빨개진다.
+    균일 400 kW 는 계약전력 5,800 kW 의 하한 1,740 kW 에 **못 미친다** —
+    제68조 ①의 뒷문장이 걸리는 자리다. 그래서 요금적용전력은 관측이 아니라
+    하한이고, 계약전력 기준과의 차이는 하한 비율의 역수 **3.33배**로 고정된다.
+    되돌리면 여기가 빨개진다.
 
     **계약전력 갈래의 경고도 함께 걷혔다** — 기준이 잠정이 아니게 됐다.
     """
@@ -829,9 +834,10 @@ def test_교육용갑_고압이_얼마나_움직였나(tmp_path: Path, tariff: T
         options=BillingOptions(contract_kw=5_800.0),
     )
     row = bill.monthly.loc[pd.Period("2023-07", freq="M")]
-    assert row["billing_demand_kw"] == pytest.approx(400.0)
-    assert row["base_won"] == pytest.approx(2_220_000.0)
-    assert 5_800.0 * EDUCATION_BASE_A_I / row["base_won"] == pytest.approx(14.5)
+    assert row["demand_before_floor_kw"] == pytest.approx(400.0)
+    assert row["billing_demand_kw"] == pytest.approx(1_740.0)  # 5,800 × 30%
+    assert row["base_won"] == pytest.approx(9_657_000.0)
+    assert 5_800.0 * EDUCATION_BASE_A_I / row["base_won"] == pytest.approx(1 / 0.3)
     assert TENTATIVE_BASE_FEE_BASIS_WARNING not in texts(bill.notices)
 
 
@@ -850,6 +856,30 @@ def test_교육용갑_저압은_계약전력_기준이_맞다(tmp_path: Path, ta
     )
     row = bill.monthly.loc[pd.Period("2023-07", freq="M")]
     assert row["base_won"] == pytest.approx(800.0 * EDUCATION_BASE_LOW)
+
+
+def test_교육용갑_저압에는_요금적용전력_하한이_붙지_않는다(
+    tmp_path: Path, tariff: TariffTable
+) -> None:
+    """**하한은 종별이 아니라 전압이 정한다** (90세션).
+
+    교육용(갑)은 종별 값으로 30% 를 들고 있지만 저압은 제68조 ②라 요금적용전력이
+    계약전력이고 하한이라는 것 자체가 없다. 같은 자료·같은 계약전력으로 고압은
+    1,740 kW 가 되는데 여기는 관측 400 kW 그대로여야 한다.
+    """
+    usage = month_usage(tmp_path, 2023, 7)
+    bill = calculate_bill(
+        usage,
+        tariff,
+        EDUCATION_LOW,
+        options=BillingOptions(contract_kw=5_800.0),
+    )
+    row = bill.monthly.loc[pd.Period("2023-07", freq="M")]
+    assert row["billing_demand_kw"] == pytest.approx(400.0)  # 1,740 이 아니다
+    assert row["base_won"] == pytest.approx(5_800.0 * EDUCATION_BASE_LOW)
+    # **결과에도 실리지 않아야 한다.** 실리면 계약전력 조정이 없는 하한으로
+    # 목표를 세운다 — 저압은 계약전력을 낮추면 기본요금이 바로 내려간다.
+    assert bill.contract_floor_ratio is None
 
 
 @pytest.mark.parametrize("contract_type", ["general_a_1", "industrial_a_1"])

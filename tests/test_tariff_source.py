@@ -175,6 +175,10 @@ def test_thresholds_and_floor_ratios_survive_the_conversion(tariff: TariffTable)
     """계약전력 임계값과 요금적용전력 하한은 엑셀에 없다. 코드가 들고 있다."""
     # 갑Ⅱ 에 하한 30% 가 있는 것이 맞다 (61세션). 제68조 제1항의 하한은 최대수요
     # 전력계 고객 전체에 걸리고, 갑Ⅱ 는 저압이 없어 언제나 그 고객이다.
+    #
+    # **교육용 둘도 30% 다** (90세션에 세칙 원문을 읽고 고쳤다). 15% 는 종별
+    # 속성이 아니라 **신청한 초·중·고교·유치원에만 붙는 고객별 특례**다
+    # (시행세칙 별표4 8. 나.(1)) — 아래 시험이 그것을 못으로 박는다.
     expected = {
         "general_a_1": (300.0, "below", None),
         "general_a_2": (300.0, "below", 0.3),
@@ -182,8 +186,8 @@ def test_thresholds_and_floor_ratios_survive_the_conversion(tariff: TariffTable)
         "industrial_a_1": (300.0, "below", None),
         "industrial_a_2": (300.0, "below", 0.3),
         "industrial_b": (300.0, "above", 0.3),
-        "education_a": (1_000.0, "below", None),  # 교육용은 1,000 kW 다
-        "education_b": (1_000.0, "above", 0.15),  # 15% 특례
+        "education_a": (1_000.0, "below", 0.3),  # 교육용은 1,000 kW 다
+        "education_b": (1_000.0, "above", 0.3),
     }
     for key, (threshold, direction, floor) in expected.items():
         contract = tariff.contract(key)
@@ -193,6 +197,24 @@ def test_thresholds_and_floor_ratios_survive_the_conversion(tariff: TariffTable)
             assert contract.contract_floor_ratio is None, key
         else:
             assert contract.contract_floor_ratio == pytest.approx(floor), key
+
+
+def test_no_contract_type_carries_the_school_exception_as_its_floor(tariff: TariffTable) -> None:
+    """**15% 를 종별 기본값으로 든 종별이 하나도 없어야 한다** (90세션).
+
+    시행세칙 별표4 8.「초·중·고교 및 유치원 전기요금 적용」 은 약관 제58조
+    적용대상 **중** 초·중등교육법 제2조와 유아교육법 제2조 제2호 시설에만
+    붙고, 「고객의 신청일이 속하는 월분부터 적용한다」 라 **신청해야 붙는다.**
+    갑/을을 가르지도 않는다 — 종별 속성으로 얹으면 신청하지 않은 고객의
+    기본요금이 절반으로 나온다.
+
+    같은 특례가 요금적용전력을 **당월분 최대수요전력**으로 바꾸는데 도구는
+    제68조 ①의 12개월 창을 쓴다. 그 창까지 갈아 끼워야 특례를 옳게 계산하므로
+    **하한만 떼어 넣을 수 없다** — 특례 자체는 미해결로 남는다.
+    """
+    for key, contract in tariff.contract_types.items():
+        floor = contract.contract_floor_ratio
+        assert floor is None or floor == pytest.approx(0.3), key
 
 
 def test_demand_rules_survive_the_conversion(tariff: TariffTable) -> None:

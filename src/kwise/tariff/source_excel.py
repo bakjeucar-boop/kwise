@@ -136,8 +136,11 @@ class ContractRule:
             덮는다 (89세션).
         time_of_use: 시간대별 요금제인지. 갑Ⅰ·교육용(갑)은 '전체시간' 단일 단가다.
         contract_floor_ratio: 요금적용전력 하한 비율. 제68조 제1항의 30% 는
-            최대수요전력계 고객 전체에 걸리므로 **갑Ⅱ에도 있다.**
-            계약전력 기준(``"contract"``) 종별만 하한 개념이 없어 None 이다.
+            최대수요전력계 고객 전체에 걸리므로 **갑Ⅱ에도 교육용에도 있다**
+            (90세션). 종별로 갈리지 않으므로 값은 30% 하나뿐이고, 전압이
+            전부 계약전력 기준인 종별(갑Ⅰ)만 하한 개념이 없어 None 이다.
+            **전압마다 기준이 갈리는 종별(교육용(갑))은 값을 들고 있고**
+            계약전력 기준 전압에서 그것을 쓰지 않는 것은 요금 엔진이 한다.
     """
 
     key: str
@@ -230,7 +233,12 @@ CONTRACT_RULES: Mapping[str, ContractRule] = {
         threshold_direction="below",
         base_fee_basis="billing_demand",
         time_of_use=False,
-        contract_floor_ratio=None,
+        # 제68조 ①의 30% 다 (90세션에 세칙 원문으로 갈랐다). 그 항의 하한은
+        # **최대수요전력계 고객 전체**에 걸리고 종별로 갈리지 않는다 — 고압에서
+        # 제68조 ①을 타는 이상 하한도 함께 온다. 저압은 제68조 ②라 하한이
+        # 없는데, 그 가르기는 :func:`kwise.tariff.engine.compute_bill` 이 기본요금
+        # 기준으로 한다 (계약전력 기준이면 하한을 적용하지 않는다).
+        contract_floor_ratio=0.3,
         voltage_base_fee_basis=(("low", "contract"),),
     ),
     "교육용(을)": ContractRule(
@@ -240,7 +248,12 @@ CONTRACT_RULES: Mapping[str, ContractRule] = {
         threshold_direction="above",
         base_fee_basis="billing_demand",
         time_of_use=True,
-        contract_floor_ratio=0.15,  # 교육용 특례 — 일반용·산업용의 30% 가 아니다
+        # **여기도 30% 다** (90세션). 6세션부터 0.15 였는데 그 15% 는 종별
+        # 속성이 아니다 — 시행세칙 별표4 8.「초·중·고교 및 유치원 전기요금
+        # 적용」 은 약관 제58조 적용대상 **중** 초·중등교육법 제2조와
+        # 유아교육법 제2조 제2호 시설에만 붙고 「고객의 신청일이 속하는
+        # 월분부터」 적용한다. 갑/을을 가르지도 않는다.
+        contract_floor_ratio=0.3,
     ),
 }
 

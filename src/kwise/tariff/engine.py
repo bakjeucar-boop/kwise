@@ -397,10 +397,16 @@ def calculate_bill(
     before_floor = billing_demands(
         demand_basis, prior_peaks=opts.prior_peaks, demand_months=contract.demand_months
     )
+    # **하한은 제68조 ①을 타는 전압에서만 건다** (90세션). 그 항의 30% 는
+    # 최대수요전력계 고객의 것이고, 계약전력 기준(제68조 ②) 고객에게는 없다 —
+    # 교육용(갑)처럼 전압마다 기준이 갈리는 종별에서 이 가르기가 필요하다.
+    # **결과에도 이 값을 싣는다** — 계약전력 조정(7.2)이 그것으로 목표를 잡으므로
+    # 종별 값을 그대로 실으면 저압에서 없는 하한으로 목표를 세운다.
+    floor_ratio = None if base_on_contract else contract.contract_floor_ratio
     demands = apply_contract_floor(
         before_floor,
         contract_kw=opts.contract_kw,
-        floor_ratio=contract.contract_floor_ratio,
+        floor_ratio=floor_ratio,
     )
 
     # 기본요금 기준 — 요금 데이터의 종별·전압 속성이 정한다 (제68조 ①·②).
@@ -653,7 +659,7 @@ def calculate_bill(
         tariff_label=table.label,
         effective_date=table.effective_date,
         base_rate_won_per_kw=rates.base_won_per_kw,
-        contract_floor_ratio=contract.contract_floor_ratio,
+        contract_floor_ratio=floor_ratio,
         demand_months=contract.demand_months,
         contract_kw=opts.contract_kw,
         period_start=usage.meta.start,

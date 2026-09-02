@@ -86,7 +86,9 @@ def test_law_derived_values_are_where_they_should_be(sandbox: Path) -> None:
     assert rule_value("power_factor.adjustment_per_percent") == 0.002
     assert rule_value("demand.months") == [7, 8, 9, 12, 1, 2]
     assert rule_value("demand.contract_floor_ratio.default") == 0.30
-    assert rule_value("demand.contract_floor_ratio.education_b") == 0.15
+    # 15% 는 종별 기본값이 아니라 **신청한 초·중·고교·유치원**의 특례다 (90세션).
+    # 값은 그대로 두고 이름만 사실에 맞췄다 — 도구는 아직 이 특례를 안 쓴다.
+    assert rule_value("demand.contract_floor_ratio.school_exception") == 0.15
     assert rule_value("contract_type.threshold_kw.education") == 1000
     assert rule_value("dr.reference_capacity_kw") == 100.0
     assert rule_value("dr.national_max_contract_kw") == 200.0
