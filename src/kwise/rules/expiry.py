@@ -81,15 +81,23 @@ def _threshold(assumptions: RuleSet, key: str, fallback_key: str) -> float:
 
 
 def _scope_of(item: RuleItem) -> tuple[str, str, str]:
-    """항목이 어느 임계를 쓰는지. (구분, 임계 키, 확인처 키)"""
+    """항목이 어느 임계를 쓰는지. (구분, 임계 키, 확인처 키)
+
+    **어느 파일에 있는가가 이름보다 먼저다** (89세션). 앞서는 ``dr.`` 로 시작하는
+    키를 무조건 「전력시장운영규칙」 으로 봐서, `assumptions.json` 에 있는
+    판단값 셋(`dr.high_capacity_kw` · `dr.low_load_multiple` ·
+    `dr.registration_percentile`)이 **법령값 행세를 하고 있었다.** 89세션에
+    `dr.event_hours` · `dr.max_events_per_day` 를 옮기면서 이 순서를 뒤집었다 —
+    안 뒤집으면 옮겨도 화면이 그대로다.
+    """
+    if not item.is_statutory:
+        if item.key.startswith("ui."):
+            return "화면 규약", "expiry.reference_months", "화면 규약"
+        return "판단값", "expiry.reference_months", "ESS 참고단가"
     if item.key.startswith("tariff.") or "unit_rate" in item.key:
         return "요금 단가", "expiry.tariff_months", "요금 단가"
     if item.key.startswith("dr."):
         return "전력시장운영규칙", "expiry.statute_months", "전력시장운영규칙"
-    if item.key.startswith("ui."):
-        return "화면 규약", "expiry.reference_months", "화면 규약"
-    if not item.is_statutory:
-        return "판단값", "expiry.reference_months", "ESS 참고단가"
     return "약관·규칙", "expiry.statute_months", "기본공급약관"
 
 

@@ -373,7 +373,7 @@ def test_expiry_warns_after_the_threshold(sandbox: Path) -> None:
     # **확인일이 없는 항목은 시행일로 잰다.** 지금은 모든 항목에 확인일이 있으므로
     # (14세션에 DR 네 항목을 확인해 채웠다) 하나를 지워 그 경로를 확인한다.
     stripped = json.loads((sandbox / "rules_kr.json").read_text(encoding="utf-8"))
-    stripped["items"]["dr.max_events_per_day"].pop("verified_on")
+    stripped["items"]["dr.excluded_days"].pop("verified_on")
     (sandbox / "rules_kr.json").write_text(
         json.dumps(stripped, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -381,7 +381,7 @@ def test_expiry_warns_after_the_threshold(sandbox: Path) -> None:
     pending = [
         item
         for item in check_expiry(rules(), assumptions(), today=late)
-        if item.key == "dr.max_events_per_day"
+        if item.key == "dr.excluded_days"
     ]
     assert pending and pending[0].basis == "시행일"
 
@@ -433,6 +433,28 @@ def test_expiry_warnings_bundle_everything(sandbox: Path) -> None:
     # 기상을 빼고 볼 수도 있어야 한다.
     only_rules = expiry_warnings(today=dt.date(2028, 10, 1), include_weather=False)
     assert not any(item.scope == "기상" for item in only_rules)
+
+
+def test_구분은_키_이름이_아니라_파일이_정한다(sandbox: Path) -> None:
+    r"""**`dr.` 로 시작한다고 다 법령값이 아니다** (89세션).
+
+    `_scope_of` 가 키 접두어를 파일보다 먼저 보고 있어서 `assumptions.json` 에
+    있는 판단값도 「전력시장운영규칙」 으로 보였다. 89세션에 `dr.event_hours`
+    와 `dr.max_events_per_day` 를 옮기면서 순서를 뒤집었다 — **안 뒤집으면
+    옮겨도 화면이 그대로다.**
+    """
+    from kwise.rules.expiry import source_link_of
+
+    judged = assumptions()
+    for key in ("dr.event_hours", "dr.max_events_per_day", "dr.high_capacity_kw"):
+        scope, _link = source_link_of(judged[key])
+        assert scope == "판단값", key
+    assert source_link_of(assumptions()["ui.notice_budget"])[0] == "화면 규약"
+
+    statutory = rules()
+    assert "dr.event_hours" not in statutory
+    assert source_link_of(statutory["dr.market_hours"])[0] == "전력시장운영규칙"
+    assert source_link_of(statutory["demand.months"])[0] == "약관·규칙"
 
 
 # ===================================================================== 9세션 — 남은 상수

@@ -124,6 +124,10 @@ PARTICIPATION_NOTICE = (
 
 # 값은 파일에 있다 (요구사항서 12장). 법령 유래는 ``rules_kr.json``,
 # 우리 판단값은 ``assumptions.json`` 이다 — **섞지 않는다.**
+#
+# **`dr.` 로 시작한다고 다 법령값이 아니다** (89세션). 조문을 못 찾은 둘
+# (`dr.event_hours` · `dr.max_events_per_day`)을 판단값으로 옮겼다 — 87·88세션이
+# 규칙 원문을 뒤져 「그 수를 정한 조문이 없다」 를 확인한 자리다.
 
 
 def dr_reference_capacity_kw() -> float:
@@ -179,13 +183,21 @@ def overlap_windows(
 
 
 def dr_max_events_per_day() -> int:
-    """하루 최대 발령 횟수."""
-    return int(rule_value("dr.max_events_per_day"))
+    """하루 최대 발령 횟수. **판단값이다** (89세션에 옮겼다).
+
+    규칙 별표28 3.2.5 는 1일 2회 이상 발령됐을 때의 고객기준부하 산정 규정이지
+    「하루 최대 2회」 라는 상한이 아니다. 상한 조문은 찾지 못했다.
+    """
+    return int(assumption("dr.max_events_per_day"))
 
 
 def dr_event_hours() -> tuple[float, float]:
-    """1회 지속시간 범위 (시간)."""
-    low, high = rule_value("dr.event_hours")
+    """1회 지속시간 범위 (시간). **판단값이다** (89세션에 옮겼다).
+
+    「1~4시간」 은 규칙 제12.3.2.1조 언저리의 **감축시험** 규정에서 온 수이고,
+    의무감축요청의 1회 지속시간 상·하한을 정한 조문은 찾지 못했다.
+    """
+    low, high = assumption("dr.event_hours")
     return (float(low), float(high))
 
 
