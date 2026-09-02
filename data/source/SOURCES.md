@@ -28,6 +28,59 @@
 **지금 폴더에는 여덟이 있다** — 위 일곱에 요금표 PDF 사본 하나가 더 있다.
 바로 아래 절이 그 사본을 설명한다.
 
+## 코드가 이 폴더를 읽는가 (87세션에 전수로 셌다) — **자리 둘 · 파일 하나**
+
+이름이 사실과 어긋난 채 남아 있으니 **그것이 계산에 닿는지**부터 갈랐다.
+`src` · `tools` · `tests` · `docs` · `data` 를 파일 이름 여덟으로 전수 grep 했다.
+
+**여는 자리는 둘뿐이고 둘 다 같은 xlsx 하나를 연다.**
+
+| 자리 | 무엇을 여나 | 언제 도나 |
+|---|---|---|
+| `tools\build_tariff.py:34` `DEFAULT_SOURCE` | `2026-06-01_KEPCO_Electricity_Tariff.xlsx` | **사람이 부를 때만.** 요금표를 새 판으로 바꿀 때 쓰는 변환기다 |
+| `tests\test_tariff_source.py:51` `SOURCE_XLSX` | 같은 xlsx | pytest 를 돌릴 때 |
+
+**PDF 넷과 txt 둘은 어떤 코드도 열지 않는다.** `pypdf` · `PdfReader` ·
+`pdftotext` 가 `src` · `tools` · `tests` 어디에도 **한 건도 없다**. 사람이 읽는
+원문이다.
+
+**`tariff_kr_20260601.json` 의 `source_file` 은 읽히지 않는다** — 85세션 결과를
+믿지 않고 다시 셌다. **쓰는 자리 하나**(`source_excel.py:536`, 변환할 때 이름을
+적어 둔다)뿐이고 **읽는 자리는 0건**이다. 값이 틀려도 계산이 안 움직인다.
+
+**85세션이 고친 「참조 열한 자리」 는 이렇게 갈린다** — 파일을 여는 코드는
+그 가운데 **둘**이다.
+
+| 갈래 | 몇 | 어디 |
+|---|---|---|
+| **파일을 실제로 연다** | **2** | `build_tariff.py` · `test_tariff_source.py` |
+| 데이터 값이지만 아무도 안 읽는다 | 1 | `tariff_kr_20260601.json` 의 `source_file` |
+| 글자뿐 (docstring · 문서) | 8 | `source_excel.py` 머리글 · `dr.py` · `demand_response.py` · `power_factor.py` · `TECHNICAL.md` · `project-overview.md` · `REQUIREMENTS_kwise.md` 둘 |
+
+### 판정 — **닿지 않는다. 다만 못 하나가 조용히 빠진다**
+
+**앱이 도는 길에는 `data\source\` 가 없다.** 화면은 `data\tariff_kr_20260601.json`
+을 읽지 원문을 열지 않는다. 그러니 **이 폴더의 이름이 틀려도 계산 결과는 한 자도
+안 움직인다.**
+
+**그런데 xlsx 이름을 바꾸면 시험 여덟 건이 「실패」 가 아니라 「skip」 이 된다.**
+`source_path` 픽스처가 파일이 없으면 `pytest.skip` 을 부른다
+(`test_tariff_source.py:57`). 32건 가운데 **8건**이 조용히 빠지고 나머지는
+그대로 통과하므로 **초록으로 보인다** — `CLAUDE.md` 8번 항목이 말하는 그 모양이다.
+
+| 어떻게 빠지나 | 시험 |
+|---|---|
+| `source_path` 직접 (6) | `..._orders_the_seasons_differently` · **`test_shipped_json_equals_a_fresh_conversion`** · `..._time_bands_come_from_the_info_sheet` · `..._conversion_can_be_narrowed_to_one_type` · `..._unknown_contract_name_is_rejected` · `..._rate_rows_carry_every_season_by_name` |
+| `converted` 픽스처 경유 (2) | `test_industrial_b_summer_peak_is_2345` · `test_general_b_sixty_values_are_unchanged` |
+
+**빠지는 여덟 가운데 `test_shipped_json_equals_a_fresh_conversion` 이 아프다** —
+납품하는 JSON 이 엑셀과 같은지 맞대는 **유일한 못**이다. 그것이 skip 되면 JSON 이
+원문과 갈라져도 아무도 모른다.
+
+**그래서 이름을 바꾸려면 `build_tariff.py:34` 와 `test_tariff_source.py:51` 을
+같은 커밋에서 함께 고친다.** 고쳤는지는 **건수로 본다** — 1,522 에서 8이 줄어
+1,514 가 되면 안 고친 것이다.
+
 ## 85세션이 이 폴더에 한 일 — 그리고 「없어진 8월 파일」
 
 **86세션에 되짚었다. 없어진 것이 없고 되살릴 것도 없다.** 한 파일이 이름을
