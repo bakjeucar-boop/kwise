@@ -92,14 +92,16 @@ AMI_BASIS_NOTICE = (
 # 전압으로 전기를 공급받는 고객에게는 최대수요전력과 무효전력을 계량할 수 있는
 # 전력량계를 설치한다」 고 적었다. 61세션에 약관 원문으로 확인했다.
 #
-#     저압이 없는 종별 (을 · 갑Ⅱ)      언제나 고압 → 요금적용전력 (제68조 ①)
-#     저압이 있는 종별 (갑Ⅰ · 교육용갑)  저압이면 계약전력 (제68조 ②)
+#     저압이 없는 종별 (을 · 갑Ⅱ)   언제나 고압 → 요금적용전력 (제68조 ①)
+#     교육용(갑) 고압A·B            제38조 ②로 계량기가 선다 → 요금적용전력 (89세션)
+#     교육용(갑) 저압 · 갑Ⅰ         계량기가 없는 것이 기본값 → 계약전력 (제68조 ②)
 #
-# **아래 문구는 뒤쪽만 남았다.** 갑Ⅱ 는 61세션에 요금적용전력으로 옮겼고
-# (용인 청구서로 확인), 갑Ⅰ·교육용(갑)은 지금 구조가 종별당 기준 하나뿐이라
-# 저압 쪽에 맞춰 두었다. 이 종별을 **고압**으로 쓰면 기본요금이 과대 산출된다.
+# **아래 문구는 계약전력 갈래에만 남았다.** 89세션에 전압별 기준이 서면서
+# 「고압으로 공급받는다면」 이라는 가정이 사라졌다 — 전압은 이제 안다.
+# 남은 잠정은 **계량기가 실제로 섰는가**뿐이다: 갑Ⅰ 고압 행은 저압계량 예외
+# 경로(제57조 ④·제59조 ⑤)이고, 저압은 제38조 ③·④가 「설치할 수 있다」(재량)다.
 TENTATIVE_BASE_FEE_BASIS_WARNING = (
-    "이 종별은 저압과 고압을 함께 씁니다. 고압으로 공급받는다면 기본요금이 "
+    "기본요금을 계약전력으로 매겼습니다. 최대수요전력계가 설치된 고객이면 "
     "요금적용전력 기준이라 실제보다 크게 나옵니다 — 청구서로 확인하십시오."
 )
 
@@ -313,6 +315,8 @@ def calculate_bill(
     opts = options if options is not None else BillingOptions()
     rates = table.rates(selection)
     contract = table.contract(selection.contract_type)
+    # **전압을 빼고 읽지 않는다** (89세션). 아래 네 자리가 같은 값을 본다.
+    base_on_contract = contract.base_fee_on_contract_at(selection.voltage)
     interval = usage.meta.interval_minutes
     index = pd.DatetimeIndex(usage.kw.index)
 
@@ -399,9 +403,9 @@ def calculate_bill(
         floor_ratio=contract.contract_floor_ratio,
     )
 
-    # 기본요금 기준 — 요금 데이터의 종별 속성이 정한다 (제68조 ①·②).
+    # 기본요금 기준 — 요금 데이터의 종별·전압 속성이 정한다 (제68조 ①·②).
     # 섞으면 기본요금이 통째로 틀리므로 계약전력이 없으면 계산하지 않는다.
-    if contract.base_fee_on_contract:
+    if base_on_contract:
         if opts.contract_kw is None:
             raise TariffDataError(
                 f"{contract.label} 은 기본요금을 계약전력으로 매깁니다. "
@@ -491,9 +495,9 @@ def calculate_bill(
     )
 
     notices: list[Notice] = []
-    if contract.base_fee_on_contract:
+    if base_on_contract:
         # 계약전력 기준이다. 요금적용전력 하한·이월 규칙은 기본요금에 관여하지 않는다.
-        # **기준 자체가 전압에 달렸음을 먼저 밝힌다** — 뒤의 경고들은 그 전제 위에 있다.
+        # **기준이 잠정임을 먼저 밝힌다** — 뒤의 경고들은 그 전제 위에 있다.
         notices.append(
             warn(TENTATIVE_BASE_FEE_BASIS_WARNING, fact="tariff.tentative_base_fee_basis")
         )
@@ -557,7 +561,7 @@ def calculate_bill(
                     fact="quality.over_contract",
                 )
             )
-    if not opts.prior_peaks and not contract.base_fee_on_contract:
+    if not opts.prior_peaks and not base_on_contract:
         # **근거다.** 요금적용전력이 왜 그 값인지 설명한다 — 툴팁과 보고서로 간다.
         # 25세션에 코드 식별자(``prior_peaks=``)와 요구사항서 번호를 걷어냈다.
         # 사용자가 할 수 있는 일이 아닌 것을 시키지 않는다.
@@ -609,7 +613,7 @@ def calculate_bill(
             "요금적용전력은 참고용으로만 "
             "함께 싣습니다 — 피크를 낮춰도 계약전력을 낮추지 않으면 기본요금은 그대로입니다."
         )
-        if contract.base_fee_on_contract
+        if base_on_contract
         else (
             "요금적용전력은 중간·최대부하 시간대의 최대수요만 대상으로 하며 "
             f"(경부하 제외), 대상월은 {'·'.join(str(m) for m in contract.demand_months)}월과 "

@@ -51,7 +51,9 @@ BANDS: tuple[str, ...] = ("light", "mid", "peak")
 DEFAULT_REGION_GROUP = "mainland"
 _TARIFF_GLOB = "tariff_*.json"
 
-# 기본요금 기준 — 을 종별은 요금적용전력, 갑 종별은 계약전력이다 (기본공급약관 제68조).
+# 기본요금 기준 — 갈림길은 갑/을이 아니라 **최대수요전력계가 섰는가**다
+# (기본공급약관 제68조 ①·②). 그것을 정하는 것은 공급전압이라(제38조 ②·③)
+# **종별이 아니라 전압으로 가른다** (89세션).
 BASE_FEE_BILLING_DEMAND = "billing_demand"
 BASE_FEE_CONTRACT = "contract"
 BASE_FEE_BASES: tuple[str, ...] = (BASE_FEE_BILLING_DEMAND, BASE_FEE_CONTRACT)
@@ -91,11 +93,17 @@ class OptionRates:
 
 @dataclass(frozen=True)
 class VoltageRates:
-    """전압구분 하나의 선택요금 모음."""
+    """전압구분 하나의 선택요금 모음.
+
+    Attributes:
+        base_fee_basis: 이 전압에서만 다른 기본요금 기준. ``None`` 이면 종별
+            기본값(:attr:`ContractType.base_fee_basis`)을 따른다.
+    """
 
     voltage: str
     label: str
     options: Mapping[str, OptionRates]
+    base_fee_basis: str | None = None
 
 
 @dataclass(frozen=True)
@@ -109,9 +117,13 @@ class ContractType:
         contract_floor_ratio: 요금적용전력의 계약전력 대비 하한. 일반용(을)·산업용(을)
             30%, 교육용(을) 15% 특례. 확인되지 않은 종별은 ``null`` 로 두면
             하한을 적용하지 않고 절감액도 산출하지 않는다.
-        base_fee_basis: 기본요금의 기준. ``"billing_demand"`` 는 요금적용전력(을 종별),
-            ``"contract"`` 는 계약전력(갑 종별)이다. **둘을 섞으면 기본요금이
-            통째로 틀린다.**
+        base_fee_basis: 기본요금의 기준 **기본값**. ``"billing_demand"`` 는
+            요금적용전력(제68조 ①), ``"contract"`` 는 계약전력(제68조 ②)이다.
+            **갑/을 구분이 아니다** — 갈림길은 최대수요전력계 설치 여부이고
+            그것을 정하는 것은 공급전압이다. 전압마다 다르면
+            :attr:`VoltageRates.base_fee_basis` 가 이 값을 덮는다.
+            **읽을 때는 반드시 :meth:`base_fee_on_contract_at` 을 쓴다** —
+            전압을 빼고 읽으면 기본요금이 통째로 틀린다.
         time_of_use: 시간대별 요금제인지. 갑Ⅰ·교육용(갑)은 '전체시간' 단일 단가라
             세 시간대 단가가 모두 같다. 검증 규칙 1 의 ``경<중간<최대`` 를
             적용하지 않는다.
@@ -132,10 +144,16 @@ class ContractType:
     base_fee_basis: str = BASE_FEE_BILLING_DEMAND
     time_of_use: bool = True
 
-    @property
-    def base_fee_on_contract(self) -> bool:
-        """기본요금이 계약전력 기준인가 (갑 종별)."""
-        return self.base_fee_basis == BASE_FEE_CONTRACT
+    def base_fee_on_contract_at(self, voltage: str) -> bool:
+        """이 전압에서 기본요금이 계약전력 기준인가 (제38조 ②·③ · 제68조 ①·②).
+
+        **이름에 전압이 붙어 있는 것이 장치다** (89세션). 앞서는 종별 속성
+        하나를 읽는 프로퍼티라 전압을 빼고 읽어도 조용히 지나갔고, 그 바람에
+        교육용(갑) 고압 기본요금이 14.5배로 나왔다.
+        """
+        rates = self.voltages.get(voltage)
+        basis = rates.base_fee_basis if rates is not None else None
+        return (basis if basis is not None else self.base_fee_basis) == BASE_FEE_CONTRACT
 
 
 @dataclass(frozen=True)
@@ -303,6 +321,20 @@ def _parse_option(option: str, payload: Mapping[str, Any], context: str) -> Opti
     )
 
 
+def _parse_base_fee_basis(payload: Mapping[str, Any], context: str) -> str | None:
+    """``base_fee_basis`` 를 검사해 돌려준다. 적혀 있지 않으면 ``None``."""
+    raw = payload.get("base_fee_basis")
+    if raw is None:
+        return None
+    basis = str(raw)
+    if basis not in BASE_FEE_BASES:
+        raise TariffDataError(
+            f"{context}: 알 수 없는 기본요금 기준입니다: {basis!r} "
+            f"(가능: {', '.join(BASE_FEE_BASES)})"
+        )
+    return basis
+
+
 def _parse_contract(key: str, payload: Mapping[str, Any]) -> ContractType:
     context = f"contract_types/{key}"
     options = tuple(str(item) for item in _require(payload, "options", context))
@@ -320,13 +352,9 @@ def _parse_contract(key: str, payload: Mapping[str, Any]) -> ContractType:
             voltage=voltage,
             label=str(voltage_payload.get("label", voltage)),
             options=parsed,
+            base_fee_basis=_parse_base_fee_basis(voltage_payload, voltage_context),
         )
-    base_fee_basis = str(payload.get("base_fee_basis", BASE_FEE_BILLING_DEMAND))
-    if base_fee_basis not in BASE_FEE_BASES:
-        raise TariffDataError(
-            f"{context}: 알 수 없는 기본요금 기준입니다: {base_fee_basis!r} "
-            f"(가능: {', '.join(BASE_FEE_BASES)})"
-        )
+    base_fee_basis = _parse_base_fee_basis(payload, context) or BASE_FEE_BILLING_DEMAND
     return ContractType(
         key=key,
         label=str(_require(payload, "label", context)),

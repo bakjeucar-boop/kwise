@@ -1892,24 +1892,31 @@ def test_케이스_스터디가_ESS_를_돌린다() -> None:
 # 봤는데, 사용자 실물의 투자비는 기본 단가 그대로였다 — 갈림길은 단가가 아니라
 # **계약종별**이었다.
 #
-#     을 종별   기본요금이 **요금적용전력**에 붙는다 → 피크를 낮추면 그만큼 준다
-#     갑 종별   기본요금이 **계약전력**에 붙는다     → 아무리 깎아도 그대로다
+#     요금적용전력 기준   피크를 낮추면 기본요금이 그만큼 준다
+#     계약전력 기준       아무리 깎아도 그대로다
 #
-# 갑Ⅰ·교육용(갑)은 전력량요금까지 **단일 단가**라 충·방전 차익도 0 이고 왕복손실만
-# 남는다 — 절감액이 **음수**가 된다. 개략 곡선은 그것을 모르고 「성립하는 목표」 를
-# 만들어 내므로, 정밀화가 후보를 못 찾아 창만 상한까지 넓히고 끝난다.
+# **「계약종별」 이 아니라 「종별과 전압」 이었다** (61세션 → 89세션). 갑Ⅰ 과
+# 교육용(갑) **저압**은 전력량요금까지 **단일 단가**라 충·방전 차익도 0 이고
+# 왕복손실만 남는다 — 절감액이 **음수**가 된다. 개략 곡선은 그것을 모르고
+# 「성립하는 목표」 를 만들어 내므로, 정밀화가 후보를 못 찾아 창만 상한까지
+# 넓히고 끝난다. **교육용(갑) 고압은 89세션에 이 갈래에서 빠졌다.**
 
 _KAP_SELECTION = ("general_a_1", "high_a", "I")
 
 
-def _kap_optimum(tariff: TariffTable, contract_type: str = "general_a_1") -> EssOptimum:
+def _kap_optimum(
+    tariff: TariffTable,
+    contract_type: str = "general_a_1",
+    voltage: str = "high_a",
+    option: str = "I",
+) -> EssOptimum:
     from kwise.diagnose import ContractInfo, diagnose
     from kwise.io import load_usage
     from kwise.quality import check_quality
     from kwise.tariff import BillingOptions, calculate_bill
 
     usage = load_usage(PROJECT_ROOT / "input" / "사용량조회_20240429.csv")
-    selection = TariffSelection(contract_type, "high_a", "I")
+    selection = TariffSelection(contract_type, voltage, option)
     options = BillingOptions(contract_kw=6_000.0)
     quality = check_quality(usage, contract_kw=6_000.0)
     diag = diagnose(
@@ -1938,14 +1945,21 @@ def _kap_optimum(tariff: TariffTable, contract_type: str = "general_a_1") -> Ess
 
 
 @pytest.mark.parametrize(
-    "contract_type",
+    ("contract_type", "voltage", "option"),
     # **갑Ⅱ 둘이 61세션에 빠졌다.** 갑Ⅱ 는 저압이 없어 기본요금이 요금적용전력에
     # 붙는다 (제38조 제2항 · 제68조 제1항) — 피크를 낮추면 기본요금이 줄고,
     # 따라서 ESS 가 성립할 수 있다. 판정은 종별 이름이 아니라 기준 필드가 한다.
-    ["general_a_1", "industrial_a_1", "education_a"],
+    #
+    # **89세션에 교육용(갑)이 고압에서 빠지고 저압으로 남았다.** 제38조 ③이
+    # 「설치할 수 있다」(재량)라 저압은 계량기가 없는 것이 기본값이다.
+    [
+        ("general_a_1", "high_a", "I"),
+        ("industrial_a_1", "high_a", "I"),
+        ("education_a", "low", "single"),
+    ],
 )
 def test_계약전력_기준_종별은_피크저감으로_기본요금이_줄지_않는다(
-    tariff: TariffTable, contract_type: str
+    tariff: TariffTable, contract_type: str, voltage: str, option: str
 ) -> None:
     """**기본 단가에서 열리던 갈래다** (56세션 1절 · 61세션에 범위를 좁혔다).
 
@@ -1956,7 +1970,7 @@ def test_계약전력_기준_종별은_피크저감으로_기본요금이_줄지
     """
     from kwise.measures.ess import BASE_FEE_ON_CONTRACT_CONCLUSION
 
-    optimum = _kap_optimum(tariff, contract_type)
+    optimum = _kap_optimum(tariff, contract_type, voltage, option)
     assert not optimum.viable, "갑 종별에서 목표를 내면 안 된다"
     assert optimum.target_kw == 0.0
     assert optimum.points == (), "잴 것이 없으므로 표도 싣지 않는다"
@@ -1967,16 +1981,23 @@ def test_계약전력_기준_종별은_피크저감으로_기본요금이_줄지
     assert BASE_FEE_ON_CONTRACT_CONCLUSION.startswith("{label}")
 
 
-@pytest.mark.parametrize("contract_type", ["general_a_2", "industrial_a_2"])
-def test_갑Ⅱ는_ESS_배제_갈래를_타지_않는다(tariff: TariffTable, contract_type: str) -> None:
+@pytest.mark.parametrize("contract_type", ["general_a_2", "industrial_a_2", "education_a"])
+def test_요금적용전력_기준이면_ESS_배제_갈래를_타지_않는다(
+    tariff: TariffTable, contract_type: str
+) -> None:
     """**배제 조건은 종별 이름이 아니라 기본요금 기준 필드가 판정한다** (61세션 5절).
 
     56세션이 이 갈래를 지을 때는 「갑 종별」 이라 적었지만 조건은 처음부터
     ``base_fee_on_contract`` 였다. 갑Ⅱ 가 요금적용전력 기준으로 옮겨 가면서
     **문지기가 저절로 열렸다** — 따로 고칠 자리가 없었다.
+
+    **89세션에 문지기가 전압을 받는다** (``base_fee_on_contract_at``). 갑Ⅱ 는
+    저압이 없어 답이 그대로이고, **교육용(갑)이 고압에서 여기로 들어왔다** —
+    제38조 ②로 계량기가 서므로 피크를 낮추면 기본요금이 준다. 88세션까지는
+    종별 하나로 읽어 고압까지 함께 막고 있었다.
     """
     contract = tariff.contract(contract_type)
-    assert not contract.base_fee_on_contract
+    assert not contract.base_fee_on_contract_at("high_a")
     optimum = _kap_optimum(tariff, contract_type)
     assert not any(item.fact == "ess.base_fee_on_contract" for item in optimum.notices)
 
@@ -2004,7 +2025,7 @@ def test_갑_종별_절감액은_왕복손실뿐이다(sample_usage: UsageData, 
     # 단일 단가 — 계시로 갈리지 않는다.
     for season in ("summer", "spring_fall", "winter"):
         assert len({rates.rate(season, band) for band in ("light", "mid", "peak")}) == 1
-    assert tariff.contract(_KAP_SELECTION[0]).base_fee_on_contract
+    assert tariff.contract(_KAP_SELECTION[0]).base_fee_on_contract_at(_KAP_SELECTION[1])
 
     baseline = calculate_bill(sample_usage, tariff, selection, options=options)
     result = evaluate_ess(

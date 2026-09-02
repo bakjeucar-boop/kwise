@@ -992,7 +992,7 @@
       "threshold_kw": 1000,
       "threshold_direction": "below",
       "effective_date": "2026-06-01",
-      "base_fee_basis": "contract",
+      "base_fee_basis": "billing_demand",
       "time_of_use": false,
       "options": [
         "single",
@@ -1015,6 +1015,7 @@
       "voltages": {
         "low": {
           "label": "저압",
+          "base_fee_basis": "contract",
           "single": {
             "base_won_per_kw": 5230.0,
             "energy": {

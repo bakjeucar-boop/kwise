@@ -485,17 +485,18 @@ def _power_factor_block(form: ContractForm | None) -> None:
 
 
 def _tentative_basis_block(table: TariffTable, form: ContractForm | None) -> None:
-    """기본요금을 계약전력으로 매기는 종별에 전압 전제를 **접지 않고** 알린다.
+    """기본요금을 계약전력으로 매긴 자리에 그 전제를 **접지 않고** 알린다.
 
     갈림길은 최대수요전력계 설치 여부이고 그것을 정하는 것은 공급전압이다
-    (약관 제38조 제2항 · 제68조). 저압이 없는 종별(을·갑Ⅱ)은 이 경로를 타지
-    않는다 — 남는 것은 저압과 고압을 함께 쓰는 갑Ⅰ·교육용(갑)뿐이고,
-    그쪽을 고압으로 쓰면 조용히 틀린다. 화면 위쪽에 남긴다 (61세션).
+    (약관 제38조 제2항 · 제68조). **89세션에 전압별 기준이 서면서 남는 자리가
+    줄었다** — 교육용(갑) 고압은 이제 요금적용전력이라 이 경로를 타지 않고,
+    갑Ⅰ(저압계량 예외 경로)과 저압(설치가 재량)만 남는다. 화면 위쪽에 남긴다
+    (61세션).
     """
     if form is None:
         return
     contract_type = table.contract(form.contract_type)
-    if not contract_type.base_fee_on_contract:
+    if not contract_type.base_fee_on_contract_at(form.voltage):
         return
     callout.caution(
         f"**{contract_type.label}** — 계약전력 {fmt.kw(form.contract_kw)} 기준으로 "

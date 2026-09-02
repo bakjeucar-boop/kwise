@@ -1432,9 +1432,13 @@ BASE_FEE_ON_CONTRACT_CONCLUSION = (
 **「갑」 이 아니라 「계약전력 기준」 이다** (61세션). 56세션이 이 결론을 낸
 자리는 일반용(갑)**Ⅰ** 고압A 실측이었는데 갑 전체로 넓혀 적었다. 갑Ⅱ 는
 저압이 없어 언제나 최대수요전력계 고객이고(제38조 제2항), 따라서 기본요금이
-요금적용전력에 붙는다 — **갑Ⅱ 에서는 ESS 가 성립할 수 있다.** 판정은 종별
-이름이 아니라 :attr:`~kwise.tariff.schema.ContractType.base_fee_on_contract`
-가 한다. 이 상수도 그 갈래에서만 쓰인다.
+요금적용전력에 붙는다 — **갑Ⅱ 에서는 ESS 가 성립할 수 있다.**
+
+**종별도 아니고 전압도 아니고 둘을 함께 본다** (89세션). 판정은
+:meth:`~kwise.tariff.schema.ContractType.base_fee_on_contract_at` 가 하고
+그 함수는 전압을 받는다 — **교육용(갑)은 고압A·B 에서 ESS 가 성립하고
+저압에서는 성립하지 않는다.** 88세션까지는 종별 하나로 읽어 고압까지 함께
+막고 있었다. 이 상수는 막는 갈래에서만 쓰인다.
 
 **개략 곡선은 그 사실을 모른다** (:func:`ess_target_curve`). 곡선은
 ``저감량 × 기본요금단가 × 개월수`` 로 회수기간을 내므로 갑 종별에서도
@@ -1727,11 +1731,12 @@ def refine_ess_target(
             at_edge=False,
         )
 
-    # **갑 종별은 애초에 성립할 수가 없다** (56세션). 기본요금이 계약전력에
-    # 붙어 피크를 낮춰도 줄지 않는다 — 개략 곡선은 그것을 모르고 「성립하는
-    # 목표」 를 만들어 내므로, **훑기 전에** 여기서 끊는다. 정밀화를 돌려도
-    # 결론은 같고(후보가 비어 창만 넓힌다) 21~90점의 요금 재계산을 버린다.
-    if table.contract(selection.contract_type).base_fee_on_contract:
+    # **계약전력 기준이면 애초에 성립할 수가 없다** (56세션 · 89세션에 전압을
+    # 붙였다). 기본요금이 계약전력에 붙어 피크를 낮춰도 줄지 않는다 — 개략
+    # 곡선은 그것을 모르고 「성립하는 목표」 를 만들어 내므로, **훑기 전에**
+    # 여기서 끊는다. 정밀화를 돌려도 결론은 같고(후보가 비어 창만 넓힌다)
+    # 21~90점의 요금 재계산을 버린다.
+    if table.contract(selection.contract_type).base_fee_on_contract_at(selection.voltage):
         return EssOptimum(
             target_kw=0.0,
             payback_years=None,

@@ -125,12 +125,15 @@ class ContractRule:
     """엑셀에 없는 종별 속성. **변환이 이 값을 만들어내지 않는다.**
 
     Attributes:
-        base_fee_basis: 기본요금 기준. ``"billing_demand"`` 는 요금적용전력,
-            ``"contract"`` 는 계약전력이다. **갑/을 구분이 아니다** — 갈림길은
-            최대수요전력계 설치 여부이고, 그것을 정하는 것은 공급전압이다
-            (제38조 제2항 · 제68조 제1항 · 제2항). 61세션에 약관 원문으로
-            확인했다: 고압 이상 고객에게는 최대수요전력계를 설치하므로,
-            **저압이 없는 종별(을·갑Ⅱ)은 언제나 요금적용전력 기준**이다.
+        base_fee_basis: 기본요금 기준의 **기본값**. ``"billing_demand"`` 는
+            요금적용전력, ``"contract"`` 는 계약전력이다. **갑/을 구분이
+            아니다** — 갈림길은 최대수요전력계 설치 여부이고, 그것을 정하는
+            것은 공급전압이다 (제38조 제2항 · 제68조 제1항 · 제2항). 61세션에
+            약관 원문으로 확인했다: 고압 이상 고객에게는 최대수요전력계를
+            설치하므로, **저압이 없는 종별(을·갑Ⅱ)은 언제나 요금적용전력
+            기준**이다.
+        voltage_base_fee_basis: 전압별 예외. 여기 적힌 전압만 위 기본값을
+            덮는다 (89세션).
         time_of_use: 시간대별 요금제인지. 갑Ⅰ·교육용(갑)은 '전체시간' 단일 단가다.
         contract_floor_ratio: 요금적용전력 하한 비율. 제68조 제1항의 30% 는
             최대수요전력계 고객 전체에 걸리므로 **갑Ⅱ에도 있다.**
@@ -146,6 +149,7 @@ class ContractRule:
     contract_floor_ratio: float | None
     demand_bands: tuple[str, ...] = ("mid", "peak")
     demand_months: tuple[int, ...] = (7, 8, 9, 12, 1, 2)
+    voltage_base_fee_basis: tuple[tuple[str, str], ...] = ()
 
 
 # 엑셀의 종별 표기 → 종별 규칙. 부록 A.4 의 확장 순서대로 적었다.
@@ -160,10 +164,11 @@ CONTRACT_RULES: Mapping[str, ContractRule] = {
         time_of_use=True,
         contract_floor_ratio=0.3,
     ),
-    # 갑Ⅰ·교육용(갑)은 **저압과 고압을 함께 가진다.** 제38조 제2항대로면 고압
-    # 고객은 요금적용전력, 저압 고객은 계약전력(제68조 제2항)이라 **전압별로
-    # 갈라야 한다.** 지금 구조는 종별당 기준 하나뿐이라 저압 쪽에 맞춰 두었다.
-    # **미해결** — 전압별 기준은 다음 세션 몫이다 (61세션 4절).
+    # 갑Ⅰ 은 **저압과 고압을 함께 가지는데 둘 다 계약전력이 맞다** (89세션).
+    # 제57조 ④·제59조 ⑤가 「갑 고압 고객은 갑Ⅱ를 적용한다」 고 못을 박아
+    # 요금표의 갑Ⅰ 고압A·B 행이 쓰이는 자리는 **저압계량 예외 경로**뿐이고,
+    # 저압계량이면 최대수요전력계가 없어 제68조 ②가 맞다. 그래서 전압별
+    # 예외를 두지 않는다 — 교육용(갑)과 묶어 고치지 마라.
     "일반용(갑) I": ContractRule(
         key="general_a_1",
         label="일반용전력(갑)Ⅰ",
@@ -213,14 +218,20 @@ CONTRACT_RULES: Mapping[str, ContractRule] = {
         time_of_use=True,
         contract_floor_ratio=0.3,
     ),
+    # 교육용(갑)은 **고압이 기본값이고 저압이 예외**다 (89세션에 갈랐다).
+    # 제38조 ②로 고압A·B 고객에게는 최대수요전력계를 설치하므로 제68조 ①이고,
+    # 저압은 제38조 ③이 「설치할 수 있다」(재량)라 제68조 ②가 기본값이다.
+    # **일반용·산업용 갑Ⅰ 과 다르다** — 제57조 ④·제59조 ⑤ 같은 단서가
+    # 교육용에는 없다 (교육용에는 갑Ⅱ 자체가 없다).
     "교육용(갑)": ContractRule(
         key="education_a",
         label="교육용전력(갑)",
         threshold_kw=1_000,  # 교육용은 임계값이 1,000 kW 다. 300 이 아니다
         threshold_direction="below",
-        base_fee_basis="contract",
+        base_fee_basis="billing_demand",
         time_of_use=False,
         contract_floor_ratio=None,
+        voltage_base_fee_basis=(("low", "contract"),),
     ),
     "교육용(을)": ContractRule(
         key="education_b",
@@ -465,7 +476,14 @@ def _contract_payload(
         voltages.setdefault(voltage, {"label": row.voltage, "_rows": {}})
         voltages[voltage]["_rows"].setdefault(option, []).append(row)
 
+    overrides = dict(rule.voltage_base_fee_basis)
+    # **조용히 지나가지 않게 한다** — 전압 이름을 잘못 적으면 기본요금 기준이
+    # 통째로 틀리는데 값은 그럴듯하게 나온다 (89세션이 고친 병이 그 모양이다).
+    if unknown := sorted(set(overrides) - set(voltages)):
+        raise TariffSourceError(f"{rule.key}: 요금표에 없는 전압의 기본요금 기준입니다: {unknown}")
     for voltage, payload in voltages.items():
+        if voltage in overrides:
+            payload["base_fee_basis"] = overrides[voltage]
         grouped: dict[str, list[RateRow]] = payload.pop("_rows")
         for option, option_rows in grouped.items():
             bases = {row.base_won_per_kw for row in option_rows}

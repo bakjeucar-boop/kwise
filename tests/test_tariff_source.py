@@ -304,11 +304,12 @@ def test_flat_rate_type_still_charges_a_higher_summer_rate(tariff: TariffTable) 
 def test_type_a_base_fee_uses_the_contract_power(
     sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
 ) -> None:
-    """**저압이 있는 종별은 계약전력 기준으로 둔다** (기본공급약관 제68조 제2항).
+    """**갑Ⅰ 은 고압 행도 계약전력 기준이다** (기본공급약관 제68조 제2항).
 
-    요금적용전력으로 매기면 기본요금이 통째로 틀린다. 갑Ⅰ·교육용(갑)은 저압과
-    고압을 함께 쓰는데 지금 구조가 종별당 기준 하나뿐이라 저압에 맞춰 두었다
-    (61세션 4절 — 전압별 기준은 미해결).
+    요금적용전력으로 매기면 기본요금이 통째로 틀린다. 제57조 제4항·제59조
+    제5항이 「갑 고압 고객은 갑Ⅱ를 적용한다」 고 못을 박아 요금표의 갑Ⅰ
+    고압A·B 행이 쓰이는 자리는 **저압계량 예외 경로**뿐이다 (87세션 판정 ·
+    89세션에 교육용(갑)만 갈랐다).
     """
     selection = TariffSelection("general_a_1", "high_a", "I")
     bill = calculate_bill(
@@ -339,7 +340,7 @@ def test_갑Ⅱ_기본요금은_요금적용전력_기준이다(
     """
     for key in ("general_a_2", "industrial_a_2"):
         contract = tariff.contract(key)
-        assert not contract.base_fee_on_contract, key
+        assert not contract.base_fee_on_contract_at("high_a"), key
         assert contract.contract_floor_ratio == pytest.approx(0.3), key
         assert "low" not in contract.voltages, f"{key} 에 저압이 생기면 이 전제가 무너진다"
 

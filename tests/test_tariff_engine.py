@@ -715,14 +715,15 @@ def test_hand_case_night_peak_is_excluded_from_billing_demand(
 # =============================================== 9세션 — 저압·고압을 함께 쓰는 종별의 경고
 
 
-def test_저압이_있는_종별에_전압_전제_경고가_붙는다(
+def test_계약전력으로_매긴_자리에_계량기_전제_경고가_붙는다(
     tariff: TariffTable, sample_usage: UsageData
 ) -> None:
-    """갑Ⅰ·교육용(갑)은 **저압과 고압을 함께 쓴다** (61세션에 범위를 좁혔다).
+    """**남은 잠정은 전압이 아니라 계량기다** (61세션 → 89세션에 갈아 끼웠다).
 
-    제38조 제2항대로면 고압 고객은 요금적용전력 기준이고 저압 고객은 계약전력
-    기준이다(제68조 제2항). 지금 구조는 종별당 기준 하나뿐이라 저압에 맞춰
-    두었으므로, 이 종별을 고압으로 쓰면 기본요금이 과대 산출된다 — 함께 싣는다.
+    61세션에는 도구가 전압별로 가르지 못해 「고압으로 공급받는다면」 이 잠정
+    이었다. 89세션에 전압별 기준이 서면서 그 가정이 사라졌다 — 전압은 이제
+    안다. 남은 것은 **최대수요전력계가 실제로 섰는가** 하나이고, 그것은
+    계약전력으로 매긴 자리에서만 물을 값이다.
     """
     bill = calculate_bill(
         sample_usage,
@@ -731,8 +732,9 @@ def test_저압이_있는_종별에_전압_전제_경고가_붙는다(
         options=BillingOptions(contract_kw=5_800.0),
     )
     assert TENTATIVE_BASE_FEE_BASIS_WARNING in texts(bill.notices)
-    assert "저압" in TENTATIVE_BASE_FEE_BASIS_WARNING
-    assert "고압" in TENTATIVE_BASE_FEE_BASIS_WARNING
+    assert "최대수요전력계" in TENTATIVE_BASE_FEE_BASIS_WARNING
+    # **「고압으로 공급받는다면」 은 지웠다** — 전압을 모르던 시절의 문장이다.
+    assert "고압" not in TENTATIVE_BASE_FEE_BASIS_WARNING
 
 
 def test_갑Ⅱ에는_전압_전제_경고가_붙지_않는다(tariff: TariffTable, sample_usage: UsageData) -> None:
@@ -761,10 +763,11 @@ def test_을_종별에는_잠정_경고가_붙지_않는다(tariff: TariffTable,
     assert TENTATIVE_BASE_FEE_BASIS_WARNING not in texts(bill.notices)
 
 
-# ======================================= 88세션 — 교육용(갑) 고압. 고치기 전에 못을 박는다
+# ============================ 88세션이 못을 박고 89세션이 고쳤다 — 교육용(갑) 고압
 #
-# **87세션이 판정을 세웠고 88세션은 시험만 짓는다** (`docs\RULES_AUDIT_20260601.md` 3절).
-# 계산은 한 줄도 안 고쳤다.
+# **87세션이 판정을 세우고 88세션이 시험만 지었다** (`docs\RULES_AUDIT_20260601.md` 3절).
+# **89세션이 `base_fee_basis` 를 전압별로 갈라** 못 넷을 초록으로 만들었다 —
+# 요금 데이터의 `voltages\low\base_fee_basis` 가 종별 기본값을 덮는다.
 #
 # 갈림길은 종별이 아니라 「제38조 ②·③에 따라 최대수요전력계가 서는가」 이고,
 # 제38조 ②의 첫 조건이 **「고압 이상의 전압」** 이다.
@@ -782,15 +785,6 @@ EDUCATION_BASE_A_I = 5_550.0  # 요금표 교육용(갑) 고압A 선택Ⅰ 기�
 EDUCATION_BASE_LOW = 5_230.0  # 요금표 교육용(갑) 저압 기본요금 (원/kW)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "교육용(갑) 고압은 기본공급약관 제38조 제2항으로 최대수요전력계가 서므로 "
-        "제68조 제1항의 요금적용전력 기준이어야 한다. 지금은 base_fee_basis 가 "
-        "종별당 하나뿐이라 저압에 맞춘 계약전력으로 매긴다. "
-        "88세션 3절 — 고치지 않고 못만 박았다. 고치면 이 시험이 XPASS 로 알린다."
-    ),
-)
 def test_교육용갑_고압은_요금적용전력으로_기본요금을_매긴다(
     tmp_path: Path, tariff: TariffTable
 ) -> None:
@@ -798,6 +792,10 @@ def test_교육용갑_고압은_요금적용전력으로_기본요금을_매긴�
 
     일반용·산업용은 제57조 제4항·제59조 제5항이 갑 고압을 갑Ⅱ 로 보내므로
     갑Ⅰ 고압 행이 예외 경로(저압계량)지만, 교육용에는 그 단서가 없다.
+
+    **88세션에 `xfail(strict)` 로 박았고 89세션에 걷었다.** 사실이 뒤집혔으므로
+    못을 지우지 않고 **값을 보는 시험으로 옮겼다** — 짝인 아래 시험이 종전
+    3,219만원과 지금 222만원을 나란히 적는다.
     """
     usage = month_usage(tmp_path, 2023, 7)
     bill = calculate_bill(
@@ -810,11 +808,18 @@ def test_교육용갑_고압은_요금적용전력으로_기본요금을_매긴�
     assert row["base_won"] == pytest.approx(row["billing_demand_kw"] * EDUCATION_BASE_A_I)
 
 
-def test_교육용갑_고압이_지금은_계약전력으로_매겨진다(tmp_path: Path, tariff: TariffTable) -> None:
-    """**틀린 값이 얼마나 틀린지 적어 둔다.** 위 시험의 짝이다.
+def test_교육용갑_고압이_얼마나_움직였나(tmp_path: Path, tariff: TariffTable) -> None:
+    """**종전 값과 지금 값을 한 자리에 적는다.** 위 시험의 짝이다 (89세션).
 
-    균일 400 kW · 계약전력 5,800 kW 면 기본요금이 **14.5배**로 나온다.
-    작은 어긋남이 아니므로 고칠 때 무엇이 움직이는지 이 수로 가늠한다.
+    88세션에는 이 시험이 「지금은 계약전력으로 매겨진다」 를 지켰다. 89세션에
+    고쳤으므로 **사실이 뒤집혔다** — 못을 지우지 않고 뜻을 갈아 끼웠다.
+
+        종전  5,800 kW × 5,550원 = 32,190,000원   (계약전력 · 틀렸다)
+        지금    400 kW × 5,550원 =  2,220,000원   (요금적용전력 · 제68조 ①)
+
+    균일 400 kW · 계약전력 5,800 kW 에서 **14.5배**였다. 되돌리면 여기가 빨개진다.
+
+    **계약전력 갈래의 경고도 함께 걷혔다** — 기준이 잠정이 아니게 됐다.
     """
     usage = month_usage(tmp_path, 2023, 7)
     bill = calculate_bill(
@@ -825,9 +830,9 @@ def test_교육용갑_고압이_지금은_계약전력으로_매겨진다(tmp_pa
     )
     row = bill.monthly.loc[pd.Period("2023-07", freq="M")]
     assert row["billing_demand_kw"] == pytest.approx(400.0)
-    assert row["base_won"] == pytest.approx(5_800.0 * EDUCATION_BASE_A_I)
-    assert row["base_won"] / (400.0 * EDUCATION_BASE_A_I) == pytest.approx(14.5)
-    assert TENTATIVE_BASE_FEE_BASIS_WARNING in texts(bill.notices)
+    assert row["base_won"] == pytest.approx(2_220_000.0)
+    assert 5_800.0 * EDUCATION_BASE_A_I / row["base_won"] == pytest.approx(14.5)
+    assert TENTATIVE_BASE_FEE_BASIS_WARNING not in texts(bill.notices)
 
 
 def test_교육용갑_저압은_계약전력_기준이_맞다(tmp_path: Path, tariff: TariffTable) -> None:
@@ -870,6 +875,6 @@ def test_갑Ⅰ_고압_행은_저압계량_예외_경로다(
     )
     rate = tariff.rates(TariffSelection(contract_type, "high_a", "I")).base_won_per_kw
     row = bill.monthly.loc[pd.Period("2023-07", freq="M")]
-    assert tariff.contract(contract_type).base_fee_on_contract
+    assert tariff.contract(contract_type).base_fee_on_contract_at("high_a")
     assert row["base_won"] == pytest.approx(280.0 * rate)
     assert TENTATIVE_BASE_FEE_BASIS_WARNING in texts(bill.notices)
