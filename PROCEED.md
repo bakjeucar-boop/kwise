@@ -341,6 +341,91 @@ Excel 은 `report\excel.py:345`·`350`·`624`·`628`, PPT 는 `slides.py:170` �
 C1~C6 은 계약전력이 관측 최대 × 1.1 이라 하한이 0.33 × 최대가 되어 **연간
 최대에 늘 진다.** 3절의 회귀 파급을 이 표로 답한다.
 
+### 2절 — 판정이 사는 자리를 전수로 훑었다. **여전히 안 고쳤다**
+
+낱말 하나로 훑지 않았다 — `demand_months` · `floor_ratio` · `floor_kw` ·
+`floor_binding` · `reducible` · `no_saving` · `crosses_type` 일곱으로 각각
+훑은 뒤 합쳤다 (84세션이 한 낱말로 훑어 `engine.py:600` 을 놓친 자리다).
+
+#### ㄱ. 요금적용전력 월별 산식이 있는 자리 — **엔진 하나가 만들고 나머지는 읽는다**
+
+만드는 곳은 **셋**이고 셋 다 같은 함수를 부른다 —
+`tariff\demand.py:132` `billing_demands`(굴림) + `:176` `apply_contract_floor`(하한),
+`tariff\engine.py:476`·`488` 이 청구 계산에서, `diagnose\peak.py:202`·`205` 가
+1단계 피크 프로파일에서 부른다. 값을 **읽기만** 하는 자리는
+`schema.py`(요금표 적재) · `source_excel.py`(요금표 짓기) · `narrative.py:669` ·
+`columns.py:48` · `excel.py:748` 이다. **산식이 흩어져 있지 않다.**
+
+#### ㄴ. 하한 판정 「floor_kw 대 연간 최대」 꼴 — **판정을 만드는 자리는 한 줄이다**
+
+**만드는 자리는 `measures\contract.py:373` 한 줄뿐이다** —
+`if floor_kw > before_floor`. `floor_binding` 프로퍼티(`:166`)도 같은 비교이고,
+`ContractAdequacy.floor_binding`(`diagnose\contract.py:159`)은 그것을 **넘겨받기만**
+한다(100세션이 옮긴 자리다). `measures\` · `compare\` · `report\` 를 다 훑어도
+같은 비교를 다시 쓰는 자리는 없다 — 나머지는 전부 `floor_kw` 와
+`demand_before_floor_kw` 를 **나란히 찍기만** 한다
+(`document.py:378`·`380`·`406`·`424`·`1553`, `excel.py:618`,
+`frames.py:470`·`477`, `worksheet.py:205`·`212`, `ui\views\measures.py:422`·`429`).
+
+**그런데 「하한이 걸리나」 를 세는 자리가 하나 더 있다 — 그리고 낟알이 다르다.**
+
+| 자리 | 무엇과 견주나 | 낟알 | 400 kW 에서의 답 |
+|---|---|---|---|
+| `measures\contract.py:373` | `floor_kw` 대 **연간** 최대 | 한 해 | **안 걸린다** |
+| `tariff\engine.py:686` | `floor_kw` 대 **달별** 굴림최대 | 달 | **4개 월에 걸린다** |
+
+**이것이 ②-13 의 뿌리다.** 두 자리가 같은 사실을 서로 다른 낟알로 세고,
+둘 다 사용자에게 문장으로 나간다 (1절 ㄹ). `engine.py:686` 은 **세기만 하고
+판정에 쓰이지 않는다** — `tariff.floor_bound_months` 를 집어 쓰는 코드가 없다.
+
+#### ㄷ. `floor_binding` 과 `reducible` — **섞는 자리는 없다**
+
+99세션 ⓑ 가 남긴 「둘을 섞지 마라」 를 자리로 확인했다. 쓰는 곳은 아홉이고
+**전부 뜻대로 쓴다** —
+
+- `reducible` (낮출 자리가 있다) : `ui\views\measures.py:418`(칸 넷/다섯) ·
+  `:447`(목표 줄) · `document.py:304`(1단계 절감액 갈래) · `:827`(`actionable`) ·
+  `:1569`(경고를 실을지) · `diagnose\contract.py:180`(여유 경고)
+- `floor_binding` (하한이 이긴다) : `document.py:404`(결론 갈래 둘째) ·
+  `worksheet.py:213`(「하한이 걸린다/걸리지 않는다」)
+- `no_saving` (`not reducible`) : `document.py:291` · `excel.py:346`·`351` ·
+  `standalone.py:171` · `ui\views\measures.py:439`
+
+**100세션이 `document.py:299` 에 그 까닭을 주석으로 박아 두었다** —
+`floor_binding` 으로 가르면 「하한은 지는데 종별을 넘어 절감이 있는」 판에서
+「없음」 이 나간다. 지금 코드는 그 자리를 `reducible` 로 가른다. **맞다.**
+
+#### ㄹ. 「더 내려도 얻을 것이 없으면 안 내린다」 — **한 파일 안 다섯 줄이다**
+
+| 자리 | 무엇을 막나 |
+|---|---|
+| `measures\contract.py:371` | `min(contract_kw, 목표)` — 지금보다 올리는 권고를 안 한다 |
+| `measures\contract.py:373` | 하한이 지면 같은 종별 목표는 없다 |
+| `measures\contract.py:255` | `min(target, 문턱−1)` — 이미 더 낮으면 그대로 쓴다 |
+| `measures\contract.py:257` | 문턱이 지금 계약전력 위면 넘어갈 자리가 아니다 |
+| `measures\contract.py:259` | 최대수요 아래로 내리는 권고를 안 한다 |
+| `measures\contract.py:385` | `quote.saving_won > saving` — 큰 쪽만 고른다 |
+
+**여섯 다 `measures\contract.py` 한 파일이고 함수 둘**
+(`evaluate_contract_adjustment` · `_crossed_quote`)**뿐이다. 결함 유형 ③ 이
+아니다** — 흩어져 있지 않다. 흩어진 것은 ㄴ 의 「걸리나」 쪽이다.
+
+#### ②-15 와 겹치는 자리 — **겹친다. 그리고 ②-15 가 먼저다**
+
+②-15 는 `batch.py:219` 가 **계약전력 없이** 기준선을 잡고
+`combination.py:503` 이 `baseline − bill + contract_saving` 으로 더하는 것이다.
+**겹치는 한 줄은 `measures\contract.py:378` `current_base = _base_fee_won(bill, floor_kw)`**
+— 하한이 안 걸린 `bill` 위에 하한을 **다시 씌워** 현재 기본요금을 만든다.
+②-13 을 달 단위로 옮기면 `:367~380` 을 다시 쓰게 되는데 **그 여섯 줄이 곧
+②-15 가 기대고 있는 자리다**(`batch.py:308` 주석이 「현행도 같은 옵션으로
+다시 계산하므로」 라고 적어 둔 그것이다).
+
+**②-15 를 먼저 닫는 편이 싸다** — 기준선에 `contract_kw` 를 넘기는 한 줄이고,
+그러면 `_base_fee_won` 이 하한을 다시 씌울 까닭이 사라져 ②-13 의 고치는 자리가
+줄어든다. **딱딱한 선후는 아니다** — `_base_fee_won` 이 쓰는
+`demand_before_floor_kw` 는 계약전력과 무관해서 ②-13 의 산수 자체는 어느 쪽
+차례로도 맞는다. **여기서 겹침을 고치지 않았다.**
+
 ---
 ## 오늘 (2026-09-03) 101세션 — **오늘을 닫았다. 짓지 않았다**
 
