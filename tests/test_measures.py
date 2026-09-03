@@ -729,6 +729,50 @@ def test_후보가_최대수요_아래면_안_넘는다(
     assert "contract.floor_not_binding" in [item.fact for item in result.notices]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "②-13 — 하한 판정이 `floor_kw > 연간 최대` 한 줄이라(measures\\contract.py:373) "
+        "달 단위로만 걸리는 몫을 못 본다. 용인 을 400 kW 는 굴림 12개월이 안 찬 "
+        "2025-08~11 네 달에서 하한 120.0 kW 가 그 달 굴림최대 112.24 kW 를 넘어 "
+        "기본요금을 175,311원 더 내는데, 판정은 연간 최대 132.28 kW 만 보고 "
+        "「낮출 자리가 없다」 고 답한다. **같은 판에서 요금 엔진은 반대로 적는다** — "
+        "`tariff.floor_bound_months` 가 「4개 월에 걸렸습니다」 다(engine.py:686). "
+        "고쳐지면 XPASS 로 스스로 빨개진다 (S102 1절에 값으로 쟀다)."
+    ),
+)
+def test_달_단위로만_걸리는_하한이_절감액에_잡힌다(tariff: TariffTable) -> None:
+    """**굴림 창이 안 찬 초기 달에만 하한이 걸리는 판** (99세션 → S102 1절).
+
+    용인 실측(2025-08-28~2026-08-28 · 최대수요 132.28 kW)을 을 고압A 선택Ⅰ 로
+    놓고 계약전력만 400 → 350 kW 로 바꾸면 총액이
+    **70,771,509 → 70,596,198원**, 곧 **175,311원**이 준다. 그 몫은 전부
+    기본요금이고 **2025-08·09·10·11 네 달**에서 왔다 — 그 달들은 대상월
+    이력(7·8·9·12·1·2)을 아직 못 채워 굴림최대가 112.24 kW 에 머무는데
+    하한 120.0 kW 가 그 위에 서기 때문이다.
+
+    **종별 전환을 빼고 본다.** 요금표를 함께 주면 299 kW·갑Ⅱ 후보가 값을
+    덮어써(8,725,941원) 이 한 자리가 안 보인다 — 여기서 박는 것은 **같은 을
+    안에서 낮춰도 주는 몫**이다.
+
+    **목표 계약전력은 박지 않는다.** 달 단위 판정이면 374 kW, 을 안의 총액
+    견주기면 300 kW 로 길마다 갈리는데 **절감액은 세 길에서 다 175,311원**이라
+    이 못은 어느 길을 고를지 미리 정하지 않는다.
+    """
+    usage_path = Path(__file__).resolve().parent.parent / "input" / "전기사용량_소형건물.xlsx"
+    if not usage_path.is_file():
+        pytest.skip(f"용인 실측 자료가 없습니다: {usage_path}")
+    usage = load_usage(usage_path)
+    options = BillingOptions(contract_kw=400.0)
+    bill = calculate_bill(
+        usage, tariff, TariffSelection("general_b", "high_a", "I"), options=options
+    )
+    result = evaluate_contract_adjustment(usage, bill, contract_kw=400.0)
+
+    assert result.reducible
+    assert result.saving_won == pytest.approx(175_311.0, abs=1.0)
+
+
 def test_후보가_지금_계약전력_이상이면_안_넘는다(
     floor_losing_general_b_usage: UsageData, tariff: TariffTable
 ) -> None:
