@@ -381,11 +381,12 @@ def _contract_facts(contract: ContractAdjustment) -> tuple[tuple[str, str], ...]
 
 
 def _contract_conclusion(contract: ContractAdjustment) -> str:
-    """계약전력 결론 — **세 갈래다** (53세션 4-9 · 83세션에 판정을 하한으로 옮겼다).
+    """계약전력 결론 — **네 갈래다** (53세션 4-9 · 83세션에 판정을 하한으로 옮겼다).
 
         초과 위약  계약전력을 넘은 구간이 있다. **상향을 검토할 자리다**
         하한이 이긴다  하한이 요금적용전력 위에 있다. 낮추면 그만큼 준다
-        하한이 진다   최대수요가 기준이라 낮춰도 줄지 않는다
+        종별이 바뀐다  하한은 지지만 문턱 아래 종별로 넘어가면 준다 (99세션)
+        하한이 진다   최대수요가 기준이고 넘어갈 종별도 없어 낮춰도 줄지 않는다
 
     39세션까지는 「하향 여지 있음」 과 「적정」 둘이었고 여유율이 그 둘을 갈랐다.
     **여유율은 이 판정에 쓸 잣대가 아니다** — 이득이 있느냐는 하한이 정한다.
@@ -396,12 +397,21 @@ def _contract_conclusion(contract: ContractAdjustment) -> str:
             f"{contract.over_contract_slots:,}건 있어 초과 위약 검토 대상입니다. "
             "하향이 아니라 상향을 검토해야 합니다."
         )
-    if contract.target_contract_kw is not None:
+    if contract.target_contract_kw is not None and contract.floor_binding:
         return (
             f"요금적용전력 하한 {contract.floor_kw:,.0f} kW 가 최대수요 "
             f"{contract.demand_before_floor_kw:,.0f} kW 보다 높아, 계약전력을 "
             f"{contract.contract_kw:,.0f} → {contract.target_contract_kw:,.0f} kW 로 "
             "낮추면 그만큼 기본요금이 줄어듭니다."
+        )
+    if contract.target_contract_kw is not None and contract.crossed_label is not None:
+        # **하한이 지는데도 낮출 자리가 있는 판** (99세션). 위 문장을 그대로 쓰면
+        # 「하한이 최대수요보다 높아」 가 거짓말이 된다 — 이 갈래는 하한이 아니라
+        # 종별이 이득을 낸다. **문구가 늘지 않는다** — 결론 한 자리의 갈래다.
+        return (
+            f"계약전력을 {contract.contract_kw:,.0f} → "
+            f"{contract.target_contract_kw:,.0f} kW 로 낮추면 계약종별이 "
+            f"{contract.crossed_label} 로 바뀌어 요금 전체가 줄어듭니다."
         )
     if contract.floor_kw is None:
         return f"계약전력 {contract.contract_kw:,.0f} kW 의 하한 비율을 알 수 없습니다."
@@ -810,7 +820,7 @@ def measure_entries(
             notices=contract.notices,
             # **여지가 없으면 왜 없는지 보인다** (39세션 4-2). 화면이 83세션에
             # 세운 지표와 같은 값이다.
-            actionable=contract.floor_binding,
+            actionable=contract.reducible,
             # **근거가 결과보다 먼저다** (53세션 6-1).
             facts_first=True,
             # **판정을 가르는 세 수다** (83세션). 화면과 같은 자리·같은 이름이다.

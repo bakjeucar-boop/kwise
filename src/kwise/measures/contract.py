@@ -17,6 +17,11 @@
 **계약전력**에 붙는 자리(갑Ⅰ·교육용(갑) 저압)의 것이라 여기서는 전제가 서지 않는다.
 여유율 10~30% 에는 붙은 근거도 없었다.
 
+**후보가 하나 더 있다 — 종별 문턱 바로 아래다** (98세션에 세우고 99세션에
+하한 갈래 밖으로 꺼냈다). 요금표가 문턱 아래 종별을 들고 있으면 거기로 넘어가
+요금을 처음부터 다시 계산한다. **하한이 지는 판에도 이 후보가 선다** — 하한이
+질 때 없는 것은 「같은 종별 안에서 낮출 이유」 이지 「넘어갈 자리」 가 아니다.
+
 비율이 없는 종별은 :data:`ContractStatus.UNKNOWN` 을 돌려주고 금액을 비운다.
 
 하한 비율을 받으면 **재계산**한다. 월별 요금적용전력에 하한을 씌워 기본요금을
@@ -97,8 +102,9 @@ class ContractAdjustment:
         billing_demand_kw: 요금적용전력 — 하한이 이기면 하한 값이다.
         demand_before_floor_kw: 직전 12개월 최대수요. **하한 판정의 상대다.**
         floor_kw: 계약전력 × 하한비율. 비율을 모르면 None.
-        target_contract_kw: 목표 계약전력 (최대수요 ÷ 하한비율).
-            **하한이 이길 때만 값이 있다** — 질 때는 낮출 이유가 없다.
+        target_contract_kw: 목표 계약전력. **낮출 자리가 있을 때만 값이 있다** —
+            하한이 이기면 최대수요 ÷ 하한비율이고, 하한이 져도 문턱 아래
+            종별로 넘어갈 수 있으면 문턱 바로 아래다 (99세션).
         saving_won: :attr:`status` 가 ``CONFIRMED`` 일 때만 값이 있다.
     """
 
@@ -135,17 +141,26 @@ class ContractAdjustment:
 
     @property
     def floor_binding(self) -> bool:
-        """**하한이 이기는가.** 참일 때만 낮출 이유가 있다."""
+        """**하한이 이기는가.** 계약전력 × 하한비율이 최대수요를 넘는가.
+
+        **낮출 자리가 있는가와 다른 사실이다** (99세션). 하한이 져도 문턱 아래
+        종별로 넘어갈 수 있으면 낮출 자리가 있다 — 그쪽은 :attr:`reducible` 이다.
+        """
+        return self.floor_kw is not None and self.floor_kw > self.demand_before_floor_kw
+
+    @property
+    def reducible(self) -> bool:
+        """**낮출 자리가 있는가.** 하한이 이기거나, 문턱 아래 종별로 넘어갈 수 있다."""
         return self.target_contract_kw is not None
 
     @property
     def no_saving(self) -> bool:
-        """**하한이 안 걸려 줄 것이 없는가.**
+        """**낮출 자리가 없어 줄 것이 없는가.**
 
         참이면 절감액 자리에 0원 대신 :data:`NO_SAVING` 을 적는다. 하한 비율을
         모르는 경우(``UNKNOWN``)는 여기 들지 않는다 — 그쪽은 「미산출」 이다.
         """
-        return self.status is ContractStatus.CONFIRMED and not self.floor_binding
+        return self.status is ContractStatus.CONFIRMED and not self.reducible
 
 
 def _demand_column(monthly: pd.DataFrame) -> str:
@@ -195,7 +210,7 @@ def _crossed_quote(
     options: BillingOptions,
     *,
     contract_kw: float,
-    target: float,
+    target: float | None,
     floor_before: float,
     step_kw: float,
 ) -> _CrossedQuote | None:
@@ -204,6 +219,10 @@ def _crossed_quote(
     **절감액을 빼서 만들지 않는다.** 종별이 바뀌면 기본요금 단가·전력량요금
     단가·선택요금 후보·부칙 경과조치가 함께 바뀌므로 요금을 처음부터 다시
     계산하고 그 종별 안에서 선택요금을 다시 고른다.
+
+    Args:
+        target: 같은 종별 안의 목표 계약전력. **하한이 지면 ``None`` 이고**
+            그때는 문턱 바로 아래가 유일한 후보다 (99세션).
     """
     contract = table.contract(bill.selection.contract_type)
     below = contract.below_threshold_key
@@ -212,8 +231,13 @@ def _crossed_quote(
         return None
 
     # 넘어가는 계약전력은 **문턱 바로 아래**다. 같은 종별 목표가 이미 그보다
-    # 낮으면 그 값을 그대로 쓴다 — 더 내려도 얻을 것이 없다.
-    candidate = min(target, threshold - step_kw)
+    # 낮으면 그 값을 그대로 쓴다 — 더 내려도 얻을 것이 없다. 하한이 지면
+    # 같은 종별 목표가 없으므로 문턱 바로 아래 하나가 후보다 (99세션).
+    below_threshold = threshold - step_kw
+    candidate = below_threshold if target is None else min(target, below_threshold)
+    # **낮추는 권고만 한다.** 문턱이 지금 계약전력 위면 넘어갈 자리가 아니다.
+    if candidate >= contract_kw:
+        return None
     # **최대수요 아래로 내리는 권고를 하지 않는다.** 초과사용부가금 대상이 된다.
     if candidate < floor_before:
         return None
@@ -333,42 +357,47 @@ def evaluate_contract_adjustment(
         else None
     )
 
-    crossed: _CrossedQuote | None = None
     # 하한 적용 전 값으로 되돌린 뒤 두 계약전력에서 각각 다시 씌운다.
     current_base = _base_fee_won(bill, floor_kw)
     adjusted_base = _base_fee_won(bill, target * ratio) if target is not None else current_base
     saving = current_base - adjusted_base
+    basis_text = (
+        f"요금적용전력 하한 {ratio:.0%} 적용, "
+        f"월별 기본요금을 {bill.base_fee_months:.2f}개월분으로 재계산"
+        if target is not None
+        else f"요금적용전력 하한 {ratio:.0%} 미적용 — 최대수요가 기준"
+    )
+
+    # **문턱 아래 종별을 후보로 놓는다** (98세션). 같은 종별 안의 목표는
+    # 기본요금만 줄이는데, 문턱을 넘으면 전력량요금 단가까지 함께 바뀐다.
+    # **하한 갈래 안에 두지 않는다** (99세션). 하한이 지는 판에서도 문턱 아래
+    # 종별로 넘어갈 수 있고, 갈래를 둘로 두면 같은 자료에서 두 값이 나온다.
+    crossed: _CrossedQuote | None = None
+    if table is not None and options is not None:
+        quote = _crossed_quote(
+            usage,
+            bill,
+            table,
+            options,
+            contract_kw=contract_kw,
+            target=target,
+            floor_before=before_floor,
+            step_kw=step_kw,
+        )
+        if quote is not None and quote.saving_won > saving:
+            crossed = quote
+            target = quote.contract_kw
+            adjusted_base = quote.bill.total_base_won
+            saving = quote.saving_won
+            basis_text = (
+                f"{quote.selection_text} 로 종별을 바꿔 요금 전체를 다시 계산 "
+                "(기본요금·전력량요금 단가가 함께 바뀐다)"
+            )
+
     if target is None:
-        basis_text = f"요금적용전력 하한 {ratio:.0%} 미적용 — 최대수요가 기준"
+        # **하한도 안 걸리고 넘어갈 종별도 없다.** 낮출 자리가 아예 없다.
         notices.append(basis(FLOOR_NOT_BINDING_NOTICE, fact="contract.floor_not_binding"))
     else:
-        basis_text = (
-            f"요금적용전력 하한 {ratio:.0%} 적용, "
-            f"월별 기본요금을 {bill.base_fee_months:.2f}개월분으로 재계산"
-        )
-        # **문턱 아래 종별을 후보로 놓는다** (98세션). 같은 종별 안의 목표는
-        # 기본요금만 줄이는데, 문턱을 넘으면 전력량요금 단가까지 함께 바뀐다.
-        if table is not None and options is not None:
-            quote = _crossed_quote(
-                usage,
-                bill,
-                table,
-                options,
-                contract_kw=contract_kw,
-                target=target,
-                floor_before=before_floor,
-                step_kw=step_kw,
-            )
-            if quote is not None and quote.saving_won > saving:
-                crossed = quote
-                target = quote.contract_kw
-                adjusted_base = quote.bill.total_base_won
-                saving = quote.saving_won
-                basis_text = (
-                    f"{quote.selection_text} 로 종별을 바꿔 요금 전체를 다시 계산 "
-                    "(기본요금·전력량요금 단가가 함께 바뀐다)"
-                )
-
         # **낮출 자리가 있을 때만 낸다.** 낮출 이유가 없는 갈래에서 「하향은
         # 되돌리기 어렵다」 를 읽히면 하지도 못할 일을 조심하라는 말이 된다.
         notices += [

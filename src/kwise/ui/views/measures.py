@@ -411,10 +411,11 @@ def _contract(
     # 「변화없음」 이 까닭 없는 결론이 되어 있었다 — 세 수를 나란히 놓으면
     # 어느 쪽이 큰가로 갈리는 것이 그 자리에서 읽힌다.
     #
-    # **두 갈래가 같은 자리를 쓴다.** 하한이 이길 때만 목표 계약전력이 한 칸
-    # 더 선다 — 화면이 두 벌이 아니라 한 벌이다.
+    # **두 갈래가 같은 자리를 쓴다.** 낮출 자리가 있을 때만 목표 계약전력이 한 칸
+    # 더 선다 — 화면이 두 벌이 아니라 한 벌이다. **하한이 이기는 것과 낮출 자리가
+    # 있는 것은 다른 사실이다** (99세션) — 하한이 져도 종별을 넘으면 자리가 있다.
     ratio = result.contract_floor_ratio
-    columns = st.columns(5 if result.floor_binding else 4)
+    columns = st.columns(5 if result.reducible else 4)
     columns[0].metric("계약전력", fmt.kw(result.contract_kw))
     columns[1].metric(
         f"계약전력의 {fmt.ratio_pct(ratio, decimals=0)}" if ratio is not None else "하한",
@@ -443,7 +444,7 @@ def _contract(
     verdict = next((item for item in result.notices if item.fact == _FLOOR_VERDICT), None)
     if verdict is not None:
         st.write(verdict.text)
-    if result.floor_binding:
+    if result.reducible:
         # **이 숫자는 현재 부하 기준이다** (14세션 2-4). 다른 수단을 켰다고 바뀌지
         # 않으며, 조합 기준의 목표 계약전력은 3단계에서 따로 낸다.
         st.caption("현재 부하 기준입니다. 다른 수단을 함께 켜면 3단계에서 다시 계산됩니다.")
