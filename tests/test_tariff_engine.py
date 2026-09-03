@@ -930,18 +930,21 @@ A2_OPTION_III = TariffSelection("general_a_2", "high_a", "III")
 A2_OPTION_IV = TariffSelection("general_a_2", "high_a", "IV")
 
 
-def peak_heavy_month(path: Path, year: int, month: int) -> UsageData:
+def peak_heavy_month(path: Path, year: int, month: int, off_kwh: float = 1.0) -> UsageData:
     """여름철 최대부하(15~21시)에만 부하가 몰린 한 달치.
 
     균일 부하로는 안 된다 — 24시간 평균이 전체시간 단가보다 싸서 선택Ⅰ 이
     언제나 이긴다. 부칙 1호가 무는 자리는 **최대부하가 몰린 달**이다.
+
+    ``off_kwh`` 를 낮출수록 최대부하 쏠림이 세진다. **짝 둘이 같은 자료에서
+    같이 서지 않는다** — Ⅰ↔Ⅲ 는 1.0 에서 이미 서지만 Ⅱ↔Ⅳ 는 0.5 라야 선다.
     """
     rows: list[tuple[str, float]] = []
     for day in month_dates(year, month):
         for label in make_labels(day):
             hour = pd.Timestamp(label.replace(" 24:00", " 00:00")).hour
-            rows.append((label, 25.0 if 15 <= hour < 21 else 1.0))
-    return load_usage(write_csv(path / f"peak-{year}-{month:02d}.csv", rows))
+            rows.append((label, 25.0 if 15 <= hour < 21 else off_kwh))
+    return load_usage(write_csv(path / f"peak-{year}-{month:02d}-{off_kwh}.csv", rows))
 
 
 def test_전환기간_밖에서는_선택Ⅰ_과_선택Ⅲ_가_갈린다(tmp_path: Path, tariff: TariffTable) -> None:
@@ -986,6 +989,25 @@ def test_원래_고른_쪽이_더_싸면_갈아_끼우지_않는다(tmp_path: Pa
     assert on_ii.total_won < on_iv.total_won
     assert on_ii.transition_months == ()
     assert on_ii.total_won == pytest.approx(3_701_409.6)
+
+
+def test_선택II_와_선택IV_짝도_실제로_선다(tmp_path: Path, tariff: TariffTable) -> None:
+    """**조문이 정한 짝은 둘인데 한쪽만 도는 것으로 끝내지 않는다.**
+
+    최대부하 쏠림을 더 세게 하면(그 밖 0.5 kWh) 선택Ⅳ 의 전체시간 단가가
+    선택Ⅱ 의 시간대별 단가를 이긴다. **용인 실물 벌에서는 이 갈래도 저 갈래도
+    안 돈다** — 세 달(2026-06·07·08) 다 Ⅱ 가 Ⅳ 보다 싸다. 그래서 여기서 값으로
+    세운다: 뜨지 않는 갈래는 없는 갈래와 같다.
+    """
+    usage = peak_heavy_month(tmp_path, *TRANSITION_MONTH, off_kwh=0.5)
+    opts = BillingOptions(contract_kw=200.0)
+    on_ii = calculate_bill(usage, tariff, A2_OPTION_II, options=opts)
+    on_iv = calculate_bill(usage, tariff, A2_OPTION_IV, options=opts)
+    assert on_ii.transition_months == (pd.Period("2026-07", freq="M"),)
+    assert on_ii.total_won == pytest.approx(on_iv.total_won)
+    assert on_ii.total_won == pytest.approx(3_555_637.6)
+    assert on_ii.selection == A2_OPTION_II
+    assert on_iv.transition_months == ()
 
 
 def test_경과조치가_없는_종별은_짝을_찾지_않는다(
