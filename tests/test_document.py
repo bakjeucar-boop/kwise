@@ -44,7 +44,7 @@ from kwise.report import (
     measure_entries,
 )
 from kwise.report.document import TABLE_STYLE
-from kwise.tariff import BillingResult
+from kwise.tariff import BillingResult, TariffTable
 
 # ===================================================================== 도우미
 
@@ -632,3 +632,57 @@ def test_부록_C_가_한계와_참고를_한_곳에_모은다(
     # 앞 30자가 같은 줄이 두 번 실리지 않는다.
     heads = [line[:30] for line in lines]
     assert len(heads) == len(set(heads))
+
+
+def test_Word_의_1단계_결론과_7_2_결론이_같은_문장이다(tmp_path: Path, tariff: TariffTable) -> None:
+    """**한 산출물 안에서 두 장이 반대로 말했다** (100세션 4절).
+
+    종별을 넘는 벌에서 7.2 는 「299 kW 로 낮추면 종별이 바뀐다」 라고 적는데
+    5.5 는 **「계약전력 400 kW 는 적정합니다」** 라고 적고 있었다. 5.5 가 하한
+    한 줄만 보는 1단계 판정 위에 자기 문장을 따로 짓고 있었기 때문이다.
+    이제 두 장이 :func:`_contract_conclusion` 하나를 쓴다.
+
+    최대수요 200 kW · 계약 400 kW 의 을 고객이다. **하한 120 kW 는 진다** —
+    같은 을 안에서는 낮출 이유가 없는데, 문턱 300 kW 아래인 299 kW 로 내리면
+    일반용전력(갑)Ⅱ 로 넘어가 요금 전체가 준다 (99세션이 연 띠다).
+    """
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.io import load_usage
+    from kwise.measures import evaluate_contract_adjustment
+    from kwise.tariff import BillingOptions, TariffSelection, calculate_bill
+    from tests._synthetic import make_labels, month_dates, write_csv
+
+    rows = [
+        (label, 50.0)  # 15분 50 kWh = 200 kW
+        for date in month_dates(2024, 3)
+        for label in make_labels(date)
+    ]
+    usage = load_usage(write_csv(tmp_path / "flat.csv", rows))
+    selection = TariffSelection("general_b", "high_a", "I")
+    options = BillingOptions(contract_kw=400.0)
+    bill = calculate_bill(usage, tariff, selection, options=options)
+    adjustment = evaluate_contract_adjustment(
+        usage, bill, contract_kw=400.0, table=tariff, options=options
+    )
+    assert not adjustment.floor_binding, "하한이 이기면 결론이 하한 갈래로 간다."
+    assert adjustment.crosses_type, "이 벌이 종별을 안 넘으면 시험이 뜻을 잃는다."
+
+    document = build_document(
+        DocumentSections(
+            usage=usage,
+            bill=bill,
+            diagnosis=diagnose(
+                usage, tariff, ContractInfo(selection, contract_kw=400.0), options=options
+            ),
+            measures=measure_entries(contract=adjustment),
+        )
+    )
+    conclusions = [
+        para.text.strip()
+        for para in document.paragraphs
+        if "일반용전력(갑)Ⅱ 로 바뀌어" in para.text
+    ]
+    # 5.5(1단계 적정성)와 7.2(계약전력 조정) 둘이다. 글자까지 같아야 한다.
+    assert len(conclusions) == 2, conclusions
+    assert conclusions[0] == conclusions[1]
+    assert "적정합니다" not in _all_text(document).split("검토 범위")[0]
