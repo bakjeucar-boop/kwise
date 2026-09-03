@@ -77,6 +77,34 @@ def _months(key: str, value: Any) -> list[ValidationIssue]:
     return issues
 
 
+def _names(key: str, value: Any) -> list[ValidationIssue]:
+    """비지 않은 이름 목록. 계약종별 키처럼 **코드가 대조하는** 값이다."""
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or not value:
+        return [ValidationIssue(key, f"비지 않은 이름 목록이어야 합니다: {value!r}")]
+    return [
+        ValidationIssue(key, f"이름은 빈 문자열이 아니어야 합니다: {item!r}")
+        for item in value
+        if not isinstance(item, str) or not item
+    ]
+
+
+def _month_map(key: str, value: Any) -> list[ValidationIssue]:
+    """월분 → 기준월 목록. **어긋나면 할인이 엉뚱한 달에 붙는다.**"""
+    if not isinstance(value, Mapping) or not value:
+        return [ValidationIssue(key, f"월분별 기준월 사전이어야 합니다: {value!r}")]
+    issues: list[ValidationIssue] = []
+    for target, months in value.items():
+        try:
+            number = int(target)
+        except (TypeError, ValueError):
+            issues.append(ValidationIssue(key, f"월분은 1~12 여야 합니다: {target!r}"))
+            continue
+        if not 1 <= number <= 12:
+            issues.append(ValidationIssue(key, f"월분은 1~12 여야 합니다: {target!r}"))
+        issues.extend(_months(key, months))
+    return issues
+
+
 def _weights(key: str, value: Any) -> list[ValidationIssue]:
     """진행률 가중치. **합이 1 에서 크게 벗어나면 막대가 끝까지 안 간다.**"""
     if not isinstance(value, Mapping):
@@ -130,6 +158,10 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "demand.contract_floor_ratio.school_exception": _ratio,
     "demand.months": _months,
     "demand.window_months": _positive,
+    "school_exception.base_discount_ratio": _ratio,
+    "school_exception.hvac_discount_ratio": _ratio,
+    "school_exception.contract_types": _names,
+    "school_exception.base_reference_months": _month_map,
     "power_factor.lagging_standard_pct": _percent,
     "power_factor.deemed_lagging_pct": _percent,
     "power_factor.lagging_floor_pct": _percent,

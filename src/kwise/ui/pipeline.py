@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
+from typing import NamedTuple
 
 import pandas as pd
 
@@ -64,16 +65,20 @@ from kwise.tariff import (
     list_options,
     list_voltages,
 )
+from kwise.tariff.school import supports_school_exception
 
 __all__ = [
+    "SCHOOL_CHOICE_SUFFIX",
     "SURPLUS_HEAVY_LABEL",
     "SURPLUS_ONSET_LABEL",
     "AzimuthOption",
+    "ContractChoice",
     "ContractForm",
     "SolarInputs",
     "azimuth_options",
     "baseline_bill",
     "combination_specs",
+    "contract_choice_key",
     "contract_type_choices",
     "daily_temperature",
     "default_lagging_pct",
@@ -116,6 +121,12 @@ class ContractForm:
     leading_power_factor_pct: float | None = None
     """야간 진상역률. **기본값이 없다** — 모르면 지상 간주(추가 0)로 둔다."""
     sunday_is_holiday: bool = True
+    school_exception: bool = False
+    """초·중·고교·유치원 특례를 신청했는가 (시행세칙 별표4 8.).
+
+    **입력 칸이 아니라 계약종별 선택지에서 온다** (97세션 3절) — 계약 정보는
+    넷 그대로다.
+    """
 
     @property
     def selection(self) -> TariffSelection:
@@ -139,15 +150,69 @@ class ContractForm:
             power_factor_pct=self.lagging_pct,
             leading_power_factor_pct=self.leading_power_factor_pct,
             sunday_is_holiday=self.sunday_is_holiday,
+            school_exception=self.school_exception,
         )
 
 
 # --------------------------------------------------------------------- 드롭다운
 
 
-def contract_type_choices(table: TariffTable) -> tuple[tuple[str, str], ...]:
-    """계약종별 (키, 표시명). **요금 데이터에서 만든다. 하드코딩 금지** (부록 A.3)."""
-    return list_contract_types(table)
+SCHOOL_CHOICE_SUFFIX = "#school"
+#: 특례 갈래의 선택지 키에 붙는 꼬리. **계약종별 키가 아니다** — 요금표를 찾을
+#: 때는 :attr:`ContractChoice.contract_type` 을 쓴다.
+
+
+class ContractChoice(NamedTuple):
+    """계약종별 선택지 하나.
+
+    **종별 하나가 선택지 둘이 되는 자리가 있다** (97세션 3절). 초·중·고교·유치원
+    특례는 종별 특례가 아니라 **시설 특례**라, 종별을 넷으로 쪼개면 6세션의
+    오독(교육용(을) 전체에 15%)을 구조로 박는다. 사용자가 보는 것은 라벨 하나
+    이고 안에서 값이 둘로 갈린다.
+
+    ``key`` 는 화면이 고르는 값이고 ``contract_type`` 이 요금표를 찾는 값이다.
+    **둘을 섞지 않는다** — 특례 갈래의 ``key`` 에는 꼬리가 붙어 있다.
+    """
+
+    key: str
+    label: str
+    contract_type: str
+    school_exception: bool
+
+
+def _school_choices(key: str, label: str) -> tuple[ContractChoice, ...]:
+    """특례를 걸 수 있는 종별 하나를 선택지 둘로 편다.
+
+    **기본으로 켜지 않는다** — 대학·도서관·평생학습관도 교육용전력이라
+    기본값이 곧 「신청했다」 가 되어 근거 없이 값을 만든다. 그래서 특례가
+    아닌 쪽이 먼저 서고, 키도 종별 키 그대로다.
+    """
+    return (
+        ContractChoice(key, f"{label} · 그 밖", key, False),
+        ContractChoice(f"{key}{SCHOOL_CHOICE_SUFFIX}", f"{label} · 초·중·고·유치원", key, True),
+    )
+
+
+def contract_type_choices(table: TariffTable) -> tuple[ContractChoice, ...]:
+    """계약종별 선택지. **요금 데이터에서 만든다. 하드코딩 금지** (부록 A.3).
+
+    특례를 걸 수 있는 종별은 :func:`~kwise.tariff.school.school_contract_types`
+    가 정한다 — 그 목록도 기준 데이터에 있다 (별표4 8. 가. · 약관 제58조).
+    """
+    return tuple(
+        choice
+        for key, label in list_contract_types(table)
+        for choice in (
+            _school_choices(key, label)
+            if supports_school_exception(key)
+            else (ContractChoice(key, label, key, False),)
+        )
+    )
+
+
+def contract_choice_key(contract_type: str, school_exception: bool) -> str:
+    """계약종별과 특례 여부를 선택지 키로 되돌린다. **저장된 값을 다시 고를 때 쓴다.**"""
+    return f"{contract_type}{SCHOOL_CHOICE_SUFFIX}" if school_exception else contract_type
 
 
 def voltage_choices(table: TariffTable, contract_type: str) -> tuple[tuple[str, str], ...]:

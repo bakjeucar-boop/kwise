@@ -22,6 +22,7 @@ from kwise.tariff import (
     TENTATIVE_BASE_FEE_BASIS_WARNING,
     BillingOptions,
     BillingResult,
+    TariffDataError,
     TariffSelection,
     TariffTable,
     apply_contract_floor,
@@ -1035,3 +1036,163 @@ def test_경과조치가_없는_종별은_짝을_찾지_않는다(
     assert tariff.contract("general_b").transition is None
     assert sample_bill.transition_months == ()
     assert tariff.contract("general_a_2").transition is not None
+
+
+# ================================= 97세션 — 초·중·고교·유치원 특례 (세칙 별표4 8.)
+#
+# **바뀌는 것이 셋이고 셋이 한 벌로 움직인다.** 「15% 특례」 라는 이름으로만
+# 기억하면 값이 가장 큰 ③ 을 통째로 빠뜨린다 (91세션 — 합계 −5.8% 중 −5.1%p 가 ③).
+#
+#     ① 창    직전 12개월이 아니라 당월분 하나        나.(1)
+#     ② 하한  계약전력의 30% 가 아니라 15%           나.(1)
+#     ③ 할인  12~2월분·7~8월분에 기본 6% · 냉난방 50%  나.(2)·다.
+
+EDU_A = TariffSelection("education_a", "high_a", "I")
+_OFFICE_CASE = Path(__file__).resolve().parent.parent / "input" / "사용량조회_소형사무빌딩.csv"
+
+
+def months_usage(path: Path, plan: dict[tuple[int, int], float]) -> UsageData:
+    """여러 달을 한 파일에 쓴다. 달마다 15분 사용량을 달리 준다."""
+    rows = [
+        (label, kwh)
+        for (year, month), kwh in plan.items()
+        for date in month_dates(year, month)
+        for label in make_labels(date)
+    ]
+    return load_usage(write_csv(path, rows))
+
+
+def school_notes(result: BillingResult) -> list[str]:
+    return [text for text in texts(result.notices) if "초·중·고교·유치원 특례를 분석" in text]
+
+
+def test_특례는_요금적용전력을_당월분으로만_잡는다(tmp_path: Path, tariff: TariffTable) -> None:
+    """① 창 (나.(1)). **7월분 피크가 8월분으로 이월되지 않는다.**
+
+    제68조 ①이면 8월분 요금적용전력은 직전 대상월(7월)의 피크에 끌려 올라간다.
+    특례는 「당월분의 최대수요전력을 요금적용전력으로 한다」 이므로 자기 달만 본다.
+    """
+    usage = months_usage(tmp_path / "창.csv", {(2024, 7): 100.0, (2024, 8): 50.0})
+    august = pd.Period("2024-08", freq="M")
+    plain = bill(usage, tariff, EDU_A, contract_kw=900.0)
+    special = bill(usage, tariff, EDU_A, contract_kw=900.0, school_exception=True)
+    assert plain.monthly.loc[august, "billing_demand_kw"] == pytest.approx(400.0)  # 7월 피크
+    assert special.monthly.loc[august, "billing_demand_kw"] == pytest.approx(200.0)  # 제 달
+    # **이력 안내는 특례에서 뜨지 않는다** — 12개월 창을 타지 않으므로 사실이 아니다.
+    assert any("직전 12개월 최대수요 이력이 없어" in text for text in texts(plain.notices))
+    assert not any("직전 12개월 최대수요 이력이 없어" in text for text in texts(special.notices))
+
+
+def test_특례는_하한을_15퍼센트로_내린다(tmp_path: Path, tariff: TariffTable) -> None:
+    """② 하한 (나.(1)). 계약전력 900 kW 에서 270 kW 가 135 kW 가 된다."""
+    usage = months_usage(tmp_path / "하한.csv", {(2024, 3): 20.0})  # 80 kW — 둘 다 하한이 이긴다
+    march = pd.Period("2024-03", freq="M")
+    plain = bill(usage, tariff, EDU_A, contract_kw=900.0)
+    special = bill(usage, tariff, EDU_A, contract_kw=900.0, school_exception=True)
+    assert plain.contract_floor_ratio == pytest.approx(0.3)
+    assert special.contract_floor_ratio == pytest.approx(0.15)
+    assert plain.monthly.loc[march, "billing_demand_kw"] == pytest.approx(270.0)
+    assert special.monthly.loc[march, "billing_demand_kw"] == pytest.approx(135.0)
+
+
+def test_특례_할인은_기본과_냉난방_비중으로_갈린다(tmp_path: Path, tariff: TariffTable) -> None:
+    """③ 할인 (나.(2)·다.). **7월분의 기본 사용전력량은 4~6월분 평균이다.**
+
+    할인율은 비율 하나로 떨어진다 — 조문이 금액을 전력량 비중으로 나눈 뒤
+    각각 깎으라고 하기 때문이다. **여기서 기대값을 표에서 다시 세운다** —
+    조문은 「사용전력량을 평균」 이라고만 하므로 **달의 길이가 다르면 하루당이
+    같아도 비중이 1/2 이 아니다** (4·6월 30일, 5·7월 31일 → 0.489).
+    """
+    usage = months_usage(
+        tmp_path / "할인.csv",
+        {(2024, 4): 50.0, (2024, 5): 50.0, (2024, 6): 50.0, (2024, 7): 100.0},
+    )
+    special = bill(usage, tariff, EDU_A, contract_kw=900.0, school_exception=True)
+    july = pd.Period("2024-07", freq="M")
+    kwh = special.monthly["total_kwh"]
+    base_share = float(kwh[[pd.Period(f"2024-0{m}", freq="M") for m in (4, 5, 6)]].mean()) / float(
+        kwh[july]
+    )
+    assert base_share == pytest.approx(0.4892, abs=1e-4)
+    discount = float(special.monthly.loc[july, "school_discount_won"])
+    before = discount + float(special.monthly.loc[july, "energy_won"])
+    assert discount / before == pytest.approx(base_share * 0.06 + (1.0 - base_share) * 0.50)
+    # **대상 월분에만 붙는다.** 4~6월분은 조문에 없는 달이다.
+    assert float(special.monthly.loc[pd.Period("2024-06", freq="M"), "school_discount_won"]) == 0.0
+    # 시간대 금액의 합이 곧 전력량요금이라는 관계가 깨지지 않는다.
+    row = special.monthly.loc[july]
+    assert float(row["light_won"] + row["mid_won"] + row["peak_won"]) == pytest.approx(
+        float(row["energy_won"])
+    )
+
+
+def test_냉난방이_음수인_달은_기본사용_할인율만_붙는다(tmp_path: Path, tariff: TariffTable) -> None:
+    """**조문이 정하지 않은 자리다** (다.). 「차감하여 산정한다」 뿐이라 0 으로 본다."""
+    usage = months_usage(
+        tmp_path / "음수.csv",
+        {(2024, 4): 100.0, (2024, 5): 100.0, (2024, 6): 100.0, (2024, 7): 50.0},
+    )
+    special = bill(usage, tariff, EDU_A, contract_kw=900.0, school_exception=True)
+    july = pd.Period("2024-07", freq="M")
+    discount = float(special.monthly.loc[july, "school_discount_won"])
+    before = discount + float(special.monthly.loc[july, "energy_won"])
+    assert discount / before == pytest.approx(0.06)
+
+
+def test_기준월이_없으면_할인하지_않고_그_사실을_낸다(tmp_path: Path, tariff: TariffTable) -> None:
+    """**지어내지 않는다.** 4~6월분이 없으면 7·8월분의 기본 사용전력량을 못 잡는다."""
+    usage = months_usage(tmp_path / "기준없음.csv", {(2024, 7): 100.0, (2024, 8): 100.0})
+    special = bill(usage, tariff, EDU_A, contract_kw=900.0, school_exception=True)
+    assert float(special.monthly["school_discount_won"].sum()) == 0.0
+    assert school_notes(special) == [
+        "초·중·고교·유치원 특례를 분석 기간 전체에 적용했습니다 — 신청일을 알 수 없기 "
+        "때문입니다. 할인은 전력량요금에만 걸었으므로 실제 할인액은 이 값보다 큽니다. "
+        "기준이 되는 앞 달 자료가 없어 2개 월분은 할인하지 않았습니다."
+    ]
+
+
+def test_특례를_못_거는_종별에_켜면_실패한다(tmp_path: Path, tariff: TariffTable) -> None:
+    """**조용히 무시하지 않는다.** 어느 규칙으로 계산했는지 아무도 모르게 된다."""
+    usage = months_usage(tmp_path / "종별.csv", {(2024, 3): 100.0})
+    with pytest.raises(TariffDataError, match="초·중·고교·유치원 특례를 적용할 수 없습니다"):
+        bill(usage, tariff, HIGH_A_I, contract_kw=900.0, school_exception=True)
+
+
+def test_특례를_안_켜면_한_자리도_안_움직인다(tmp_path: Path, tariff: TariffTable) -> None:
+    """**갈래가 새지 않는다.** 켜지 않은 판은 새 열이 0 이고 합계가 그대로다."""
+    usage = months_usage(
+        tmp_path / "안켬.csv",
+        {(2024, 4): 50.0, (2024, 5): 50.0, (2024, 6): 50.0, (2024, 7): 100.0},
+    )
+    plain = bill(usage, tariff, EDU_A, contract_kw=900.0)
+    assert float(plain.monthly["school_discount_won"].sum()) == 0.0
+    assert school_notes(plain) == []
+    assert plain.total_energy_won == pytest.approx(
+        float(plain.monthly["light_won"].sum() + plain.monthly["mid_won"].sum())
+        + float(plain.monthly["peak_won"].sum())
+    )
+
+
+def test_실측_소형_학교의_특례_전후가_91세션_값과_같다(tariff: TariffTable) -> None:
+    """**엔진 밖에서 손으로 낸 값과 맞댄다** (91세션 2절).
+
+    같은 자료·같은 종별로 91세션이 도구 밖에서 계산해 둔 수가 있다. 그 수를
+    여기 박아 두면 셋 가운데 하나만 어긋나도 이 자리에서 걸린다 — 합계만
+    보면 ①·②·③ 이 서로를 가릴 수 있다.
+    """
+    if not _OFFICE_CASE.is_file():
+        pytest.skip(f"실측 파일이 없습니다: {_OFFICE_CASE}")
+    usage = load_usage(_OFFICE_CASE)
+    plain = bill(usage, tariff, EDU_A, contract_kw=300.0)
+    special = bill(usage, tariff, EDU_A, contract_kw=300.0, school_exception=True)
+    assert plain.total_base_won == pytest.approx(17_404_897.0, abs=1.0)
+    assert special.total_base_won == pytest.approx(15_644_812.0, abs=1.0)
+    assert plain.total_energy_won - special.total_energy_won == pytest.approx(5_256_153.0, abs=1.0)
+    assert plain.total_won - special.total_won == pytest.approx(7_016_238.0, abs=1.0)
+    # 계약 950 kW 는 하한이 이기는 벌이라 기본요금 쪽이 더 크게 움직인다.
+    over_plain = bill(usage, tariff, EDU_A, contract_kw=950.0)
+    over_special = bill(usage, tariff, EDU_A, contract_kw=950.0, school_exception=True)
+    assert over_plain.total_base_won - over_special.total_base_won == pytest.approx(
+        3_336_188.0, abs=1.0
+    )
+    assert over_plain.total_won - over_special.total_won == pytest.approx(8_592_341.0, abs=1.0)

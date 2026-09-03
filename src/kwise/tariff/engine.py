@@ -45,6 +45,11 @@ from kwise.tariff.schema import (
     TariffSelection,
     TariffTable,
 )
+from kwise.tariff.school import (
+    school_discount_rates_by_month,
+    school_floor_ratio,
+    supports_school_exception,
+)
 from kwise.tariff.tou import classify_slots
 
 __all__ = [
@@ -126,6 +131,13 @@ class BillingOptions:
     power_factor_pct: float | None = None
     """주간 지상역률. None 이면 약관 제42조의 간주값(rules_kr.json)을 쓴다."""
     leading_power_factor_pct: float | None = None
+    school_exception: bool = False
+    """초·중·고교·유치원 특례를 **신청했는가** (시행세칙 별표4 8.).
+
+    **기본으로 켜지 않는다.** 대학·도서관·평생학습관도 교육용전력인데 기본값이
+    곧 「신청했다」 가 되어 근거 없이 값을 만든다. 켜면 요금적용전력의 창·하한·
+    계절 할인 셋이 함께 바뀐다 — :mod:`kwise.tariff.school` 참조.
+    """
 
 
 @dataclass(frozen=True)
@@ -313,6 +325,7 @@ _MONEY_COLUMNS = (
     "mid_won",
     "peak_won",
     "discount_won",
+    "school_discount_won",
     "power_factor_won",
     "energy_won",
     "energy_won_adjusted",
@@ -366,6 +379,16 @@ def calculate_bill(
     contract = table.contract(selection.contract_type)
     # **전압을 빼고 읽지 않는다** (89세션). 아래 네 자리가 같은 값을 본다.
     base_on_contract = contract.base_fee_on_contract_at(selection.voltage)
+    # 초·중·고교·유치원 특례 (시행세칙 별표4 8. · 97세션). **조용히 무시하지
+    # 않는다** — 켠 채로 자격 없는 종별에 넘어오면 어느 규칙으로 계산했는지
+    # 아무도 모른다.
+    school = bool(opts.school_exception)
+    if school and not supports_school_exception(selection.contract_type):
+        raise TariffDataError(
+            f"{contract.label} 에는 초·중·고교·유치원 특례를 적용할 수 없습니다 "
+            "(기본공급약관시행세칙 별표4 8. 가.). 특례는 교육용전력 적용대상 중 "
+            "초·중등교육법·유아교육법에 따른 교육시설의 것입니다."
+        )
     interval = usage.meta.interval_minutes
     index = pd.DatetimeIndex(usage.kw.index)
 
@@ -443,15 +466,25 @@ def calculate_bill(
     eligible = demand_eligible_mask(slots["band"], demand_bands=contract.demand_bands)
     demand_basis = monthly_demand_basis(usage.kw, month_labels, eligible)
     # 대상월 규칙 (5.2 ②) → 계약전력 하한 (5.2 ③)
-    before_floor = billing_demands(
-        demand_basis, prior_peaks=opts.prior_peaks, demand_months=contract.demand_months
+    #
+    # **특례는 창이 당월분 하나다** (별표4 8. 나.(1) · 97세션). 제68조 ①의
+    # 12개월 창을 타지 않으므로 직전 이력도 필요 없다.
+    before_floor = (
+        {month: float(value) for month, value in demand_basis.items()}
+        if school
+        else billing_demands(
+            demand_basis, prior_peaks=opts.prior_peaks, demand_months=contract.demand_months
+        )
     )
     # **하한은 제68조 ①을 타는 전압에서만 건다** (90세션). 그 항의 30% 는
     # 최대수요전력계 고객의 것이고, 계약전력 기준(제68조 ②) 고객에게는 없다 —
     # 교육용(갑)처럼 전압마다 기준이 갈리는 종별에서 이 가르기가 필요하다.
     # **결과에도 이 값을 싣는다** — 계약전력 조정(7.2)이 그것으로 목표를 잡으므로
     # 종별 값을 그대로 실으면 저압에서 없는 하한으로 목표를 세운다.
-    floor_ratio = None if base_on_contract else contract.contract_floor_ratio
+    # **특례의 하한은 15% 다** (별표4 8. 나.(1)). 거는 자리는 그대로다 —
+    # 조문도 「약관 제68조 제1항을 적용받는 경우」 로 같은 가르기를 쓴다.
+    type_floor_ratio = school_floor_ratio() if school else contract.contract_floor_ratio
+    floor_ratio = None if base_on_contract else type_floor_ratio
     demands = apply_contract_floor(
         before_floor,
         contract_kw=opts.contract_kw,
@@ -477,6 +510,20 @@ def calculate_bill(
         _as_period(month): float(count) / slots_per_day for month, count in counts.items()
     }
     factors, partial_notes = _base_fee_factors(covered_days, opts.partial_month_policy)
+
+    # ③ 계절 할인 (별표4 8. 나.(2)·다. · 97세션). **부분 월은 기준월에서 뺀다** —
+    # 며칠치뿐인 달을 평균에 넣으면 기본 사용전력량이 내려가 냉난방 비중이
+    # 부풀고 할인이 과대 산출된다.
+    school_rates: dict[pd.Period, float] = {}
+    school_skipped: tuple[pd.Period, ...] = ()
+    if school:
+        school_rates, school_skipped = school_discount_rates_by_month(
+            {month: sum(band_kwh[month].values()) for month in months},
+            reference_months={month for month in months if factors[month] >= 1.0},
+        )
+        for month, rate in school_rates.items():
+            for band in BANDS:
+                band_won[month][band] *= 1.0 - rate
 
     missing = (
         quality.monthly
@@ -509,7 +556,11 @@ def calculate_bill(
         # 역률요금은 그 달 기본요금에 대한 비율이다 (제43조). 부분 월 계수가 곱해진
         # 값에 붙이므로 부분 월도 자동으로 안분된다.
         power_factor_won = base_won * power_factor_ratio
-        observed_energy_won = energy_won[month]
+        # 특례 할인은 그 달 전력량요금에 대한 비율이다 (별표4 8. 나.(2)).
+        # **시간대 금액에도 같은 비율로 걸었다** — 세 시간대의 합이 곧
+        # 전력량요금이라는 관계를 깨면 월별 요금 구성 그래프가 어긋난다.
+        school_discount_won = energy_won[month] * school_rates.get(month, 0.0)
+        observed_energy_won = energy_won[month] - school_discount_won
         adjusted_energy_won = observed_energy_won / (1.0 - ratio) if ratio < 1.0 else float("nan")
         rows.append(
             {
@@ -534,6 +585,7 @@ def calculate_bill(
                 "mid_won": band_won[month]["mid"],
                 "peak_won": band_won[month]["peak"],
                 "discount_won": discount_won[month],
+                "school_discount_won": school_discount_won,
                 "power_factor_won": power_factor_won,
                 "energy_won": observed_energy_won,
                 "energy_won_adjusted": adjusted_energy_won,
@@ -612,7 +664,7 @@ def calculate_bill(
                     fact="tariff.contract_type_threshold",
                 )
             )
-    elif contract.contract_floor_ratio is None:
+    elif type_floor_ratio is None:
         notices.append(
             basis(
                 f"{contract.label} 의 요금적용전력 하한 비율이 요금 데이터에 없어 "
@@ -624,19 +676,19 @@ def calculate_bill(
         notices.append(
             warn(
                 "계약전력을 주지 않아 요금적용전력 하한"
-                f"(계약전력의 {contract.contract_floor_ratio:.0%})을 적용하지 않았습니다. "
+                f"(계약전력의 {type_floor_ratio:.0%})을 적용하지 않았습니다. "
                 "저부하 사업장은 기본요금이 과소 산출됩니다.",
                 fact="tariff.floor_no_contract",
             )
         )
     else:
-        floor_kw = opts.contract_kw * contract.contract_floor_ratio
+        floor_kw = opts.contract_kw * type_floor_ratio
         bound = [month for month in months if before_floor[month] < floor_kw]
         if bound:
             notices.append(
                 basis(
                     f"요금적용전력 하한 {floor_kw:,.1f} kW "
-                    f"(계약전력의 {contract.contract_floor_ratio:.0%})가 "
+                    f"(계약전력의 {type_floor_ratio:.0%})가 "
                     f"{len(bound)}개 월에 걸렸습니다.",
                     fact="tariff.floor_bound_months",
                 )
@@ -652,7 +704,7 @@ def calculate_bill(
                     fact="quality.over_contract",
                 )
             )
-    if not opts.prior_peaks and not base_on_contract:
+    if not opts.prior_peaks and not base_on_contract and not school:
         # **근거다.** 요금적용전력이 왜 그 값인지 설명한다 — 툴팁과 보고서로 간다.
         # 25세션에 코드 식별자(``prior_peaks=``)와 요구사항서 번호를 걷어냈다.
         # 사용자가 할 수 있는 일이 아닌 것을 시키지 않는다.
@@ -721,14 +773,38 @@ def calculate_bill(
         if base_on_contract
         else (
             "요금적용전력은 중간·최대부하 시간대의 최대수요만 대상으로 하며 "
-            f"(경부하 제외), 대상월은 {'·'.join(str(m) for m in contract.demand_months)}월과 "
-            "검침 당월입니다. 3~6월·10~11월 피크는 이월되지 않습니다 "
-            "(한전 기본공급약관 제68조)."
+            "(경부하 제외), 초·중·고교·유치원 특례를 적용해 **당월분**으로만 "
+            "잡습니다. 직전 달의 피크는 이월되지 않습니다 "
+            "(한전 기본공급약관시행세칙 별표4 8.)."
+            if school
+            else (
+                "요금적용전력은 중간·최대부하 시간대의 최대수요만 대상으로 하며 "
+                f"(경부하 제외), 대상월은 {'·'.join(str(m) for m in contract.demand_months)}월과 "
+                "검침 당월입니다. 3~6월·10~11월 피크는 이월되지 않습니다 "
+                "(한전 기본공급약관 제68조)."
+            )
         )
     )
+    # **특례는 한 줄로 낸다** (97세션 6절). 신청일을 도구가 모른다는 것과
+    # 할인이 과소라는 것이 한 문장에 함께 있어야 값을 오독하지 않는다 —
+    # 둘로 쪼개면 화면 문구만 늘고 읽는 사람은 반쪽만 본다.
+    school_note = ""
+    if school:
+        school_note = (
+            "초·중·고교·유치원 특례를 분석 기간 전체에 적용했습니다 — 신청일을 "
+            "알 수 없기 때문입니다. 할인은 전력량요금에만 걸었으므로 실제 "
+            "할인액은 이 값보다 큽니다."
+        )
+        if school_skipped:
+            school_note += (
+                f" 기준이 되는 앞 달 자료가 없어 {len(school_skipped)}개 월분은 "
+                "할인하지 않았습니다."
+            )
+
     # 요금적용전력 규칙·안분 계수는 **근거**다 — 기본요금이 왜 그 값인지 그 자체다.
     notices += [
         basis(demand_note, fact="tariff.billing_demand_rule"),
+        *([basis(school_note, fact="tariff.school_exception")] if school_note else []),
         *partial_notes,
         basis(
             "전력량요금은 관측 기준이 정본이고, 결측 보정 기준은 회수기간 산정 "

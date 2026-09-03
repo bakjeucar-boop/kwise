@@ -232,8 +232,10 @@ def test_야간_진상역률은_기본값이_없다() -> None:
 
 def test_드롭다운을_요금_데이터에서_만든다(table: TariffTable) -> None:
     """**하드코딩 금지** (부록 A.3)."""
-    types = dict(contract_type_choices(table))
-    assert set(types) == set(table.contract_types)
+    choices = contract_type_choices(table)
+    # **선택지 수와 종별 수가 다르다** (97세션 3절) — 특례를 걸 수 있는 종별은
+    # 선택지 둘로 펴진다. 종별 자체는 여전히 요금 데이터가 정한다.
+    assert {choice.contract_type for choice in choices} == set(table.contract_types)
     voltages = dict(voltage_choices(table, "general_b"))
     assert "high_a" in voltages
     assert option_choices(table, "general_b", "high_a") == ("I", "II", "III")
@@ -557,7 +559,8 @@ def test_실제_항목_전부에_원문_확인처가_붙는다() -> None:
     # 항목이 조용히 사라지는 것을 막는 잣대다. 늘리는 것은 정상, 줄면 확인한다.
     # 83세션에 근거 없는 여유율 둘(`contract.margin_ratio`·`margin_range`)이 빠졌다.
     # 89세션에 둘이 파일을 건너갔다 — 31+47 에서 29+49 가 됐고 합은 안 바뀐다.
-    assert len(rows) == len(items) == 78  # rules_kr 29 + assumptions 49
+    # 97세션에 초·중·고교·유치원 특례가 넷을 더했다 — 33+49.
+    assert len(rows) == len(items) == 82  # rules_kr 33 + assumptions 49
     assert all(row.link.startswith(("한국", "국가", "에너지", "Open", "기술서")) for row in rows)
     # **바깥에 원문이 없는 값도 있다** (22세션). 화면 예산은 우리가 정한 규약이라
     # 확인처가 기술서다 — 그래도 따라갈 데는 있어야 한다.
@@ -771,6 +774,41 @@ def test_경과조치를_가르는_것이_캐시_열쇠에_있다() -> None:
     assert form_token(on_i) != form_token(replace(on_i, option="III"))
     assert form_token(on_i) != form_token(replace(on_i, contract_type="general_b"))
     assert form_token(on_i) == form_token(replace(on_i))
+
+
+def test_특례가_캐시_열쇠를_가른다() -> None:
+    """**결과를 가르는 것은 열쇠에 있어야 한다** (97세션 4절 · 결함 유형 ④).
+
+    특례를 켜고 끈 두 판은 기본요금도 전력량요금도 다르다. 열쇠에 없으면
+    같은 캐시를 물어 **옛 금액이 새 조건의 것처럼 보인다.**
+    """
+    from kwise.ui.cache import form_token
+
+    off = ContractForm(contract_type="education_a", voltage="high_a", option="I")
+    assert form_token(off) != form_token(replace(off, school_exception=True))
+
+
+def test_교육용은_선택지_둘로_갈리고_나머지는_하나다(table: TariffTable) -> None:
+    """**종별을 쪼개지 않는다. 라벨 하나가 종별과 특례로 풀린다** (97세션 3절).
+
+    6세션이 특례를 종별 속성으로 읽어 교육용(을) 전체에 15% 를 얹었다 —
+    종별을 넷으로 쪼개면 그 오독을 구조로 박는다. **기본은 특례가 꺼진 쪽**이다:
+    대학·도서관도 교육용전력이라 켜 두면 근거 없이 값이 만들어진다.
+    """
+    from kwise.ui.pipeline import contract_choice_key, contract_type_choices
+
+    choices = contract_type_choices(table)
+    school = [choice for choice in choices if choice.school_exception]
+    assert {choice.contract_type for choice in school} == {"education_a", "education_b"}
+    # 특례를 걸 수 있는 종별은 정확히 둘씩, 나머지는 하나씩이다.
+    for contract_type in table.contract_types:
+        rows = [choice for choice in choices if choice.contract_type == contract_type]
+        assert len(rows) == (2 if contract_type in {"education_a", "education_b"} else 1)
+        assert rows[0].school_exception is False, contract_type  # 기본이 먼저 선다
+        assert rows[0].key == contract_type  # 종별 키를 그대로 쓴다 — 저장된 값이 산다
+    # 선택지 키와 (종별, 특례) 가 왕복한다.
+    for choice in choices:
+        assert contract_choice_key(choice.contract_type, choice.school_exception) == choice.key
 
 
 def test_편집이_실패하면_캐시를_건드리지_않는다(monkeypatch: pytest.MonkeyPatch) -> None:

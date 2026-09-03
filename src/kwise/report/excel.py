@@ -756,6 +756,7 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
                 "total_won",
                 "total_won_adjusted",
                 "discount_won",
+                "school_discount_won",
                 "demand_confidence",
             ]
         ],

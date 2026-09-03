@@ -31,6 +31,7 @@ import streamlit as st
 from kwise.pv import list_provinces, list_sigungu
 from kwise.quality import DEFAULT_OPERATING_HOURS
 from kwise.rules import assumption
+from kwise.ui.pipeline import ContractChoice
 
 __all__ = [
     "BUILDING_KEY",
@@ -98,18 +99,23 @@ def building_uses() -> tuple[BuildingUse, ...]:
 
 
 def narrow_contract_types(
-    choices: tuple[tuple[str, str], ...], use_key: str
-) -> tuple[tuple[str, str], ...]:
+    choices: tuple[ContractChoice, ...], use_key: str
+) -> tuple[ContractChoice, ...]:
     """용도로 계약종별 후보를 좁힌다. **좁힐 수 없으면 전부 돌려준다.**
 
     고르지 않았거나(``""``) 모르는 용도이거나 남는 것이 없으면 전 종별이다 —
     좁히기가 실패했다고 고를 것이 사라지면 입력 자체를 못 한다.
+
+    **종별로 좁힌다** — 한 종별이 선택지 둘인 자리(초·중·고교·유치원 특례)에서는
+    둘이 함께 남거나 함께 빠진다. 특례는 시설 속성이라 용도가 가릴 것이 아니다.
     """
     prefixes = next((item.contract_prefixes for item in building_uses() if item.key == use_key), ())
     if not prefixes:
         return choices
     narrowed = tuple(
-        item for item in choices if any(item[0].startswith(prefix) for prefix in prefixes)
+        item
+        for item in choices
+        if any(item.contract_type.startswith(prefix) for prefix in prefixes)
     )
     return narrowed or choices
 

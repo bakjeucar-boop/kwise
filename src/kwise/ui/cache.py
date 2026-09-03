@@ -204,6 +204,9 @@ def form_token(form: ContractForm) -> str:
             form.lagging_pct,
             form.leading_power_factor_pct,
             form.sunday_is_holiday,
+            # **특례가 결과를 가른다** (97세션 4절). 열쇠에 없으면 특례를 켜고
+            # 끈 두 판이 같은 캐시를 물어 옛 금액이 새 조건의 것처럼 보인다.
+            form.school_exception,
         )
     )
 

@@ -419,6 +419,50 @@ def test_교육용_덱_벌에_하한이_이기는_자리가_있다(tariff: Tarif
     assert floor_kw > peak_kw, f"하한 {floor_kw} kW 가 최대수요 {peak_kw} kW 를 못 넘는다"
 
 
+def test_특례를_켜면_계약전력_조정_권고가_뒤집힌다(tariff: TariffTable) -> None:
+    """**값이 아니라 권고가 바뀌는 자리다** (91세션 · 97세션 5절).
+
+    같은 자료·같은 계약전력에서 하한이 285 → 142.5 kW 로 내려가면 최대수요
+    264.7 kW 에 **져서** 낮출 이유 자체가 사라진다. 절감액이 1,338,660원에서
+    0 원이 된다 — 특례는 기본요금만 깎는 것이 아니라 **개선 수단 하나의 판정을
+    통째로 바꾼다.** 금액만 보고 「−7%」 로 정리하면 이 뒤집힘이 안 보인다.
+    """
+    import sys
+
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    import render_deck
+
+    from kwise.measures.contract import evaluate_contract_adjustment
+    from kwise.ui.pipeline import ContractForm, baseline_bill
+
+    case = render_deck.BY_KEY["small-edu-a-over"]
+    usage = load_usage(case.csv)
+
+    def adjust(school: bool) -> object:
+        form = ContractForm(
+            case.contract_type,
+            case.voltage,
+            case.option,
+            contract_kw=case.contract_kw,
+            school_exception=school,
+        )
+        return evaluate_contract_adjustment(
+            usage,
+            baseline_bill(usage, tariff, form),
+            contract_kw=case.contract_kw,
+            contract_floor_ratio=None,  # 요금 결과가 들고 온 값을 쓴다
+        )
+
+    plain = adjust(False)
+    special = adjust(True)
+    assert plain.floor_kw == pytest.approx(285.0)  # type: ignore[attr-defined]
+    assert plain.target_contract_kw == 883.0  # type: ignore[attr-defined]
+    assert plain.saving_won == pytest.approx(1_338_660.0)  # type: ignore[attr-defined]
+    assert special.floor_kw == pytest.approx(142.5)  # type: ignore[attr-defined]
+    assert special.target_contract_kw is None  # type: ignore[attr-defined]
+    assert special.saving_won == pytest.approx(0.0)  # type: ignore[attr-defined]
+
+
 def test_contract_warnings_only_when_lowering_helps(sample_usage: UsageData) -> None:
     """**낮출 자리가 있을 때만 하향 경고를 낸다** (83세션).
 

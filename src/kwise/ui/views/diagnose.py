@@ -60,6 +60,7 @@ from kwise.ui.labels import option_label
 from kwise.ui.notices import partition_facts, screen_notices, tooltip_text
 from kwise.ui.pipeline import (
     ContractForm,
+    contract_choice_key,
     contract_type_choices,
     default_lagging_pct,
     option_choices,
@@ -343,15 +344,21 @@ def _contract_block(table: TariffTable, building: BuildingInfo | None) -> Contra
     saved = get_form()
     types = contract_type_choices(table)
     narrowed = narrow_contract_types(types, building.use_key if building else "")
-    type_keys = [key for key, _label in narrowed]
-    type_labels = {key: label for key, label in narrowed}
+    type_keys = [choice.key for choice in narrowed]
+    type_labels = {choice.key: choice.label for choice in narrowed}
+    # **선택지 하나가 종별과 특례 둘로 풀린다** (97세션 3절). 입력 칸은 넷 그대로다.
+    by_key = {choice.key: choice for choice in narrowed}
 
     with st.expander("계약 정보 (4)", expanded=saved is None):
         # **2열로 나눈다.** 넷을 세로로 쌓으면 스크롤이 생겨 한눈에 안 들어온다.
         left, right = st.columns(2)
         with left:
-            default_type = saved.contract_type if saved else type_keys[0]
-            contract_type = st.selectbox(
+            default_type = (
+                contract_choice_key(saved.contract_type, saved.school_exception)
+                if saved
+                else type_keys[0]
+            )
+            picked = st.selectbox(
                 "계약종별",
                 type_keys,
                 index=type_keys.index(default_type) if default_type in type_keys else 0,
@@ -361,6 +368,8 @@ def _contract_block(table: TariffTable, building: BuildingInfo | None) -> Contra
                     + manual_tip("contract-info")
                 ),
             )
+            choice = by_key[picked]
+            contract_type = choice.contract_type
 
             voltages = voltage_choices(table, contract_type)
             voltage_keys = [key for key, _label in voltages]
@@ -408,6 +417,7 @@ def _contract_block(table: TariffTable, building: BuildingInfo | None) -> Contra
             contract_kw=contract_kw or None,
             power_factor_pct=lagging,
             leading_power_factor_pct=leading,
+            school_exception=choice.school_exception,
         )
         if st.button("계약 정보 확정", type="primary"):
             set_form(form)

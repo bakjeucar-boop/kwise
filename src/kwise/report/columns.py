@@ -62,6 +62,7 @@ COLUMN_LABELS: dict[str, str] = {
     "energy_won": "전력량요금(원)",
     "energy_won_adjusted": "전력량요금 보정(원)",
     "discount_won": "할인(원)",
+    "school_discount_won": "초·중·고교·유치원 특례 할인(원)",
     "power_factor_won": "역률 요금(원)",
     "total_won": "합계(원)",
     "total_won_adjusted": "합계 보정(원)",
