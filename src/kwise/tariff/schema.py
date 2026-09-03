@@ -46,6 +46,8 @@ __all__ = [
     "list_voltages",
     "load_tariff",
     "switchable_selections",
+    "threshold_text",
+    "within_type_threshold",
 ]
 
 BANDS: tuple[str, ...] = ("light", "mid", "peak")
@@ -213,6 +215,50 @@ class ContractType:
         rates = self.voltages.get(voltage)
         basis = rates.base_fee_basis if rates is not None else None
         return (basis if basis is not None else self.base_fee_basis) == BASE_FEE_CONTRACT
+
+
+def within_type_threshold(
+    contract_kw: float, threshold_kw: float | None, direction: str | None
+) -> bool:
+    """이 계약전력이 종별 경계 안인가 (약관 제56조·제58조 등).
+
+    ``threshold_direction`` 이 방향을 정한다 — ``"below"`` 는 문턱 **미만**이
+    그 종별이고(갑Ⅰ·갑Ⅱ 300 · 교육용(갑) 1,000), ``"above"`` 는 문턱 **이상**
+    이다(을 300 · 교육용(을) 1,000).
+
+    **기본값을 두지 않는다** (21세션). 문턱이 있는데 방향을 모르면 조용히 한쪽을
+    고르지 않고 실패한다 — 어느 쪽으로 읽었는지 아무도 모르게 되기 때문이다.
+    문턱 자체가 없는 종별은 경계가 없으므로 참이다.
+
+    Raises:
+        TariffDataError: 문턱은 있는데 방향이 없거나 모르는 낱말일 때.
+    """
+    if threshold_kw is None:
+        return True
+    if direction == "below":
+        return contract_kw < threshold_kw
+    if direction == "above":
+        return contract_kw >= threshold_kw
+    raise TariffDataError(
+        f"종별 문턱 {threshold_kw:,.0f} kW 의 방향을 알 수 없습니다: {direction!r} "
+        "(가능: 'below', 'above')"
+    )
+
+
+def threshold_text(threshold_kw: float, direction: str | None) -> str:
+    """``"300 kW 미만"`` 꼴. 안내 문구가 방향을 말로 옮길 때 쓴다.
+
+    **여기서도 기본값을 두지 않는다.** 모르는 방향에 한쪽 낱말을 붙이면
+    안내가 사실과 반대되는 말을 하게 된다 (결함 유형 ①).
+    """
+    if direction == "below":
+        return f"{threshold_kw:,.0f} kW 미만"
+    if direction == "above":
+        return f"{threshold_kw:,.0f} kW 이상"
+    raise TariffDataError(
+        f"종별 문턱 {threshold_kw:,.0f} kW 의 방향을 알 수 없습니다: {direction!r} "
+        "(가능: 'below', 'above')"
+    )
 
 
 @dataclass(frozen=True)

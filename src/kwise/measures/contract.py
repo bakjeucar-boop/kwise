@@ -36,6 +36,7 @@ from kwise.measures.base import Certainty, annualize
 from kwise.money import NO_SAVING
 from kwise.notices import Notice, basis, block, warn
 from kwise.tariff import BillingResult
+from kwise.tariff.schema import threshold_text, within_type_threshold
 
 __all__ = [
     "MARGIN_NOTICE",
@@ -61,6 +62,12 @@ _UNKNOWN_NOTICE = (
 FLOOR_NOT_BINDING_NOTICE = (
     "하한이 요금적용전력에 걸리지 않아 계약전력을 낮춰도 기본요금이 줄지 않습니다."
 )
+TYPE_THRESHOLD_FACT = "contract.crosses_type_threshold"
+"""**목표 계약전력이 종별 경계 밖일 때의 사실 ID** (96세션).
+
+절감액은 지금 종별의 단가로 낸 값이라 종별이 바뀌면 그 값이 아니다. 여기서
+단가를 갈아 끼우지는 않는다 — **경계를 넘는다는 사실까지**가 이 안내의 몫이다.
+"""
 """**하한이 지는 갈래의 결론.** 3단계·PPT 가 이미 이렇게 적고 있던 문장이다 —
 2단계 개요가 거꾸로 적고 있어 83세션에 이 문장으로 맞췄다.
 """
@@ -230,6 +237,22 @@ def evaluate_contract_adjustment(
                 fact="contract.energy_unchanged",
             ),
         ]
+        # **목표가 종별 경계를 넘는가** (96세션). 방향은 요금 데이터가 정한다 —
+        # 갑Ⅰ·갑Ⅱ 는 300 kW 미만, 을은 300 kW 이상, 교육용은 1,000 kW 다.
+        # 넘으면 **절감액이 지금 종별 단가로 낸 값**이라는 사실을 함께 낸다.
+        threshold = bill.threshold_kw
+        if threshold is not None and not within_type_threshold(
+            target, threshold, bill.threshold_direction
+        ):
+            notices.append(
+                warn(
+                    f"{bill.contract_label} 은 계약전력 "
+                    f"{threshold_text(threshold, bill.threshold_direction)} "
+                    f"종별인데 목표 계약전력이 {target:,.0f} kW 입니다. "
+                    "종별이 바뀌는 자리이므로 절감액은 지금 종별 단가로 낸 값입니다.",
+                    fact=TYPE_THRESHOLD_FACT,
+                )
+            )
     return ContractAdjustment(
         status=ContractStatus.CONFIRMED,
         contract_kw=contract_kw,

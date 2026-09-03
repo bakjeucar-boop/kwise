@@ -53,16 +53,19 @@ from kwise.measures import (
     with_load,
     with_surplus_revenue,
 )
+from kwise.measures.contract import TYPE_THRESHOLD_FACT
 from kwise.notices import texts
 from kwise.pv import ArrayConfig, PvSystemConfig
 from kwise.quality import QualityReport
 from kwise.tariff import (
     BillingOptions,
     BillingResult,
+    TariffDataError,
     TariffSelection,
     TariffTable,
     calculate_bill,
 )
+from kwise.tariff.schema import threshold_text, within_type_threshold
 from tests._synthetic import clearsky_weather, write_month
 
 CURRENT = TariffSelection("general_b", "high_a", "I")
@@ -393,6 +396,59 @@ def test_invalid_floor_ratio_raises(sample_usage: UsageData, sample_bill: Billin
         evaluate_contract_adjustment(
             sample_usage, sample_bill, contract_kw=7_000.0, contract_floor_ratio=1.5
         )
+
+
+def test_목표가_종별_경계를_넘으면_그_사실을_낸다(
+    sample_usage: UsageData, tariff: TariffTable, sample_report: QualityReport
+) -> None:
+    """**갑Ⅱ 는 300 kW 미만 종별이다** (96세션).
+
+    계약전력 20,000 kW 는 그 자체가 갑Ⅱ 에 없는 값이고 목표 17,645 kW 도
+    경계 밖이다 — 그 값으로 바꾸면 종별이 바뀌므로 지금 단가로 낸 절감액이
+    아니다. **단가를 갈아 끼우지는 않는다** — 경계를 넘는다는 사실까지가
+    이 안내의 몫이다.
+    """
+    bill = calculate_bill(
+        sample_usage,
+        tariff,
+        TariffSelection("general_a_2", "high_a", "II"),
+        options=BillingOptions(contract_kw=20_000.0),
+        quality=sample_report,
+    )
+    assert bill.threshold_kw == pytest.approx(300.0)
+    assert bill.threshold_direction == "below"
+
+    result = evaluate_contract_adjustment(sample_usage, bill, contract_kw=20_000.0)
+    assert result.target_contract_kw == 17_645.0
+    crossing = [item for item in result.notices if item.fact == TYPE_THRESHOLD_FACT]
+    assert len(crossing) == 1
+    assert "300 kW 미만" in crossing[0].text
+    assert "17,645 kW" in crossing[0].text
+
+
+def test_경계_안이면_안내를_내지_않는다(
+    sample_usage: UsageData, sample_bill: BillingResult
+) -> None:
+    """**안 넘는 판이 실물에 있다** (96세션). 을은 300 kW **이상** 종별이라
+    목표 5,294 kW 는 경계 안이다 — 뜨지 않아야 할 자리에서 안 뜨는지 본다.
+    """
+    assert sample_bill.threshold_direction == "above"
+    result = evaluate_contract_adjustment(
+        sample_usage, sample_bill, contract_kw=7_000.0, contract_floor_ratio=1.0
+    )
+    assert result.target_contract_kw == 5_294.0
+    assert not [item for item in result.notices if item.fact == TYPE_THRESHOLD_FACT]
+
+
+def test_방향을_모르면_실패한다() -> None:
+    """**코드에 기본값을 두지 않는다** (21세션). 방향을 모른 채 한쪽으로 읽으면
+    안내가 사실과 반대되는 말을 하게 된다.
+    """
+    assert within_type_threshold(700.0, None, None)  # 문턱이 없으면 경계도 없다
+    with pytest.raises(TariffDataError, match="방향"):
+        within_type_threshold(700.0, 300.0, None)
+    with pytest.raises(TariffDataError, match="방향"):
+        threshold_text(300.0, "over")
 
 
 # --------------------------------------------------------------------- 7.3 태양광

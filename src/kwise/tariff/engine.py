@@ -159,6 +159,12 @@ class BillingResult:
     contract_floor_ratio: float | None
     demand_months: tuple[int, ...]
     contract_kw: float | None
+    threshold_kw: float | None
+    """종별 경계 (갑Ⅰ·갑Ⅱ·을 300 · 교육용 1,000). 없는 종별은 ``None``."""
+    threshold_direction: str | None
+    """경계의 방향 — ``"below"`` 는 문턱 미만이 그 종별, ``"above"`` 는 이상이다.
+    **계약전력 조정 권고가 이 경계를 넘는지 보는 데 쓴다** (96세션).
+    :func:`kwise.tariff.schema.within_type_threshold` 가 읽는다."""
 
     period_start: pd.Timestamp
     period_end: pd.Timestamp
@@ -755,6 +761,8 @@ def calculate_bill(
         contract_floor_ratio=floor_ratio,
         demand_months=contract.demand_months,
         contract_kw=opts.contract_kw,
+        threshold_kw=contract.threshold_kw,
+        threshold_direction=contract.threshold_direction,
         period_start=usage.meta.start,
         period_end=usage.meta.end,
         period_days=period_days,
