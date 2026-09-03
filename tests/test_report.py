@@ -598,6 +598,51 @@ def test_empty_case_list_is_rejected(tmp_path: Path) -> None:
         load_batch_config(path)
 
 
+def test_배치_기준선이_절감액과_같은_밑둥_위에_선다(
+    tmp_path: Path, tariff: TariffTable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """②-15 (103세션 3절). **하한이 걸리는 벌**로 밑둥을 재 본다.
+
+    균일 400 kW 에 계약전력 3,000 kW 라 하한 900 kW 가 달마다 이긴다. 앞서는
+    기준선만 계약전력 없이 잡혀 **하한이 안 걸린 총액에서 하한이 걸린 절감액을
+    빼고** 있었다.
+
+    **아래 둘을 함께 본다** — 위만 두면 하한이 안 걸리는 벌로 바뀌어도 통과한다.
+    """
+    from kwise.io import load_usage
+    from kwise.report.batch import run_case
+    from kwise.tariff import BillingOptions, calculate_bill
+
+    monkeypatch.setenv("PROJECT_CACHE", str(tmp_path / "cache"))
+    usage_path = write_month(tmp_path / "하한벌.csv", 2024, 3, kwh=100.0)
+    path = tmp_path / "cases.yaml"
+    path.write_text(
+        "output_dir: out\n"
+        "cases:\n"
+        "  - name: 하한벌\n"
+        "    usage: 하한벌.csv\n"
+        "    contract_type: general_b\n"
+        "    voltage: high_a\n"
+        "    option: I\n"
+        "    contract_kw: 3000\n",
+        encoding="utf-8",
+    )
+    config = load_batch_config(path)
+    summary = run_case(
+        config.cases[0], tariff, output_dir=tmp_path / "out", include_timeseries=False
+    )
+
+    usage = load_usage(usage_path)
+    selection = TariffSelection("general_b", "high_a", "I")
+    with_floor = calculate_bill(usage, tariff, selection, options=BillingOptions(contract_kw=3000))
+    without_floor = calculate_bill(usage, tariff, selection)
+
+    assert summary.baseline_won == pytest.approx(with_floor.total_won)
+    assert with_floor.total_won > without_floor.total_won, (
+        "하한이 안 걸리는 벌이 되었습니다. 이 시험은 걸리는 벌에서만 뜻이 있습니다."
+    )
+
+
 def test_peak_window_on_a_day_without_observations() -> None:
     """**관측이 하나도 없는 날** (25세션 1절).
 

@@ -216,8 +216,13 @@ def run_case(
     usage = load_usage(case.usage)
     quality = check_quality(usage)
     contract = ContractInfo(case.selection, contract_kw=case.contract_kw)
-    diagnosis = diagnose(usage, table, contract, quality=quality)
-    baseline = calculate_bill(usage, table, case.selection, quality=quality)
+    # **계약전력을 요금 옵션에도 넣는다** (103세션 3절). 화면이 하는 것과 같다
+    # (`ui\\pipeline.py` 의 ``ContractForm.billing_options``) — 기준선·조합·
+    # 감도·수단이 **한 밑둥** 위에 선다. 앞서는 기준선만 계약전력 없이 잡혀
+    # 하한이 안 걸린 총액에서 하한이 걸린 절감액을 빼고 있었다.
+    options = BillingOptions(contract_kw=case.contract_kw)
+    diagnosis = diagnose(usage, table, contract, quality=quality, options=options)
+    baseline = calculate_bill(usage, table, case.selection, options=options, quality=quality)
 
     note = ""
     unit_pv: pd.Series | None = None
@@ -275,6 +280,7 @@ def run_case(
         baseline_bill=baseline,
         unit_pv_kw_per_kwp=unit_pv,
         quality=quality,
+        options=options,
     )
 
     sensitivity = (
@@ -285,6 +291,7 @@ def run_case(
             baseline_bill=baseline,
             unit_pv_kw_per_kwp=unit_pv,
             quality=quality,
+            options=options,
         )
         if unit_pv is not None
         else no_pv_sensitivity_frame()
@@ -296,6 +303,7 @@ def run_case(
         table,
         case.selection,
         quality=quality,
+        options=options,
         option_totals=diagnosis.option_totals,
     )
     contract_result = (
@@ -304,10 +312,8 @@ def run_case(
             baseline,
             contract_kw=case.contract_kw,
             contract_floor_ratio=case.contract_floor_ratio,
-            # **기준선을 계약전력 없이 계산했다** (219줄). 넘는 쪽을 볼 때는
-            # 현행도 같은 옵션으로 다시 계산하므로 한쪽만 하한이 걸리지 않는다.
             table=table,
-            options=BillingOptions(),
+            options=options,
         )
         if case.contract_kw is not None
         else None
@@ -332,6 +338,7 @@ def run_case(
         target_pct=case.power_factor_target_pct,
         investment_won=case.power_factor_investment_won,
         quality=quality,
+        options=options,
     )
     ess_result = (
         evaluate_ess(
@@ -340,9 +347,10 @@ def run_case(
             case.selection,
             target_kw=case.ess_target_kw,
             cost=case.ess_cost,
-            charge_mask=light_band_mask(usage, table, selection=case.selection),
+            charge_mask=light_band_mask(usage, table, selection=case.selection, options=options),
             baseline=baseline,
             quality=quality,
+            options=options,
         )
         if case.ess_target_kw is not None
         else None
