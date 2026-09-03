@@ -223,15 +223,18 @@ def test_기준_데이터로_갔다_돌아온다() -> None:
 def test_용도를_고르면_계약종별_후보가_좁아진다() -> None:
     """좁히기이지 판정이 아니다 (16세션 2절)."""
     from kwise.tariff import load_tariff
-    from kwise.tariff.schema import list_contract_types
     from kwise.ui.building import narrow_contract_types
+    from kwise.ui.pipeline import contract_type_choices
 
-    every = list_contract_types(load_tariff())
+    # **선택지로 좁힌다** (97세션 3절). 한 종별이 선택지 둘인 자리가 생겼고,
+    # 특례는 시설 속성이라 용도가 가릴 것이 아니다 — 둘이 함께 남거나 함께 빠진다.
+    every = contract_type_choices(load_tariff())
     assert len(narrow_contract_types(every, "")) == len(every)
     factory = narrow_contract_types(every, "factory")
-    assert factory and all(key.startswith("industrial") for key, _label in factory)
+    assert factory and all(item.contract_type.startswith("industrial") for item in factory)
     school = narrow_contract_types(every, "school")
-    assert school and all(key.startswith("education") for key, _label in school)
+    assert school and all(item.contract_type.startswith("education") for item in school)
+    assert len(school) == 4  # 교육용 둘 × (그 밖 · 초·중·고·유치원)
     # 모르는 용도면 전 종별이다 — 고를 것이 사라지면 입력을 못 한다.
     assert narrow_contract_types(every, "없는용도") == every
 
