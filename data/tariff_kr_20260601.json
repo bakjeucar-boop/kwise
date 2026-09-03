@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.3",
+  "schema_version": "0.4",
   "region": "kr",
   "source": "한국전력공사 전기요금표(종합)",
   "source_file": "2026-06-01_KEPCO_Electricity_Tariff.xlsx",
@@ -637,6 +637,14 @@
               }
             }
           }
+        }
+      },
+      "transition": {
+        "first_billing_month": "2026-06",
+        "last_billing_month": "2026-11",
+        "counterpart": {
+          "I": "III",
+          "II": "IV"
         }
       }
     },

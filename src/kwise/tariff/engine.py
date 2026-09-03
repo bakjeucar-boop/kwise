@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -176,6 +176,8 @@ class BillingResult:
 
     limited_months: tuple[pd.Period, ...]
     prior_peaks_supplied: bool
+    transition_months: tuple[pd.Period, ...] = ()
+    """부칙의 경과조치로 **짝 선택요금의 금액이 실린 달.** 없으면 빈 튜플이다."""
     notices: tuple[Notice, ...] = field(default=())
 
     @property
@@ -290,6 +292,46 @@ def _base_fee_factors(
             )
         )
     return factors, notes
+
+
+# --------------------------------------------------------------------- 부칙 경과조치
+
+
+# **비금액 열은 두 선택요금에서 같다** — 같은 사용량을 같은 규칙으로 쪼갠 것이라
+# kWh·최대수요·요금적용전력·안분 계수가 한 자리도 다르지 않고 단가만 다르다.
+# 그래서 갈아 끼우는 것은 아래 열들뿐이다.
+_MONEY_COLUMNS = (
+    "base_won",
+    "light_won",
+    "mid_won",
+    "peak_won",
+    "discount_won",
+    "power_factor_won",
+    "energy_won",
+    "energy_won_adjusted",
+    "total_won",
+    "total_won_adjusted",
+)
+
+
+def _lower_of_counterpart(
+    monthly: pd.DataFrame, counterpart: pd.DataFrame, months: Sequence[pd.Period]
+) -> tuple[pd.Period, ...]:
+    """``months`` 가운데 **짝이 더 싼 달의 금액을 갈아 끼운다.** 바뀐 달을 돌려준다.
+
+    ``monthly`` 를 그 자리에서 고친다 — 부른 쪽이 방금 만든 표라 남의 것을
+    건드리지 않는다.
+    """
+    replaced: list[pd.Period] = []
+    for month in months:
+        if month not in counterpart.index:
+            continue
+        if float(counterpart.loc[month, "total_won"]) >= float(monthly.loc[month, "total_won"]):
+            continue
+        for column in _MONEY_COLUMNS:
+            monthly.loc[month, column] = counterpart.loc[month, column]
+        replaced.append(month)
+    return tuple(replaced)
 
 
 # --------------------------------------------------------------------- 본체
@@ -496,6 +538,42 @@ def calculate_bill(
         )
 
     monthly = pd.DataFrame(rows).set_index("month")
+
+    # 부칙의 경과조치 — 일반용(갑)Ⅱ 는 부칙 (2026. 5. 22) 제2항 제1호다.
+    # **고른 선택요금은 그대로 두고 그 기간에 청구되는 금액만 낮은 쪽으로 간다.**
+    # 신청과 무관하게 걸리므로 고객이 아무것도 안 해도 이 값이 청구된다.
+    #
+    # 아래에서 자기를 다시 부르지만 **한 번에 멈춘다** — 짝은 한쪽 방향으로만
+    # 적혀 있어(``{"I": "III", "II": "IV"}``) 짝의 짝이 없다.
+    transition_months: tuple[pd.Period, ...] = ()
+    transition = contract.transition
+    counterpart_option = (
+        transition.counterpart_of(selection.option) if transition is not None else None
+    )
+    covered = (
+        [month for month in months if transition.covers(month.year, month.month)]
+        if transition is not None and counterpart_option is not None
+        else []
+    )
+    if covered and counterpart_option is not None:
+        counterpart = calculate_bill(
+            usage,
+            table,
+            TariffSelection(selection.contract_type, selection.voltage, counterpart_option),
+            options=opts,
+            quality=quality,
+        )
+        transition_months = _lower_of_counterpart(monthly, counterpart.monthly, covered)
+        if transition_months:
+            # 기본요금이 바뀌었으면 역률요금의 **기준**도 바뀐다 (제43조). 비율은
+            # 역률만으로 정해지므로 그대로이고 금액만 다시 잡힌다 — 월별
+            # ``power_factor_won`` 은 이미 짝의 것으로 갈아 끼워져 앞뒤가 맞는다.
+            power_factor = power_factor_charge(
+                float(monthly["base_won"].sum()),
+                lagging_pct=opts.power_factor_pct,
+                leading_pct=opts.leading_power_factor_pct,
+            )
+
     limited_months = tuple(
         month for month in months if missing_ratio.get(month, 0.0) > opts.missing_limit_ratio
     )
@@ -677,5 +755,6 @@ def calculate_bill(
         power_factor=power_factor,
         limited_months=limited_months,
         prior_peaks_supplied=bool(opts.prior_peaks),
+        transition_months=transition_months,
         notices=tuple(notices),
     )

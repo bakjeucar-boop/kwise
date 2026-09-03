@@ -912,21 +912,22 @@ def test_갑Ⅰ_고압_행은_저압계량_예외_경로다(
 
 # ------------------------------------------------- 부칙 (2026. 5. 22) 제2항 제1호
 #
-# **아직 하지 않은 일에 박는 못이다** (93세션 6절).
-#
 # 그 조항은 일반용전력(갑)Ⅱ 고객의 2026년 6월분~11월분 요금에 대해, 선택(Ⅰ)을
 # 쓰고 있으면 선택(Ⅲ)으로도 계산해 **낮은 쪽을 적용**하고 선택(Ⅱ)와 선택(Ⅳ)도
-# 같게 하라고 정한다. 도구는 그 자동 비교를 하지 않는다 — 고객이 고른 하나로
-# 간다. **미해결 목록에만 두면 사람이 읽어야 살아나므로**, 고쳐지는 날 스스로
-# 빨개지는 못을 여기 박는다.
+# 같게 하라고 정한다. **신청과 무관하다** — 제3호가 「신청한」 Ⅲ·Ⅳ 를 12월분부터로
+# 따로 정하므로 제1호의 자동 비교에 신청이 없다는 것이 대조로 선다.
 #
-# 아래 두 시험은 짝이다. 앞엣것이 「선택Ⅲ 가 더 싼 달」 이라는 전제를 지키고
-# (전제가 죽으면 뒤엣것의 xfail 이 뜻을 잃는다), 뒤엣것이 그 달에 자동 비교가
-# 없다는 사실을 지킨다.
+# **93세션이 여기 xfail(strict) 못을 박았고 94세션에 XPASS 로 깨졌다.** 그 자리를
+# 아래 시험 넷이 대신한다 — 못은 「아직 안 했다」 를 지키는 것이고 이것들은
+# 「무엇을 했나」 를 값으로 지킨다. 93세션이 `--runxfail` 로 본 빨간 값은
+# **선택Ⅰ 3,705,819원 · 선택Ⅲ 3,687,643원**이었다. 지금은 선택Ⅰ 이 3,687,643원이다.
 
 TRANSITION_MONTH = (2026, 7)  # 부칙 1호의 6월분~11월분 안이다
+AFTER_TRANSITION_MONTH = (2027, 7)  # 밖이다. 달력이 달라 값도 다르다
 A2_OPTION_I = TariffSelection("general_a_2", "high_a", "I")
+A2_OPTION_II = TariffSelection("general_a_2", "high_a", "II")
 A2_OPTION_III = TariffSelection("general_a_2", "high_a", "III")
+A2_OPTION_IV = TariffSelection("general_a_2", "high_a", "IV")
 
 
 def peak_heavy_month(path: Path, year: int, month: int) -> UsageData:
@@ -943,27 +944,54 @@ def peak_heavy_month(path: Path, year: int, month: int) -> UsageData:
     return load_usage(write_csv(path / f"peak-{year}-{month:02d}.csv", rows))
 
 
-def test_최대부하가_몰린_달에는_선택Ⅲ_가_더_싸다(tmp_path: Path, tariff: TariffTable) -> None:
-    """아래 못의 **전제**다. 이것이 깨지면 아래 xfail 은 아무것도 안 지킨다."""
-    usage = peak_heavy_month(tmp_path, *TRANSITION_MONTH)
+def test_전환기간_밖에서는_선택Ⅰ_과_선택Ⅲ_가_갈린다(tmp_path: Path, tariff: TariffTable) -> None:
+    """**아래 세 시험의 대조군**이다. 엔진이 둘을 늘 같게 만드는 것이 아니다."""
+    usage = peak_heavy_month(tmp_path, *AFTER_TRANSITION_MONTH)
     opts = BillingOptions(contract_kw=200.0)
-    on_i = calculate_bill(usage, tariff, A2_OPTION_I, options=opts).total_won
-    on_iii = calculate_bill(usage, tariff, A2_OPTION_III, options=opts).total_won
-    assert on_iii < on_i
+    on_i = calculate_bill(usage, tariff, A2_OPTION_I, options=opts)
+    on_iii = calculate_bill(usage, tariff, A2_OPTION_III, options=opts)
+    assert on_i.transition_months == ()
+    assert on_i.total_won == pytest.approx(3_660_500.8)
+    assert on_iii.total_won == pytest.approx(3_687_643.2)
     # 기본요금 단가가 같으므로(둘 다 7,170원/kW) 차이는 전력량요금에서만 온다.
     assert tariff.rates(A2_OPTION_I).base_won_per_kw == tariff.rates(A2_OPTION_III).base_won_per_kw
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="부칙 (2026. 5. 22) 제2항 제1호의 자동 최저요금이 도구에 없다 (93세션에 안 했다)",
-)
-def test_전환기간_요금은_선택Ⅰ_과_선택Ⅲ_중_낮은_쪽이어야_한다(
-    tmp_path: Path, tariff: TariffTable
-) -> None:
-    """**고쳐지면 이 못이 XPASS 로 깨져 알린다.** 그때 xfail 표를 걷는다."""
+def test_전환기간_요금은_선택Ⅰ_과_선택Ⅲ_중_낮은_쪽이다(tmp_path: Path, tariff: TariffTable) -> None:
+    """**짝이 더 싼 달은 짝의 금액이 실린다.** 계약은 그대로 선택Ⅰ 이다."""
     usage = peak_heavy_month(tmp_path, *TRANSITION_MONTH)
     opts = BillingOptions(contract_kw=200.0)
-    on_i = calculate_bill(usage, tariff, A2_OPTION_I, options=opts).total_won
-    on_iii = calculate_bill(usage, tariff, A2_OPTION_III, options=opts).total_won
-    assert on_i == pytest.approx(min(on_i, on_iii))
+    on_i = calculate_bill(usage, tariff, A2_OPTION_I, options=opts)
+    on_iii = calculate_bill(usage, tariff, A2_OPTION_III, options=opts)
+    assert on_i.transition_months == (pd.Period("2026-07", freq="M"),)
+    assert on_i.total_won == pytest.approx(on_iii.total_won)
+    assert on_i.total_won == pytest.approx(3_687_643.2)
+    # **고른 선택요금은 안 바뀐다** — 바뀌는 것은 그 기간에 청구되는 금액뿐이다.
+    assert on_i.selection == A2_OPTION_I
+    assert "선택I" in "".join(on_i.traceability())
+    # 짝 쪽은 자동 비교를 받지 않는다. 짝의 짝이 없어 재귀가 한 번에 멈춘다.
+    assert on_iii.transition_months == ()
+
+
+def test_원래_고른_쪽이_더_싸면_갈아_끼우지_않는다(tmp_path: Path, tariff: TariffTable) -> None:
+    """**낮은 쪽을 적용한다** 는 것이지 **짝으로 바꾼다** 는 것이 아니다.
+
+    이 달의 선택Ⅱ 는 선택Ⅳ 보다 싸다 — 기본요금 단가가 같은데(둘 다 8,230원/kW)
+    시간대별 단가가 전체시간 단가를 이긴다. 그래서 아무것도 안 바뀐다.
+    """
+    usage = peak_heavy_month(tmp_path, *TRANSITION_MONTH)
+    opts = BillingOptions(contract_kw=200.0)
+    on_ii = calculate_bill(usage, tariff, A2_OPTION_II, options=opts)
+    on_iv = calculate_bill(usage, tariff, A2_OPTION_IV, options=opts)
+    assert on_ii.total_won < on_iv.total_won
+    assert on_ii.transition_months == ()
+    assert on_ii.total_won == pytest.approx(3_701_409.6)
+
+
+def test_경과조치가_없는_종별은_짝을_찾지_않는다(
+    sample_bill: BillingResult, tariff: TariffTable
+) -> None:
+    """일반용(을)에는 부칙 1호가 없다. **요금 데이터에 칸 자체가 없다.**"""
+    assert tariff.contract("general_b").transition is None
+    assert sample_bill.transition_months == ()
+    assert tariff.contract("general_a_2").transition is not None

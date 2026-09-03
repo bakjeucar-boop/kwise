@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
@@ -752,6 +753,24 @@ def test_열_지정이_다르면_지문이_달라진다() -> None:
     plain = load_usage(SAMPLE)
     token = usage_token(plain)
     assert isinstance(token, str) and len(token) == 16
+
+
+def test_경과조치를_가르는_것이_캐시_열쇠에_있다() -> None:
+    """부칙 (2026. 5. 22) 제2항 제1호는 **종별·선택요금·기간** 셋으로 갈린다.
+
+    새 입력을 만들지 않았으므로 열쇠에 더할 것도 없다 — 다만 셋이 실제로
+    열쇠를 가르는지는 값으로 봐 두어야 한다. 결과를 가르는 것이 열쇠에 없으면
+    앞 결과가 그대로 돌아온다.
+
+    기간은 :func:`usage_token` 이 문다 (위 두 시험). 여기서는 나머지 둘이다.
+    """
+    from kwise.ui.cache import form_token
+    from kwise.ui.pipeline import ContractForm
+
+    on_i = ContractForm(contract_type="general_a_2", voltage="high_a", option="I")
+    assert form_token(on_i) != form_token(replace(on_i, option="III"))
+    assert form_token(on_i) != form_token(replace(on_i, contract_type="general_b"))
+    assert form_token(on_i) == form_token(replace(on_i))
 
 
 def test_편집이_실패하면_캐시를_건드리지_않는다(monkeypatch: pytest.MonkeyPatch) -> None:

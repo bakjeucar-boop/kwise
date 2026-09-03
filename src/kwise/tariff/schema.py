@@ -36,6 +36,7 @@ __all__ = [
     "TariffDataError",
     "TariffSelection",
     "TariffTable",
+    "TransitionRule",
     "VoltageRates",
     "available_tariff_files",
     "default_tariff_dir",
@@ -124,6 +125,43 @@ class VoltageRates:
 
 
 @dataclass(frozen=True)
+class TransitionRule:
+    """부칙의 경과조치 — **정해진 요금월 동안 두 선택요금 중 낮은 쪽을 적용한다.**
+
+    일반용전력(갑)Ⅱ 의 부칙 (2026. 5. 22) 제2항 제1호가 그것이다. 2026년
+    6월분부터 11월분까지, 선택(Ⅰ)을 쓰고 있으면 선택(Ⅲ)으로도 계산해 **낮은
+    쪽**을 적용하고 선택(Ⅱ)와 선택(Ⅳ)도 같다. **고객이 신청하지 않아도 걸린다**
+    — 제3호가 「신청한」 선택(Ⅲ)·(Ⅳ)를 12월분부터로 따로 정하므로 제1호의 자동
+    비교에는 신청이 없다는 것이 대조로 선다.
+
+    **고객이 고른 선택요금을 바꾸는 것이 아니다.** 계약은 그대로 선택Ⅰ 이고
+    그 기간에 청구되는 금액만 낮은 쪽이 된다.
+
+    Attributes:
+        first_billing_month: 첫 요금월 (``2026-06``). **날이 아니라 요금월이다.**
+        last_billing_month: 마지막 요금월 (``2026-11``).
+        counterpart: 견줄 짝. ``{"I": "III", "II": "IV"}`` 다. **한쪽 방향만
+            적는다** — 짝을 양방향으로 적으면 견주기가 서로를 부른다.
+    """
+
+    first_billing_month: str
+    last_billing_month: str
+    counterpart: Mapping[str, str]
+
+    def counterpart_of(self, option: str) -> str | None:
+        """이 선택요금이 견줄 짝. 없으면 ``None`` 이다."""
+        return self.counterpart.get(option)
+
+    def covers(self, year: int, month: int) -> bool:
+        """그 요금월이 경과조치 기간 안인가.
+
+        ``YYYY-MM`` 은 자리수가 고정이라 글자 견주기가 곧 날짜 견주기다.
+        """
+        label = f"{year:04d}-{month:02d}"
+        return self.first_billing_month <= label <= self.last_billing_month
+
+
+@dataclass(frozen=True)
 class ContractType:
     """계약종별.
 
@@ -145,6 +183,8 @@ class ContractType:
         time_of_use: 시간대별 요금제인지. 갑Ⅰ·교육용(갑)은 '전체시간' 단일 단가라
             세 시간대 단가가 모두 같다. 검증 규칙 1 의 ``경<중간<최대`` 를
             적용하지 않는다.
+        transition: 부칙의 경과조치. 지금은 일반용(갑)Ⅱ 하나뿐이라
+            **대부분의 종별에서 ``None``** 이다 (:class:`TransitionRule`).
     """
 
     key: str
@@ -161,6 +201,7 @@ class ContractType:
     contract_floor_ratio: float | None
     base_fee_basis: str = BASE_FEE_BILLING_DEMAND
     time_of_use: bool = True
+    transition: TransitionRule | None = None
 
     def base_fee_on_contract_at(self, voltage: str) -> bool:
         """이 전압에서 기본요금이 계약전력 기준인가 (제38조 ②·③ · 제68조 ①·②).
@@ -356,6 +397,24 @@ def _parse_base_fee_basis(payload: Mapping[str, Any], context: str) -> str | Non
     return basis
 
 
+def _parse_transition(payload: Mapping[str, Any], context: str) -> TransitionRule | None:
+    """경과조치를 읽는다. 없는 종별이 대부분이므로 없으면 ``None`` 이다.
+
+    **있으면 세 자리가 다 있어야 한다.** 하나라도 비면 조용히 안 걸리는 규칙이
+    되는데, 그것은 「안 넣은 것」 과 구별되지 않는다.
+    """
+    raw = payload.get("transition")
+    if raw is None:
+        return None
+    where = f"{context}/transition"
+    counterpart = _require(raw, "counterpart", where)
+    return TransitionRule(
+        first_billing_month=str(_require(raw, "first_billing_month", where)),
+        last_billing_month=str(_require(raw, "last_billing_month", where)),
+        counterpart={str(option): str(pair) for option, pair in counterpart.items()},
+    )
+
+
 def _parse_contract(key: str, payload: Mapping[str, Any]) -> ContractType:
     context = f"contract_types/{key}"
     options = tuple(str(item) for item in _require(payload, "options", context))
@@ -399,6 +458,7 @@ def _parse_contract(key: str, payload: Mapping[str, Any]) -> ContractType:
         ),
         base_fee_basis=base_fee_basis,
         time_of_use=bool(payload.get("time_of_use", True)),
+        transition=_parse_transition(payload, context),
     )
 
 

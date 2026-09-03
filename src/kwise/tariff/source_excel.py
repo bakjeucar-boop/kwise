@@ -60,6 +60,7 @@ __all__ = [
     "ContractRule",
     "RateRow",
     "TariffSourceError",
+    "Transition",
     "build_payload",
     "read_rate_rows",
     "read_time_bands",
@@ -155,6 +156,24 @@ class BorrowedOption:
 
 
 @dataclass(frozen=True)
+class Transition:
+    """부칙의 경과조치. 엑셀에도 요금표 각주에도 없다 — **약관을 봐야 나온다.**
+
+    일반용전력(갑)Ⅱ 의 부칙 (2026. 5. 22) 제2항 제1호가 그것이고, 요금표 각주는
+    제3호(「선택요금Ⅲ, Ⅳ는 ’26.12월부터 적용 가능」)만 적는다.
+
+    Attributes:
+        first_billing_month: 첫 요금월 (``2026-06``).
+        last_billing_month: 마지막 요금월 (``2026-11``).
+        counterpart: 견줄 짝. **한쪽 방향만 적는다.**
+    """
+
+    first_billing_month: str
+    last_billing_month: str
+    counterpart: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
 class ContractRule:
     """엑셀에 없는 종별 속성. **변환이 이 값을 만들어내지 않는다.**
 
@@ -188,6 +207,7 @@ class ContractRule:
     demand_months: tuple[int, ...] = (7, 8, 9, 12, 1, 2)
     voltage_base_fee_basis: tuple[tuple[str, str], ...] = ()
     borrowed_options: tuple[BorrowedOption, ...] = ()
+    transition: Transition | None = None
 
 
 # 엑셀의 종별 표기 → 종별 규칙. 부록 A.4 의 확장 순서대로 적었다.
@@ -234,6 +254,8 @@ CONTRACT_RULES: Mapping[str, ContractRule] = {
             BorrowedOption("III", "일반용(갑) I", "I", "2026-12"),
             BorrowedOption("IV", "일반용(갑) I", "II", "2026-12"),
         ),
+        # 부칙 (2026. 5. 22) 제2항 제1호 — 6월분~11월분은 신청 없이 낮은 쪽이다.
+        transition=Transition("2026-06", "2026-11", (("I", "III"), ("II", "IV"))),
     ),
     "산업용(갑) I": ContractRule(
         key="industrial_a_1",
@@ -554,7 +576,7 @@ def _contract_payload(
                 "energy": _energy_block(option_rows, rule),
             }
 
-    return {
+    payload = {
         "label": rule.label,
         "threshold_kw": rule.threshold_kw,
         "threshold_direction": rule.threshold_direction,
@@ -567,6 +589,15 @@ def _contract_payload(
         "contract_floor_ratio": rule.contract_floor_ratio,
         "voltages": voltages,
     }
+    # 경과조치가 없는 종별이 대부분이다. **없으면 칸도 두지 않는다** — 빈 칸은
+    # 「안 걸린다」 와 「아직 안 읽었다」 를 구별해 주지 않는다.
+    if rule.transition is not None:
+        payload["transition"] = {
+            "first_billing_month": rule.transition.first_billing_month,
+            "last_billing_month": rule.transition.last_billing_month,
+            "counterpart": dict(rule.transition.counterpart),
+        }
+    return payload
 
 
 def _add_borrowed_options(contract_types: dict[str, Any]) -> None:
@@ -607,7 +638,7 @@ def build_payload(
     *,
     effective_date: str,
     source: str = "한국전력공사 전기요금표(종합)",
-    schema_version: str = "0.3",
+    schema_version: str = "0.4",
     contracts: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """엑셀 한 권을 요금 데이터 JSON 페이로드로 바꾼다.
