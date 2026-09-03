@@ -820,7 +820,21 @@ def measure_entries(
             # 「즉시」 라 적으면 즉시 회수된다고 읽힌다.
             payback=_payback_text(0.0, 0.0) if contract.saving_won else "—",
             certainty=str(contract.certainty),
-            cautions=(CONTRACT_CHANGE_WARNING, *body_lines(contract.notices)),
+            # **같은 문장을 두 번 싣지 않는다** (102세션 4절). `MARGIN_NOTICE`
+            # 가 `CONTRACT_CHANGE_WARNING` 과 **글자까지 같은 사본**이라, 앞에
+            # 세운 한 줄과 `contract.notices` 에서 온 한 줄이 7.2 주의사항에
+            # **잇달아 두 번** 섰다 (84·100세션). **화면과 같은 방식이다** —
+            # `ui\views\measures.py` 가 같은 문자열을 걸러 내고 있다.
+            # **사본 둘을 합치는 것은 여기서 안 한다** — 쓰는 자리 여섯을 함께
+            # 옮기는 일이라, 뿌리는 미해결에 이름으로 남겼다.
+            cautions=(
+                CONTRACT_CHANGE_WARNING,
+                *(
+                    line
+                    for line in body_lines(contract.notices)
+                    if line != CONTRACT_CHANGE_WARNING
+                ),
+            ),
             notices=contract.notices,
             # **여지가 없으면 왜 없는지 보인다** (39세션 4-2). 화면이 83세션에
             # 세운 지표와 같은 값이다.

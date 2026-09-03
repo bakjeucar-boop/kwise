@@ -686,3 +686,65 @@ def test_Word_의_1단계_결론과_7_2_결론이_같은_문장이다(tmp_path: 
     assert len(conclusions) == 2, conclusions
     assert conclusions[0] == conclusions[1]
     assert "적정합니다" not in _all_text(document).split("검토 범위")[0]
+
+
+def test_Word_7_2_주의사항에_같은_경고가_두_번_서지_않는다(
+    tmp_path: Path, tariff: TariffTable
+) -> None:
+    """**같은 문장이 잇달아 두 번 섰다** (84세션 · 100세션 4절 — 같은 결함 둘).
+
+    `report\\notices.py` 의 ``CONTRACT_CHANGE_WARNING`` 과
+    `measures\\contract.py` 의 ``MARGIN_NOTICE`` 가 **글자까지 같은 사본**이라,
+    7.2 주의사항이 앞에 세운 한 줄과 ``contract.notices`` 에서 온 한 줄을
+    **둘 다** 실었다. 화면은 같은 문자열을 걸러 내고 있었고 Word 만 안 걸렀다.
+
+    **글자를 세는 못이 아니라 실물을 지어 세는 못이다** — 문서를 실제로 짓고
+    7.2 절 안의 문단만 골라 센다. 102세션에 고치기 전 값은 **2회**였다.
+    **사본 둘을 합치는 것은 이 못의 몫이 아니다** — 뿌리는 미해결에 남아 있다.
+    """
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.io import load_usage
+    from kwise.measures import evaluate_contract_adjustment
+    from kwise.notices import texts
+    from kwise.report import CONTRACT_CHANGE_WARNING
+    from kwise.tariff import BillingOptions, TariffSelection, calculate_bill
+    from tests._synthetic import make_labels, month_dates, write_csv
+
+    rows = [
+        (label, 50.0)  # 15분 50 kWh = 200 kW
+        for date in month_dates(2024, 3)
+        for label in make_labels(date)
+    ]
+    usage = load_usage(write_csv(tmp_path / "flat.csv", rows))
+    selection = TariffSelection("general_b", "high_a", "I")
+    options = BillingOptions(contract_kw=400.0)
+    bill = calculate_bill(usage, tariff, selection, options=options)
+    adjustment = evaluate_contract_adjustment(
+        usage, bill, contract_kw=400.0, table=tariff, options=options
+    )
+    # **낮출 자리가 있어야 그 경고가 실린다** — 없으면 시험이 뜻을 잃는다.
+    assert adjustment.reducible
+    assert CONTRACT_CHANGE_WARNING in texts(adjustment.notices)
+
+    document = build_document(
+        DocumentSections(
+            usage=usage,
+            bill=bill,
+            diagnosis=diagnose(
+                usage, tariff, ContractInfo(selection, contract_kw=400.0), options=options
+            ),
+            measures=measure_entries(contract=adjustment),
+        )
+    )
+    paragraphs = list(document.paragraphs)
+    heads = [
+        index
+        for index, para in enumerate(paragraphs)
+        if _style_name(para).startswith("Heading")
+    ]
+    start = next(index for index in heads if "7.2 계약전력 조정" in paragraphs[index].text)
+    end = next((index for index in heads if index > start), len(paragraphs))
+    block = [para.text.strip() for para in paragraphs[start:end]]
+
+    assert block.count(CONTRACT_CHANGE_WARNING) == 1, block
+    assert "주의사항" in block, "주의사항 자리 자체가 사라지면 안 된다."
