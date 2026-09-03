@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.4",
+  "schema_version": "0.5",
   "region": "kr",
   "source": "한국전력공사 전기요금표(종합)",
   "source_file": "2026-06-01_KEPCO_Electricity_Tariff.xlsx",
@@ -280,7 +280,8 @@
             }
           }
         }
-      }
+      },
+      "below_threshold_key": "general_a_2"
     },
     "general_a_1": {
       "label": "일반용전력(갑)Ⅰ",
@@ -1149,7 +1150,8 @@
             }
           }
         }
-      }
+      },
+      "below_threshold_key": "industrial_a_2"
     },
     "education_a": {
       "label": "교육용전력(갑)",
@@ -1418,7 +1420,8 @@
             }
           }
         }
-      }
+      },
+      "below_threshold_key": "education_a"
     }
   },
   "special_rules": {

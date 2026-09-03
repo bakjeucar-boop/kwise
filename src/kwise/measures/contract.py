@@ -25,7 +25,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
 import pandas as pd
@@ -35,8 +35,15 @@ from kwise.io import UsageData
 from kwise.measures.base import Certainty, annualize
 from kwise.money import NO_SAVING
 from kwise.notices import Notice, basis, block, warn
-from kwise.tariff import BillingResult
-from kwise.tariff.schema import threshold_text, within_type_threshold
+from kwise.tariff import (
+    BillingOptions,
+    BillingResult,
+    TariffSelection,
+    TariffTable,
+    calculate_bill,
+    list_selections,
+)
+from kwise.tariff.schema import TariffDataError, threshold_text, within_type_threshold
 
 __all__ = [
     "MARGIN_NOTICE",
@@ -65,8 +72,9 @@ FLOOR_NOT_BINDING_NOTICE = (
 TYPE_THRESHOLD_FACT = "contract.crosses_type_threshold"
 """**목표 계약전력이 종별 경계 밖일 때의 사실 ID** (96세션).
 
-절감액은 지금 종별의 단가로 낸 값이라 종별이 바뀌면 그 값이 아니다. 여기서
-단가를 갈아 끼우지는 않는다 — **경계를 넘는다는 사실까지**가 이 안내의 몫이다.
+**98세션에 단가를 갈아 끼웠다** — 요금표가 문턱 아래 종별을 들고 있으면
+그 종별로 요금을 처음부터 다시 계산하고 싼 쪽을 권한다. 그래서 이 사실은
+이제 「지금 단가로 낸 값이다」 가 아니라 **「종별이 바뀐다」** 를 말한다.
 """
 """**하한이 지는 갈래의 결론.** 3단계·PPT 가 이미 이렇게 적고 있던 문장이다 —
 2단계 개요가 거꾸로 적고 있어 83세션에 이 문장으로 맞췄다.
@@ -107,9 +115,22 @@ class ContractAdjustment:
     saving_won: float | None
     annual_saving_won: float | None
     saving_basis: str
+    crossed_selection: TariffSelection | None = None
+    """종별 문턱을 넘어 권하는 조합 (98세션). 안 넘으면 ``None``."""
+    crossed_label: str | None = None
+    """넘어간 종별의 이름. 예 ``"일반용전력(갑)Ⅱ"``."""
+    crossed_total_won: float | None = None
+    """넘어간 종별에서 **처음부터 다시 계산한** 총 요금."""
+    current_total_won: float | None = None
+    """현행 종별의 총 요금. :attr:`crossed_total_won` 과 짝으로만 채운다."""
     certainty: Certainty = Certainty.HIGH
     investment_won: float = 0.0
     notices: tuple[Notice, ...] = field(default=())
+
+    @property
+    def crosses_type(self) -> bool:
+        """**권고가 종별을 넘는가.** 참이면 절감액이 총액 차이다."""
+        return self.crossed_selection is not None
 
     @property
     def floor_binding(self) -> bool:
@@ -142,6 +163,86 @@ def _base_fee_won(bill: BillingResult, floor_kw: float) -> float:
     return float((demand * bill.base_rate_won_per_kw * monthly["base_fee_factor"]).sum())
 
 
+@dataclass(frozen=True)
+class _CrossedQuote:
+    """문턱 아래 종별에서 **처음부터 다시 계산한** 요금 한 벌 (98세션)."""
+
+    selection: TariffSelection
+    label: str
+    contract_kw: float
+    bill: BillingResult
+    current_bill: BillingResult
+    """현행 종별을 **같은 옵션·같은 계약전력**으로 다시 계산한 것.
+
+    ``bill`` 을 그대로 쓰지 않는다 — 부르는 쪽이 계약전력 없이 계산한 기준선을
+    넘겨줄 수 있고(:mod:`kwise.report.batch`), 그러면 한쪽만 하한이 걸려
+    총액 차이가 종별이 아니라 하한 때문에 갈린다.
+    """
+
+    @property
+    def saving_won(self) -> float:
+        return self.current_bill.total_won - self.bill.total_won
+
+
+def _crossed_quote(
+    usage: UsageData,
+    bill: BillingResult,
+    table: TariffTable,
+    options: BillingOptions,
+    *,
+    contract_kw: float,
+    target: float,
+    floor_before: float,
+    step_kw: float,
+) -> _CrossedQuote | None:
+    """문턱 아래로 내려간 종별의 가장 싼 조합. 못 넘으면 ``None``.
+
+    **절감액을 빼서 만들지 않는다.** 종별이 바뀌면 기본요금 단가·전력량요금
+    단가·선택요금 후보·부칙 경과조치가 함께 바뀌므로 요금을 처음부터 다시
+    계산하고 그 종별 안에서 선택요금을 다시 고른다.
+    """
+    contract = table.contract(bill.selection.contract_type)
+    below = contract.below_threshold_key
+    threshold = contract.threshold_kw
+    if below is None or threshold is None or contract.threshold_direction != "above":
+        return None
+
+    # 넘어가는 계약전력은 **문턱 바로 아래**다. 같은 종별 목표가 이미 그보다
+    # 낮으면 그 값을 그대로 쓴다 — 더 내려도 얻을 것이 없다.
+    candidate = min(target, threshold - step_kw)
+    # **최대수요 아래로 내리는 권고를 하지 않는다.** 초과사용부가금 대상이 된다.
+    if candidate < floor_before:
+        return None
+
+    if below not in table.contract_types:
+        # 요금 데이터가 가리키는 종별이 없다. **기본값을 두지 않고 멈춘다.**
+        raise TariffDataError(f"{contract.key} 의 문턱 아래 종별이 요금표에 없습니다: {below!r}")
+    crossed = table.contract(below)
+    if bill.selection.voltage not in crossed.voltages:
+        # 전압이 새 종별에 없으면 넘어갈 수 없다 (산업용(을) 고압C 가 그렇다).
+        return None
+
+    opts = replace(options, contract_kw=candidate)
+    quotes = [
+        (calculate_bill(usage, table, selection, options=opts), selection)
+        for selection in list_selections(
+            table, contract_types=[below], voltages=[bill.selection.voltage]
+        )
+    ]
+    if not quotes:
+        return None
+    best_bill, best_selection = min(quotes, key=lambda pair: pair[0].total_won)
+    return _CrossedQuote(
+        selection=best_selection,
+        label=crossed.label,
+        contract_kw=candidate,
+        bill=best_bill,
+        current_bill=calculate_bill(
+            usage, table, bill.selection, options=replace(options, contract_kw=contract_kw)
+        ),
+    )
+
+
 def evaluate_contract_adjustment(
     usage: UsageData,
     bill: BillingResult,
@@ -149,6 +250,8 @@ def evaluate_contract_adjustment(
     contract_kw: float,
     contract_floor_ratio: float | None = None,
     step_kw: float = 1.0,
+    table: TariffTable | None = None,
+    options: BillingOptions | None = None,
 ) -> ContractAdjustment:
     """하한 판정과, 하한이 이기는 경우의 목표 계약전력·절감액을 낸다.
 
@@ -157,9 +260,20 @@ def evaluate_contract_adjustment(
             None 이면 요금표의 종별 속성(제68조 ①의 30%)을 쓴다. 종별
             속성마저 비어 있으면 '미확인' 을 돌려주고 금액을 만들지 않는다.
         step_kw: 계약전력 조정 단위.
+        table: 요금 데이터. 주면 목표가 종별 문턱 아래로 갈 수 있는지 보고,
+            갈 수 있으면 **넘어간 종별의 단가로 요금을 처음부터 다시 계산해**
+            싼 쪽을 권한다 (98세션). 안 주면 지금 종별 안에서만 본다.
+        options: ``bill`` 을 계산할 때 쓴 것과 **같은** 요금 옵션.
+            ``table`` 과 짝이다 — 다른 옵션으로 다시 계산하면 총액 차이가
+            종별이 아니라 옵션 때문에 갈린다.
+
+    Raises:
+        ValueError: ``table`` 만 주고 ``options`` 를 안 줬을 때.
     """
     if contract_kw <= 0:
         raise ValueError(f"계약전력은 양수여야 합니다: {contract_kw}")
+    if table is not None and options is None:
+        raise ValueError("table 을 주면 options 도 함께 줘야 합니다 (같은 옵션으로 다시 계산한다).")
 
     ratio = contract_floor_ratio if contract_floor_ratio is not None else bill.contract_floor_ratio
     observed = usage.kw.dropna()
@@ -214,6 +328,7 @@ def evaluate_contract_adjustment(
         else None
     )
 
+    crossed: _CrossedQuote | None = None
     # 하한 적용 전 값으로 되돌린 뒤 두 계약전력에서 각각 다시 씌운다.
     current_base = _base_fee_won(bill, floor_kw)
     adjusted_base = _base_fee_won(bill, target * ratio) if target is not None else current_base
@@ -253,6 +368,30 @@ def evaluate_contract_adjustment(
                     fact=TYPE_THRESHOLD_FACT,
                 )
             )
+
+        # **문턱 아래 종별을 후보로 놓는다** (98세션). 같은 종별 안의 목표는
+        # 기본요금만 줄이는데, 문턱을 넘으면 전력량요금 단가까지 함께 바뀐다.
+        if table is not None and options is not None:
+            quote = _crossed_quote(
+                usage,
+                bill,
+                table,
+                options,
+                contract_kw=contract_kw,
+                target=target,
+                floor_before=before_floor,
+                step_kw=step_kw,
+            )
+            if quote is not None and quote.saving_won > saving:
+                crossed = quote
+                target = quote.contract_kw
+                adjusted_base = quote.bill.total_base_won
+                saving = quote.saving_won
+                basis_text = (
+                    f"{bill.contract_label} → {quote.label} "
+                    f"{quote.bill.voltage_label} 선택{quote.selection.option} 로 "
+                    "요금 전체를 다시 계산 (기본요금·전력량요금 단가가 함께 바뀐다)"
+                )
     return ContractAdjustment(
         status=ContractStatus.CONFIRMED,
         contract_kw=contract_kw,
@@ -268,6 +407,10 @@ def evaluate_contract_adjustment(
         saving_won=saving,
         annual_saving_won=annualize(saving, bill.base_fee_months),
         saving_basis=basis_text,
+        crossed_selection=crossed.selection if crossed is not None else None,
+        crossed_label=crossed.label if crossed is not None else None,
+        crossed_total_won=crossed.bill.total_won if crossed is not None else None,
+        current_total_won=crossed.current_bill.total_won if crossed is not None else None,
         notices=tuple(notices),
     )
 

@@ -296,9 +296,9 @@ def render(
     if stale:
         callout.caution("선택이 변경되었습니다 — 다시 계산하십시오.")
         with callout.stale(_STALE_KEY):
-            _combined_block(usage, form, comparison, rows, results.contract, enabled)
+            _combined_block(usage, table, form, comparison, rows, results.contract, enabled)
     else:
-        _combined_block(usage, form, comparison, rows, results.contract, enabled)
+        _combined_block(usage, table, form, comparison, rows, results.contract, enabled)
     # **2단계 카드가 이미 낸 경고는 여기서 되풀이하지 않는다** (16세션 3절).
     # 세 화면이 한 번에 그려지므로 같은 문장이 두 번 뜬다 — 조합 자체의 경고만 남긴다.
     # **문구가 아니라 사실로 견준다** (20세션). 조합 쪽 문구에는 조합명이 앞에
@@ -431,6 +431,7 @@ def _standalone_block(rows: tuple[StandaloneRow, ...]) -> None:
 
 def _combined_block(
     usage: UsageData,
+    table: TariffTable,
     form: ContractForm,
     comparison: ComparisonResult,
     rows: tuple[StandaloneRow, ...],
@@ -496,7 +497,7 @@ def _combined_block(
     # 산출 근거이지 결론이 아니다. 본문에 세 줄을 쌓으면 정작 위의 지표 셋이
     # 묻힌다 — 예산(본문 3줄)을 넘긴 자리이기도 했다.
     reasons = _interaction_reasons(comparison, combined, picked)
-    extra_won = _contract_headroom(usage, form, combined, contract)
+    extra_won = _contract_headroom(usage, table, form, combined, contract)
     sheet = combination_worksheet(
         simple_won=simple,
         combined_won=actual,
@@ -546,6 +547,7 @@ def _interaction_reasons(
 
 def _contract_headroom(
     usage: UsageData,
+    table: TariffTable,
     form: ContractForm,
     combined: CombinationResult,
     standalone: ContractAdjustment | None,
@@ -561,6 +563,10 @@ def _contract_headroom(
         usage,
         combined.bill,
         contract_kw=form.contract_kw,
+        # **2단계 카드와 같은 조건으로 본다** (98세션). 한쪽만 종별을 넘게 두면
+        # 「추가 하향」 이 앞 카드의 절감액을 빼는 순간 음수가 된다.
+        table=table,
+        options=form.billing_options(),
     )
     already = (standalone.annual_saving_won or 0.0) if standalone is not None else 0.0
     extra = (adjustment.annual_saving_won or 0.0) - already
@@ -885,6 +891,7 @@ def _measure_results(
         contract = cached_contract_adjustment(
             usage,
             baseline,
+            table,
             token,
             # **계약종별이 하한 비율을 정한다** (59세션 8절). ``baseline`` 은
             # 열쇠에서 빠지므로 이것이 없으면 종별을 바꿔도 앞 결과가 나온다.

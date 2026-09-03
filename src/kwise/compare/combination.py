@@ -440,6 +440,10 @@ def evaluate_combination(
             bill,
             contract_kw=spec.contract_kw,
             contract_floor_ratio=spec.contract_floor_ratio,
+            # **종별을 넘는 후보까지 본다** (98세션). 조합도 수단마다 요금을
+            # 다시 계산하는 자리이므로 여기서 빼면 조합만 옛 값을 낸다.
+            table=table,
+            options=opts,
         )
         contract_saving = adjustment.saving_won
         notices.extend(adjustment.notices)

@@ -1,0 +1,5 @@
+cd C:\Users\SAMSUNG\Documents\kwise
+.venv\Scripts\activate
+git pull
+python tools\daily_brief.py
+claude --remote-control "kwise"

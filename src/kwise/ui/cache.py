@@ -482,6 +482,7 @@ def cached_tariff_switch(
 def cached_contract_adjustment(
     _usage: UsageData,
     _bill: BillingResult,
+    _table: TariffTable,
     token: str,
     form: ContractForm,
     contract_kw: float,
@@ -496,12 +497,18 @@ def cached_contract_adjustment(
     다시 나왔다** — 일반용(을) 로 한 번 계산한 뒤 일반용(갑)Ⅰ 로 바꾸니
     「하한 규정 미확인 — 미산출」 이어야 할 자리에 「없음 — 하한 30% 적용」 이
     섰다. 덱 여섯을 한 프로세스에서 뽑다가 드러났다.
+
+    **전환 뒤 종별도 같은 ``form`` 이 가른다** (98세션). 넘어가는 종별은
+    현행 종별의 요금 데이터 속성(``below_threshold_key``)이라 현행 종별이
+    열쇠에 있으면 함께 갈린다 — 새 열쇠를 더할 자리가 아니다.
     """
     return evaluate_contract_adjustment(
         _usage,
         _bill,
         contract_kw=contract_kw,
         contract_floor_ratio=contract_floor_ratio,
+        table=_table,
+        options=form.billing_options(),
     )
 
 

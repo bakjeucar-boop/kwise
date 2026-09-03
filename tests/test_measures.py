@@ -440,6 +440,124 @@ def test_경계_안이면_안내를_내지_않는다(
     assert not [item for item in result.notices if item.fact == TYPE_THRESHOLD_FACT]
 
 
+@pytest.fixture(scope="session")
+def small_general_b_usage(tmp_path_factory: pytest.TempPathFactory) -> UsageData:
+    """을 종별인데 **최대수요가 90 kW 아래**인 한 달치 (98세션).
+
+    실측 벌 넷은 하나도 경계를 넘지 않는다 — 을에서 목표(최대수요 ÷ 30%)가
+    300 kW 아래로 가려면 최대수요가 90 kW 미만이어야 한다. 그 자리를 짓는다.
+    """
+    from tests._synthetic import make_labels, month_dates, write_csv
+
+    rows = [
+        (label, 20.0)  # 15분 20 kWh = 80 kW
+        for date in month_dates(2024, 3)
+        for label in make_labels(date)
+    ]
+    return load_usage(write_csv(tmp_path_factory.mktemp("small-b") / "flat.csv", rows))
+
+
+def test_목표가_문턱_아래로_가면_넘어간_종별로_다시_계산한다(
+    small_general_b_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**단가를 갈아 끼운다** (98세션). 96세션은 경계를 읽기만 했다.
+
+    최대수요 80 kW · 계약 400 kW 의 을 고객이다. 하한 120 kW 가 최대수요를
+    이기므로 목표는 80 ÷ 30% = 267 kW 이고, 그 값은 300 kW 아래라 종별이
+    일반용전력(갑)Ⅱ 로 바뀐다 (약관 제57조 ② 1. · ④).
+
+    **절감액이 총액 차이다.** 종별이 바뀌면 전력량요금 단가까지 함께 바뀌므로
+    기본요금만 빼면 절반만 맞는 값이 된다.
+    """
+    options = BillingOptions(contract_kw=400.0)
+    bill = calculate_bill(
+        small_general_b_usage, tariff, TariffSelection("general_b", "high_a", "I"), options=options
+    )
+    result = evaluate_contract_adjustment(
+        small_general_b_usage, bill, contract_kw=400.0, table=tariff, options=options
+    )
+
+    assert result.crosses_type
+    assert result.crossed_selection is not None
+    assert result.crossed_selection.contract_type == "general_a_2"
+    assert result.crossed_selection.voltage == "high_a"
+    assert result.crossed_label == "일반용전력(갑)Ⅱ"
+    # 목표는 **문턱 바로 아래**다. 같은 종별 목표 267 kW 가 이미 그보다 낮다.
+    assert result.target_contract_kw == pytest.approx(267.0)
+    assert result.current_total_won is not None and result.crossed_total_won is not None
+    assert result.saving_won == pytest.approx(result.current_total_won - result.crossed_total_won)
+    assert "일반용전력(을) → 일반용전력(갑)Ⅱ" in result.saving_basis
+
+    # **빼기로 어림한 값이 아니다.** 전환 후 총액은 그 종별로 처음부터 계산한다.
+    crossed = calculate_bill(
+        small_general_b_usage,
+        tariff,
+        result.crossed_selection,
+        options=replace(options, contract_kw=result.target_contract_kw),
+    )
+    assert result.crossed_total_won == pytest.approx(crossed.total_won)
+
+    # 같은 종별 안에서만 보면 기본요금 차이뿐이라 **훨씬 작다.**
+    same_type_only = evaluate_contract_adjustment(small_general_b_usage, bill, contract_kw=400.0)
+    assert same_type_only.saving_won is not None and result.saving_won is not None
+    assert result.saving_won > same_type_only.saving_won
+
+
+def test_경계를_안_넘는_판은_요금표를_줘도_종전과_같다(
+    sample_usage: UsageData, sample_bill: BillingResult, tariff: TariffTable
+) -> None:
+    """**안 넘는 판이 새면 갈래가 잘못 선 것이다** (98세션).
+
+    을 7,000 kW · 최대수요 5,293.4 kW 는 목표가 17,645 kW 라 300 kW 문턱을
+    넘을 길이 없다 — 요금표를 줘도 값이 한 자리도 움직이지 않아야 한다.
+    """
+    before = evaluate_contract_adjustment(
+        sample_usage, sample_bill, contract_kw=7_000.0, contract_floor_ratio=1.0
+    )
+    after = evaluate_contract_adjustment(
+        sample_usage,
+        sample_bill,
+        contract_kw=7_000.0,
+        contract_floor_ratio=1.0,
+        table=tariff,
+        options=BillingOptions(contract_kw=7_000.0),
+    )
+    assert not after.crosses_type
+    assert after.target_contract_kw == before.target_contract_kw
+    assert after.saving_won == before.saving_won
+    assert after.current_base_won == before.current_base_won
+    assert after.adjusted_base_won == before.adjusted_base_won
+    assert after.saving_basis == before.saving_basis
+
+
+def test_요금표만_주고_옵션을_안_주면_멈춘다(
+    sample_usage: UsageData, sample_bill: BillingResult, tariff: TariffTable
+) -> None:
+    """**다른 옵션으로 다시 계산하면 총액 차이가 종별 때문이 아니게 된다.**
+
+    조용히 기본 옵션으로 계산하지 않고 그 자리에서 멈춘다.
+    """
+    with pytest.raises(ValueError, match="options"):
+        evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=7_000.0, table=tariff)
+
+
+def test_문턱_아래_종별은_요금_데이터가_정한다(tariff: TariffTable) -> None:
+    """**코드에 짝을 박지 않는다.** 을 셋만 값을 들고, 갑은 비어 있다 —
+    계약전력 조정은 낮추는 권고만 하므로 위로 넘는 갈래가 없다.
+    """
+    below = {key: contract.below_threshold_key for key, contract in tariff.contract_types.items()}
+    assert below == {
+        "general_b": "general_a_2",
+        "industrial_b": "industrial_a_2",
+        "education_b": "education_a",
+        "general_a_1": None,
+        "general_a_2": None,
+        "industrial_a_1": None,
+        "industrial_a_2": None,
+        "education_a": None,
+    }
+
+
 def test_방향을_모르면_실패한다() -> None:
     """**코드에 기본값을 두지 않는다** (21세션). 방향을 모른 채 한쪽으로 읽으면
     안내가 사실과 반대되는 말을 하게 된다.

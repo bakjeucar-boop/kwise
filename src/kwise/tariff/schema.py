@@ -193,6 +193,14 @@ class ContractType:
     label: str
     threshold_kw: float | None
     threshold_direction: str | None
+    below_threshold_key: str | None
+    """계약전력이 문턱 **아래로** 내려가면 적용되는 종별의 키 (98세션).
+
+    약관이 「…고객에게 적용합니다」 로 적으므로 **신청이 아니라 계약전력이
+    정한다** (제57조 ② · 제58조 ② · 제59조 ②). ``"above"`` 종별에만 값이
+    있다 — 계약전력 조정은 낮추는 권고만 하기 때문이다.
+    :func:`kwise.measures.contract.evaluate_contract_adjustment` 가 읽는다.
+    """
     effective_date: str | None
     options: tuple[str, ...]
     voltages: Mapping[str, VoltageRates]
@@ -488,6 +496,7 @@ def _parse_contract(key: str, payload: Mapping[str, Any]) -> ContractType:
             float(payload["threshold_kw"]) if payload.get("threshold_kw") is not None else None
         ),
         threshold_direction=payload.get("threshold_direction"),
+        below_threshold_key=payload.get("below_threshold_key"),
         effective_date=payload.get("effective_date"),
         options=options,
         voltages=voltages,

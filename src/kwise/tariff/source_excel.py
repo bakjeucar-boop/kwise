@@ -203,6 +203,17 @@ class ContractRule:
     base_fee_basis: str
     time_of_use: bool
     contract_floor_ratio: float | None
+    below_threshold_key: str | None = None
+    """계약전력이 문턱 **아래로** 내려가면 적용되는 종별 (98세션).
+
+    조문이 「…고객에게 적용합니다」 로 적으므로 **신청이 아니라 계약전력이
+    정한다** — 제57조 ② (일반용 300 kW) · 제58조 ② (교육용 1,000 kW) ·
+    제59조 ② (산업용 300 kW). 고압 고객이 갑으로 내려가면 제57조 ④ ·
+    제59조 ⑤ 가 「갑Ⅱ를 적용한다」 고 못을 박으므로 갑Ⅰ 이 아니라 갑Ⅱ 다.
+
+    **``"above"`` 종별에만 값이 있다.** 계약전력 조정은 낮추는 권고만 하므로
+    문턱 **위로** 넘는 갈래는 실물에 설 자리가 없다 — 없는 것을 짓지 않는다.
+    """
     demand_bands: tuple[str, ...] = ("mid", "peak")
     demand_months: tuple[int, ...] = (7, 8, 9, 12, 1, 2)
     voltage_base_fee_basis: tuple[tuple[str, str], ...] = ()
@@ -221,6 +232,9 @@ CONTRACT_RULES: Mapping[str, ContractRule] = {
         base_fee_basis="billing_demand",
         time_of_use=True,
         contract_floor_ratio=0.3,
+        # 제57조 ② 1. 이 「4kW 이상 300kW 미만」 을 갑으로 정하고, 제57조 ④ 가
+        # 「일반용전력(갑) 고압 고객은 갑Ⅱ를 적용한다」 고 못을 박는다.
+        below_threshold_key="general_a_2",
     ),
     # 갑Ⅰ 은 **저압과 고압을 함께 가지는데 둘 다 계약전력이 맞다** (89세션).
     # 제57조 ④·제59조 ⑤가 「갑 고압 고객은 갑Ⅱ를 적용한다」 고 못을 박아
@@ -284,6 +298,9 @@ CONTRACT_RULES: Mapping[str, ContractRule] = {
         base_fee_basis="billing_demand",
         time_of_use=True,
         contract_floor_ratio=0.3,
+        # 제59조 ② · ⑤ 가 일반용의 제57조 ② · ④ 와 같은 모양이다.
+        # **고압C 는 갑Ⅱ 에 없다** — 그 전압은 못 넘고, 그 사실은 안내로 나간다.
+        below_threshold_key="industrial_a_2",
     ),
     # 교육용(갑)은 **고압이 기본값이고 저압이 예외**다 (89세션에 갈랐다).
     # 제38조 ②로 고압A·B 고객에게는 최대수요전력계를 설치하므로 제68조 ①이고,
@@ -318,6 +335,9 @@ CONTRACT_RULES: Mapping[str, ContractRule] = {
         # 유아교육법 제2조 제2호 시설에만 붙고 「고객의 신청일이 속하는
         # 월분부터」 적용한다. 갑/을을 가르지도 않는다.
         contract_floor_ratio=0.3,
+        # 제58조 ② 1. — 교육용은 1,000 kW 가 문턱이고 **갑Ⅱ 가 없다.**
+        # 그래서 넘어가는 곳이 교육용전력(갑) 하나다.
+        below_threshold_key="education_a",
     ),
 }
 
@@ -589,6 +609,10 @@ def _contract_payload(
         "contract_floor_ratio": rule.contract_floor_ratio,
         "voltages": voltages,
     }
+    # 문턱 아래로 내려가는 종별도 **없으면 칸을 두지 않는다** (98세션).
+    # 갑 종별에는 값이 없다 — 위로 넘는 권고를 하지 않기 때문이다.
+    if rule.below_threshold_key is not None:
+        payload["below_threshold_key"] = rule.below_threshold_key
     # 경과조치가 없는 종별이 대부분이다. **없으면 칸도 두지 않는다** — 빈 칸은
     # 「안 걸린다」 와 「아직 안 읽었다」 를 구별해 주지 않는다.
     if rule.transition is not None:
@@ -638,7 +662,7 @@ def build_payload(
     *,
     effective_date: str,
     source: str = "한국전력공사 전기요금표(종합)",
-    schema_version: str = "0.4",
+    schema_version: str = "0.5",
     contracts: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """엑셀 한 권을 요금 데이터 JSON 페이로드로 바꾼다.
@@ -670,6 +694,17 @@ def build_payload(
         for name in wanted
     }
     _add_borrowed_options(contract_types)
+    # **가리키는 종별이 이번 변환에 있는지 여기서 본다** (98세션). 없는 키를
+    # 그대로 내보내면 계약전력 조정이 조용히 안 넘어간다 — 뜨지 않는 갈래가 된다.
+    # **부록 A.4 의 「한 종별씩 넣기」 는 예외다** — 짝이 아직 없는 것이 정상이라
+    # 그때는 칸을 뺀다. 전체 변환에서 짝이 없으면 그것은 규칙이 틀린 것이다.
+    for key, payload in contract_types.items():
+        below = payload.get("below_threshold_key")
+        if below is None or below in contract_types:
+            continue
+        if contracts is None:
+            raise TariffSourceError(f"{key}: 문턱 아래 종별이 이번 변환에 없습니다: {below!r}")
+        del payload["below_threshold_key"]
     return {
         "schema_version": schema_version,
         "region": "kr",

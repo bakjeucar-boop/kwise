@@ -66,7 +66,7 @@ def test_shipped_file_is_found_and_loaded(tariff: TariffTable) -> None:
     assert tariff.source_path is not None
     assert tariff.source_path.name == "tariff_kr_20260601.json"
     assert tariff.effective_date == "2026-06-01"
-    assert tariff.schema_version == "0.4"  # 94세션 — 종별에 부칙 경과조치
+    assert tariff.schema_version == "0.5"  # 98세션 — 종별에 문턱 아래 종별
     assert not tariff.verified  # 청구서 대조 전이다
 
 

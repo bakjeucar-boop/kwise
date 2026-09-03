@@ -49,6 +49,7 @@ from kwise.report.excel import (
     no_pv_sensitivity_frame,
 )
 from kwise.tariff import (
+    BillingOptions,
     TariffSelection,
     TariffTable,
     calculate_bill,
@@ -303,6 +304,10 @@ def run_case(
             baseline,
             contract_kw=case.contract_kw,
             contract_floor_ratio=case.contract_floor_ratio,
+            # **기준선을 계약전력 없이 계산했다** (219줄). 넘는 쪽을 볼 때는
+            # 현행도 같은 옵션으로 다시 계산하므로 한쪽만 하한이 걸리지 않는다.
+            table=table,
+            options=BillingOptions(),
         )
         if case.contract_kw is not None
         else None
