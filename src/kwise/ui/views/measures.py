@@ -242,9 +242,13 @@ def _open_key(measure_key: str) -> str:
 #:                     요금제를 바꿔도 그대로라 **여기서 요금제를 고르는 데
 #:                     쓰이지 않는다.** 계약전력 기준 종별에서만 뜨는 문장이라
 #:                     을 종별로만 돌던 감사가 이것을 못 세고 있었다 (4절)
+#:     특례 갈래     **1단계 「계약 정보」 아래가 낸다** (97세션 6절). 초·중·고교·
+#:                     유치원이면 계약종별을 다시 고르라는 말이라, 고칠 수 있는
+#:                     자리는 1단계 하나다. 잠정 경고와 같은 모양이다
 _TARIFF_HIDDEN_FACTS: tuple[str, ...] = (
     "quality.month_missing_rate",
     "tariff.billing_demand_rule",
+    "tariff.school_exception_available",
     "tariff.tentative_base_fee_basis",
     "tariff_switch.best_selection",
 )

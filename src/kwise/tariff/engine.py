@@ -800,6 +800,17 @@ def calculate_bill(
                 f" 기준이 되는 앞 달 자료가 없어 {len(school_skipped)}개 월분은 "
                 "할인하지 않았습니다."
             )
+    elif supports_school_exception(selection.contract_type):
+        # **주의다.** 대상인데 안 고르면 금액만 틀리는 것이 아니라 **권고가
+        # 뒤집힌다** — 하한이 내려가 계약전력을 낮출 이유가 사라지는 벌이 있다.
+        # 「값이 달라집니다」 만 적으면 그 자리가 안 보인다 (97세션 6절).
+        notices.append(
+            warn(
+                "초·중·고교·유치원이면 계약종별에서 그 갈래를 고르십시오. 기본요금과 "
+                "전력량요금이 함께 줄고, 계약전력을 낮추라는 권고가 사라질 수도 있습니다.",
+                fact="tariff.school_exception_available",
+            )
+        )
 
     # 요금적용전력 규칙·안분 계수는 **근거**다 — 기본요금이 왜 그 값인지 그 자체다.
     notices += [

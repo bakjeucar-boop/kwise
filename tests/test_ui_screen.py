@@ -21,6 +21,7 @@ import functools
 import inspect
 import re
 from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -2751,6 +2752,82 @@ def test_잠정_경고는_한_번만_뜬다(other_case_lines: tuple[Any, ...]) -
 
     hits = [item for item in other_case_lines if TENTATIVE_BASE_FEE_BASIS_WARNING in item.text]
     assert len(hits) <= 1, [f"{item.where} :: {item.text[:60]}" for item in hits]
+
+
+# ============================== 97세션 6절 — 초·중·고교·유치원 특례의 두 안내
+#
+# **갈래 양쪽이 실물에 서야 한다.** 켠 판에는 「기간 전체에 적용했다·할인이
+# 과소다」 가, 안 켠 교육용에는 「그 갈래를 고르라」 가 뜬다. 뜨지 않는 갈래는
+# 없는 갈래와 같다 (83세션).
+
+_SCHOOL_HINT = "계약종별에서 그 갈래를 고르십시오"
+
+
+@pytest.fixture(scope="module")
+def school_lines() -> tuple[Any, ...]:
+    """특례를 켠 교육용(갑) 화면의 문구 한 벌. **감사와 같은 잣대로 훑는다.**"""
+    audit = _audit()
+    form = audit.CASES["교육갑"]
+    app = audit.run(solar=False, case="교육갑")
+    app.session_state["contract_form"] = replace(form, school_exception=True)
+    return audit.collect(app.run(timeout=900))
+
+
+def test_특례를_켠_화면이_기간_전체_적용과_과소_산출을_함께_말한다(
+    school_lines: tuple[Any, ...],
+) -> None:
+    """**한 줄에 둘이 함께 있어야 한다** (97세션 6절).
+
+    신청일을 모른다는 것만 적으면 할인이 과소라는 사실이 사라지고, 반대도
+    마찬가지다. 둘로 쪼개면 화면 문구만 늘고 읽는 사람은 반쪽만 본다.
+    """
+    hits = [item.text for item in school_lines if "특례를 분석 기간 전체에 적용" in item.text]
+    assert hits, "특례를 켠 화면에 근거가 없습니다."
+    assert all("신청일을 알 수 없기" in text for text in hits)
+    assert all("실제 할인액은 이 값보다 큽니다" in text for text in hits)
+
+
+def test_특례를_켠_화면도_같은_잣대다(school_lines: tuple[Any, ...]) -> None:
+    """감사 조건은 넷 그대로 두되, **새로 선 갈래도 규칙을 지켜야 한다.**"""
+    offenders = _audit().offenders(school_lines)
+    assert not any(offenders.values()), {
+        rule: [item.text[:60] for item in items] for rule, items in offenders.items() if items
+    }
+
+
+def test_특례를_안_켠_교육용에는_갈래_안내가_뜬다() -> None:
+    """**값이 다르다는 말만으로는 부족하다** (97세션 6절).
+
+    950 kW 벌에서는 하한이 285 → 142.5 kW 로 내려가 최대수요에 져서 **계약전력
+    조정 절감액이 통째로 사라진다.** 금액이 아니라 권고가 바뀌는 자리이므로
+    안내가 거기까지 말해야 한다.
+    """
+    lines = _audit().collect(solar=False, case="교육갑")
+    hits = [item.text for item in lines if _SCHOOL_HINT in item.text]
+    assert hits, "교육용인데 갈래 안내가 없습니다."
+    assert all("권고가 사라질 수도 있습니다" in text for text in hits)
+
+
+def test_갈래_안내도_한_번만_뜬다() -> None:
+    """**같은 자리를 90세션이 이미 겪었다.** 요금 결과는 두 자리가 실어 나른다.
+
+    남기는 것은 1단계다 — 계약종별을 다시 고르라는 말이라 고칠 수 있는 자리가
+    거기 하나다. 2단계 「선택요금 전환」 카드는 `_TARIFF_HIDDEN_FACTS` 가 내린다.
+    **산출물에서는 안 내린다** — 보고서는 `result.notices` 를 그대로 쓴다.
+    """
+    lines = _audit().collect(solar=False, case="교육갑")
+    hits = [item for item in lines if _SCHOOL_HINT in item.text]
+    assert len(hits) == 1, [f"{item.where} :: {item.text[:60]}" for item in hits]
+    assert hits[0].where.endswith("1단계 · 진단")
+
+
+def test_교육용이_아니면_갈래_안내가_안_뜬다(
+    screen_lines: tuple[Any, ...], school_lines: tuple[Any, ...]
+) -> None:
+    """**안 뜨는 판이 둘이다.** 기준선(일반용(을))은 걸 수 있는 특례가 없고,
+    이미 켠 화면에는 고르라고 할 것이 없다."""
+    assert not [item for item in screen_lines if _SCHOOL_HINT in item.text]
+    assert not [item for item in school_lines if _SCHOOL_HINT in item.text]
 
 
 # ======================================================== 25세션 · 입력 끝값

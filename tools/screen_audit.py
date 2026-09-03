@@ -407,7 +407,10 @@ BARE_ARTICLE = re.compile(r"제\s*\d+[\d·~]*\s*조")
 BARE_SCHEDULE = re.compile(r"별표\s*\d+")
 #: 조문 앞에 있어야 할 규정 이름.
 ARTICLE_OWNERS = ("기본공급약관", "전력시장운영규칙")
-SCHEDULE_OWNER = "전력시장운영규칙"
+#: 별표 앞에 있어야 할 규정 이름. **둘이다** (97세션 6절) — 앞서는 하나였고,
+#: 그래서 「기본공급약관시행세칙 별표4」 를 규정 이름이 없는 것으로 읽었다.
+#: 규칙의 뜻은 그대로다: 별표 번호만 적지 않는다.
+SCHEDULE_OWNERS = ("전력시장운영규칙", "기본공급약관시행세칙")
 
 
 def _bare_article(text: str) -> bool:
@@ -418,7 +421,9 @@ def _bare_article(text: str) -> bool:
 
 
 def _bare_schedule(text: str) -> bool:
-    return bool(BARE_SCHEDULE.search(text)) and SCHEDULE_OWNER not in text
+    if not BARE_SCHEDULE.search(text):
+        return False
+    return not any(owner in text for owner in SCHEDULE_OWNERS)
 
 
 #: **마크다운을 해석하는 자리.** 물결표 규칙은 여기에만 건다 — 표 셀·차트 라벨·
