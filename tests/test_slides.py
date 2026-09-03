@@ -3424,6 +3424,33 @@ def test_덱_라벨이_그림_실패를_0_까지_적는다() -> None:
     assert "태양광 · 일별 발전량" in noisy
 
 
+def test_덱은_벌마다_제_좌표로_태양광을_돌린다() -> None:
+    """**화면에 적은 지역과 발전량을 낸 좌표가 같아야 한다** (97세션 1절).
+
+    96세션이 낸 결함이다 — 덱이 `case.sigungu` 대신 모듈 상수(강원도/강릉시)를
+    `SolarInputs` 에 먹여, 용인 두 벌이 옆단에는 「경기도 용인시」 라고 적고
+    발전량은 강릉 격자로 냈다 (365일 101,863 kWh 대 104,774 kWh, +2.9%).
+    라벨 파일까지 「강원도/강릉시」 라 **산출물만 봐서는 알 수 없었다.**
+
+    케이스 스터디 104/104 가 이것을 못 잡은 까닭은 덱 경로를 아예 안 타기
+    때문이다 — 못은 그래서 여기에 박는다.
+    """
+    import sys
+
+    sys.path.insert(0, str(Path("tools").resolve()))
+    import render_deck
+
+    for case in render_deck.CASES:
+        assert render_deck.solar_inputs_for(case).region_key == case.sigungu, case.key
+        assert case.sigungu in render_deck.label_text(case), case.key
+        assert case.province == case.sigungu.partition("/")[0], case.key
+
+    # **강릉이 아닌 벌이 있어야 이 시험이 무엇을 잡는다.** 전부 강릉이면
+    # 상수를 먹여도 통과한다 — 뜨지 않는 갈래는 없는 갈래와 같다.
+    off = [case for case in render_deck.CASES if case.sigungu != render_deck.REGION]
+    assert [case.key for case in off] == ["small-a2", "small-a2-was"]
+
+
 # ================================================= 60세션 12절 — T6 판정을 집행한다
 
 

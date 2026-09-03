@@ -22,6 +22,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -29,6 +30,9 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 # **`sys.path` 를 세운 뒤에 들여온다.** 위에 두면 저장소를 설치하지 않은
 # 환경에서 이 도구가 통째로 못 뜬다.
 from kwise.report.figures import FigureFailureCollector  # noqa: E402
+
+if TYPE_CHECKING:  # streamlit 을 도구 시작에 들이지 않는다 — 형에만 쓴다
+    from kwise.ui.pipeline import SolarInputs
 
 APP = PROJECT_ROOT / "src" / "kwise" / "ui" / "app.py"
 LARGE_CSV = PROJECT_ROOT / "input" / "사용량조회_20240429.csv"
@@ -38,7 +42,11 @@ SMALL_CSV = PROJECT_ROOT / "input" / "사용량조회_소형사무빌딩.csv"
 YONGIN_XLSX = PROJECT_ROOT / "input" / "전기사용량_소형건물.xlsx"
 
 #: 통합 시험과 같은 지역을 쓴다 (48세션). 지역을 바꾸면 발전량이 통째로 흔들린다.
-PROVINCE = "강원도"
+#:
+#: **벌의 기본값으로 쓰지 않는다** (97세션). 96세션이 낸 결함이 이 상수를
+#: `SolarInputs` 에 바로 먹인 것이었다 — 용인 두 벌이 화면에는 「경기도 용인시」
+#: 라고 적고 발전량은 강릉 격자로 냈다. 이제 벌마다 `sigungu` 를 반드시 적고,
+#: 강릉을 쓰는 벌은 이 이름을 그 자리에 적는다.
 REGION = "강원도/강릉시"
 
 ALL_MEASURES = (
@@ -64,11 +72,19 @@ class Case:
     contract_kw: float
     area_m2: float
     building_name: str
+    sigungu: str
+    """지역. **기본값을 두지 않는다** — 적지 않으면 벌이 아예 만들어지지 않는다.
+
+    화면과 태양광이 **같은 이 값**을 쓴다 (97세션 1절). 발전량이 통째로 흔들리는
+    값이라 「적었겠지」 로 넘길 자리가 아니다.
+    """
     surplus_use: str = ""
     """고른 잉여 처리. 비우면 화면 기본값(출력제어)이다 (57세션)."""
-    province: str = PROVINCE
-    sigungu: str = REGION
-    """지역. 실측 자료의 소재지가 분명한 벌만 바꾼다 — 발전량이 통째로 흔들린다."""
+
+    @property
+    def province(self) -> str:
+        """옆단 1단(시도). **따로 적지 않는다** — 적으면 시군구와 어긋날 수 있다."""
+        return self.sigungu.partition("/")[0]
 
 
 CASES: tuple[Case, ...] = (
@@ -82,6 +98,7 @@ CASES: tuple[Case, ...] = (
         contract_kw=6_000.0,
         area_m2=20_000.0,
         building_name="대형 사업장",
+        sigungu=REGION,
     ),
     Case(
         key="large-a",
@@ -93,6 +110,7 @@ CASES: tuple[Case, ...] = (
         contract_kw=6_000.0,
         area_m2=20_000.0,
         building_name="대형 사업장(갑)",
+        sigungu=REGION,
     ),
     Case(
         key="small-b",
@@ -104,6 +122,7 @@ CASES: tuple[Case, ...] = (
         contract_kw=300.0,
         area_m2=1_000.0,
         building_name="소형 사무빌딩",
+        sigungu=REGION,
     ),
     Case(
         key="small-a",
@@ -115,6 +134,7 @@ CASES: tuple[Case, ...] = (
         contract_kw=300.0,
         area_m2=1_000.0,
         building_name="소형 사무빌딩(갑)",
+        sigungu=REGION,
     ),
     Case(
         key="large-b-over",
@@ -129,6 +149,7 @@ CASES: tuple[Case, ...] = (
         contract_kw=20_000.0,
         area_m2=20_000.0,
         building_name="대형 사업장(계약 과다)",
+        sigungu=REGION,
     ),
     Case(
         key="small-b-sell",
@@ -140,6 +161,7 @@ CASES: tuple[Case, ...] = (
         contract_kw=300.0,
         area_m2=1_000.0,
         building_name="소형 사무빌딩(외부 판매)",
+        sigungu=REGION,
         # **기본이 아닌 잉여 처리를 골라 본다** (59세션 5절). 기본값(출력제어)은
         # 0원이라 「절감액에 잉여가 얹힌다」 는 사실이 값으로 안 보인다.
         surplus_use="외부 판매",
@@ -157,7 +179,6 @@ CASES: tuple[Case, ...] = (
         contract_kw=290.0,
         area_m2=1_000.0,
         building_name="용인 소규모 건물(갑Ⅱ)",
-        province="경기도",
         sigungu="경기도/용인시",
     ),
     Case(
@@ -186,7 +207,6 @@ CASES: tuple[Case, ...] = (
         contract_kw=700.0,
         area_m2=1_000.0,
         building_name="용인 소규모 건물(옛 계약 700 · 을)",
-        province="경기도",
         sigungu="경기도/용인시",
     ),
     Case(
@@ -204,6 +224,7 @@ CASES: tuple[Case, ...] = (
         contract_kw=300.0,
         area_m2=1_000.0,
         building_name="소형 학교(교육용 갑)",
+        sigungu=REGION,
     ),
     Case(
         key="small-edu-a-over",
@@ -228,10 +249,22 @@ CASES: tuple[Case, ...] = (
         contract_kw=950.0,
         area_m2=1_000.0,
         building_name="소형 학교(교육용 갑 · 계약 과다)",
+        sigungu=REGION,
     ),
 )
 
 BY_KEY = {case.key: case for case in CASES}
+
+
+def solar_inputs_for(case: Case) -> SolarInputs:
+    """이 벌의 태양광 입력. **좌표는 벌 정의에서 온다** (97세션 1절).
+
+    `build_deck` 안에 있던 한 줄을 여기로 꺼냈다. 안에 있으면 좌표를 확인하려고
+    화면을 통째로 띄워야 하고, 그래서 **96세션까지 아무 시험도 이 줄을 안 봤다.**
+    """
+    from kwise.ui.pipeline import SolarInputs
+
+    return SolarInputs(region_key=case.sigungu, area_m2=case.area_m2)
 
 
 def _first_option(contract_type: str, voltage: str) -> str:
@@ -247,7 +280,7 @@ def build_deck(case: Case, *, timeout: int = 1800) -> bytes:
     from streamlit.testing.v1 import AppTest
 
     from kwise.ui.artifacts import ARTIFACT_KEY
-    from kwise.ui.pipeline import ContractForm, SolarInputs
+    from kwise.ui.pipeline import ContractForm
 
     app = AppTest.from_file(str(APP), default_timeout=timeout)
     state = app.session_state
@@ -264,7 +297,7 @@ def build_deck(case: Case, *, timeout: int = 1800) -> bytes:
     state["building_name"] = case.building_name
     # **태양광은 「계산」 을 누른 상태로 시작한다.** 위젯에 키가 없어 면적을
     # 세션으로 심을 수 없다 — 눌린 결과(``solar_inputs``)를 바로 넣는다.
-    state["solar_inputs"] = SolarInputs(region_key=REGION, area_m2=case.area_m2)
+    state["solar_inputs"] = solar_inputs_for(case)
     if case.surplus_use:
         state["measure_solar_surplus_use"] = case.surplus_use
     for key in ALL_MEASURES:
@@ -358,7 +391,7 @@ def label_text(case: Case, titles: Sequence[str] = (), failures: Sequence[str] =
         f"계약전력    {case.contract_kw:,.0f} kW",
         f"면적        {case.area_m2:,.0f} m²",
         f"건물명      {case.building_name}",
-        f"지역        {REGION}",
+        f"지역        {case.sigungu}",
         # **0 이면 0 이라 적는다** (60세션 11절). 줄이 없으면 「기록을 안 남긴
         # 것」 과 「실패가 없던 것」 이 갈리지 않는다.
         f"그림 실패    {len(failures)}개",
