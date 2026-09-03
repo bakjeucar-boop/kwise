@@ -517,6 +517,11 @@ def test_숫자를_직접_찍지_않는다(name: str) -> None:
 
 SAMPLE = Path("input") / "사용량조회_20240429.csv"
 
+#: 하한이 지면서도 종별을 넘을 수 있는 유일한 실물 자료 (99세션). 최대수요
+#: 264.7 kW 라 을 300 kW 에서 하한 90 kW 는 지고, 문턱 아래 299 kW 는 그 위에 선다.
+#: 덱 벌 ``small-b``·``small-b-sell`` 의 조건과 같다.
+OFFICE = Path("input") / "사용량조회_소형사무빌딩.csv"
+
 
 #: 화면 시험이 쓰는 지역. **48세션 전의 기본값 그대로다** — 지역을 바꾸면
 #: 발전량이 달라져 태양광 값이 통째로 흔들린다.
@@ -1525,6 +1530,33 @@ def test_하한이_지면_판정_줄이_선다() -> None:
     assert not [item for item in screen.number_input if "여유율" in str(item.label)]
     body = " ".join(item.value for item in screen.markdown)
     assert FLOOR_NOT_BINDING_NOTICE in body
+
+
+def test_하한이_져도_종별이_바뀐다는_안내가_실물에_뜬다() -> None:
+    """**갈래가 뜰 수 있는 자리인지 화면에서 본다** (99세션).
+
+    96세션 갈래가 두 세션 동안 **뜰 수 없는 상태**로 서 있었다. 같은 일을
+    되풀이하지 않는다 — 소형 사무빌딩(최대수요 264.7 kW) 을 300 kW 는
+    하한 90 kW 가 지는데 문턱 바로 아래 299 kW 는 그 위에 있어 넘어갈 자리가
+    있다. **덱 벌 ``small-b``·``small-b-sell`` 가 쓰는 조건 그대로다.**
+    """
+    from kwise.measures.contract import FLOOR_NOT_BINDING_NOTICE
+
+    screen = _running(
+        option="I",
+        contract_kw=300.0,
+        nav_page="2단계 · 개선 수단",
+        measure_on_contract=True,
+        upload_bytes=OFFICE.read_bytes(),
+        upload_name=OFFICE.name,
+    )
+    assert not screen.exception, screen.exception
+    body = " ".join(item.value for item in screen.markdown)
+    assert "계약종별이 일반용전력(갑)Ⅱ 로 바뀝니다" in body
+    # **낮춰도 안 준다는 말은 이 판에서 거짓이다.**
+    assert FLOOR_NOT_BINDING_NOTICE not in body
+    # 목표 계약전력 칸이 실제로 선다 — 하한이 지는 판에는 없던 칸이다.
+    assert "목표 계약전력" in [str(item.label) for item in screen.metric]
 
 
 def test_태양광에_계산_단추가_있다() -> None:

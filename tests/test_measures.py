@@ -593,6 +593,129 @@ def test_문턱_아래_종별은_요금_데이터가_정한다(tariff: TariffTab
     }
 
 
+@pytest.fixture(scope="session")
+def floor_losing_general_b_usage(tmp_path_factory: pytest.TempPathFactory) -> UsageData:
+    """을 종별이고 **최대수요가 하한과 문턱 사이**인 한 달치 (99세션).
+
+    계약 400 kW 에서 하한 120 kW 는 최대수요 200 kW 에 **진다** — 같은 종별
+    안에서는 낮출 이유가 없는 자리다. 그런데 문턱 바로 아래 299 kW 는 최대수요
+    위에 있어 **넘어갈 자리는 있다.** 98세션이 못 보던 띠가 이것이다.
+    """
+    from tests._synthetic import make_labels, month_dates, write_csv
+
+    rows = [
+        (label, 50.0)  # 15분 50 kWh = 200 kW
+        for date in month_dates(2024, 3)
+        for label in make_labels(date)
+    ]
+    return load_usage(write_csv(tmp_path_factory.mktemp("floor-losing") / "flat.csv", rows))
+
+
+def test_하한이_져도_문턱_아래_종별로_넘어간다(
+    floor_losing_general_b_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**후보는 하한 갈래 밖에 있다** (99세션).
+
+    98세션은 문턱 아래 종별을 「하한이 이긴다」 가지 안에서만 봤다. 그래서
+    하한이 지는 을 판은 전환 이득을 통째로 0 으로 냈다 — 용인 실측 을 400 kW
+    에서 **0원 대 8,725,941원**이었다.
+
+    **하한이 지는 것과 낮출 자리가 없는 것은 다른 사실이다.**
+    """
+    options = BillingOptions(contract_kw=400.0)
+    bill = calculate_bill(
+        floor_losing_general_b_usage,
+        tariff,
+        TariffSelection("general_b", "high_a", "I"),
+        options=options,
+    )
+    result = evaluate_contract_adjustment(
+        floor_losing_general_b_usage, bill, contract_kw=400.0, table=tariff, options=options
+    )
+
+    # 하한은 진다. 그래도 낮출 자리는 있다 — 둘이 다른 사실이다.
+    assert not result.floor_binding
+    assert result.reducible
+    assert result.crosses_type
+    assert result.target_contract_kw == pytest.approx(299.0)
+    assert result.crossed_label == "일반용전력(갑)Ⅱ"
+
+    # **절감액이 총액 차이다.** 빼기로 어림한 값이 아니다.
+    assert result.current_total_won is not None and result.crossed_total_won is not None
+    assert result.saving_won == pytest.approx(result.current_total_won - result.crossed_total_won)
+    assert result.saving_won is not None and result.saving_won > 0.0
+    assert result.crossed_selection is not None
+    crossed = calculate_bill(
+        floor_losing_general_b_usage,
+        tariff,
+        result.crossed_selection,
+        options=replace(options, contract_kw=299.0),
+    )
+    assert result.crossed_total_won == pytest.approx(crossed.total_won)
+
+    # **안내가 실제로 뜬다.** 「낮춰도 안 준다」 는 이 판에서 거짓이라 빠진다.
+    facts = [item.fact for item in result.notices]
+    assert facts.count(TYPE_THRESHOLD_FACT) == 1
+    assert "contract.floor_not_binding" not in facts
+    assert "contract.energy_unchanged" not in facts
+
+    # **결론도 하한을 말하지 않는다.** 하한이 최대수요보다 높다고 적으면 거짓이다.
+    from kwise.report.document import measure_entries
+
+    entry = next(item for item in measure_entries(contract=result) if item.kind.key == "contract")
+    assert "계약종별이 일반용전력(갑)Ⅱ 로 바뀌어" in entry.conclusion
+    assert "보다 높아" not in entry.conclusion
+    assert entry.actionable
+
+    # **요금표를 안 주면 종전 그대로다** — 갈아 끼울 단가가 없다.
+    without = evaluate_contract_adjustment(floor_losing_general_b_usage, bill, contract_kw=400.0)
+    assert not without.reducible
+    assert without.saving_won == pytest.approx(0.0)
+
+
+def test_후보가_최대수요_아래면_안_넘는다(
+    sample_usage: UsageData, sample_bill: BillingResult, tariff: TariffTable
+) -> None:
+    """**안 뜨는 판을 함께 박는다** (99세션).
+
+    대형 을 6,000 kW 는 하한 1,800 kW 가 최대수요 5,293.44 kW 에 지는데,
+    문턱 바로 아래 299 kW 는 그 최대수요보다 **낮다** — 초과사용부가금 대상이
+    되므로 권고하지 않는다. **화면 감사 네 조건 가운데 을 조건이 이것이다.**
+    """
+    options = BillingOptions(contract_kw=6_000.0)
+    result = evaluate_contract_adjustment(
+        sample_usage, sample_bill, contract_kw=6_000.0, table=tariff, options=options
+    )
+    assert not result.floor_binding
+    assert not result.reducible
+    assert not result.crosses_type
+    assert result.no_saving
+    assert result.saving_won == pytest.approx(0.0)
+    assert "contract.floor_not_binding" in [item.fact for item in result.notices]
+
+
+def test_후보가_지금_계약전력_이상이면_안_넘는다(
+    floor_losing_general_b_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**낮추는 권고만 한다** (99세션).
+
+    계약전력이 이미 문턱 아래면 넘어갈 자리가 아니다. 못이 없으면 을 250 kW
+    같은 어긋난 입력에 **299 kW 로 올리라는** 권고가 난다.
+    """
+    options = BillingOptions(contract_kw=250.0)
+    bill = calculate_bill(
+        floor_losing_general_b_usage,
+        tariff,
+        TariffSelection("general_b", "high_a", "I"),
+        options=options,
+    )
+    result = evaluate_contract_adjustment(
+        floor_losing_general_b_usage, bill, contract_kw=250.0, table=tariff, options=options
+    )
+    assert not result.crosses_type
+    assert result.target_contract_kw is None
+
+
 def test_방향을_모르면_실패한다() -> None:
     """**코드에 기본값을 두지 않는다** (21세션). 방향을 모른 채 한쪽으로 읽으면
     안내가 사실과 반대되는 말을 하게 된다.
