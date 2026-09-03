@@ -486,7 +486,7 @@ def test_목표가_문턱_아래로_가면_넘어간_종별로_다시_계산한�
     assert result.target_contract_kw == pytest.approx(267.0)
     assert result.current_total_won is not None and result.crossed_total_won is not None
     assert result.saving_won == pytest.approx(result.current_total_won - result.crossed_total_won)
-    assert "일반용전력(을) → 일반용전력(갑)Ⅱ" in result.saving_basis
+    assert "일반용전력(갑)Ⅱ 고압A 선택Ⅱ 로 종별을 바꿔" in result.saving_basis
 
     # **빼기로 어림한 값이 아니다.** 전환 후 총액은 그 종별로 처음부터 계산한다.
     crossed = calculate_bill(
@@ -501,6 +501,41 @@ def test_목표가_문턱_아래로_가면_넘어간_종별로_다시_계산한�
     same_type_only = evaluate_contract_adjustment(small_general_b_usage, bill, contract_kw=400.0)
     assert same_type_only.saving_won is not None and result.saving_won is not None
     assert result.saving_won > same_type_only.saving_won
+
+
+def test_넘는_판의_안내는_종별이_바뀐다고_말한다(
+    small_general_b_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**말할 것은 「계약전력이 줄었다」 가 아니라 「종별이 바뀐다」 다** (98세션).
+
+    **문구가 늘지 않았다** — 넘는 판에서는 「전력량요금은 변하지 않습니다」 를
+    빼고 그 자리에 종별 안내가 선다. 전력량요금 단가도 함께 바뀌므로 그 문장은
+    넘는 판에서 사실과 어긋난다.
+    """
+    options = BillingOptions(contract_kw=400.0)
+    bill = calculate_bill(
+        small_general_b_usage, tariff, TariffSelection("general_b", "high_a", "I"), options=options
+    )
+    result = evaluate_contract_adjustment(
+        small_general_b_usage, bill, contract_kw=400.0, table=tariff, options=options
+    )
+    facts = [item.fact for item in result.notices]
+    assert facts.count(TYPE_THRESHOLD_FACT) == 1
+    assert "contract.energy_unchanged" not in facts
+
+    crossing = next(item for item in result.notices if item.fact == TYPE_THRESHOLD_FACT)
+    assert "계약종별이 일반용전력(갑)Ⅱ 로 바뀝니다" in crossing.text
+    assert "267 kW" in crossing.text
+    # **약관 원문을 그대로 옮기지 않는다** — 설비 이름이 딸려 들어온다.
+    assert "전력량계" not in crossing.text
+    assert "최대수요전력계" not in crossing.text
+
+    # **요금표를 안 주면 96세션의 옛 안내가 그대로 선다** — 갈아 끼울 단가가
+    # 없으니 「지금 종별 단가로 낸 값이다」 가 여전히 사실이다.
+    no_table = evaluate_contract_adjustment(small_general_b_usage, bill, contract_kw=400.0)
+    old = next(item for item in no_table.notices if item.fact == TYPE_THRESHOLD_FACT)
+    assert "지금 종별 단가로 낸 값입니다" in old.text
+    assert "contract.energy_unchanged" in [item.fact for item in no_table.notices]
 
 
 def test_경계를_안_넘는_판은_요금표를_줘도_종전과_같다(

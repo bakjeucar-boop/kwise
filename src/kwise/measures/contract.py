@@ -42,6 +42,7 @@ from kwise.tariff import (
     TariffTable,
     calculate_bill,
     list_selections,
+    selection_label,
 )
 from kwise.tariff.schema import TariffDataError, threshold_text, within_type_threshold
 
@@ -169,6 +170,9 @@ class _CrossedQuote:
 
     selection: TariffSelection
     label: str
+    """넘어간 **종별**의 이름. 안내가 이것으로 「종별이 바뀐다」 를 말한다."""
+    selection_text: str
+    """``일반용전력(갑)Ⅱ 고압A 선택Ⅱ`` — 산출 근거에 그대로 적는다."""
     contract_kw: float
     bill: BillingResult
     current_bill: BillingResult
@@ -235,6 +239,7 @@ def _crossed_quote(
     return _CrossedQuote(
         selection=best_selection,
         label=crossed.label,
+        selection_text=selection_label(table, best_selection),
         contract_kw=candidate,
         bill=best_bill,
         current_bill=calculate_bill(
@@ -341,34 +346,6 @@ def evaluate_contract_adjustment(
             f"요금적용전력 하한 {ratio:.0%} 적용, "
             f"월별 기본요금을 {bill.base_fee_months:.2f}개월분으로 재계산"
         )
-        # **낮출 자리가 있을 때만 낸다.** 낮출 이유가 없는 갈래에서 「하향은
-        # 되돌리기 어렵다」 를 읽히면 하지도 못할 일을 조심하라는 말이 된다.
-        notices += [
-            warn(MARGIN_NOTICE, fact="contract.margin"),
-            warn(_PENALTY_NOTICE, fact="contract.penalty"),
-            basis(basis_text, fact="contract.saving_basis"),
-            basis(
-                "전력량요금은 계약전력과 무관하므로 변하지 않습니다.",
-                fact="contract.energy_unchanged",
-            ),
-        ]
-        # **목표가 종별 경계를 넘는가** (96세션). 방향은 요금 데이터가 정한다 —
-        # 갑Ⅰ·갑Ⅱ 는 300 kW 미만, 을은 300 kW 이상, 교육용은 1,000 kW 다.
-        # 넘으면 **절감액이 지금 종별 단가로 낸 값**이라는 사실을 함께 낸다.
-        threshold = bill.threshold_kw
-        if threshold is not None and not within_type_threshold(
-            target, threshold, bill.threshold_direction
-        ):
-            notices.append(
-                warn(
-                    f"{bill.contract_label} 은 계약전력 "
-                    f"{threshold_text(threshold, bill.threshold_direction)} "
-                    f"종별인데 목표 계약전력이 {target:,.0f} kW 입니다. "
-                    "종별이 바뀌는 자리이므로 절감액은 지금 종별 단가로 낸 값입니다.",
-                    fact=TYPE_THRESHOLD_FACT,
-                )
-            )
-
         # **문턱 아래 종별을 후보로 놓는다** (98세션). 같은 종별 안의 목표는
         # 기본요금만 줄이는데, 문턱을 넘으면 전력량요금 단가까지 함께 바뀐다.
         if table is not None and options is not None:
@@ -388,10 +365,52 @@ def evaluate_contract_adjustment(
                 adjusted_base = quote.bill.total_base_won
                 saving = quote.saving_won
                 basis_text = (
-                    f"{bill.contract_label} → {quote.label} "
-                    f"{quote.bill.voltage_label} 선택{quote.selection.option} 로 "
-                    "요금 전체를 다시 계산 (기본요금·전력량요금 단가가 함께 바뀐다)"
+                    f"{quote.selection_text} 로 종별을 바꿔 요금 전체를 다시 계산 "
+                    "(기본요금·전력량요금 단가가 함께 바뀐다)"
                 )
+
+        # **낮출 자리가 있을 때만 낸다.** 낮출 이유가 없는 갈래에서 「하향은
+        # 되돌리기 어렵다」 를 읽히면 하지도 못할 일을 조심하라는 말이 된다.
+        notices += [
+            warn(MARGIN_NOTICE, fact="contract.margin"),
+            warn(_PENALTY_NOTICE, fact="contract.penalty"),
+            basis(basis_text, fact="contract.saving_basis"),
+        ]
+        if crossed is None:
+            # **넘는 판에서는 내지 않는다** (98세션). 종별이 바뀌면 전력량요금
+            # 단가도 바뀌므로 이 문장이 사실과 어긋난다.
+            notices.append(
+                basis(
+                    "전력량요금은 계약전력과 무관하므로 변하지 않습니다.",
+                    fact="contract.energy_unchanged",
+                )
+            )
+        # **목표가 종별 경계를 넘는가** (96세션). 방향은 요금 데이터가 정한다 —
+        # 갑Ⅰ·갑Ⅱ 는 300 kW 미만, 을은 300 kW 이상, 교육용은 1,000 kW 다.
+        # **말할 것은 「계약전력이 줄었다」 가 아니라 「종별이 바뀐다」 다** (98세션).
+        threshold = bill.threshold_kw
+        if crossed is not None:
+            notices.append(
+                warn(
+                    f"목표 {target:,.0f} kW 는 지금 계약종별의 범위 밖입니다. "
+                    f"그렇게 낮추면 계약종별이 {crossed.label} 로 바뀝니다 — "
+                    "절감액은 바뀐 종별의 요금으로 다시 계산한 값입니다.",
+                    fact=TYPE_THRESHOLD_FACT,
+                )
+            )
+        elif threshold is not None and not within_type_threshold(
+            target, threshold, bill.threshold_direction
+        ):
+            # 넘는데 갈아 끼울 종별을 요금 데이터가 안 들고 있는 자리다.
+            notices.append(
+                warn(
+                    f"{bill.contract_label} 은 계약전력 "
+                    f"{threshold_text(threshold, bill.threshold_direction)} "
+                    f"종별인데 목표 계약전력이 {target:,.0f} kW 입니다. "
+                    "종별이 바뀌는 자리이므로 절감액은 지금 종별 단가로 낸 값입니다.",
+                    fact=TYPE_THRESHOLD_FACT,
+                )
+            )
     return ContractAdjustment(
         status=ContractStatus.CONFIRMED,
         contract_kw=contract_kw,
