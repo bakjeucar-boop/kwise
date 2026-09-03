@@ -22,6 +22,7 @@ __all__ = [
     "OPTION_LABELS",
     "OPTION_ORDER",
     "SEASON_LABELS",
+    "billing_month_label",
     "contract_label",
     "option_label",
     "option_sort_key",
@@ -52,6 +53,17 @@ OPTION_ORDER: tuple[str, ...] = ("I", "II", "III", "IV", "single")
 #: 표기 규약이므로 선택요금과 같은 자리에 둔다. :mod:`kwise.report.columns` 의
 #: 값 번역표도 여기를 본다 — 두 벌이면 한쪽만 고쳐진다.
 SEASON_LABELS: dict[str, str] = {"spring_fall": "봄·가을", "summer": "여름", "winter": "겨울"}
+
+
+def billing_month_label(month: str) -> str:
+    """``2026-12`` · ``2026-12-01`` → ``2026년 12월분``.
+
+    **약관이 「월분」 으로 세는 자리는 「월」 로 적지 않는다.** 검침 기간이 달을
+    걸치므로 둘은 다르다 — 요금표 각주는 「’26.12월부터」 로 적는데 약관이
+    정본이다. 시행일이 날로 적힌 것도 받는다 (꼴이 둘이다).
+    """
+    year, number = month.split("-")[:2]
+    return f"{int(year)}년 {int(number)}월분"
 
 
 def season_label(season: str) -> str:

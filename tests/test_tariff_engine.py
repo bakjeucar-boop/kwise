@@ -947,6 +947,11 @@ def peak_heavy_month(path: Path, year: int, month: int, off_kwh: float = 1.0) ->
     return load_usage(write_csv(path / f"peak-{year}-{month:02d}-{off_kwh}.csv", rows))
 
 
+def transition_notices(result: BillingResult) -> list[str]:
+    """경과조치 근거만 골라낸다. **든 자리에만 서야 한다.**"""
+    return [item for item in texts(result.notices) if "낮은 요금이 신청 없이" in item]
+
+
 def test_전환기간_밖에서는_선택Ⅰ_과_선택Ⅲ_가_갈린다(tmp_path: Path, tariff: TariffTable) -> None:
     """**아래 세 시험의 대조군**이다. 엔진이 둘을 늘 같게 만드는 것이 아니다."""
     usage = peak_heavy_month(tmp_path, *AFTER_TRANSITION_MONTH)
@@ -956,6 +961,7 @@ def test_전환기간_밖에서는_선택Ⅰ_과_선택Ⅲ_가_갈린다(tmp_pat
     assert on_i.transition_months == ()
     assert on_i.total_won == pytest.approx(3_660_500.8)
     assert on_iii.total_won == pytest.approx(3_687_643.2)
+    assert not transition_notices(on_i)  # 안 든 자리에는 안 낸다
     # 기본요금 단가가 같으므로(둘 다 7,170원/kW) 차이는 전력량요금에서만 온다.
     assert tariff.rates(A2_OPTION_I).base_won_per_kw == tariff.rates(A2_OPTION_III).base_won_per_kw
 
@@ -974,6 +980,12 @@ def test_전환기간_요금은_선택Ⅰ_과_선택Ⅲ_중_낮은_쪽이다(tmp
     assert "선택I" in "".join(on_i.traceability())
     # 짝 쪽은 자동 비교를 받지 않는다. 짝의 짝이 없어 재귀가 한 번에 멈춘다.
     assert on_iii.transition_months == ()
+    # **든 자리에 그 사실을 낸다.** 조문·부칙 번호는 매뉴얼로 간다.
+    assert transition_notices(on_i) == [
+        "2026년 6월분부터 2026년 11월분까지는 선택Ⅰ·선택Ⅲ 중 낮은 요금이 신청 없이 "
+        "적용되며, 분석 기간에서 1개 월이 선택Ⅲ 단가로 계산됐습니다."
+    ]
+    assert not transition_notices(on_iii)
 
 
 def test_원래_고른_쪽이_더_싸면_갈아_끼우지_않는다(tmp_path: Path, tariff: TariffTable) -> None:
@@ -989,6 +1001,8 @@ def test_원래_고른_쪽이_더_싸면_갈아_끼우지_않는다(tmp_path: Pa
     assert on_ii.total_won < on_iv.total_won
     assert on_ii.transition_months == ()
     assert on_ii.total_won == pytest.approx(3_701_409.6)
+    # **안 뜨는 판이다.** 갈아 낀 것이 없으면 낼 사실도 없다.
+    assert not transition_notices(on_ii)
 
 
 def test_선택II_와_선택IV_짝도_실제로_선다(tmp_path: Path, tariff: TariffTable) -> None:
@@ -1008,6 +1022,10 @@ def test_선택II_와_선택IV_짝도_실제로_선다(tmp_path: Path, tariff: T
     assert on_ii.total_won == pytest.approx(3_555_637.6)
     assert on_ii.selection == A2_OPTION_II
     assert on_iv.transition_months == ()
+    assert transition_notices(on_ii) == [
+        "2026년 6월분부터 2026년 11월분까지는 선택Ⅱ·선택Ⅳ 중 낮은 요금이 신청 없이 "
+        "적용되며, 분석 기간에서 1개 월이 선택Ⅳ 단가로 계산됐습니다."
+    ]
 
 
 def test_경과조치가_없는_종별은_짝을_찾지_않는다(

@@ -27,7 +27,7 @@ from collections.abc import Iterable
 from datetime import date
 
 from kwise.notices import Notice, warn
-from kwise.tariff.labels import option_label, option_sort_key
+from kwise.tariff.labels import billing_month_label, option_label, option_sort_key
 from kwise.tariff.schema import TariffSelection, TariffTable
 
 __all__ = ["pending_option_notices"]
@@ -43,12 +43,6 @@ def _starts(effective_date: str) -> date:
     하한일 뿐이다.
     """
     return date.fromisoformat(effective_date if len(effective_date) > 7 else f"{effective_date}-01")
-
-
-def _billing_month(effective_date: str) -> str:
-    """``2026-12`` → ``2026년 12월분``."""
-    parsed = _starts(effective_date)
-    return f"{parsed.year}년 {parsed.month}월분"
 
 
 def pending_option_notices(
@@ -77,7 +71,7 @@ def pending_option_notices(
         names = "·".join(option_label(option) for option in sorted(options, key=option_sort_key))
         notices.append(
             warn(
-                f"{names} 요금제는 {_billing_month(effective_date)} 요금부터 쓸 수 있습니다. "
+                f"{names} 요금제는 {billing_month_label(effective_date)} 요금부터 쓸 수 있습니다. "
                 "분석 기간 전체에 이 요금제를 적용해 계산하므로 "
                 "실제 청구와 다를 수 있습니다.",
                 fact=f"tariff.pending_option:{effective_date}",

@@ -32,6 +32,7 @@ from kwise.tariff.demand import (
     monthly_demand_basis,
 )
 from kwise.tariff.holiday import DateLike, build_calendar
+from kwise.tariff.labels import billing_month_label, option_label
 from kwise.tariff.power_factor import (
     PowerFactorCharge,
     lagging_standard_pct,
@@ -655,6 +656,20 @@ def calculate_bill(
                 "올린 자료의 첫 달부터 이력을 쌓아 계산하기 때문입니다 "
                 "(한전 기본공급약관 제68조).",
                 fact="tariff.prior_peaks_missing",
+            )
+        )
+    if transition_months and transition is not None and counterpart_option is not None:
+        # **근거다.** 고른 선택요금의 단가로 검산하면 안 맞는 달이 생기므로,
+        # 그 금액이 어디서 왔는지를 적는다. 조문 번호는 매뉴얼이 받는다.
+        notices.append(
+            basis(
+                f"{billing_month_label(transition.first_billing_month)}부터 "
+                f"{billing_month_label(transition.last_billing_month)}까지는 "
+                f"{option_label(selection.option)}·{option_label(counterpart_option)} 중 "
+                "낮은 요금이 신청 없이 적용되며, 분석 기간에서 "
+                f"{len(transition_months)}개 월이 "
+                f"{option_label(counterpart_option)} 단가로 계산됐습니다.",
+                fact="tariff.transition_lower_of",
             )
         )
     notices.extend(power_factor.notices)  # 역률 (제41·43조)
