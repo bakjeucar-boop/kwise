@@ -503,6 +503,41 @@ def test_목표가_문턱_아래로_가면_넘어간_종별로_다시_계산한�
     assert result.saving_won > same_type_only.saving_won
 
 
+def test_넘는_판의_근거표는_총액_둘의_차이를_적는다(
+    small_general_b_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**산식 칸이 값과 산술로 맞아야 한다** (100세션 0절).
+
+    99세션이 하한이 지는 띠를 연 뒤 덱의 부록 19장이 「현재 기본요금
+    22,642,000 − 조정 후 기본요금 25,809,000 = 21,810,000원」 이라고 적고
+    있었다. 종별을 넘으면 차액의 상대가 기본요금이 아니라 **총액**이다.
+    """
+    from kwise.report.worksheet import contract_worksheet
+
+    options = BillingOptions(contract_kw=400.0)
+    bill = calculate_bill(
+        small_general_b_usage, tariff, TariffSelection("general_b", "high_a", "I"), options=options
+    )
+    result = evaluate_contract_adjustment(
+        small_general_b_usage, bill, contract_kw=400.0, table=tariff, options=options
+    )
+    assert result.crosses_type
+
+    frame = contract_worksheet(result).frame()
+    shown = dict(zip(frame["구분"], frame["값"], strict=True))
+    formula = dict(zip(frame["구분"], frame["산식"], strict=True))
+
+    # 기본요금 두 줄은 이 갈래에 서지 않는다 — 서면 빼기가 어긋난다.
+    assert "조정 후 기본요금" not in shown
+    assert formula["목표 계약전력"] == "일반용전력(갑)Ⅱ 문턱 바로 아래"
+    assert formula["절감액"] == "현행 − 바뀐 종별"
+
+    def _won_of(label: str) -> int:
+        return int(shown[label].removesuffix("원").replace(",", ""))
+
+    assert _won_of("현행 종별 총 요금") - _won_of("일반용전력(갑)Ⅱ 총 요금") == _won_of("절감액")
+
+
 def test_넘는_판의_안내는_종별이_바뀐다고_말한다(
     small_general_b_usage: UsageData, tariff: TariffTable
 ) -> None:

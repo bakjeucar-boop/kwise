@@ -191,7 +191,14 @@ def tariff_switch_worksheet(result: TariffSwitchResult) -> Worksheet:
 
 
 def contract_worksheet(result: ContractAdjustment) -> Worksheet:
-    """7.2 계약전력 조정 — **하한 판정과 기본요금 차액.**"""
+    """7.2 계약전력 조정 — **하한 판정과 요금 차액.**
+
+    **차액의 상대가 갈래마다 다르다** (100세션). 같은 종별 안에서 낮추면
+    기본요금 둘의 차이지만, 종별을 넘으면 전력량요금 단가까지 바뀌므로
+    **총액 둘의 차이**다. 산식 칸에 앞엣것만 적어 두면 종별 갈래에서
+    「현재 − 조정 후」 가 값과 어긋난다 — 소형 을 300 kW 에서
+    22,642,000 − 25,809,000 이 21,810,000 이라고 적혀 있었다.
+    """
     ratio = result.contract_floor_ratio
     rows: list[WorkRow] = [
         WorkRow("현재 계약전력", "", _kw(result.contract_kw, decimals=0)),
@@ -209,13 +216,19 @@ def contract_worksheet(result: ContractAdjustment) -> Worksheet:
         rows.append(
             WorkRow(
                 "목표 계약전력",
-                f"최대수요 ÷ {ratio:.0%}",
+                f"{result.crossed_label} 문턱 바로 아래"
+                if result.crosses_type
+                else f"최대수요 ÷ {ratio:.0%}",
                 _kw(result.target_contract_kw, decimals=0)
                 if result.target_contract_kw is not None
                 else NO_SAVING,
             )
         )
-    if result.current_base_won is not None and result.adjusted_base_won is not None:
+    if result.crosses_type:
+        rows.append(WorkRow("현행 종별 총 요금", "", _won(result.current_total_won)))
+        rows.append(WorkRow(f"{result.crossed_label} 총 요금", "", _won(result.crossed_total_won)))
+        rows.append(WorkRow("절감액", "현행 − 바뀐 종별", _won(result.saving_won), total=True))
+    elif result.current_base_won is not None and result.adjusted_base_won is not None:
         rows.append(WorkRow("현재 기본요금", "", _won(result.current_base_won)))
         rows.append(WorkRow("조정 후 기본요금", "", _won(result.adjusted_base_won)))
         rows.append(WorkRow("절감액", "현재 − 조정 후", _won(result.saving_won), total=True))
