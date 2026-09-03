@@ -31,6 +31,7 @@ from kwise.report.casestudy import (  # noqa: E402
     DEFAULT_CAPACITIES_KWP,
     build_case_definitions,
     run_case_study,
+    weather_cache_gaps,
 )
 from kwise.report.excel import write_workbook  # noqa: E402
 from kwise.report.notices import DATA_SOURCES, KNOWN_LIMITS  # noqa: E402
@@ -96,6 +97,17 @@ def main(argv: list[str] | None = None) -> int:
         f"[bold]케이스 {len(definitions)}건[/bold] × PV {args.capacities} kWp × 감도 3종 — "
         "순차 실행"
     )
+    # **돌리기 전에 말한다** (96세션). 캐시가 없으면 계산 중간에 Open-Meteo 를
+    # 타는데, 그 사실이 실행이 길어진 뒤에야 드러났다. 소요는 짐작하지 않는다.
+    gaps = weather_cache_gaps(definitions)
+    if gaps:
+        console.print(
+            "[yellow]기상 캐시 없음 — 취득이 필요하다:[/yellow] "
+            + ", ".join(
+                label if covered else f"{label} (사전 취득분 밖)" for label, covered in gaps
+            )
+        )
+
     table = load_tariff()
     # **화면과 같은 콜백이다.** 계산 쪽은 어느 쪽이 붙었는지 모른다 (10.6).
     reporter = RichProgress(console) if args.progress else None

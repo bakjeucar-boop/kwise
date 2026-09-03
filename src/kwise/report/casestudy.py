@@ -85,6 +85,7 @@ __all__ = [
     "build_case_definitions",
     "run_case_study",
     "run_one_case",
+    "weather_cache_gaps",
 ]
 
 # 케이스 좌표. 사전 취득분 격자(37.50, 127.00)에 걸린다 — 네트워크를 타지 않는다.
@@ -278,6 +279,35 @@ def build_case_definitions(directory: Path) -> tuple[CaseDefinition, ...]:
         )
     )
     return tuple(definitions)
+
+
+def weather_cache_gaps(
+    definitions: Sequence[CaseDefinition],
+) -> tuple[tuple[str, bool], ...]:
+    """기상 캐시가 비어 있는 벌과, 사전 취득분으로 물러설 수 있는지.
+
+    **돌리기 전에 알아야 하는 사실이다** (96세션). 캐시가 없으면 계산 중간에
+    Open-Meteo 를 타는데, 그 사실이 실행이 길어진 뒤에야 드러났다. 사전 취득분이
+    덮지 못하는 벌(용인 — 2026년)은 취득에 실패하면 계산이 아예 멈춘다.
+
+    **소요는 짐작하지 않는다** — 취득이 필요하다는 사실까지만 낸다.
+
+    Returns:
+        ``(벌 이름, 사전 취득분이 덮는가)`` 짝. 캐시가 있는 벌은 들지 않는다.
+    """
+    from kwise.pv.archive import archive_covers
+    from kwise.pv.weather import weather_cache_path
+
+    gaps: list[tuple[str, bool]] = []
+    for definition in definitions:
+        usage = load_usage(definition.usage_path)
+        region = find_region(definition.region_key)
+        request = WeatherRequest.for_index(
+            pd.DatetimeIndex(usage.kw.index), region.latitude, region.longitude
+        )
+        if not weather_cache_path(request).is_file():
+            gaps.append((definition.label, archive_covers(request)))
+    return tuple(gaps)
 
 
 def _weather_for(usage: UsageData, region_key: str = CASE_REGION_KEY) -> WeatherData:
