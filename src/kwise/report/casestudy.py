@@ -1,7 +1,7 @@
 """케이스 스터디 (요구사항서 11.3).
 
-**실측이 1건뿐이라 샘플을 변형한 6종으로 돈다** (`tools\\make_cases.py` 가 만든다).
-UI 없이 순수 함수로 계산하고 결과를 표로 낸다.
+**샘플을 변형한 합성 6종과 실측 1종으로 돈다** (합성은 `tools\\make_cases.py` 가
+만든다). UI 없이 순수 함수로 계산하고 결과를 표로 낸다.
 
 케이스마다 요금적용전력 3규칙(경부하 제외·대상월 한정·계약전력 하한)이 **다르게**
 작동해야 한다. 같은 결과가 나오면 규칙이 실제로는 걸리지 않고 있다는 뜻이다.
@@ -13,7 +13,18 @@ UI 없이 순수 함수로 계산하고 결과를 표로 낸다.
     C5 겨울 피크형   대상월인데 PV 발전이 약하다
     C6 야간 피크형   **관측 최대는 밤인데 요금적용전력은 낮에서 나온다**
 
-케이스는 **순차로** 돈다. 여섯 벌의 시계열을 동시에 들지 않는다 (메모리 규약).
+**일곱째는 합성이 아니라 실측이다** (95세션 0절).
+
+    R1 용인 실측    일반용(갑)Ⅱ 고압A 선택Ⅱ · 계약전력 290 kW
+
+61세션에 들어온 실측인데 **회귀 밖에 있었다** — 합성 여섯이 안에 있고 실측이
+밖에 있는 상태를 되돌린다. 덤으로 **갑Ⅱ 경로가 회귀에 선다**: C1~C6 는
+`general_b`·`industrial_b` 라 갑Ⅱ 를 매 판 확인하는 자리가 여태 없었다.
+
+**이 벌만 좌표와 계약전력이 다르다.** 용인이고 계약전력은 실제 값(290 kW)이라
+관측 최대의 1.1배 규칙을 쓰지 않는다.
+
+케이스는 **순차로** 돈다. 일곱 벌의 시계열을 동시에 들지 않는다 (메모리 규약).
 """
 
 from __future__ import annotations
@@ -79,6 +90,16 @@ __all__ = [
 # 케이스 좌표. 사전 취득분 격자(37.50, 127.00)에 걸린다 — 네트워크를 타지 않는다.
 CASE_REGION_KEY = "서울특별시/강남구"
 
+# 용인 실측 벌의 좌표. **사전 취득분은 2023~2025 뿐이라 이 벌의 기간(2026년까지)을
+# 덮지 못한다** — `PROJECT_CACHE` 캐시가 비어 있으면 Open-Meteo 를 탄다.
+YONGIN_REGION_KEY = "경기도/용인시"
+
+#: 용인 실측 자료. 합성 케이스와 달리 ``input\\cases\\`` 밖에 있다.
+YONGIN_USAGE_NAME = "전기사용량_소형건물.xlsx"
+
+#: 용인 건물이 실제로 쓰는 계약전력. **지어낸 값이 아니다** (`docs\\BILL_CHECK.md`).
+YONGIN_CONTRACT_KW = 290.0
+
 # PV 용량 축 (11.3). 0 이 있어야 "PV 0 이면 절감 0" 을 확인할 수 있다.
 DEFAULT_CAPACITIES_KWP: tuple[float, ...] = (0.0, 500.0, 1_000.0, 2_000.0)
 
@@ -98,6 +119,10 @@ class CaseDefinition:
     voltage: str = "high_a"
     option: str = "I"
     note: str = ""
+    region_key: str = CASE_REGION_KEY
+    """기상·태양광 좌표. 실측 벌만 자기 소재지를 쓴다."""
+    contract_kw: float | None = None
+    """계약전력. ``None`` 이면 관측 최대의 :data:`CONTRACT_MARGIN` 배로 잡는다."""
 
     @property
     def selection(self) -> TariffSelection:
@@ -198,7 +223,7 @@ class CaseStudy:
                 "항목": "기상 캐시 적중",
                 "값": (
                     f"{len(self.results) - self.weather_calls}/{len(self.results)} "
-                    "(모든 케이스가 같은 좌표·기간이라 첫 건만 취득한다)"
+                    "(합성 여섯은 좌표·기간이 같아 첫 건만 취득한다. 실측은 따로 선다)"
                 ),
             }
         )
@@ -212,9 +237,11 @@ class CaseStudy:
 
 
 def build_case_definitions(directory: Path) -> tuple[CaseDefinition, ...]:
-    """``input\\cases\\`` 의 파일에서 케이스 정의를 만든다.
+    """``input\\cases\\`` 의 합성 여섯과 **실측 하나**로 케이스 정의를 만든다.
 
     **C4 만 산업용(을)이다** — 봄·가을 주말 할인 특례를 태우기 위해서다.
+    **R1 만 실측이고 갑Ⅱ 다** (95세션 0절). 자료가 ``input\\`` 바로 아래에
+    있으므로 ``directory`` 의 어버이에서 찾는다.
     """
     plan = (
         ("C1", "오전 피크형", "general_b", "원본. 10~13시 집중"),
@@ -234,6 +261,22 @@ def build_case_definitions(directory: Path) -> tuple[CaseDefinition, ...]:
                 key=key, name=name, usage_path=path, contract_type=contract_type, note=note
             )
         )
+
+    yongin = directory.parent / YONGIN_USAGE_NAME
+    if not yongin.is_file():
+        raise FileNotFoundError(f"용인 실측 자료가 없습니다: {yongin}")
+    definitions.append(
+        CaseDefinition(
+            key="R1",
+            name="용인 실측",
+            usage_path=yongin,
+            contract_type="general_a_2",
+            option="II",
+            note="실측 (61세션). 갑Ⅱ 경로가 회귀에 서는 유일한 자리다",
+            region_key=YONGIN_REGION_KEY,
+            contract_kw=YONGIN_CONTRACT_KW,
+        )
+    )
     return tuple(definitions)
 
 
@@ -350,7 +393,11 @@ def run_one_case(
         usage = load_usage(definition.usage_path)
     with runner.running("quality"):
         quality = check_quality(usage)
-    contract_kw = float(usage.kw.max()) * CONTRACT_MARGIN
+    contract_kw = (
+        definition.contract_kw
+        if definition.contract_kw is not None
+        else float(usage.kw.max()) * CONTRACT_MARGIN
+    )
     contract = ContractInfo(definition.selection, contract_kw=contract_kw)
     with runner.running("diagnose"):
         diagnosis = diagnose(usage, table, contract, quality=quality)
@@ -359,9 +406,9 @@ def run_one_case(
     profile = unit_pv
     if profile is None:
         with runner.running("weather"):
-            weather = _weather_for(usage)
+            weather = _weather_for(usage, definition.region_key)
             weather_source = weather.source
-            profile = unit_generation_kw(usage, weather, _pv_config())
+            profile = unit_generation_kw(usage, weather, _pv_config(definition.region_key))
         if weather_source == "cache":
             runner.skip("weather", "캐시 적중")
     else:
@@ -485,7 +532,11 @@ def run_one_case(
             "절감액(원)": diagnosis.summary.contract_saving_won,
             "12개월 환산(원)": None,
             "확실성": "높음",
-            "비고": f"계약 {contract_kw:,.0f} kW 가정 (관측 최대 × {CONTRACT_MARGIN})",
+            "비고": (
+                f"계약 {contract_kw:,.0f} kW (실제 값)"
+                if definition.contract_kw is not None
+                else f"계약 {contract_kw:,.0f} kW 가정 (관측 최대 × {CONTRACT_MARGIN})"
+            ),
         },
         {
             "케이스": definition.label,
@@ -561,20 +612,21 @@ def run_case_study(
     pv_unit_cost_won_per_kwp: float | None = None,
     progress: ProgressReporter | None = None,
 ) -> CaseStudy:
-    """케이스를 **순차로** 돌린다. 여섯 벌의 시계열을 동시에 들지 않는다.
+    """케이스를 **순차로** 돌린다. 일곱 벌의 시계열을 동시에 들지 않는다.
 
     단위 발전 프로파일은 케이스마다 다시 만든다 (부하 인덱스에 정렬해야 한다).
-    기상 자체는 좌표·기간이 같아 **첫 건만 취득하고 나머지는 캐시**를 탄다.
+    합성 여섯은 좌표·기간이 같아 **첫 건만 취득하고 나머지는 캐시**를 타고,
+    **실측(R1)은 좌표도 기간도 달라 요청이 하나 더 선다.**
     """
     started = time.perf_counter()
     results: list[CaseResult] = []
     weather_calls = 0
     for definition in definitions:
         usage_index_source = load_usage(definition.usage_path)
-        weather = _weather_for(usage_index_source)
+        weather = _weather_for(usage_index_source, definition.region_key)
         if weather.source != "cache":
             weather_calls += 1
-        profile = unit_generation_kw(usage_index_source, weather, _pv_config())
+        profile = unit_generation_kw(usage_index_source, weather, _pv_config(definition.region_key))
         del usage_index_source
         results.append(
             run_one_case(

@@ -2,8 +2,8 @@
 
 **타당성 판정이 하나라도 실패하면 계산 오류다.** 여기서 막는다.
 
-케이스 6종을 다 돌리면 100초쯤 걸린다. 회귀에서는 **판정 결과만** 확인하고,
-케이스 생성·경계 케이스는 가벼운 경로로 따로 본다.
+케이스 일곱(합성 여섯 + 실측 하나)을 다 돌리면 100초쯤 걸린다. 회귀에서는
+**판정 결과만** 확인하고, 케이스 생성·경계 케이스는 가벼운 경로로 따로 본다.
 """
 
 from __future__ import annotations
@@ -68,10 +68,14 @@ def weather_cache_state(case_dir: Path) -> WeatherCacheState:
 
     ``study`` 픽스처가 이것에 의존하므로 순서가 보장된다 — 스터디가 캐시를
     채우기 전의 상태를 봐야 기대값이 맞는다.
+
+    **좌표는 케이스마다 읽는다** (95세션 0절). 합성 여섯은 한 좌표를 나눠 쓰지만
+    실측(R1)은 자기 소재지를 쓴다 — `CASE_REGION_KEY` 를 모두에 먹이면 실측
+    벌의 요청을 **없는 것으로 세게 된다.**
     """
-    region = find_region(CASE_REGION_KEY)
     paths = set()
     for definition in build_case_definitions(case_dir):
+        region = find_region(definition.region_key)
         usage = load_usage(definition.usage_path)
         request = WeatherRequest.for_index(
             pd.DatetimeIndex(usage.kw.index), region.latitude, region.longitude
@@ -85,19 +89,35 @@ def weather_cache_state(case_dir: Path) -> WeatherCacheState:
 
 @pytest.fixture(scope="module")
 def study(case_dir: Path, tariff: TariffTable, weather_cache_state: WeatherCacheState) -> CaseStudy:
-    """케이스 6종 × PV 4단계 × 감도 3종. **순차로 돈다.**"""
+    """케이스 일곱 × PV 4단계 × 감도 3종. **순차로 돈다.**"""
     return run_case_study(build_case_definitions(case_dir), tariff)
 
 
 # --------------------------------------------------------------------- 케이스 정의
 
 
-def test_six_cases_with_one_industrial(case_dir: Path) -> None:
-    """C4 만 산업용(을)이다 — 봄·가을 주말 할인 특례를 태우기 위해서다."""
+def test_six_synthetic_cases_and_one_measured(case_dir: Path) -> None:
+    """C4 만 산업용(을)이고 **R1 만 실측이자 갑Ⅱ 다**.
+
+    C4 는 봄·가을 주말 할인 특례를 태우려고 갈랐고, R1 은 갑Ⅱ 경로를 회귀에
+    세우려고 붙였다 (95세션 0절) — C1~C6 는 `general_b`·`industrial_b` 라
+    **갑Ⅱ 가 매 판 확인되는 자리가 없었다.**
+    """
     definitions = build_case_definitions(case_dir)
-    assert [item.key for item in definitions] == ["C1", "C2", "C3", "C4", "C5", "C6"]
+    assert [item.key for item in definitions] == ["C1", "C2", "C3", "C4", "C5", "C6", "R1"]
     industrial = [item.key for item in definitions if item.contract_type == "industrial_b"]
     assert industrial == ["C4"]
+    type_a_2 = [item.key for item in definitions if item.contract_type == "general_a_2"]
+    assert type_a_2 == ["R1"]
+
+    # **좌표와 계약전력이 갈리는 것도 R1 하나다.** 합성 여섯은 사전 취득분
+    # 격자에 걸리는 한 좌표를 나눠 쓰고 계약전력은 관측 최대의 1.1배 가정이다.
+    synthetic = [item for item in definitions if item.key != "R1"]
+    assert {item.region_key for item in synthetic} == {CASE_REGION_KEY}
+    assert all(item.contract_kw is None for item in synthetic)
+    measured = next(item for item in definitions if item.key == "R1")
+    assert measured.region_key == "경기도/용인시"
+    assert measured.contract_kw == 290.0  # 이 건물이 실제로 쓰는 계약전력
 
 
 def test_case_profiles_differ_where_they_should(case_dir: Path) -> None:
@@ -178,10 +198,36 @@ def test_afternoon_peak_saturates_immediately(study: CaseStudy) -> None:
     assert savings.nunique() == 1  # 500 kWp 에서 이미 포화
 
 
+def test_용인_실측_회귀값이_그대로다_청구서_118kW_와는_다른_계열이다(study: CaseStudy) -> None:
+    """R1 용인 실측의 회귀값. **두 값이 다른 계열이라는 것을 이름에 적어 둔다.**
+
+    여기 박는 **132.3 kW 는 도구가 자료에서 센 최대수요**다 (15분 실측,
+    2026-01-20 09:15). 청구서의 **118 kW 는 한전 고지서의 월별 최대수요전력에서
+    나온 요금적용전력**이고 (`docs\\BILL_CHECK.md` 1절), 두 계열이 어긋나는
+    까닭은 아직 모른다 — 가설 일곱이 죽었다(같은 문서 2절). **그러므로 118 로는
+    통과할 수 없다.** 118 을 박으면 도구가 아니라 한전 고지서를 시험하게 된다.
+
+    셋을 박는 근거는 대형 정본 회귀값(5,293.4 kW · 49.0% · 13.5%)과 같다 —
+    **바뀌면 계산을 건드린 것**이다. 총 요금 액수는 요금표 개정에 딸려 움직이므로
+    여기 박지 않는다.
+    """
+    result = study.find("R1")
+    assert result.definition.contract_type == "general_a_2"
+    assert result.definition.option == "II"
+    assert result.contract_kw == 290.0
+
+    assert float(result.usage.kw.max()) == pytest.approx(132.28, abs=0.01)
+    assert result.baseline.billing_demand_kw == pytest.approx(132.28, abs=0.01)
+    assert result.usage.meta.total_kwh / 1000.0 == pytest.approx(476.0, abs=0.1)
+    assert result.diagnosis.pattern.load_factor == pytest.approx(0.411, abs=0.001)
+    base_share = result.baseline.total_base_won / result.baseline.total_won
+    assert base_share == pytest.approx(0.201, abs=0.001)
+
+
 def test_sensitivity_upper_bound_is_not_pinned(study: CaseStudy) -> None:
     """**단조성을 요구하지 않는다.** 상한 시나리오가 케이스·용량에 따라 바뀐다.
 
-    실제로 6케이스 × 3용량 어디에서도 '첨예형'이 상한이 아니다 — 총량이 보존되므로
+    실제로 7케이스 × 3용량 어디에서도 '첨예형'이 상한이 아니다 — 총량이 보존되므로
     첨예도를 올리면 어깨가 낮아지고, 피크 저감은 어깨 출력에 걸리기 때문이다.
     """
     rows = [row for result in study.results for row in result.sensitivity_rows]
@@ -200,30 +246,36 @@ def test_generation_is_preserved_across_scenarios(study: CaseStudy) -> None:
     assert float(spread.max()) < 0.01
 
 
-def test_all_cases_share_one_weather_request(weather_cache_state: WeatherCacheState) -> None:
-    """**캐시 적중의 근거**는 여섯 케이스가 같은 좌표·기간을 쓴다는 것이다.
+def test_synthetic_cases_share_one_weather_request(
+    weather_cache_state: WeatherCacheState,
+) -> None:
+    """**캐시 적중의 근거**는 합성 여섯이 같은 좌표·기간을 쓴다는 것이다.
 
     캐시가 차 있든 비었든 이 성질은 변하지 않는다. 캐시 적중 횟수보다 이쪽이
-    본질이라 따로 세운다 — 케이스 기간이 갈라지면 여기서 먼저 걸린다.
+    본질이라 따로 세운다 — 합성 케이스의 기간이 갈라지면 여기서 먼저 걸린다.
+
+    **둘째 요청은 실측(R1)이다** (95세션 0절). 좌표(용인)도 기간(2025-08~2026-08)도
+    합성과 다르므로 요청이 하나 더 서는 것이 정상이다 — **하나로 돌아가면 실측이
+    합성 좌표로 계산되고 있다는 뜻**이라 여기서 걸린다.
     """
-    assert weather_cache_state.requests == 1
+    assert weather_cache_state.requests == 2
 
 
 def test_case_study_runs_sequentially_and_hits_the_weather_cache(
     study: CaseStudy, weather_cache_state: WeatherCacheState
 ) -> None:
-    """기상은 **캐시에 없던 것만** 취득한다. 나머지 다섯은 캐시를 탄다.
+    """기상은 **캐시에 없던 것만** 취득한다. 나머지는 캐시를 탄다.
 
     기대값을 0 으로 박아 두었더니 캐시가 빈 새 PC 에서 1 이 나와 실패했다
     (2026-08-15). 코드가 아니라 시험이 환경에 기대고 있었다. 이제 실행 전
     캐시 상태에서 기대값을 끌어오므로 **찬 캐시에서도 더운 캐시에서도 같은
     성질을 잰다** — 취득은 요청 하나당 많아야 한 번이다.
 
-    캐시가 고장 나면 여섯 케이스가 저마다 취득해 6 이 되고, 여기서 걸린다.
+    캐시가 고장 나면 일곱 케이스가 저마다 취득해 7 이 되고, 여기서 걸린다.
     """
     assert study.weather_calls == weather_cache_state.cold
     assert study.weather_calls <= weather_cache_state.requests
-    assert len(study.results) == 6
+    assert len(study.results) == 7
     assert study.elapsed_sec > 0
 
 
