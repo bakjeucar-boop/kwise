@@ -31,3 +31,6 @@ data/*.damaged
 # 이력에서도 걷어냈다 — 되살리려면 kwise-backup-20260814.bundle 을 쓴다.
 input/
 review/
+
+# 개인 스니펫. 저장소에 올리지 않는다 (103세션).
+start-kwise.txt
