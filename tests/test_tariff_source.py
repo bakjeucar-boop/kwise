@@ -345,7 +345,8 @@ def test_general_a_2_carries_the_two_flat_options(tariff: TariffTable) -> None:
             places += 1
         assert not rates.time_of_use, (voltage, option)
         # 부칙 (2026. 5. 22) 제2항 제3호 — 「2026년 12월분 요금부터 적용」.
-        assert rates.effective_date == "2026-12-01", (voltage, option)
+        # **날이 아니라 요금월이다.** 12월분이 시작하는 날은 검침 기간에 따라 다르다.
+        assert rates.effective_date == "2026-12", (voltage, option)
     assert places == 16
 
     # 종별은 6-01 시행 그대로다. 선택요금이 종별 시행일을 물려받지 않는다.

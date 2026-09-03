@@ -138,7 +138,7 @@ def test_dropdown_choices_come_from_the_data(tariff: TariffTable) -> None:
 def test_pending_options_are_not_filtered_out_of_the_dropdown(tariff: TariffTable) -> None:
     """**시행일로 후보를 막지 않는다** (93세션에 사람이 정한 것).
 
-    갑Ⅱ 선택Ⅲ·Ⅳ 는 2026-12-01 시행인데 오늘이 그 앞이어도 고를 수 있어야
+    갑Ⅱ 선택Ⅲ·Ⅳ 는 2026년 12월분 시행인데 오늘이 그 앞이어도 고를 수 있어야
     한다. 화면 실물로도 확인했다 — 갑Ⅱ 고압A 의 선택요금 드롭다운에
     선택Ⅰ·Ⅱ·Ⅲ·Ⅳ 넷이 선다. 걸러 내는 갈래를 만들면 여기가 깨진다.
     """

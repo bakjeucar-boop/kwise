@@ -504,7 +504,7 @@
           },
           "III": {
             "base_won_per_kw": 7170.0,
-            "effective_date": "2026-12-01",
+            "effective_date": "2026-12",
             "time_of_use": false,
             "energy": {
               "summer": {
@@ -526,7 +526,7 @@
           },
           "IV": {
             "base_won_per_kw": 8230.0,
-            "effective_date": "2026-12-01",
+            "effective_date": "2026-12",
             "time_of_use": false,
             "energy": {
               "summer": {
@@ -595,7 +595,7 @@
           },
           "III": {
             "base_won_per_kw": 7170.0,
-            "effective_date": "2026-12-01",
+            "effective_date": "2026-12",
             "time_of_use": false,
             "energy": {
               "summer": {
@@ -617,7 +617,7 @@
           },
           "IV": {
             "base_won_per_kw": 8230.0,
-            "effective_date": "2026-12-01",
+            "effective_date": "2026-12",
             "time_of_use": false,
             "energy": {
               "summer": {

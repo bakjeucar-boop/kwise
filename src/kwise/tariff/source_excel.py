@@ -140,8 +140,10 @@ class BorrowedOption:
     ``tests\\test_tariff_source.py`` 의 못이 그것을 알린다.
 
     Attributes:
-        effective_date: **이 선택요금**의 시행일. 「2026년 12월분 요금부터」
-            (부칙 제2항 제3호)를 그 달 1일로 적는다 — 스키마 0.3 의 규약이다.
+        effective_date: **이 선택요금**의 시행일. 약관이 「2026년 12월분
+            요금부터」 (부칙 제2항 제3호)로 정하므로 **날이 아니라 요금월**
+            (``2026-12``)로 적는다. 날로 적으면 없는 사실을 적는 것이다 —
+            검침 기간이 달을 걸치므로 12월분이 시작하는 날은 고객마다 다르다.
         from_contract: 값을 가져올 종별의 **엑셀 표기**.
         from_option: 그 종별 안의 선택요금 키.
     """
@@ -229,8 +231,8 @@ CONTRACT_RULES: Mapping[str, ContractRule] = {
         # **시행일로 후보를 막지 않는다** — 고객은 고를 수 있고, 계산은 고른
         # 하나로 기간 전체를 간다. 그 오차는 안내로 낸다.
         borrowed_options=(
-            BorrowedOption("III", "일반용(갑) I", "I", "2026-12-01"),
-            BorrowedOption("IV", "일반용(갑) I", "II", "2026-12-01"),
+            BorrowedOption("III", "일반용(갑) I", "I", "2026-12"),
+            BorrowedOption("IV", "일반용(갑) I", "II", "2026-12"),
         ),
     ),
     "산업용(갑) I": ContractRule(

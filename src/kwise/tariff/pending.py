@@ -33,12 +33,21 @@ from kwise.tariff.schema import TariffSelection, TariffTable
 __all__ = ["pending_option_notices"]
 
 
-def _billing_month(effective_date: str) -> str:
-    """``2026-12-01`` → ``2026년 12월분``.
+def _starts(effective_date: str) -> date:
+    """시행일을 견줄 수 있는 날로. **두 꼴이 온다.**
 
-    스키마 0.3 의 규약이다 — 선택요금 시행일은 **첫 요금월의 1일**로 적는다.
+    요금표 판과 함께 서는 선택요금은 **날**(``2026-06-01``)이고, 약관이
+    「N월분 요금부터」 로 정한 것은 **요금월**(``2026-12``)이다. 요금월이
+    실제로 시작하는 날은 검침 기간에 따라 고객마다 다르므로 **날로 환산해
+    적어 두지 않는다** — 여기서 그 달 첫날로 읽는 것은 견주는 데 쓰는
+    하한일 뿐이다.
     """
-    parsed = date.fromisoformat(effective_date)
+    return date.fromisoformat(effective_date if len(effective_date) > 7 else f"{effective_date}-01")
+
+
+def _billing_month(effective_date: str) -> str:
+    """``2026-12`` → ``2026년 12월분``."""
+    parsed = _starts(effective_date)
     return f"{parsed.year}년 {parsed.month}월분"
 
 
@@ -54,11 +63,11 @@ def pending_option_notices(
         selections: 산출물에 등장하는 조합. 현행과 권고 둘이면 둘 다 준다.
         period_start: 분석 기간의 시작일.
     """
-    edition = date.fromisoformat(table.effective_date)
+    edition = _starts(table.effective_date)
     by_date: dict[str, set[str]] = {}
     for selection in selections:
         rates = table.rates(selection)
-        starts = date.fromisoformat(rates.effective_date)
+        starts = _starts(rates.effective_date)
         if starts <= edition or starts <= period_start:
             continue
         by_date.setdefault(rates.effective_date, set()).add(selection.option)

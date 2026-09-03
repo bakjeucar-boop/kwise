@@ -207,6 +207,27 @@ def test_diagnose_warns_about_a_pending_option(tmp_path: Path, tariff: TariffTab
     assert len(pending) == 1
 
 
+def test_diagnose_is_silent_once_the_period_starts_after_the_option(
+    tmp_path: Path, tariff: TariffTable
+) -> None:
+    """**1단계의 안 뜨는 판** — 기간 전체가 시행 뒤면 오차가 없다.
+
+    안 뜨는 갈래는 `pending_option_notices` 안에 있고 2단계 시험 둘이 이미
+    본다. 여기서 보는 것은 그 갈래가 아니라 **1단계가 넘기는
+    ``period_start``** 다 — 잘못 넘기면 서는 판은 그대로 통과하고 이 판만
+    빨개진다.
+    """
+    from tests._synthetic import write_month
+
+    usage = load_usage(write_month(tmp_path / "2027-03.csv", 2027, 3, kwh=25.0))
+    result = diagnose(
+        usage,
+        tariff,
+        ContractInfo(TariffSelection("general_a_2", "high_a", "III"), contract_kw=200.0),
+    )
+    assert not [item for item in texts(result.notices) if "요금부터 쓸 수 있습니다" in item]
+
+
 def test_diagnose_without_contract_kw_still_prices(
     sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
 ) -> None:
