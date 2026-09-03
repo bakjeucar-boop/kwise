@@ -30,12 +30,12 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
 import pandas as pd
 
-from kwise.diagnose.contract import target_contract_kw
 from kwise.io import UsageData
 from kwise.measures.base import Certainty, annualize
 from kwise.money import NO_SAVING
@@ -57,7 +57,24 @@ __all__ = [
     "ContractAdjustment",
     "ContractStatus",
     "evaluate_contract_adjustment",
+    "target_contract_kw",
 ]
+
+
+def target_contract_kw(demand_kw: float, floor_ratio: float, step_kw: float = 1.0) -> float:
+    """목표 계약전력 — **최대수요 ÷ 하한비율을 올림**한다.
+
+    **산식이 한 자리에 있어야 한다** (83세션). **100세션에 이 자리로 옮겼다** —
+    83세션은 1단계 적정성 쪽에 두고 둘이 함께 불렀는데, 이제 판정 자체가 이
+    모듈 하나이므로 부르는 곳도 여기 하나다. 1단계가 조정 쪽을 받아 오게 되면서
+    ``measures → diagnose`` 로 거꾸로 나 있던 화살표가 맞물렸다.
+
+    ``1e-9`` 를 빼고 올리는 까닭은 **부동소수 부스러기** 때문이다 —
+    ``132.3 / 0.3`` 이 ``441.00000000000006`` 이라 그대로 올리면 442 가 되고,
+    화면·PPT·Excel 이 1 kW 어긋난 목표를 적는다.
+    """
+    return math.ceil(demand_kw / floor_ratio / step_kw - 1e-9) * step_kw
+
 
 MARGIN_NOTICE = (
     "기본요금은 직전 12개월 중 최대수요로 결정됩니다. 계약전력을 하향할 경우, "

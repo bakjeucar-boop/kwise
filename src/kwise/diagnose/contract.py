@@ -15,39 +15,33 @@
 계약전력」 은 걷어냈다 — 근거가 붙어 있지 않았고, 기본요금이 계약전력에 붙는
 종별의 산식이라 여기서는 전제가 서지 않는다. 자세한 사정은
 :mod:`kwise.measures.contract` 의 머리글에 적었다.
+
+**판정은 여기서 하지 않는다** (100세션). 98·99세션이 「문턱 아래 종별로
+넘어가면 요금 전체가 준다」 를 :mod:`kwise.measures.contract` 에 세웠는데
+이 자리는 여전히 하한 한 줄만 보고 있었다 — 그래서 2단계가 「299 kW 로
+낮춰라」 하는 판에서 1단계는 **「적정합니다」** 라고 적었다. 한 산출물 안에서
+두 장이 반대로 말한 것이다. 이제 적정성은 **조정 판정을 받아** 이용률·여유만
+얹는다. 같은 사실을 두 번 세지 않는다.
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
-
-import pandas as pd
+from typing import TYPE_CHECKING
 
 from kwise.notices import Notice, block, warn
 from kwise.rules import rule_value
 from kwise.tariff import TariffSelection
+
+if TYPE_CHECKING:  # 실행 시점에 들이면 measures → diagnose 와 맞물려 돈다.
+    from kwise.measures.contract import ContractAdjustment
 
 __all__ = [
     "ContractAdequacy",
     "ContractInfo",
     "assess_contract",
     "deemed_power_factor_pct",
-    "target_contract_kw",
 ]
-
-
-def target_contract_kw(demand_kw: float, floor_ratio: float, step_kw: float = 1.0) -> float:
-    """목표 계약전력 — **최대수요 ÷ 하한비율을 올림**한다.
-
-    **산식이 한 자리에 있어야 한다** (83세션). 1단계 적정성과 7.2 카드가 각자
-    올리면 같은 자료에서 두 값이 나온다.
-
-    ``1e-9`` 를 빼고 올리는 까닭은 **부동소수 부스러기** 때문이다 —
-    ``132.3 / 0.3`` 이 ``441.00000000000006`` 이라 그대로 올리면 442 가 되고,
-    화면·PPT·Excel 이 1 kW 어긋난 목표를 적는다.
-    """
-    return math.ceil(demand_kw / floor_ratio / step_kw - 1e-9) * step_kw
 
 
 def deemed_power_factor_pct() -> float:
@@ -92,115 +86,116 @@ class ContractInfo:
 
 @dataclass(frozen=True)
 class ContractAdequacy:
-    """계약전력 적정성.
+    """계약전력 적정성 — **조정 판정에 이용률·여유를 얹은 것**이다 (100세션).
+
+    판정(낮출 자리가 있는가 · 목표는 얼마인가 · 그러면 얼마인가)은
+    :class:`~kwise.measures.contract.ContractAdjustment` 하나가 쥔다. 이 자리가
+    따로 세면 같은 자료에서 두 값이 나온다 — 실제로 그랬다.
 
     Attributes:
+        adjustment: 계약전력 조정 판정. **여기서 파생한다.**
         billing_demand_kw: 직전 12개월 최대수요 (하한 적용 **전**).
-        utilization: 최대수요 ÷ 계약전력. 낮으면 과계약이다.
-        floor_kw: 계약전력 × 하한비율. 비율을 모르면 None.
-        target_contract_kw: 목표 계약전력 (최대수요 ÷ 하한비율).
-            **하한이 이길 때만 값이 있다.**
-        saving_won: 하한 규정을 아는 경우에만 값이 있다. 모르면 None.
+            이용률과 여유는 1단계가 본 이 값으로 낸다.
     """
 
-    contract_kw: float
+    adjustment: ContractAdjustment
     billing_demand_kw: float
-    max_demand_kw: float
-    utilization: float
-    headroom_kw: float
-    over_contract_slots: int
-    contract_floor_ratio: float | None
-    floor_kw: float | None
-    target_contract_kw: float | None
-    saving_won: float | None
-    saving_basis: str
     notices: tuple[Notice, ...] = field(default=())
+
+    # ---- 판정은 조정 쪽 하나가 쥔다. 여기서는 그대로 읽기만 한다.
+    @property
+    def contract_kw(self) -> float:
+        return self.adjustment.contract_kw
+
+    @property
+    def max_demand_kw(self) -> float:
+        return self.adjustment.max_demand_kw
+
+    @property
+    def over_contract_slots(self) -> int:
+        return self.adjustment.over_contract_slots
+
+    @property
+    def contract_floor_ratio(self) -> float | None:
+        return self.adjustment.contract_floor_ratio
+
+    @property
+    def floor_kw(self) -> float | None:
+        return self.adjustment.floor_kw
+
+    @property
+    def target_contract_kw(self) -> float | None:
+        return self.adjustment.target_contract_kw
+
+    @property
+    def saving_won(self) -> float | None:
+        return self.adjustment.saving_won
+
+    @property
+    def saving_basis(self) -> str:
+        return self.adjustment.saving_basis
+
+    @property
+    def crossed_label(self) -> str | None:
+        """넘어가는 종별의 이름. 안 넘으면 None."""
+        return self.adjustment.crossed_label
+
+    # ---- 1단계가 스스로 내는 것 둘.
+    @property
+    def utilization(self) -> float:
+        """최대수요 ÷ 계약전력. 낮으면 과계약이다."""
+        return self.billing_demand_kw / self.contract_kw
+
+    @property
+    def headroom_kw(self) -> float:
+        return self.contract_kw - self.billing_demand_kw
 
     @property
     def floor_binding(self) -> bool:
-        """**하한이 이기는가.** 참일 때만 낮출 이유가 있다."""
-        return self.target_contract_kw is not None
+        """**하한이 이기는가.** 글자 그대로다 (99세션이 조정 쪽에서 갈랐다).
+
+        「낮출 자리가 있다」 와 **다른 사실이다** — 그쪽은 :attr:`reducible` 이다.
+        """
+        return self.adjustment.floor_binding
+
+    @property
+    def reducible(self) -> bool:
+        """**낮출 자리가 있는가.** 하한이 이기거나, 문턱 아래 종별로 넘어갈 수 있다."""
+        return self.adjustment.reducible
 
 
 def assess_contract(
-    kw: pd.Series,
+    adjustment: ContractAdjustment,
     *,
-    contract_kw: float,
     billing_demand_kw: float,
-    base_rate_won_per_kw: float,
-    base_fee_months: float,
-    contract_floor_ratio: float | None = None,
-    step_kw: float = 1.0,
 ) -> ContractAdequacy:
-    """계약전력 적정성을 본다.
+    """계약전력 적정성을 본다. **판정은 만들지 않고 받는다** (100세션).
 
     Args:
+        adjustment: 계약전력 조정 판정 (:mod:`kwise.measures.contract`).
         billing_demand_kw: 직전 12개월 최대수요 (하한 적용 **전** 값).
-        contract_floor_ratio: 요금적용전력의 계약전력 대비 하한 비율.
-            None 이면 절감액을 산출하지 않는다.
-        step_kw: 계약전력 조정 단위.
+            이용률과 여유는 1단계가 본 이 값으로 낸다.
     """
-    if contract_kw <= 0:
-        raise ValueError(f"계약전력은 양수여야 합니다: {contract_kw}")
-
-    observed = kw.dropna()
-    max_demand = float(observed.max()) if len(observed) else 0.0
-    over_slots = int((observed > contract_kw).sum())
-
-    floor_kw = contract_kw * contract_floor_ratio if contract_floor_ratio is not None else None
-    # **판정은 이 한 줄이다** (83세션). 하한이 최대수요를 넘어야 낮출 이유가 있다.
-    target = (
-        min(contract_kw, target_contract_kw(billing_demand_kw, contract_floor_ratio, step_kw))
-        if floor_kw is not None and contract_floor_ratio and floor_kw > billing_demand_kw
-        else None
-    )
-
     notices: list[Notice] = []
-    if target is not None:
+    if adjustment.reducible:
         notices.append(warn(_MARGIN_NOTICE, fact="contract.margin"))
-    if over_slots:
+    if adjustment.over_contract_slots:
         # **개선 수단 쪽과 같은 사실이다** (measures\contract.py). 문구가 세 글자
         # 다른 탓에 지문으로는 안 잡혀 화면에 두 번 나왔다 (20세션 2절).
         notices.append(
             warn(
-                f"계약전력 {contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 있습니다. "
+                f"계약전력 {adjustment.contract_kw:,.0f} kW 를 넘은 구간이 "
+                f"{adjustment.over_contract_slots:,}건 있습니다. "
                 "하향 대상이 아니라 상향·초과 위약 검토 대상입니다.",
                 fact="contract.over_limit",
             )
         )
-
-    saving: float | None = None
-    if contract_floor_ratio is None or floor_kw is None:
-        basis_text = "하한 비율 없음 — 미산출"
+    if adjustment.contract_floor_ratio is None:
         # **차단** — 금액을 만들지 않는다.
         notices.append(block(_FLOOR_UNKNOWN, fact="contract.floor_unknown"))
-    elif target is None:
-        saving = 0.0
-        basis_text = f"요금적용전력 하한 {contract_floor_ratio:.0%} 미적용 — 최대수요가 기준"
-    else:
-        # 재계산한다. 두 계약전력 각각에서 요금적용전력을 다시 구해 기본요금을 낸다.
-        target_demand = max(billing_demand_kw, target * contract_floor_ratio)
-        saving = (floor_kw - target_demand) * base_rate_won_per_kw * base_fee_months
-        basis_text = (
-            f"요금적용전력 하한 {contract_floor_ratio:.0%} 가정, "
-            f"기본요금 {base_fee_months:.2f}개월분 기준"
-        )
-        # **안내로 내지 않는다** (25세션 3-3 · K). 2단계 7.2 카드가 같은 사실을
-        # 더 자세히 낸다 (``contract.saving_basis`` — 하한과 개월수가 같은 값이다).
-        # 적정성은 16세션에 7.2 로 옮겼으므로 근거도 그쪽 하나면 된다. 다만
-        # 금액 옆에 붙는 사유 문자열로는 그대로 쓴다.
 
     return ContractAdequacy(
-        contract_kw=contract_kw,
+        adjustment=adjustment,
         billing_demand_kw=billing_demand_kw,
-        max_demand_kw=max_demand,
-        utilization=billing_demand_kw / contract_kw,
-        headroom_kw=contract_kw - billing_demand_kw,
-        over_contract_slots=over_slots,
-        contract_floor_ratio=contract_floor_ratio,
-        floor_kw=floor_kw,
-        target_contract_kw=target,
-        saving_won=saving,
-        saving_basis=basis_text,
         notices=tuple(notices),
     )

@@ -294,10 +294,14 @@ def _contract_saving(contract: ContractAdjustment, value: float | None) -> str:
 
 
 def _contract_adequacy_saving(adequacy: ContractAdequacy) -> str:
-    """1단계 계약전력 적정성의 절감액 칸. 수단 쪽과 **같은 세 갈래다.**"""
+    """1단계 계약전력 적정성의 절감액 칸. 수단 쪽과 **같은 세 갈래다.**
+
+    **「낮출 자리가 있다」 로 가른다** (100세션). ``floor_binding`` 으로 가르면
+    하한이 지면서 종별을 넘는 판에서 절감액이 있는데도 「없음」 이 나간다.
+    """
     if adequacy.saving_won is None:
         return f"{_UNPRICED} — {adequacy.saving_basis}"
-    if not adequacy.floor_binding:
+    if not adequacy.reducible:
         return NO_SAVING
     return _won(adequacy.saving_won)
 
@@ -1535,17 +1539,10 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
     if adequacy is not None:
         _heading(document, f"{number}.5 계약전력 적정성", level=2)
         floor_ratio = adequacy.contract_floor_ratio
-        _conclusion(
-            document,
-            (
-                f"요금적용전력 하한 {adequacy.floor_kw:,.1f} kW 가 최대수요 "
-                f"{adequacy.billing_demand_kw:,.1f} kW 보다 높아 계약전력을 "
-                f"{adequacy.target_contract_kw:,.0f} kW 까지 낮출 수 있습니다."
-                if adequacy.floor_binding
-                else f"계약전력 {adequacy.contract_kw:,.0f} kW 는 적정합니다 "
-                f"(이용률 {adequacy.utilization:.1%})."
-            ),
-        )
+        # **7.2 와 같은 문장을 쓴다** (100세션). 여기에 따로 적혀 있던 두 갈래는
+        # 종별 전환을 몰라 「299 kW 로 낮춰라」 하는 판에서 「적정합니다」 라고
+        # 적었다. 어휘를 한 곳에 두면 두 장이 갈릴 수 없다.
+        _conclusion(document, _contract_conclusion(adequacy.adjustment))
         _add_table(
             document,
             [
@@ -1569,7 +1566,7 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
                 ],
             ],
         )
-        if adequacy.floor_binding:
+        if adequacy.reducible:
             _para(document, CONTRACT_CHANGE_WARNING)
     document.add_page_break()
 

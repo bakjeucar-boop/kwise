@@ -30,6 +30,11 @@ from kwise.diagnose.summary import (
     pv_basis_label,
 )
 from kwise.io import UsageData
+
+# **1단계가 2단계 판정을 받아 온다** (100세션). 묶음(``kwise.measures``)이 아니라
+# 이 한 모듈만 들인다 — 묶음을 들이면 ``demand_response`` 를 지나 ``diagnose``
+# 로 되돌아와 맞물린다.
+from kwise.measures.contract import evaluate_contract_adjustment
 from kwise.notices import Notice, block
 from kwise.quality import (
     DEFAULT_OPERATING_HOURS,
@@ -216,17 +221,25 @@ def diagnose(
 
     adequacy: ContractAdequacy | None = None
     if contract.contract_kw is not None:
-        adequacy = assess_contract(
-            usage.kw,
+        # **판정은 한 자리에서 한다** (100세션). 1단계가 하한만 보고 따로 세던
+        # 것을 걷어내고 조정 쪽 판정을 받아 온다 — 그래야 2단계가 「299 kW 로
+        # 낮춰라」 하는 판에서 1단계가 「적정합니다」 라고 적지 않는다.
+        # **설비 정보는 여전히 안 묻는다** — 사용량·요금표·계약 정보뿐이고
+        # 셋 다 이 자리에 이미 있다.
+        adjustment = evaluate_contract_adjustment(
+            usage,
+            current_bill,
             contract_kw=contract.contract_kw,
-            billing_demand_kw=peak.billing_demand_before_floor_kw,
-            base_rate_won_per_kw=current_bill.base_rate_won_per_kw,
-            base_fee_months=current_bill.base_fee_months,
             contract_floor_ratio=(
                 contract_floor_ratio
                 if contract_floor_ratio is not None
                 else (type_rules.contract_floor_ratio if type_rules else None)
             ),
+            table=table,
+            options=opts,
+        )
+        adequacy = assess_contract(
+            adjustment, billing_demand_kw=peak.billing_demand_before_floor_kw
         )
         notices.extend(adequacy.notices)
     else:

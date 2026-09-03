@@ -336,17 +336,10 @@ def test_계약전력_초과가_한_번만_나온다(
     from kwise.measures import evaluate_contract_adjustment
 
     contract_kw = 4_000.0  # 관측 최대수요보다 낮게 잡아 초과를 만든다
-    adequacy = assess_contract(
-        sample_usage.kw,
-        contract_kw=contract_kw,
-        billing_demand_kw=sample_bill.billing_demand_kw,
-        base_rate_won_per_kw=8_320.0,
-        base_fee_months=sample_bill.base_fee_months,
-        contract_floor_ratio=0.3,
-    )
     adjustment = evaluate_contract_adjustment(
         sample_usage, sample_bill, contract_kw=contract_kw, contract_floor_ratio=0.3
     )
+    adequacy = assess_contract(adjustment, billing_demand_kw=sample_bill.billing_demand_kw)
     facts = {"contract.over_limit"}
     assert facts <= {item.fact for item in adequacy.notices}
     assert facts <= {item.fact for item in adjustment.notices}

@@ -355,6 +355,7 @@ def test_contract_excess_is_flagged(tmp_path: Path, tariff: TariffTable) -> None
     **초과사용부가금 대상**이므로 별도로 세어야 한다.
     """
     from kwise.diagnose.contract import assess_contract
+    from kwise.measures.contract import evaluate_contract_adjustment
     from tests._synthetic import make_labels, write_csv
 
     rows: list[tuple[str, float]] = []
@@ -365,14 +366,10 @@ def test_contract_excess_is_flagged(tmp_path: Path, tariff: TariffTable) -> None
     usage = load_usage(write_csv(tmp_path / "excess.csv", rows))
     result = calculate_bill(usage, tariff, GENERAL_B)
 
-    adequacy = assess_contract(
-        usage.kw,
-        contract_kw=1_000.0,
-        billing_demand_kw=result.billing_demand_kw,
-        base_rate_won_per_kw=result.base_rate_won_per_kw,
-        base_fee_months=result.base_fee_months,
-        contract_floor_ratio=0.30,
+    adjustment = evaluate_contract_adjustment(
+        usage, result, contract_kw=1_000.0, contract_floor_ratio=0.30
     )
+    adequacy = assess_contract(adjustment, billing_demand_kw=result.billing_demand_kw)
     assert adequacy.over_contract_slots > 0  # 계약 1,000 kW 를 넘는 슬롯이 있다
     assert adequacy.max_demand_kw == pytest.approx(1_200.0)
     assert result.billing_demand_kw == pytest.approx(400.0)  # 경부하는 대상이 아니다
