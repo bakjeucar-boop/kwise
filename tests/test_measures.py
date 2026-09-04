@@ -53,7 +53,7 @@ from kwise.measures import (
     with_load,
     with_surplus_revenue,
 )
-from kwise.measures.contract import TYPE_THRESHOLD_FACT
+from kwise.measures.contract import TYPE_THRESHOLD_FACT, target_contract_kw
 from kwise.notices import texts
 from kwise.pv import ArrayConfig, PvSystemConfig
 from kwise.quality import QualityReport
@@ -422,6 +422,28 @@ def test_목표는_관측_최대_아래로_안_내려간다(tmp_path: Path, tari
     # 포화만 봤다면 여기서 멈춘다 — 그 값은 관측 최대 아래다.
     assert math.floor(monthly_max / 0.3) == 1_333
     assert observed_max > 1_333
+
+
+def test_목표_산식은_부동소수_부스러기에_한_칸_안_밀린다() -> None:
+    """**나눗셈이 들어간 자리는 한 칸씩 밀린다** (83세션 → 106세션 2절).
+
+    83세션이 앓던 병이다 — ``132.3 / 0.3`` 이 ``441.00000000000006`` 이라
+    그대로 올리면 **442** 가 되고 화면·PPT·Excel 이 1 kW 어긋난 목표를 적었다.
+    105세션이 산식을 「포화(내림)와 보전(올림)의 큰 쪽」 으로 갈면서 **미는
+    방향이 둘로 늘었다** — 내림은 아래로, 올림은 위로 민다. **둘 다 본다.**
+
+    부스러기를 터는 자리는 ``±1e-9`` 다. 그 한 자리가 빠지면 이 못이 문다.
+    """
+    # 포화 — 하한을 다시 비율로 나눈 값이 정수 바로 아래로 떨어진다.
+    crumb = 218 * 0.3  # 65.39999999999999
+    assert crumb / 0.3 == 217.99999999999997
+    assert math.floor(crumb / 0.3) == 217  # 그대로 내리면 한 칸 아래
+    assert target_contract_kw({"m": crumb}, 0.3, observed_max_kw=0.0) == 218.0
+
+    # 보전 — 관측 최대가 정수 바로 위로 떨어진다.
+    over = 132.3 / 0.3  # 441.00000000000006
+    assert math.ceil(over) == 442  # 그대로 올리면 한 칸 위
+    assert target_contract_kw({"m": 0.0}, 0.3, observed_max_kw=over) == 441.0
 
 
 def test_penalty_warning_only_when_lowering_helps(
