@@ -1517,7 +1517,7 @@ quality.month_missing_rate:2023-11   달이 판별자다
 **수단 장의 형태는 그림 수가 정한다** (38세션). `MeasureEntry.slide_figures` 가
 둘이면 `chart_pair`, 하나면 `stat_chart` 다 — 화면이 그림 둘로 답하는 물음을
 슬라이드가 하나로 줄이면 남은 하나가 무엇의 근거인지 알 수 없어진다. 화면
-그림과 PPT 그림의 짝은 `tests	est_slides.py` 의 `SCREEN_TO_DECK` 가 쥐고,
+그림과 PPT 그림의 짝은 `tests\test_slides.py` 의 `SCREEN_TO_DECK` 가 쥐고,
 화면에 그림을 더하고 슬라이드를 잊으면 시험이 잡는다.
 
 **해석 한 줄과 용어 풀이는 `report\narrative.py` 가 쥔다** (39세션). 문장을
@@ -1764,7 +1764,7 @@ data\backup\     편집 직전 스냅샷 (최근 10개, .gitignore)
 
 > **이 넷만으로는 그 갈래를 못 잡는다.** 여섯 케이스는 기본 단가에서 그 자리에
 > 닿지 않는다 — 단가를 낮춰야 개략 곡선의 마진이 통과하고 정밀화가 후보를
-> 못 찾는 상태가 된다. 그 조합은 `tests	est_ess_cost.py` 가 지킨다.
+> 못 찾는 상태가 된다. 그 조합은 `tests\test_ess_cost.py` 가 지킨다.
 > **케이스 스터디가 막는 것은 「ESS 를 아예 안 본다」 는 것 자체다.**
 
 > **판정 잣대를 한 번 바로잡았다.** 처음에 "기본요금 절감액 ÷ 기본요금"으로

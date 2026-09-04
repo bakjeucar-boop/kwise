@@ -1157,7 +1157,7 @@ def _download_block(
     # 나란히 두면 고를 근거가 없다 — 의사결정자에게 건네는 쪽을 PPT 하나로 정했다.
     #
     # 지운 것이 아니라 감춘 것이다. :func:`kwise.report.document.build_document` 와
-    # ``tests	est_document.py`` 는 손대지 않았으므로, 아래 세 줄만 되살리면
+    # ``tests\test_document.py`` 는 손대지 않았으므로, 아래 세 줄만 되살리면
     # 단추가 돌아온다.
     #
     #     word_tab 을 st.tabs 에 되넣고
