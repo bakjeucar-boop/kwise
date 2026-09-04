@@ -519,10 +519,12 @@ def _interaction_reasons(
         row.key for row in rows if row.combinable and row.annual_saving_won is not None
     }
     baseline = comparison.baseline
-    if combined.spec.selection != baseline.spec.selection:
+    # **넣은 값이 아니라 나온 값을 적는다** (S112 5절 · ⑱). 조합이 조합 부하에서
+    # 선택요금을 다시 고르므로 ``spec.selection`` 은 계산에 쓴 것이 아니다.
+    if combined.selection != baseline.selection:
         reasons.append(
             "**요금제가 바뀌면 다른 수단의 기준 단가가 바뀝니다.** 조합은 "
-            f"{option_label(combined.spec.selection.option)} 로 계산했으므로, 현행 "
+            f"{option_label(combined.selection.option)} 로 계산했으므로, 현행 "
             "요금제를 기준으로 낸 2단계 값과 계약전력·역률·ESS 절감액이 다릅니다."
         )
     if "ess" in keys or "solar" in keys:

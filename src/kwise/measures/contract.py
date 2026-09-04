@@ -209,17 +209,22 @@ class ContractAdjustment:
 
     계약전력이 내려가면 요금적용전력 하한이 함께 내려가고, 기본요금 단가가
     후보마다 다르므로 **후보들이 서로 다른 폭으로 싸진다** — 그래서 최적이
-    바뀔 수 있다. 안 바뀌면(또는 요금표를 안 받아 못 보면) ``None`` 이다.
+    바뀔 수 있다.
+
+    **「2단계 선택요금 카드가 권하는 것」 과 갈릴 때만 값이 있다.** 그 카드는
+    현행 계약전력에서 고르므로, 현행을 상대로 삼으면 그 카드의 말을 되풀이할
+    뿐이다. 안 갈리면(또는 요금표를 안 받아 못 보면) ``None`` 이다.
 
     종별을 넘는 판(:attr:`crossed_selection`)에서는 채우지 않는다 — 그쪽은
     넘어간 종별 안에서 이미 선택요금을 다시 고른다.
     """
     retuned_saving_won: float | None = None
-    """다시 고르면 **더** 얻는 몫. :attr:`saving_won` 과 겹치지 않는다.
+    """**2단계 권고를 목표까지 그대로 들고 갈 때 더 내는 돈.**
 
-    **두 몫을 갈라 둔다** (S112 2절 ㄹ). :attr:`saving_won` 은 계약전력만
-    낮춰 얻는 기본요금 몫이고, 이 값은 그 위에서 선택요금까지 바꿔 더 얻는
-    몫이다. 합치면 「계약전력을 낮춰서 얻은 돈」 을 잘못 읽는다.
+    :attr:`saving_won` 과 겹치지 않는다 — **두 몫을 갈라 둔다** (S112 2절 ㄹ).
+    :attr:`saving_won` 은 계약전력만 낮춰 얻는 기본요금 몫이고, 이 값은 그 위에서
+    요금제를 바꿔야 더 얻는 몫이다. 합치면 「계약전력을 낮춰서 얻은 돈」 을
+    잘못 읽는다.
     """
     certainty: Certainty = Certainty.HIGH
     investment_won: float = 0.0
@@ -371,6 +376,7 @@ def _retune_selection(
     options: BillingOptions,
     selection: TariffSelection,
     *,
+    contract_kw: float,
     target_kw: float,
 ) -> tuple[TariffSelection, float] | None:
     """**목표 계약전력에서 선택요금을 다시 고른다** (S112 2절 · ⑲).
@@ -380,23 +386,34 @@ def _retune_selection(
     후보마다 다르므로 하한이 내려간 몫에 **후보마다 다른 단가**가 곱해져
     순위가 뒤집힐 수 있다.
 
+    **견주는 상대는 현행이 아니라 「2단계 선택요금 카드가 권하는 것」 이다.**
+    그 카드는 **현행 계약전력**에서 최적을 고르므로, 여기서 현행과 견주면
+    「선택요금을 바꾸면 유리하다」 는 그 카드의 말을 되풀이할 뿐이다 —
+    ⑲ 가 말하려는 것은 **두 카드의 답이 갈리는 자리**다.
+
     **같은 종별·전압 안에서만 고른다** — 갈아탈 수 있는 것은 선택요금뿐이다
     (:func:`kwise.tariff.switchable_selections`).
 
     Returns:
-        ``(다시 고른 조합, 더 얻는 몫)``. 현행이 그대로 최적이면 ``None``.
+        ``(목표에서의 최적, 2단계 권고를 그대로 들 때 더 내는 돈)``.
+        두 카드의 답이 같으면 ``None``.
     """
     candidates = switchable_selections(table, selection)
     if len(candidates) < 2:
         return None
-    opts = replace(options, contract_kw=target_kw)
-    totals = {
-        item: calculate_bill(usage, table, item, options=opts).total_won for item in candidates
-    }
-    best = min(candidates, key=lambda item: totals[item])
-    if best == selection:
+
+    def totals(kw: float) -> dict[TariffSelection, float]:
+        opts = replace(options, contract_kw=kw)
+        return {
+            item: calculate_bill(usage, table, item, options=opts).total_won for item in candidates
+        }
+
+    now, after = totals(contract_kw), totals(target_kw)
+    recommended = min(candidates, key=lambda item: now[item])
+    best = min(candidates, key=lambda item: after[item])
+    if best == recommended:
         return None
-    return best, totals[selection] - totals[best]
+    return best, after[recommended] - after[best]
 
 
 def evaluate_contract_adjustment(
@@ -552,7 +569,27 @@ def evaluate_contract_adjustment(
     # 「계약전력을 낮춰서 얻은 돈」 을 잘못 읽는다.
     retuned: tuple[TariffSelection, float] | None = None
     if target is not None and crossed is None and table is not None and options is not None:
-        retuned = _retune_selection(usage, table, options, bill.selection, target_kw=target)
+        retuned = _retune_selection(
+            usage,
+            table,
+            options,
+            bill.selection,
+            contract_kw=contract_kw,
+            target_kw=target,
+        )
+    if retuned is not None:
+        # **새 안내를 붙이지 않고 산출 근거를 늘린다** (S112 5절 ㄷ). 안내
+        # 항목이 하나 늘면 화면 예산을 먹는데, 이것은 절감액이 **무엇을 잰
+        # 값인가**를 말하는 것이라 근거 줄에 붙는 것이 제자리다. 위 절감액이
+        # **계약전력만 낮춘 몫**이라는 사실도 여기서 갈라 말한다 (2절 ㄹ).
+        #
+        # **조사를 붙이지 않는다** — 종별 이름이 무엇으로 끝나는지 모르므로
+        # 「이/가」·「로/으로」 를 쓰면 틀린 자리가 생긴다. 「쪽이」 는 언제나 맞다.
+        basis_text += (
+            ". 위 절감액은 계약전력만 낮춘 몫입니다. 목표 계약전력에서는 "
+            f"요금제 카드가 권한 것보다 {selection_label(table, retuned[0])} 쪽이 "
+            f"{retuned[1]:,.0f}원 더 유리합니다"
+        )
 
     if target is None:
         # **낮출 자리가 아예 없다. 까닭이 둘이다** (108세션 2절) — 하한이 어느

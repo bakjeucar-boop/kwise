@@ -2084,7 +2084,9 @@ def _build_combination(
     # 5,170 kW」 처럼 **직전 조합에 무엇을 더했는가**를 적는 것이라, 그것만 떼어
     # 놓으면 앞의 수단들이 보이지 않았다. 목록을 여기서 다시 만들지 않는다 —
     # 조합 재계산이 본 것과 갈라진다.
-    baseline = comparison.combinations[0].spec.selection if comparison.combinations else None
+    # **나온 값을 견준다** (S112 5절 · ⑱). 기준선은 다시 안 고르므로 값은 같지만,
+    # 두 자리가 다른 것을 읽으면 나중에 갈라진다.
+    baseline = comparison.combinations[0].selection if comparison.combinations else None
     _text(
         slide,
         guide,

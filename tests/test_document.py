@@ -284,11 +284,17 @@ def test_표_머리글이_굵다(full_document: DocumentType) -> None:
 
 
 def test_조합_비교가_표로_나온다(full_document: DocumentType) -> None:
-    table = _table_with_header(full_document, "조합", "절감액", "투자비", "회수기간")
+    """**「요금제」 열은 S112 5절에 붙었다** (⑱).
+
+    조합이 조합 부하에서 선택요금을 다시 고르게 되면서 **조합마다 다를 수
+    있다** — 열이 없으면 2단계가 권한 하나로 전부 낸 줄 읽는다.
+    """
+    table = _table_with_header(full_document, "조합", "요금제", "절감액", "투자비", "회수기간")
     assert len(table.rows) >= 2  # type: ignore[attr-defined]
     body = [cell.text for cell in table.rows[1].cells]  # type: ignore[attr-defined]
     assert body[0]
-    assert "원" in body[1]  # 단위를 값에 붙인다 (Word 표는 열 이름에 단위가 없다)
+    assert body[1].startswith("선택") or body[1] == "전체시간"
+    assert "원" in body[2]  # 단위를 값에 붙인다 (Word 표는 열 이름에 단위가 없다)
 
 
 def test_금액에_단위가_붙는다(full_document: DocumentType) -> None:

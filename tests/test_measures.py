@@ -723,7 +723,12 @@ def test_경계를_안_넘는_판은_요금표를_줘도_종전과_같다(
     assert after.saving_won == before.saving_won
     assert after.current_base_won == before.current_base_won
     assert after.adjusted_base_won == before.adjusted_base_won
-    assert after.saving_basis == before.saving_basis
+    # **근거 줄에는 꼬리가 붙는다** (S112 2·5절). 요금표를 주면 목표 계약전력에서
+    # 선택요금을 다시 고르고 그 사실을 근거에 적는다 — **금액은 안 움직인다**
+    # (재선정 몫은 ``retuned_saving_won`` 에 갈라 둔다). 이 시험이 지키는 것은
+    # 「종별 문턱 갈래가 안 넘는 판에서 새지 않는다」 이고 그쪽은 그대로다.
+    assert after.saving_basis.startswith(before.saving_basis)
+    assert before.retuned_selection is None  # 요금표가 없으면 못 고른다
 
 
 def test_요금표만_주고_옵션을_안_주면_멈춘다(
@@ -2213,6 +2218,14 @@ def test_계약전력_조정이_목표에서_선택요금을_다시_고른다(
     # 을 잘못 읽는다.
     assert adjustment.saving_won is not None
     assert adjustment.saving_won != pytest.approx(adjustment.retuned_saving_won)
+
+    # **화면이 그 사실을 말한다** (S112 5절). 새 안내를 붙이지 않고 산출 근거
+    # 줄을 늘렸다 — 안내 항목이 늘면 화면 예산을 먹는데, 이것은 절감액이
+    # 무엇을 잰 값인가를 말하는 것이라 근거 줄이 제자리다.
+    reason = next(item.text for item in adjustment.notices if item.fact == "contract.saving_basis")
+    assert "계약전력만 낮춘 몫" in reason
+    assert "선택Ⅲ 쪽이" in reason
+    assert "1,340,816원 더 유리" in reason
 
 
 def test_현행이_이미_최적이면_다시_고른_것이_없다(

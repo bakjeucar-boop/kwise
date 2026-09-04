@@ -57,6 +57,7 @@ from kwise.tariff import (
     TariffTable,
     calculate_bill,
     deemed_lagging_pct,
+    option_label,
     switchable_selections,
 )
 
@@ -173,25 +174,35 @@ class CombinationSpec:
         baseline: TariffSelection | None = None,
         *,
         applied: tuple[AppliedMeasure, ...] | None = None,
+        selection: TariffSelection | None = None,
     ) -> str:
         """조합에 **무엇이 들어갔는지 한 줄로** (39세션 3-3).
 
-            선택요금 전환 + 역률 개선 97% + 태양광 240 kWp
+            선택Ⅱ 전환 + 역률 개선 97% + 태양광 240 kWp
 
         조합 이름(:attr:`name`)은 「+ ESS 목표 5,170 kW」 처럼 **직전 조합에 무엇을
         더했는가**를 적는다 — 표에서 차례로 읽을 때는 그것이 맞지만, 그 이름
         하나만 떼어 놓으면 앞의 수단들이 보이지 않는다.
 
+        **어느 요금제인지 이름에 적는다** (S112 5절 · ⑱). 앞서는 「선택요금
+        전환」 이라고만 적었는데, 조합이 조합 부하에서 선택요금을 **다시**
+        고르게 되면서 그 값이 2단계 권고와 다를 수 있게 됐다 — 이름이 그것을
+        안 말하면 사용자는 2단계가 권한 요금제로 낸 값인 줄 읽는다.
+        **문구를 늘리지 않았다** — 같은 조각의 이름을 고쳤을 뿐이다.
+
         Args:
             baseline: 기준선의 선택요금. 이것과 다르면 요금제를 바꾼 조합이므로
-                맨 앞에 「선택요금 전환」 을 세운다. 주지 않으면 세지 않는다.
+                맨 앞에 그 요금제를 세운다. 주지 않으면 세지 않는다.
             applied: 적을 수단 목록. 주지 않으면 :attr:`applied` 다.
                 결과 쪽이 계약전력을 목표로 갈아 끼워 넘긴다 (108세션 3절 —
                 :attr:`CombinationResult.applied`).
+            selection: **실제로 요금을 낸** 선택요금. 주지 않으면 스펙의 것이다 —
+                ``applied`` 와 같은 모양으로, 결과 쪽이 다시 고른 것을 넘긴다.
         """
+        chosen = self.selection if selection is None else selection
         parts: list[str] = []
-        if baseline is not None and self.selection != baseline:
-            parts.append("선택요금 전환")
+        if baseline is not None and chosen != baseline:
+            parts.append(f"{option_label(chosen.option)} 전환")
         parts.extend(item.short_label for item in (self.applied if applied is None else applied))
         return " + ".join(parts) if parts else "현행 유지"
 
@@ -255,9 +266,20 @@ class CombinationResult:
         """조합 표의 「수단」 열. :attr:`applied` 와 같은 목록이다."""
         return tuple(item.label for item in self.applied)
 
+    @property
+    def selection(self) -> TariffSelection:
+        """**실제로 요금을 낸 선택요금** (S112 3절 · ⑱).
+
+        ``spec.selection`` 은 **넣는 값**이고 이것이 **나온 값**이다 — 수단이
+        부하를 바꾸면 조합이 조합 부하에서 다시 고르기 때문이다. 계약전력이
+        ``spec.contract_kw``(현행)와 :attr:`applied`(목표)로 갈리는 것과 같은
+        모양이다 (108세션 3절).
+        """
+        return self.bill.selection
+
     def composition(self, baseline: TariffSelection | None = None) -> str:
-        """조합 구성 한 줄 — :meth:`CombinationSpec.composition` 에 :attr:`applied` 를 준다."""
-        return self.spec.composition(baseline, applied=self.applied)
+        """조합 구성 한 줄 — :meth:`CombinationSpec.composition` 에 **나온 값**을 준다."""
+        return self.spec.composition(baseline, applied=self.applied, selection=self.selection)
 
     @property
     def total_won(self) -> float:
@@ -280,10 +302,17 @@ class ComparisonResult:
     notices: tuple[Notice, ...] = field(default=())
 
     def frame(self) -> pd.DataFrame:
-        """조합 | 절감액 | 투자비 | 회수기간. **확실성 열은 없다** (53세션 1-4)."""
+        """조합 | 요금제 | 절감액 | 투자비 | 회수기간. **확실성 열은 없다** (53세션 1-4).
+
+        **「요금제」 열은 S112 5절에 붙였다** (⑱). 조합이 조합 부하에서 선택요금을
+        다시 고르게 되면서 **조합마다 다를 수 있다** — 태양광 조합이 Ⅱ 를,
+        ESS 조합이 Ⅲ 을 쓰는 판이 실제로 나온다. 열이 없으면 사용자는 2단계가
+        권한 하나로 전부 낸 줄 읽는다. **표는 자료라 화면 문구 예산 밖이다.**
+        """
         rows = [
             {
                 "조합": item.name,
+                "요금제": option_label(item.selection.option),
                 "수단": ", ".join(item.measure_labels) or "—",
                 "요금(원)": item.total_won,
                 "절감액(원)": item.saving_won,

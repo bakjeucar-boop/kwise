@@ -72,6 +72,7 @@ from kwise.report.notices import (
 )
 from kwise.report.worksheet import COLUMNS, Worksheet
 from kwise.tariff import BillingResult, TariffTable
+from kwise.tariff.labels import option_label
 from kwise.tariff.power_factor import lagging_standard_pct
 
 __all__ = [
@@ -1627,17 +1628,24 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
     comparison = sections.comparison
     assert comparison is not None  # build_document 가 없으면 이 장을 부르지 않는다
     best = comparison.best
+    # **조합에 무엇이 들었는지 이름 대신 구성으로 적는다** (S112 5절 · ⑱).
+    # 조합 이름은 「+ ESS 목표 5,170 kW」 처럼 직전 조합에 더한 것만 말해
+    # **어느 요금제로 낸 값인지가 안 보인다** — 조합이 조합 부하에서 선택요금을
+    # 다시 고르게 되면서 그 값이 2단계 권고와 다를 수 있다. PPT 15장이 이미
+    # 같은 것을 적고 있다. **문구를 늘리지 않았다** — 같은 문장의 한 조각이다.
+    baseline = comparison.combinations[0].selection if comparison.combinations else None
     _conclusion(
         document,
-        f"권장안은 「{best.name}」 입니다. {_won(best.saving_won)} 를 줄이고 "
+        f"권장안은 「{best.composition(baseline)}」 입니다. {_won(best.saving_won)} 를 줄이고 "
         f"투자비는 {_won(best.investment_won)}, 회수기간은 "
         f"{_payback_text(best.payback_years, best.investment_won)} 입니다.",
     )
-    rows = [["조합", "절감액", "투자비", "회수기간"]]
+    rows = [["조합", "요금제", "절감액", "투자비", "회수기간"]]
     for item in comparison.combinations:
         rows.append(
             [
                 item.name,
+                option_label(item.selection.option),
                 _won(item.saving_won),
                 _won(item.investment_won),
                 _payback_text(item.payback_years, item.investment_won),

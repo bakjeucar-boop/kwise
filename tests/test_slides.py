@@ -65,6 +65,7 @@ from kwise.report.slides import (
     split_reason,
 )
 from kwise.tariff import BillingResult, TariffTable
+from kwise.tariff.labels import option_label
 
 #: DrawingML 이름공간. 글꼴 지정이 이 안에 있다.
 _A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
@@ -941,10 +942,14 @@ def test_조합_구성을_한_줄로_이어_적는다(full_sections: DocumentSec
     """
     comparison = full_sections.comparison
     assert comparison is not None
-    baseline = comparison.combinations[0].spec.selection
+    baseline = comparison.combinations[0].selection
     line = comparison.best.composition(baseline)
     assert " + " in line
-    assert "선택요금 전환" in line
+    # **어느 요금제인지 이름에 적는다** (S112 5절 · ⑱). 앞서는 「선택요금 전환」
+    # 이라고만 적었는데, 조합이 조합 부하에서 다시 고르게 되면서 그 값이 2단계
+    # 권고와 다를 수 있다 — 이름이 그것을 안 말하면 옛 요금제로 낸 줄 읽는다.
+    assert line.startswith(f"{option_label(comparison.best.selection.option)} 전환 + ")
+    assert "선택요금 전환" not in line
     assert "(" not in line, "괄호를 겹쳐 적지 않는다."
     text = _slide_text(_slide_by_key(build_slides(full_sections), full_sections, "combination"))
     assert line in text
