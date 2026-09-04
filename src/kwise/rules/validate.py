@@ -141,6 +141,37 @@ def _hour_windows(key: str, value: Any) -> list[ValidationIssue]:
     return issues
 
 
+def _excess_tiers(key: str, value: Any) -> list[ValidationIssue]:
+    """[[초과비율 하한, 기본요금 단가 배수], …] — 제67조의3 ③ 의 구간표.
+
+    **하한이 올라가는 차례로 서 있어야 한다.** 뒤엉키면 판정이 첫 줄에서 멈춰
+    배수 하나가 전 구간에 걸리는데, 금액이 그럴듯해서 발견이 늦다.
+    """
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or not value:
+        return [ValidationIssue(key, f"구간 목록이어야 합니다: {value!r}")]
+    issues: list[ValidationIssue] = []
+    previous: tuple[float, float] | None = None
+    for tier in value:
+        if not isinstance(tier, Sequence) or isinstance(tier, (str, bytes)) or len(tier) != 2:
+            issues.append(ValidationIssue(key, f"[하한, 배수] 두 값이어야 합니다: {tier!r}"))
+            continue
+        floor, multiplier = _number(tier[0]), _number(tier[1])
+        if floor is None or not 0.0 <= floor < 1.0:
+            issues.append(ValidationIssue(key, f"초과비율 하한은 0 이상 1 미만이어야 합니다: {tier[0]!r}"))
+            continue
+        if multiplier is None or multiplier <= 0:
+            issues.append(ValidationIssue(key, f"배수는 양수여야 합니다: {tier[1]!r}"))
+            continue
+        if previous is not None and (floor <= previous[0] or multiplier <= previous[1]):
+            issues.append(
+                ValidationIssue(key, f"하한과 배수가 함께 커져야 합니다: {previous!r} → {tier!r}")
+            )
+        previous = (floor, multiplier)
+    if previous is not None and _number(value[0][0]) != 0.0:
+        issues.append(ValidationIssue(key, "첫 구간의 하한은 0 이어야 합니다 (초과가 곧 부가금이다)."))
+    return issues
+
+
 def _ratio_range(key: str, value: Any) -> list[ValidationIssue]:
     """[하한, 상한] 비율. 하한이 상한보다 크면 화면 권장 구간이 뒤집힌다."""
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or len(value) != 2:
@@ -171,6 +202,9 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "power_factor.leading_lagging_deemed_pct": _percent,
     "power_factor.adjustment_per_percent": _ratio,
     "power_factor.day_window": _hour_window,
+    # 초과사용부가금 (제67조의3 ③·④ · 109세션).
+    "excess_charge.ratio_tiers": _excess_tiers,
+    "excess_charge.grace_months": _positive,
     "contract_type.threshold_kw.general": _positive,
     "contract_type.threshold_kw.industrial": _positive,
     "contract_type.threshold_kw.education": _positive,
