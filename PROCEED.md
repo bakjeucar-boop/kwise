@@ -526,9 +526,12 @@ C6 목표 10,921 kW 의 총액이 **2,727,074,348원**(선택Ⅱ)으로 나오�
 (`sweep_s114.py` · `floor_s114.py` · `table_s114.py`)라 산출물이 아니다.
 **다시 재려면 다시 짓는다** — 값은 위 표에 다 있다.
 
-#### ㅅ. 돌고 있는 백그라운드 셸 — **없다**
+#### ㅅ. 돌고 있는 백그라운드 셸 — **이 세션 것은 없다**
 
-`Get-CimInstance Win32_Process -Filter "Name='python.exe'"` 가 **0개**다.
+훑기 둘 · pytest 둘 · 케이스 스터디 하나가 전부 끝났다. 마칠 때
+`Get-CimInstance Win32_Process -Filter "Name='python.exe'"` 에 **둘이 뜨는데
+둘 다 `cdu-simul` 것**이다 — 남의 세션이므로 **안 죽였다.**
+(회귀 pytest 를 잰 판에서는 **0개**였다. 3절 ㄷ 의 「깨끗한 판」 이 그 뜻이다.)
 
 ---
 
