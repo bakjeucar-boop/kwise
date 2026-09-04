@@ -56,6 +56,7 @@ from kwise.report import (
 from kwise.tariff import BillingResult, TariffSelection, TariffTable
 from tests._synthetic import write_month
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CURRENT = TariffSelection("general_b", "high_a", "I")
 BEST = TariffSelection("general_b", "high_a", "II")
 
@@ -641,6 +642,102 @@ def test_배치_기준선이_절감액과_같은_밑둥_위에_선다(
     assert with_floor.total_won > without_floor.total_won, (
         "하한이 안 걸리는 벌이 되었습니다. 이 시험은 걸리는 벌에서만 뜻이 있습니다."
     )
+
+
+def test_배치가_계약전력_기준_종별을_돌린다(
+    tmp_path: Path, tariff: TariffTable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**안 도는 갈래가 없는지 본다** (104세션 2절).
+
+    103세션 3절 앞에는 갑Ⅰ 이 배치에서 **아예 안 돌았다** —
+    ``TariffDataError: 일반용전력(갑)Ⅰ 은 기본요금을 계약전력으로 매깁니다``
+    로 죽는다(약관 제68조 제2항). 그런데 pytest 1,602 도 케이스 스터디 104/104
+    도 다 초록이었다. **안 돈 갈래는 실패 줄을 내지 않는다** — 배치 벌 목록이
+    저장소에 없어(사용자가 YAML 로 짓는다) 아무도 갑Ⅰ 을 배치에 넣어 본 적이
+    없었을 뿐이다.
+
+    **오류를 낸 쪽은 옳았다.** 갑Ⅰ 은 전 전압에서 기본요금이 계약전력 기준이라
+    계약전력 없이는 기본요금이 통째로 틀린다. 틀린 것은 **넘기는 쪽**이다 —
+    ``CaseSpec.contract_kw`` 를 손에 쥐고도 요금 옵션에 안 담았다.
+
+    **금액까지 맞대 본다** — 예외만 안 나면 통과하게 두면 계약전력이 아닌 값이
+    실려도 초록이 된다.
+    """
+    from kwise.io import load_usage
+    from kwise.report.batch import CaseSpec, run_case
+    from kwise.tariff import BillingOptions, calculate_bill
+
+    monkeypatch.setenv("PROJECT_CACHE", str(tmp_path / "cache"))
+    usage_path = write_month(tmp_path / "갑Ⅰ벌.csv", 2024, 3, kwh=100.0)
+    selection = TariffSelection("general_a_1", "high_a", "I")
+    assert tariff.contract_types[selection.contract_type].base_fee_on_contract_at(
+        selection.voltage
+    ), "기본요금이 요금적용전력 기준으로 바뀌었습니다. 이 시험은 계약전력 기준에서만 뜻이 있습니다."
+
+    spec = CaseSpec(
+        name="갑Ⅰ벌",
+        usage=usage_path,
+        contract_type=selection.contract_type,
+        voltage=selection.voltage,
+        option=selection.option,
+        contract_kw=200.0,
+    )
+    summary = run_case(spec, tariff, output_dir=tmp_path / "out", include_timeseries=False)
+
+    expected = calculate_bill(
+        load_usage(usage_path), tariff, selection, options=BillingOptions(contract_kw=200.0)
+    )
+    assert summary.baseline_won == pytest.approx(expected.total_won)
+
+
+def test_덱_벌_갑Ⅰ_둘이_배치에서_돈다(
+    tmp_path: Path, tariff: TariffTable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**실물 벌로 다시 본다** (104세션 2절). 위는 지은 벌, 여기는 뽑는 벌이다.
+
+    103세션 3절 앞에 배치에서 죽던 벌은 ``large-a`` 와 ``small-a`` 둘이다 —
+    열일곱 가운데 나머지 열다섯은 그때도 돌았고 104세션 1절이 값으로 확인했다.
+    **죽던 둘에만 못을 박는다.** 열일곱을 다 돌리면 1번 PC 에서 52초가 붙는데,
+    2번 PC 는 전체 시험 상한 8분까지 70초밖에 안 남는다.
+
+    벌이 없어지거나 종별이 바뀌면 ``BY_KEY`` 에서 바로 걸린다.
+    """
+    import sys
+
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    import render_deck
+
+    from kwise.io import load_usage
+    from kwise.report.batch import CaseSpec, run_case
+    from kwise.tariff import BillingOptions, calculate_bill
+
+    monkeypatch.setenv("PROJECT_CACHE", str(tmp_path / "cache"))
+    for key in ("large-a", "small-a"):
+        case = render_deck.BY_KEY[key]
+        # 덱은 빈 선택요금을 화면에서 채운다. 배치에는 채우는 자리가 없으므로
+        # 여기서도 덱과 같은 것을 쓴다 (`render_deck.build_deck`).
+        option = case.option or render_deck._first_option(case.contract_type, case.voltage)
+        selection = TariffSelection(case.contract_type, case.voltage, option)
+        assert tariff.contract_types[case.contract_type].base_fee_on_contract_at(case.voltage), (
+            f"{key} 가 계약전력 기준 종별이 아니게 되었습니다"
+        )
+
+        spec = CaseSpec(
+            name=key,
+            usage=case.csv,
+            contract_type=case.contract_type,
+            voltage=case.voltage,
+            option=option,
+            contract_kw=case.contract_kw,
+        )
+        summary = run_case(spec, tariff, output_dir=tmp_path / "out", include_timeseries=False)
+        expected = calculate_bill(
+            load_usage(case.csv),
+            tariff,
+            selection,
+            options=BillingOptions(contract_kw=case.contract_kw),
+        )
+        assert summary.baseline_won == pytest.approx(expected.total_won), key
 
 
 def test_peak_window_on_a_day_without_observations() -> None:
