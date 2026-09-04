@@ -2186,17 +2186,14 @@ def test_계약전력을_낮추면_선택요금_순위가_실제로_뒤집힌다
     assert carried == pytest.approx(1_340_816.0, abs=1.0)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="⑲ 계약전력 조정 카드가 목표에서 선택요금을 다시 안 고른다 (S112 2절)",
-)
 def test_계약전력_조정이_목표에서_선택요금을_다시_고른다(
     flipping_night_usage: UsageData, tariff: TariffTable
 ) -> None:
-    """**목표 계약전력에서 최적인 선택요금을 함께 권해야 한다** (⑲).
+    """**목표 계약전력에서 최적인 선택요금을 함께 권한다** (⑲ · S112 2절).
 
-    지금은 현행 계약전력으로만 총액을 내므로 Ⅱ 를 권한 채로 끝난다 —
-    목표까지 낮추면 Ⅲ 이 1,340,816 원 싼데 그 사실이 카드에 없다.
+    **S112 1절이 ``xfail(strict)`` 로 박았고 2절에 XPASS 로 깨져 걷었다.**
+    앞서는 현행 계약전력으로만 총액을 내 Ⅱ 를 권한 채 끝났다 — 목표까지
+    낮추면 Ⅲ 이 1,340,816 원 싼데 그 사실이 카드에 없었다.
     """
     usage, table = flipping_night_usage, tariff
     options = BillingOptions(contract_kw=FLIP19_CONTRACT_KW)
@@ -2210,3 +2207,70 @@ def test_계약전력_조정이_목표에서_선택요금을_다시_고른다(
     assert adjustment.retuned_selection is not None
     assert adjustment.retuned_selection.option == "III"
     assert adjustment.retuned_saving_won == pytest.approx(1_340_816.0, abs=1.0)
+
+    # **두 몫이 갈라져 있다** (2절 ㄹ). 계약전력만 낮춘 몫은 기본요금 차이고,
+    # 다시 고른 몫은 그 위에 얹힌다 — 합쳐 두면 「계약전력을 낮춰서 얻은 돈」
+    # 을 잘못 읽는다.
+    assert adjustment.saving_won is not None
+    assert adjustment.saving_won != pytest.approx(adjustment.retuned_saving_won)
+
+
+def test_현행이_이미_최적이면_다시_고른_것이_없다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """**바뀌지 않으면 비운다** (S112 2절). 「바꿨다」 를 말할 자리가 아니다."""
+    options = BillingOptions(contract_kw=7_000.0)
+    adjustment = evaluate_contract_adjustment(
+        sample_usage,
+        calculate_bill(sample_usage, tariff, CURRENT, options=options, quality=sample_report),
+        contract_kw=7_000.0,
+        table=tariff,
+        options=options,
+    )
+    assert adjustment.retuned_selection is None
+    assert adjustment.retuned_saving_won is None
+
+
+def test_다시_고른_것이_선택요금_전환_카드로_새지_않는다(
+    flipping_night_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**2단계 카드는 서로 독립 평가다** (`project-overview.md` 1절 · S112 2절 ㄴ).
+
+    계약전력 조정 카드가 목표에서 Ⅲ 을 다시 골라도, 선택요금 전환 카드는
+    **현행 계약전력**에서 Ⅱ 를 권한다. 두 카드가 다른 답을 내는 것이 정상이다 —
+    계약전력 하향은 되돌리기 어려운 별개 결정이라(위약금) 그것을 전제로 요금제를
+    권하면 두 결정이 엉킨다. 계약전력을 낮추면 요금제도 바뀐다는 사실은
+    **계약전력 조정 카드 안에서** 말한다.
+    """
+    usage, table = flipping_night_usage, tariff
+    options = BillingOptions(contract_kw=FLIP19_CONTRACT_KW)
+    adjustment = evaluate_contract_adjustment(
+        usage,
+        calculate_bill(usage, table, FLIP19_SELECTION, options=options),
+        contract_kw=FLIP19_CONTRACT_KW,
+        table=table,
+        options=options,
+    )
+    switch = evaluate_tariff_switch(usage, table, FLIP19_SELECTION, options=options)
+
+    assert adjustment.retuned_selection is not None
+    assert adjustment.retuned_selection.option == "III"
+    # 선택요금 전환 카드는 현행 계약전력이 전제다 — 거기서는 Ⅱ 가 최적이다.
+    assert switch.best.selection == FLIP19_SELECTION
+    assert not switch.switch_needed
+    assert switch.best.selection != adjustment.retuned_selection
+
+
+def test_요금표를_안_주면_다시_고르지_않는다(
+    flipping_night_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**요금표가 있어야 후보를 안다.** 없으면 조용히 지금 종별 안에서만 본다."""
+    usage, table = flipping_night_usage, tariff
+    options = BillingOptions(contract_kw=FLIP19_CONTRACT_KW)
+    adjustment = evaluate_contract_adjustment(
+        usage,
+        calculate_bill(usage, table, FLIP19_SELECTION, options=options),
+        contract_kw=FLIP19_CONTRACT_KW,
+    )
+    assert adjustment.target_contract_kw == pytest.approx(4_000.0)
+    assert adjustment.retuned_selection is None

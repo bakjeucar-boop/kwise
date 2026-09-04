@@ -60,6 +60,7 @@ from kwise.tariff import (
     floor_bound_months,
     list_selections,
     selection_label,
+    switchable_selections,
 )
 from kwise.tariff.schema import TariffDataError, threshold_text, within_type_threshold
 
@@ -203,6 +204,23 @@ class ContractAdjustment:
     """넘어간 종별에서 **처음부터 다시 계산한** 총 요금."""
     current_total_won: float | None = None
     """현행 종별의 총 요금. :attr:`crossed_total_won` 과 짝으로만 채운다."""
+    retuned_selection: TariffSelection | None = None
+    """**목표 계약전력에서 다시 고른 선택요금** (S112 2절 · ⑲).
+
+    계약전력이 내려가면 요금적용전력 하한이 함께 내려가고, 기본요금 단가가
+    후보마다 다르므로 **후보들이 서로 다른 폭으로 싸진다** — 그래서 최적이
+    바뀔 수 있다. 안 바뀌면(또는 요금표를 안 받아 못 보면) ``None`` 이다.
+
+    종별을 넘는 판(:attr:`crossed_selection`)에서는 채우지 않는다 — 그쪽은
+    넘어간 종별 안에서 이미 선택요금을 다시 고른다.
+    """
+    retuned_saving_won: float | None = None
+    """다시 고르면 **더** 얻는 몫. :attr:`saving_won` 과 겹치지 않는다.
+
+    **두 몫을 갈라 둔다** (S112 2절 ㄹ). :attr:`saving_won` 은 계약전력만
+    낮춰 얻는 기본요금 몫이고, 이 값은 그 위에서 선택요금까지 바꿔 더 얻는
+    몫이다. 합치면 「계약전력을 낮춰서 얻은 돈」 을 잘못 읽는다.
+    """
     certainty: Certainty = Certainty.HIGH
     investment_won: float = 0.0
     notices: tuple[Notice, ...] = field(default=())
@@ -347,6 +365,40 @@ def _crossed_quote(
     )
 
 
+def _retune_selection(
+    usage: UsageData,
+    table: TariffTable,
+    options: BillingOptions,
+    selection: TariffSelection,
+    *,
+    target_kw: float,
+) -> tuple[TariffSelection, float] | None:
+    """**목표 계약전력에서 선택요금을 다시 고른다** (S112 2절 · ⑲).
+
+    바뀌는 것은 기본요금 하나다 — 전력량요금은 계약전력과 무관하고, 목표는
+    관측 최대 위이므로 초과사용부가금도 안 붙는다. 그런데 기본요금 단가가
+    후보마다 다르므로 하한이 내려간 몫에 **후보마다 다른 단가**가 곱해져
+    순위가 뒤집힐 수 있다.
+
+    **같은 종별·전압 안에서만 고른다** — 갈아탈 수 있는 것은 선택요금뿐이다
+    (:func:`kwise.tariff.switchable_selections`).
+
+    Returns:
+        ``(다시 고른 조합, 더 얻는 몫)``. 현행이 그대로 최적이면 ``None``.
+    """
+    candidates = switchable_selections(table, selection)
+    if len(candidates) < 2:
+        return None
+    opts = replace(options, contract_kw=target_kw)
+    totals = {
+        item: calculate_bill(usage, table, item, options=opts).total_won for item in candidates
+    }
+    best = min(candidates, key=lambda item: totals[item])
+    if best == selection:
+        return None
+    return best, totals[selection] - totals[best]
+
+
 def evaluate_contract_adjustment(
     usage: UsageData,
     bill: BillingResult,
@@ -486,6 +538,22 @@ def evaluate_contract_adjustment(
                 "(기본요금·전력량요금 단가가 함께 바뀐다)"
             )
 
+    # **목표에서 선택요금을 다시 고른다** (S112 2절 · ⑲). 계약전력이 내려가면
+    # 요금적용전력 하한이 함께 내려가는데 기본요금 단가가 후보마다 달라
+    # **후보들이 서로 다른 폭으로 싸진다** — 그래서 최적이 바뀔 수 있다.
+    # `project-overview.md` 가 「수단마다 요금을 다시 계산한다」 로 이미 적어 둔
+    # 원칙인데 이 카드가 현행 계약전력으로만 총액을 내고 있었다.
+    #
+    # **종별을 넘는 판에서는 안 본다** — :func:`_crossed_quote` 가 넘어간 종별
+    # 안에서 이미 선택요금을 다시 고른다. 여기서 또 고르면 두 재선정이 겹친다.
+    #
+    # **절감액에 더하지 않는다** (2절 ㄹ). ``saving_won`` 은 계약전력만 낮춰
+    # 얻는 몫이고 이 값은 그 위에 얹히는 몫이다 — 합쳐 두면 사용자가
+    # 「계약전력을 낮춰서 얻은 돈」 을 잘못 읽는다.
+    retuned: tuple[TariffSelection, float] | None = None
+    if target is not None and crossed is None and table is not None and options is not None:
+        retuned = _retune_selection(usage, table, options, bill.selection, target_kw=target)
+
     if target is None:
         # **낮출 자리가 아예 없다. 까닭이 둘이다** (108세션 2절) — 하한이 어느
         # 달에도 안 걸리거나, 걸렸어도 관측 최대가 계약전력에 닿아 보전이
@@ -560,6 +628,8 @@ def evaluate_contract_adjustment(
         crossed_label=crossed.label if crossed is not None else None,
         crossed_total_won=crossed.bill.total_won if crossed is not None else None,
         current_total_won=crossed.current_bill.total_won if crossed is not None else None,
+        retuned_selection=retuned[0] if retuned is not None else None,
+        retuned_saving_won=retuned[1] if retuned is not None else None,
         notices=tuple(notices),
     )
 
