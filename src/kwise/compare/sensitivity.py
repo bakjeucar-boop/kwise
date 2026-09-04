@@ -31,7 +31,7 @@ from kwise.io import UsageData
 from kwise.progress import ProgressReporter, record
 from kwise.pv import SharpnessFactors, load_sharpness_factors
 from kwise.quality import QualityReport
-from kwise.tariff import BillingOptions, BillingResult, TariffTable
+from kwise.tariff import BillingOptions, BillingResult, TariffSelection, TariffTable
 
 __all__ = [
     "RANGE_METRICS",
@@ -125,6 +125,31 @@ class SensitivityRange:
         return f"{self.metric} {self.range_text()}"
 
 
+def _held_selection(
+    usage: UsageData,
+    table: TariffTable,
+    spec: CombinationSpec,
+    *,
+    baseline_bill: BillingResult,
+    unit_pv_kw_per_kwp: pd.Series | None,
+    charge_mask: pd.Series | None,
+    quality: QualityReport | None,
+    options: BillingOptions | None,
+) -> TariffSelection:
+    """감도 세 판이 함께 쓸 선택요금. **기준 시나리오에서 한 번 고른다.**"""
+    base = evaluate_combination(
+        usage,
+        table,
+        spec,
+        baseline_bill=baseline_bill,
+        unit_pv_kw_per_kwp=unit_pv_kw_per_kwp,
+        charge_mask=charge_mask,
+        quality=quality,
+        options=options,
+    )
+    return base.bill.selection
+
+
 def sensitivity_comparison(
     usage: UsageData,
     table: TariffTable,
@@ -142,15 +167,31 @@ def sensitivity_comparison(
 
     표시는 :func:`sensitivity_range_frame` 의 범위 쪽을 쓴다. 이 표는 근거다.
     ``progress`` 는 선택 인자다 (10.6) — 시나리오마다 요금을 다시 계산한다.
+
+    **선택요금은 시나리오를 가로질러 고정한다** (S112 3절 · ⑱). 조합은 조합
+    부하에서 선택요금을 다시 고르지만, 감도는 **같은 조합**이 첨예도 불확실성에
+    얼마나 흔들리나를 보는 자리다 — 시나리오마다 다시 고르면 「발전량을 보고
+    나서 요금제를 고른다」 는 못 할 가정이 된다. 그래서 기준 시나리오에서 한
+    번 고르고 나머지는 그것을 그대로 쓴다.
     """
     from dataclasses import replace
 
     report = record(progress)
     items = load_sharpness_factors() if factors is None else factors
+    held = _held_selection(
+        usage,
+        table,
+        spec,
+        baseline_bill=baseline_bill,
+        unit_pv_kw_per_kwp=unit_pv_kw_per_kwp,
+        charge_mask=charge_mask,
+        quality=quality,
+        options=options,
+    )
     rows: list[dict[str, object]] = []
     for index, (label, sharpness) in enumerate(items.items()):
         report.step(index + 1, f"{index + 1}/{len(items.labels)} {label}")
-        scenario = replace(spec, sharpness=sharpness)
+        scenario = replace(spec, sharpness=sharpness, selection=held, retune_selection=False)
         result = evaluate_combination(
             usage,
             table,

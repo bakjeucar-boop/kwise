@@ -720,30 +720,19 @@ FLIP18_CONTRACT_KW = 5_500.0
 """갑Ⅰ 은 기본요금이 **계약전력**에 붙으므로 요금 옵션에 계약전력이 필요하다."""
 
 
-def _flip18_rank(
-    usage: UsageData,
-    tariff: TariffTable,
-    baseline: BillingResult,
-    unit_pv: pd.Series,
-    report: QualityReport,
-) -> list[tuple[TariffSelection, float]]:
-    """조합 부하에서 후보별 총액. 싼 순이다."""
+def _flip18_totals(
+    usage: UsageData, tariff: TariffTable, report: QualityReport
+) -> dict[TariffSelection, float]:
+    """후보별 총액. **조합 경로를 안 탄다** — 재선정 전 순위를 보기 위해서다."""
     from kwise.tariff import switchable_selections
 
     options = BillingOptions(contract_kw=FLIP18_CONTRACT_KW)
-    quotes = []
-    for candidate in switchable_selections(tariff, FLIP18_CURRENT):
-        result = evaluate_combination(
-            usage,
-            tariff,
-            CombinationSpec(str(candidate), candidate, pv_capacity_kwp=FLIP18_PV_KWP),
-            baseline_bill=baseline,
-            unit_pv_kw_per_kwp=unit_pv,
-            quality=report,
-            options=options,
-        )
-        quotes.append((candidate, result.bill.total_won))
-    return sorted(quotes, key=lambda pair: pair[1])
+    return {
+        candidate: calculate_bill(
+            usage, tariff, candidate, options=options, quality=report
+        ).total_won
+        for candidate in switchable_selections(tariff, FLIP18_CURRENT)
+    }
 
 
 def test_태양광이_선택요금_순위를_실제로_뒤집는다(
@@ -752,35 +741,38 @@ def test_태양광이_선택요금_순위를_실제로_뒤집는다(
     tariff: TariffTable,
     sample_unit_pv: pd.Series,
 ) -> None:
-    """**못을 박기 전에 자료부터 확인한다** (S112 1절 ㄹ).
+    """**자료가 실제로 뒤집힌다** (S112 1절 ㄹ · 4절 ㄴ).
 
-    아래 ``xfail`` 못이 「뜨지 않는 갈래」 가 아님을 이 시험이 지킨다.
+    아래 재선정 시험이 「뜨지 않는 갈래」 가 아님을 이 시험이 지킨다 — 자료가
+    바뀌어 뒤집힘이 사라지면 이쪽이 먼저 깨진다.
+
+    **조합 경로를 안 탄다.** :func:`evaluate_combination` 은 이제 스스로 다시
+    고르므로 후보를 넣어도 셋이 같은 답을 낸다 — 재선정 **전** 순위를 보려면
+    부하를 직접 만들어 요금만 매겨야 한다. 그래서 금액이 조합 경로의 것과
+    다르다(역률 몫이 빠져 있다).
     """
-    options = BillingOptions(contract_kw=FLIP18_CONTRACT_KW)
-    baseline = calculate_bill(
-        sample_usage, tariff, FLIP18_CURRENT, options=options, quality=sample_report
-    )
-    rank = _flip18_rank(sample_usage, tariff, baseline, sample_unit_pv, sample_report)
-    assert rank[0][0].option == "I"
+    from kwise.measures import apply_generation
 
-    carried = dict(rank)[FLIP18_CURRENT] - rank[0][1]
-    assert carried == pytest.approx(2_651_504.0, abs=1.0)
+    before = _flip18_totals(sample_usage, tariff, sample_report)
+    assert min(before, key=lambda item: before[item]) == FLIP18_CURRENT
+
+    net = apply_generation(sample_usage, sample_unit_pv * FLIP18_PV_KWP)
+    after = _flip18_totals(net.usage, tariff, sample_report)
+    best = min(after, key=lambda item: after[item])
+    assert best.option == "I"
+    assert after[FLIP18_CURRENT] - after[best] == pytest.approx(882_582.59, abs=0.01)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="⑱ 3단계 조합이 조합 부하에서 선택요금을 다시 안 고른다 (S112 3절에서 고친다)",
-)
 def test_조합이_조합_부하에서_선택요금을_다시_고른다(
     sample_usage: UsageData,
     sample_report: QualityReport,
     tariff: TariffTable,
     sample_unit_pv: pd.Series,
 ) -> None:
-    """**PV 가 부하를 바꿨으면 선택요금도 다시 골라야 한다** (⑱).
+    """**PV 가 부하를 바꿨으면 선택요금도 다시 고른다** (⑱ · S112 3절).
 
-    지금은 2단계가 원부하에서 고른 것을 그대로 들고 간다 — 조합 부하에서는
-    Ⅰ 이 2,651,504 원 싼데 Ⅱ 로 요금을 낸다.
+    **S112 1절이 ``xfail(strict)`` 로 박았고 3절에 XPASS 로 깨져 걷었다.**
+    앞서는 2단계가 원부하에서 고른 Ⅱ 를 그대로 들고 갔다.
     """
     options = BillingOptions(contract_kw=FLIP18_CONTRACT_KW)
     baseline = calculate_bill(
@@ -796,3 +788,30 @@ def test_조합이_조합_부하에서_선택요금을_다시_고른다(
         options=options,
     )
     assert result.bill.selection.option == "I"
+    assert result.bill.selection != result.spec.selection
+
+
+def test_수단이_없으면_다시_고르지_않는다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+) -> None:
+    """**기준선은 기준선이어야 한다** (S112 3절).
+
+    부하를 바꾸는 수단이 없으면 2단계가 고른 것이 그대로 정답이다 — 여기서
+    다시 고르면 기준선이 저 혼자 싸져 **절감액의 밑둥이 사라진다.**
+    """
+    options = BillingOptions(contract_kw=FLIP18_CONTRACT_KW)
+    baseline = calculate_bill(
+        sample_usage, tariff, FLIP18_CURRENT, options=options, quality=sample_report
+    )
+    result = evaluate_combination(
+        sample_usage,
+        tariff,
+        CombinationSpec("기준선", FLIP18_CURRENT),
+        baseline_bill=baseline,
+        quality=sample_report,
+        options=options,
+    )
+    assert result.bill.selection == FLIP18_CURRENT
+    assert result.saving_won == pytest.approx(0.0)

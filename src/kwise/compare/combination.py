@@ -57,6 +57,7 @@ from kwise.tariff import (
     TariffTable,
     calculate_bill,
     deemed_lagging_pct,
+    switchable_selections,
 )
 
 __all__ = [
@@ -106,6 +107,15 @@ class CombinationSpec:
     """
     surplus_scenario: str = ""
     """고른 시나리오 이름. 추적성 문구가 쓴다."""
+    retune_selection: bool = True
+    """**조합 부하에서 선택요금을 다시 고르는가** (S112 3절 · ⑱).
+
+    켜 두는 것이 기본이다 — 수단이 부하를 바꾸면 최적 선택요금도 바뀐다.
+    **끄는 자리는 감도 하나다** (:func:`kwise.compare.sensitivity_comparison`):
+    감도는 **같은 조합**이 첨예도 불확실성에 얼마나 흔들리나를 보는 자리인데,
+    시나리오마다 다시 고르면 「발전량을 보고 나서 요금제를 고른다」 는 못 할
+    가정이 된다. 사용자는 요금제를 **미리** 고르고 살아야 한다.
+    """
 
     @property
     def pv_cost(self) -> PvCostInput:
@@ -328,6 +338,73 @@ def _combination_certainty(spec: CombinationSpec) -> Certainty:
     return lowest_certainty(grades)
 
 
+def _quote(
+    working: UsageData,
+    table: TariffTable,
+    spec: CombinationSpec,
+    selection: TariffSelection,
+    opts: BillingOptions,
+    quality: QualityReport | None,
+) -> tuple[BillingResult, ContractAdjustment | None]:
+    """후보 하나의 요금과 계약전력 조정."""
+    bill = calculate_bill(working, table, selection, options=opts, quality=quality)
+    if spec.contract_kw is None:
+        return bill, None
+    adjustment = evaluate_contract_adjustment(
+        working,
+        bill,
+        contract_kw=spec.contract_kw,
+        contract_floor_ratio=spec.contract_floor_ratio,
+        # **종별을 넘는 후보까지 본다** (98세션). 조합도 수단마다 요금을
+        # 다시 계산하는 자리이므로 여기서 빼면 조합만 옛 값을 낸다.
+        table=table,
+        options=opts,
+    )
+    return bill, adjustment
+
+
+def _net_cost(bill: BillingResult, adjustment: ContractAdjustment | None) -> float:
+    """조합이 실제로 견주는 수 — **총액에서 계약전력 조정 몫을 뺀 것**.
+
+    절감액이 ``기준선 − 총액 + 계약전력 조정 몫`` 이므로, 총액만 보고 고르면
+    조정 몫이 큰 후보를 놓친다.
+    """
+    saving = adjustment.saving_won if adjustment is not None else None
+    return bill.total_won - (saving or 0.0)
+
+
+def _price(
+    working: UsageData,
+    table: TariffTable,
+    spec: CombinationSpec,
+    opts: BillingOptions,
+    quality: QualityReport | None,
+) -> tuple[BillingResult, ContractAdjustment | None]:
+    """조합 부하의 요금. **수단을 켰으면 선택요금을 다시 고른다** (S112 3절 · ⑱).
+
+    이 모듈 머리글이 「태양광이 사용량을 줄이면 최적 선택요금이 바뀐다」 를
+    이미 적어 두었는데 그 재선정을 안 하고 2단계가 원부하에서 고른 것을 그대로
+    들고 갔다. **새 규칙이 아니라 적혀 있던 규칙이다.**
+
+    **부하를 바꾸는 수단이 켜졌을 때만 다시 고른다.** 기준선과 선택요금 전환
+    카드는 부하가 원부하 그대로라 2단계가 고른 것이 그대로 정답이다 — 거기서
+    다시 고르면 기준선이 기준선이 아니게 되어 절감액의 밑둥이 사라진다.
+
+    **한 번만 돈다** (3절 ㄷ). 계약전력 조정이 목표에서 또 선택요금을 고르지만
+    (:attr:`ContractAdjustment.retuned_selection` · ⑲) 그 결과는 **갈라 적힐 뿐
+    조합의 요금 계산에 안 들어가므로** 되먹임이 없다. 되먹임을 넣으면 「어느
+    계약전력에서의 최적인가」 가 조합마다 달라져 **조합끼리 못 견준다.**
+    """
+    if not spec.retune_selection or not (spec.has_pv or spec.has_ess):
+        return _quote(working, table, spec, spec.selection, opts, quality)
+    quotes = {
+        candidate: _quote(working, table, spec, candidate, opts, quality)
+        for candidate in switchable_selections(table, spec.selection)
+    }
+    best = min(quotes, key=lambda item: _net_cost(*quotes[item]))
+    return quotes[best]
+
+
 def evaluate_combination(
     usage: UsageData,
     table: TariffTable,
@@ -474,22 +551,9 @@ def evaluate_combination(
                 )
             )
 
-    bill = calculate_bill(working, table, spec.selection, options=opts, quality=quality)
-
-    contract_saving: float | None = None
-    adjustment: ContractAdjustment | None = None
-    if spec.contract_kw is not None:
-        adjustment = evaluate_contract_adjustment(
-            working,
-            bill,
-            contract_kw=spec.contract_kw,
-            contract_floor_ratio=spec.contract_floor_ratio,
-            # **종별을 넘는 후보까지 본다** (98세션). 조합도 수단마다 요금을
-            # 다시 계산하는 자리이므로 여기서 빼면 조합만 옛 값을 낸다.
-            table=table,
-            options=opts,
-        )
-        contract_saving = adjustment.saving_won
+    bill, adjustment = _price(working, table, spec, opts, quality)
+    contract_saving = adjustment.saving_won if adjustment is not None else None
+    if adjustment is not None:
         notices.extend(adjustment.notices)
 
     # 투자비를 **모르면 0 이 아니라 None 이다.** 0 으로 두면 회수기간이 0년으로
