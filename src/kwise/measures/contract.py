@@ -177,6 +177,10 @@ class ContractAdjustment:
             한 달도 안 걸려도 문턱 아래 종별로 넘어갈 수 있으면 문턱 바로
             아래다 (99세션).
         saving_won: :attr:`status` 가 ``CONFIRMED`` 일 때만 값이 있다.
+            **기본요금 몫에 역률요금 몫이 얹힌 값이다** (S116 · ⑭) —
+            :attr:`current_base_won` 과 :attr:`adjusted_base_won` 의 차이가
+            아니다. 그 둘은 역률요금을 뺀 기본요금이고, 역률요금은 그 달
+            기본요금에 대한 비율이라 기본요금이 줄면 함께 준다 (약관 제43조 ②).
     """
 
     status: ContractStatus
@@ -521,7 +525,17 @@ def evaluate_contract_adjustment(
     # 하한 적용 전 값으로 되돌린 뒤 두 계약전력에서 각각 다시 씌운다.
     current_base = _base_fee_won(bill, floor_kw)
     adjusted_base = _base_fee_won(bill, target * ratio) if target is not None else current_base
-    saving = current_base - adjusted_base
+    # **역률 몫까지 담는다** (S116 · ⑭). 역률요금은 그 달 기본요금에 대한
+    # 비율이므로(약관 제43조 ②) 기본요금이 줄면 **같은 비율로 함께 준다** —
+    # 기본요금 차이만 내면 고객이 실제로 덜 내는 돈과 어긋난다. 비율은 역률
+    # 하나로 정해지고 계약전력과 무관하므로 두 계약전력에서 같은 값이다.
+    #
+    # **역률 개선 카드(④)의 몫이 아니다.** 여기서 역률은 **현행 그대로** 두고
+    # 기본요금 기반만 낮춘다 — 두 카드가 겹치지 않는다.
+    #
+    # **산식을 여기 한 자리에만 둔다.** 종별을 넘는 갈래(:func:`_crossed_quote`)는
+    # 요금을 처음부터 다시 계산하므로 역률요금이 이미 ``total_won`` 안에 있다.
+    saving = (current_base - adjusted_base) * (1.0 + bill.power_factor.total_ratio)
     basis_text = (
         f"요금적용전력 하한 {ratio:.0%} 적용, "
         f"월별 기본요금을 {bill.base_fee_months:.2f}개월분으로 재계산"

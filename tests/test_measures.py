@@ -345,6 +345,39 @@ def test_confirmed_floor_rule_recalculates_the_base_fee(
     assert "하한 100%" in result.saving_basis
 
 
+@pytest.mark.parametrize(
+    ("pct", "ratio"),
+    [(None, 0.0), (85.0, 0.014), (97.0, -0.010)],
+    ids=["간주값92", "미달85", "초과97"],
+)
+def test_절감액은_역률요금까지_담은_총액_차이다(
+    sample_usage: UsageData, tariff: TariffTable, pct: float | None, ratio: float
+) -> None:
+    """역률요금은 그 달 기본요금에 대한 비율이다 (약관 제43조 ②) — S116 · ⑭.
+
+    기본요금이 줄면 역률요금도 **같은 비율로 함께 준다.** 기본요금 차이만 내면
+    고객이 실제로 덜 내는 돈과 어긋난다. 간주값 92% 에서는 비율이 0 이라
+    종전과 같은 값이고 — **그래서 회귀 기대값이 안 움직인다.**
+    """
+    options = BillingOptions(contract_kw=20_000.0, power_factor_pct=pct)
+    bill = calculate_bill(sample_usage, tariff, CURRENT, options=options)
+    assert bill.power_factor.total_ratio == pytest.approx(ratio)
+
+    result = evaluate_contract_adjustment(sample_usage, bill, contract_kw=20_000.0)
+    target = result.target_contract_kw
+    assert target is not None
+    assert result.crossed_selection is None  # 같은 종별 갈래다 — 넘는 쪽은 이미 총액이다
+
+    base_gap = result.current_base_won - (result.adjusted_base_won or 0.0)
+    assert result.saving_won == pytest.approx(base_gap * (1.0 + ratio))
+    # 목표에서 요금을 처음부터 다시 계산한 총액 차이와 같다.
+    # 전력량요금은 계약전력과 무관하고, 목표는 관측 최대 위라 부가금도 안 붙는다.
+    after = calculate_bill(
+        sample_usage, tariff, CURRENT, options=replace(options, contract_kw=target)
+    )
+    assert result.saving_won == pytest.approx(bill.total_won - after.total_won)
+
+
 def test_floor_below_the_demand_yields_no_saving(
     sample_usage: UsageData, sample_bill: BillingResult
 ) -> None:
