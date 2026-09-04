@@ -178,7 +178,7 @@ class CaseResult:
             "계약종별": self.definition.contract_type,
             "기간": f"{self.usage.meta.start:%Y-%m-%d} ~ {self.usage.meta.end:%Y-%m-%d}",
             "총 사용량(MWh)": self.usage.meta.total_kwh / 1000.0,
-            "관측 최대수요(kW)": float(self.usage.kw.max()),
+            "관측 최대수요(kW)": self.usage.observed_max_kw,
             "요금적용전력(kW)": self.baseline.billing_demand_kw,
             # 부하율·기저부하 비율은 관측 슬롯이 없으면 None 이다. 그럴 일은 없지만
             # 0 으로 때우지 않고 그대로 둔다.
@@ -440,7 +440,7 @@ def run_one_case(
     contract_kw = (
         definition.contract_kw
         if definition.contract_kw is not None
-        else float(usage.kw.max()) * CONTRACT_MARGIN
+        else usage.observed_max_kw * CONTRACT_MARGIN
     )
     contract = ContractInfo(definition.selection, contract_kw=contract_kw)
     # **계약전력을 요금 옵션에도 넣는다** (107세션 3절 · ②-15). 배치(103세션

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -420,3 +421,36 @@ def test_energy_kwh_guard_survives_slicing(tmp_path: Path) -> None:
 def test_sample_energy_kwh_blocks_kw_conversion(sample: UsageData) -> None:
     with pytest.raises(EnergyToDemandError, match=r"요구사항서 4\.3"):
         _ = sample.energy_kwh() * 4
+
+
+# PV 발전 시계열의 최대다. 관측 수요가 아니므로 이 규칙 밖이다.
+_PEAK_COUNT_ALLOWED = frozenset({Path("src") / "kwise" / "pv" / "alignment.py"})
+
+
+def test_관측_최대와_초과_구간을_세는_자리는_한_곳이다() -> None:
+    """**⑮ — 같은 사실을 여럿이 따로 세고 있었다** (S120 2절).
+
+    지시서는 **둘**로 알고 있었는데 실물은 **넷**이었다 — 로더 ·
+    :func:`kwise.measures.netload.with_load` · 요금 엔진의 계약전력 초과 경고 ·
+    계약전력 조정 판정. 케이스 산출물 셋이 그 위에 더 있었다. 값은 벌 일곱에서
+    다 같았으므로 **값 결함이 아니라 유지보수 위험**이다 : 한쪽만 고치면 그날
+    갈리고, 사실 ID 가 둘(``quality.over_contract`` · ``contract.over_limit``)
+    이라 **한 판 안에서 두 문장이 어긋나게 된다.**
+
+    **소스로 본다.** 세는 식이 다시 서면 여기서 걸린다 — 105세션이
+    :func:`kwise.tariff.demand.floor_bound_months` 를 모은 뒤 세운 것과 같은 못이다.
+    """
+    peak = re.compile(r"\bkw(?:_series)?\.(?:dropna\(\)\.)?max\(\)")
+    over = re.compile(r">\s*(?:opts\.)?contract_kw\s*\)\.sum\(\)")
+    peaks: list[str] = []
+    overs: list[str] = []
+    for path in sorted(Path("src").rglob("*.py")):
+        body = path.read_text(encoding="utf-8")
+        for number, line in enumerate(body.splitlines(), 1):
+            if peak.search(line) and path not in _PEAK_COUNT_ALLOWED:
+                peaks.append(f"{path}:{number}: {line.strip()}")
+            # 세는 식이 사는 자리 하나는 이 파일이다.
+            if over.search(line) and path.name != "usage.py":
+                overs.append(f"{path}:{number}: {line.strip()}")
+    assert not peaks, f"관측 최대를 손으로 세는 자리가 생겼다 — {peaks}"
+    assert not overs, f"계약전력 초과 구간을 손으로 세는 자리가 생겼다 — {overs}"

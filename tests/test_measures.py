@@ -69,6 +69,7 @@ from kwise.tariff import (
     TariffTable,
     apply_contract_floor,
     calculate_bill,
+    round_kw,
 )
 from kwise.tariff.schema import switchable_selections, threshold_text, within_type_threshold
 from tests._synthetic import clearsky_weather, night_peak_month, write_month
@@ -1028,6 +1029,66 @@ def test_종별을_넘는_갈래는_역률이_걸려도_절감액이_총액_차�
     without = evaluate_contract_adjustment(floor_losing_general_b_usage, bill, contract_kw=400.0)
     assert not without.reducible
     assert without.saving_won == pytest.approx(0.0)
+
+
+def test_문턱_후보는_대상_수요가_아니라_관측_최대를_본다(
+    tmp_path: Path, tariff: TariffTable
+) -> None:
+    """**⑬ 이 닿는 띠를 지어 박는다** (S120 2절).
+
+    ``_crossed_quote`` 의 「관측 최대 아래로 내리는 권고를 하지 않는다」 검사가
+    앞서는 **하한 적용 전 대상 수요**의 최대를 봤다 — 경부하 시간대와 비대상월이
+    빠진 값이라 초과사용부가금이 재는 것과 다르다. 부가금은 제67조의3 이 계약
+    전력을 넘은 **모든** 구간을 세므로 경부하도 든다.
+
+    **벌 일곱에서는 0원이라 회귀가 못 잡는다** — 후보가 늘 문턱 바로 아래
+    299 kW 이고 두 기준이 다 그보다 크다. 닿는 조건은 **「대상 수요의 최대 <
+    문턱 < 관측 최대」** 이므로 그 띠를 여기서 짓는다 :
+
+        관측 최대   400 kW (야간)      ← 부가금이 재는 값
+        대상 최대   240 kW (정오)      ← 앞서 보던 값
+        문턱        300 kW
+
+    고치기 전에는 ``299 < 240`` 이 거짓이라 **299 kW 권고가 그대로 나갔다** —
+    관측 최대 400 kW 인 건물에 계약 299 kW 를 권하는 것이고, 초과 구간이
+    한 달에 수백 건 생긴다.
+    """
+    usage = load_usage(night_peak_month(tmp_path / "night.csv", night_kwh=100.0, midday_kwh=60.0))
+    assert usage.observed_max_kw == pytest.approx(400.0)  # 야간 100 kWh × 4
+
+    options = BillingOptions(contract_kw=400.0)
+    selection = TariffSelection("general_b", "high_a", "I")
+    bill = calculate_bill(usage, tariff, selection, options=options)
+    # 대상 수요는 경부하가 빠져 정오 240 kW 다. 문턱 300 kW 가 그 사이에 선다.
+    before_floor = float(bill.monthly["demand_before_floor_kw"].max())
+    assert before_floor == pytest.approx(240.0)
+    assert before_floor < 300.0 < usage.observed_max_kw
+
+    result = evaluate_contract_adjustment(
+        usage, bill, contract_kw=400.0, table=tariff, options=options
+    )
+    assert not result.crosses_type
+    assert result.target_contract_kw is None
+    # 넘겼다면 299 kW 를 권했을 자리다. 그 값이 어디에도 없어야 한다.
+    assert result.saving_won == pytest.approx(0.0)
+
+
+def test_목표_계약전력은_반올림하지_않는다() -> None:
+    """**⑫ — 근거 조문이 같아도 ``round_kw`` 와 한 자리로 못 모은다** (S120 2절).
+
+    ``step_kw = 1.0`` 도 :func:`kwise.tariff.demand.round_kw` 도 제7조 ①(계산단위
+    1kW)에서 온다. 그런데 그쪽은 **반올림**이고 목표 계약전력은 **방향이 있는
+    접기**다 — 보전 갈래는 관측 최대를 덮어야 하므로 **올려야** 한다.
+
+    용인 R1 이 그 자리다. 반올림으로 모으면 132 가 되어 관측 최대 132.28 kW
+    아래로 내려가고, 그 순간 초과사용부가금 대상이 된다.
+    """
+    observed = 132.28
+    # 하한이 아무 달에도 안 걸리게 크게 둔다 — 보전 갈래만 남긴다.
+    target = target_contract_kw({"2026-01": 10.0}, 0.3, 1.0, observed_max_kw=observed)
+    assert target == pytest.approx(133.0)  # ceil — 관측 최대를 덮는다
+    assert round_kw(observed) == pytest.approx(132.0)  # 반올림 — 덮지 못한다
+    assert target != round_kw(observed)
 
 
 def test_후보가_최대수요_아래면_안_넘는다(

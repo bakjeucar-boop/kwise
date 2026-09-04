@@ -323,6 +323,30 @@ def test_요금적용전력을_만드는_자리는_한_곳이다() -> None:
     assert not floors, f"하한을 손으로 씌우는 자리가 생겼다 — {floors}"
 
 
+def test_관측_최대는_메타와_달별_최대와_한_값이다(
+    sample_usage: UsageData, sample_bill: BillingResult
+) -> None:
+    """**⑮ 를 값으로 본다** (S120 2절). 소스 못은 ``test_io_usage.py`` 에 있다.
+
+    :attr:`kwise.io.UsageData.observed_max_kw` 는 :class:`UsageMeta` 의 값을 그대로
+    내고, 요금 엔진의 달별 ``max_demand_kw`` 열의 최대가 그와 같아야 한다 —
+    같은 자료를 다른 길로 센 것이므로 갈리면 그중 하나가 틀린 것이다.
+
+    **초과 구간도 한 자리에서 센다.** 계약전력을 관측 최대 아래로 내려 실제로
+    구간이 잡히는 자리에서 본다 — 0 끼리 같은 것은 못이 아니다.
+    """
+    assert sample_usage.observed_max_kw == pytest.approx(sample_usage.meta.max_demand_kw)
+    assert sample_usage.observed_max_kw == pytest.approx(
+        float(sample_bill.monthly["max_demand_kw"].max())
+    )
+
+    half = sample_usage.observed_max_kw / 2.0
+    slots = sample_usage.over_contract_slots(half)
+    assert slots > 0  # 0 끼리 견주면 아무것도 안 본 것이다
+    assert slots == int((sample_usage.kw.dropna() > half).sum())
+    assert sample_usage.over_contract_slots(sample_usage.observed_max_kw) == 0
+
+
 def test_최대수요전력은_접지_않는다(sample_usage: UsageData, sample_bill: BillingResult) -> None:
     """**관측값은 요금이 아니다** (S119 ⑳ · 판단 ㄴ).
 

@@ -60,6 +60,7 @@ __all__ = [
     "load_usage_bytes",
     "match_usage_column",
     "normalize_column_name",
+    "observed_max_kw",
     "override_columns",
     "parse_usage_datetime",
     "parse_usage_energy",
@@ -212,6 +213,22 @@ class EnergySeries(pd.Series):  # type: ignore[misc]
         return super().__truediv__(other)
 
 
+def observed_max_kw(kw: pd.Series) -> float:
+    """관측 최대수요를 세는 **한 자리**. 결측을 빼고, 잰 값이 없으면 ``0.0``.
+
+    **같은 사실을 넷이 따로 세고 있었다** (S120 · ⑮). 지시서는 둘로 알고 있었는데
+    실물은 로더 · :func:`kwise.measures.netload.with_load` · 요금 엔진의 계약전력
+    초과 경고 · 계약전력 조정 판정이었고, 케이스 산출물 셋이 그 위에 더 있었다.
+    한쪽만 고치면 그날 갈린다 — 105세션이
+    :func:`kwise.tariff.demand.floor_bound_months` 를 모은 것과 같은 손질이다.
+
+    **읽는 쪽은 이 함수를 부르지 않는다** — :attr:`UsageData.observed_max_kw` 를
+    쓴다. 이 함수를 부르는 것은 :class:`UsageMeta` 를 **만드는** 두 자리뿐이다.
+    """
+    observed = kw.dropna()
+    return float(observed.max()) if len(observed) else 0.0
+
+
 @dataclass(frozen=True, eq=False)
 class UsageData:
     """로더의 반환값.
@@ -234,6 +251,31 @@ class UsageData:
     def total_kwh(self) -> float:
         """그리드 이탈 행을 포함한 총 사용량. 요금 계산의 기준이다."""
         return self.meta.total_kwh
+
+    @property
+    def observed_max_kw(self) -> float:
+        """관측 최대수요. **읽는 자리는 여기 하나다** (S120 · ⑮).
+
+        값은 :attr:`UsageMeta.max_demand_kw` 를 그대로 낸다 — 세는 식은
+        :func:`observed_max_kw` 하나이고 메타를 만드는 두 자리(로더 ·
+        :func:`kwise.measures.netload.with_load`)가 그것을 부른다.
+
+        **달별 최대(``monthly["max_demand_kw"]``)와 다른 값이 아니다** — 그 열의
+        최대가 이 값이어야 한다. 달별은 보고용으로 따로 남긴다.
+        """
+        return self.meta.max_demand_kw
+
+    def over_contract_slots(self, contract_kw: float) -> int:
+        """계약전력을 넘은 구간 수. 결측은 세지 않는다.
+
+        **세는 자리를 하나로 둔다** (S120 · ⑮). 요금 엔진의 계약전력 초과 경고
+        (``quality.over_contract``)와 계약전력 조정 판정
+        (:func:`kwise.measures.contract.evaluate_contract_adjustment`)이 같은
+        식을 따로 적고 있었다 — 사실 ID 만 둘이었지 세는 자료는 같다. 한쪽만
+        고치면 그날 갈린다. 105세션이
+        :func:`kwise.tariff.demand.floor_bound_months` 를 모은 것과 같은 손질이다.
+        """
+        return int((self.kw.dropna() > contract_kw).sum())
 
     def energy_kwh(self, *, include_off_grid: bool = True) -> EnergySeries:
         """요금 계산용 사용량 시계열.
@@ -587,7 +629,7 @@ def load_usage_bytes(
     # 총합 경로를 막은 시리즈로 감싼다. 이탈분이 있으면 .sum() 이 예외를 던진다.
     kwh_series = GridKwhSeries(aligned.to_numpy(dtype=float), index=index, name="kwh")
     kwh_series.off_grid_kwh = off_grid_kwh
-    max_demand_kw = float(kw_series.max())
+    max_demand_kw = observed_max_kw(kw_series)
     max_demand_at = pd.Timestamp(kw_series.idxmax())
     mean_kw = float(kw_series.mean())
     load_factor = mean_kw / max_demand_kw if max_demand_kw else 0.0

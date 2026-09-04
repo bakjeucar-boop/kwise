@@ -351,7 +351,7 @@ def _cross_case_checks(study: CaseStudy, capacity: float = 1_000.0) -> list[Chec
     )
 
     c6_result = study.find("C6")
-    observed = float(c6_result.usage.kw.max())
+    observed = c6_result.usage.observed_max_kw
     billing = c6_result.baseline.billing_demand_kw
     checks.append(
         Check(

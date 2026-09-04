@@ -106,10 +106,26 @@ def target_contract_kw(
     다. 그대로 두면 목표가 **7,415 kW** 로 나와 실측이 **935구간·3,505.64 kW**
     를 넘는다 — 초과사용부가금을 막으라고 지은 갈래가 못 막았다.
 
+    ``step_kw = 1.0`` 은 **제7조 ①(끝수 계산)** 에서 온다 — 약관이 계약전력의
+    계산단위를 1kW 로 못 박는다 (2026-06-01 합본 21쪽 · 5부 ⑦). 지어낸 값이
+    아니다 (S120 · ⑫).
+
+    **그런데 :func:`kwise.tariff.demand.round_kw` 와 한 자리로 못 모은다.**
+    근거 조문은 같아도 **하는 일이 다르다** — 그쪽은 **반올림**이고 여기는
+    **방향이 있는 접기**다. 목표 계약전력은 포화 갈래를 **내리고** 보전 갈래를
+    **올려야** 뜻이 서므로 반올림하면 둘 다 깨진다 : 용인 R1 의 보전 갈래는
+    ``ceil(132.28) = 133`` 이어야 하는데 반올림은 **132** 로 접어 관측 최대
+    아래로 내려가고, 그 순간 초과사용부가금 대상이 된다.
+
     ``1e-9`` 를 더하고 내리는(그리고 빼고 올리는) 까닭은 **부동소수 부스러기**
     때문이다 — 계약 218 kW 의 하한이 ``218 * 0.3 = 65.39999999999999`` 로 잡히고
     그것을 다시 0.3 으로 나누면 ``217.99999999999997`` 이라 그대로 내리면
     217 이 된다. 화면·PPT·Excel 이 1 kW 어긋난 목표를 적는다.
+
+    **``round_kw`` 의 ``round(v, 9)`` 와 같은 일이 아니다** (S120 · ⑫). 그쪽은
+    반올림에 **들어가기 전** 값을 9자리로 접고, 여기는 ``floor``/``ceil`` 의
+    **경계에서 방향을 준다** — 거는 대상도 시점도 다르다. 제도가 정하는 값이
+    아니므로 ``data\\rules_kr.json`` 으로 옮기지 않는다. **코드에 있는 것이 옳다.**
 
     **산식이 한 자리에 있어야 한다** (83세션). **100세션에 이 자리로 옮겼다** —
     83세션은 1단계 적정성 쪽에 두고 둘이 함께 불렀는데, 이제 판정 자체가 이
@@ -332,7 +348,7 @@ def _crossed_quote(
     *,
     contract_kw: float,
     target: float | None,
-    floor_before: float,
+    observed_max_kw: float,
     step_kw: float,
 ) -> _CrossedQuote | None:
     """문턱 아래로 내려간 종별의 가장 싼 조합. 못 넘으면 ``None``.
@@ -359,8 +375,19 @@ def _crossed_quote(
     # **낮추는 권고만 한다.** 문턱이 지금 계약전력 위면 넘어갈 자리가 아니다.
     if candidate >= contract_kw:
         return None
-    # **최대수요 아래로 내리는 권고를 하지 않는다.** 초과사용부가금 대상이 된다.
-    if candidate < floor_before:
+    # **관측 최대 아래로 내리는 권고를 하지 않는다.** 초과사용부가금 대상이 된다.
+    #
+    # **보는 값이 관측 최대다** (S120 · ⑬). 앞서는 하한 적용 **전 대상 수요**의
+    # 최대(``before_floor``)를 봤는데, 그것은 경부하 시간대와 비대상월이 빠진
+    # 값이라 부가금이 재는 것과 다르다 — 부가금은 제67조의3 이 계약전력을 넘은
+    # **모든** 구간을 세므로 경부하도 든다. 106세션이 :func:`target_contract_kw`
+    # 를 같은 까닭으로 고쳤는데 이 갈래가 안 따라왔다. 야간 피크형(C6)에서
+    # 두 값이 2,801.00 대 10,920.64 kW 로 **3.90배** 갈린다.
+    #
+    # **지금 벌에서는 금액이 안 움직인다** — 후보가 늘 문턱 바로 아래(299 kW)라
+    # 두 기준 어느 쪽으로도 걸러진다. **닿는 조건은 「대상 수요의 최대 < 문턱 <
+    # 관측 최대」** 이고, 그때는 앞의 식이 관측 최대 아래로 내리는 권고를 못 막는다.
+    if candidate < observed_max_kw:
         return None
 
     if below not in table.contract_types:
@@ -472,14 +499,13 @@ def evaluate_contract_adjustment(
         raise ValueError("table 을 주면 options 도 함께 줘야 합니다 (같은 옵션으로 다시 계산한다).")
 
     ratio = contract_floor_ratio if contract_floor_ratio is not None else bill.contract_floor_ratio
-    observed = usage.kw.dropna()
-    max_demand = float(observed.max()) if len(observed) else 0.0
+    max_demand = usage.observed_max_kw
     billing_demand = float(bill.billing_demand_kw)
     monthly_demand: dict[Any, float] = {
         month: float(value) for month, value in bill.monthly[_demand_column(bill.monthly)].items()
     }
     before_floor = max(monthly_demand.values())
-    over_slots = int((observed > contract_kw).sum())
+    over_slots = usage.over_contract_slots(contract_kw)
 
     notices: list[Notice] = []
     if over_slots:
@@ -575,7 +601,7 @@ def evaluate_contract_adjustment(
             options,
             contract_kw=contract_kw,
             target=target,
-            floor_before=before_floor,
+            observed_max_kw=max_demand,
             step_kw=step_kw,
         )
         if quote is not None and quote.saving_won > saving:

@@ -701,7 +701,7 @@ def calculate_bill(
         notices.append(
             warn(TENTATIVE_BASE_FEE_BASIS_WARNING, fact="tariff.tentative_base_fee_basis")
         )
-        observed_peak = float(usage.kw.max())
+        observed_peak = usage.observed_max_kw
         if observed_peak > (opts.contract_kw or 0.0):
             # 품질 점검이 내는 「계약전력 초과」 와 **같은 사실**이다.
             notices.append(
@@ -754,8 +754,7 @@ def calculate_bill(
                     fact="tariff.floor_bound_months",
                 )
             )
-        over = usage.kw.dropna()
-        over_slots = int((over > opts.contract_kw).sum())
+        over_slots = usage.over_contract_slots(opts.contract_kw)
         if over_slots:
             # **금액이 생겼으므로 「별도로 확인하십시오」 를 걷었다** (109세션).
             # 108세션까지는 부가금을 계산하지 않아 사용자에게 미룰 수밖에

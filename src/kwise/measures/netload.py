@@ -18,7 +18,7 @@ from dataclasses import dataclass, replace
 
 import pandas as pd
 
-from kwise.io import GridKwhSeries, UsageData
+from kwise.io import GridKwhSeries, UsageData, observed_max_kw
 
 __all__ = ["NetLoad", "apply_generation", "with_load"]
 
@@ -69,7 +69,7 @@ def with_load(usage: UsageData, load_kw: pd.Series, *, source_suffix: str = "") 
     kwh_grid.off_grid_kwh = meta.off_grid_kwh
 
     total_kwh = float(grid_kwh.sum()) + meta.off_grid_kwh
-    max_demand = float(kw.max()) if kw.notna().any() else 0.0
+    max_demand = observed_max_kw(kw)
     mean_kw = float(kw.mean()) if kw.notna().any() else 0.0
     new_meta = replace(
         meta,
