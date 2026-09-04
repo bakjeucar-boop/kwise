@@ -228,7 +228,7 @@ def test_low_factor_warns_about_the_maintenance_duty() -> None:
 def test_default_bill_is_unchanged_by_the_new_term(sample_bill: BillingResult) -> None:
     """**기본값 92% 에서 부록 B 회귀가 그대로다.** 역률 항이 0 이기 때문이다."""
     assert sample_bill.total_power_factor_won == pytest.approx(0.0)
-    assert sample_bill.total_base_won == pytest.approx(452_832_624, rel=1e-6)
+    assert sample_bill.total_base_won == pytest.approx(452_804_556.25, rel=1e-6)
     assert sample_bill.total_won == pytest.approx(
         sample_bill.total_base_won + sample_bill.total_energy_won
     )

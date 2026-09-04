@@ -77,12 +77,16 @@ def test_peak_timestamp_matches_appendix_b(sample_diagnosis: Diagnosis) -> None:
 
 
 def test_billing_demand_follows_the_12_month_rule(sample_diagnosis: Diagnosis) -> None:
-    """8월 최대수요는 5,288 kW 지만 요금적용전력은 7월의 5,293 kW 다."""
+    """8월 최대수요는 5,288 kW 지만 요금적용전력은 7월의 5,293 kW 다.
+
+    **5,293.44 가 아니라 5,293 이다** (S118 ⑳). 제7조 ① 이 요금적용전력의
+    계산단위를 1kW 로 못 박았다.
+    """
     monthly = sample_diagnosis.peak.monthly
     august = monthly.loc[pd.Period("2023-08", freq="M")]
     assert august["max_demand_kw"] < august["billing_demand_kw"]
-    assert august["billing_demand_kw"] == pytest.approx(5_293.44)
-    assert sample_diagnosis.peak.billing_demand_kw == pytest.approx(5_293.44)
+    assert august["billing_demand_kw"] == pytest.approx(5_293.0)
+    assert sample_diagnosis.peak.billing_demand_kw == pytest.approx(5_293.0)
 
 
 def test_top_100_hour_distribution_matches_appendix_b(sample_diagnosis: Diagnosis) -> None:
@@ -185,7 +189,7 @@ def test_diagnose_works_without_contract_info(
     assert result.structure is None
     assert result.contract is None
     assert result.pattern.load_factor == pytest.approx(0.490, abs=0.001)
-    assert result.peak.billing_demand_kw == pytest.approx(5_293.44)
+    assert result.peak.billing_demand_kw == pytest.approx(5_293.0)
     assert result.summary.pv_potential is PvPotential.HIGH
     assert result.summary.tariff_switch_saving_won is None
     assert any("계약 정보가 없어" in message for message in texts(result.notices))
@@ -470,11 +474,12 @@ def test_특례를_켜면_계약전력_조정_권고가_뒤집힌다(tariff: Tar
 
     같은 자료·같은 계약전력에서 하한이 285 → 142.5 kW 로 내려가면 **어느 달에도
     안 걸려서**(가장 작은 달이 208.24 kW 다) 낮출 이유 자체가 사라진다.
-    절감액이 1,576,103원에서 0 원이 된다 — 특례는 기본요금만 깎는 것이 아니라
+    절감액이 1,563,365.625원에서 0 원이 된다 — 특례는 기본요금만 깎는 것이 아니라
     **개선 수단 하나의 판정을 통째로 바꾼다.** 금액만 보고 「−7%」 로 정리하면
     이 뒤집힘이 안 보인다.
 
-    **105세션에 목표 883 → 694 kW · 절감 1,338,660 → 1,576,103원이 됐다.**
+    **105세션에 목표 883 → 694 kW · 절감 1,338,660 → 1,576,103원이 됐다**
+    (그 1,576,103 은 **S119 에 1,563,365.625 로 갈렸다** — ⑳ · 제7조 ①).
     가장 작은 달(208.24 kW)로 나누므로 883 kW 로 멈출 때보다 더 얻는다 —
     883 의 하한 264.9 kW 는 그 달들에 여전히 걸려 있었다.
     """
@@ -508,7 +513,10 @@ def test_특례를_켜면_계약전력_조정_권고가_뒤집힌다(tariff: Tar
     special = adjust(True)
     assert plain.floor_kw == pytest.approx(285.0)  # type: ignore[attr-defined]
     assert plain.target_contract_kw == 694.0  # type: ignore[attr-defined]
-    assert plain.saving_won == pytest.approx(1_576_103.0, abs=1.0)  # type: ignore[attr-defined]
+    # **S119 에 1,576,103 → 1,563,365.625 로 갈아 끼웠다** (⑳ · 제7조 ①).
+    # 요금적용전력이 1kW 로 접히면서 목표 694 kW 의 기본요금 기반이 움직였다 —
+    # **뒤집힘 자체(목표 694 → None · 절감 → 0)는 그대로다.**
+    assert plain.saving_won == pytest.approx(1_563_365.625, abs=1.0)  # type: ignore[attr-defined]
     assert special.floor_kw == pytest.approx(142.5)  # type: ignore[attr-defined]
     assert special.target_contract_kw is None  # type: ignore[attr-defined]
     assert special.saving_won == pytest.approx(0.0)  # type: ignore[attr-defined]

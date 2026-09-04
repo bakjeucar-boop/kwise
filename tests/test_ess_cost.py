@@ -1836,8 +1836,9 @@ def test_목표를_지킨_줄은_저감량이_그대로다(
     chosen = frame[frame["목표 요금적용전력(kW)"].str.startswith("5,180")]
     assert len(chosen) == 1
     assert float(chosen["저감량(kW)"].iloc[0]) == pytest.approx(113.0, abs=1.0)
-    assert float(chosen["연간 절감액(원)"].iloc[0]) == pytest.approx(8_264_580.0, abs=1.0)
-    assert float(chosen["회수기간(년)"].iloc[0]) == pytest.approx(31.69, abs=0.01)
+    assert float(chosen["연간 절감액(원)"].iloc[0]) == pytest.approx(8_233_985.0, abs=1.0)
+    # **회수기간은 절감액에 딸려 온다** — S118 이 절감액만 갈고 이 줄을 빠뜨렸다.
+    assert float(chosen["회수기간(년)"].iloc[0]) == pytest.approx(31.81, abs=0.01)
 
 
 def test_충방전_시각이_구간으로_나온다(

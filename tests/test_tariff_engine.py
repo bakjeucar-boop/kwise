@@ -9,11 +9,13 @@ kWh 배분에서 먼저 걸린다.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
+from kwise.diagnose import ContractInfo
 from kwise.io import UsageData, load_usage
 from kwise.notices import texts
 from kwise.quality import QualityReport
@@ -30,6 +32,7 @@ from kwise.tariff import (
     calculate_bill,
     is_demand_month,
     list_selections,
+    round_kw,
 )
 from tests._synthetic import make_labels, month_dates, write_csv, write_month
 
@@ -253,6 +256,94 @@ def test_요금적용전력은_제68조_제1항_산식을_그대로_따른다() 
     assert floored[pd.Period("2025-10", freq="M")] == 300.0  # 하한 위는 그대로
 
 
+def test_계약전력과_요금적용전력은_1kW_단위다() -> None:
+    """제7조 ①(끝수 계산) — 계산단위 1kW, 그 이하 첫째자리에서 반올림 (S118 ⑳).
+
+    **부스러기와 x.5 를 함께 본다.** ``132.3 / 0.3`` 은 ``441.00000000000006`` 이고,
+    파이썬 ``round`` 는 ``264.5`` 를 짝수 쪽 264 로 붙인다 — 약관의 반올림이 아니다.
+
+    **두 입구가 같은 값을 내야 한다** — 화면·PPT 는 :class:`ContractInfo` 를,
+    요금은 :class:`BillingOptions` 를 적으므로 한쪽만 접으면 한 산출물 안에서
+    계약전력이 두 값으로 적힌다.
+    """
+    assert round_kw(132.3 / 0.3) == 441.0  # 441.00000000000006 → 442 가 아니다
+    assert round_kw(264.5) == 265.0  # 파이썬 round 는 264 를 준다
+    assert round_kw(264.4999) == 264.0
+
+    # 요금적용전력 — 하한을 씌우든 안 씌우든 정수로 나간다
+    demands = {"2026-01": 264.68, "2026-02": 441.00000000000006}
+    assert apply_contract_floor(demands, contract_kw=None, floor_ratio=None) == {
+        "2026-01": 265.0,
+        "2026-02": 441.0,
+    }
+    floored = apply_contract_floor(demands, contract_kw=882.5, floor_ratio=0.3)
+    assert floored["2026-01"] == 265.0  # 하한 264.75 → 265
+
+    # 계약전력 — 케이스 스터디가 관측 최대의 1.1배로 잡아 소수로 들어오는 자리다
+    assert BillingOptions(contract_kw=5_822.784).contract_kw == 5_823.0
+    assert ContractInfo(HIGH_A_I, contract_kw=5_822.784).contract_kw == 5_823.0
+
+
+# 1kW 로 접는 일을 하는 자리. **셋뿐이다** — 식이 사는 자리 하나와 계약전력 입구 둘.
+_KW_FOLD_ALLOWED = frozenset(
+    {
+        Path("src") / "kwise" / "tariff" / "demand.py",
+        Path("src") / "kwise" / "tariff" / "engine.py",
+        Path("src") / "kwise" / "diagnose" / "contract.py",
+    }
+)
+
+
+def test_요금적용전력을_만드는_자리는_한_곳이다() -> None:
+    """**⑭(S116)와 ⑳(S118)은 같은 뿌리에서 두 번 돋았다** (S119). 그 뿌리를 본다.
+
+    요금적용전력은 ``round_kw(max(하한 전 수요, 계약전력 × 하한비율))`` 하나로
+    만들어진다 — :func:`apply_contract_floor` 다. 이 식이 **엔진 밖에서 다시
+    서면** 엔진을 고칠 때마다 그쪽이 안 따라와 판정이 어긋난다: S116 은
+    절감액에서, S118 은 반올림에서 **같은 자리**를 만났다. 83세션의 441/442 도
+    같은 모양이었다.
+
+    **두 조각으로 본다.** 1kW 로 접는 일(:func:`round_kw`)은 위 세 자리에서만
+    하고, 하한을 씌우는 일은 :func:`apply_contract_floor` 밖에 없다 — 소스의
+    ``clip`` 은 전부 0 으로 자르는 것이다. 하한을 손으로 씌우던 자리가 다시 서면
+    여기서 걸린다.
+    """
+    fold = re.compile(r"\bround_kw\(")
+    hand_floor = re.compile(r"\.clip\(\s*lower\s*=\s*(?!0\.0\s*\))")
+    folders: list[str] = []
+    floors: list[str] = []
+    for path in sorted(Path("src").rglob("*.py")):
+        body = path.read_text(encoding="utf-8")
+        if fold.search(body) and path not in _KW_FOLD_ALLOWED:
+            folders.append(str(path))
+        for number, line in enumerate(body.splitlines(), 1):
+            if hand_floor.search(line):
+                floors.append(f"{path}:{number}: {line.strip()}")
+    assert not folders, f"1kW 로 접는 자리가 늘었다 — {folders}"
+    assert not floors, f"하한을 손으로 씌우는 자리가 생겼다 — {floors}"
+
+
+def test_최대수요전력은_접지_않는다(sample_usage: UsageData, sample_bill: BillingResult) -> None:
+    """**관측값은 요금이 아니다** (S119 ⑳ · 판단 ㄴ).
+
+    제7조 ① 이 1kW 로 못 박은 것은 셋이지만 그 조문은 「요금 등을 **계산하는**
+    단위」다. 요금으로 가는 길은 :func:`apply_contract_floor` 에서 이미 접히므로,
+    그 앞의 관측 최대수요까지 접으면 얻는 것 없이 **부하율이 갈린다** —
+    ``load_factor`` 는 ``mean_kw / max_demand_kw`` 이고 (:mod:`kwise.io.usage`)
+    부하율은 요금이 아니다.
+
+    **소수가 그대로 남는지를 본다.** 누가 나중에 관측값을 접으면 여기서 걸린다.
+    """
+    observed = sample_usage.meta.max_demand_kw
+    assert observed == pytest.approx(5_293.44)  # 접히면 5,293.0 이 된다
+    assert observed != round_kw(observed)
+    assert sample_usage.meta.load_factor == pytest.approx(
+        sample_usage.meta.mean_kw / observed
+    )
+    # 요금 쪽은 접혀 있다 — 같은 자료에서 둘이 다른 값인 것이 이 판의 결론이다.
+    assert sample_bill.billing_demand_kw == pytest.approx(5_293.0)
+
+
 def test_billing_demand_drops_the_peak_after_12_months() -> None:
     peaks = {"2023-01": 5_000.0}
     peaks.update({f"2023-{month:02d}": 3_000.0 for month in range(2, 13)})
@@ -287,11 +378,11 @@ def test_sample_billing_demand_follows_the_12_month_rule(sample_bill: BillingRes
     monthly = sample_bill.monthly
     august = monthly.loc[pd.Period("2023-08", freq="M")]
     assert august["max_demand_kw"] == pytest.approx(5_287.7, abs=0.1)
-    assert august["billing_demand_kw"] == pytest.approx(5_293.44)
+    assert august["billing_demand_kw"] == pytest.approx(5_293.0)  # 1kW 단위 (제7조 ①)
     # 연간 최대 이후 모든 달의 요금적용전력이 그 값으로 고정된다
     after = monthly.loc[pd.Period("2023-07", freq="M") :, "billing_demand_kw"]
-    assert (after - 5_293.44).abs().max() < 1e-6
-    assert sample_bill.billing_demand_kw == pytest.approx(5_293.44)
+    assert (after - 5_293.0).abs().max() < 1e-6
+    assert sample_bill.billing_demand_kw == pytest.approx(5_293.0)
 
 
 def test_sample_monthly_peaks_match_appendix_b(sample_bill: BillingResult) -> None:
@@ -613,7 +704,7 @@ def test_contract_floor_lifts_the_demand(
         options=BillingOptions(contract_kw=5_500.0),  # 하한 1,650 kW — 걸리지 않는다
         quality=sample_report,
     )
-    assert low.billing_demand_kw == pytest.approx(5_293.44)
+    assert low.billing_demand_kw == pytest.approx(5_293.0)  # 1kW 단위 (제7조 ①)
 
 
 def test_floor_ratio_is_a_contract_type_attribute(tariff: TariffTable) -> None:
@@ -1179,20 +1270,24 @@ def test_실측_소형_학교의_특례_전후가_91세션_값과_같다(tariff:
     같은 자료·같은 종별로 91세션이 도구 밖에서 계산해 둔 수가 있다. 그 수를
     여기 박아 두면 셋 가운데 하나만 어긋나도 이 자리에서 걸린다 — 합계만
     보면 ①·②·③ 이 서로를 가릴 수 있다.
+
+    **S118 에 다섯을 갈아 끼웠다.** 91세션이 손으로 낼 때 제7조 ①(요금적용전력
+    1kW 반올림)을 안 태웠다 — 이 벌의 요금적용전력이 264.68 → **265** 다.
+    ``energy 차`` 만 그대로다(전력량요금은 요금적용전력에 안 걸린다).
     """
     if not _OFFICE_CASE.is_file():
         pytest.skip(f"실측 파일이 없습니다: {_OFFICE_CASE}")
     usage = load_usage(_OFFICE_CASE)
     plain = bill(usage, tariff, EDU_A, contract_kw=300.0)
     special = bill(usage, tariff, EDU_A, contract_kw=300.0, school_exception=True)
-    assert plain.total_base_won == pytest.approx(17_404_897.0, abs=1.0)
-    assert special.total_base_won == pytest.approx(15_644_812.0, abs=1.0)
+    assert plain.total_base_won == pytest.approx(17_417_634.0, abs=1.0)
+    assert special.total_base_won == pytest.approx(15_637_819.0, abs=1.0)
     assert plain.total_energy_won - special.total_energy_won == pytest.approx(5_256_153.0, abs=1.0)
-    assert plain.total_won - special.total_won == pytest.approx(7_016_238.0, abs=1.0)
+    assert plain.total_won - special.total_won == pytest.approx(7_035_969.0, abs=1.0)
     # 계약 950 kW 는 하한이 이기는 벌이라 기본요금 쪽이 더 크게 움직인다.
     over_plain = bill(usage, tariff, EDU_A, contract_kw=950.0)
     over_special = bill(usage, tariff, EDU_A, contract_kw=950.0, school_exception=True)
     assert over_plain.total_base_won - over_special.total_base_won == pytest.approx(
-        3_336_188.0, abs=1.0
+        3_343_181.0, abs=1.0
     )
-    assert over_plain.total_won - over_special.total_won == pytest.approx(8_592_341.0, abs=1.0)
+    assert over_plain.total_won - over_special.total_won == pytest.approx(8_599_334.0, abs=1.0)

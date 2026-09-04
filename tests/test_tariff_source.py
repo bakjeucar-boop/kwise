@@ -163,8 +163,8 @@ def test_sample_billing_demand_is_unchanged(
     bill = calculate_bill(
         sample_usage, tariff, TariffSelection("general_b", "high_a", "I"), quality=sample_report
     )
-    assert bill.billing_demand_kw == pytest.approx(5_293.44)
-    assert bill.total_base_won == pytest.approx(452_832_624, rel=1e-6)
+    assert bill.billing_demand_kw == pytest.approx(5_293.0)  # 1kW 단위 (제7조 ①)
+    assert bill.total_base_won == pytest.approx(452_804_556.25, rel=1e-6)
     assert bill.base_fee_months == pytest.approx(12.0)
 
 

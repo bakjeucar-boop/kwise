@@ -206,7 +206,7 @@ def test_baseline_has_no_saving(sample_comparison: ComparisonResult) -> None:
 
 def test_pv_reduces_the_billing_demand(sample_comparison: ComparisonResult) -> None:
     demands = [item.billing_demand_kw for item in sample_comparison.combinations]
-    assert demands[0] == pytest.approx(5_293.44)  # 기준선
+    assert demands[0] == pytest.approx(5_293.0)  # 기준선 — 1kW 단위다 (제7조 ①)
     assert demands[-1] == pytest.approx(ESS_TARGET)  # ESS 가 목표까지 깎는다
     assert demands[2] < demands[0]  # 태양광만으로도 조금 내려간다
 

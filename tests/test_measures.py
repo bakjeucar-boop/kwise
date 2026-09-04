@@ -67,6 +67,7 @@ from kwise.tariff import (
     TariffDataError,
     TariffSelection,
     TariffTable,
+    apply_contract_floor,
     calculate_bill,
 )
 from kwise.tariff.schema import switchable_selections, threshold_text, within_type_threshold
@@ -281,17 +282,16 @@ def test_갑Ⅱ도_계약전력_조정_금액을_낸다(
     assert result.target_contract_kw is not None
     rate = bill.base_rate_won_per_kw
     monthly = bill.monthly
-    floor_now = 20_000.0 * 0.30
-    floor_then = result.target_contract_kw * 0.30
-    expected = float(
-        (
-            (monthly["demand_before_floor_kw"].clip(lower=floor_now))
-            - (monthly["demand_before_floor_kw"].clip(lower=floor_then))
-        )
-        .mul(monthly["base_fee_factor"])
-        .sum()
-        * rate
+    # **요금적용전력을 시험이 다시 만들지 않는다** (S119 ⑳). 실물이 쓰는
+    # :func:`apply_contract_floor` 를 그대로 불러 하한과 1kW 반올림(제7조 ①)을
+    # 함께 받는다 — 식을 여기 다시 적으면 **실물이 갈려도 시험은 제 식으로
+    # 통과한다.** S118 이 ``.map(round_kw)`` 를 손으로 넣은 것이 그 신호였다.
+    before = monthly["demand_before_floor_kw"].to_dict()
+    now = pd.Series(apply_contract_floor(before, contract_kw=20_000.0, floor_ratio=0.30))
+    then = pd.Series(
+        apply_contract_floor(before, contract_kw=result.target_contract_kw, floor_ratio=0.30)
     )
+    expected = float((now - then).mul(monthly["base_fee_factor"]).sum() * rate)
     assert result.saving_won == pytest.approx(expected)
 
     # **하한을 안 씌우면 이만큼 과다 산출된다.** 계약전력 차이로 곧장 곱한 값이다.
@@ -433,7 +433,11 @@ def test_83세션이_상한이라_부른_값_아래로_내려도_더_얻는다(
     샘플 을 20,000 kW 다. 83세션이 상한이라 부른 값은 `ceil(5,293.44 / 0.3)`
     = **17,645 kW** 인데, 그 계약전력에서도 **열세 달이 다 하한에 걸려 있다** —
     하한 5,293.5 kW 가 가장 작은 달 4,164.48 kW 를 훨씬 넘기 때문이다.
-    거기서 13,881 kW 까지 더 내리면 **5,796,216원**을 더 얻는다.
+    거기서 13,881 kW 까지 더 내리면 **5,867,603.75원**을 더 얻는다.
+
+    **S119 에 5,796,216 → 5,867,603.75 로 갈아 끼웠다** (⑳ · 제7조 ①). 요금적용
+    전력이 1kW 로 접히면서 두 계약전력의 월별 기본요금 기반이 함께 움직였다 —
+    이 값은 엔진의 총액 차이라 :func:`_base_fee_won` 을 안 지난다.
     """
     selection = TariffSelection("general_b", "high_a", "I")
     old_cap = math.ceil(5_293.44 / 0.3)  # 83세션이 「상한」 이라 부른 값
@@ -447,7 +451,7 @@ def test_83세션이_상한이라_부른_값_아래로_내려도_더_얻는다(
     assert len(bills[float(old_cap)].floor_bound_months) == 13
     assert len(bills[13_881.0].floor_bound_months) == 0
     gap = bills[float(old_cap)].total_won - bills[13_881.0].total_won
-    assert gap == pytest.approx(5_796_216.0, abs=1.0)
+    assert gap == pytest.approx(5_867_603.75, abs=1.0)
 
 
 def test_목표는_관측_최대_아래로_안_내려간다(tmp_path: Path, tariff: TariffTable) -> None:
@@ -1120,7 +1124,7 @@ def test_달_단위로만_걸리는_하한이_절감액에_잡힌다(tariff: Tar
 
     용인 실측(2025-08-28~2026-08-28 · 최대수요 132.28 kW)을 을 고압A 선택Ⅰ 로
     놓고 계약전력만 400 → 350 kW 로 바꾸면 총액이
-    **70,771,509 → 70,596,198원**, 곧 **175,311원**이 준다. 그 몫은 전부
+    **70,754,442 → 70,573,709원**, 곧 **180,733원**이 준다. 그 몫은 전부
     기본요금이고 **2025-08·09·10·11 네 달**에서 왔다 — 그 달들은 대상월
     이력(7·8·9·12·1·2)을 아직 못 채워 굴림최대가 112.24 kW 에 머무는데
     하한 120.0 kW 가 그 위에 서기 때문이다.
@@ -1133,8 +1137,13 @@ def test_달_단위로만_걸리는_하한이_절감액에_잡힌다(tariff: Tar
     서면서 사실이 뒤집혀 XPASS 로 빨개졌다 — 설계대로다. 못은 없애지 않고
     **정상으로 통과하는 자리로 옮겼다**: 그때는 「어느 길을 고를지 미리 정하지
     않는다」 며 절감액만 박았는데, 이제 길이 정해졌으므로 **목표 374 kW 도
-    함께 박는다.** 375 에서 멈추면 169,437원이다 — 하한 112.5 kW 가 그 넉 달의
+    함께 박는다.** 375 에서 멈추면 158,141원이다 — 하한 112.5 kW 가 그 넉 달의
     112.24 kW 를 아직 넘어서다.
+
+    **S119 에 셋을 갈아 끼웠다** (⑳ · 제7조 ①). 175,311 → **180,733**원 ·
+    169,437 → **158,141**원 · 총액 70,771,509 → 70,754,442원이다. 요금적용전력이
+    1kW 로 접히면서 넉 달의 기반이 움직였다 — **부호가 양쪽인 것이 이 조문의
+    성질이다.** 목표 374 kW 와 「넉 달」 은 안 움직였다.
 
     **한 판 안의 두 문장이 안 어긋나는지도 여기서 본다** (②-13 ⓒ). 엔진이
     「4개 월에 걸렸습니다」 라 적는 판에서 판정이 「걸리지 않아 줄지 않습니다」
@@ -1152,7 +1161,7 @@ def test_달_단위로만_걸리는_하한이_절감액에_잡힌다(tariff: Tar
 
     assert result.reducible
     assert result.target_contract_kw == pytest.approx(374.0)
-    assert result.saving_won == pytest.approx(175_311.0, abs=1.0)
+    assert result.saving_won == pytest.approx(180_733.0, abs=1.0)
     # **하한은 연간으로는 진다.** 그런데도 낮출 자리가 있다 — 그 둘이 다른
     # 사실이라는 것이 ②-13 의 뿌리였다.
     assert not result.floor_binding
@@ -1169,7 +1178,7 @@ def test_달_단위로만_걸리는_하한이_절감액에_잡힌다(tariff: Tar
         TariffSelection("general_b", "high_a", "I"),
         options=BillingOptions(contract_kw=375.0),
     )
-    assert bill.total_won - at_375.total_won == pytest.approx(169_437.0, abs=1.0)
+    assert bill.total_won - at_375.total_won == pytest.approx(158_141.0, abs=1.0)
 
 
 def test_후보가_지금_계약전력_이상이면_안_넘는다(

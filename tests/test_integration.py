@@ -626,9 +626,13 @@ def test_저부하_평일이_없으면_사유만_적는다(sample_diagnosis: obj
 
 
 def test_요금적용전력_회귀값이_그대로다(sample_diagnosis: object) -> None:
-    """15세션은 표시만 고쳤다. **계산값이 바뀌면 그것은 회귀다.**"""
+    """15세션은 표시만 고쳤다. **계산값이 바뀌면 그것은 회귀다.**
+
+    **S118 에 5,293.44 → 5,293 으로 갈아 끼웠다** — 제7조 ① 이 요금적용전력의
+    계산단위를 1kW 로 못 박았다. 표시가 아니라 계산이 바뀐 자리다.
+    """
     peak = sample_diagnosis.peak  # type: ignore[attr-defined]
-    assert peak.billing_demand_kw == pytest.approx(5_293.44)
+    assert peak.billing_demand_kw == pytest.approx(5_293.0)
 
 
 def test_3단계_요약이_2단계_카드와_같다() -> None:

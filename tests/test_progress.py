@@ -407,6 +407,9 @@ def test_요금_계산_회귀값이_그대로다(
     """월 라벨을 한 번만 푸는 최적화(10세션) 뒤에도 값이 같아야 한다.
 
     부록 B 의 확정 수치다. **한 자리라도 달라지면 최적화가 계산을 바꾼 것이다.**
+
+    **S118 에 셋을 갈아 끼웠다** — 제7조 ① 이 요금적용전력을 1kW 로 접는다
+    (5,293.44 → 5,293). 최적화가 아니라 조문이 값을 바꾼 자리다.
     """
     from kwise.tariff import calculate_bill
 
@@ -417,9 +420,9 @@ def test_요금_계산_회귀값이_그대로다(
         options=BillingOptions(contract_kw=5_800.0),
         quality=sample_report,
     )
-    assert bill.total_base_won == pytest.approx(452_832_624.0)
-    assert bill.billing_demand_kw == pytest.approx(5_293.44)
-    assert bill.total_won == pytest.approx(3_351_117_349.0080004)
+    assert bill.total_base_won == pytest.approx(452_804_556.25)
+    assert bill.billing_demand_kw == pytest.approx(5_293.0)
+    assert bill.total_won == pytest.approx(3_351_089_281.2580004)
 
 
 def test_용량_곡선이_시뮬레이션을_되풀이하지_않는다(

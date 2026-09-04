@@ -33,7 +33,12 @@ from kwise.report.casestudy import (
     run_case_study,
 )
 from kwise.report.validity import check_case_study
-from kwise.tariff import TariffSelection, TariffTable, calculate_bill
+from kwise.tariff import (
+    TariffSelection,
+    TariffTable,
+    apply_contract_floor,
+    calculate_bill,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CASE_DIR = PROJECT_ROOT / "input" / "cases"
@@ -201,7 +206,12 @@ def test_케이스_스터디가_하한_갈래를_C6_에서_돈다(
     # 라는 것을 값으로 못 박는다 — 이 성질이 C6 의 PV 기여를 0 으로 만든다.
     ratio = c6.baseline.contract_floor_ratio
     assert ratio is not None
-    assert c6.baseline.billing_demand_kw == pytest.approx(c6.contract_kw * ratio)
+    # **항등식이 조문을 다시 적지 않는다** (S119 ⑳). 요금적용전력은 하한을 씌운
+    # 뒤 1kW 로 접은 값이고(제7조 ①), 그 식은 :func:`apply_contract_floor` 하나가
+    # 들고 있다 — 여기 ``contract_kw * ratio`` 로 다시 적으면 **실물이 갈려도 이
+    # 시험은 제 식으로 통과한다.** 수요를 0 으로 넣어 하한만 남긴다.
+    pinned = apply_contract_floor({"C6": 0.0}, contract_kw=c6.contract_kw, floor_ratio=ratio)
+    assert c6.baseline.billing_demand_kw == pytest.approx(pinned["C6"])
 
     # **계약전력을 빼면 도로 안 걸린다.** 걸리는 것이 자료의 성질만이 아니라
     # **밑둥이 계약전력을 주기 때문**이라는 것을 양쪽에서 못 박는다.
@@ -255,21 +265,25 @@ def test_용인_실측_회귀값이_그대로다_청구서_118kW_와는_다른_�
     까닭은 아직 모른다 — 가설 일곱이 죽었다(같은 문서 2절). **그러므로 118 로는
     통과할 수 없다.** 118 을 박으면 도구가 아니라 한전 고지서를 시험하게 된다.
 
-    셋을 박는 근거는 대형 정본 회귀값(5,293.4 kW · 49.0% · 13.5%)과 같다 —
-    **바뀌면 계산을 건드린 것**이다. 총 요금 액수는 요금표 개정에 딸려 움직이므로
-    여기 박지 않는다.
+    셋을 박는 근거는 대형 정본 회귀값(관측 최대 5,293.44 kW · 요금적용전력
+    5,293 kW · 49.0% · 13.5%)과 같다 — **바뀌면 계산을 건드린 것**이다.
+    총 요금 액수는 요금표 개정에 딸려 움직이므로 여기 박지 않는다.
+
+    **S119 에 관측 최대와 요금적용전력을 갈랐다** (⑳ · 제7조 ①). 앞서는 두
+    줄이 다 `132.28` 이라 **한 이름처럼 서 있었는데**, 요금적용전력만 1kW 로
+    접혀 **132** 가 된다. 기본요금 비중도 20.1 → **20.0%** 로 딸려 왔다.
     """
     result = study.find("R1")
     assert result.definition.contract_type == "general_a_2"
     assert result.definition.option == "II"
     assert result.contract_kw == 290.0
 
-    assert float(result.usage.kw.max()) == pytest.approx(132.28, abs=0.01)
-    assert result.baseline.billing_demand_kw == pytest.approx(132.28, abs=0.01)
+    assert float(result.usage.kw.max()) == pytest.approx(132.28, abs=0.01)  # 관측값 — 안 접는다
+    assert result.baseline.billing_demand_kw == pytest.approx(132.0)  # 요금 — 1kW 단위
     assert result.usage.meta.total_kwh / 1000.0 == pytest.approx(476.0, abs=0.1)
     assert result.diagnosis.pattern.load_factor == pytest.approx(0.411, abs=0.001)
     base_share = result.baseline.total_base_won / result.baseline.total_won
-    assert base_share == pytest.approx(0.201, abs=0.001)
+    assert base_share == pytest.approx(0.200, abs=0.001)
 
 
 def test_sensitivity_upper_bound_is_not_pinned(study: CaseStudy) -> None:
