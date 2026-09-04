@@ -69,7 +69,7 @@ from kwise.tariff import (
     TariffTable,
     calculate_bill,
 )
-from kwise.tariff.schema import threshold_text, within_type_threshold
+from kwise.tariff.schema import switchable_selections, threshold_text, within_type_threshold
 from tests._synthetic import clearsky_weather, night_peak_month, write_month
 
 CURRENT = TariffSelection("general_b", "high_a", "I")
@@ -459,6 +459,80 @@ def test_목표는_관측_최대_아래로_안_내려간다(tmp_path: Path, tari
     # 포화만 봤다면 여기서 멈춘다 — 그 값은 관측 최대 아래다.
     assert math.floor(monthly_max / 0.3) == 1_333
     assert observed_max > 1_333
+
+
+def test_목표는_초과사용부가금_0_안에서_총액이_가장_낮은_값이다(
+    tmp_path: Path, sample_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**규칙을 값으로 본다** (114세션 · ②-31 · `docs\\CALC_LOGIC.md` 2부).
+
+        계약전력 목표는 초과사용부가금이 0 인 값 가운데 총액이 가장 낮은 값으로
+        고른다.
+
+    ②-31 은 「보전 갈래가 총액을 안 보고 목표를 고른다」 였다. 산식
+    (:func:`target_contract_kw`)에 총액이 인자로 없는 것은 지금도 그대로인데,
+    **값으로는 두 갈래가 다 이 규칙과 같은 답을 낸다** (114세션 1절 · 벌
+    열일곱 전수). 그 사실이 조용히 깨지지 않게 여기 못을 박는다.
+
+    **총액은 다시 계산한 값이다** — 계약전력을 바꾸면 요금적용전력 하한과
+    초과사용부가금이 함께 바뀌고 최적 선택요금도 바뀔 수 있으므로, 절감액을
+    빼서 만들지 않고 후보마다 처음부터 계산해 **가장 싼 것**을 쓴다.
+    종별 문턱(300 kW)은 두 벌 다 한참 위에 있어 안 걸린다 — 걸리는 벌은
+    `small-a2-was` 이고 그것은 저장소에 없는 자료를 쓴다.
+
+    **총액이 같은 값은 통과시킨다.** 초과 0 안에서 총액이 평평한 구간이 있는
+    벌이 있는데(포화 갈래가 그렇다) 그 구간의 어디를 고를지는 규칙이 아직
+    말하지 않는다 — 동점 처리는 안 정했다. 시험이 먼저 정하게 두지 않는다.
+
+    벌 둘을 본다. **저장소에 있는 자료만 쓴다.**
+
+        보전 갈래   합성 야간 피크 한 달. 관측 최대 2,000 kW · 목표 2,000 kW
+        포화 갈래   실측 샘플 을 20,000 kW. 초과 0 하한 5,294 · 목표 13,881 kW
+    """
+    selection = TariffSelection("general_b", "high_a", "I")
+
+    def cheapest_total(usage: UsageData, kw: float) -> BillingResult:
+        """그 계약전력에서 **가장 싼** 한 벌. 선택요금을 다시 고른다."""
+        options = BillingOptions(contract_kw=kw)
+        return min(
+            (
+                calculate_bill(usage, tariff, item, options=options)
+                for item in switchable_selections(tariff, selection)
+            ),
+            key=lambda item: item.total_won,
+        )
+
+    night = load_usage(
+        night_peak_month(tmp_path / "night.csv", night_kwh=500.0, midday_kwh=100.0, other_kwh=50.0)
+    )
+    herds = (
+        (night, 3_000.0, 2_000.0),
+        (sample_usage, 20_000.0, 13_881.0),
+    )
+    for usage, contract_kw, expected_target in herds:
+        options = BillingOptions(contract_kw=contract_kw)
+        bill = calculate_bill(usage, tariff, selection, options=options)
+        result = evaluate_contract_adjustment(
+            usage, bill, contract_kw=contract_kw, table=tariff, options=options
+        )
+        target = result.target_contract_kw
+        assert target == pytest.approx(expected_target)
+
+        # ㄱ. 목표에서 초과사용부가금이 0 이다 — 「초과 0 인 값 가운데」 의 앞 절반.
+        at_target = cheapest_total(usage, target)
+        assert at_target.excess.exceeded_months == ()
+        assert at_target.total_excess_won == pytest.approx(0.0)
+
+        # ㄴ. 목표보다 낮은 초과 0 값 가운데 **더 싼 것이 없다** — 뒤 절반.
+        #     아래끝은 초과가 0 이 되는 가장 낮은 계약전력이다. 그 아래는
+        #     초과가 서므로 규칙이 보는 자리가 아니다.
+        floor_kw = math.ceil(float(usage.kw.dropna().max()))
+        assert int((usage.kw > floor_kw).sum()) == 0
+        assert int((usage.kw > floor_kw - 1).sum()) > 0
+        for kw in (floor_kw, (floor_kw + target) / 2.0, target - 1.0):
+            if kw < floor_kw:
+                continue
+            assert cheapest_total(usage, kw).total_won >= at_target.total_won - 1.0, kw
 
 
 def test_목표_산식은_부동소수_부스러기에_한_칸_안_밀린다() -> None:
