@@ -72,7 +72,11 @@ __all__ = [
 
 
 def target_contract_kw(
-    monthly_demand_kw: Mapping[Any, float], floor_ratio: float, step_kw: float = 1.0
+    monthly_demand_kw: Mapping[Any, float],
+    floor_ratio: float,
+    step_kw: float = 1.0,
+    *,
+    observed_max_kw: float,
 ) -> float:
     """목표 계약전력 — **어느 달에도 하한이 안 걸리는 가장 큰 값**이다.
 
@@ -89,7 +93,14 @@ def target_contract_kw(
                못 얻는다 (용인 을 400 kW 에서 375 는 169,437원, 374 는 175,311원)
         보전   **관측 최대 아래로는 안 내린다.** 초과사용부가금 대상이 되므로
                권고할 수 없다 — :func:`_crossed_quote` 가 문턱 후보에 거는 것과
-               같은 선이다. 달별 수요의 최대가 곧 관측 최대다
+               같은 선이다. **관측 최대를 따로 받는다** (106세션 1절)
+
+    **달별 수요의 최대는 관측 최대가 아니다** (106세션 1절에 값으로 봤다).
+    ``monthly_demand_kw`` 는 요금적용전력 산정 대상 수요라 **경부하 시간대와
+    비대상월이 빠져 있다** — 105세션은 그 최대를 관측 최대로 알고 보전 갈래에
+    먹였는데, 야간 피크형(C6)은 관측 최대 10,920.64 kW 인데 그 값이 2,801.00 kW
+    다. 그대로 두면 목표가 **7,415 kW** 로 나와 실측이 **935구간·3,505.64 kW**
+    를 넘는다 — 초과사용부가금을 막으라고 지은 갈래가 못 막았다.
 
     ``1e-9`` 를 더하고 내리는(그리고 빼고 올리는) 까닭은 **부동소수 부스러기**
     때문이다 — 계약 218 kW 의 하한이 ``218 * 0.3 = 65.39999999999999`` 로 잡히고
@@ -102,7 +113,7 @@ def target_contract_kw(
     """
     values = [float(value) for value in monthly_demand_kw.values()]
     saturating = math.floor(min(values) / floor_ratio / step_kw + 1e-9) * step_kw
-    covering = math.ceil(max(values) / step_kw - 1e-9) * step_kw
+    covering = math.ceil(observed_max_kw / step_kw - 1e-9) * step_kw
     return max(saturating, covering)
 
 
@@ -413,7 +424,12 @@ def evaluate_contract_adjustment(
     # 이 함수가 **청구서와 다른 계약전력·비율**로도 불리기 때문이다.
     bound = floor_bound_months(monthly_demand, floor_kw)
     target = (
-        min(contract_kw, target_contract_kw(monthly_demand, ratio, step_kw)) if bound else None
+        min(
+            contract_kw,
+            target_contract_kw(monthly_demand, ratio, step_kw, observed_max_kw=max_demand),
+        )
+        if bound
+        else None
     )
 
     # 하한 적용 전 값으로 되돌린 뒤 두 계약전력에서 각각 다시 씌운다.

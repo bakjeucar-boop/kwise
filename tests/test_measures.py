@@ -66,7 +66,7 @@ from kwise.tariff import (
     calculate_bill,
 )
 from kwise.tariff.schema import threshold_text, within_type_threshold
-from tests._synthetic import clearsky_weather, write_month
+from tests._synthetic import clearsky_weather, night_peak_month, write_month
 
 CURRENT = TariffSelection("general_b", "high_a", "I")
 BEST = TariffSelection("general_b", "high_a", "II")
@@ -378,6 +378,50 @@ def test_목표는_가장_작은_달을_하한비율로_나눈_값이다(
     assert result.target_contract_kw * ratio <= float(monthly.min())
     # **연간 최대로 냈다면 열두 달이 그 값으로 끌어올려진다.** 그 차이가 이 못이다.
     assert result.target_contract_kw < math.ceil(result.demand_before_floor_kw / ratio)
+
+
+def test_목표는_관측_최대_아래로_안_내려간다(tmp_path: Path, tariff: TariffTable) -> None:
+    """**달별 수요의 최대는 관측 최대가 아니다** (106세션 1절 ㄹ).
+
+    105세션이 「보전」 갈래를 지으며 「달별 수요의 최대가 곧 관측 최대다」 라
+    적었는데 **사실이 아니다.** ``demand_before_floor_kw`` 는 요금적용전력
+    산정 대상 수요라 **경부하(22~08시)와 비대상월이 빠져 있다** — 야간 피크형은
+    둘이 몇 배로 벌어진다.
+
+    이 벌은 야간 2,000 kW · 정오 400 kW · 나머지 200 kW 다. 계약 3,000 kW 의
+    하한 900 kW 가 정오 400 kW 를 넘어 하한이 걸린다.
+
+        포화   400 ÷ 30% = 1,333 kW   ← 여기서 멈추면 실측이 667 kW 넘는다
+        보전   관측 최대 2,000 kW     ← 목표는 이쪽이다
+
+    **실물에서도 같은 자리가 있다** — 케이스 C6(야간 피크형)은 관측 최대
+    10,920.64 kW 인데 달별 하한 전 최대가 2,801.00 kW 다. 고치기 전에는 계약
+    12,012.7 kW 에서 목표 **7,415 kW** 가 나와 실측이 **935구간·3,505.64 kW**
+    를 넘었다 (고친 뒤 10,921 kW · 초과 0구간). C6 자료는 저장소에 없어
+    이 못은 합성 벌로 같은 사실을 본다.
+    """
+    usage = load_usage(
+        night_peak_month(tmp_path / "night.csv", night_kwh=500.0, midday_kwh=100.0, other_kwh=50.0)
+    )
+    options = BillingOptions(contract_kw=3_000.0)
+    bill = calculate_bill(
+        usage, tariff, TariffSelection("general_b", "high_a", "I"), options=options
+    )
+
+    observed_max = float(usage.kw.max())
+    monthly_max = float(bill.monthly["demand_before_floor_kw"].max())
+    # **뿌리부터 값으로 본다** — 둘이 같다는 전제가 틀렸다.
+    assert observed_max == pytest.approx(2_000.0)
+    assert monthly_max == pytest.approx(400.0)
+
+    result = evaluate_contract_adjustment(usage, bill, contract_kw=3_000.0)
+    assert result.reducible
+    assert result.target_contract_kw == pytest.approx(2_000.0)
+    # **목표를 권해도 초과사용부가금 자리에 안 놓는다.**
+    assert int((usage.kw > result.target_contract_kw).sum()) == 0
+    # 포화만 봤다면 여기서 멈춘다 — 그 값은 관측 최대 아래다.
+    assert math.floor(monthly_max / 0.3) == 1_333
+    assert observed_max > 1_333
 
 
 def test_penalty_warning_only_when_lowering_helps(
