@@ -967,6 +967,59 @@ def test_하한이_져도_문턱_아래_종별로_넘어간다(
     assert "보다 높아" not in entry.conclusion
     assert entry.actionable
 
+
+@pytest.mark.parametrize(
+    ("power_factor_pct", "expected_ratio"),
+    [(85.0, 0.014), (97.0, -0.01)],
+)
+def test_종별을_넘는_갈래는_역률이_걸려도_절감액이_총액_차이_그대로다(
+    floor_losing_general_b_usage: UsageData,
+    tariff: TariffTable,
+    power_factor_pct: float,
+    expected_ratio: float,
+) -> None:
+    """**S116 의 곱셈은 이 갈래에 닿지 않는다** (S117 3절 · ⑭).
+
+    ⑭ 를 닫은 산식 ``(현재 − 조정 후 기본요금) × (1 + 역률 비율)`` 은
+    **절감액이 기본요금 차이일 때** 선다. 종별을 넘으면 절감액은 **총액
+    차이**이고 역률요금은 이미 그 총액 안에 있다 — 곱하면 두 번 센다.
+
+    **S116 에는 안 드러났다.** 그 갈래 벌 셋이 세 역률에서 앞뒤 값이 같아
+    0 으로 나왔는데, 재 보니 **역률이 안 걸려서가 아니라 식이 맞아서** 0
+    이었다. 여기서는 역률을 실제로 걸어 그 사실을 못으로 박는다.
+    """
+    options = BillingOptions(contract_kw=400.0, power_factor_pct=power_factor_pct)
+    bill = calculate_bill(
+        floor_losing_general_b_usage,
+        tariff,
+        TariffSelection("general_b", "high_a", "I"),
+        options=options,
+    )
+    # **역률이 실제로 걸린다.** 이 줄이 빨개지면 아래 확인이 뜻을 잃는다 —
+    # 「걸리는데도 안 새는가」 를 보는 시험이지 0 을 0 과 견주는 시험이 아니다.
+    assert bill.power_factor.total_ratio == pytest.approx(expected_ratio)
+    assert bill.total_power_factor_won != 0.0
+
+    result = evaluate_contract_adjustment(
+        floor_losing_general_b_usage, bill, contract_kw=400.0, table=tariff, options=options
+    )
+    assert result.crosses_type
+    assert result.current_total_won is not None and result.crossed_total_won is not None
+    assert result.saving_won is not None
+
+    # **절감액은 총액 차이 그대로다.** 곱셈이 이 갈래로 새면 여기서 어긋난다.
+    assert result.saving_won == pytest.approx(result.current_total_won - result.crossed_total_won)
+
+    # **기본요금 차이로는 이 값이 안 나온다.** 종별을 넘으면 기본요금 단가가
+    # 올라 조정 후가 **현재보다 크고**(1,444,000 → 1,646,000) 곱셈 식은 음수가
+    # 된다 — 총액이 싼 것은 전력량요금이 싸기 때문이다.
+    assert result.adjusted_base_won is not None
+    assert result.adjusted_base_won > result.current_base_won
+    from_base_fee = (result.current_base_won - result.adjusted_base_won) * (
+        1.0 + bill.power_factor.total_ratio
+    )
+    assert from_base_fee < 0.0 < result.saving_won
+
     # **요금표를 안 주면 종전 그대로다** — 갈아 끼울 단가가 없다.
     without = evaluate_contract_adjustment(floor_losing_general_b_usage, bill, contract_kw=400.0)
     assert not without.reducible
