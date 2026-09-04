@@ -29,6 +29,7 @@ from kwise.tariff.demand import (
     billing_demands,
     demand_eligible_mask,
     demand_window_months,
+    floor_bound_months,
     monthly_demand_basis,
 )
 from kwise.tariff.holiday import DateLike, build_calendar
@@ -197,6 +198,13 @@ class BillingResult:
     prior_peaks_supplied: bool
     transition_months: tuple[pd.Period, ...] = ()
     """부칙의 경과조치로 **짝 선택요금의 금액이 실린 달.** 없으면 빈 튜플이다."""
+    floor_bound_months: tuple[pd.Period, ...] = ()
+    """**요금적용전력 하한이 실제로 걸린 달** (105세션 3절 · ②-13).
+
+    ``tariff.floor_bound_months`` 안내가 세는 것과 **같은 값**이다 —
+    :func:`kwise.tariff.demand.floor_bound_months` 하나가 센다. 계약전력
+    하한이 없는 갈래(계약전력 기준 종별 · 비율 없음 · 계약전력 없음)에서는
+    빈 튜플이다."""
     notices: tuple[Notice, ...] = field(default=())
 
     @property
@@ -638,6 +646,7 @@ def calculate_bill(
     )
 
     notices: list[Notice] = []
+    bound_months: tuple[pd.Period, ...] = ()
     if base_on_contract:
         # 계약전력 기준이다. 요금적용전력 하한·이월 규칙은 기본요금에 관여하지 않는다.
         # **기준이 잠정임을 먼저 밝힌다** — 뒤의 경고들은 그 전제 위에 있다.
@@ -683,13 +692,17 @@ def calculate_bill(
         )
     else:
         floor_kw = opts.contract_kw * type_floor_ratio
-        bound = [month for month in months if before_floor[month] < floor_kw]
-        if bound:
+        # **세는 자리는 하나다** (105세션 3절). 계약전력 조정 판정이 같은
+        # 함수로 세고, 결과에 실어 두 문장이 어긋날 수 없게 한다.
+        bound_months = floor_bound_months(
+            {month: before_floor[month] for month in months}, floor_kw
+        )
+        if bound_months:
             notices.append(
                 basis(
                     f"요금적용전력 하한 {floor_kw:,.1f} kW "
                     f"(계약전력의 {type_floor_ratio:.0%})가 "
-                    f"{len(bound)}개 월에 걸렸습니다.",
+                    f"{len(bound_months)}개 월에 걸렸습니다.",
                     fact="tariff.floor_bound_months",
                 )
             )
@@ -866,5 +879,6 @@ def calculate_bill(
         limited_months=limited_months,
         prior_peaks_supplied=bool(opts.prior_peaks),
         transition_months=transition_months,
+        floor_bound_months=bound_months,
         notices=tuple(notices),
     )

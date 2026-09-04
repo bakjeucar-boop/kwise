@@ -38,6 +38,7 @@ __all__ = [
     "default_demand_months",
     "demand_eligible_mask",
     "demand_window_months",
+    "floor_bound_months",
     "is_demand_month",
     "monthly_demand_basis",
 ]
@@ -190,3 +191,19 @@ def apply_contract_floor(
         raise ValueError(f"하한 비율은 0~1 이어야 합니다: {floor_ratio}")
     floor = contract_kw * floor_ratio
     return {month: max(float(value), floor) for month, value in demands.items()}
+
+
+def floor_bound_months(demands: Mapping[Any, float], floor_kw: float) -> tuple[Any, ...]:
+    """**하한이 실제로 걸린 달.** 하한 적용 **전** 수요를 넘겨야 한다.
+
+    **하한은 달마다 걸린다** (105세션 1절 · ②-13). 요금적용전력은 달마다
+    ``max(직전 12개월 최대수요, 계약전력 × 30%)`` 이므로, 굴림 창을 아직 못
+    채운 초기 달은 굴림최대가 작아 **그 달에만 하한이 걸릴 수 있다.** 연간
+    최대 하나로 판정하면 그 달들이 통째로 안 보인다.
+
+    **세는 자리를 하나로 둔다** (83세션 산식 규칙). 요금 안내
+    (``tariff.floor_bound_months``)와 계약전력 조정 판정
+    (:func:`kwise.measures.contract.evaluate_contract_adjustment`)이 이 함수
+    하나를 쓴다 — 각자 세면 같은 자료에서 두 값이 나온다.
+    """
+    return tuple(month for month, value in demands.items() if float(value) < floor_kw)

@@ -16,6 +16,7 @@ from kwise.tariff.demand import (
     default_demand_bands,
     default_demand_months,
     demand_eligible_mask,
+    floor_bound_months,
     is_demand_month,
     monthly_demand_basis,
 )
@@ -146,6 +147,7 @@ __all__ = [
     "default_tariff_dir",
     "demand_eligible_mask",
     "demand_window_months",
+    "floor_bound_months",
     "is_demand_month",
     "lagging_adjustment_ratio",
     "lagging_floor_pct",

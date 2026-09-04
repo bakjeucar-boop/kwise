@@ -468,10 +468,15 @@ def test_교육용_덱_벌에_하한이_이기는_자리가_있다(tariff: Tarif
 def test_특례를_켜면_계약전력_조정_권고가_뒤집힌다(tariff: TariffTable) -> None:
     """**값이 아니라 권고가 바뀌는 자리다** (91세션 · 97세션 5절).
 
-    같은 자료·같은 계약전력에서 하한이 285 → 142.5 kW 로 내려가면 최대수요
-    264.7 kW 에 **져서** 낮출 이유 자체가 사라진다. 절감액이 1,338,660원에서
-    0 원이 된다 — 특례는 기본요금만 깎는 것이 아니라 **개선 수단 하나의 판정을
-    통째로 바꾼다.** 금액만 보고 「−7%」 로 정리하면 이 뒤집힘이 안 보인다.
+    같은 자료·같은 계약전력에서 하한이 285 → 142.5 kW 로 내려가면 **어느 달에도
+    안 걸려서**(가장 작은 달이 208.24 kW 다) 낮출 이유 자체가 사라진다.
+    절감액이 1,576,103원에서 0 원이 된다 — 특례는 기본요금만 깎는 것이 아니라
+    **개선 수단 하나의 판정을 통째로 바꾼다.** 금액만 보고 「−7%」 로 정리하면
+    이 뒤집힘이 안 보인다.
+
+    **105세션에 목표 883 → 694 kW · 절감 1,338,660 → 1,576,103원이 됐다.**
+    가장 작은 달(208.24 kW)로 나누므로 883 kW 로 멈출 때보다 더 얻는다 —
+    883 의 하한 264.9 kW 는 그 달들에 여전히 걸려 있었다.
     """
     import sys
 
@@ -502,8 +507,8 @@ def test_특례를_켜면_계약전력_조정_권고가_뒤집힌다(tariff: Tar
     plain = adjust(False)
     special = adjust(True)
     assert plain.floor_kw == pytest.approx(285.0)  # type: ignore[attr-defined]
-    assert plain.target_contract_kw == 883.0  # type: ignore[attr-defined]
-    assert plain.saving_won == pytest.approx(1_338_660.0)  # type: ignore[attr-defined]
+    assert plain.target_contract_kw == 694.0  # type: ignore[attr-defined]
+    assert plain.saving_won == pytest.approx(1_576_103.0, abs=1.0)  # type: ignore[attr-defined]
     assert special.floor_kw == pytest.approx(142.5)  # type: ignore[attr-defined]
     assert special.target_contract_kw is None  # type: ignore[attr-defined]
     assert special.saving_won == pytest.approx(0.0)  # type: ignore[attr-defined]

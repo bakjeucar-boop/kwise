@@ -350,25 +350,34 @@ def test_floor_below_the_demand_yields_no_saving(
     assert any("걸리지 않아" in note for note in texts(result.notices))
 
 
-def test_목표는_최대수요를_하한비율로_나눈_값이다(
+def test_목표는_가장_작은_달을_하한비율로_나눈_값이다(
     sample_usage: UsageData, sample_bill: BillingResult
 ) -> None:
-    """**여유율을 곱하지 않는다** (83세션 4).
+    """**여유율을 곱하지 않는다** (83세션 4). **가장 작은 달로 나눈다** (105세션 3절).
 
-    최대수요 ÷ 하한비율은 약관에서 바로 나오는 수이고, 그 아래로 내려도 더
-    얻을 것이 없는 상한이다. 20,000 kW 의 30% 는 6,000 kW 로 최대수요
-    5,293.44 kW 를 넘으므로 하한이 기준이 된다.
+    83세션은 **연간 최대** ÷ 하한비율을 「그 아래로 내려도 더 얻을 것이 없는
+    상한」 이라 적었는데 **사실이 아니었다** — 그 값에서도 하한이 연간 최대와
+    같아지므로 **그보다 작은 달들은 여전히 하한으로 끌어올려진다.** 요금적용
+    전력은 달마다 정해지므로(제68조 ①) 하한이 어느 달에도 안 걸리려면 **가장
+    작은 달** 아래로 내려야 한다.
+
+    20,000 kW 의 30% 는 6,000 kW 로 열세 달이 다 걸린다. 가장 작은 달은
+    첫 달 4,164.48 kW(굴림 창을 못 채웠다)이고 그것을 30% 로 나누면
+    13,881.6 → **13,881 kW** 다. 연간 최대로 낸 17,645 kW 보다 낮고,
+    그만큼 기본요금을 더 얻는다.
     """
     result = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=20_000.0)
     assert result.floor_binding
     ratio = result.contract_floor_ratio
     assert ratio is not None
-    assert result.target_contract_kw == math.ceil(result.demand_before_floor_kw / ratio)
-    # 목표에서 다시 씌운 하한은 최대수요 바로 위다 — 더 내려도 얻을 것이 없다.
+    monthly = sample_bill.monthly["demand_before_floor_kw"]
+    assert result.target_contract_kw == math.floor(float(monthly.min()) / ratio)
+    assert result.target_contract_kw == 13_881.0
+    # **목표에서 다시 씌운 하한은 어느 달도 안 넘는다** — 더 내려도 얻을 것이 없다.
     assert result.target_contract_kw is not None
-    assert result.target_contract_kw * ratio == pytest.approx(
-        result.demand_before_floor_kw, abs=1.0
-    )
+    assert result.target_contract_kw * ratio <= float(monthly.min())
+    # **연간 최대로 냈다면 열두 달이 그 값으로 끌어올려진다.** 그 차이가 이 못이다.
+    assert result.target_contract_kw < math.ceil(result.demand_before_floor_kw / ratio)
 
 
 def test_penalty_warning_only_when_lowering_helps(
@@ -403,10 +412,13 @@ def test_목표가_종별_경계를_넘으면_그_사실을_낸다(
 ) -> None:
     """**갑Ⅱ 는 300 kW 미만 종별이다** (96세션).
 
-    계약전력 20,000 kW 는 그 자체가 갑Ⅱ 에 없는 값이고 목표 17,645 kW 도
+    계약전력 20,000 kW 는 그 자체가 갑Ⅱ 에 없는 값이고 목표 13,881 kW 도
     경계 밖이다 — 그 값으로 바꾸면 종별이 바뀌므로 지금 단가로 낸 절감액이
     아니다. **단가를 갈아 끼우지는 않는다** — 경계를 넘는다는 사실까지가
     이 안내의 몫이다.
+
+    **목표는 105세션에 17,645 → 13,881 kW 로 내려갔다** (가장 작은 달로 나눈다).
+    경계 밖이라는 사실은 그대로다.
     """
     bill = calculate_bill(
         sample_usage,
@@ -419,11 +431,11 @@ def test_목표가_종별_경계를_넘으면_그_사실을_낸다(
     assert bill.threshold_direction == "below"
 
     result = evaluate_contract_adjustment(sample_usage, bill, contract_kw=20_000.0)
-    assert result.target_contract_kw == 17_645.0
+    assert result.target_contract_kw == 13_881.0
     crossing = [item for item in result.notices if item.fact == TYPE_THRESHOLD_FACT]
     assert len(crossing) == 1
     assert "300 kW 미만" in crossing[0].text
-    assert "17,645 kW" in crossing[0].text
+    assert "13,881 kW" in crossing[0].text
 
 
 def test_경계_안이면_안내를_내지_않는다(
@@ -463,8 +475,12 @@ def test_목표가_문턱_아래로_가면_넘어간_종별로_다시_계산한�
     """**단가를 갈아 끼운다** (98세션). 96세션은 경계를 읽기만 했다.
 
     최대수요 80 kW · 계약 400 kW 의 을 고객이다. 하한 120 kW 가 최대수요를
-    이기므로 목표는 80 ÷ 30% = 267 kW 이고, 그 값은 300 kW 아래라 종별이
-    일반용전력(갑)Ⅱ 로 바뀐다 (약관 제57조 ② 1. · ④).
+    이기므로 목표는 80 ÷ 30% 을 **내린** 266 kW 이고, 그 값은 300 kW 아래라
+    종별이 일반용전력(갑)Ⅱ 로 바뀐다 (약관 제57조 ② 1. · ④).
+
+    **105세션에 267 → 266 이 됐다.** 267 kW 의 하한은 80.1 kW 로 최대수요
+    80 kW 를 **아직 넘어** 그 달들이 80.1 로 매겨진다 — 266 이 하한을 79.8 로
+    내려 마지막 한 원까지 얻는 자리다.
 
     **절감액이 총액 차이다.** 종별이 바뀌면 전력량요금 단가까지 함께 바뀌므로
     기본요금만 빼면 절반만 맞는 값이 된다.
@@ -482,8 +498,8 @@ def test_목표가_문턱_아래로_가면_넘어간_종별로_다시_계산한�
     assert result.crossed_selection.contract_type == "general_a_2"
     assert result.crossed_selection.voltage == "high_a"
     assert result.crossed_label == "일반용전력(갑)Ⅱ"
-    # 목표는 **문턱 바로 아래**다. 같은 종별 목표 267 kW 가 이미 그보다 낮다.
-    assert result.target_contract_kw == pytest.approx(267.0)
+    # 목표는 **문턱 바로 아래**다. 같은 종별 목표 266 kW 가 이미 그보다 낮다.
+    assert result.target_contract_kw == pytest.approx(266.0)
     assert result.current_total_won is not None and result.crossed_total_won is not None
     assert result.saving_won == pytest.approx(result.current_total_won - result.crossed_total_won)
     assert "일반용전력(갑)Ⅱ 고압A 선택Ⅱ 로 종별을 바꿔" in result.saving_basis
@@ -535,7 +551,13 @@ def test_넘는_판의_근거표는_총액_둘의_차이를_적는다(
     def _won_of(label: str) -> int:
         return int(shown[label].removesuffix("원").replace(",", ""))
 
-    assert _won_of("현행 종별 총 요금") - _won_of("일반용전력(갑)Ⅱ 총 요금") == _won_of("절감액")
+    # **천원 절사는 뺄셈과 함께 가지 않는다** (105세션 3절에 값으로 봤다).
+    # 세 칸이 각자 잘리므로 앞 둘의 차가 절감액 칸과 **1,000원까지** 어긋날 수
+    # 있다 — 100세션이 잡은 것은 22,642,000 − 25,809,000 = 21,810,000 처럼
+    # **상대가 아예 다른** 어긋남이라 이 여유로도 그대로 잡힌다. 절사 자체는
+    # 미해결 ②-29 다.
+    gap = _won_of("현행 종별 총 요금") - _won_of("일반용전력(갑)Ⅱ 총 요금") - _won_of("절감액")
+    assert abs(gap) <= 1_000
 
 
 def test_넘는_판의_안내는_종별이_바뀐다고_말한다(
@@ -560,7 +582,7 @@ def test_넘는_판의_안내는_종별이_바뀐다고_말한다(
 
     crossing = next(item for item in result.notices if item.fact == TYPE_THRESHOLD_FACT)
     assert "계약종별이 일반용전력(갑)Ⅱ 로 바뀝니다" in crossing.text
-    assert "267 kW" in crossing.text
+    assert "266 kW" in crossing.text
     # **약관 원문을 그대로 옮기지 않는다** — 설비 이름이 딸려 들어온다.
     assert "전력량계" not in crossing.text
     assert "최대수요전력계" not in crossing.text

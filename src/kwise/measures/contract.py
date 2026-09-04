@@ -1,20 +1,27 @@
 """계약전력 조정 (요구사항서 7.2, 6.4) — 투자 0원.
 
-**판정은 하한 하나로 갈린다** (83세션). 기본요금이 요금적용전력에 붙는 종별
-(을 · 갑Ⅱ)에서 요금적용전력은 이렇게 정해진다 (약관 제68조 제1항).
+**판정은 「하한이 걸린 달」 이 갈린다** (83세션에 하한으로 옮기고 105세션에
+달로 내렸다). 기본요금이 요금적용전력에 붙는 종별(을 · 갑Ⅱ)에서 요금적용전력은
+**달마다** 이렇게 정해진다 (약관 제68조 제1항).
 
-    요금적용전력 = max(직전 12개월 최대수요, 계약전력 × 하한비율)
+    그 달의 요금적용전력 = max(직전 12개월 최대수요, 계약전력 × 하한비율)
 
-    하한이 진다   하한 ≤ 최대수요 → 기준이 최대수요다. 계약전력을 낮춰도
-                  요금적용전력이 그대로라 **한 푼도 줄지 않는다**
-    하한이 이긴다  하한 > 최대수요 → 기준이 하한이다. 계약전력을 낮추면
-                  하한이 함께 내려가 **최대수요에 닿을 때까지** 줄어든다
+    걸린 달이 없다   어느 달도 하한이 그 달 수요를 못 넘는다. 계약전력을
+                     낮춰도 **한 푼도 줄지 않는다**
+    걸린 달이 있다   그 달들은 기준이 하한이다. 계약전력을 낮추면 하한이 함께
+                     내려가 **그 달의 수요에 닿을 때까지** 줄어든다
 
-그래서 목표 계약전력은 **최대수요 ÷ 하한비율** 하나다 — 약관에서 바로 나오는
-수이고, 그 아래로 내려도 더 얻을 것이 없는 상한이다. **여유율을 곱하지 않는다**
-(83세션에 걷어냈다). 61세션이 갑Ⅰ/갑Ⅱ 를 가르며 기본요금 기준을 바로잡았는데
-「요금적용전력 × (1+여유율)」 이라는 권장값이 따라오지 않았다 — 그 값은 기본요금이
-**계약전력**에 붙는 자리(갑Ⅰ·교육용(갑) 저압)의 것이라 여기서는 전제가 서지 않는다.
+**연간 최대 하나로 보지 않는다** (105세션 · ②-13). 굴림 12개월을 아직 못 채운
+초기 달은 굴림최대가 작아 **그 달에만 하한이 걸린다** — 연간 최대만 보면 그
+몫이 통째로 안 보이고, 같은 판에서 요금 엔진이 내는 「N개 월에 걸렸습니다」 와
+어긋난다. 세는 함수는 :func:`kwise.tariff.demand.floor_bound_months` 하나다.
+
+목표 계약전력은 **어느 달에도 하한이 안 걸리는 가장 큰 값**이다
+(:func:`target_contract_kw`) — 약관에서 바로 나오는 수이고, 그 아래로 내려도
+더 얻을 것이 없는 상한이다. **여유율을 곱하지 않는다** (83세션에 걷어냈다).
+61세션이 갑Ⅰ/갑Ⅱ 를 가르며 기본요금 기준을 바로잡았는데 「요금적용전력 ×
+(1+여유율)」 이라는 권장값이 따라오지 않았다 — 그 값은 기본요금이 **계약전력**에
+붙는 자리(갑Ⅰ·교육용(갑) 저압)의 것이라 여기서는 전제가 서지 않는다.
 여유율 10~30% 에는 붙은 근거도 없었다.
 
 **후보가 하나 더 있다 — 종별 문턱 바로 아래다** (98세션에 세우고 99세션에
@@ -31,8 +38,10 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
+from typing import Any
 
 import pandas as pd
 
@@ -46,6 +55,7 @@ from kwise.tariff import (
     TariffSelection,
     TariffTable,
     calculate_bill,
+    floor_bound_months,
     list_selections,
     selection_label,
 )
@@ -61,19 +71,39 @@ __all__ = [
 ]
 
 
-def target_contract_kw(demand_kw: float, floor_ratio: float, step_kw: float = 1.0) -> float:
-    """목표 계약전력 — **최대수요 ÷ 하한비율을 올림**한다.
+def target_contract_kw(
+    monthly_demand_kw: Mapping[Any, float], floor_ratio: float, step_kw: float = 1.0
+) -> float:
+    """목표 계약전력 — **어느 달에도 하한이 안 걸리는 가장 큰 값**이다.
+
+    **달별 하한 적용 전 수요를 받는다** (105세션 3절 · ②-13). 앞서는 연간
+    최대 하나를 받아 ``최대수요 ÷ 하한비율`` 을 올렸는데, 요금적용전력은
+    **달마다** ``max(직전 12개월 최대수요, 계약전력 × 30%)`` 라 굴림 창을 못
+    채운 초기 달의 몫을 그 산식이 못 본다. 그 몫까지 얻으려면 하한을 **가장
+    작은 달** 아래로 내려야 한다.
+
+    두 수를 견주어 큰 쪽이다.
+
+        포화   하한이 어느 달에도 안 걸리는 가장 큰 계약전력 — ``최소 달 ÷ 비율``
+               을 **내림**한다. 올리면 그 달에 하한이 그대로 걸려 마지막 한 원을
+               못 얻는다 (용인 을 400 kW 에서 375 는 169,437원, 374 는 175,311원)
+        보전   **관측 최대 아래로는 안 내린다.** 초과사용부가금 대상이 되므로
+               권고할 수 없다 — :func:`_crossed_quote` 가 문턱 후보에 거는 것과
+               같은 선이다. 달별 수요의 최대가 곧 관측 최대다
+
+    ``1e-9`` 를 더하고 내리는(그리고 빼고 올리는) 까닭은 **부동소수 부스러기**
+    때문이다 — 계약 218 kW 의 하한이 ``218 * 0.3 = 65.39999999999999`` 로 잡히고
+    그것을 다시 0.3 으로 나누면 ``217.99999999999997`` 이라 그대로 내리면
+    217 이 된다. 화면·PPT·Excel 이 1 kW 어긋난 목표를 적는다.
 
     **산식이 한 자리에 있어야 한다** (83세션). **100세션에 이 자리로 옮겼다** —
     83세션은 1단계 적정성 쪽에 두고 둘이 함께 불렀는데, 이제 판정 자체가 이
-    모듈 하나이므로 부르는 곳도 여기 하나다. 1단계가 조정 쪽을 받아 오게 되면서
-    ``measures → diagnose`` 로 거꾸로 나 있던 화살표가 맞물렸다.
-
-    ``1e-9`` 를 빼고 올리는 까닭은 **부동소수 부스러기** 때문이다 —
-    ``132.3 / 0.3`` 이 ``441.00000000000006`` 이라 그대로 올리면 442 가 되고,
-    화면·PPT·Excel 이 1 kW 어긋난 목표를 적는다.
+    모듈 하나이므로 부르는 곳도 여기 하나다.
     """
-    return math.ceil(demand_kw / floor_ratio / step_kw - 1e-9) * step_kw
+    values = [float(value) for value in monthly_demand_kw.values()]
+    saturating = math.floor(min(values) / floor_ratio / step_kw + 1e-9) * step_kw
+    covering = math.ceil(max(values) / step_kw - 1e-9) * step_kw
+    return max(saturating, covering)
 
 
 MARGIN_NOTICE = (
@@ -120,8 +150,9 @@ class ContractAdjustment:
         demand_before_floor_kw: 직전 12개월 최대수요. **하한 판정의 상대다.**
         floor_kw: 계약전력 × 하한비율. 비율을 모르면 None.
         target_contract_kw: 목표 계약전력. **낮출 자리가 있을 때만 값이 있다** —
-            하한이 이기면 최대수요 ÷ 하한비율이고, 하한이 져도 문턱 아래
-            종별로 넘어갈 수 있으면 문턱 바로 아래다 (99세션).
+            하한이 걸린 달이 있으면 **어느 달에도 안 걸리는 가장 큰 값**이고,
+            한 달도 안 걸려도 문턱 아래 종별로 넘어갈 수 있으면 문턱 바로
+            아래다 (99세션).
         saving_won: :attr:`status` 가 ``CONFIRMED`` 일 때만 값이 있다.
     """
 
@@ -158,16 +189,18 @@ class ContractAdjustment:
 
     @property
     def floor_binding(self) -> bool:
-        """**하한이 이기는가.** 계약전력 × 하한비율이 최대수요를 넘는가.
+        """**하한이 이기는가.** 계약전력 × 하한비율이 **연간** 최대수요를 넘는가.
 
-        **낮출 자리가 있는가와 다른 사실이다** (99세션). 하한이 져도 문턱 아래
-        종별로 넘어갈 수 있으면 낮출 자리가 있다 — 그쪽은 :attr:`reducible` 이다.
+        **판정이 아니다** (105세션 · ②-13). 이 값이 거짓이어도 굴림 창을 못
+        채운 초기 달에는 하한이 걸릴 수 있다 — 「낮출 자리가 있는가」 는
+        :attr:`reducible` 이 말한다. 글자 그대로 「하한 > 연간 최대수요」 이고,
+        **하한이 모든 달에 걸린다**는 뜻으로만 쓴다.
         """
         return self.floor_kw is not None and self.floor_kw > self.demand_before_floor_kw
 
     @property
     def reducible(self) -> bool:
-        """**낮출 자리가 있는가.** 하한이 이기거나, 문턱 아래 종별로 넘어갈 수 있다."""
+        """**낮출 자리가 있는가.** 하한이 걸린 달이 있거나, 문턱 아래 종별로 넘어갈 수 있다."""
         return self.target_contract_kw is not None
 
     @property
@@ -325,7 +358,10 @@ def evaluate_contract_adjustment(
     observed = usage.kw.dropna()
     max_demand = float(observed.max()) if len(observed) else 0.0
     billing_demand = float(bill.billing_demand_kw)
-    before_floor = float(bill.monthly[_demand_column(bill.monthly)].max())
+    monthly_demand: dict[Any, float] = {
+        month: float(value) for month, value in bill.monthly[_demand_column(bill.monthly)].items()
+    }
+    before_floor = max(monthly_demand.values())
     over_slots = int((observed > contract_kw).sum())
 
     notices: list[Notice] = []
@@ -365,13 +401,16 @@ def evaluate_contract_adjustment(
         raise ValueError(f"하한 비율은 0 초과 1 이하여야 합니다: {ratio}")
 
     floor_kw = contract_kw * ratio
-    # **판정은 이 한 줄이다.** 하한이 최대수요를 넘어야 낮출 이유가 생긴다.
-    # 목표 산식은 1단계 적정성과 **같은 함수**를 쓴다 — 각자 올리면 같은
-    # 자료에서 두 값이 나온다.
+    # **판정은 「걸린 달」 이 읽는다** (105세션 3절 · ②-13). 앞서는
+    # ``floor_kw > before_floor`` 한 줄이라 **연간 최대**만 봤는데, 요금
+    # 엔진은 같은 판에서 달별로 세어 「N개 월에 걸렸습니다」 를 내고 있었다 —
+    # 한 판 안에서 두 문장이 어긋났다. **세는 함수를 하나로 두어** 어긋날 수
+    # 없게 한다. 청구 결과에도 같은 값이 실려 있다
+    # (:attr:`BillingResult.floor_bound_months`) — 여기서 다시 부르는 까닭은
+    # 이 함수가 **청구서와 다른 계약전력·비율**로도 불리기 때문이다.
+    bound = floor_bound_months(monthly_demand, floor_kw)
     target = (
-        min(contract_kw, target_contract_kw(before_floor, ratio, step_kw))
-        if floor_kw > before_floor
-        else None
+        min(contract_kw, target_contract_kw(monthly_demand, ratio, step_kw)) if bound else None
     )
 
     # 하한 적용 전 값으로 되돌린 뒤 두 계약전력에서 각각 다시 씌운다.
