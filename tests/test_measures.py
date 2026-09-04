@@ -461,13 +461,14 @@ def test_목표는_관측_최대_아래로_안_내려간다(tmp_path: Path, tari
     assert observed_max > 1_333
 
 
-def test_목표는_초과사용부가금_0_안에서_총액이_가장_낮은_값이다(
+def test_목표는_초과_0_안의_총액_최저이고_동점이면_현행에_가장_가까운_값이다(
     tmp_path: Path, sample_usage: UsageData, tariff: TariffTable
 ) -> None:
-    """**규칙을 값으로 본다** (114세션 · ②-31 · `docs\\CALC_LOGIC.md` 2부).
+    """**규칙을 값으로 본다** (114세션 → 115세션 · `docs\\CALC_LOGIC.md` 2부).
 
         계약전력 목표는 초과사용부가금이 0 인 값 가운데 총액이 가장 낮은 값으로
-        고른다.
+        고른다. 총액이 같은 값이 여럿이면 현행 계약전력에 가장 가까운 값을
+        고른다 — 현행이 그 구간 안이면 조정을 권하지 않는다.
 
     ②-31 은 「보전 갈래가 총액을 안 보고 목표를 고른다」 였다. 산식
     (:func:`target_contract_kw`)에 총액이 인자로 없는 것은 지금도 그대로인데,
@@ -480,14 +481,16 @@ def test_목표는_초과사용부가금_0_안에서_총액이_가장_낮은_값
     종별 문턱(300 kW)은 두 벌 다 한참 위에 있어 안 걸린다 — 걸리는 벌은
     `small-a2-was` 이고 그것은 저장소에 없는 자료를 쓴다.
 
-    **총액이 같은 값은 통과시킨다.** 초과 0 안에서 총액이 평평한 구간이 있는
-    벌이 있는데(포화 갈래가 그렇다) 그 구간의 어디를 고를지는 규칙이 아직
-    말하지 않는다 — 동점 처리는 안 정했다. 시험이 먼저 정하게 두지 않는다.
+    **동점을 115세션에 정했다.** 앞서는 「총액이 같은 값은 통과시킨다」 였다 —
+    규칙이 동점을 안 말했으므로 시험이 먼저 정하지 않았다. 이제 규칙이
+    말하므로 **구간 안 아무 데나가 아니라 「현행에 가장 가까운 값」** 을 본다.
+    포화 벌의 구간은 5,294~13,881 이고 현행이 20,000 이라 **위끝이 답**이다.
 
-    벌 둘을 본다. **저장소에 있는 자료만 쓴다.**
+    벌 셋을 본다. **저장소에 있는 자료만 쓴다.**
 
         보전 갈래   합성 야간 피크 한 달. 관측 최대 2,000 kW · 목표 2,000 kW
         포화 갈래   실측 샘플 을 20,000 kW. 초과 0 하한 5,294 · 목표 13,881 kW
+        구간 안     같은 실측 샘플 을 6,000 kW. 구간 안이라 **목표를 안 낸다**
     """
     selection = TariffSelection("general_b", "high_a", "I")
 
@@ -533,6 +536,30 @@ def test_목표는_초과사용부가금_0_안에서_총액이_가장_낮은_값
             if kw < floor_kw:
                 continue
             assert cheapest_total(usage, kw).total_won >= at_target.total_won - 1.0, kw
+
+        # ㄷ. **동점이면 현행에 가장 가까운 값이다** (115세션). 아래끝이
+        #     목표와 **다른 자리인데 총액이 한 원도 안 다르면** 동점이고,
+        #     그때 목표는 현행 쪽 끝이어야 한다. 보전 갈래는 아래끝과 목표가
+        #     **같은 값**이라(단일점) 이 자리를 지나간다 — 고를 것이 없다.
+        at_floor = cheapest_total(usage, float(floor_kw))
+        if floor_kw < target and at_floor.total_won == pytest.approx(at_target.total_won):
+            assert abs(target - contract_kw) < abs(floor_kw - contract_kw), target
+
+    # ㄹ. **현행이 그 구간 안이면 조정을 권하지 않는다** — 규칙의 마지막 절.
+    #     같은 실측 샘플의 현행 6,000 kW 는 구간 5,294~13,881 안이라 목표가
+    #     없어야 한다 (`large-b` 벌의 자리다). 하한이 한 달도 안 걸려
+    #     :func:`target_contract_kw` 를 아예 안 부르는 갈래이고, 그래서
+    #     산식의 날값 13,881 이 산출물로 새어 나가지 않는다.
+    inside = BillingOptions(contract_kw=6_000.0)
+    at_inside = evaluate_contract_adjustment(
+        sample_usage,
+        calculate_bill(sample_usage, tariff, selection, options=inside),
+        contract_kw=6_000.0,
+        table=tariff,
+        options=inside,
+    )
+    assert at_inside.target_contract_kw is None
+    assert at_inside.status is ContractStatus.CONFIRMED
 
 
 def test_목표_산식은_부동소수_부스러기에_한_칸_안_밀린다() -> None:
