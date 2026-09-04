@@ -791,6 +791,32 @@ def test_조합이_조합_부하에서_선택요금을_다시_고른다(
     assert result.bill.selection != result.spec.selection
 
 
+def test_기본_조합_세트가_재선정을_켠_채로_나온다() -> None:
+    """**회귀가 이 자리를 보게 한다** (S112 4절 ㄴ).
+
+    ⑱ 이 회귀에 안 걸린 까닭은 케이스 스터디 PV 축(0·500·1,000·2,000 kWp)이
+    **뒤집히는 자리(C3 · 3,000 kWp) 바로 아래에서 끊겼기** 때문이다.
+    **축을 넓혀서는 이 병이 안 낫는다** — 다음 결함이 축 밖 어딘가에서 뜨면
+    또 못 본다. 축은 언제나 유한하다. 그래서 축 대신 **경로가 살아 있는지**
+    를 지킨다. 누가 기본값을 뒤집거나 감도 밖에서 끄면 조용히 옛 행동으로
+    돌아가는데, 그 자리를 이 시험이 잡는다.
+    """
+    specs = default_combinations(
+        current_selection=CURRENT,
+        best_selection=BEST,
+        pv_capacity_kwp=PV_KWP,
+        ess_target_kw=ESS_TARGET,
+        contract_kw=20_000.0,
+    )
+    assert [spec.retune_selection for spec in specs] == [True] * len(specs)
+
+    # 실제로 다시 고르는 것은 부하를 바꾸는 수단이 켜진 조합뿐이다.
+    retuning = [
+        spec.name for spec in specs if spec.retune_selection and (spec.has_pv or spec.has_ess)
+    ]
+    assert retuning == [f"+ 태양광 {PV_KWP:,.0f} kWp", f"+ ESS 목표 {ESS_TARGET:,.0f} kW"]
+
+
 def test_수단이_없으면_다시_고르지_않는다(
     sample_usage: UsageData,
     sample_report: QualityReport,
