@@ -751,18 +751,6 @@ def test_후보가_최대수요_아래면_안_넘는다(
     assert "contract.floor_not_binding" in [item.fact for item in result.notices]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "②-13 — 하한 판정이 `floor_kw > 연간 최대` 한 줄이라(measures\\contract.py:373) "
-        "달 단위로만 걸리는 몫을 못 본다. 용인 을 400 kW 는 굴림 12개월이 안 찬 "
-        "2025-08~11 네 달에서 하한 120.0 kW 가 그 달 굴림최대 112.24 kW 를 넘어 "
-        "기본요금을 175,311원 더 내는데, 판정은 연간 최대 132.28 kW 만 보고 "
-        "「낮출 자리가 없다」 고 답한다. **같은 판에서 요금 엔진은 반대로 적는다** — "
-        "`tariff.floor_bound_months` 가 「4개 월에 걸렸습니다」 다(engine.py:686). "
-        "고쳐지면 XPASS 로 스스로 빨개진다 (S102 1절에 값으로 쟀다)."
-    ),
-)
 def test_달_단위로만_걸리는_하한이_절감액에_잡힌다(tariff: TariffTable) -> None:
     """**굴림 창이 안 찬 초기 달에만 하한이 걸리는 판** (99세션 → S102 1절).
 
@@ -777,9 +765,16 @@ def test_달_단위로만_걸리는_하한이_절감액에_잡힌다(tariff: Tar
     덮어써(8,725,941원) 이 한 자리가 안 보인다 — 여기서 박는 것은 **같은 을
     안에서 낮춰도 주는 몫**이다.
 
-    **목표 계약전력은 박지 않는다.** 달 단위 판정이면 374 kW, 을 안의 총액
-    견주기면 300 kW 로 길마다 갈리는데 **절감액은 세 길에서 다 175,311원**이라
-    이 못은 어느 길을 고를지 미리 정하지 않는다.
+    **S102 가 `xfail(strict=True)` 로 박았고 105세션 4절에 걷었다.** 길 C 가
+    서면서 사실이 뒤집혀 XPASS 로 빨개졌다 — 설계대로다. 못은 없애지 않고
+    **정상으로 통과하는 자리로 옮겼다**: 그때는 「어느 길을 고를지 미리 정하지
+    않는다」 며 절감액만 박았는데, 이제 길이 정해졌으므로 **목표 374 kW 도
+    함께 박는다.** 375 에서 멈추면 169,437원이다 — 하한 112.5 kW 가 그 넉 달의
+    112.24 kW 를 아직 넘어서다.
+
+    **한 판 안의 두 문장이 안 어긋나는지도 여기서 본다** (②-13 ⓒ). 엔진이
+    「4개 월에 걸렸습니다」 라 적는 판에서 판정이 「걸리지 않아 줄지 않습니다」
+    라 적으면 안 된다.
     """
     usage_path = Path(__file__).resolve().parent.parent / "input" / "전기사용량_소형건물.xlsx"
     if not usage_path.is_file():
@@ -792,7 +787,25 @@ def test_달_단위로만_걸리는_하한이_절감액에_잡힌다(tariff: Tar
     result = evaluate_contract_adjustment(usage, bill, contract_kw=400.0)
 
     assert result.reducible
+    assert result.target_contract_kw == pytest.approx(374.0)
     assert result.saving_won == pytest.approx(175_311.0, abs=1.0)
+    # **하한은 연간으로는 진다.** 그런데도 낮출 자리가 있다 — 그 둘이 다른
+    # 사실이라는 것이 ②-13 의 뿌리였다.
+    assert not result.floor_binding
+
+    # **엔진과 판정이 같은 판에서 같은 말을 한다.**
+    assert len(bill.floor_bound_months) == 4
+    assert any(item.fact == "tariff.floor_bound_months" for item in bill.notices)
+    assert "contract.floor_not_binding" not in [item.fact for item in result.notices]
+
+    # **375 는 마지막 한 원을 못 얻는다.** 목표가 374 여야 하는 까닭이다.
+    at_375 = calculate_bill(
+        usage,
+        tariff,
+        TariffSelection("general_b", "high_a", "I"),
+        options=BillingOptions(contract_kw=375.0),
+    )
+    assert bill.total_won - at_375.total_won == pytest.approx(169_437.0, abs=1.0)
 
 
 def test_후보가_지금_계약전력_이상이면_안_넘는다(
