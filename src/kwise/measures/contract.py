@@ -170,6 +170,9 @@ class ContractAdjustment:
     saving_won: float | None
     annual_saving_won: float | None
     saving_basis: str
+    floor_bound_months: tuple[Any, ...] = ()
+    """**하한이 실제로 걸린 달** (105세션 3절 · ②-13). 요금 안내가 세는 것과
+    같은 값이다 — :func:`kwise.tariff.demand.floor_bound_months` 하나가 센다."""
     crossed_selection: TariffSelection | None = None
     """종별 문턱을 넘어 권하는 조합 (98세션). 안 넘으면 ``None``."""
     crossed_label: str | None = None
@@ -511,6 +514,7 @@ def evaluate_contract_adjustment(
         saving_won=saving,
         annual_saving_won=annualize(saving, bill.base_fee_months),
         saving_basis=basis_text,
+        floor_bound_months=bound,
         crossed_selection=crossed.selection if crossed is not None else None,
         crossed_label=crossed.label if crossed is not None else None,
         crossed_total_won=crossed.bill.total_won if crossed is not None else None,

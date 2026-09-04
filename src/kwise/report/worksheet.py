@@ -205,12 +205,17 @@ def contract_worksheet(result: ContractAdjustment) -> Worksheet:
         WorkRow("최대수요", "직전 12개월 최대 (하한 적용 전)", _kw(result.demand_before_floor_kw)),
     ]
     if ratio is not None and result.floor_kw is not None:
+        # **걸린 달을 적는다** (105세션 5절 · ②-13). 앞서는 「걸린다/걸리지
+        # 않는다」 를 **연간 최대**로만 갈랐다 — 굴림 창을 못 채운 초기 달에만
+        # 걸리는 판에서 근거표가 「걸리지 않는다」 라 적고 바로 아랫줄에
+        # 목표와 절감액을 적었다. 세는 자리는 요금 안내와 같다.
+        bound = len(result.floor_bound_months)
         rows.append(
             WorkRow(
                 f"하한 판정 ({ratio:.0%})",
                 f"계약전력 {result.contract_kw:,.0f} kW × {ratio:.0%}",
                 f"{result.floor_kw:,.1f} kW"
-                + (" — 하한이 걸린다" if result.floor_binding else " — 걸리지 않는다"),
+                + (f" — {bound}개 월에 걸린다" if bound else " — 어느 달에도 안 걸린다"),
             )
         )
         rows.append(
@@ -218,7 +223,7 @@ def contract_worksheet(result: ContractAdjustment) -> Worksheet:
                 "목표 계약전력",
                 f"{result.crossed_label} 문턱 바로 아래"
                 if result.crosses_type
-                else f"최대수요 ÷ {ratio:.0%}",
+                else f"가장 작은 달 ÷ {ratio:.0%}",
                 _kw(result.target_contract_kw, decimals=0)
                 if result.target_contract_kw is not None
                 else NO_SAVING,

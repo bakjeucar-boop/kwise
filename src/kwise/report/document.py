@@ -388,12 +388,19 @@ def _contract_conclusion(contract: ContractAdjustment) -> str:
     """계약전력 결론 — **네 갈래다** (53세션 4-9 · 83세션에 판정을 하한으로 옮겼다).
 
         초과 위약  계약전력을 넘은 구간이 있다. **상향을 검토할 자리다**
-        하한이 이긴다  하한이 요금적용전력 위에 있다. 낮추면 그만큼 준다
-        종별이 바뀐다  하한은 지지만 문턱 아래 종별로 넘어가면 준다 (99세션)
-        하한이 진다   최대수요가 기준이고 넘어갈 종별도 없어 낮춰도 줄지 않는다
+        종별이 바뀐다  문턱 아래 종별로 넘어가면 요금 전체가 준다 (99세션)
+        하한이 걸린다  하한이 어느 달의 요금적용전력을 끌어올린다. 낮추면 그만큼 준다
+        하한이 안 걸린다  어느 달도 안 걸리고 넘어갈 종별도 없어 낮춰도 줄지 않는다
 
     39세션까지는 「하향 여지 있음」 과 「적정」 둘이었고 여유율이 그 둘을 갈랐다.
     **여유율은 이 판정에 쓸 잣대가 아니다** — 이득이 있느냐는 하한이 정한다.
+
+    **105세션에 두 갈래를 손봤다** (②-13). ㄱ 종별 갈래를 하한 갈래보다 **먼저**
+    본다 — 둘 다 서는 판(하한이 걸리면서 문턱도 넘는 판)에서 절감액은 종별
+    전환에서 오는데 하한 문장이 「그만큼 기본요금이 줄어듭니다」 라고 적고
+    있었다. ㄴ 하한 문장이 **「최대수요보다 높아」 를 안 쓴다** — 연간 최대만
+    보는 말이라, 굴림 창을 못 채운 초기 달에만 걸리는 판에서 거짓이 된다.
+    **문구는 안 늘었다** — 갈래 넷이 그대로 넷이다.
     """
     if contract.over_contract_slots:
         return (
@@ -401,28 +408,25 @@ def _contract_conclusion(contract: ContractAdjustment) -> str:
             f"{contract.over_contract_slots:,}건 있어 초과 위약 검토 대상입니다. "
             "하향이 아니라 상향을 검토해야 합니다."
         )
-    if contract.target_contract_kw is not None and contract.floor_binding:
-        return (
-            f"요금적용전력 하한 {contract.floor_kw:,.0f} kW 가 최대수요 "
-            f"{contract.demand_before_floor_kw:,.0f} kW 보다 높아, 계약전력을 "
-            f"{contract.contract_kw:,.0f} → {contract.target_contract_kw:,.0f} kW 로 "
-            "낮추면 그만큼 기본요금이 줄어듭니다."
-        )
     if contract.target_contract_kw is not None and contract.crossed_label is not None:
-        # **하한이 지는데도 낮출 자리가 있는 판** (99세션). 위 문장을 그대로 쓰면
-        # 「하한이 최대수요보다 높아」 가 거짓말이 된다 — 이 갈래는 하한이 아니라
-        # 종별이 이득을 낸다. **문구가 늘지 않는다** — 결론 한 자리의 갈래다.
         return (
             f"계약전력을 {contract.contract_kw:,.0f} → "
             f"{contract.target_contract_kw:,.0f} kW 로 낮추면 계약종별이 "
             f"{contract.crossed_label} 로 바뀌어 요금 전체가 줄어듭니다."
         )
+    if contract.target_contract_kw is not None and contract.floor_bound_months:
+        return (
+            f"요금적용전력 하한 {contract.floor_kw:,.0f} kW 가 "
+            f"{len(contract.floor_bound_months)}개 월의 요금적용전력을 끌어올리고 있어, "
+            f"계약전력을 {contract.contract_kw:,.0f} → "
+            f"{contract.target_contract_kw:,.0f} kW 로 낮추면 그만큼 기본요금이 줄어듭니다."
+        )
     if contract.floor_kw is None:
         return f"계약전력 {contract.contract_kw:,.0f} kW 의 하한 비율을 알 수 없습니다."
     return (
-        f"계약전력 {contract.contract_kw:,.0f} kW 는 이미 적정합니다. 최대수요 "
-        f"{contract.demand_before_floor_kw:,.0f} kW 가 하한 "
-        f"{contract.floor_kw:,.0f} kW 위에 있어 낮출 자리가 없습니다."
+        f"계약전력 {contract.contract_kw:,.0f} kW 는 이미 적정합니다. 하한 "
+        f"{contract.floor_kw:,.0f} kW 가 어느 달의 요금적용전력에도 걸리지 않아 "
+        "낮출 자리가 없습니다."
     )
 
 
