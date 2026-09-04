@@ -200,7 +200,7 @@ def test_잘라도_되는_칸은_그대로_자른다(monkeypatch: pytest.MonkeyP
     이것이 없으면 「전부 온전히」 로 미끄러져 브리핑이 그냥 길어진다.
     """
     out = _built(SAMPLE, monkeypatch)
-    evidence = next(line for line in out.splitlines() if line.startswith("  근거 · 테스트 상태"))
+    evidence = next(line for line in out.splitlines() if line.startswith("  · 테스트 상태"))
     assert evidence.endswith("…"), evidence
     assert TAIL_CLIPPED not in out, "자르는 칸의 꼬리가 남았습니다 — clip 이 죽었습니다"
 
@@ -413,18 +413,14 @@ def test_미해결이_부풀어도_뒤_칸이_다_나온다(monkeypatch: pytest.
     out = _built(_inflate(), monkeypatch)
     for tail in (TAIL_NEXT, TAIL_BLOCKER):
         assert tail in out, f"{tail} 가 잘렸습니다 — 뒤 칸이 앞 칸에 희생됐습니다"
-    assert "  근거 · 테스트 상태" in out, out
+    assert "  · 테스트 상태" in out, out
     assert "## 내가 밟아야 할 것" in out, out
     assert "③-1 1시간 자료" in out, out
 
-    # **자른 자리는 무엇이 잘렸는지와 전문이 어디 있는지를 남긴다.**
-    # 잘린 줄이 없으면 읽는 쪽은 **본문이 원래 그만큼인 줄 안다.**
-    rows = out.splitlines()
-    cut = [i for i, line in enumerate(rows) if "본문" in line and "줄였다" in line]
-    assert cut, "본문을 줄였는데 말하지 않았습니다"
-    assert all("전문은 PROCEED.md" in rows[i] for i in cut), cut
-    # **문장 한가운데서 끊지 않는다** — 09-02 는 「계절 구분 ·」 에서 끊었다.
-    assert all(rows[i - 1].rstrip().endswith("다.") for i in cut), [rows[i - 1] for i in cut]
+    # **부푸는 것은 이름뿐이다** (113세션 3절). 85세션은 본문을 세 줄까지 담고
+    # 「본문 N자를 줄였다」 를 붙였는데, 그 대가가 브리핑의 43.6% 였다.
+    # 이제 본문을 아예 안 내므로 **항목이 늘어도 한 항목이 한 줄이다.**
+    assert "줄였다. 전문은 PROCEED.md" not in out, "본문 요약이 되살아났습니다"
 
 
 def test_N건_없는_갈래를_새로_열면_말한다(monkeypatch: pytest.MonkeyPatch) -> None:

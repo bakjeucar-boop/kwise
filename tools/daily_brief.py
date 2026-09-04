@@ -3,16 +3,21 @@ r"""아침 브리핑을 만든다.
 `PROCEED.md` 에서 오늘 시작에 필요한 것만 뽑는다.
 새 대화의 첫 메시지로 붙이는 것이 용도다.
 
+**다섯이 선다** (113세션 3절) — ① 지금 상태(HEAD · 미해결 수 · 근거 넷) ·
+② 직전 세션 · ③ 오늘 첫 작업 · ④ 다시 열지 마라 · ⑤ 살아 있는 못(① 안의
+「테스트 상태」 xfail 수). 그 뒤에 미해결 목록과 「내가 밟아야 할 것」 이 붙는다.
+**이 다섯이면 세션 지시서를 쓸 수 있다.**
+
 **칸마다 자를지 접을지가 다르다** (68세션 2절). 이것은 아침에 읽는 요약이면서
 **인수인계 매체**다 — 짧아야 읽히고 온전해야 넘겨진다. 그래서 셋은 접기만 하고
-자르지 않는다: **오늘 첫 작업 · 미해결 항목 · 블로커.** 나머지(직전 세션 요약 ·
+자르지 않는다: **오늘 첫 작업 · 미해결 이름 · 블로커.** 나머지(직전 세션 요약 ·
 근거 넷)는 그대로 자른다.
 
-**예산도 칸마다 따로다** (85세션 1절). 전역 한도 하나를 두면 앞 칸이 다 먹었을
-때 뒤 칸이 통째로 죽는다 — 09-02 아침에 71줄이 그렇게 사라졌다. 지금 한도는
-**미해결 한 항목의 본문**에만 있고(:data:`ITEM_BODY_LINES`), 갈래 제목 ·
-항목 이름 · 뒤 칸 넷(블로커 · 오늘 첫 작업 · 근거 셋 · 「내가 밟아야 할 것」)은
-어떤 경우에도 온전히 나온다.
+**글자 수로 자르지 않고 담는 것을 줄인다** (113세션 3절). 85세션이 전역 한도를
+미해결 본문으로 옮겨(`ITEM_BODY_LINES`) 뒤 칸이 죽는 병은 고쳤지만 브리핑은
+**24,670자**까지 자랐다 — 「오늘 첫 작업」 54.6% · 미해결 43.6%. 끝을 자르면
+읽는 쪽이 잘린 뒤를 궁금해해 결국 `PROCEED.md` 를 열게 되므로 아낀 것이 없다.
+그래서 **미해결은 이름만 내고**, 닫힌 일은 「다시 열지 마라」 칸으로 보낸다.
 
     .venv\Scripts\python.exe tools\daily_brief.py
     .venv\Scripts\python.exe tools\daily_brief.py --no-clip   클립보드 복사 생략
@@ -32,16 +37,14 @@ import textwrap
 from pathlib import Path
 from typing import NamedTuple
 
-# **예산은 칸마다 따로 둔다** (85세션 1절). 전에는 전역 한도 하나(`MAX_LINES`)가
-# 문서 전체에 걸려 있었다 — **앞 칸이 예산을 다 먹으면 뒤 칸이 통째로 죽는다.**
-# 09-02 아침에 그렇게 됐다: 미해결 ②-13 이 문장 한가운데서 끊기고 그 뒤 71줄이
-# 사라졌다(②-14~②-20 일곱 · ③ 갈래 · 블로커 · 오늘 첫 작업 · 근거 셋 ·
-# 「내가 밟아야 할 것」). 50 → 90 으로 올린 것이 68세션인데, **올리는 것으로는
-# 안 낫는다** — 항목이 느는 날 같은 자리에서 다시 죽는다. 자리를 옮겨야 낫는다.
+# **미해결은 이름만 낸다** (113세션 3절). 85세션이 전역 한도를 미해결 본문으로
+# 옮겨(`ITEM_BODY_LINES = 3`) 뒤 칸이 죽는 병은 고쳤는데, **본문을 낸다는 것
+# 자체는 그대로 남았다** — 그 대가가 항목마다 최대 네 줄이고 브리핑 24,670자의
+# **43.6%**(10,744자)였다. 이름만 내면 **1,532자**다.
 #
-# 그래서 한도가 **미해결 한 항목의 본문**에만 걸린다. 잘리는 것은 그 본문뿐이고
-# 갈래 제목 · 항목 이름 · 뒤 칸 넷은 어떤 경우에도 온전히 나온다.
-ITEM_BODY_LINES = 3
+# **잃는 것이 없다** — 전문이 필요하면 `PROCEED.md` 「현재 상태」 에서 이름으로
+# 떠 오면 되고, 지난 열 세션 지시서가 이미 다 그렇게 했다.
+#
 # 한 줄이 길면 터미널에서 접혀 줄 수가 어긋난다.
 WRAP_AT = 96
 
@@ -404,39 +407,27 @@ def item_parts(text: str) -> tuple[str, str]:
     return text, ""
 
 
-#: 문장 끝. **한가운데서 끊지 않으려고** 문장 단위로 담는다 (85세션 1절).
-_SENTENCE = re.compile(r"(?<=\.)\s+")
+#: `## 오늘 (…) 112세션 — …` 처럼 **서술 절 제목**에 선 세션 번호 (113세션 3절).
+#:
+#: :func:`latest_session` 이 읽는 표와 **다른 자리**다. 세 세션(110·111·112)이
+#: 서술 절만 쓰고 표 행을 안 붙여 브리핑이 사흘 동안 「직전 세션 — 109세션」
+#: 을 냈다. **읽는 쪽이 아니라 쓰는 쪽이 밀린 것**이므로 코드가 고칠 수 있는
+#: 것은 하나뿐이다 — **밀렸다고 말하는 것.**
+_SECTION_NO = re.compile(r"^##[^\n]*?(\d+)세션", re.M)
 
 
-def clip_body(text: str, first: str, rest: str, tag: str) -> list[str]:
-    """미해결 항목 **본문**을 :data:`ITEM_BODY_LINES` 줄까지 담는다 (85세션 1절).
+def stale_session(body: str, title: str) -> int:
+    """서술 절이 표보다 **두 판 이상** 앞서 있으면 그 번호. 아니면 0.
 
-    **자르는 것은 본문뿐이다.** 이름 줄은 부르는 쪽이 이미 온전히 실었다.
+    :func:`missing_groups` 와 같은 자리의 장치다 — **조용히 낡는 것을 막는다.**
 
-    **문장 한가운데서 끊지 않는다.** 줄 수가 상한을 넘지 않는 데까지 문장을
-    담는다 — 09-02 브리핑은 ②-13 을 「여덟 종별 단가 · 계절 구분 ·」 에서
-    끊었고, 그 조각만 읽으면 무슨 말인지 알 수 없다. 첫 문장 하나가 이미
-    상한을 넘으면 그것만 낱말 자리에서 접어 싣는다.
-
-    **자른 자리에 무엇이 잘렸는지와 전문이 어디 있는지를 남긴다.** 잘린 줄
-    자체가 없으면 브리핑을 읽는 쪽은 **본문이 원래 그만큼인 줄 안다.**
+    **한 판은 봐준다.** 도는 세션이 자기 절을 먼저 쓰고 표 행은 종료 절차에
+    붙이므로, 세션 중에는 서술 절이 표보다 하나 앞선 것이 **정상**이다. 그것까지
+    짖으면 날마다 뜨고, **매일 뜨는 경고는 안 읽힌다** (72세션 잣대).
     """
-    text = text.strip()
-    if not text:
-        return []
-    kept = ""
-    for sentence in _SENTENCE.split(text):
-        trial = f"{kept} {sentence}".strip()
-        if kept and len(wrap(trial, first, rest)) > ITEM_BODY_LINES:
-            break
-        kept = trial
-    if not kept:  # 첫 문장 하나가 이미 상한을 넘는다 — 낱말 자리에서 접는다
-        kept = " ".join(line.strip() for line in wrap(text, first, rest)[:ITEM_BODY_LINES])
-    lines = wrap(kept, first, rest)[:ITEM_BODY_LINES]
-    left = len(text) - len(kept)
-    if left > 0:
-        lines.append(f"{rest}… {tag} 본문 {left}자를 줄였다. 전문은 PROCEED.md 「현재 상태」")
-    return lines
+    heads = [int(n) for n in _SECTION_NO.findall(body)]
+    now = int(m.group(1)) if (m := re.match(r"(\d+)세션", title)) else 0
+    return top if heads and (top := max(heads)) > now + 1 else 0
 
 
 # ── 브리핑 조립 ──────────────────────────────────────────────────────────
@@ -470,23 +461,59 @@ def build() -> str:
     # 「변경 2건」 이 실은 파일 3개인 일이 생긴다.
     dirty = git("status", "--porcelain", "-uall")
     mark = f"  (커밋 안 된 파일 {len(dirty.splitlines())}개)" if dirty else ""
-    lines.append(f"# 오늘의 출발점 — HEAD {head}{mark}")
+    items = open_items(state)
+
+    # ① 지금 상태 — HEAD 와 회귀값이 한 자리에 선다 (113세션 3절). 근거 넷은
+    # 전에 「오늘 첫 작업」 칸 꼬리에 있었다. **여는 값을 먼저 보여야** 내일
+    # 이 브리핑 하나로 세션을 열 수 있다.
+    lines.append(f"# 지금 상태 — HEAD {head}{mark}")
     lines.append(f"  {clip(subject)}")
+    if items:
+        lines.append(f"  미해결 {total_items(items)}건")
     # **행이 사라지면 어느 행인지 말한다** (72세션 3절). 68세션 장치는 미해결이
     # 0건일 때만 걸려, 70세션에 「다음 작업」 이 사라졌을 때는 아무 소리도 안 났다.
     for name in unread_rows(body):
         lines.append(f"  **「{name}」 행을 못 읽었다** — 칸 안의 세로줄은 \\| 로 적는다")
+    # ⑤ 살아 있는 못은 「테스트 상태」 의 xfail 수가 담는다.
+    for key in ("테스트 상태", "케이스 스터디", "화면 감사", "살아 있는 못"):
+        if key in state:
+            lines.append(f"  · {key} — {clip(strip_md(state[key]), WRAP_AT - 14)}")
     lines.append("")
 
-    # 직전 세션이 무엇을 했나 — 세 줄. **「어제」 가 아니다** (68세션 2절) —
+    # ② 직전 세션이 무엇을 했나 — 세 줄. **「어제」 가 아니다** (68세션 2절) —
     # 하루에 두 세션이 돌면 「어제」 가 오늘을 가리킨다. 날짜는 괄호에 있다.
     lines.append(f"## 직전 세션 — {title}" if title else "## 직전 세션")
+    # **표가 낡으면 말한다** (113세션 3절). 110~112세션이 서술 절만 쓰고 표
+    # 행을 안 붙여 사흘 동안 109세션이 「직전」 이었다.
+    if behind := stale_session(body, title):
+        lines.append(
+            f"  **표가 {behind}세션까지 밀렸다** — PROCEED.md 세션 목록표에 그 행을 붙인다"
+        )
     for seg in split_top(strip_md(detail))[:3]:
         lines.append(f"  · {clip(seg, WRAP_AT - 4)}")
     lines.append("")
 
-    # 미해결 — 갈래 · 번호 · 한 줄. **자르지 않는다** (아래 KEEP_WHOLE).
-    items = open_items(state)
+    # ③ 다음에 할 일. **자르지 않는다** — 차례와 갈림길이 여기 있다.
+    lines.append("## 오늘 첫 작업")
+    nxt = strip_md(state.get("다음 작업", ""))
+    if not nxt:
+        # **그럴듯한 기본값을 두지 않는다** (72세션 3절). 70세션에 이 행이
+        # 사라졌을 때 「정해지지 않았다 — 지시서를 기다린다」 가 떴다. 그 말은
+        # **읽히는 말**이라 아무도 이상하게 보지 않았다 — 네 사고 가운데 가장
+        # 나빴던 까닭이다. **없으면 없다고 말한다.**
+        nxt = "**「다음 작업」 을 못 읽었다** — PROCEED.md 「현재 상태」 의 그 행을 보라"
+    lines.extend(wrap(nxt, "  ", "  "))
+    lines.append("")
+
+    # ④ 다시 열지 마라 — **이름만.** 까닭은 세션 기록에 있다 (113세션 3절).
+    # 이 칸이 없으면 닫힌 일이 「오늘 첫 작업」 에 눌러앉는다 — 그 칸 14,117자
+    # 가운데 88세션까지의 덩이 4,567자가 그렇게 쌓인 것이다.
+    if closed := strip_md(state.get("다시 열지 마라", "")):
+        lines.append("## 다시 열지 마라")
+        for seg in split_top(closed):
+            lines.extend(wrap(seg, "  · ", "    "))
+        lines.append("")
+
     if not items:
         # **조용한 0 을 막는다.** 칸에 세로줄(|)이 하나 섞이면 그 표 행이 통째로
         # 사라지는데, 그때 「미해결 0건」 이 아무 말 없이 나왔다 (68세션 1절).
@@ -511,30 +538,12 @@ def build() -> str:
             seen.add(item.sym)
             lines.append(f"  {item.sym} {item.name}")
         first = f"    {item.tag}. "
-        rest = " " * len(first)
-        # **이름은 온전히 · 본문만 줄인다** (85세션 1절).
-        name, body = item_parts(item.text or item.name)
-        lines.extend(wrap(name, first, rest))
-        lines.extend(clip_body(body, rest, rest, item.tag))
+        # **이름만 낸다** (113세션 3절). 본문은 `PROCEED.md` 에서 이름으로 뜬다.
+        lines.extend(wrap(item_parts(item.text or item.name)[0], first, " " * len(first)))
     if state.get("블로커", "").strip(" —-"):
         lines.extend(wrap(strip_md(state["블로커"]).lstrip("— "), "  블로커 — ", "    "))
     else:
         lines.append("  블로커 없음")
-    lines.append("")
-
-    # 오늘 첫 작업과 근거. **첫 작업은 자르지 않는다** — 후보 원문이 여기 있다.
-    lines.append("## 오늘 첫 작업")
-    nxt = strip_md(state.get("다음 작업", ""))
-    if not nxt:
-        # **그럴듯한 기본값을 두지 않는다** (72세션 3절). 70세션에 이 행이
-        # 사라졌을 때 「정해지지 않았다 — 지시서를 기다린다」 가 떴다. 그 말은
-        # **읽히는 말**이라 아무도 이상하게 보지 않았다 — 네 사고 가운데 가장
-        # 나빴던 까닭이다. **없으면 없다고 말한다.**
-        nxt = "**「다음 작업」 을 못 읽었다** — PROCEED.md 「현재 상태」 의 그 행을 보라"
-    lines.extend(wrap(nxt, "  ", "  "))
-    for key in ("테스트 상태", "케이스 스터디", "화면 감사"):
-        if key in state:
-            lines.append(f"  근거 · {key} — {clip(strip_md(state[key]), WRAP_AT - 14)}")
     lines.append("")
 
     # 내가 밟아야 할 것 — 사람이 움직여야 풀리는 갈래만.
@@ -553,7 +562,7 @@ def build() -> str:
         lines.pop()
 
     # **전역 한도를 두지 않는다** (85세션 1절). 여기서 자르면 그것이 곧 뒤 칸을
-    # 죽이는 자리다 — 예산은 :data:`ITEM_BODY_LINES` 로 미해결 항목 본문에만 있다.
+    # 죽이는 자리다 — **글자 수로 자르지 않고 담는 것을 줄인다** (113세션 3절).
     return "\n".join(lines) + "\n"
 
 
