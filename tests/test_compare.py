@@ -24,7 +24,14 @@ from kwise.measures import Certainty, dispatch_peak_shaving, lowest_certainty
 from kwise.measures.solar import power_factor_after_pct, power_factor_floor_pct
 from kwise.notices import texts
 from kwise.quality import QualityReport
-from kwise.tariff import BillingResult, TariffSelection, TariffTable, deemed_lagging_pct
+from kwise.tariff import (
+    BillingOptions,
+    BillingResult,
+    TariffSelection,
+    TariffTable,
+    calculate_bill,
+    deemed_lagging_pct,
+)
 
 CURRENT = TariffSelection("general_b", "high_a", "I")
 BEST = TariffSelection("general_b", "high_a", "II")
@@ -700,3 +707,92 @@ def test_조합_비교_열쇠가_잉여_수익을_안_본다() -> None:
     assert "surplus_revenue_won=None" in source
     assert 'key = f"compare|{token}|{stripped}|{options_key}|{stamp}"' in source
     assert "with_surplus_revenue" in source
+
+
+# ------------------------------------------ 수단을 켠 뒤 선택요금을 다시 (⑱)
+
+#: **PV 가 순위를 뒤집는 자리** (S112 1절). 갑Ⅰ 고압A 는 후보가 Ⅰ·Ⅱ 둘이고,
+#: 원부하에서는 Ⅱ 가 싼데 PV 4,000 kWp 를 켜면 Ⅰ 이 싸진다 — 태양광이 낮
+#: 전력량요금을 깎아 **전력량요금 단가 차이보다 기본요금 단가 차이가 커진다.**
+FLIP18_CURRENT = TariffSelection("general_a_1", "high_a", "II")
+FLIP18_PV_KWP = 4_000.0
+FLIP18_CONTRACT_KW = 5_500.0
+"""갑Ⅰ 은 기본요금이 **계약전력**에 붙으므로 요금 옵션에 계약전력이 필요하다."""
+
+
+def _flip18_rank(
+    usage: UsageData,
+    tariff: TariffTable,
+    baseline: BillingResult,
+    unit_pv: pd.Series,
+    report: QualityReport,
+) -> list[tuple[TariffSelection, float]]:
+    """조합 부하에서 후보별 총액. 싼 순이다."""
+    from kwise.tariff import switchable_selections
+
+    options = BillingOptions(contract_kw=FLIP18_CONTRACT_KW)
+    quotes = []
+    for candidate in switchable_selections(tariff, FLIP18_CURRENT):
+        result = evaluate_combination(
+            usage,
+            tariff,
+            CombinationSpec(str(candidate), candidate, pv_capacity_kwp=FLIP18_PV_KWP),
+            baseline_bill=baseline,
+            unit_pv_kw_per_kwp=unit_pv,
+            quality=report,
+            options=options,
+        )
+        quotes.append((candidate, result.bill.total_won))
+    return sorted(quotes, key=lambda pair: pair[1])
+
+
+def test_태양광이_선택요금_순위를_실제로_뒤집는다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_unit_pv: pd.Series,
+) -> None:
+    """**못을 박기 전에 자료부터 확인한다** (S112 1절 ㄹ).
+
+    아래 ``xfail`` 못이 「뜨지 않는 갈래」 가 아님을 이 시험이 지킨다.
+    """
+    options = BillingOptions(contract_kw=FLIP18_CONTRACT_KW)
+    baseline = calculate_bill(
+        sample_usage, tariff, FLIP18_CURRENT, options=options, quality=sample_report
+    )
+    rank = _flip18_rank(sample_usage, tariff, baseline, sample_unit_pv, sample_report)
+    assert rank[0][0].option == "I"
+
+    carried = dict(rank)[FLIP18_CURRENT] - rank[0][1]
+    assert carried == pytest.approx(2_651_504.0, abs=1.0)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="⑱ 3단계 조합이 조합 부하에서 선택요금을 다시 안 고른다 (S112 3절에서 고친다)",
+)
+def test_조합이_조합_부하에서_선택요금을_다시_고른다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_unit_pv: pd.Series,
+) -> None:
+    """**PV 가 부하를 바꿨으면 선택요금도 다시 골라야 한다** (⑱).
+
+    지금은 2단계가 원부하에서 고른 것을 그대로 들고 간다 — 조합 부하에서는
+    Ⅰ 이 2,651,504 원 싼데 Ⅱ 로 요금을 낸다.
+    """
+    options = BillingOptions(contract_kw=FLIP18_CONTRACT_KW)
+    baseline = calculate_bill(
+        sample_usage, tariff, FLIP18_CURRENT, options=options, quality=sample_report
+    )
+    result = evaluate_combination(
+        sample_usage,
+        tariff,
+        CombinationSpec("태양광", FLIP18_CURRENT, pv_capacity_kwp=FLIP18_PV_KWP),
+        baseline_bill=baseline,
+        unit_pv_kw_per_kwp=sample_unit_pv,
+        quality=sample_report,
+        options=options,
+    )
+    assert result.bill.selection.option == "I"

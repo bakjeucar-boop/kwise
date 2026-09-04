@@ -2111,3 +2111,102 @@ def test_잉여가_0이면_단가를_넣어도_문구가_없다(
     assert result.total_kwh == pytest.approx(0.0)
     assert result.applied_price_note == ""
     assert not [item for item in result.notices if "산출했습니다" in item.text]
+
+
+# ------------------------------------------------- 조건이 바뀌면 선택요금을 다시 (⑲)
+
+
+@pytest.fixture(scope="module")
+def flipping_night_usage(tmp_path_factory: pytest.TempPathFactory) -> UsageData:
+    """**계약전력을 낮추면 선택요금 순위가 뒤집히는** 야간 피크형 (S112 1절).
+
+    관측 최대 4,000 kW 인데 요금적용전력 산정 대상 수요는 그 훨씬 아래다 —
+    경부하 시간대가 빠지기 때문이다. 계약전력을 관측 최대의 3배로 잡으면
+    하한(30%)이 모든 달을 끌어올리고, 목표까지 낮추면 하한이 함께 내려가
+    **기본요금 단가가 다른 후보들이 서로 다른 폭으로 싸진다.**
+    """
+    path = night_peak_month(
+        tmp_path_factory.mktemp("flip19") / "night.csv",
+        night_kwh=1_000.0,
+        midday_kwh=150.0,
+        other_kwh=30.0,
+    )
+    return load_usage(path)
+
+
+FLIP19_SELECTION = TariffSelection("general_b", "high_b", "II")
+FLIP19_CONTRACT_KW = 12_000.0
+
+
+def _flip19_totals(
+    usage: UsageData, tariff: TariffTable, contract_kw: float
+) -> list[tuple[TariffSelection, float]]:
+    """계약전력 하나에서 후보별 총액. 싼 순이다."""
+    from kwise.tariff import switchable_selections
+
+    options = BillingOptions(contract_kw=contract_kw)
+    quotes = [
+        (item, calculate_bill(usage, tariff, item, options=options).total_won)
+        for item in switchable_selections(tariff, FLIP19_SELECTION)
+    ]
+    return sorted(quotes, key=lambda pair: pair[1])
+
+
+def test_계약전력을_낮추면_선택요금_순위가_실제로_뒤집힌다(
+    flipping_night_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**못을 박기 전에 자료부터 확인한다** (S112 1절 ㄹ).
+
+    아래 ``xfail`` 못이 「뜨지 않는 갈래」 가 아님을 이 시험이 지킨다 —
+    자료가 바뀌어 뒤집힘이 사라지면 못보다 **이쪽이 먼저 깨진다.**
+    """
+    usage, table = flipping_night_usage, tariff
+    adjustment = evaluate_contract_adjustment(
+        usage,
+        calculate_bill(
+            usage,
+            table,
+            FLIP19_SELECTION,
+            options=BillingOptions(contract_kw=FLIP19_CONTRACT_KW),
+        ),
+        contract_kw=FLIP19_CONTRACT_KW,
+        table=table,
+        options=BillingOptions(contract_kw=FLIP19_CONTRACT_KW),
+    )
+    target = adjustment.target_contract_kw
+    assert target == pytest.approx(4_000.0)
+
+    now = _flip19_totals(usage, table, FLIP19_CONTRACT_KW)
+    after = _flip19_totals(usage, table, target)
+    assert now[0][0].option == "II"
+    assert after[0][0].option == "III"
+
+    # 2단계가 권한 Ⅱ 를 목표에서 그대로 들면 이만큼 더 낸다.
+    carried = dict(after)[now[0][0]] - after[0][1]
+    assert carried == pytest.approx(1_340_816.0, abs=1.0)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="⑲ 계약전력 조정 카드가 목표에서 선택요금을 다시 안 고른다 (S112 2절)",
+)
+def test_계약전력_조정이_목표에서_선택요금을_다시_고른다(
+    flipping_night_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**목표 계약전력에서 최적인 선택요금을 함께 권해야 한다** (⑲).
+
+    지금은 현행 계약전력으로만 총액을 내므로 Ⅱ 를 권한 채로 끝난다 —
+    목표까지 낮추면 Ⅲ 이 1,340,816 원 싼데 그 사실이 카드에 없다.
+    """
+    usage, table = flipping_night_usage, tariff
+    options = BillingOptions(contract_kw=FLIP19_CONTRACT_KW)
+    adjustment = evaluate_contract_adjustment(
+        usage,
+        calculate_bill(usage, table, FLIP19_SELECTION, options=options),
+        contract_kw=FLIP19_CONTRACT_KW,
+        table=table,
+        options=options,
+    )
+    assert adjustment.retuned_selection is not None
+    assert adjustment.retuned_selection.option == "III"
+    assert adjustment.retuned_saving_won == pytest.approx(1_340_816.0, abs=1.0)
