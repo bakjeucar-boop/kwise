@@ -19,6 +19,7 @@ from kwise.tariff.demand import (
     floor_bound_months,
     is_demand_month,
     monthly_demand_basis,
+    round_kw,
 )
 from kwise.tariff.engine import (
     AMI_BASIS_NOTICE,
@@ -183,6 +184,7 @@ __all__ = [
     "parse_tariff",
     "pending_option_notices",
     "power_factor_charge",
+    "round_kw",
     "selection_label",
     "switchable_selections",
     "validate_tariff",

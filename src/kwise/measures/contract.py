@@ -56,6 +56,7 @@ from kwise.tariff import (
     BillingResult,
     TariffSelection,
     TariffTable,
+    apply_contract_floor,
     calculate_bill,
     floor_bound_months,
     list_selections,
@@ -274,10 +275,28 @@ def _demand_column(monthly: pd.DataFrame) -> str:
     )
 
 
-def _base_fee_won(bill: BillingResult, floor_kw: float) -> float:
-    """월별 요금적용전력에 하한을 씌워 기본요금을 다시 합산한다."""
+def _base_fee_won(bill: BillingResult, contract_kw: float, floor_ratio: float) -> float:
+    """월별 요금적용전력으로 기본요금을 다시 합산한다.
+
+    **요금적용전력을 여기서 만들지 않는다** (S119 ⑳). 하한을 씌우고 1kW 로 접는
+    일은 :func:`kwise.tariff.demand.apply_contract_floor` 하나가 한다 — 엔진이
+    쓰는 그 함수다. 앞서는 하한을 ``clip`` 으로 씌우고 ``round_kw`` 로 접어
+    **같은 식을 여기 다시 적었고**, 그래서 ⑭(S116)·⑳(S118)이 **같은 뿌리에서
+    두 번 돋았다**:
+    엔진을 고칠 때마다 이쪽이 안 따라와 ``saving_won`` 이 목표에서 처음부터 다시
+    계산한 총액 차이와 어긋났다.
+
+    받는 것이 하한 값(``floor_kw``)이 아니라 **계약전력과 비율**인 까닭도
+    그것이다 — 하한을 부르는 쪽이 만들면 곱하는 자리가 다시 둘이 된다.
+    """
     monthly = bill.monthly
-    demand = monthly[_demand_column(monthly)].clip(lower=floor_kw)
+    demand = pd.Series(
+        apply_contract_floor(
+            monthly[_demand_column(monthly)].to_dict(),
+            contract_kw=contract_kw,
+            floor_ratio=floor_ratio,
+        )
+    )
     return float((demand * bill.base_rate_won_per_kw * monthly["base_fee_factor"]).sum())
 
 
@@ -523,8 +542,8 @@ def evaluate_contract_adjustment(
     target = candidate if candidate is not None and candidate < contract_kw else None
 
     # 하한 적용 전 값으로 되돌린 뒤 두 계약전력에서 각각 다시 씌운다.
-    current_base = _base_fee_won(bill, floor_kw)
-    adjusted_base = _base_fee_won(bill, target * ratio) if target is not None else current_base
+    current_base = _base_fee_won(bill, contract_kw, ratio)
+    adjusted_base = _base_fee_won(bill, target, ratio) if target is not None else current_base
     # **역률 몫까지 담는다** (S116 · ⑭). 역률요금은 그 달 기본요금에 대한
     # 비율이므로(약관 제43조 ②) 기본요금이 줄면 **같은 비율로 함께 준다** —
     # 기본요금 차이만 내면 고객이 실제로 덜 내는 돈과 어긋난다. 비율은 역률
@@ -683,10 +702,3 @@ def evaluate_contract_adjustment(
         retuned_saving_won=retuned[1] if retuned is not None else None,
         notices=tuple(notices),
     )
-
-
-def contract_demand_series(
-    bill: BillingResult, contract_kw: float, floor_ratio: float
-) -> pd.Series:
-    """월별 요금적용전력에 하한을 씌운 결과. 명세에 붙일 수 있다."""
-    return bill.monthly["billing_demand_kw"].clip(lower=contract_kw * floor_ratio)

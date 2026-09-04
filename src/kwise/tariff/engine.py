@@ -32,6 +32,7 @@ from kwise.tariff.demand import (
     demand_window_months,
     floor_bound_months,
     monthly_demand_basis,
+    round_kw,
 )
 from kwise.tariff.excess import ExcessCharge, excess_charges
 from kwise.tariff.holiday import DateLike, build_calendar
@@ -142,6 +143,13 @@ class BillingOptions:
     곧 「신청했다」 가 되어 근거 없이 값을 만든다. 켜면 요금적용전력의 창·하한·
     계절 할인 셋이 함께 바뀐다 — :mod:`kwise.tariff.school` 참조.
     """
+
+    def __post_init__(self) -> None:
+        # 제7조 ① — 계약전력의 계산단위는 1kW 다 (S118 ⑳). **입구에서 한 번
+        # 접는다** — 이 값은 기본요금 기준 · 하한 · 초과사용부가금 · 경고 문구로
+        # 갈라져 나가므로, 쓰는 자리에서 각자 접으면 한 판 안에서 두 값이 된다.
+        if self.contract_kw is not None:
+            object.__setattr__(self, "contract_kw", round_kw(self.contract_kw))
 
 
 @dataclass(frozen=True)

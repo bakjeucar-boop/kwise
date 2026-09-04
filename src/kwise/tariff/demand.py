@@ -41,10 +41,34 @@ __all__ = [
     "floor_bound_months",
     "is_demand_month",
     "monthly_demand_basis",
+    "round_kw",
 ]
 
 # 값은 ``data\rules_kr.json`` 에 있다 (요구사항서 12장). **모듈 상수로 붙잡지
 # 않는다** — import 시점에 고정하면 파일을 고쳐도 옛 값으로 계산된다.
+
+
+def round_kw(value: float) -> float:
+    """제7조 ①(끝수 계산) — 계산단위 1kW, **그 이하 첫째자리에서 반올림**한다.
+
+    조문이 1kW 로 못 박은 것은 **계약전력 · 요금적용전력 · 최대수요전력** 셋이다
+    (2026-06-01 합본 21쪽). 이 도구는 앞의 둘에만 건다 — 최대수요전력은 관측값을
+    그대로 보이는 자리라 금액에 닿지 않는다.
+
+    **부스러기를 먼저 턴다.** 요금적용전력은 ``계약전력 × 0.3`` 같은 나눗셈·곱셈을
+    거쳐 오므로 ``132.3 / 0.3`` 이 ``441.00000000000006`` 이 되는 자리를 지난다.
+    9자리에서 한 번 접고 반올림한다.
+
+    **파이썬 ``round`` 를 쓰지 않는다.** 그것은 짝수 쪽으로 붙이는 은행가 반올림이라
+    ``round(264.5)`` 가 264 다. 약관의 반올림은 올림 쪽이다.
+
+    **거는 자리는 셋이다** — :func:`apply_contract_floor` (요금적용전력) ·
+    :class:`~kwise.tariff.engine.BillingOptions` 과
+    :class:`~kwise.diagnose.contract.ContractInfo` 의 계약전력. 앞의 하나가
+    요금적용전력의 마지막 관문이고 뒤의 둘이 계약전력의 입구다. **식은 이 함수
+    하나다** — 부르는 쪽마다 적으면 같은 자료에서 두 값이 나온다 (83세션).
+    """
+    return float(math.floor(round(value, 9) + 0.5))
 
 
 def default_demand_bands() -> tuple[str, ...]:
@@ -180,17 +204,22 @@ def apply_contract_floor(
     contract_kw: float | None,
     floor_ratio: float | None = None,
 ) -> dict[pd.Period, float]:
-    """계약전력 하한을 씌운다. 계약전력이나 비율을 모르면 그대로 둔다.
+    """계약전력 하한을 씌우고 **1kW 로 반올림한다.** 비율을 모르면 하한만 건너뛴다.
 
     하한은 요금표에 종별 속성으로 담기지만 **값은 전 종별이 30% 다** (제68조 ①).
     비율이 확인되지 않은 종별은 요금 데이터에 ``null`` 로 두면 하한을 적용하지 않는다.
+
+    **요금적용전력이 여기서 끝난다** (S118 ⑳). 하한을 씌우든 안 씌우든 이 함수를
+    지나 나가므로 제7조 ①(:func:`round_kw`)을 여기 한 자리에 건다 — 요금 계산
+    (:mod:`kwise.tariff.engine`)과 피크 분석(:mod:`kwise.diagnose.peak`)이 둘 다
+    이 함수로 요금적용전력을 만든다.
     """
     if contract_kw is None or floor_ratio is None:
-        return {month: float(value) for month, value in demands.items()}
+        return {month: round_kw(value) for month, value in demands.items()}
     if not 0.0 <= floor_ratio <= 1.0:
         raise ValueError(f"하한 비율은 0~1 이어야 합니다: {floor_ratio}")
     floor = contract_kw * floor_ratio
-    return {month: max(float(value), floor) for month, value in demands.items()}
+    return {month: round_kw(max(float(value), floor)) for month, value in demands.items()}
 
 
 def floor_bound_months(demands: Mapping[Any, float], floor_kw: float) -> tuple[Any, ...]:

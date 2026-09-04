@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING
 
 from kwise.notices import Notice, block, warn
 from kwise.rules import rule_value
-from kwise.tariff import TariffSelection
+from kwise.tariff import TariffSelection, round_kw
 
 if TYPE_CHECKING:  # 실행 시점에 들이면 measures → diagnose 와 맞물려 돈다.
     from kwise.measures.contract import ContractAdjustment
@@ -81,6 +81,12 @@ class ContractInfo:
     def __post_init__(self) -> None:
         if self.contract_kw is not None and self.contract_kw <= 0:
             raise ValueError(f"계약전력은 양수여야 합니다: {self.contract_kw}")
+        # 제7조 ① — 계약전력의 계산단위는 1kW 다 (S118 ⑳). **요금 쪽 입구
+        # (:class:`~kwise.tariff.engine.BillingOptions`)와 같은 값이어야 한다** —
+        # 화면·PPT 는 이쪽을, 요금은 저쪽을 적으므로 한쪽만 접으면 한 산출물
+        # 안에서 계약전력이 두 값으로 적힌다.
+        if self.contract_kw is not None:
+            object.__setattr__(self, "contract_kw", round_kw(self.contract_kw))
         if not 0 < self.power_factor_pct <= 100:
             raise ValueError(f"역률은 0~100% 여야 합니다: {self.power_factor_pct}")
 
