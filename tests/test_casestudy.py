@@ -33,7 +33,7 @@ from kwise.report.casestudy import (
     run_case_study,
 )
 from kwise.report.validity import check_case_study
-from kwise.tariff import TariffSelection, TariffTable, calculate_bill
+from kwise.tariff import BillingOptions, TariffSelection, TariffTable, calculate_bill
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CASE_DIR = PROJECT_ROOT / "input" / "cases"
@@ -166,6 +166,43 @@ def test_every_validity_check_passes(study: CaseStudy) -> None:
     """**하나라도 실패하면 계산 오류다.** 실패 내역을 그대로 보여 준다."""
     failed = [item for item in check_case_study(study) if not item.passed]
     assert not failed, "\n".join(f"{item.scope} · {item.name} — {item.detail}" for item in failed)
+
+
+def test_케이스_스터디가_하한_갈래를_한_번도_안_돈다(
+    study: CaseStudy, tariff: TariffTable
+) -> None:
+    """**회귀가 못 보는 갈래를 못으로 박는다** (105세션 6절 · ②-15).
+
+    케이스 스터디의 기준선은 `BillingOptions` 에 계약전력을 안 넣는다
+    (`casestudy.py` 의 `run_one_case`). 그래서 **하한이 아예 안 걸리고**,
+    105세션이 지은 「걸린 달이 판정을 가른다」 갈래를 **회귀 104판정이 한 번도
+    안 본다.** 54세션의 「케이스 스터디가 ESS 를 아예 안 돌리고 있었다」 와
+    같은 모양이다 — **안 도는 갈래는 초록으로 보인다.**
+
+    **글자를 세는 못이 아니라 값으로 보는 못이다.** 아홉 자리를 닫는 날(②-15)
+    첫 단언이 먼저 빨개져 **스스로 알린다** — 그때 이 시험을 지우고, 하한이
+    실제로 걸리는 벌에서 목표와 절감액을 보는 못으로 갈아 끼운다.
+
+    **105세션은 고치지 않았다.** 아홉 자리를 닫으려면 C6 계약전력을 먼저
+    정해야 하고(105세션 2절이 후보 셋을 값으로 쟀다) 그것은 사람의 선택이다.
+    """
+    bound = {
+        result.definition.key: len(result.baseline.floor_bound_months)
+        for result in study.results
+    }
+    assert set(bound.values()) == {0}, f"하한이 걸린 벌이 생겼다 — {bound}"
+
+    # **계약전력을 넣으면 실제로 걸린다.** 안 걸리는 것이 자료의 성질이 아니라
+    # **밑둥이 계약전력을 안 줘서**라는 것을 값으로 못 박는다.
+    c6 = study.find("C6")
+    with_contract = calculate_bill(
+        c6.usage,
+        tariff,
+        c6.definition.selection,
+        options=BillingOptions(contract_kw=c6.contract_kw),
+    )
+    assert len(with_contract.floor_bound_months) == len(with_contract.monthly)
+    assert with_contract.total_won > c6.baseline.total_won
 
 
 def test_pv_zero_saves_exactly_nothing(study: CaseStudy) -> None:
