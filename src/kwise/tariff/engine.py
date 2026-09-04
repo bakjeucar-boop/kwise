@@ -32,6 +32,7 @@ from kwise.tariff.demand import (
     floor_bound_months,
     monthly_demand_basis,
 )
+from kwise.tariff.excess import ExcessCharge, excess_charges
 from kwise.tariff.holiday import DateLike, build_calendar
 from kwise.tariff.labels import billing_month_label, option_label
 from kwise.tariff.power_factor import (
@@ -61,6 +62,7 @@ __all__ = [
     "AnnualEstimate",
     "BillingOptions",
     "BillingResult",
+    "ExcessCharge",
     "PartialMonthPolicy",
     "PowerFactorCharge",
     "billing_demands",
@@ -189,6 +191,8 @@ class BillingResult:
     total_base_won: float
     total_energy_won: float
     total_power_factor_won: float
+    total_excess_won: float
+    """초과사용부가금 총액 (제67조의3 ③ · 109세션). ``total_won`` 에 들어 있다."""
     total_won: float
     total_energy_won_adjusted: float
     total_won_adjusted: float
@@ -205,6 +209,11 @@ class BillingResult:
     :func:`kwise.tariff.demand.floor_bound_months` 하나가 센다. 계약전력
     하한이 없는 갈래(계약전력 기준 종별 · 비율 없음 · 계약전력 없음)에서는
     빈 튜플이다."""
+    excess: ExcessCharge = field(default_factory=ExcessCharge)
+    """초과사용부가금의 달별 내역 (제67조의3 ③ · 109세션).
+
+    ``excess.applicable`` 이 ``False`` 면 **0원이 아니라 「산출하지 않았다」** 이다
+    — 계약전력 기준 종별(제67조의3 ①)이거나 계약전력을 안 준 경우다."""
     notices: tuple[Notice, ...] = field(default=())
 
     @property
@@ -337,6 +346,9 @@ _MONEY_COLUMNS = (
     "power_factor_won",
     "energy_won",
     "energy_won_adjusted",
+    # 초과사용부가금도 단가에 비례하므로 짝마다 다르다 (109세션). 안 갈아 끼우면
+    # 짝의 단가로 계산한 달에 이쪽 단가의 부가금이 남아 총액이 어긋난다.
+    "excess_won",
     "total_won",
     "total_won_adjusted",
 )
@@ -552,6 +564,21 @@ def calculate_bill(
     )
     power_factor_ratio = power_factor.total_ratio
 
+    # 초과사용부가금 (제67조의3 ③ · 109세션). **제68조 ① 고객의 것이다** —
+    # 계약전력 기준 종별은 같은 조 제1항이라 구간이 다르고, 세칙에 우리가
+    # 판정할 수 없는 예외 목록이 붙는다. 그 갈래는 산출하지 않는다.
+    # **판정에 쓰는 것은 관측 최대수요다** — 경부하를 뺀 요금적용전력 대상값이
+    # 아니다 (별표3 단서 2호는 요금적용전력의 것이다).
+    excess = (
+        ExcessCharge()
+        if base_on_contract
+        else excess_charges(
+            monthly_peaks,
+            contract_kw=opts.contract_kw,
+            base_rate_won_per_kw=rates.base_won_per_kw,
+        )
+    )
+
     rows: list[dict[str, Any]] = []
     for month in months:
         month_mask = month_labels == month
@@ -570,6 +597,8 @@ def calculate_bill(
         school_discount_won = energy_won[month] * school_rates.get(month, 0.0)
         observed_energy_won = energy_won[month] - school_discount_won
         adjusted_energy_won = observed_energy_won / (1.0 - ratio) if ratio < 1.0 else float("nan")
+        # 초과사용부가금은 **청구되는 달**에만 실린다. 첫 초과 달은 예고뿐이라 0 이다.
+        excess_won = excess.won_of(month)
         rows.append(
             {
                 "month": month,
@@ -597,8 +626,11 @@ def calculate_bill(
                 "power_factor_won": power_factor_won,
                 "energy_won": observed_energy_won,
                 "energy_won_adjusted": adjusted_energy_won,
-                "total_won": base_won + power_factor_won + observed_energy_won,
-                "total_won_adjusted": base_won + power_factor_won + adjusted_energy_won,
+                "excess_won": excess_won,
+                "total_won": base_won + power_factor_won + observed_energy_won + excess_won,
+                "total_won_adjusted": (
+                    base_won + power_factor_won + adjusted_energy_won + excess_won
+                ),
                 "missing_ratio": ratio,
                 "demand_confidence": "신뢰 제한" if limited else "정상",
             }
@@ -849,6 +881,9 @@ def calculate_bill(
     total_energy = float(monthly["energy_won"].sum())
     total_energy_adjusted = float(monthly["energy_won_adjusted"].sum())
     total_power_factor = float(monthly["power_factor_won"].sum())
+    # **표에서 센다.** 경과조치로 짝의 금액이 실린 달이 있으면 ``excess`` 객체의
+    # 합과 갈리는데, 청구되는 것은 표 쪽이다.
+    total_excess = float(monthly["excess_won"].sum())
 
     return BillingResult(
         monthly=monthly,
@@ -872,13 +907,17 @@ def calculate_bill(
         total_base_won=total_base,
         total_energy_won=total_energy,
         total_power_factor_won=total_power_factor,
-        total_won=total_base + total_power_factor + total_energy,
+        total_excess_won=total_excess,
+        total_won=total_base + total_power_factor + total_energy + total_excess,
         total_energy_won_adjusted=total_energy_adjusted,
-        total_won_adjusted=total_base + total_power_factor + total_energy_adjusted,
+        total_won_adjusted=(
+            total_base + total_power_factor + total_energy_adjusted + total_excess
+        ),
         power_factor=power_factor,
         limited_months=limited_months,
         prior_peaks_supplied=bool(opts.prior_peaks),
         transition_months=transition_months,
         floor_bound_months=bound_months,
+        excess=excess,
         notices=tuple(notices),
     )

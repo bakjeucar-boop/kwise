@@ -157,7 +157,9 @@ def _excess_tiers(key: str, value: Any) -> list[ValidationIssue]:
             continue
         floor, multiplier = _number(tier[0]), _number(tier[1])
         if floor is None or not 0.0 <= floor < 1.0:
-            issues.append(ValidationIssue(key, f"초과비율 하한은 0 이상 1 미만이어야 합니다: {tier[0]!r}"))
+            issues.append(
+                ValidationIssue(key, f"초과비율 하한은 0 이상 1 미만이어야 합니다: {tier[0]!r}")
+            )
             continue
         if multiplier is None or multiplier <= 0:
             issues.append(ValidationIssue(key, f"배수는 양수여야 합니다: {tier[1]!r}"))
@@ -168,7 +170,9 @@ def _excess_tiers(key: str, value: Any) -> list[ValidationIssue]:
             )
         previous = (floor, multiplier)
     if previous is not None and _number(value[0][0]) != 0.0:
-        issues.append(ValidationIssue(key, "첫 구간의 하한은 0 이어야 합니다 (초과가 곧 부가금이다)."))
+        issues.append(
+            ValidationIssue(key, "첫 구간의 하한은 0 이어야 합니다 (초과가 곧 부가금이다).")
+        )
     return issues
 
 

@@ -32,6 +32,14 @@ from kwise.tariff.engine import (
     calculate_bill,
     demand_window_months,
 )
+from kwise.tariff.excess import (
+    ExcessCharge,
+    ExcessMonth,
+    excess_charges,
+    excess_grace_months,
+    excess_multiplier,
+    excess_tiers,
+)
 from kwise.tariff.holiday import (
     DEFAULT_COUNTRY,
     HolidayCalendar,
@@ -118,6 +126,8 @@ __all__ = [
     "DayRules",
     "DayType",
     "EnergyRates",
+    "ExcessCharge",
+    "ExcessMonth",
     "HolidayCalendar",
     "OptionPairPolicy",
     "OptionRates",
@@ -147,6 +157,10 @@ __all__ = [
     "default_tariff_dir",
     "demand_eligible_mask",
     "demand_window_months",
+    "excess_charges",
+    "excess_grace_months",
+    "excess_multiplier",
+    "excess_tiers",
     "floor_bound_months",
     "is_demand_month",
     "lagging_adjustment_ratio",
