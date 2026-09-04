@@ -2225,7 +2225,8 @@ def test_계약전력_조정이_목표에서_선택요금을_다시_고른다(
     reason = next(item.text for item in adjustment.notices if item.fact == "contract.saving_basis")
     assert "계약전력만 낮춘 몫" in reason
     assert "선택Ⅲ 쪽이" in reason
-    assert "1,340,816원 더 유리" in reason
+    # **표시 금액은 천 원 절사다** — `kwise.money.won` 을 거친다.
+    assert "1,340,000원 더 유리" in reason
 
 
 def test_현행이_이미_최적이면_다시_고른_것이_없다(

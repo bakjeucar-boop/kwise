@@ -49,7 +49,7 @@ import pandas as pd
 
 from kwise.io import UsageData
 from kwise.measures.base import Certainty, annualize
-from kwise.money import NO_SAVING
+from kwise.money import NO_SAVING, won
 from kwise.notices import Notice, basis, block, warn
 from kwise.tariff import (
     BillingOptions,
@@ -577,19 +577,19 @@ def evaluate_contract_adjustment(
             contract_kw=contract_kw,
             target_kw=target,
         )
-    if retuned is not None:
-        # **새 안내를 붙이지 않고 산출 근거를 늘린다** (S112 5절 ㄷ). 안내
-        # 항목이 하나 늘면 화면 예산을 먹는데, 이것은 절감액이 **무엇을 잰
-        # 값인가**를 말하는 것이라 근거 줄에 붙는 것이 제자리다. 위 절감액이
-        # **계약전력만 낮춘 몫**이라는 사실도 여기서 갈라 말한다 (2절 ㄹ).
-        #
-        # **조사를 붙이지 않는다** — 종별 이름이 무엇으로 끝나는지 모르므로
-        # 「이/가」·「로/으로」 를 쓰면 틀린 자리가 생긴다. 「쪽이」 는 언제나 맞다.
-        basis_text += (
-            ". 위 절감액은 계약전력만 낮춘 몫입니다. 목표 계약전력에서는 "
-            f"요금제 카드가 권한 것보다 {selection_label(table, retuned[0])} 쪽이 "
-            f"{retuned[1]:,.0f}원 더 유리합니다"
-        )
+        if retuned is not None:
+            # **새 안내를 붙이지 않고 산출 근거를 늘린다** (S112 5절 ㄷ). 안내
+            # 항목이 하나 늘면 화면 예산을 먹는데, 이것은 절감액이 **무엇을 잰
+            # 값인가**를 말하는 것이라 근거 줄에 붙는 것이 제자리다. 위 절감액이
+            # **계약전력만 낮춘 몫**이라는 사실도 여기서 갈라 말한다 (2절 ㄹ).
+            #
+            # **조사를 붙이지 않는다** — 종별 이름이 무엇으로 끝나는지 모르므로
+            # 「이/가」·「로/으로」 를 쓰면 틀린 자리가 생긴다. 「쪽이」 는 언제나 맞다.
+            basis_text += (
+                ". 위 절감액은 계약전력만 낮춘 몫입니다. 목표 계약전력에서는 "
+                f"요금제 카드가 권한 것보다 {selection_label(table, retuned[0])} 쪽이 "
+                f"{won(retuned[1], reason=NO_SAVING)} 더 유리합니다"
+            )
 
     if target is None:
         # **낮출 자리가 아예 없다. 까닭이 둘이다** (108세션 2절) — 하한이 어느
