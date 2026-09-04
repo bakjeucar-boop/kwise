@@ -21,6 +21,7 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from kwise import money
 from kwise.io import UsageData
 from kwise.notices import Notice, basis, info, warn
 from kwise.quality import QualityReport, monthly_missing
@@ -745,7 +746,8 @@ def calculate_bill(
             # 108세션까지는 부가금을 계산하지 않아 사용자에게 미룰 수밖에
             # 없었는데, 이제 총액에 들어 있다. **문구를 늘리지 않고 갈아 끼웠다.**
             tail = (
-                f"초과사용부가금 {excess.total_won:,.0f}원을 청구 총액에 넣었습니다."
+                f"초과사용부가금 {money.won(excess.total_won, reason='—')}을 "
+                "청구 총액에 넣었습니다."
                 if excess.total_won
                 else "초과한 달이 하나뿐이라 초과사용부가금은 예고이고 청구되지 않습니다."
             )

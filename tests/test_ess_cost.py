@@ -1699,6 +1699,17 @@ def test_소형_사무빌딩에서_성립하지_않는_사양을_고르지_않�
 
 _NIGHT_CASE = PROJECT_ROOT / "input" / "cases" / "C6_야간 피크형.csv"
 
+#: 이 벌의 계약전력. **관측 최대(10,920.64 kW) 위에 둔다** (109세션).
+#:
+#: 앞서는 6,000 kW 였는데, 109세션에 초과사용부가금이 총액에 실리자 그 값이
+#: **1.8배 초과 벌**이 됐다 — ESS 가 야간 피크를 깎으면 부가금이 함께 줄어
+#: 절감액이 양수인 점이 생긴다(최대 30,577,303원). 그 절감은 **맞는 값**이지만
+#: 이 자리에서 보려는 것은 「후보가 하나도 값이 안 매겨지는」 갈래이고, 부가금이
+#: 끼면 그 갈래를 딴 것이 흐려진다. **계약을 관측 최대 위로 올려 부가금을
+#: 0 으로 두고 본래 자리를 지킨다** — 깃발 넷(성립 안 함·목표 0·회수기간 없음·
+#: `ess.refine_unpriced`)은 6,000 kW 에서도 그대로 섰다.
+_NIGHT_CONTRACT_KW = 11_000.0
+
 
 def _night_optimum(tariff: TariffTable, *, scale: float) -> tuple[EssOptimum, float]:
     """야간 피크 자료를 **단가를 낮춰** 돌린다.
@@ -1714,9 +1725,10 @@ def _night_optimum(tariff: TariffTable, *, scale: float) -> tuple[EssOptimum, fl
 
     usage = load_usage(_NIGHT_CASE)
     selection = TariffSelection("general_b", "high_a", "I")
-    options = BillingOptions(contract_kw=6_000.0)
-    quality = check_quality(usage, contract_kw=6_000.0)
-    diag = diagnose(usage, tariff, ContractInfo(selection, contract_kw=6_000.0), quality=quality)
+    options = BillingOptions(contract_kw=_NIGHT_CONTRACT_KW)
+    quality = check_quality(usage, contract_kw=_NIGHT_CONTRACT_KW)
+    contract = ContractInfo(selection, contract_kw=_NIGHT_CONTRACT_KW)
+    diag = diagnose(usage, tariff, contract, quality=quality)
     baseline = calculate_bill(usage, tariff, selection, options=options, quality=quality)
     peak = float(diag.peak.billing_demand_kw)
     base = load_ess_cost_model()
