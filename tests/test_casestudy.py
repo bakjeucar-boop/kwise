@@ -33,7 +33,7 @@ from kwise.report.casestudy import (
     run_case_study,
 )
 from kwise.report.validity import check_case_study
-from kwise.tariff import BillingOptions, TariffSelection, TariffTable, calculate_bill
+from kwise.tariff import TariffSelection, TariffTable, calculate_bill
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CASE_DIR = PROJECT_ROOT / "input" / "cases"
@@ -168,41 +168,46 @@ def test_every_validity_check_passes(study: CaseStudy) -> None:
     assert not failed, "\n".join(f"{item.scope} · {item.name} — {item.detail}" for item in failed)
 
 
-def test_케이스_스터디가_하한_갈래를_한_번도_안_돈다(
+def test_케이스_스터디가_하한_갈래를_C6_에서_돈다(
     study: CaseStudy, tariff: TariffTable
 ) -> None:
-    """**회귀가 못 보는 갈래를 못으로 박는다** (105세션 6절 · ②-15).
+    """**회귀가 하한 갈래를 밟는 유일한 자리다** (107세션 3절 · ②-15 · ②-30).
 
-    케이스 스터디의 기준선은 `BillingOptions` 에 계약전력을 안 넣는다
-    (`casestudy.py` 의 `run_one_case`). 그래서 **하한이 아예 안 걸리고**,
-    105세션이 지은 「걸린 달이 판정을 가른다」 갈래를 **회귀 104판정이 한 번도
-    안 본다.** 54세션의 「케이스 스터디가 ESS 를 아예 안 돌리고 있었다」 와
-    같은 모양이다 — **안 도는 갈래는 초록으로 보인다.**
+    105세션 6절이 박아 둔 못은 그 반대를 봤다 — 「케이스 스터디가 하한 갈래를
+    **한 번도 안 돈다**」. 케이스 스터디의 기준선이 `BillingOptions` 에
+    계약전력을 안 넣어 일곱 벌 전부 걸린 달이 0 이었고, 105세션이 지은
+    「걸린 달이 판정을 가른다」 갈래를 104판정이 하나도 밟지 않았다.
 
-    **글자를 세는 못이 아니라 값으로 보는 못이다.** 아홉 자리를 닫는 날(②-15)
-    첫 단언이 먼저 빨개져 **스스로 알린다** — 그때 이 시험을 지우고, 하한이
-    실제로 걸리는 벌에서 목표와 절감액을 보는 못으로 갈아 끼운다.
+    **107세션 3절이 그 아홉 자리를 닫자 그 못이 스스로 빨개졌다** —
+    `{C1: 0 … C6: 13 … R1: 0}`. **사실이 뒤집혔으므로 걷고, 새 사실을 값으로
+    보는 이 못으로 옮겼다.** 안 도는 갈래를 세던 자리가 이제 **도는 갈래를
+    센다.**
 
-    **105세션은 고치지 않았다.** 아홉 자리를 닫으려면 C6 계약전력을 먼저
-    정해야 하고(105세션 2절이 후보 셋을 값으로 쟀다) 그것은 사람의 선택이다.
+    하한이 이기는 벌은 케이스 일곱 가운데 **C6 하나뿐이다** (107세션 2절 ㄴ).
+    경부하가 요금적용전력 산정에서 빠지므로 대상 수요(2,801.0 kW)가 계약전력
+    하한(12,012.7 × 30% = 3,603.81 kW) **아래**에 있다 — 그래서 열세 달이
+    전부 걸린다.
     """
     bound = {
         result.definition.key: len(result.baseline.floor_bound_months)
         for result in study.results
     }
-    assert set(bound.values()) == {0}, f"하한이 걸린 벌이 생겼다 — {bound}"
-
-    # **계약전력을 넣으면 실제로 걸린다.** 안 걸리는 것이 자료의 성질이 아니라
-    # **밑둥이 계약전력을 안 줘서**라는 것을 값으로 못 박는다.
     c6 = study.find("C6")
-    with_contract = calculate_bill(
-        c6.usage,
-        tariff,
-        c6.definition.selection,
-        options=BillingOptions(contract_kw=c6.contract_kw),
-    )
-    assert len(with_contract.floor_bound_months) == len(with_contract.monthly)
-    assert with_contract.total_won > c6.baseline.total_won
+    assert bound["C6"] == len(c6.baseline.monthly), f"C6 에서 하한이 빠졌다 — {bound}"
+    others = {key: value for key, value in bound.items() if key != "C6"}
+    assert set(others.values()) == {0}, f"C6 말고 하한이 걸린 벌이 생겼다 — {bound}"
+
+    # **하한이 요금적용전력을 붙든다.** 걸린 달의 기준이 수요가 아니라 하한이
+    # 라는 것을 값으로 못 박는다 — 이 성질이 C6 의 PV 기여를 0 으로 만든다.
+    ratio = c6.baseline.contract_floor_ratio
+    assert ratio is not None
+    assert c6.baseline.billing_demand_kw == pytest.approx(c6.contract_kw * ratio)
+
+    # **계약전력을 빼면 도로 안 걸린다.** 걸리는 것이 자료의 성질만이 아니라
+    # **밑둥이 계약전력을 주기 때문**이라는 것을 양쪽에서 못 박는다.
+    without_contract = calculate_bill(c6.usage, tariff, c6.definition.selection)
+    assert without_contract.floor_bound_months == ()
+    assert without_contract.total_won < c6.baseline.total_won
 
 
 def test_pv_zero_saves_exactly_nothing(study: CaseStudy) -> None:
@@ -217,14 +222,20 @@ def test_night_peak_case_proves_the_light_band_rule(study: CaseStudy) -> None:
     result = study.find("C6")
     observed = float(result.usage.kw.max())
     assert result.baseline.billing_demand_kw < observed * 0.5
-    # 그리고 PV 기여가 오히려 커야 한다 — 대상 슬롯이 주간뿐이다.
+    # **그리고 PV 가 한 칸도 못 내린다** (107세션 3절). 밑둥이 계약전력을 안
+    # 주던 동안은 반대였다 — 대상 슬롯이 주간뿐이라 PV 기여가 C1 보다 컸다
+    # (3.05% vs 1.80%). 밑둥을 닫으니 하한 3,603.81 kW 가 요금적용전력을
+    # 붙들어 **용량을 아무리 키워도 값이 그대로다.** C1 은 그대로 내려간다.
     frame = pd.DataFrame(list(result.pv_rows)).set_index("용량(kWp)")
     reduction = result.baseline.billing_demand_kw - float(frame.loc[1000.0, "요금적용전력(kW)"])
     c1 = study.find("C1")
     c1_frame = pd.DataFrame(list(c1.pv_rows)).set_index("용량(kWp)")
     c1_reduction = c1.baseline.billing_demand_kw - float(c1_frame.loc[1000.0, "요금적용전력(kW)"])
-    assert reduction / result.baseline.billing_demand_kw > (
-        c1_reduction / c1.baseline.billing_demand_kw
+    assert reduction == pytest.approx(0.0)
+    assert c1_reduction > 0.0
+    # 2,000 kWp 까지 키워도 그대로다 — 용량이 모자라서가 아니다.
+    assert float(frame.loc[2000.0, "요금적용전력(kW)"]) == pytest.approx(
+        result.baseline.billing_demand_kw
     )
 
 

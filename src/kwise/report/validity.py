@@ -363,14 +363,23 @@ def _cross_case_checks(study: CaseStudy, capacity: float = 1_000.0) -> list[Chec
         )
     )
 
-    c6_ratio = reduction_ratio("C6")
+    # **저감률 판정이 서던 자리다** (107세션 3절). 밑둥이 계약전력을 안 주던
+    # 동안 C6 는 하한 없이 계산돼 요금적용전력이 2,801.0 kW 였고, 대상 슬롯이
+    # 주간뿐이라 PV 가 그대로 들어 저감률이 C1 보다 컸다(3.05% vs 1.80%).
+    # 밑둥을 닫으니 하한 3,603.81 kW 가 요금적용전력을 붙들어 **PV 를 아무리
+    # 넣어도 한 칸도 안 내려간다** — 저감률 0.00%. **값을 갈아 끼울 자리가
+    # 아니다.** C6 가 보던 성질이 통째로 바뀌었으므로 판정도 그 성질을 본다.
+    # 하한이 이기는 벌은 케이스 일곱 가운데 C6 하나뿐이다 (107세션 2절 ㄴ) —
+    # 여기가 그 갈래를 회귀에서 밟는 유일한 자리다 (②-30).
+    c6_kw = reduction_kw("C6")
+    c6_floor_kw = c6_result.contract_kw * (c6_result.baseline.contract_floor_ratio or 0.0)
     checks.append(
         Check(
             "교차",
-            "C6 야간 피크형의 PV 기여가 오히려 크다 (저감률)",
-            c6_ratio > c1_ratio,
-            f"저감률 C6 {c6_ratio:.2%} vs C1 {c1_ratio:.2%} — "
-            "대상 슬롯이 주간뿐이라 PV 가 그대로 듣는다",
+            "C6 야간 피크형: 하한이 요금적용전력을 붙들어 PV 가 한 칸도 못 내린다",
+            c6_kw < 1e-9 and c1_kw > 1e-9,
+            f"C6 저감 {c6_kw:,.2f} kW vs C1 {c1_kw:,.2f} kW — "
+            f"경부하 최대라 대상 수요가 하한 {c6_floor_kw:,.1f} kW 아래에 있다",
         )
     )
 

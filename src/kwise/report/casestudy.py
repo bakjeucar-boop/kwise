@@ -69,6 +69,7 @@ from kwise.pv import (
 from kwise.pv.region import find_region
 from kwise.quality import QualityReport, check_quality
 from kwise.tariff import (
+    BillingOptions,
     BillingResult,
     TariffSelection,
     TariffTable,
@@ -335,6 +336,7 @@ def _case_ess(
     definition: CaseDefinition,
     baseline: BillingResult,
     quality: QualityReport,
+    options: BillingOptions,
 ) -> EssOptimum | None:
     """케이스 하나의 ESS 정밀화 (54세션). **화면과 같은 경로다.**
 
@@ -359,6 +361,7 @@ def _case_ess(
         curve=curve,
         baseline=baseline,
         quality=quality,
+        options=options,
     )
 
 
@@ -429,9 +432,18 @@ def run_one_case(
         else float(usage.kw.max()) * CONTRACT_MARGIN
     )
     contract = ContractInfo(definition.selection, contract_kw=contract_kw)
+    # **계약전력을 요금 옵션에도 넣는다** (107세션 3절 · ②-15). 배치(103세션
+    # 3절)와 화면(`ui\\pipeline.py` 의 ``ContractForm.billing_options``)이
+    # 하는 것과 같다 — 기준선·태양광·감도·선택요금·수단이 **한 밑둥** 위에
+    # 선다. 앞서는 기준선만 계약전력 없이 잡혀 요금적용전력 하한이 안 걸린
+    # 총액에서 하한이 걸린 절감액을 빼고 있었고, 엔진이 그 판마다
+    # ``tariff.floor_no_contract`` 를 냈다.
+    options = BillingOptions(contract_kw=contract_kw)
     with runner.running("diagnose"):
-        diagnosis = diagnose(usage, table, contract, quality=quality)
-        baseline = calculate_bill(usage, table, definition.selection, quality=quality)
+        diagnosis = diagnose(usage, table, contract, quality=quality, options=options)
+        baseline = calculate_bill(
+            usage, table, definition.selection, options=options, quality=quality
+        )
 
     profile = unit_pv
     if profile is None:
@@ -467,6 +479,7 @@ def run_one_case(
             steps=1,
             baseline=baseline,
             quality=quality,
+            options=options,
         )
         point = curve.points[-1]
         pv_rows.append(
@@ -505,6 +518,7 @@ def run_one_case(
             baseline_bill=baseline,
             unit_pv_kw_per_kwp=profile,
             quality=quality,
+            options=options,
         )
         for item in sensitivity_ranges(frame):
             sensitivity_rows.append(
@@ -529,7 +543,9 @@ def run_one_case(
     for candidate in switchable_selections(table, definition.selection):
         total = diagnosis.option_totals.get(candidate.option)
         if total is None:
-            total = calculate_bill(usage, table, candidate, quality=quality).total_won
+            total = calculate_bill(
+                usage, table, candidate, options=options, quality=quality
+            ).total_won
         selection_rows.append(
             {
                 "케이스": definition.label,
@@ -542,10 +558,15 @@ def run_one_case(
 
     # ---- 수단 (감도와 무관해야 하는 확정 계산들)
     switch = evaluate_tariff_switch(
-        usage, table, definition.selection, quality=quality, option_totals=diagnosis.option_totals
+        usage,
+        table,
+        definition.selection,
+        quality=quality,
+        options=options,
+        option_totals=diagnosis.option_totals,
     )
     power_factor = evaluate_power_factor(
-        usage, table, definition.selection, baseline=baseline, quality=quality
+        usage, table, definition.selection, baseline=baseline, quality=quality, options=options
     )
     measure_rows: list[dict[str, object]] = [
         {
@@ -583,7 +604,7 @@ def run_one_case(
     # 나오는」 갈래가 66/66 을 통과한 채 실물에만 나왔다.
     #
     # **화면과 같은 경로다** — 개략 곡선 → 정밀화. 그 경로가 깨졌던 자리다.
-    ess = _case_ess(usage, table, definition, baseline, quality)
+    ess = _case_ess(usage, table, definition, baseline, quality, options)
     chosen = _ess_point(ess) if ess is not None and ess.viable else None
     measure_rows.append(
         {
