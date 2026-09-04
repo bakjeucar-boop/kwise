@@ -149,7 +149,12 @@ class AnnualEstimate:
     """12개월 환산값. '연간' 이라는 말 대신 환산이라고 적는다 (5.5)."""
 
     factor: float
-    base_won: float
+    base_with_power_factor_won: float
+    """**역률요금까지 담는다.** 이름이 그 사실을 말하게 둔다 (S117 · ②) —
+    앞서는 ``base_won`` 이었는데 저장소의 다른 모든 ``base_won`` 은 역률을 뺀
+    값이라 **한 이름이 두 값을 가리켰다.** 세는 몫은
+    :attr:`~kwise.diagnose.structure.RateStructure.base_with_power_factor_won`
+    과 같으므로 이름도 같게 뒀다."""
     energy_won: float
     total_won: float
     energy_won_adjusted: float
@@ -257,7 +262,9 @@ class BillingResult:
             )
         return AnnualEstimate(
             factor=factor,
-            base_won=(self.total_base_won + self.total_power_factor_won) * factor,
+            base_with_power_factor_won=(
+                (self.total_base_won + self.total_power_factor_won) * factor
+            ),
             energy_won=self.total_energy_won * factor,
             total_won=self.total_won * factor,
             energy_won_adjusted=self.total_energy_won_adjusted * factor,

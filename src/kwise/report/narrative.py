@@ -730,11 +730,11 @@ def structure_lead(structure: ChargeStructure) -> str:
         가운데  그 사이 — 둘을 같이
         높음   :func:`base_fee_share_high` 초과 — 최대수요를 먼저
     """
-    base_won = structure.base_with_power_factor_won
+    base_with_power_factor_won = structure.base_with_power_factor_won
     total = structure.total_won
     if not total:
         return "요금 구성을 산출하지 못했습니다."
-    share = base_won / total
+    share = base_with_power_factor_won / total
     if share > base_fee_share_high():
         return f"기본요금이 {_pct(share)}로 큽니다 — 최대수요를 낮추는 방안을 먼저 검토합니다."
     if share >= base_fee_share_low():

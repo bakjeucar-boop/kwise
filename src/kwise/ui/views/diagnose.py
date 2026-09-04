@@ -883,17 +883,22 @@ def _structure_block(usage: UsageData, diagnosis: Diagnosis, building: BuildingI
     # 「기본요금 = 요금적용전력 × 단가 × 개월수」 라는 각주가 거짓이 되고,
     # 안 세우면 **기본 + 전력량 = 합계**가 깨진다. 0원이면 칸이 안 생기므로
     # 지금 자료의 문구 수는 그대로다.
-    base_won = structure.base_with_power_factor_won
+    base_with_power_factor_won = structure.base_with_power_factor_won
     total_won = structure.total_won
     excess_won = structure.excess_won
     labels = ["기본요금", "전력량요금", *(["초과사용부가금"] if excess_won else []), "합계"]
-    values = [base_won, structure.energy_won, *([excess_won] if excess_won else []), total_won]
+    values = [
+        base_with_power_factor_won,
+        structure.energy_won,
+        *([excess_won] if excess_won else []),
+        total_won,
+    ]
     columns = st.columns(len(labels) + 1)
     for column, label, value in zip(columns, labels, values, strict=False):
         column.metric(label, fmt.won_short(value))
     columns[-1].metric(
         "기본요금 비중",
-        fmt.ratio_pct(base_won / total_won if total_won else None),
+        fmt.ratio_pct(base_with_power_factor_won / total_won if total_won else None),
         help=manual_tip("charge-structure"),
     )
     # **이 넷이 어느 자료에서 나왔는지를 여기서 한 번 적는다** (64세션 3절).
