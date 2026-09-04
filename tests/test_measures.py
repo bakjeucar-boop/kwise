@@ -53,7 +53,11 @@ from kwise.measures import (
     with_load,
     with_surplus_revenue,
 )
-from kwise.measures.contract import TYPE_THRESHOLD_FACT, target_contract_kw
+from kwise.measures.contract import (
+    CONTRACT_AT_OBSERVED_MAX_NOTICE,
+    TYPE_THRESHOLD_FACT,
+    target_contract_kw,
+)
 from kwise.notices import texts
 from kwise.pv import ArrayConfig, PvSystemConfig
 from kwise.quality import QualityReport
@@ -849,6 +853,74 @@ def test_후보가_최대수요_아래면_안_넘는다(
     assert result.no_saving
     assert result.saving_won == pytest.approx(0.0)
     assert "contract.floor_not_binding" in [item.fact for item in result.notices]
+
+
+def test_목표가_현행과_같으면_낮출_자리가_없다(tariff: TariffTable) -> None:
+    """**목표 = 현행인데 「낮출 자리가 있다」 고 말하던 자리** (108세션 2절).
+
+    C6 야간 피크형은 관측 최대 **10,920.64 kW** 이고 권고 목표가 **10,921 kW**
+    다. 그 권고를 받아들여 계약전력을 10,921 로 바꾸고 다시 돌리면 하한은
+    **13개 월에 그대로 걸리는데** 목표가 현행 위로 올라가 ``min()`` 이 현행으로
+    눌러 놓았다 — **절감액 0원인데 ``reducible`` 이 참**이라 「10,921 →
+    10,921 kW 로 낮추면 그만큼 기본요금이 줄어듭니다」 가 나갔다.
+
+    **초과 경고가 대신 막아 주지 않는다.** 이 자리는 초과 구간이 **0건**이라
+    ``contract.over_limit`` 이 안 뜬다 — 곧 **우리가 권고한 값을 그대로 쓴
+    고객만 이 거짓 문장을 본다.**
+
+    **까닭 문장도 함께 본다.** 하한이 걸린 판이므로 「하한이 걸리지 않아」 는
+    쓸 수 없다.
+    """
+    usage_path = Path(__file__).resolve().parent.parent / "input" / "cases" / "C6_야간 피크형.csv"
+    if not usage_path.is_file():
+        pytest.skip(f"C6 케이스 자료가 없습니다: {usage_path} (tools\\make_cases.py 실행)")
+    usage = load_usage(usage_path)
+    selection = TariffSelection("general_b", "high_a", "I")
+
+    # 먼저 권고 목표를 받는다 — 현행은 관측 최대 × 1.1 이다.
+    current_kw = float(usage.kw.max()) * 1.1
+    options = BillingOptions(contract_kw=current_kw)
+    bill = calculate_bill(usage, tariff, selection, options=options)
+    first = evaluate_contract_adjustment(
+        usage, bill, contract_kw=current_kw, table=tariff, options=options
+    )
+    assert first.reducible
+    assert first.target_contract_kw == pytest.approx(10_921.0)
+
+    # 그 목표를 계약전력으로 놓고 다시 돌린다.
+    target_kw = first.target_contract_kw
+    assert target_kw is not None
+    again_options = BillingOptions(contract_kw=target_kw)
+    again_bill = calculate_bill(usage, tariff, selection, options=again_options)
+    again = evaluate_contract_adjustment(
+        usage, again_bill, contract_kw=target_kw, table=tariff, options=again_options
+    )
+
+    # **하한은 그대로 걸려 있고 초과는 0건이다** — 이 판이 실제로 선다.
+    assert len(again.floor_bound_months) == 13
+    assert again.over_contract_slots == 0
+
+    # **낮출 자리가 없다.** 목표를 비우고 절감액은 「없음」 이다.
+    assert again.target_contract_kw is None
+    assert not again.reducible
+    assert again.no_saving
+    assert again.saving_won == pytest.approx(0.0)
+
+    # **까닭은 하한이 아니라 관측 최대다.**
+    verdict = next(item for item in again.notices if item.fact == "contract.floor_not_binding")
+    assert verdict.text == CONTRACT_AT_OBSERVED_MAX_NOTICE
+
+    # **하향 경고도 안 나간다** — 하지도 못할 일을 조심하라는 말이 된다.
+    facts = [item.fact for item in again.notices]
+    assert "contract.margin" not in facts
+    assert "contract.penalty" not in facts
+
+    # **결론도 「낮추면 줄어듭니다」 를 안 쓴다.**
+    from kwise.report.document import measure_entries
+
+    entry = next(item for item in measure_entries(contract=again) if item.kind.key == "contract")
+    assert "낮추면" not in entry.conclusion
+    assert not entry.actionable
 
 
 def test_달_단위로만_걸리는_하한이_절감액에_잡힌다(tariff: TariffTable) -> None:

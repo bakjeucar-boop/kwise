@@ -135,6 +135,15 @@ _UNKNOWN_NOTICE = (
 FLOOR_NOT_BINDING_NOTICE = (
     "하한이 요금적용전력에 걸리지 않아 계약전력을 낮춰도 기본요금이 줄지 않습니다."
 )
+CONTRACT_AT_OBSERVED_MAX_NOTICE = (
+    "관측 최대수요가 계약전력에 닿아 있어 계약전력을 더 낮출 자리가 없습니다."
+)
+"""**하한은 걸렸는데 낮출 자리가 없는 갈래** (108세션 2절).
+
+**판정 줄은 여전히 하나다** — 이 문장과 :data:`FLOOR_NOT_BINDING_NOTICE` 는
+서로 배타적이고 사실 ID 도 같다. 화면·PPT 가 그 ID 로 판정 줄을 뜨므로
+갈래를 나눠도 읽는 쪽이 늘지 않는다.
+"""
 TYPE_THRESHOLD_FACT = "contract.crosses_type_threshold"
 """**목표 계약전력이 종별 경계 밖일 때의 사실 ID** (96세션).
 
@@ -425,14 +434,20 @@ def evaluate_contract_adjustment(
     # (:attr:`BillingResult.floor_bound_months`) — 여기서 다시 부르는 까닭은
     # 이 함수가 **청구서와 다른 계약전력·비율**로도 불리기 때문이다.
     bound = floor_bound_months(monthly_demand, floor_kw)
-    target = (
-        min(
-            contract_kw,
-            target_contract_kw(monthly_demand, ratio, step_kw, observed_max_kw=max_demand),
-        )
+    # **현행보다 낮을 때만 목표다** (108세션 2절). 앞서는 ``min(contract_kw, …)``
+    # 이라 목표가 현행 위로 올라가면 **현행으로 눌려** 「10,921 → 10,921 kW 로
+    # 낮추면 줄어듭니다」 가 절감액 0원과 함께 나갔다 — 고객에게 나가는 거짓
+    # 문장이다. 그 자리는 **관측 최대가 계약전력에 닿은 판**이다(보전 갈래가
+    # 현행을 붙든다). 하한이 걸린 것은 사실이지만 **낮출 자리는 없다.**
+    #
+    # **뿌리가 여기 하나다** — 화면 셋·Word 둘·PPT·Excel 둘·계산 근거 시트가
+    # 전부 이 값과 :attr:`ContractAdjustment.reducible` 을 읽는다.
+    candidate = (
+        target_contract_kw(monthly_demand, ratio, step_kw, observed_max_kw=max_demand)
         if bound
         else None
     )
+    target = candidate if candidate is not None and candidate < contract_kw else None
 
     # 하한 적용 전 값으로 되돌린 뒤 두 계약전력에서 각각 다시 씌운다.
     current_base = _base_fee_won(bill, floor_kw)
@@ -472,8 +487,16 @@ def evaluate_contract_adjustment(
             )
 
     if target is None:
-        # **하한도 안 걸리고 넘어갈 종별도 없다.** 낮출 자리가 아예 없다.
-        notices.append(basis(FLOOR_NOT_BINDING_NOTICE, fact="contract.floor_not_binding"))
+        # **낮출 자리가 아예 없다. 까닭이 둘이다** (108세션 2절) — 하한이 어느
+        # 달에도 안 걸리거나, 걸렸어도 관측 최대가 계약전력에 닿아 보전이
+        # 현행을 붙든다. **사실 ID 는 하나로 둔다** — 판정 줄을 뜨는 쪽
+        # (화면·PPT)이 그 ID 로 찾는다.
+        notices.append(
+            basis(
+                FLOOR_NOT_BINDING_NOTICE if not bound else CONTRACT_AT_OBSERVED_MAX_NOTICE,
+                fact="contract.floor_not_binding",
+            )
+        )
     else:
         # **낮출 자리가 있을 때만 낸다.** 낮출 이유가 없는 갈래에서 「하향은
         # 되돌리기 어렵다」 를 읽히면 하지도 못할 일을 조심하라는 말이 된다.
