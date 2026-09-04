@@ -158,7 +158,12 @@ class CombinationSpec:
     def measure_labels(self) -> tuple[str, ...]:
         return tuple(item.label for item in self.applied)
 
-    def composition(self, baseline: TariffSelection | None = None) -> str:
+    def composition(
+        self,
+        baseline: TariffSelection | None = None,
+        *,
+        applied: tuple[AppliedMeasure, ...] | None = None,
+    ) -> str:
         """조합에 **무엇이 들어갔는지 한 줄로** (39세션 3-3).
 
             선택요금 전환 + 역률 개선 97% + 태양광 240 kWp
@@ -170,11 +175,14 @@ class CombinationSpec:
         Args:
             baseline: 기준선의 선택요금. 이것과 다르면 요금제를 바꾼 조합이므로
                 맨 앞에 「선택요금 전환」 을 세운다. 주지 않으면 세지 않는다.
+            applied: 적을 수단 목록. 주지 않으면 :attr:`applied` 다.
+                결과 쪽이 계약전력을 목표로 갈아 끼워 넘긴다 (108세션 3절 —
+                :attr:`CombinationResult.applied`).
         """
         parts: list[str] = []
         if baseline is not None and self.selection != baseline:
             parts.append("선택요금 전환")
-        parts.extend(item.short_label for item in self.applied)
+        parts.extend(item.short_label for item in (self.applied if applied is None else applied))
         return " + ".join(parts) if parts else "현행 유지"
 
 
@@ -206,6 +214,42 @@ class CombinationResult:
         return self.spec.name
 
     @property
+    def applied(self) -> tuple[AppliedMeasure, ...]:
+        """조합에 들어간 수단 — **계약전력 조각만 목표를 적는다** (108세션 3절).
+
+        :attr:`CombinationSpec.applied` 는 **넣는 값**이라 계약전력에 「바꾸기
+        전」 이 붙는다. 다른 조각은 다 도입 후 값인데(태양광 1,600 kWp · 역률
+        97%) 그 조각만 현행이라 PPT 15장이 「… + 계약전력 조정 **20,000 kW** +
+        …」 를 적었다 — 그 벌의 목표는 13,881 kW 다.
+
+        **목표는 결과 쪽에만 있다** — 조합 부하로 다시 계산해야 나온다.
+        **낮출 자리가 없으면 조각을 뺀다** — 절감액이 0원이라 조합에 들어간
+        것이 없다.
+        """
+        target = (
+            self.contract_adjustment.target_contract_kw
+            if self.contract_adjustment is not None
+            else None
+        )
+        if target is None:
+            return tuple(item for item in self.spec.applied if item.key != "contract")
+        return tuple(
+            AppliedMeasure("contract", (("contract_kw", target),))
+            if item.key == "contract"
+            else item
+            for item in self.spec.applied
+        )
+
+    @property
+    def measure_labels(self) -> tuple[str, ...]:
+        """조합 표의 「수단」 열. :attr:`applied` 와 같은 목록이다."""
+        return tuple(item.label for item in self.applied)
+
+    def composition(self, baseline: TariffSelection | None = None) -> str:
+        """조합 구성 한 줄 — :meth:`CombinationSpec.composition` 에 :attr:`applied` 를 준다."""
+        return self.spec.composition(baseline, applied=self.applied)
+
+    @property
     def total_won(self) -> float:
         """조합 적용 후 실질 부담. **절감액과 더해서 기준선이 나와야 한다.**
 
@@ -230,7 +274,7 @@ class ComparisonResult:
         rows = [
             {
                 "조합": item.name,
-                "수단": ", ".join(item.spec.measure_labels) or "—",
+                "수단": ", ".join(item.measure_labels) or "—",
                 "요금(원)": item.total_won,
                 "절감액(원)": item.saving_won,
                 "12개월 환산 절감액(원)": item.annual_saving_won,

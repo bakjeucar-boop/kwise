@@ -942,7 +942,7 @@ def test_조합_구성을_한_줄로_이어_적는다(full_sections: DocumentSec
     comparison = full_sections.comparison
     assert comparison is not None
     baseline = comparison.combinations[0].spec.selection
-    line = comparison.best.spec.composition(baseline)
+    line = comparison.best.composition(baseline)
     assert " + " in line
     assert "선택요금 전환" in line
     assert "(" not in line, "괄호를 겹쳐 적지 않는다."

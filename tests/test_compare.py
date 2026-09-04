@@ -641,6 +641,52 @@ def test_잉여_수익_근거가_한_자리에서_나온다(sample_comparison: C
     assert SURPLUS_REVENUE_FACT not in [item.fact_base for item in cleared.notices]
 
 
+def test_조합_이름의_계약전력은_목표다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+) -> None:
+    """**현행이 아니라 목표를 적는다** (108세션 3절).
+
+    조합 이름의 다른 조각은 다 **도입 후** 값인데(태양광 kWp · 역률 %)
+    계약전력만 ``spec.contract_kw`` — **바꾸기 전** 값이 붙고 있었다.
+    계약전력 과다 벌(현행 20,000 kW · 목표 13,881 kW)에서 PPT 15장이
+    「… + 계약전력 조정 **20,000 kW** + …」 를 적었다. **두 수가 가까운
+    벌에서는 틀린 줄도 모르고 읽힌다.**
+
+    **넣는 값 쪽(``spec``)은 그대로다** — 조합을 다시 돌리는 자리가 그 값을 쓴다.
+    """
+    result = evaluate_combination(
+        sample_usage,
+        tariff,
+        CombinationSpec("계약전력만", CURRENT, contract_kw=20_000.0),
+        baseline_bill=sample_bill,
+        quality=sample_report,
+    )
+    adjustment = result.contract_adjustment
+    assert adjustment is not None
+    assert adjustment.target_contract_kw == pytest.approx(13_881.0)
+
+    assert "계약전력 조정 13,881 kW" in result.composition()
+    assert "20,000 kW" not in result.composition()
+    assert result.measure_labels == ("계약전력 조정 (13,881 kW)",)
+    assert result.spec.measure_labels == ("계약전력 조정 (20,000 kW)",)
+
+    # **낮출 자리가 없으면 조각 자체가 빠진다** — 조합에 들어간 것이 없다.
+    none_left = evaluate_combination(
+        sample_usage,
+        tariff,
+        CombinationSpec("이미 적정", CURRENT, contract_kw=6_000.0),
+        baseline_bill=sample_bill,
+        quality=sample_report,
+    )
+    assert none_left.contract_adjustment is not None
+    assert none_left.contract_adjustment.target_contract_kw is None
+    assert none_left.measure_labels == ()
+    assert none_left.composition() == "현행 유지"
+
+
 def test_조합_비교_열쇠가_잉여_수익을_안_본다() -> None:
     """**요금과 무관한 값이 열쇠에 있으면 캐시가 죽는다** (57세션 2절)."""
     import inspect

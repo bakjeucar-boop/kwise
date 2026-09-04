@@ -2080,7 +2080,7 @@ def _build_combination(
     _text(
         slide,
         guide,
-        [best.spec.composition(baseline)],
+        [best.composition(baseline)],
         left=geometry.margin_in,
         top=top + 0.42,
         width=half,
