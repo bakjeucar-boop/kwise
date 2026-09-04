@@ -330,7 +330,9 @@ def test_confirmed_floor_rule_recalculates_the_base_fee(
         sample_usage, sample_bill, contract_kw=7_000.0, contract_floor_ratio=1.0
     )
     assert result.status is ContractStatus.CONFIRMED
-    # 목표는 최대수요 ÷ 100% = 5,294 kW (올림). 하한이 모든 달에 걸린다.
+    # 목표 5,294 kW 는 **보전** 갈래에서 온다 — 관측 최대 5,293.44 를 올린 값이다
+    # (106세션 1절). 포화는 가장 작은 달 4,164.48 ÷ 100% = 4,164 라 더 낮고,
+    # 큰 쪽이 목표다. 하한이 모든 달에 걸린다.
     assert result.target_contract_kw == 5_294.0
     expected = (7_000.0 - 5_294.0) * 7_220.0 * 12.0
     assert result.saving_won == pytest.approx(expected)
@@ -378,6 +380,37 @@ def test_목표는_가장_작은_달을_하한비율로_나눈_값이다(
     assert result.target_contract_kw * ratio <= float(monthly.min())
     # **연간 최대로 냈다면 열두 달이 그 값으로 끌어올려진다.** 그 차이가 이 못이다.
     assert result.target_contract_kw < math.ceil(result.demand_before_floor_kw / ratio)
+
+
+def test_83세션이_상한이라_부른_값_아래로_내려도_더_얻는다(
+    sample_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**뒤집힌 사실을 값으로 본다** (83세션 → 105세션 3절 → 106세션 6절).
+
+    83세션은 「**연간 최대 ÷ 하한비율**은 그 아래로 내려도 얻을 것이 없는
+    상한이다」 라 적었고 그 문장이 세 세션을 옮겨 다녔다. 105세션이 **사실이
+    아니라고 판정**했는데, 그 세션이 갈아낸 시험 여섯은 **목표끼리만 견주었을
+    뿐**(`target < ceil(연간 최대 / 비율)`) **「그 아래로 내려도 얻는다」 를
+    돈으로 본 자리가 없었다.** 그 자리를 여기 짓는다.
+
+    샘플 을 20,000 kW 다. 83세션이 상한이라 부른 값은 `ceil(5,293.44 / 0.3)`
+    = **17,645 kW** 인데, 그 계약전력에서도 **열세 달이 다 하한에 걸려 있다** —
+    하한 5,293.5 kW 가 가장 작은 달 4,164.48 kW 를 훨씬 넘기 때문이다.
+    거기서 13,881 kW 까지 더 내리면 **5,796,216원**을 더 얻는다.
+    """
+    selection = TariffSelection("general_b", "high_a", "I")
+    old_cap = math.ceil(5_293.44 / 0.3)  # 83세션이 「상한」 이라 부른 값
+    assert old_cap == 17_645
+
+    bills = {
+        kw: calculate_bill(sample_usage, tariff, selection, options=BillingOptions(contract_kw=kw))
+        for kw in (float(old_cap), 13_881.0)
+    }
+    # **그 「상한」 에서도 하한이 열세 달에 걸려 있다** — 그래서 얻을 것이 남았다.
+    assert len(bills[float(old_cap)].floor_bound_months) == 13
+    assert len(bills[13_881.0].floor_bound_months) == 0
+    gap = bills[float(old_cap)].total_won - bills[13_881.0].total_won
+    assert gap == pytest.approx(5_796_216.0, abs=1.0)
 
 
 def test_목표는_관측_최대_아래로_안_내려간다(tmp_path: Path, tariff: TariffTable) -> None:
@@ -522,8 +555,9 @@ def test_경계_안이면_안내를_내지_않는다(
 def small_general_b_usage(tmp_path_factory: pytest.TempPathFactory) -> UsageData:
     """을 종별인데 **최대수요가 90 kW 아래**인 한 달치 (98세션).
 
-    실측 벌 넷은 하나도 경계를 넘지 않는다 — 을에서 목표(최대수요 ÷ 30%)가
-    300 kW 아래로 가려면 최대수요가 90 kW 미만이어야 한다. 그 자리를 짓는다.
+    실측 벌 넷은 하나도 경계를 넘지 않는다 — 을에서 목표(가장 작은 달 ÷ 30%)가
+    300 kW 아래로 가려면 그 달이 90 kW 미만이어야 한다. 그 자리를 짓는다.
+    **한 달치라 가장 작은 달과 최대수요가 같은 수다.**
     """
     from tests._synthetic import make_labels, month_dates, write_csv
 
