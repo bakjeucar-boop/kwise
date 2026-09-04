@@ -876,15 +876,22 @@ def _structure_block(usage: UsageData, diagnosis: Diagnosis, building: BuildingI
     #
     # **역률요금은 기본요금에 합쳐 적는다.** 기본요금의 ±% 조정이라 따로 세울
     # 값이 아니고, 요금 엔진의 12개월 환산도 둘을 함께 묶는다
-    # (:meth:`~kwise.tariff.BillingResult.annualize`). 그래야 **기본 + 전력량 =
-    # 합계**가 화면에서 그대로 성립한다 — 샘플은 역률 조정이 0원이라 값이 같다.
-    base_won = structure.base_won + structure.bill.total_power_factor_won
+    # (:meth:`~kwise.tariff.BillingResult.annualize`). **세는 자리는 하나다**
+    # (109세션 — :attr:`ChargeStructure.base_with_power_factor_won`).
+    #
+    # **초과사용부가금은 붙은 자료에서만 한 칸을 더 쓴다** (109세션). 접으면
+    # 「기본요금 = 요금적용전력 × 단가 × 개월수」 라는 각주가 거짓이 되고,
+    # 안 세우면 **기본 + 전력량 = 합계**가 깨진다. 0원이면 칸이 안 생기므로
+    # 지금 자료의 문구 수는 그대로다.
+    base_won = structure.base_with_power_factor_won
     total_won = structure.total_won
-    columns = st.columns(4)
-    columns[0].metric("기본요금", fmt.won_short(base_won))
-    columns[1].metric("전력량요금", fmt.won_short(structure.energy_won))
-    columns[2].metric("합계", fmt.won_short(total_won))
-    columns[3].metric(
+    excess_won = structure.excess_won
+    labels = ["기본요금", "전력량요금", *(["초과사용부가금"] if excess_won else []), "합계"]
+    values = [base_won, structure.energy_won, *([excess_won] if excess_won else []), total_won]
+    columns = st.columns(len(labels) + 1)
+    for column, label, value in zip(columns, labels, values, strict=False):
+        column.metric(label, fmt.won_short(value))
+    columns[-1].metric(
         "기본요금 비중",
         fmt.ratio_pct(base_won / total_won if total_won else None),
         help=manual_tip("charge-structure"),

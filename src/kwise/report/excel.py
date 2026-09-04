@@ -233,6 +233,18 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
         )
     rows.append(("요금", "역률요금", power_factor_text))
     rows.append(("요금", "전력량요금", f"{format_won(bill.total_energy_won)} 원"))
+    # **부가금이 붙은 벌에서만 선다** (109세션). 0원인 벌에 한 줄을 더 두면
+    # 「없는 것을 있다고」 적는 꼴이고, 붙은 벌에 안 두면 합계가 안 맞는다.
+    if bill.total_excess_won:
+        rows.append(
+            (
+                "요금",
+                "초과사용부가금",
+                f"{format_won(bill.total_excess_won)} 원 "
+                f"(청구 {len(bill.excess.charged_months)}개 월, "
+                f"첫 초과 달은 예고)",
+            )
+        )
     rows.append(("요금", "합계 (관측 기준)", f"{format_won(bill.total_won)} 원"))
     rows.append(("요금", "합계 (결측 보정 기준)", f"{format_won(bill.total_won_adjusted)} 원"))
     # 항목을 각각 절사하므로 항목 합과 합계 표시가 어긋날 수 있다 (14세션).

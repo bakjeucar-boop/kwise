@@ -46,6 +46,8 @@ class OptionQuote:
     total_won: float
     base_won: float | None = None
     energy_won: float | None = None
+    excess_won: float | None = None
+    """초과사용부가금 (109세션). **없으면 참고 줄의 합계가 부분의 합과 어긋난다.**"""
 
     @property
     def key(self) -> str:
@@ -154,6 +156,9 @@ def evaluate_tariff_switch(
             ),
             energy_won=(
                 detailed[str(selection)].total_energy_won if str(selection) in detailed else None
+            ),
+            excess_won=(
+                detailed[str(selection)].total_excess_won if str(selection) in detailed else None
             ),
         )
         for selection in selections

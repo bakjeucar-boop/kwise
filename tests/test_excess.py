@@ -9,6 +9,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from kwise.diagnose.structure import charge_structure
 from kwise.io import UsageData
 from kwise.quality import QualityReport
 from kwise.tariff import (
@@ -165,3 +166,27 @@ def test_계약전력_기준_종별에는_이_구간표를_쓰지_않는다(
     )
     assert bill.excess.applicable is False
     assert bill.total_excess_won == 0.0
+
+
+def test_요금_구성이_합계와_맞는다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """**기본(+역률) + 전력량 + 부가금 = 합계.** 접거나 빠뜨리면 여기서 뜬다."""
+    options = BillingOptions(contract_kw=3_000.0)
+    bill = calculate_bill(
+        sample_usage,
+        tariff,
+        TariffSelection("general_b", "high_a", "I"),
+        options=options,
+        quality=sample_report,
+    )
+    structure = charge_structure(sample_usage, tariff, bill, options=options)
+    assert structure.excess_won > 0
+    # **부가금은 기본요금에 안 접는다** — 「기본요금 = 요금적용전력 × 단가 ×
+    # 개월수」 라는 각주가 덱마다 따라다닌다.
+    assert structure.base_with_power_factor_won == pytest.approx(
+        bill.total_base_won + bill.total_power_factor_won
+    )
+    assert (
+        structure.base_with_power_factor_won + structure.energy_won + structure.excess_won
+    ) == pytest.approx(structure.total_won)

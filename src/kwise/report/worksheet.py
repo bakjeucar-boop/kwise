@@ -158,6 +158,18 @@ def _bill_rows(bill: BillingResult, *, title: str) -> list[WorkRow]:
         rows.append(
             WorkRow("역률 요금", "기본요금 × 역률 조정률", _won(bill.total_power_factor_won))
         )
+    # **부가금이 있으면 반드시 선다** (109세션). 없으면 합계가 위 행들의 합과
+    # 어긋나 계산 근거가 그 자리에서 거짓이 된다 — 교육용(갑) 300 kW 조건에서
+    # 「기본 399,521,000 + 전력량 2,223,326,000」 인데 합계가 3,843,956,000 이었다.
+    # 0원이면 안 세운다 (역률 요금 행과 같은 틀이다).
+    if bill.total_excess_won:
+        rows.append(
+            WorkRow(
+                "초과사용부가금",
+                f"초과 {len(bill.excess.charged_months)}개 월 × 기본요금 단가 × 배수",
+                _won(bill.total_excess_won),
+            )
+        )
     rows.append(WorkRow("합계", "", _won(bill.total_won), total=True))
     return rows
 
@@ -174,13 +186,16 @@ def tariff_switch_worksheet(result: TariffSwitchResult) -> Worksheet:
     for quote in result.quotes:
         if str(quote.selection) in shown:
             continue
+        # **부가금이 있으면 항을 더한다** (109세션). 안 적으면 이 줄에서만
+        # 「기본 + 전력량」 이 합계와 안 맞는다.
+        formula = (
+            f"기본 {money.won_plain(quote.base_won, reason='—')}"
+            f" + 전력량 {money.won_plain(quote.energy_won, reason='—')}"
+        )
+        if quote.excess_won:
+            formula += f" + 부가금 {money.won_plain(quote.excess_won, reason='—')}"
         rows.append(
-            WorkRow(
-                f"참고 {option_label(quote.selection.option)}",
-                f"기본 {money.won_plain(quote.base_won, reason='—')}"
-                f" + 전력량 {money.won_plain(quote.energy_won, reason='—')}",
-                _won(quote.total_won),
-            )
+            WorkRow(f"참고 {option_label(quote.selection.option)}", formula, _won(quote.total_won))
         )
     if rows:
         rows.append(WorkRow("절감액", "현행 합계 − 최적 합계", _won(result.saving_won), total=True))

@@ -560,7 +560,8 @@ def test_실제_항목_전부에_원문_확인처가_붙는다() -> None:
     # 83세션에 근거 없는 여유율 둘(`contract.margin_ratio`·`margin_range`)이 빠졌다.
     # 89세션에 둘이 파일을 건너갔다 — 31+47 에서 29+49 가 됐고 합은 안 바뀐다.
     # 97세션에 초·중·고교·유치원 특례가 넷을 더했다 — 33+49.
-    assert len(rows) == len(items) == 82  # rules_kr 33 + assumptions 49
+    # 109세션에 초과사용부가금이 둘을 더했다 — 35+49.
+    assert len(rows) == len(items) == 84  # rules_kr 35 + assumptions 49
     assert all(row.link.startswith(("한국", "국가", "에너지", "Open", "기술서")) for row in rows)
     # **바깥에 원문이 없는 값도 있다** (22세션). 화면 예산은 우리가 정한 규약이라
     # 확인처가 기술서다 — 그래도 따라갈 데는 있어야 한다.

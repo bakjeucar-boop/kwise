@@ -1373,7 +1373,10 @@ def _build_structure(
     bottom_y = _note_top(guide, *notes)
     height = bottom_y - top
 
-    base_won = structure.base_won + structure.bill.total_power_factor_won
+    base_won = structure.base_with_power_factor_won
+    # **초과사용부가금은 붙은 자료에서만 한 칸을 더 쓴다** (109세션). 기본요금에
+    # 접으면 아래 각주의 「기본요금 = 요금적용전력 × 단가 × 개월수」 가 그 자리에서
+    # 거짓이 된다 — 그 산식은 용어집에 고정으로 박혀 덱마다 따라다닌다.
     chart_top = (
         _stats(
             slide,
@@ -1381,6 +1384,11 @@ def _build_structure(
             [
                 ("기본요금", _won(base_won)),
                 ("전력량요금", _won(structure.energy_won)),
+                *(
+                    [("초과사용부가금", _won(structure.excess_won))]
+                    if structure.excess_won
+                    else []
+                ),
                 (
                     "기본요금 비중",
                     _pct(base_won / structure.total_won if structure.total_won else None),

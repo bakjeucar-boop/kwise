@@ -48,6 +48,29 @@ class ChargeStructure:
     band_season_kwh: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     @property
+    def base_with_power_factor_won(self) -> float:
+        """화면·PPT 의 「기본요금」 지표가 세는 값 (109세션에 한 자리로 모았다).
+
+        **역률요금까지다.** 기본요금의 ±% 조정이라 따로 세울 값이 아니고
+        (제43조), 요금 엔진의 12개월 환산도 둘을 함께 묶는다.
+
+        **초과사용부가금은 안 접는다** (109세션). 접으면 「기본요금 = 요금적용전력
+        × 단가 × 개월수」 라는 각주가 그 자리에서 거짓이 된다 — 그 산식은
+        용어집(:data:`~kwise.report.narrative.GLOSSARY`)에 고정으로 박혀 덱마다
+        따라다닌다. **설명이 필요하다는 것은 이름이 틀렸다는 뜻**이라 이름을
+        지키고 몫을 갈랐다. 부가금은 한전 청구서에도 별도 항목으로 나온다.
+
+        앞서는 부르는 쪽 셋이 각각 ``base_won + total_power_factor_won`` 을 적고
+        있었다. 세는 자리를 하나로 두면 다음에 무엇이 붙어도 한 곳만 고친다.
+        """
+        return self.base_won + self.bill.total_power_factor_won
+
+    @property
+    def excess_won(self) -> float:
+        """초과사용부가금 (제67조의3 ③). **0원이면 지표를 안 세운다.**"""
+        return self.bill.total_excess_won
+
+    @property
     def monthly(self) -> pd.DataFrame:
         return self.bill.monthly
 

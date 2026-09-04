@@ -741,11 +741,19 @@ def calculate_bill(
         over = usage.kw.dropna()
         over_slots = int((over > opts.contract_kw).sum())
         if over_slots:
+            # **금액이 생겼으므로 「별도로 확인하십시오」 를 걷었다** (109세션).
+            # 108세션까지는 부가금을 계산하지 않아 사용자에게 미룰 수밖에
+            # 없었는데, 이제 총액에 들어 있다. **문구를 늘리지 않고 갈아 끼웠다.**
+            tail = (
+                f"초과사용부가금 {excess.total_won:,.0f}원을 청구 총액에 넣었습니다."
+                if excess.total_won
+                else "초과한 달이 하나뿐이라 초과사용부가금은 예고이고 청구되지 않습니다."
+            )
             notices.append(
                 warn(
                     f"계약전력 {opts.contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 "
                     "있습니다. 경부하 초과는 요금적용전력에 영향을 주지 않지만 "
-                    "초과사용부가금 대상이므로 별도로 확인하십시오.",
+                    f"초과사용부가금 대상입니다 — {tail}",
                     fact="quality.over_contract",
                 )
             )

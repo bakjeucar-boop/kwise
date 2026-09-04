@@ -1978,12 +1978,15 @@ def test_요금구조가_세_갈래다() -> None:
                 base_won=share * 100.0,
                 energy_won=(1 - share) * 100.0,
                 total_won=100.0,
-                bill=SimpleNamespace(total_power_factor_won=0.0),
+                bill=SimpleNamespace(total_power_factor_won=0.0, total_excess_won=0.0),
+                base_with_power_factor_won=share * 100.0,
             )
         )
 
     low = lead(base_fee_share_low() - 0.05)
-    assert "나머지는 전력량요금입니다" in low
+    # **「나머지는 전력량요금입니다」 를 걷었다** (109세션). 초과사용부가금이
+    # 총액에 들어오면서 나머지가 전력량요금 하나가 아니게 됐다.
+    assert "나머지는 전력량요금입니다" not in low
     # **뒷문장이 지침에서 결과로 바뀌었다** (59세션 7절). 「단가가 낮은 시간대로
     # 부하를 옮기거나 사용량을 줄이는 방안」 은 앞말에서 곧바로 따라오는 말이라
     # 읽는 사람이 얻는 것이 없었다 — 높음 갈래의 거울 문장으로 바꿨다.
@@ -2003,7 +2006,8 @@ def test_요금구조가_세_갈래다() -> None:
             base_won=0.0,
             energy_won=0.0,
             total_won=0.0,
-            bill=SimpleNamespace(total_power_factor_won=0.0),
+            bill=SimpleNamespace(total_power_factor_won=0.0, total_excess_won=0.0),
+            base_with_power_factor_won=0.0,
         )
     )
 

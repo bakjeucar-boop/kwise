@@ -730,7 +730,7 @@ def structure_lead(structure: ChargeStructure) -> str:
         가운데  그 사이 — 둘을 같이
         높음   :func:`base_fee_share_high` 초과 — 최대수요를 먼저
     """
-    base_won = structure.base_won + structure.bill.total_power_factor_won
+    base_won = structure.base_with_power_factor_won
     total = structure.total_won
     if not total:
         return "요금 구성을 산출하지 못했습니다."
@@ -750,10 +750,10 @@ def structure_lead(structure: ChargeStructure) -> str:
     #
     # **갈래를 지우지 않는다** (54세션). 뒷문장이 셋을 가르는 자리라 통째로
     # 빼면 셋이 「기본요금은 ○○%입니다」 로 같아진다.
-    return (
-        f"전체 요금 중 기본요금은 {_pct(share)}이며 나머지는 전력량요금입니다 — "
-        "피크를 낮춰도 줄어드는 몫이 작습니다."
-    )
+    # **「나머지는 전력량요금입니다」 를 걷었다** (109세션). 초과사용부가금이
+    # 총액에 들어오면서 나머지가 전력량요금 하나가 아니게 됐다 — 곁의 지표가
+    # 이미 몫을 다 보이므로 **문구를 더하지 않고 뺐다.**
+    return f"전체 요금 중 기본요금은 {_pct(share)}입니다 — 피크를 낮춰도 줄어드는 몫이 작습니다."
 
 
 #: 투자 없이 되는 수단의 이름. **금액이 붙는 것만 근거로 든다** (53세션 4-7).
