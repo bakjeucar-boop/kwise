@@ -566,6 +566,11 @@ def solar_curve_sheet(curve: SolarCurve) -> pd.DataFrame:
             "잉여(kWh)": point.surplus_kwh,
             "자가소비율": point.self_consumption_ratio,
             "요금적용전력(kW)": point.billing_demand_kw,
+            # **기본요금 절감이 늘다 마는 까닭을 가리킨다** (S126 · ②-26).
+            # 하한에 닿은 달은 용량을 더 키워도 기본요금이 한 푼도 안 준다 —
+            # 그 수를 안 적으면 읽는 사람이 「태양광이 효과 없다」 로 읽는다.
+            # 하한 값(kW)은 「진단 요약」 시트의 「요금적용전력 하한」 이 낸다.
+            "하한 걸린 달": point.floor_bound_months,
             "기본요금 절감(원)": point.base_saving_won,
             "전력량요금 절감(원)": point.energy_saving_won,
             "총 절감액(원)": point.total_saving_won,

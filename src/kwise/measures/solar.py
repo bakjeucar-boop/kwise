@@ -314,6 +314,17 @@ class SolarPoint:
     """
     surplus_scenario: str = ""
     """고른 시나리오 이름. 비어 있으면 **아직 고르지 않았다.**"""
+    floor_bound_months: int = 0
+    """**이 용량에서 요금적용전력이 계약전력 하한에 닿은 달 수** (S126 · ②-26).
+
+    태양광이 요금적용전력을 끌어내리면 그 달은 하한(계약전력 × 비율)에서 멈춘다
+    — 더 지어도 그 달의 기본요금은 한 푼도 안 준다. **값이 왜 늘다 마는지를
+    가리키는 수다.** 세는 함수는 :func:`kwise.tariff.demand.floor_bound_months`
+    하나이고 요금 안내가 세는 것과 같은 값이다.
+
+    **포화의 까닭이 이것 하나는 아니다.** 하한에 안 닿은 달은 태양이 못 미치는
+    시간대의 잔여 피크에서 멈춘다 — 그쪽은 계약전력을 낮춰도 안 준다.
+    """
 
     @property
     def saving_after_power_factor_won(self) -> float:
@@ -690,6 +701,7 @@ def _evaluate_point(
         ),
         power_factor_after_pct=after_pct,
         power_factor_extra_won=extra_won,
+        floor_bound_months=len(bill.floor_bound_months),
     )
 
 

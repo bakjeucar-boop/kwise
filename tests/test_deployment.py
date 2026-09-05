@@ -488,6 +488,13 @@ def test_제어문자_검사가_심은_자리를_잡는다(tmp_path: Path) -> No
     # 박히면 아래 시험이 저장소를 훑다가 여기서 걸린다 — 67세션에 편집 도구를
     # 지나며 실제로 한 번 박혔고, `scan_ctrl.py` 가 그 자리를 잡아냈다.
     planted.write_text("첫 줄\n둘째 \u0008 줄\n셋째 \u000c 줄\n", encoding="utf-8")
+    # **탭도 한 줄 심는다** (S126 3절 · ②-18). 85세션이 눈으로 찾은 자리를 도구는
+    # 0곳이라 했다 — ``tests`` + 탭 + ``est_document.py`` 가 그 꼴이다. 여기서도
+    # 글자를 직접 안 넣는다: 진짜 탭을 넣으면 아래 저장소 훑기가 이 파일에서 걸린다.
+    # ``chr`` 로 적는 까닭은 **편집 도구가 탭 이스케이프를 글자로 되돌리기**
+    # 때문이다 — 위 두 줄의 ``\\u0008``·``\\u000c`` 와 달리 원본에 남길 수 없었다.
+    with planted.open("a", encoding="utf-8") as handle:
+        handle.write("넷째 tests" + chr(0x09) + "est_document.py 줄\n")
     (tmp_path / "깨끗한.md").write_text("아무것도 없다\n", encoding="utf-8")
 
     hits = scan_ctrl.scan(tmp_path)
@@ -495,6 +502,7 @@ def test_제어문자_검사가_심은_자리를_잡는다(tmp_path: Path) -> No
     assert [(str(hit.path), hit.line, hit.code) for hit in hits] == [
         ("심은.md", 2, 0x08),
         ("심은.md", 3, 0x0C),
+        ("심은.md", 4, 0x09),
     ], hits
 
 

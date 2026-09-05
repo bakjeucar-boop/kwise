@@ -1412,6 +1412,39 @@ def test_base_saving_is_monotonic(sample_curve: SolarCurve) -> None:
     assert savings == sorted(savings)
 
 
+def test_기본요금_절감이_0_일_때_하한_걸린_달을_함께_낸다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_unit_pv: pd.Series,
+) -> None:
+    """**0 을 「태양광이 효과 없다」 로 읽지 않게 한다** (S126 · ②-26).
+
+    계약전력 20,000 kW 의 하한 6,000 kW 가 요금적용전력 5,293 kW 를 넘으므로
+    기본요금은 모든 달에서 하한으로 매겨진다 — 태양광을 아무리 지어도 기본요금
+    절감이 **한 푼도 안 난다.** 값만 보면 「피크를 못 깎았다」 와 구별되지 않는데,
+    실제로는 깎았고 하한이 그 몫을 먹은 것이다.
+
+    ``덱 large-b-over`` 가 그 자리다.
+    """
+    options = BillingOptions(contract_kw=20_000.0)
+    curve = solar_curve(
+        sample_usage,
+        tariff,
+        TariffSelection("general_b", "high_a", "I"),
+        sample_unit_pv,
+        max_capacity_kwp=960.0,
+        steps=2,
+        quality=sample_report,
+        options=options,
+    )
+    bound = [point.floor_bound_months for point in curve.points]
+    assert all(point.base_saving_won == 0.0 for point in curve.points)
+    # **모든 달이 하한에 닿았다.** 0원과 나란히 서야 까닭이 읽힌다.
+    assert min(bound) > 0
+    assert bound == [bound[0]] * len(bound)
+
+
 def test_generation_is_proportional_to_capacity(sample_curve: SolarCurve) -> None:
     points = sample_curve.points
     reference = points[-1]

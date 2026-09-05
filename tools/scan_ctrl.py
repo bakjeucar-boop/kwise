@@ -9,6 +9,11 @@ r"""저장소에 남은 제어문자를 **문자 단위로** 훑는다 (66세션
 
 **눈으로는 안 보인다.** U+0008·U+000C 는 화면에 자국을 안 남긴다.
 
+**탭(U+0009)도 센다** (S126 · ②-18). 앞서는 탭을 빼 두어 `tests` + 탭 +
+`est_document.py` 가 박힌 자리를 **0곳이라 했다** — 84·85세션이 눈으로 찾아낸
+것을 도구가 못 봤다. 탭은 자국을 남기지만 **그 자국이 여백과 구별되지 않는다.**
+저장소의 탭은 0개이므로(S126 3절에 세었다) 새로 박히면 그 자리에서 걸린다.
+
 **`splitlines()` 로 세면 적게 센다.** U+000C 를 줄바꿈으로 삼켜 줄 안에서
 안 보이기 때문이다 — 65세션이 그것에 걸려 일곱을 다섯으로 셌다. 그래서
 줄로 자르지 않고 **글 전체를 문자로** 훑는다.
@@ -45,8 +50,8 @@ SKIP_DIRS = frozenset(
 #: PDF 에서 뽑은 약관·규칙 원문. 여기 U+000C 는 **쪽 구분이라 정상이다.**
 SOURCE_TEXT = Path("data") / "source"
 
-#: 탭·개행·복귀만 남기고 C0 제어문자를 잡는다.
-_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+#: 개행·복귀만 남기고 C0 제어문자를 잡는다. **탭(U+0009)도 센다** (S126 · ②-18).
+_CONTROL = re.compile(r"[\x00-\x09\x0b\x0c\x0e-\x1f]")
 
 
 class Hit(NamedTuple):
@@ -101,7 +106,13 @@ def main() -> int:
     left = [hit for hit in hits if not is_source_text(hit.path)]
     for hit in left:
         print(f"  {hit}")
-    print(f"남은 자리 {len(left)}곳 · 약관 원문에서 건너뛴 것 {len(skipped):,}곳(정상)")
+    # **탭을 갈라 적는다** (S126 3절). 한 수로 뭉치면 「탭도 세는가」 를 값으로
+    # 볼 수 없다 — ②-18 이 열려 있던 내내 그 수가 0 이었다.
+    tabs = [hit for hit in left if hit.code == 0x09]
+    print(
+        f"남은 자리 {len(left)}곳 (제어문자 {len(left) - len(tabs)} · 탭 {len(tabs)})"
+        f" · 약관 원문에서 건너뛴 것 {len(skipped):,}곳(정상)"
+    )
     return 1 if left else 0
 
 
