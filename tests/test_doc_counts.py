@@ -269,3 +269,69 @@ def test_의심_목록_갈래표의_수와_번호가_같다() -> None:
             f"「{branch}」 갈래의 수 {declared} 와 번호 {listed} 개가 갈립니다 — "
             "표의 두 칸을 함께 고치십시오."
         )
+
+
+# --------------------------------------------- 갈래 넷이 시험을 다 무는가 (S125)
+
+#: 「pytest 분할 실행」 절에 적힌 갈래 명령 한 줄.
+BRANCH_CMD = re.compile(r"^ {4}\.venv\\Scripts\\python\.exe -m pytest (?P<args>.+)$")
+
+#: 명령이 부르는 시험 파일 — ``tests\X`` 와 ``--ignore=tests\X`` 를 함께 잡는다.
+BRANCH_FILE = re.compile(r"tests[\\/](\S+)")
+
+
+def _branch_commands() -> list[tuple[str, set[str]]]:
+    """갈래 명령마다 (원문, 부르는 파일 이름) 을 낸다.
+
+    파일을 하나도 안 부르는 명령(전체 실행)은 뺀다.
+    """
+    lines = _section(_read("PROCEED.md").splitlines(), "## pytest 분할 실행")
+    out: list[tuple[str, set[str]]] = []
+    for line in lines:
+        found = BRANCH_CMD.match(line)
+        if found is None:
+            continue
+        names = set(BRANCH_FILE.findall(found.group("args")))
+        if names:
+            out.append((found.group("args"), names))
+    return out
+
+
+def test_갈래_넷이_시험_파일을_빠짐없이_한_번씩_문다() -> None:
+    """**갈래 합이 수집과 같은지를 파일 이름으로 지킨다** (S125).
+
+    **여기에 1,662 같은 수를 적지 않는다** — 적으면 그 수가 또 하나의 낡을
+    자리가 된다. 명령에서 파일 이름을 읽어 ``tests\\`` 아래 실물과 맞댈 뿐이다.
+
+    셋을 함께 잡는다 — ① 어느 갈래에도 없는 파일 · ② 두 갈래에 겹치는 파일 ·
+    ③ 명령의 오타. 오타는 「그런 파일이 없다」 로 걸린다: S124 가 ① 을 손으로
+    칠 때 ``--ignore=tests\\test_document`` 처럼 ``.py`` 를 빠뜨려 81건이
+    겹쳐 돌았고, **pytest 는 없는 경로를 조용히 지나간다.**
+    """
+    commands = _branch_commands()
+    assert len(commands) == 4, f"갈래 명령 넷을 못 읽었습니다 — {len(commands)}개만 잡혔습니다."
+
+    real = {path.name for path in (PROJECT_ROOT / "tests").glob("test_*.py")}
+    for args, names in commands:
+        missing = sorted(names - real)
+        assert not missing, (
+            f"명령이 없는 파일을 부릅니다 — {', '.join(missing)} "
+            f"(`.py` 를 빠뜨렸는지 보십시오): {args}"
+        )
+
+    ignored = [names for args, names in commands if "--ignore=" in args]
+    assert len(ignored) == 1, "``--ignore`` 로 거르는 갈래는 ① 하나여야 합니다."
+    (engine_skips,) = ignored
+    named = [names for args, names in commands if "--ignore=" not in args]
+
+    seen: set[str] = set()
+    for names in named:
+        overlap = sorted(seen & names)
+        assert not overlap, f"두 갈래가 같은 파일을 함께 뭅니다 — {', '.join(overlap)}"
+        seen |= names
+
+    assert engine_skips == seen, (
+        "① 이 거르는 파일과 ②③④ 가 부르는 파일이 다릅니다 — "
+        f"① 만 거르는 것 {sorted(engine_skips - seen)} · "
+        f"②③④ 만 부르는 것 {sorted(seen - engine_skips)}"
+    )
