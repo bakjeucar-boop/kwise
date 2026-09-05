@@ -771,6 +771,10 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
                 "base_fee_factor",
                 "base_won",
                 "power_factor_won",
+                # **부가금 열이 없으면 부분의 합이 합계에 못 미친다** (S129 2절).
+                # C7 에서 달마다 최대 2,334만원이 설명되지 않았다 — S127 이
+                # Word 요금 구조 표에서 고친 것과 같은 모양이다.
+                "excess_won",
                 "energy_won",
                 "energy_won_adjusted",
                 "total_won",

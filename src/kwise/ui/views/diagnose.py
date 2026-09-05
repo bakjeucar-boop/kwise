@@ -947,7 +947,13 @@ SCREEN_MONTHLY_COLUMNS: tuple[str, ...] = (
     "billing_demand_kw",  # 요금적용전력 — 기본요금이 왜 그 값인지
     "total_kwh",
     "base_won",
+    # **요금 항목은 중간값이 아니다** (S129 2절). 위 규약은 요금적용전력을 내는
+    # 중간값 넷을 Excel 로 보낸 것인데, 역률요금과 부가금은 결론 쪽이다 —
+    # 둘이 빠져 있어 **기본 + 전력량이 합계에 못 미쳤다.** 부분이 합계와 안 맞는
+    # 표는 「없으면 결과를 오독하는 것」 이라 화면에 남긴다 (`CLAUDE.md` 화면 문구).
+    "power_factor_won",
     "energy_won",
+    "excess_won",
     "total_won",
 )
 
@@ -959,6 +965,11 @@ def _monthly_table(monthly: pd.DataFrame) -> None:
     (21세션 3-3).
     """
     columns = [name for name in SCREEN_MONTHLY_COLUMNS if name in monthly.columns]
+    # **부가금 열은 붙은 자료에서만 선다** (109세션 규약 · S129 2절). 요약 시트도
+    # 지표도 0원이면 자리를 안 만든다 — 늘 0인 열을 두면 「없는 것을 있다고」
+    # 적는 꼴이다. 역률요금은 반대다: 0원이 곧 「조정 없음」 이라 늘 선다.
+    if "excess_won" in columns and not monthly["excess_won"].any():
+        columns.remove("excess_won")
     st.dataframe(
         localize(monthly[columns], index_name="월"),
         width="stretch",

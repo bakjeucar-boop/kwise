@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -190,3 +192,43 @@ def test_요금_구성이_합계와_맞는다(
     assert (
         structure.base_with_power_factor_won + structure.energy_won + structure.excess_won
     ) == pytest.approx(structure.total_won)
+
+
+#: 월별 명세가 **합계를 설명하려면** 실어야 하는 요금 열 (S129 2절).
+#: 넷을 더하면 ``total_won`` 이다 — 하나라도 빠지면 부분의 합이 합계에 못 미친다.
+SPEC_CHARGE_COLUMNS = ("base_won", "power_factor_won", "excess_won", "energy_won")
+
+
+def test_월별_명세의_부분_합이_합계와_맞는다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """**화면과 Excel 의 월별 명세가 같은 넷을 싣는다** (S129 2절 · ②-32 이웃).
+
+    S127 이 Word 요금 구조 표에서 고친 것과 같은 모양이 명세에도 있었다 —
+    ``excess_won`` 열이 어디에도 없어 **기본 + 역률 + 전력량이 합계에 못
+    미쳤다.** 금액을 여기 다시 적지 않는다. 부분을 더해 합계와 맞대기만 한다.
+    """
+    from kwise.ui.views.diagnose import SCREEN_MONTHLY_COLUMNS
+
+    bill = calculate_bill(
+        sample_usage,
+        tariff,
+        TariffSelection("general_b", "high_a", "I"),
+        options=BillingOptions(contract_kw=3_000.0),
+        quality=sample_report,
+    )
+    assert bill.total_excess_won > 0, "부가금이 서는 벌이어야 열이 빠진 것이 드러난다"
+
+    monthly = bill.monthly
+    parts = sum(float(monthly[name].sum()) for name in SPEC_CHARGE_COLUMNS)
+    assert parts == pytest.approx(float(monthly["total_won"].sum()))
+
+    for name in SPEC_CHARGE_COLUMNS:
+        assert name in SCREEN_MONTHLY_COLUMNS, f"화면 월별 명세에 {name} 이 없습니다."
+
+    # Excel 쪽은 열 목록이 소스에 있다 — `test_월별_명세는_결론_열만_낸다` 와 같은 꼴.
+    source = (Path("src") / "kwise" / "report" / "excel.py").read_text(encoding="utf-8")
+    detail = source[source.index('sheets["요금 계산 명세"]') :]
+    detail = detail[: detail.index('sheets["수단별 결과"]')]
+    for name in SPEC_CHARGE_COLUMNS:
+        assert f'"{name}"' in detail, f"Excel 요금 계산 명세에 {name} 이 없습니다."

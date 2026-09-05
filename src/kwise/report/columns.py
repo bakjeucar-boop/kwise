@@ -64,6 +64,9 @@ COLUMN_LABELS: dict[str, str] = {
     "discount_won": "할인(원)",
     "school_discount_won": "초·중·고교·유치원 특례 할인(원)",
     "power_factor_won": "역률 요금(원)",
+    # **부가금은 기본요금에 접지 않는다** (109세션). 접으면 「기본요금 =
+    # 요금적용전력 × 단가 × 개월수」 라는 각주가 그 자리에서 거짓이 된다.
+    "excess_won": "초과사용부가금(원)",
     "total_won": "합계(원)",
     "total_won_adjusted": "합계 보정(원)",
 }
