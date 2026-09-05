@@ -1532,17 +1532,23 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
     structure = diagnosis.structure
     if structure is not None:
         _heading(document, f"{number}.4 현재 요금 구조", level=2)
+        # **화면·PPT 와 같은 몫을 센다** (S124 · ②-40). 앞서는 ``base_won``(역률요금
+        # 을 뺀 값)을 ``total_won``(담은 값)으로 나누고 있어 **짝이 안 맞았다** —
+        # 역률 85% 를 걸면 이 표의 기본 + 전력량이 합계보다 317,220원 모자라고
+        # 비중 합이 99.8% 가 된다. 역률요금이 0원인 자료(간주 92%)에서는 값이 그대로다.
+        base_won = structure.base_with_power_factor_won
+        base_share = structure.base_with_power_factor_share
         _conclusion(
             document,
-            f"기본요금이 총액의 {structure.base_share:.1%} 입니다 "
-            f"({_won(structure.base_won)} / {_won(structure.total_won)}).",
+            f"기본요금이 총액의 {base_share:.1%} 입니다 "
+            f"({_won(base_won)} / {_won(structure.total_won)}).",
         )
         share = structure.band_share
         _add_table(
             document,
             [
                 ["구분", "금액·비중"],
-                ["기본요금", f"{_won(structure.base_won)} ({structure.base_share:.1%})"],
+                ["기본요금", f"{_won(base_won)} ({base_share:.1%})"],
                 [
                     "전력량요금",
                     f"{_won(structure.energy_won)} ({structure.energy_share:.1%})",

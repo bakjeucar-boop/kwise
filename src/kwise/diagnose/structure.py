@@ -66,6 +66,22 @@ class ChargeStructure:
         return self.base_won + self.bill.total_power_factor_won
 
     @property
+    def base_with_power_factor_share(self) -> float:
+        """:attr:`base_with_power_factor_won` 의 비중 (S124 · ②-40).
+
+        **:attr:`base_share` 는 분자와 분모의 짝이 안 맞는다** — 분자
+        ``total_base_won`` 은 역률요금을 뺀 값인데 분모 ``total_won`` 은 담고
+        있다. 역률 85% 를 걸면 그 비중과 :attr:`energy_share` 의 합이
+        **99.8%** 가 되고, 그 둘로 세운 Word 표는 기본 + 전력량이 합계보다
+        317,220원 모자란다.
+
+        화면·PPT 는 앞서부터 이 몫을 세고 있었다 — **부르는 쪽에서 각자
+        나눗셈을 적고 있으므로** 사본을 늘리지 않으려고 여기 둔다 (109세션이
+        :attr:`base_with_power_factor_won` 을 한 자리로 모은 것과 같은 규약).
+        """
+        return self.base_with_power_factor_won / self.total_won if self.total_won else 0.0
+
+    @property
     def excess_won(self) -> float:
         """초과사용부가금 (제67조의3 ③). **0원이면 지표를 안 세운다.**"""
         return self.bill.total_excess_won

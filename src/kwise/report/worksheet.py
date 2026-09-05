@@ -251,7 +251,33 @@ def contract_worksheet(result: ContractAdjustment) -> Worksheet:
     elif result.current_base_won is not None and result.adjusted_base_won is not None:
         rows.append(WorkRow("현재 기본요금", "", _won(result.current_base_won)))
         rows.append(WorkRow("조정 후 기본요금", "", _won(result.adjusted_base_won)))
-        rows.append(WorkRow("절감액", "현재 − 조정 후", _won(result.saving_won), total=True))
+        # **두 줄의 차가 절감액이 아니다** (S124 · ②-41). ``saving_won`` 은 역률요금
+        # 몫까지 담는다 (S116 · ⑭ — 역률요금은 기본요금에 대한 비율이라 기본요금이
+        # 줄면 함께 준다, 약관 제43조 ②). 시트 이름이 「계산 근거」 인데 **그 시트로
+        # 되짚을 수 없었다** — large-b-over 에 역률 85% 를 걸면 519,840,000 −
+        # 452,804,000 = 67,036,000 인데 절감액은 67,973,000원이라 937,000원이 뜬다.
+        # 몫을 한 줄로 세우면 세 줄이 산수로 맞는다. **역률요금이 0원인 자료(약관
+        # 제42조 간주 92%)에서는 줄이 안 생기므로 지금 벌의 줄 수는 그대로다.**
+        base_cut = result.current_base_won - result.adjusted_base_won
+        power_factor_cut = None if result.saving_won is None else result.saving_won - base_cut
+        formula = "현재 − 조정 후"
+        if power_factor_cut:
+            rows.append(
+                WorkRow("역률요금 절감", "기본요금이 줄면 함께 준다", _won(power_factor_cut))
+            )
+            formula = "현재 − 조정 후 + 역률요금 절감"
+        # **0원과 「없음」 을 가른다** (S124 · ②-27). 낮출 자리가 없어 줄 것이
+        # 없는 것(:attr:`~kwise.measures.contract.ContractAdjustment.no_saving`)은
+        # 계산해서 0원이 나온 것과 다르다 — 같은 시트의 「목표 계약전력」 이 이미
+        # 그 어휘를 쓰고 있었는데 **절감액 줄만 0원으로 남아 있었다.**
+        rows.append(
+            WorkRow(
+                "절감액",
+                formula,
+                NO_SAVING if result.no_saving else _won(result.saving_won),
+                total=True,
+            )
+        )
     return Worksheet("contract", "계약전력 조정 계산 근거", tuple(rows))
 
 

@@ -267,6 +267,36 @@ def test_charge_structure_shares_add_up(sample_diagnosis: Diagnosis) -> None:
     assert float(structure.season_share.sum()) == pytest.approx(1.0)
 
 
+def test_산출물이_세는_기본요금_비중은_역률이_붙어도_백을_채운다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """**분자와 분모의 짝을 맞춘다** (S124 · ②-40).
+
+    위 못은 **역률요금이 0원인 간주 92% 에서만** 참이었다. ``base_share`` 는
+    역률요금을 뺀 분자를 담은 분모로 나누므로, 85% 를 걸면 전력량요금 비중과
+    합해도 100% 가 안 된다 — 그 둘로 세운 Word 표는 기본 + 전력량이 합계보다
+    모자란다. 산출물은 :attr:`base_with_power_factor_share` 를 센다.
+    """
+    options = BillingOptions(power_factor_pct=85.0, contract_kw=5_500.0)
+    structure = diagnose(
+        sample_usage,
+        tariff,
+        ContractInfo(CURRENT, contract_kw=5_500.0),
+        quality=sample_report,
+        options=options,
+    ).structure
+    assert structure is not None
+    assert structure.bill.total_power_factor_won > 0, "역률요금이 서는 벌이어야 한다"
+
+    # 낡은 몫은 100% 를 못 채운다 — 이 못이 잡는 것이 그 자리다.
+    assert structure.base_share + structure.energy_share < 0.999
+    assert structure.base_with_power_factor_share + structure.energy_share == pytest.approx(1.0)
+    # 표의 금액도 같은 말을 한다 — 기본 + 전력량 = 합계.
+    assert structure.base_with_power_factor_won + structure.energy_won == pytest.approx(
+        structure.total_won
+    )
+
+
 def test_band_energy_ties_to_total_usage(
     sample_diagnosis: Diagnosis, sample_usage: UsageData
 ) -> None:

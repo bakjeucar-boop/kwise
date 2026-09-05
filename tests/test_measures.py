@@ -20,9 +20,11 @@ from kwise.io import UsageData, load_usage
 from kwise.measures import (
     CURTAIL_SCENARIO,
     EXTERNAL_SCENARIO,
+    NO_SAVING,
     OFFSET_SCENARIO,
     PV_UNPRICED_REASON,
     Certainty,
+    ContractAdjustment,
     ContractStatus,
     EssCostInput,
     EssResult,
@@ -801,6 +803,82 @@ def test_넘는_판의_근거표는_총액_둘의_차이를_적는다(
     # 미해결 ②-29 다.
     gap = _won_of("현행 종별 총 요금") - _won_of("일반용전력(갑)Ⅱ 총 요금") - _won_of("절감액")
     assert abs(gap) <= 1_000
+
+
+def _contract_sheet(
+    usage: UsageData, tariff: TariffTable, *, contract_kw: float, power_factor_pct: float | None
+) -> tuple[dict[str, str], dict[str, str], ContractAdjustment]:
+    """계약전력 조정 근거표를 「구분 → 값」·「구분 → 산식」 으로 편다."""
+    from kwise.report.worksheet import contract_worksheet
+
+    options = BillingOptions(contract_kw=contract_kw, power_factor_pct=power_factor_pct)
+    bill = calculate_bill(
+        usage, tariff, TariffSelection("general_b", "high_a", "I"), options=options
+    )
+    result = evaluate_contract_adjustment(
+        usage, bill, contract_kw=contract_kw, table=tariff, options=options
+    )
+    frame = contract_worksheet(result).frame()
+    return (
+        dict(zip(frame["구분"], frame["값"], strict=True)),
+        dict(zip(frame["구분"], frame["산식"], strict=True)),
+        result,
+    )
+
+
+def test_두_줄_갈래의_근거표는_역률_몫까지_적는다(
+    sample_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**「계산 근거」 라면 그 표로 되짚을 수 있어야 한다** (S124 · ②-41).
+
+    ``saving_won`` 은 역률요금 몫까지 담는데(S116 · ⑭) 표는 기본요금 두 줄만
+    적고 산식 칸에 「현재 − 조정 후」 라 써 있었다. 역률 85% 를 걸면 그 뺄셈이
+    937,000원 어긋난다 — 읽는 사람이 표에서 절감액을 못 만든다.
+
+    **간주 92% 에서는 역률요금이 0원이라 줄이 안 생긴다** — 지금 벌의 줄 수가
+    그대로인 까닭이다.
+    """
+    shown, formula, result = _contract_sheet(
+        sample_usage, tariff, contract_kw=20_000.0, power_factor_pct=85.0
+    )
+    assert not result.crosses_type, "두 줄 갈래를 세우는 벌이어야 한다"
+
+    def _won_of(label: str) -> int:
+        return int(shown[label].removesuffix("원").replace(",", ""))
+
+    assert formula["절감액"] == "현재 − 조정 후 + 역률요금 절감"
+    # 네 칸이 각자 천원 절사되므로 앞 셋의 합이 절감액과 1,000원까지 어긋난다.
+    gap = (
+        _won_of("현재 기본요금")
+        - _won_of("조정 후 기본요금")
+        + _won_of("역률요금 절감")
+        - _won_of("절감액")
+    )
+    assert abs(gap) <= 1_000
+
+    # 역률요금이 0원이면 줄이 안 선다 — 그때는 뺄셈이 그대로 맞는다.
+    plain, plain_formula, _ = _contract_sheet(
+        sample_usage, tariff, contract_kw=20_000.0, power_factor_pct=None
+    )
+    assert "역률요금 절감" not in plain
+    assert plain_formula["절감액"] == "현재 − 조정 후"
+
+
+def test_낮출_자리가_없으면_근거표의_절감액은_없음이다(
+    sample_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**0원과 「없음」 을 가른다** (S124 · ②-27).
+
+    같은 표의 「목표 계약전력」 은 이미 :data:`~kwise.money.NO_SAVING` 을 쓰는데
+    **절감액 줄만 0원으로 남아 있었다** — 한 표 안에서 같은 사실을 두 말로 적었다.
+    계산해서 0원이 나온 것과 낮출 자리가 없는 것은 다른 결론이다.
+    """
+    shown, _formula, result = _contract_sheet(
+        sample_usage, tariff, contract_kw=6_000.0, power_factor_pct=None
+    )
+    assert result.no_saving, "낮출 자리가 없는 벌이어야 한다"
+    assert shown["목표 계약전력"] == NO_SAVING
+    assert shown["절감액"] == NO_SAVING
 
 
 def test_넘는_판의_안내는_종별이_바뀐다고_말한다(

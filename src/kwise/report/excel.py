@@ -677,7 +677,10 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
         structure = diagnosis.structure
         rows.extend(
             [
-                ("기본요금 비중", f"{structure.base_share:.1%}"),
+                # **화면·PPT·Word 와 같은 몫을 센다** (S124 · ②-40). `base_share`
+                # 는 분자만 역률요금을 빼 **전력량요금 비중과 합해도 100% 가 안
+                # 된다** — 역률 85% 에서 99.8% 다.
+                ("기본요금 비중", f"{structure.base_with_power_factor_share:.1%}"),
                 ("전력량요금 비중", f"{structure.energy_share:.1%}"),
                 *(
                     (f"{band} 사용량 비중", f"{share:.1%}")

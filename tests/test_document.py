@@ -19,6 +19,7 @@ import pytest
 from docx import Document as ReadDocument
 from docx.document import Document as DocumentType
 
+from kwise import money
 from kwise.compare import ComparisonResult, SensitivityRange
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
@@ -301,6 +302,56 @@ def test_금액에_단위가_붙는다(full_document: DocumentType) -> None:
     table = _table_with_header(full_document, "항목", "값")
     values = [row.cells[1].text for row in table.rows[1:]]  # type: ignore[attr-defined]
     assert any(value.endswith("원") for value in values)
+
+
+def test_요금_구조_표의_기본_더하기_전력량이_합계다(
+    sample_usage: UsageData, sample_report: object, tariff: TariffTable
+) -> None:
+    """**표가 스스로 산수로 맞아야 한다** (S124 · ②-40).
+
+    「현재 요금 구조」 는 앞서 ``base_won``(역률요금을 뺀 값)을 적고 비중은
+    그것을 ``total_won``(담은 값)으로 나눈 몫을 적었다 — 역률 85% 를 걸면
+    기본 + 전력량이 합계보다 317,220원 모자라고 비중 합이 99.8% 가 된다.
+    화면·PPT 는 앞서부터 역률요금을 담아 세고 있었다.
+
+    **간주 92% 벌에서는 역률요금이 0원이라 값이 그대로다** — 이 못이 벌을
+    따로 세우는 까닭이다.
+    """
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.tariff import BillingOptions, TariffSelection, calculate_bill
+
+    selection = TariffSelection("general_b", "high_a", "I")
+    options = BillingOptions(power_factor_pct=85.0, contract_kw=5_500.0)
+    bill = calculate_bill(sample_usage, tariff, selection, quality=sample_report, options=options)
+    diagnosis = diagnose(
+        sample_usage,
+        tariff,
+        ContractInfo(selection, contract_kw=5_500.0),
+        quality=sample_report,
+        options=options,
+    )
+    assert bill.total_power_factor_won > 0, "역률요금이 서는 벌이어야 한다"
+
+    document = build_document(DocumentSections(usage=sample_usage, bill=bill, diagnosis=diagnosis))
+    table = _table_with_header(document, "구분", "금액·비중")
+    cells = {
+        row.cells[0].text: row.cells[1].text  # type: ignore[attr-defined]
+        for row in table.rows[1:]  # type: ignore[attr-defined]
+    }
+
+    def _won_of(label: str) -> int:
+        return int(cells[label].split("원")[0].replace(",", ""))
+
+    def _share_of(label: str) -> float:
+        return float(cells[label].split("(")[1].rstrip("%)"))
+
+    # 두 칸이 각자 천원 절사되므로 합계와 1,000원까지 어긋난다.
+    total = int(
+        money.won(diagnosis.structure.total_won, reason="—").removesuffix("원").replace(",", "")
+    )
+    assert abs(_won_of("기본요금") + _won_of("전력량요금") - total) <= 1_000
+    # 소수 한 자리로 적으므로 0.1%p 까지.
+    assert abs(_share_of("기본요금") + _share_of("전력량요금") - 100.0) <= 0.1
 
 
 # ===================================================================== ④ 미산출 사유
