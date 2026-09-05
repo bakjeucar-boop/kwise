@@ -67,7 +67,7 @@ ESS 최소 용량 · 잉여 발생량과 시간대 분포. 연간 발전량·자
 
 | | 무엇 | 분량 |
 |---|---|---|
-| **화면** | Streamlit. 화면 번호는 1~6, 문서·산출물은 7.1~7.6 | 실주행 문구 973건 |
+| **화면** | Streamlit. 화면 번호는 1~6, 문서·산출물은 7.1~7.6 | 실주행 문구 — 을 956 · 갑Ⅰ 806 · 교육갑 959 · 교육갑저압 807 (**넷은 조건이 달라 하나로 못 적는다**) |
 | **Excel** | 13시트. 감도는 여기에 있다 | |
 | **PPT** | 대형 을 21장 · 대형 갑 20장 · 소형 21장. 수단 0개면 11장, 계약전력 조정까지 서면 22장 | **절 번호(7.x)를 안 단다** |
 
@@ -225,7 +225,7 @@ C1~C6 만 보므로 그대로다.
       compare\          3단계
       report\           Excel · PPT · Word
       ui\               Streamlit. 계산은 안 한다
-    data\               tariff_*.json (8종별 · **schema 0.5**) · rules_kr.json 33 · assumptions.json 49
+    data\               tariff_*.json (8종별 · **schema 0.5**) · rules_kr.json 35항목 · assumptions.json 49항목
                         data\defaults\ 는 출고 복원용 사본
     tools\              render_deck.py · capture_screen.py · run_casestudy.py
                         screen_audit.py · run_benchmark.py · build_docs.py

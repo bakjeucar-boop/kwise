@@ -235,7 +235,9 @@ mypy
 (`test_ui_screen.py`)을 못 쪼갠다 — 그 파일이 그대로 남아 이득이 없다.
 
 **mypy 는 맨 `mypy` 다** (70세션 3절). `pyproject.toml` 의
-`files = ["src", "tests", "tools"]` 를 그대로 돌린다 — 161파일이 통과한다.
+`files = ["src", "tests", "tools"]` 를 그대로 돌린다 — 166파일을 본다.
+**지금은 통과가 아니다** — 121세션에 재니 `tests\test_measures.py` 하나에서
+6건이 난다 (`PROCEED.md` 「mypy 범위」).
 
 70세션 전에는 `mypy src` 로 판단했다. `tests\` 가 검사 대상에 들어 있는데
 통과한 적이 없어(70세션 착수 시점 **142건**) 설정과 문서가 서로 다른 말을

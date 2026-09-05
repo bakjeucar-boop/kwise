@@ -52,7 +52,7 @@
 | 개선 수단 | 7종 (선택요금·계약전력·DR·역률·태양광·ESS·잉여) |
 | 태양광 | pvlib 시뮬레이션, 용량 곡선 20단계, 감도 3종 |
 | 비교 | 조합별 재계산, 회수기간 (확실성 등급은 계산에만 남는다) |
-| 산출 | Excel 9시트, Word 5장, CLI 배치 |
+| 산출 | Excel 13시트, Word 5장, CLI 배치 |
 | 기준 데이터 | 화면 편집, 근거·확인일, 원복 3층, 만료 감지 |
 
 ### 1.3 개발 언어와 스택 {#tech-stack}
@@ -177,12 +177,12 @@ reference/          기존 pv_peak_cut 코드. **읽기 전용**
 | 파일 | 형식 | 내용 | 갱신 |
 |---|---|---|---|
 | `data/tariff_kr_*.json` | JSON | 요금표 8종별 × 전압 × 선택요금 ([부록 A](#부록-a-요금-데이터-스키마)) | 엑셀 원본에서 변환 |
-| `data/rules_kr.json` | JSON | **법령 유래** 27항목. 근거 조문 필수 | 화면·엑셀 |
-| `data/assumptions.json` | JSON | **판단값** 25항목 | 화면·엑셀 |
+| `data/rules_kr.json` | JSON | **법령 유래** 35항목. 근거 조문 필수 | 화면·엑셀 |
+| `data/assumptions.json` | JSON | **판단값** 49항목 | 화면·엑셀 |
 | `data/defaults/*.json` | JSON | 출고값. 읽기 전용, 커밋 | 손대지 않는다 |
 | `data/backup/*.json` | JSON | 편집 직전 스냅샷 최근 10개 | 자동 |
 | `data/rules_history.jsonl` | JSONL | 편집 이력 한 줄씩 | 자동 |
-| `data/sigungu_kr.json` | JSON | 시군구 229개 좌표 | 드물게 |
+| `data/sigungu_kr.json` | JSON | 시군구 228개 좌표 | 드물게 |
 | `data/ess_cost_cases.json` | JSON | ESS 조달 사례 (회귀 원자료) | 24개월 |
 | `data/ess_cost_model.json` | JSON | ESS 투자비 모델 (재적합 산출물) | 24개월 |
 | `data/ess_cost_reference.json` | JSON | LCOS 참고단가 (차익거래·전망 전용) | 24개월 |
@@ -1593,8 +1593,8 @@ Excel 과 요약 CSV 뿐이다), 여러 건을 나란히 놓는 자리라 건별
 
 | 파일 | 항목 | 근거 |
 |---|---|---|
-| `rules_kr.json` | **27개** | 조문 (약관 제41·42·43·56·57·58·68조, 운영규칙 제12장) |
-| `assumptions.json` | **25개** | `"판단값"` |
+| `rules_kr.json` | **35개** | 조문 (약관 제41·42·43·56·57·58·68조, 운영규칙 제12장) |
+| `assumptions.json` | **49개** | `"판단값"` |
 
 **섞지 않는다.** 섞으면 "이 숫자를 우리가 정한 것인가 법이 정한 것인가"를
 되물을 수 없는데, 그 물음이 갱신 판단의 전부다. **스키마가 이를 강제한다** —
@@ -1720,7 +1720,7 @@ data\backup\     편집 직전 스냅샷 (최근 10개, .gitignore)
 |---|---|
 | `test_progress.py` | **계산 모듈에 `import streamlit` 이 없다.** AST 로 훑는다 |
 | `test_ui.py` | 매뉴얼 앵커 목록과 문서가 어긋나지 않는다 |
-| `test_casestudy.py` | 타당성 판정 66건 |
+| `test_casestudy.py` | 타당성 판정 104건 |
 
 ### 6.2 케이스 스터디 C1~C6 {#tech-casestudy}
 
@@ -2134,7 +2134,7 @@ Windows 작업 집합을 `GetProcessMemoryInfo` 로 직접 읽는다. `tracemall
 | 화면 캡처 | 매뉴얼에 자리만 잡아 두었다. `CAPTURES.md` 참조 |
 
 **메모리 여유가 생겼다고 다중 시나리오를 동시 적재하지 않는다.** 순차 처리를
-유지한다 — 케이스 6종의 시계열을 동시에 들지 않는 것이 그 규약이다.
+유지한다 — 케이스 일곱의 시계열을 동시에 들지 않는 것이 그 규약이다.
 
 ---
 

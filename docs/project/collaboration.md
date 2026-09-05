@@ -49,7 +49,7 @@
 
 **판단값과 법령 유래를 가른다.** 기준 데이터가 두 파일로 갈라져 있다.
 
-    data\rules_kr.json      33항목   source = 「기본공급약관 제57조」 같은 조문
+    data\rules_kr.json      35항목   source = 「기본공급약관 제57조」 같은 조문
                                      source_date · verified_on 이 붙는다
     data\assumptions.json   49항목   source = 「판단값」
                                      화면에서 [판단] 으로 보이고 고칠 수 있다
