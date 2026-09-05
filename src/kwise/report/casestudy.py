@@ -12,8 +12,9 @@
     C4 주말 가동형   산업용(을) 봄·가을 주말 할인 특례
     C5 겨울 피크형   대상월인데 PV 발전이 약하다
     C6 야간 피크형   **관측 최대는 밤인데 요금적용전력은 낮에서 나온다**
+    C7 계약 부족형   **계약전력이 관측 최대 아래라 초과사용부가금이 붙는다**
 
-**일곱째는 합성이 아니라 실측이다** (95세션 0절).
+**마지막은 합성이 아니라 실측이다** (95세션 0절).
 
     R1 용인 실측    일반용(갑)Ⅱ 고압A 선택Ⅱ · 계약전력 290 kW
 
@@ -24,7 +25,16 @@
 **이 벌만 좌표와 계약전력이 다르다.** 용인이고 계약전력은 실제 값(290 kW)이라
 관측 최대의 1.1배 규칙을 쓰지 않는다.
 
-케이스는 **순차로** 돈다. 일곱 벌의 시계열을 동시에 들지 않는다 (메모리 규약).
+**C7 은 S128 에 올렸다** (②-32). S127 이 덱 벌 `large-b-short` 를 지어
+초과사용부가금이 실제로 서는 자리를 만들었는데 **덱에만 있고 케이스 스터디
+목록에는 없었다** — 합성이 회귀 안에 있고 실측이 밖에 있던 R1 이전의 모양과
+같아서, 95세션이 R1 을 올린 그 방식을 그대로 따랐다.
+
+**C7 은 자료가 실측이고 계약전력만 합성이다.** 그래서 R 이 아니라 C 다 —
+갈림의 잣대는 자료가 아니라 **조건**이다(C1 도 자료는 대형 실측 원본 그대로다).
+R1 만 계약전력까지 실제 값이고, C1~C7 은 다 지어낸 계약전력을 쓴다.
+
+케이스는 **순차로** 돈다. 여덟 벌의 시계열을 동시에 들지 않는다 (메모리 규약).
 """
 
 from __future__ import annotations
@@ -102,6 +112,14 @@ YONGIN_USAGE_NAME = "전기사용량_소형건물.xlsx"
 #: 용인 건물이 실제로 쓰는 계약전력. **지어낸 값이 아니다** (`docs\\BILL_CHECK.md`).
 YONGIN_CONTRACT_KW = 290.0
 
+#: C7 이 쓰는 대형 실측 정본. 덱 벌 `large-b-short` 와 **같은 파일**이다.
+LARGE_USAGE_NAME = "사용량조회_20240429.csv"
+
+#: C7 의 계약전력. **자료는 실측이고 이 수만 합성이다** (S127 · S128).
+#: 관측 최대 5,293.44 kW 아래라 초과사용부가금이 붙는다. 일반용(을)은 계약전력
+#: 300 kW 이상이므로(기본공급약관 제57조 ②) 성립하는 수다.
+SHORT_CONTRACT_KW = 4_000.0
+
 # PV 용량 축 (11.3). 0 이 있어야 "PV 0 이면 절감 0" 을 확인할 수 있다.
 DEFAULT_CAPACITIES_KWP: tuple[float, ...] = (0.0, 500.0, 1_000.0, 2_000.0)
 
@@ -136,6 +154,12 @@ class CaseDefinition:
     """기상·태양광 좌표. 실측 벌만 자기 소재지를 쓴다."""
     contract_kw: float | None = None
     """계약전력. ``None`` 이면 관측 최대의 :data:`CONTRACT_MARGIN` 배로 잡는다."""
+    contract_is_actual: bool = False
+    """계약전력이 **그 건물이 실제로 쓰는 값**인가 (R1 하나뿐이다).
+
+    ``contract_kw is not None`` 으로 가르면 안 된다 — C7 도 값을 박지만 그
+    수는 지어낸 것이라 「실제 값」 이라 적으면 거짓이 된다 (S128).
+    """
 
     @property
     def selection(self) -> TariffSelection:
@@ -236,7 +260,7 @@ class CaseStudy:
                 "항목": "기상 캐시 적중",
                 "값": (
                     f"{len(self.results) - self.weather_calls}/{len(self.results)} "
-                    "(합성 여섯은 좌표·기간이 같아 첫 건만 취득한다. 실측은 따로 선다)"
+                    "(C1~C7 은 좌표·기간이 같아 첫 건만 취득한다. 실측은 따로 선다)"
                 ),
             }
         )
@@ -250,11 +274,12 @@ class CaseStudy:
 
 
 def build_case_definitions(directory: Path) -> tuple[CaseDefinition, ...]:
-    """``input\\cases\\`` 의 합성 여섯과 **실측 하나**로 케이스 정의를 만든다.
+    """``input\\cases\\`` 의 여섯과 **그 밖의 둘**로 케이스 정의를 만든다.
 
     **C4 만 산업용(을)이다** — 봄·가을 주말 할인 특례를 태우기 위해서다.
-    **R1 만 실측이고 갑Ⅱ 다** (95세션 0절). 자료가 ``input\\`` 바로 아래에
-    있으므로 ``directory`` 의 어버이에서 찾는다.
+    **R1 만 실측이고 갑Ⅱ 다** (95세션 0절).
+    **C7 만 계약전력이 관측 최대 아래다** (S128). 둘 다 자료가 ``input\\``
+    바로 아래에 있으므로 ``directory`` 의 어버이에서 찾는다.
     """
     plan = (
         ("C1", "오전 피크형", "general_b", "원본. 10~13시 집중"),
@@ -275,6 +300,23 @@ def build_case_definitions(directory: Path) -> tuple[CaseDefinition, ...]:
             )
         )
 
+    # **C7 은 `input\\cases\\` 밖의 대형 실측 정본을 쓴다** (S128 · ②-32).
+    # 덱 벌 `large-b-short` 와 같은 파일·같은 계약전력이라 둘을 맞대 볼 수 있다.
+    # 좌표는 C1~C6 와 같으므로 기상 요청이 늘지 않는다.
+    large = directory.parent / LARGE_USAGE_NAME
+    if not large.is_file():
+        raise FileNotFoundError(f"대형 실측 자료가 없습니다: {large}")
+    definitions.append(
+        CaseDefinition(
+            key="C7",
+            name="계약 부족형",
+            usage_path=large,
+            contract_type="general_b",
+            note="계약전력 4,000 kW < 관측 최대 — 초과사용부가금이 서는 유일한 벌",
+            contract_kw=SHORT_CONTRACT_KW,
+        )
+    )
+
     yongin = directory.parent / YONGIN_USAGE_NAME
     if not yongin.is_file():
         raise FileNotFoundError(f"용인 실측 자료가 없습니다: {yongin}")
@@ -288,6 +330,7 @@ def build_case_definitions(directory: Path) -> tuple[CaseDefinition, ...]:
             note="실측 (61세션). 갑Ⅱ 경로가 회귀에 서는 유일한 자리다",
             region_key=YONGIN_REGION_KEY,
             contract_kw=YONGIN_CONTRACT_KW,
+            contract_is_actual=True,
         )
     )
     return tuple(definitions)
@@ -596,6 +639,8 @@ def run_one_case(
             "확실성": "높음",
             "비고": (
                 f"계약 {contract_kw:,.0f} kW (실제 값)"
+                if definition.contract_is_actual
+                else f"계약 {contract_kw:,.0f} kW (합성 조건)"
                 if definition.contract_kw is not None
                 else f"계약 {contract_kw:,.0f} kW 가정 (관측 최대 × {CONTRACT_MARGIN})"
             ),
@@ -674,10 +719,10 @@ def run_case_study(
     pv_unit_cost_won_per_kwp: float | None = None,
     progress: ProgressReporter | None = None,
 ) -> CaseStudy:
-    """케이스를 **순차로** 돌린다. 일곱 벌의 시계열을 동시에 들지 않는다.
+    """케이스를 **순차로** 돌린다. 여덟 벌의 시계열을 동시에 들지 않는다.
 
     단위 발전 프로파일은 케이스마다 다시 만든다 (부하 인덱스에 정렬해야 한다).
-    합성 여섯은 좌표·기간이 같아 **첫 건만 취득하고 나머지는 캐시**를 타고,
+    C1~C7 은 좌표·기간이 같아 **첫 건만 취득하고 나머지는 캐시**를 타고,
     **실측(R1)은 좌표도 기간도 달라 요청이 하나 더 선다.**
     """
     started = time.perf_counter()
