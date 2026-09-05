@@ -1544,6 +1544,14 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
             f"({_won(base_won)} / {_won(structure.total_won)}).",
         )
         share = structure.band_share
+        # **초과사용부가금은 붙은 자료에서만 한 칸을 더 쓴다** (S127 2절 · ②-32).
+        # 화면과 PPT 는 109세션부터 이 칸을 세우는데 **이 표만 안 세우고 있었다** —
+        # 분모 ``total_won`` 은 부가금을 담고 있으므로 안 세우면 **기본 + 전력량이
+        # 합계에 못 미친다.** S124 가 고친 역률요금 짝 안 맞음과 같은 모양이다.
+        # 부가금이 서는 벌이 저장소에 하나도 없어 **한 번도 그려진 적이 없었다** —
+        # S127 이 `large-b-short` 를 지어 그 자리에서 드러났다 (122,451,200원 ·
+        # 총액의 3.5%). 0원이면 칸이 안 생기므로 지금까지의 산출물은 그대로다.
+        excess_won = structure.excess_won
         _add_table(
             document,
             [
@@ -1553,6 +1561,16 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
                     "전력량요금",
                     f"{_won(structure.energy_won)} ({structure.energy_share:.1%})",
                 ],
+                *(
+                    [
+                        [
+                            "초과사용부가금",
+                            f"{_won(excess_won)} ({excess_won / structure.total_won:.1%})",
+                        ]
+                    ]
+                    if excess_won
+                    else []
+                ),
                 ["경부하 사용량 비중", f"{float(share.get('light', 0.0)):.1%}"],
                 ["중간부하 사용량 비중", f"{float(share.get('mid', 0.0)):.1%}"],
                 ["최대부하 사용량 비중", f"{float(share.get('peak', 0.0)):.1%}"],

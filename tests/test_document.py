@@ -30,6 +30,7 @@ from kwise.measures import (
     SolarPoint,
     TariffSwitchResult,
 )
+from kwise.quality import QualityReport
 from kwise.report import (
     CHAPTER_COMPARISON,
     CHAPTER_DIAGNOSIS,
@@ -352,6 +353,49 @@ def test_요금_구조_표의_기본_더하기_전력량이_합계다(
     assert abs(_won_of("기본요금") + _won_of("전력량요금") - total) <= 1_000
     # 소수 한 자리로 적으므로 0.1%p 까지.
     assert abs(_share_of("기본요금") + _share_of("전력량요금") - 100.0) <= 0.1
+
+
+def test_요금_구조_표가_초과사용부가금_칸을_세운다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """**부가금이 서는 벌에서 표가 합계에 못 미쳤다** (S127 2절 · ②-32).
+
+    화면과 PPT 는 109세션부터 부가금 칸을 세우는데 **Word 표만 안 세웠다** —
+    분모 ``total_won`` 은 부가금을 담으므로 기본 + 전력량이 합계에 못 미친다.
+    위 못과 같은 병인데 **역률이 아니라 부가금 쪽**이고, 그래서 벌을 따로
+    세운다: 계약전력이 관측 최대 위면 부가금이 0원이라 칸이 아예 안 생긴다.
+
+    **계약전력 4,000 kW 는 덱 벌 `large-b-short` 와 같은 조건이다** — 저장소에
+    부가금이 서는 벌이 하나도 없어 이 갈래가 한 번도 그려진 적이 없었다.
+    """
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.tariff import BillingOptions, TariffSelection, calculate_bill
+
+    selection = TariffSelection("general_b", "high_a", "I")
+    options = BillingOptions(contract_kw=4_000.0)
+    bill = calculate_bill(sample_usage, tariff, selection, quality=sample_report, options=options)
+    diagnosis = diagnose(
+        sample_usage,
+        tariff,
+        ContractInfo(selection, contract_kw=4_000.0),
+        quality=sample_report,
+        options=options,
+    )
+    assert bill.total_excess_won > 0, "초과사용부가금이 서는 벌이어야 한다"
+
+    document = build_document(DocumentSections(usage=sample_usage, bill=bill, diagnosis=diagnosis))
+    table = _table_with_header(document, "구분", "금액·비중")
+    cells = {
+        row.cells[0].text: row.cells[1].text
+        for row in table.rows[1:]  # type: ignore[attr-defined]
+    }
+    assert "초과사용부가금" in cells
+
+    def _share_of(label: str) -> float:
+        return float(cells[label].split("(")[1].rstrip("%)"))
+
+    labels = ["기본요금", "전력량요금", "초과사용부가금"]
+    assert abs(sum(_share_of(label) for label in labels) - 100.0) <= 0.1
 
 
 # ===================================================================== ④ 미산출 사유
