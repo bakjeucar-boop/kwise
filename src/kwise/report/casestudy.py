@@ -195,6 +195,20 @@ class CaseResult:
     def label(self) -> str:
         return self.definition.label
 
+    @property
+    def base_with_power_factor_share(self) -> float:
+        """기본요금 비중. **산식은 여기 없다** (S133 2절 · ②-39 · ②-52).
+
+        앞서는 이 산출물만 ``total_base_won`` 을 ``total_won`` 으로 나눠
+        **역률요금을 분자에서 뺐다** — 화면·PPT·Word·Excel 넷은 역률을 담은
+        몫을 세고 있었다.
+        벌 여덟이 다 제42조 간주값(92%)이라 역률요금이 0원이었고 그래서 값이
+        우연히 같았다. :attr:`ChargeStructure.base_with_power_factor_share` 를
+        읽어 자리를 하나로 만든다.
+        """
+        structure = self.diagnosis.structure
+        return structure.base_with_power_factor_share if structure is not None else 0.0
+
     def summary_row(self) -> dict[str, float | str]:
         pattern = self.diagnosis.pattern
         return {
@@ -211,11 +225,7 @@ class CaseResult:
             "기본요금(원)": self.baseline.total_base_won,
             "전력량요금(원)": self.baseline.total_energy_won,
             "총 요금(원)": self.baseline.total_won,
-            "기본요금 비중(%)": (
-                self.baseline.total_base_won / self.baseline.total_won * 100.0
-                if self.baseline.total_won
-                else 0.0
-            ),
+            "기본요금 비중(%)": self.base_with_power_factor_share * 100.0,
             "기상": self.weather_source,
             "소요(초)": self.elapsed_sec,
         }

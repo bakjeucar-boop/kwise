@@ -1390,12 +1390,12 @@ def _build_structure(
                     else []
                 ),
                 (
+                    # **비중을 여기서 나누지 않는다** (S133 2절 · ②-39).
+                    # 산식은 ``ChargeStructure.base_with_power_factor_share``
+                    # 한 자리에 있다 — 화면과 이 장이 각자 나누면 반올림 자리가
+                    # 갈려 같은 자료에서 두 값이 나간다.
                     "기본요금 비중",
-                    _pct(
-                        base_with_power_factor_won / structure.total_won
-                        if structure.total_won
-                        else None
-                    ),
+                    _pct(structure.base_with_power_factor_share if structure.total_won else None),
                 ),
             ],
             left=geometry.margin_in,

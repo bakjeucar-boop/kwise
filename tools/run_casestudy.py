@@ -133,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
             result.label,
             f"{result.baseline.billing_demand_kw:,.1f} kW",
             f"{result.diagnosis.pattern.load_factor:.1%}",
-            f"{result.baseline.total_base_won / result.baseline.total_won:.1%}",
+            f"{result.base_with_power_factor_share:.1%}",
             f"{result.elapsed_sec:.1f}s",
         )
     console.print(summary)

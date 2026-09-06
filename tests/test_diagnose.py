@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -295,6 +296,35 @@ def test_산출물이_세는_기본요금_비중은_역률이_붙어도_백을_�
     assert structure.base_with_power_factor_won + structure.energy_won == pytest.approx(
         structure.total_won
     )
+
+
+#: 기본요금 비중의 산식이 사는 자리. **하나뿐이다** —
+#: :attr:`~kwise.diagnose.structure.ChargeStructure.base_with_power_factor_share`.
+_SHARE_HOME = Path("src") / "kwise" / "diagnose" / "structure.py"
+
+
+def test_기본요금_비중을_만드는_자리는_한_곳이다() -> None:
+    """**S119 「자리 하나」 못과 같은 꼴이다** (S133 2절 · ②-39 · ②-52).
+
+    기본요금 비중은 ``base_with_power_factor_won / total_won`` 하나로
+    만들어진다. 이 나눗셈이 :data:`_SHARE_HOME` 밖에 서면 **부르는 쪽마다
+    반올림 자리가 갈려** 같은 자료에서 두 값이 나간다 — S130 리뷰가 다섯 자리
+    세 꼴을 셌고, S133 이 전수로 다시 뽑으니 **일곱 자리**였다(화면 · PPT 지표 ·
+    PPT 문장 · Excel · Word · 케이스 스터디 xlsx · 케이스 스터디 콘솔).
+
+    **분자로 쓰인 것만 문다.** ``total_base_won`` 이 **분모**에 서는 자리
+    (``report\\validity.py`` 의 절감액 비율)는 다른 사실이라 걸지 않는다.
+    """
+    divider = re.compile(r"(?:base_with_power_factor_won|total_base_won)\s*/(?!/)")
+    strays: list[str] = []
+    for root in (Path("src"), Path("tools")):
+        for path in sorted(root.rglob("*.py")):
+            if path == _SHARE_HOME:
+                continue
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if divider.search(line):
+                    strays.append(f"{path}:{number}: {line.strip()}")
+    assert not strays, f"기본요금 비중을 만드는 나눗셈이 {_SHARE_HOME} 밖에 섰다 — {strays}"
 
 
 def test_band_energy_ties_to_total_usage(

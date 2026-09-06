@@ -898,7 +898,12 @@ def _structure_block(usage: UsageData, diagnosis: Diagnosis, building: BuildingI
         column.metric(label, fmt.won_short(value))
     columns[-1].metric(
         "기본요금 비중",
-        fmt.ratio_pct(base_with_power_factor_won / total_won if total_won else None),
+        # **비중을 여기서 나누지 않는다** (S133 2절 · ②-39). 산식은
+        # :attr:`ChargeStructure.base_with_power_factor_share` 한 자리에 있다 —
+        # 부르는 쪽마다 나누면 반올림 자리가 갈려 같은 자료에서 두 값이 나온다.
+        # ``None`` 갈래는 그대로 둔다 — 속성은 0원 총액에서 0.0 을 내는데
+        # 화면은 「모른다」 를 적어야 한다.
+        fmt.ratio_pct(structure.base_with_power_factor_share if total_won else None),
         help=manual_tip("charge-structure"),
     )
     # **이 넷이 어느 자료에서 나왔는지를 여기서 한 번 적는다** (64세션 3절).

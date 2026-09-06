@@ -730,11 +730,12 @@ def structure_lead(structure: ChargeStructure) -> str:
         가운데  그 사이 — 둘을 같이
         높음   :func:`base_fee_share_high` 초과 — 최대수요를 먼저
     """
-    base_with_power_factor_won = structure.base_with_power_factor_won
-    total = structure.total_won
-    if not total:
+    if not structure.total_won:
         return "요금 구성을 산출하지 못했습니다."
-    share = base_with_power_factor_won / total
+    # **비중을 여기서 나누지 않는다** (S133 2절 · ②-39). 리뷰가 센 다섯 자리
+    # 밖의 **여섯째**가 이 문장이었다 — 지표는 속성을 읽는데 그 지표를 설명하는
+    # 문장이 제 나눗셈을 적고 있으면 한 장 안에서 두 값이 갈릴 수 있다.
+    share = structure.base_with_power_factor_share
     if share > base_fee_share_high():
         return f"기본요금이 {_pct(share)}로 큽니다 — 최대수요를 낮추는 방안을 먼저 검토합니다."
     if share >= base_fee_share_low():

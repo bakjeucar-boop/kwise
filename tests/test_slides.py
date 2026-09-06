@@ -1985,6 +1985,10 @@ def test_요금구조가_세_갈래다() -> None:
                 total_won=100.0,
                 bill=SimpleNamespace(total_power_factor_won=0.0, total_excess_won=0.0),
                 base_with_power_factor_won=share * 100.0,
+                # **비중을 시험이 다시 나누지 않는다** (S133 2절). 문장이 읽는
+                # 것은 산식이 아니라 :attr:`base_with_power_factor_share` 이고,
+                # 이 시험이 보는 것은 그 값으로 갈래 셋이 갈리는가다.
+                base_with_power_factor_share=share,
             )
         )
 
@@ -2013,6 +2017,7 @@ def test_요금구조가_세_갈래다() -> None:
             total_won=0.0,
             bill=SimpleNamespace(total_power_factor_won=0.0, total_excess_won=0.0),
             base_with_power_factor_won=0.0,
+            base_with_power_factor_share=0.0,
         )
     )
 
