@@ -299,6 +299,44 @@ def test_미해결과_다음_작업_칸은_갈래_번호로_부르지_않는다(
         )
 
 
+#: 미해결 한 항목의 **본문** 상한 (S135 3절 · 리뷰 6절 ㅂ B).
+#:
+#: 이 칸은 다음 판이 매번 통째로 읽는 자리라 **세 판 연속 ctx 에서 가장 크게
+#: 먹은 것**으로 적혔다. 상한 아래는 「이름이 무슨 뜻인가」 이고 그 위는
+#: **경위**다 — 경위는 세션 절이 제자리다.
+ITEM_BODY_CAP = 600
+
+
+def test_미해결_항목_본문은_상한을_넘지_않는다() -> None:
+    """**넘으면 몸을 세션 절로 보내고 이름만 남긴다** (S135 3절).
+
+    S135 가 열여섯을 옮겨 칸이 **36,948 → 18,972자**로 줄었다. 못이 없으면
+    다시 자란다 — S130 리뷰가 쟀을 때 31,415자였고 다섯 판 만에 5,533자가
+    늘었다.
+
+    **브리핑을 불러 센다** — 미해결 칸을 읽는 자리를 여기서 새로 짓지 않는다.
+    """
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    try:
+        import daily_brief
+    finally:
+        sys.path.pop(0)
+
+    state = daily_brief.current_state(_read("PROCEED.md"))
+    items = daily_brief.open_items(state)
+    assert items, "미해결 칸을 못 읽었습니다 — PROCEED.md 「현재 상태」 를 보십시오."
+
+    over = []
+    for item in items:
+        name, body = daily_brief.item_parts(item.text)
+        if len(body) > ITEM_BODY_CAP:
+            over.append(f"{name} ({len(body):,}자)")
+    assert not over, (
+        f"미해결 항목 본문이 {ITEM_BODY_CAP}자를 넘습니다 — {' · '.join(over)}. "
+        "몸을 세션 절로 옮기고 칸에는 이름과 「몸은 N세션 절에 있다」 만 남기십시오."
+    )
+
+
 # ------------------------------------------- 한 문서 안에서 갈리는 것 (S120 ⑮)
 
 #: ``CALC_LOGIC.md`` 부록의 갈래 표 — 「수」 칸과 「번호」 칸.
