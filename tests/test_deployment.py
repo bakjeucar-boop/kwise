@@ -573,3 +573,40 @@ def test_요금표_엑셀은_두_자리가_같은_실물을_가리킨다() -> No
         "tools\\build_tariff.py 와 tests\\test_tariff_source.py 를 함께 고치십시오 "
         "— 안 고치면 시험 여덟이 실패가 아니라 skip 이 됩니다."
     )
+
+
+# ---------------------------------------- S135 2절 — 세는 눈을 사람 손에 두지 않는다
+
+
+def _count_sites() -> ModuleType:
+    """``tools\\count_sites.py`` 를 불러온다 (`scan_ctrl` 을 쓰는 방식과 같다)."""
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    try:
+        import count_sites
+    finally:
+        sys.path.pop(0)
+    return count_sites
+
+
+def test_모은_사실은_한_자리를_지킨다() -> None:
+    """**도구를 불러서 문다** (S135 2절 · 리뷰 6절 ㄱ).
+
+    S133·S134 가 박은 못 둘과 **겹친다.** 다른 것은 무엇을 보느냐다 — 그쪽은
+    제 파일 안에 그물을 적어 **글자를 보고**, 이쪽은 ``tools\\fact_sites.json``
+    을 **도구가 읽어** 센다. 그래서 사실을 하나 더할 때 그쪽은 시험을 새로
+    쓰지만 이쪽은 자료에 줄을 더한다.
+
+    **못이 무는 사실은 자료가 정한다** (``"못": true``). 아직 안 모은 셋(MWh
+    표기 · 부분 합 조각 · 금액 한 칸)은 수만 세고 물지 않는다 — 무는 순간
+    빨간 못이 되고, 그것은 사람이 모으기로 정한 뒤의 일이다.
+    """
+    count_sites = _count_sites()
+    roots, facts = count_sites.load()
+    nailed = [fact for fact in facts if fact.nailed]
+    assert nailed, "무는 사실이 하나도 없습니다 — tools\\fact_sites.json 의 「못」 을 보십시오."
+    for fact in nailed:
+        strays = count_sites.strays(fact, roots)
+        assert not strays, (
+            f"「{fact.name}」 을 만드는 자리가 {[str(home) for home in fact.homes]} "
+            f"밖에 섰습니다 — {[str(site).strip() for site in strays]}"
+        )
