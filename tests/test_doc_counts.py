@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -153,6 +154,20 @@ def _engine_branch_files() -> int:
     return sum(1 for path in (PROJECT_ROOT / "tests").glob("test_*.py") if path.name not in ignored)
 
 
+def _open_items() -> int:
+    """미해결 건수 — 갈래 머리말이 말하는 수의 합 (``tools\\daily_brief.py`` 와 같은 자리).
+
+    브리핑이 세는 수를 **여기서 다시 세지 않는다.** 그 도구를 불러 쓴다.
+    """
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    try:
+        import daily_brief
+    finally:
+        sys.path.pop(0)
+    state = daily_brief.current_state(_read("PROCEED.md"))
+    return daily_brief.total_items(daily_brief.open_items(state))
+
+
 #: (이름, 실물을 세는 함수, 문서에서 그 수를 찾는 표식).
 #:
 #: **표식마다 무리(group) 가 하나여야 한다** — 그 하나가 문서가 적은 수다.
@@ -219,6 +234,8 @@ COUNTS: tuple[tuple[str, Callable[[], int], str], ...] = (
         _engine_branch_files,
         r"아래\s*(\d[\d,]*)\s*파일",
     ),
+    # S131 2절 — 「다음 작업」 칸이 「미해결 59건」 이라 적고 있었는데 실물은 63 이었다.
+    ("미해결 건수", _open_items, r"미해결\s*(\d[\d,]*)\s*건"),
 )
 
 
@@ -244,6 +261,42 @@ def test_문서가_적은_수가_실물과_같다(name: str, count: Callable[[],
     assert not wrong, f"{name} 이 문서와 갈립니다 — 실물은 {actual} 입니다. " + " · ".join(
         f"{src}:{line} 이 {value}" for src, line, value in wrong
     )
+
+
+# ------------------------------------- 번호가 아니라 이름으로 부른다 (S131 2절)
+
+#: 이름 대신 번호로 부른 자리 — 「②-32」 처럼 갈래 표식에 번호가 붙은 꼴.
+#: **항목 자체의 머리 번호는 서식이라 이 꼴로 적지 않는다** — 미해결 칸은
+#: `**이름** (몸)` 으로만 열고 번호는 브리핑이 붙인다.
+GROUP_REF = re.compile(r"[①-⑮]-\d+")
+
+#: 이 못이 보는 칸 둘. **「다시 열지 마라」 와 세션 목록표는 밖이다** — 닫힌
+#: 기록이라 그때의 번호와 이름이 함께 붙어 있고, 고치면 이력이 아니게 된다.
+REF_ROWS = ("미해결", "다음 작업")
+
+
+def test_미해결과_다음_작업_칸은_갈래_번호로_부르지_않는다() -> None:
+    """**세션을 건너 항목을 가리킬 때는 번호가 아니라 이름을 쓴다** (71세션 규약).
+
+    번호는 앞 갈래가 하나만 닫혀도 통째로 밀린다 — S70 이 둘을 지워 뒤가 두
+    칸씩 밀렸고, S71 은 「다음 작업」 의 한 문장만 옛 번호에 남아 브리핑이 딴
+    항목을 그 자리의 본체라고 불렀다. **규약은 71세션부터 글로 있었는데 못이
+    없어 S130 이 다시 셋을 찾았다** — 「덱 벌이 하나도 없는 종별 넷」 을 두
+    자리가 서로 다른 옛 번호로 부르고 있었다.
+    """
+    rows = {}
+    for line in _section(_read("PROCEED.md").splitlines(), "## 현재 상태"):
+        cells = line.split("|")
+        if len(cells) > 2 and cells[1].strip() in REF_ROWS:
+            rows[cells[1].strip()] = line
+
+    assert set(rows) == set(REF_ROWS), f"칸 둘을 못 읽었습니다 — {sorted(rows)}"
+    for name, line in rows.items():
+        found = GROUP_REF.findall(line)
+        assert not found, (
+            f"「{name}」 칸이 항목을 번호로 부릅니다 — {', '.join(sorted(set(found)))}. "
+            "번호는 항목이 하나만 닫혀도 밀립니다. 이름으로 적으십시오."
+        )
 
 
 # ------------------------------------------- 한 문서 안에서 갈리는 것 (S120 ⑮)
