@@ -232,3 +232,52 @@ def test_월별_명세의_부분_합이_합계와_맞는다(
     detail = detail[: detail.index('sheets["수단별 결과"]')]
     for name in SPEC_CHARGE_COLUMNS:
         assert f'"{name}"' in detail, f"Excel 요금 계산 명세에 {name} 이 없습니다."
+
+
+def _bar_gap(
+    usage: UsageData, report: QualityReport, table: TariffTable, contract_kw: float
+) -> tuple[float, float]:
+    """(막대 조각 합 − 합계, 부가금 총액). ``contract_kw`` 로 부가금을 켜고 끈다."""
+    from kwise.report.frames import monthly_charge_frame
+
+    options = BillingOptions(contract_kw=contract_kw)
+    bill = calculate_bill(
+        usage,
+        table,
+        TariffSelection("general_b", "high_a", "I"),
+        options=options,
+        quality=report,
+    )
+    structure = charge_structure(usage, table, bill, options=options)
+    frame = monthly_charge_frame(structure)
+    gap = float(frame["원"].sum()) - float(structure.monthly["total_won"].sum())
+    return gap, bill.total_excess_won
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="막대의 조각 구성은 사람이 정할 자리 — ②-32 (월별 요금 구성 막대가 부가금을 안 담는다)",
+)
+def test_월별_요금_구성_막대의_조각_합이_합계와_맞는다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """**재료 자리에서 한 번 문다** (S131 1절 · ②-32 의 뿌리 못).
+
+    「부분 합 = 합계」 를 지키는 자리가 넷인데 셋은 자리마다 못이 섰고(화면·Excel
+    월별 명세 S129 · Word 요금 구조 표 S124·S127) **막대만 열려 있었다.** 막대의
+    재료는 :func:`~kwise.report.frames.monthly_charge_frame` **한 자리**이고
+    화면(``ui\\charts.py``)과 PPT(``report\\figures.py``)가 둘 다 그것을 읽는다 —
+    그래서 자리마다 못을 박지 않고 여기 하나를 박는다.
+
+    **부가금 0 인 벌은 이미 맞는다** (``test_월별_요금_구성이_네_조각이다``).
+    갈리는 것은 부가금이 서는 벌뿐이라 두 벌을 한 못이 문다.
+    """
+    # ① 부가금 0 인 기본 벌 — 지금도 맞는다.
+    gap, excess = _bar_gap(sample_usage, sample_report, tariff, 12_000.0)
+    assert excess == 0.0, "이 벌은 부가금이 0 이어야 한다"
+    assert gap == pytest.approx(0.0)
+
+    # ② 부가금이 서는 벌 — 조각 넷에 ``excess_won`` 이 없어 합계에 못 미친다.
+    gap, excess = _bar_gap(sample_usage, sample_report, tariff, 3_000.0)
+    assert excess > 0, "부가금이 서는 벌이어야 빠진 조각이 드러난다"
+    assert gap == pytest.approx(0.0)
