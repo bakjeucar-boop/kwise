@@ -364,9 +364,18 @@ CANONICAL_ENTRY_POINT = "streamlit_app.py"
 _RUN_COMMAND = re.compile(r"streamlit(?:\.exe)?\s+run\s+([^\s`|]+)")
 
 
+#: 지시서가 사는 자리 (S131 5절). **이름을 적지 않고 폴더를 훑는다** — 판마다
+#: 파일이 하나씩 늘어 목록에 적으면 다음 판이 반드시 빠뜨린다.
+DIRECTIVE_DIR = PROJECT_ROOT / "docs" / "directives"
+
+
 def _instruction_texts() -> Iterator[tuple[str, str]]:
     for name in INSTRUCTION_DOCS:
         yield name, _read(PROJECT_ROOT / name)
+    # 지시서도 **사람이 읽고 그대로 따라 치는 글**이다 — 규약을 어긴 명령이
+    # 실리면 그것이 그대로 한 판을 돌린다.
+    for path in sorted(DIRECTIVE_DIR.glob("S*.md")):
+        yield f"docs/directives/{path.name}", _read(path)
 
 
 def test_docs_point_at_one_entry_point() -> None:
