@@ -36,6 +36,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from kwise.io import load_usage, slot_start  # noqa: E402
+from kwise.report.notices import format_mwh  # noqa: E402
 
 DEFAULT_SOURCE = PROJECT_ROOT / "input" / "사용량조회_20240429.csv"
 DEFAULT_OUTPUT = PROJECT_ROOT / "input" / "cases"
@@ -253,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         usage = load_usage(target)
         print(
             f"{recipe.key} {recipe.name:8s} {recipe.contract_type:12s} "
-            f"총 {usage.meta.total_kwh / 1000:>9,.0f} MWh · "
+            f"총 {format_mwh(usage.meta.total_kwh, decimals=0):>13} · "
             f"최대 {usage.kw.max():>8,.1f} kW · "
             f"부하율 {usage.kw.mean() / usage.kw.max():.1%} · {recipe.description}"
         )

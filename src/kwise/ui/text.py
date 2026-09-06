@@ -26,7 +26,7 @@ from collections.abc import Iterable
 from kwise import money
 from kwise.measures import payback_label
 from kwise.money import ROUNDING_FOOTNOTE, TRUNCATION_FOOTNOTE
-from kwise.report.notices import format_won
+from kwise.report.notices import format_mwh, format_won
 
 __all__ = [
     "CHART_TIPS",
@@ -325,7 +325,9 @@ def kwh(value: float | None, *, decimals: int = 0) -> str:
 
 
 def mwh(value: float | None, *, decimals: int = 1) -> str:
-    return DASH if value is None else f"{value / 1000.0:,.{decimals}f} MWh"
+    """**몸은 :func:`kwise.report.notices.format_mwh` 에 있다** (S136 2절).
+    산출물 쪽이 이 모듈을 부르면 순환이라 계산 쪽으로 옮겼다."""
+    return DASH if value is None else format_mwh(value, decimals=decimals)
 
 
 def pct(value: float | None, *, decimals: int = 1) -> str:

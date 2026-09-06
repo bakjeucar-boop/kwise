@@ -56,6 +56,7 @@ from kwise.report.notices import (
     AMI_BASIS_NOTICE,
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
+    format_mwh,
     plain_text,
     rules_basis_line,
 )
@@ -1101,7 +1102,7 @@ def _build_building(
             f" ({bill.period_days:.0f}일 · 기본요금 {bill.base_fee_months:.2f}개월분)",
         ],
         ["검침 간격", f"{meta.interval_minutes}분 · {meta.expected_rows:,}구간"],
-        ["총 사용량", f"{meta.total_kwh / 1000:,.1f} MWh"],
+        ["총 사용량", format_mwh(meta.total_kwh)],
         [
             "결측",
             f"{meta.missing_rows:,}구간 ({meta.missing_ratio:.1%}) — 보간하지 않고 뺐습니다",
@@ -1173,7 +1174,7 @@ def _build_usage_pattern(
         slide,
         guide,
         [
-            (span_label, f"{meta.total_kwh / 1000:,.0f} MWh"),
+            (span_label, format_mwh(meta.total_kwh, decimals=0)),
             ("부하율", _pct(pattern.load_factor)),
             ("기저부하 비율", _pct(pattern.base_load_ratio)),
             ("운영시간 외 부하 비중", _pct(pattern.off_hours_energy_share)),

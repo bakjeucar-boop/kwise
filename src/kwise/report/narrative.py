@@ -40,6 +40,7 @@ from kwise.quality import (
     MonthlyMissing,
     QualityReport,
 )
+from kwise.report.notices import format_mwh
 from kwise.rules import assumption
 from kwise.tariff import TariffTable
 from kwise.tariff.labels import season_label
@@ -892,11 +893,11 @@ def surplus_lead(
     """
     if total_kwh > 0:
         return (
-            f"발전량 {generation_kwh / 1000:,.0f} MWh 가운데 "
-            f"{total_kwh / 1000:,.0f} MWh 가 자가소비하고 남아 계통으로 돌아갑니다."
+            f"발전량 {format_mwh(generation_kwh, decimals=0)} 가운데 "
+            f"{format_mwh(total_kwh, decimals=0)} 가 자가소비하고 남아 계통으로 돌아갑니다."
         )
     head = (
-        f"발전량 {generation_kwh / 1000:,.0f} MWh 전부가 자가소비되어 계통으로 "
+        f"발전량 {format_mwh(generation_kwh, decimals=0)} 전부가 자가소비되어 계통으로 "
         "내보낼 잉여가 없습니다."
     )
     if surplus_free_kwp is not None and surplus_free_kwp > 0:

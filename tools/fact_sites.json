@@ -19,9 +19,9 @@
     {
       "이름": "MWh 표기",
       "그물": "^(?=.*MWh).*?/\\s*1_?000",
-      "한 자리": ["src/kwise/ui/text.py"],
-      "못": false,
-      "비고": "kWh 를 1000 으로 나눠 MWh 로 적는 자리. 도우미는 ui/text.py::mwh 인데 쓰는 것은 화면뿐이다"
+      "한 자리": ["src/kwise/report/notices.py", "src/kwise/report/casestudy.py"],
+      "못": true,
+      "비고": "kWh 를 1000 으로 나눠 MWh 로 적는 자리. 몸은 report/notices.py::format_mwh 이고 ui/text.py::mwh 는 이름만 이어받는다 (S136 2절). casestudy.py 도 한 자리다 — 거기 /1000 은 서식이 아니라 xlsx 셀에 담는 날값이라 문자열로 모으면 숫자 열이 글자가 된다"
     },
     {
       "이름": "부분 합 조각",

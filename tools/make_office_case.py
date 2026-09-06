@@ -35,6 +35,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from kwise.io import load_usage, slot_start  # noqa: E402
+from kwise.report.notices import format_mwh  # noqa: E402
 from kwise.tariff.holiday import build_calendar  # noqa: E402
 
 DEFAULT_SOURCE = PROJECT_ROOT / "input" / "사용량조회_20240429.csv"
@@ -187,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     weekend = starts.dayofweek >= 5
     print(
         f"{path.name} — 최대 {usage.meta.max_demand_kw:,.1f} kW · "
-        f"{usage.meta.total_kwh / 1000:,.1f} MWh · 결측 {usage.meta.missing_rows:,}\n"
+        f"{format_mwh(usage.meta.total_kwh)} · 결측 {usage.meta.missing_rows:,}\n"
         f"    주말 평균 {usage.kw[weekend].mean():,.1f} kW / "
         f"평일 평균 {usage.kw[~weekend].mean():,.1f} kW = "
         f"{usage.kw[weekend].mean() / usage.kw[~weekend].mean():.1%} · "

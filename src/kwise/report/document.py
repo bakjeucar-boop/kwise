@@ -67,6 +67,7 @@ from kwise.report.notices import (
     DATA_SOURCES,
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
+    format_mwh,
     format_won,
     plain_text,
 )
@@ -982,8 +983,8 @@ def measure_entries(
                 f"{sellable}의 **자격요건은 판정하지 않았습니다.** 금액만 참고하십시오."
             )
             surplus_facts = (
-                ("자가소비", f"{(surplus.generation_kwh - surplus.total_kwh) / 1000:,.1f} MWh"),
-                ("잉여", f"{surplus.total_kwh / 1000:,.1f} MWh"),
+                ("자가소비", format_mwh(surplus.generation_kwh - surplus.total_kwh)),
+                ("잉여", format_mwh(surplus.total_kwh)),
             )
             # **시나리오 줄을 각주에서 뺐다** (53세션 3절). 잉여가 나면
             # **「잉여 활용」 장이 다음에 붙어** 같은 것을 표로 낸다 — 각주가
@@ -1445,7 +1446,7 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
         ["항목", "값"],
         ["기간", f"{meta.start:%Y-%m-%d} ~ {meta.end:%Y-%m-%d} ({meta.period_days:.0f}일)"],
         ["검침 간격", f"{meta.interval_minutes}분"],
-        ["총 사용량", f"{meta.total_kwh / 1000:,.1f} MWh"],
+        ["총 사용량", format_mwh(meta.total_kwh)],
         ["결측", f"{meta.missing_rows:,}구간 ({meta.missing_ratio:.1%}) — 보간하지 않았습니다"],
     ]
     if quality is not None:

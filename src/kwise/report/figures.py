@@ -72,6 +72,7 @@ from kwise.report.frames import (
     temperature_mean_frame,
     top_hour_frame,
 )
+from kwise.report.notices import format_mwh
 
 __all__ = [
     "DONUT_GRID",
@@ -1103,7 +1104,7 @@ def band_donut_grid_png(
             labeldistance=1.18,
         )
         total = float(frame["사용량(kWh)"].sum())
-        axes.set_title(f"{label} · {total / 1000:,.0f} MWh", fontsize=11, color=marks.text)
+        axes.set_title(f"{label} · {format_mwh(total, decimals=0)}", fontsize=11, color=marks.text)
 
     # 계절이 넷에 못 미치면 남는 칸은 비운다. 빈 원을 그리면 「안 썼다」 로 읽힌다.
     for axes in axes_list[len(list(seasons)) :]:

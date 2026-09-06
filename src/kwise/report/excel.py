@@ -55,6 +55,7 @@ from kwise.report.notices import (
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
     UNPRICED_REASONS,
+    format_mwh,
     format_won,
     rules_basis_line,
 )
@@ -203,7 +204,7 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
             (
                 "데이터",
                 "총 사용량",
-                f"{usage.total_kwh / 1000:,.1f} MWh (그리드 이탈 "
+                f"{format_mwh(usage.total_kwh)} (그리드 이탈 "
                 f"{usage.meta.off_grid_kwh:,.2f} kWh 포함)",
             ),
             ("데이터", "최대수요", f"{usage.meta.max_demand_kw:,.1f} kW"),
@@ -473,7 +474,7 @@ def measure_summary_frame(
                     # Word 부록과 **같은 문장**이다 —
                     # :meth:`SurplusResult.applied_price_note` 하나에서 온다.
                     "비고": (
-                        f"연간 잉여 {surplus.total_kwh / 1000:,.1f} MWh · "
+                        f"연간 잉여 {format_mwh(surplus.total_kwh)} · "
                         + (
                             f"차감 {offset.deducted_kwh:,.0f} kWh · "
                             f"잔여 {offset.remaining_kwh:,.0f} kWh · "

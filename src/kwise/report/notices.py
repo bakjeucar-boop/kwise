@@ -18,6 +18,7 @@ __all__ = [
     "TENTATIVE_BASE_FEE_BASIS_WARNING",
     "TRUNCATION_FOOTNOTE",
     "UNPRICED_REASONS",
+    "format_mwh",
     "format_won",
     "plain_text",
     "rules_basis_line",
@@ -171,3 +172,23 @@ def format_won(value: float | None, *, reason: str = UNPRICED_REASONS["contract"
     열 이름이 ``(원)`` 을 달고 있는 Excel 칸용이라 단위를 붙이지 않는다.
     """
     return money.won_plain(value, reason=reason)
+
+
+def format_mwh(value: float, *, decimals: int = 1) -> str:
+    """kWh 를 MWh 로 적는다 (S136 2절).
+
+    **``/ 1000`` 을 손으로 적는 자리가 열둘이었다** — Word 3 · Excel 2 · PPT 2 ·
+    말로 적는 모듈 3 · 그림 1 · 도구 2. 화면 도우미(:func:`kwise.ui.text.mwh`)가
+    같은 일을 하고 있었으나 **쓰는 것은 화면뿐**이었고, `ui\\text.py` 가 이
+    모듈을 부르므로 산출물 쪽이 그것을 부르면 순환이다. 그래서 몸이 여기 있고
+    화면은 이름만 이어받는다 — S134 가 회수기간에 쓴 것과 같은 꼴이다.
+
+    **소수 자리는 하나로 세우지 않는다.** 표의 값 칸은 ``.1f`` 이고 문장·지표·
+    축 제목은 ``.0f`` 다. 모으는 것은 나눗셈이지 자릿수가 아니므로 부르는 쪽이
+    ``decimals`` 로 정한다.
+
+    **``None`` 은 안 받는다** — 모르는 값을 줄표로 적는 것은 화면 규약이라
+    :func:`kwise.ui.text.mwh` 가 그 앞에서 가른다. 두 자리에서 같은 줄표를
+    적지 않는다.
+    """
+    return f"{value / 1000.0:,.{decimals}f} MWh"
