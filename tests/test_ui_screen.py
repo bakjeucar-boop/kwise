@@ -2247,12 +2247,22 @@ BANNED_WORDS = ("콘덴서", "APFR")
 
 
 def test_콘덴서와_자동역률조정장치라는_말이_없다() -> None:
-    """**「역률 개선」 으로만 적는다** (16세션 6-2). 화면·산출물·문서 전부다."""
+    """**「역률 개선」 으로만 적는다** (16세션 6-2). 화면·산출물·문서 전부다.
+
+    **`docs\\directives\\` 는 뺀다** (S134 4절). 그 폴더는 웹 대화창이 보낸
+    지시서를 **받은 본문 그대로** 앉히는 자리라 우리가 고칠 글이 아니다 —
+    성격이 `PROCEED.md` 와 같고 그쪽은 애초에 이 그물 밖에 있다(뿌리가
+    `src\\kwise` 와 `docs` 뿐이다). S134 지시서가 역률 개선의 투자비를 말하며
+    그 낱말을 썼다.
+    """
     roots = (Path("src") / "kwise", Path("docs"))
+    directives = Path("docs") / "directives"
     offenders: list[str] = []
     for root in roots:
         for path in sorted(root.rglob("*")):
             if path.suffix not in {".py", ".md"} or path.name == "REQUIREMENTS_kwise.md":
+                continue
+            if directives in path.parents:
                 continue
             body = path.read_text(encoding="utf-8")
             offenders.extend(f"{path}: {word}" for word in BANNED_WORDS if word in body)
