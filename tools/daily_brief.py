@@ -430,6 +430,36 @@ def stale_session(body: str, title: str) -> int:
     return top if heads and (top := max(heads)) > now + 1 else 0
 
 
+#: 미해결 대조의 **수** — 「미해결 58 → 59」. 굵게 감싼 꼴도 함께 잡는다.
+_COUNT_PAIR = re.compile(r"미해결[^\n]{0,4}?(\d+)\s*(?:→|->)\s*(\d+)")
+
+#: **무엇이 늘고 무엇이 줄었나.** 실물의 꼴은 둘이다 — 「늘어난 것 … · 줄어든
+#: 것 …」(S120~S123·S125·S128~S130)과 「늘었다: … 줄었다: …」(S126).
+_UP_DOWN = (re.compile(r"늘(?:어난|었|린)"), re.compile(r"줄(?:어든|었|인)"))
+
+
+def nameless_diff(detail: str) -> str:
+    """미해결 대조에 **수만 있고 이름이 없으면** 그 수. 없으면 빈 문자열.
+
+    **글로만 있는 규약은 안 듣는다** (S131 4절). `CLAUDE.md` 세션 종료 절이
+    「늘어난 것과 줄어든 것을 각각 이름으로」 라고 적은 지 오래인데 S119
+    (「50 → 51」 뿐) · S124 (「셋 닫고 셋 세웠다」) · S127 (「58 → 58」 뿐)이
+    수만 적었다. **수만 맞추면 하나 늘고 하나 준 판이 안 보인다** — 68세션이
+    「다음 작업」 을 갈아 끼우며 60세션 항목 B 를 소리 없이 지운 자리다.
+
+    **번호로 적은 것은 짖지 않는다** (S120·S121). 이름이 아니라 번호라 다른
+    병이지만 **그 병은 못이 따로 문다** (``test_doc_counts.py``) — 여기서 함께
+    짖으면 한 자리에 경고가 둘이 뜬다.
+    """
+    found = _COUNT_PAIR.search(detail)
+    if found is None:
+        return ""
+    tail = detail[found.end() :]
+    if all(mark.search(tail) for mark in _UP_DOWN):
+        return ""
+    return f"{found.group(1)} → {found.group(2)}"
+
+
 # ── 브리핑 조립 ──────────────────────────────────────────────────────────
 
 
@@ -488,6 +518,10 @@ def build() -> str:
     if behind := stale_session(body, title):
         lines.append(
             f"  **표가 {behind}세션까지 밀렸다** — PROCEED.md 세션 목록표에 그 행을 붙인다"
+        )
+    if pair := nameless_diff(detail):
+        lines.append(
+            f"  **미해결 대조가 수뿐이다 ({pair})** — 늘어난 것과 줄어든 것을 이름으로 적는다"
         )
     for seg in split_top(strip_md(detail))[:3]:
         lines.append(f"  · {clip(seg, WRAP_AT - 4)}")

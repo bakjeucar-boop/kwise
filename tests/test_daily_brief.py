@@ -437,3 +437,45 @@ def test_N건_없는_갈래를_새로_열면_말한다(monkeypatch: pytest.Monke
     assert broken != SAMPLE
     out = _built(broken, monkeypatch)
     assert "갈래 ④ 를 못 읽었다" in out, out
+
+
+# ============================================ ⑧ 이름 없는 대조 (S131 4절)
+
+#: 마지막 세션 행의 미해결 대조 — 실물에서 뽑은 꼴 넷.
+DIFF_ROWS = (
+    ("미해결 **50 → 51**", True),  # S119 — 수뿐이다
+    ("미해결 58 → 58 (셋 닫고 셋 세웠다)", True),  # S124 — 이름이 없다
+    ("미해결 **58 → 58**.", True),  # S127 — 수뿐이다
+    ("미해결 **59 → 63** (늘어난 것 「못 일곱」 · 줄어든 것 없음)", False),  # S130
+    ("미해결 **58 → 58** (늘었다: 두 자리 · 줄었다: 탭을 안 센다)", False),  # S126
+    ("미해결 **51 → 52** (늘어난 것 ②-44 · 줄어든 것 없음)", False),  # S120 — 번호는 딴 못
+)
+
+WARN = "미해결 대조가 수뿐이다"
+
+
+@pytest.mark.parametrize("detail,warns", DIFF_ROWS, ids=[row[0][:28] for row in DIFF_ROWS])
+def test_이름_없는_미해결_대조에_경고가_뜬다(
+    detail: str, warns: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**뜨는 꼴과 안 뜨는 꼴을 함께 본다** — 뜨지 않는 경고는 없는 경고와 같다.
+
+    `CLAUDE.md` 세션 종료 절이 「늘어난 것과 줄어든 것을 각각 이름으로」 라고
+    적은 지 오래인데 S119·S124·S127 이 수만 적었다 — **글로만 있는 규약은 안
+    듣는다.** 지금 마지막 행(S130)은 이름 넷이 있어 경고가 안 뜨므로, 뜨는
+    쪽은 여기 표본으로 세운다.
+    """
+    text = SAMPLE.replace("표본 세션 — 첫 토막", f"{detail} — 첫 토막")
+    assert text != SAMPLE
+    out = _built(text, monkeypatch)
+    assert (WARN in out) is warns, out
+
+
+def test_지금_마지막_세션_행에는_경고가_안_뜬다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**실물로도 한 번 본다.** 표본만 보면 서식이 갈렸을 때 조용하다."""
+    brief = _brief()
+    _title, detail = brief.latest_session(brief.read_proceed())
+    assert brief.nameless_diff(detail) == "", (
+        "마지막 세션 행의 미해결 대조에 이름이 없습니다 — 늘어난 것과 줄어든 것을 "
+        "이름으로 적으십시오."
+    )
