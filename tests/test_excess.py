@@ -256,7 +256,10 @@ def _bar_gap(
 
 @pytest.mark.xfail(
     strict=True,
-    reason="막대의 조각 구성은 사람이 정할 자리 — 「월별 요금 구성 막대가 초과사용부가금을 안 담는다」",
+    reason=(
+        "막대의 조각 구성은 사람이 정할 자리 — "
+        "「월별 요금 구성 막대가 초과사용부가금을 안 담는다」"
+    ),
 )
 def test_월별_요금_구성_막대의_조각_합이_합계와_맞는다(
     sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable

@@ -80,6 +80,12 @@ class Case:
     """
     surplus_use: str = ""
     """고른 잉여 처리. 비우면 화면 기본값(출력제어)이다 (57세션)."""
+    power_factor_pct: float | None = None
+    """주간 지상역률. ``None`` 이면 약관 제42조 간주값(92%)이라 역률요금이 0원이다.
+
+    **야간 진상은 두지 않는다** — 기본값이 없고 모르면 산출하지 않는 것이 규약이다
+    (`ContractForm.leading_power_factor_pct`).
+    """
 
     @property
     def province(self) -> str:
@@ -179,6 +185,32 @@ CASES: tuple[Case, ...] = (
         area_m2=20_000.0,
         building_name="대형 사업장(계약 부족)",
         sigungu=REGION,
+    ),
+    Case(
+        key="large-b-pf85",
+        title="대형 · 일반용(을) 고압A 선택Ⅰ · 주간 지상역률 85% (합성 조건)",
+        csv=LARGE_CSV,
+        contract_type="general_b",
+        voltage="high_a",
+        option="I",
+        contract_kw=6_000.0,
+        area_m2=20_000.0,
+        building_name="대형 사업장(역률 85%)",
+        sigungu=REGION,
+        # **역률요금이 실제로 서는 유일한 벌이다** (S132 2절 · 리뷰 3절 12번).
+        # 앞서는 덱 열하나 · 케이스 여덟 · 화면 감사 조건 넷 — **스물셋이 전부
+        # 약관 제42조 간주값(92%)이라 역률요금 0원**이었다. 그래서 「기본요금」 이
+        # 산출물마다 다른 몫을 세는 것(화면·PPT·Word 는 역률을 접고 Excel 요약
+        # 시트와 케이스 스터디는 안 접는다)이 **값으로 한 번도 안 드러났다.**
+        # **뜨지 않는 갈래는 없는 갈래와 같다.**
+        #
+        # **`large-b` 에서 역률 하나만 갈았다** — 자료·종별·전압·선택요금·
+        # 계약전력·면적·지역이 다 같다. 둘을 나란히 뽑으면 갈린 값이 역률에서만
+        # 온 것이 값으로 보인다.
+        #
+        # 85% 는 약관 제42조 하한 90% 아래라 추가 부과 쪽이다 —
+        # 미달 5%p × 0.2%/%p = **기본요금의 1%** 가 붙는다.
+        power_factor_pct=85.0,
     ),
     Case(
         key="small-b-sell",
@@ -320,6 +352,7 @@ def build_deck(case: Case, *, timeout: int = 1800) -> bytes:
         voltage=case.voltage,
         option=case.option or _first_option(case.contract_type, case.voltage),
         contract_kw=case.contract_kw,
+        power_factor_pct=case.power_factor_pct,
     )
     state["building_province"] = case.province
     state["building_sigungu"] = case.sigungu
@@ -427,6 +460,8 @@ def label_text(case: Case, titles: Sequence[str] = (), failures: Sequence[str] =
     ]
     if case.surplus_use:
         lines.append(f"잉여 처리   {case.surplus_use}")
+    if case.power_factor_pct is not None:
+        lines.append(f"주간 지상역률 {case.power_factor_pct:,.1f}%")
     lines += [f"    {line}" for line in failures]
     if titles:
         # **장 수는 벌마다 다르다.** 갈리는 것은 수단 장이 아니라 **부록 장**이다 —
