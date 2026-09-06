@@ -31,6 +31,7 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 from docx.text.paragraph import Paragraph
 
+from kwise import money
 from kwise.compare import SCENARIO_NAME_CAVEAT, ComparisonResult, SensitivityRange
 from kwise.diagnose import ContractAdequacy, Diagnosis
 from kwise.diagnose.dr import DR_OFF_DAYS_FACT, DrProfile
@@ -67,8 +68,8 @@ from kwise.report.notices import (
     DATA_SOURCES,
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
+    UNPRICED_REASONS,
     format_mwh,
-    format_won,
     plain_text,
 )
 from kwise.report.worksheet import COLUMNS, Worksheet
@@ -469,13 +470,14 @@ def _safe_figure(make: Callable[[], bytes], what: str = "이름 없는 그림") 
 def _won(value: float | None, *, reason: str | None = None) -> str:
     """금액 한 칸. **모르면 빈칸이 아니라 사유다** (7.5).
 
-    :func:`kwise.report.notices.format_won` 은 Excel 용이라 단위를 붙이지 않는다
-    (열 이름이 ``(원)`` 을 달고 있다). Word 표는 열 이름에 단위가 없으므로
-    값에 붙인다 — 숫자만 있는 칸은 읽는 사람이 단위를 되물어야 한다.
+    Word 표는 열 이름에 단위가 없으므로 값에 붙인다 — 숫자만 있는 칸은 읽는
+    사람이 단위를 되물어야 한다. **그 꼴이 :func:`kwise.money.won` 이다.**
+
+    **앞서는 :func:`~kwise.report.notices.format_won`(단위 없는 Excel 칸용)에
+    「원」 을 손으로 붙여 같은 글자를 만들고 있었다** (S136 3절에 걷었다) —
+    값 열에서 한 글자도 안 다르고 ``None`` 사유까지 같은 것을 값으로 봤다.
     """
-    if value is None:
-        return format_won(None) if reason is None else reason
-    return f"{format_won(value)}원"
+    return money.won(value, reason=reason if reason is not None else UNPRICED_REASONS["contract"])
 
 
 def _payback_text(years: float | None, investment_won: float | None) -> str:
