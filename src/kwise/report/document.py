@@ -53,7 +53,8 @@ from kwise.measures import (
     TariffSwitchResult,
     annualize,
     measure_kind,
-    payback_text,
+    payback_label,
+    payback_years,
     spec_mark_note,
 )
 from kwise.measures import surplus as surplus_module
@@ -66,7 +67,6 @@ from kwise.report.notices import (
     DATA_SOURCES,
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
-    UNPRICED_REASONS,
     format_won,
     plain_text,
 )
@@ -478,12 +478,8 @@ def _won(value: float | None, *, reason: str | None = None) -> str:
 
 
 def _payback_text(years: float | None, investment_won: float | None) -> str:
-    """회수기간 한 줄. **표시 상한을 넘으면 「>50년」 이다** (50세션 3-7)."""
-    if investment_won is None:
-        return f"{_UNPRICED} — 투자비 미입력"
-    if not investment_won:
-        return "즉시 (투자 없음)"
-    return payback_text(years) if years is not None else f"{_UNPRICED} — 절감액 없음"
+    """회수기간 한 줄. **문구는 :func:`~kwise.measures.payback_label` 이 만든다** (S134 3절)."""
+    return payback_label(years, investment_won)
 
 
 def _measure_saving(annual_won: float | None, period_won: float | None) -> str:
@@ -796,7 +792,8 @@ def measure_entries(
             saving_annual=_annual_saving(switch.annual_saving_won, switch.saving_won),
             has_saving=bool(switch.saving_won),
             investment=_won(0.0),
-            payback=_payback_text(0.0, 0.0),
+            # **0.0 을 박지 않는다** (S134 3절). 절감이 없으면 「즉시」 가 아니다.
+            payback=_payback_text(payback_years(0.0, switch.annual_saving_won or 0.0), 0.0),
             certainty=str(switch.certainty),
             cautions=(
                 "설비 도입과 무관한 확정 계산입니다. 감도를 적용하지 않습니다.",
@@ -822,8 +819,9 @@ def measure_entries(
             has_saving=bool(contract.saving_won),
             investment=_won(0.0),
             # **회수기간은 Excel 과 같은 말이다** (83세션 13). 절감이 없는데
-            # 「즉시」 라 적으면 즉시 회수된다고 읽힌다.
-            payback=_payback_text(0.0, 0.0) if contract.saving_won else "—",
+            # 「즉시」 라 적으면 즉시 회수된다고 읽힌다 — 판정은 S134 3절에
+            # ``payback_years`` 한 자리로 모았다.
+            payback=_payback_text(payback_years(0.0, contract.annual_saving_won or 0.0), 0.0),
             certainty=str(contract.certainty),
             # **같은 문장을 두 번 싣지 않는다** (102세션 4절). `MARGIN_NOTICE`
             # 가 `CONTRACT_CHANGE_WARNING` 과 **글자까지 같은 사본**이라, 앞에
@@ -873,11 +871,8 @@ def measure_entries(
             investment=_won(0.0),
             # **Excel 과 같은 말이다** (83세션 13). 절감이 없는데 「즉시」 라
             # 적으면 즉시 회수된다고 읽힌다 — 같은 표의 같은 칸이므로 함께 맞췄다.
-            payback=(
-                _payback_text(0.0, 0.0)
-                if demand_response.is_priced
-                else UNPRICED_REASONS["no_saving"]
-            ),
+            # 판정은 S134 3절에 ``payback_years`` 한 자리로 모았다.
+            payback=_payback_text(payback_years(0.0, demand_response.settlement_won or 0.0), 0.0),
             certainty=str(demand_response.certainty),
             has_saving=demand_response.is_priced and bool(demand_response.settlement_won),
             cautions=(

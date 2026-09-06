@@ -58,6 +58,7 @@ from kwise.measures import (
     evaluate_demand_response,
     evaluate_power_factor,
     evaluate_tariff_switch,
+    payback_text,
     solar_curve,
     unit_generation_kw,
 )
@@ -464,7 +465,8 @@ def _ess_remark(optimum: EssOptimum | None, baseline_demand_kw: float) -> str:
         f"목표 {optimum.target_kw:,.0f} kW "
         f"(기준 {baseline_demand_kw:,.1f} → 실제 {point.achieved_demand_kw:,.1f}) · "
         f"{point.grid_power_kw:,.0f} kW / {point.grid_capacity_kwh:,.0f} kWh · "
-        f"회수 {optimum.payback_years:,.1f}년"
+        # **표시 상한을 태운다** (S134 3절) — 도구 콘솔도 같은 글을 쓴다.
+        f"회수 {payback_text(optimum.payback_years)}"
     )
 
 

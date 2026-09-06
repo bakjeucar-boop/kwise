@@ -24,7 +24,7 @@ import re
 from collections.abc import Iterable
 
 from kwise import money
-from kwise.measures import payback_text
+from kwise.measures import payback_label
 from kwise.money import ROUNDING_FOOTNOTE, TRUNCATION_FOOTNOTE
 from kwise.report.notices import format_won
 
@@ -429,21 +429,12 @@ def markdown_safe(value: str) -> str:
 
 
 def payback(years: float | None, *, investment_won: float | None = None) -> str:
-    """회수기간. **투자비를 모르면 0년이 아니라 사유**다.
+    """회수기간. **문구는 :func:`~kwise.measures.payback_label` 이 만든다** (S134 3절).
 
-    투자비가 0원인 무투자 수단만 '즉시' 로 적는다.
-
-    **표시 상한을 넘으면 「>50년」 이다** (50세션 3-7). 500년·3,000년 같은 값은
-    근거로 읽히지 않는다 — 자르는 것은 표시뿐이고 계산은 그대로 둔다. 상한은
-    기준 데이터(``ess.payback_display_cap_years``)에 있다.
+    앞서는 화면·PPT·Word·Excel·배치 CLI 가 각자 적어 「즉시」 조건이 넷으로
+    갈려 있었다. 이 자리는 화면이 쓰는 이름만 지킨다 — 문구도 조건도 여기 없다.
     """
-    if years is None:
-        if investment_won is None:
-            return "미산출 — 투자비 미입력"
-        return DASH
-    if years <= 0:
-        return "즉시"
-    return payback_text(years)
+    return payback_label(years, investment_won)
 
 
 # **확실성 뱃지를 지웠다** (28세션 4절 · 53세션에 산출물에서도). 화면에서 등급을 빼기로 했으므로 이

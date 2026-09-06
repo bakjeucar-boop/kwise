@@ -76,6 +76,7 @@ from kwise.measures.demand_response import (
 )
 from kwise.measures.ess import (
     BELOW_MINIMUM_CONCLUSION,
+    IMMEDIATE,
     NOT_VIABLE_CONCLUSION,
     SPEC_TABLE_ROWS,
     DispatchResult,
@@ -100,6 +101,7 @@ from kwise.measures.ess import (
     light_band_mask,
     min_pcs_power_kw,
     payback_display_cap_years,
+    payback_label,
     payback_text,
     reference_targets,
     refine_ess_target,
@@ -204,6 +206,7 @@ __all__ = [
     "DR_ADVISORY",
     "ELIGIBILITY_NOTICE",
     "EXTERNAL_SCENARIO",
+    "IMMEDIATE",
     "LARGEST_SAVING",
     "MARGIN_NOTICE",
     "MARGIN_SHORT",
@@ -308,6 +311,7 @@ __all__ = [
     "offset_max_kw",
     "offset_settles_cash",
     "payback_display_cap_years",
+    "payback_label",
     "payback_text",
     "payback_tie_note",
     "payback_tie_ratio",

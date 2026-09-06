@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -1600,6 +1601,39 @@ def test_회수기간_50년_초과는_상한으로_적는다() -> None:
         certainty=Certainty.MEDIUM_LOW,
     )
     assert _payback(row) == ">50년"
+
+
+#: 회수기간 문구가 사는 자리. **하나뿐이다** —
+#: :func:`~kwise.measures.payback_label` 과 :data:`~kwise.measures.IMMEDIATE`.
+_PAYBACK_HOME = Path("src") / "kwise" / "measures" / "ess.py"
+
+
+def test_회수기간_문구를_만드는_자리는_한_곳이다() -> None:
+    """**S133 「비중 자리 하나」 못과 같은 꼴이다** (S134 3절 · 리뷰 6절 ㄱ).
+
+    S130 리뷰가 다섯 자리 두 꼴로 셌는데 S134 가 전수로 뽑으니 **문구를 만드는
+    자리 열다섯 · 「즉시」 를 정하는 자리 아홉 · 조건 넷 꼴**이었다. 조건이 갈린
+    탓에 절감이 0 인 조합 줄이 PPT·Word 에서 「즉시」 로 나갔다.
+
+    **「즉시」 라는 글자로 문다.** 조건이 어디서 서는지는 그 낱말을 적는 자리로
+    드러난다 — 함수 이름으로 물면 Excel·CLI 처럼 **인라인으로 적는 자리**를
+    놓친다(리뷰가 그렇게 다섯만 셌다).
+
+    **주석도 문다** (S133 이 같은 꼴에서 본 것이다 — 값으로 확인했다). 그물은
+    줄을 글자로 볼 뿐 코드인지 주석인지 안 가른다. 지금 안 걸리는 것은 저장소의
+    주석이 ``「즉시」`` (낫표)와 ``"즉시 회수"`` (읽히는 꼴을 말하는 셋)를 쓰기
+    때문이지 그물이 가려서가 아니다 — **주석에 ``"즉시"`` 를 적으면 빨개진다.**
+    """
+    stray_home = re.compile(r'"즉시"')
+    strays: list[str] = []
+    for root in (Path("src"), Path("tools")):
+        for path in sorted(root.rglob("*.py")):
+            if path == _PAYBACK_HOME:
+                continue
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if stray_home.search(line):
+                    strays.append(f"{path}:{number}: {line.strip()}")
+    assert not strays, f"「즉시」 를 적는 자리가 {_PAYBACK_HOME} 밖에 섰다 — {strays}"
 
 
 def test_참고_지점은_곡선_전체에_벌려_잡는다(target_curve: EssTargetCurve) -> None:

@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.table import Table
 
 from kwise import __version__
+from kwise.measures import payback_label
 from kwise.report.batch import BatchResult, load_batch_config, run_batch
 
 __all__ = ["app", "main"]
@@ -29,7 +30,9 @@ def _render(result: BatchResult) -> None:
     table.add_column("최선 조합")
     table.add_column("절감액(원)", justify="right")
     table.add_column("투자비(원)", justify="right")
-    table.add_column("회수(년)", justify="right")
+    # **열 이름에서 단위를 뗐다** (S134 3절). 값이 「즉시」·「—」·「>50년」 도
+    # 되므로 「(년)」 은 늘 참이 아니다.
+    table.add_column("회수기간", justify="right")
     table.add_column("확실성")
     for summary in result.summaries:
         table.add_row(
@@ -37,11 +40,7 @@ def _render(result: BatchResult) -> None:
             summary.best_combination,
             f"{summary.saving_won:,.0f}",
             f"{summary.investment_won:,.0f}",
-            "즉시"
-            if summary.payback_years == 0
-            else f"{summary.payback_years:.1f}"
-            if summary.payback_years is not None
-            else "—",
+            payback_label(summary.payback_years, summary.investment_won),
             summary.certainty,
         )
     console.print(table)

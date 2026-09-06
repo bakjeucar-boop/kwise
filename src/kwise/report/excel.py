@@ -41,7 +41,8 @@ from kwise.measures import (
     SurplusResult,
     TariffSwitchResult,
     annualize,
-    payback_text,
+    payback_label,
+    payback_years,
 )
 from kwise.notices import Notice, dedupe
 from kwise.report import narrative
@@ -337,7 +338,9 @@ def measure_summary_frame(
                 "투자비(원)": format_won(0.0),
                 "절감액(원)": format_won(switch.saving_won),
                 "12개월 환산(원)": format_won(switch.annual_saving_won),
-                "회수기간": "즉시",
+                # **늘 「즉시」 였다** (S134 3절). 현행이 이미 최선이라 절감이
+                # 0 인 벌에서도 그렇게 적혔다 — 판정을 ``payback_years`` 로 옮겼다.
+                "회수기간": payback_label(payback_years(0.0, switch.annual_saving_won or 0.0), 0.0),
                 "비고": "설비 도입과 무관합니다. 감도를 적용하지 않습니다.",
             }
         )
@@ -363,7 +366,9 @@ def measure_summary_frame(
                     if contract.no_saving
                     else format_won(contract.annual_saving_won, reason=UNPRICED_REASONS["contract"])
                 ),
-                "회수기간": "즉시" if contract.saving_won else "—",
+                "회수기간": payback_label(
+                    payback_years(0.0, contract.annual_saving_won or 0.0), 0.0
+                ),
                 "비고": contract.saving_basis,
             }
         )
@@ -374,7 +379,9 @@ def measure_summary_frame(
                 "투자비(원)": format_won(0.0),
                 "절감액(원)": demand_response.settlement_label,
                 "12개월 환산(원)": demand_response.settlement_label,
-                "회수기간": "즉시" if demand_response.is_priced else UNPRICED_REASONS["no_saving"],
+                "회수기간": payback_label(
+                    payback_years(0.0, demand_response.settlement_won or 0.0), 0.0
+                ),
                 "비고": (
                     f"거래 가능일 {demand_response.eligible_days}일 중 저부하 평일 "
                     f"{demand_response.low_load_days}일. 연간 감축 가능량 "
@@ -397,12 +404,8 @@ def measure_summary_frame(
                 "투자비(원)": format_won(power_factor.investment_won),
                 "절감액(원)": format_won(power_factor.saving_won),
                 "12개월 환산(원)": format_won(power_factor.annual_saving_won),
-                "회수기간": (
-                    "즉시"
-                    if power_factor.payback_years == 0
-                    else f"{power_factor.payback_years:.1f}년"
-                    if power_factor.payback_years is not None
-                    else UNPRICED_REASONS["no_saving"]
+                "회수기간": payback_label(
+                    power_factor.payback_years, power_factor.investment_won
                 ),
                 "비고": (
                     f"주간(08~22시) 지상역률 기준 92%, 매 1%당 기본요금의 0.2% "
@@ -420,11 +423,9 @@ def measure_summary_frame(
                 "투자비(원)": format_won(solar.investment_won, reason=UNPRICED_REASONS["pv_price"]),
                 "절감액(원)": format_won(solar.total_saving_won),
                 "12개월 환산(원)": format_won(solar.annual_saving_won),
-                "회수기간": (
-                    f"{solar.payback_years:.1f}년"
-                    if solar.payback_years is not None
-                    else UNPRICED_REASONS["no_saving"]
-                ),
+                # **표시 상한을 여기서도 태운다** (S134 3절). 앞서는 손으로
+                # 적어 500년·3,000년이 그대로 나갔다 — 태양광만 예외였다.
+                "회수기간": payback_label(solar.payback_years, solar.investment_won),
                 # **역률 조정값을 곁에 적는다** (59세션 12절 · 목록 P6). 금액
                 # 칸은 조정 전 값이다 — 카드의 절감액은 「그 수단만 적용했을 때」
                 # 여야 한다 (31세션). 문장은 화면·PPT·Word 와 같은 것을 쓴다.
@@ -495,12 +496,7 @@ def measure_summary_frame(
                 "투자비(원)": format_won(ess.investment_won),
                 "절감액(원)": format_won(ess.total_saving_won),
                 "12개월 환산(원)": format_won(ess.annual_saving_won),
-                "회수기간": (
-                    # **표시 상한을 넘으면 「>50년」 이다** (50세션 3-7).
-                    payback_text(ess.payback_years)
-                    if ess.payback_years is not None
-                    else UNPRICED_REASONS["no_saving"]
-                ),
+                "회수기간": payback_label(ess.payback_years, ess.investment_won),
                 "비고": (
                     f"방전시간 {ess.discharge_hours:.2f}h ({ess.c_rate:.1f}C, 규격 용량 ÷ 출력) · "
                     f"필요 사양 {ess.required_power_kw:,.1f} kW / "

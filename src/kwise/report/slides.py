@@ -46,7 +46,8 @@ from pptx.util import Emu, Inches, Pt
 
 from kwise import money
 from kwise.diagnose import ChargeStructure
-from kwise.measures import NO_SAVING
+from kwise.measures import IMMEDIATE as _IMMEDIATE
+from kwise.measures import NO_SAVING, payback_label
 from kwise.report import figures, narrative
 from kwise.report.design import DesignGuide, load_design_guide
 from kwise.report.document import DocumentSections, MeasureEntry, MeasureFigure
@@ -936,11 +937,11 @@ def _won(value: float | None, *, reason: str | None = None) -> str:
 
 
 def _payback(years: float | None, investment_won: float | None) -> str:
-    if investment_won is None:
-        return _UNPRICED
-    if not investment_won:
-        return IMMEDIATE
-    return f"{years:,.1f}년" if years is not None else _UNPRICED
+    """**문구는 :func:`~kwise.measures.payback_label` 이 만든다** (S134 3절).
+
+    슬라이드만 다른 것은 **사유를 떼는 것** 하나다 (:func:`split_reason` · 39세션 2-1).
+    """
+    return split_reason(payback_label(years, investment_won))[0]
 
 
 def _pct(value: float | None) -> str:
@@ -953,9 +954,9 @@ def _pct(value: float | None) -> str:
 #: 0 원」 으로 읽히는데, 요금제 전환·계약전력 조정은 애초에 살 물건이 없다.
 NO_INVESTMENT = "—"
 
-#: 투자가 없는 수단의 회수기간 칸. **괄호를 뗀다** — 투자비 칸이 이미 없다고
-#: 말하므로 「(투자 없음)」 이 같은 말을 한 번 더 한다.
-IMMEDIATE = "즉시"
+#: 투자가 없는 수단의 회수기간 칸. **글자는 :mod:`kwise.measures` 에 있다**
+#: (S134 3절) — 여기서 다시 적으면 「즉시」 가 두 자리가 된다.
+IMMEDIATE = _IMMEDIATE
 
 
 def _is_zero_won(text: str) -> bool:

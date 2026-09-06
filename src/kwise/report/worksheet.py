@@ -368,8 +368,10 @@ def solar_worksheet(curve: SolarCurve, point: SolarPoint | None = None) -> Works
     if best.investment_won is not None:
         rows.append(WorkRow("투자비", "용량 × kWp당 단가", _won(best.investment_won)))
     if best.payback_years is not None:
+        # **표시 상한을 여기서도 태운다** (S134 3절). 태양광만 손으로 적어
+        # 500년·3,000년이 그대로 나갔다.
         rows.append(
-            WorkRow("회수기간", "투자비 ÷ 12개월 환산 절감액", f"{best.payback_years:,.1f}년")
+            WorkRow("회수기간", "투자비 ÷ 12개월 환산 절감액", payback_text(best.payback_years))
         )
     return Worksheet("solar", "태양광 계산 근거", tuple(rows))
 

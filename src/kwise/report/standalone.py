@@ -39,7 +39,8 @@ from kwise.measures import (
     SurplusResult,
     TariffSwitchResult,
     measure_kind,
-    payback_text,
+    payback_label,
+    payback_years,
 )
 from kwise.report.columns import option_label
 from kwise.report.notices import UNPRICED_REASONS
@@ -148,7 +149,9 @@ def standalone_rows(
                 ),
                 annual_saving_won=switch.annual_saving_won,
                 investment_won=0.0,
-                payback_years=0.0,
+                # **0.0 을 박지 않는다** (S134 3절). 절감이 없으면 회수할 것도
+                # 없으므로 「즉시」 가 아니다 — 판정은 ``payback_years`` 하나가 한다.
+                payback_years=payback_years(0.0, switch.annual_saving_won or 0.0),
                 certainty=switch.certainty,
             )
         )
@@ -165,7 +168,7 @@ def standalone_rows(
                 ),
                 annual_saving_won=contract.annual_saving_won,
                 investment_won=0.0,
-                payback_years=0.0 if contract.saving_won else None,
+                payback_years=payback_years(0.0, contract.annual_saving_won or 0.0),
                 certainty=contract.certainty,
                 saving_reason=contract.saving_basis,
                 zero_reason=NO_SAVING if contract.no_saving else "",
@@ -178,7 +181,7 @@ def standalone_rows(
                 reduction=f"{demand_response.annual_reducible_kwh:,.0f} kWh 입찰",
                 annual_saving_won=demand_response.settlement_won,
                 investment_won=0.0,
-                payback_years=0.0 if demand_response.is_priced else None,
+                payback_years=payback_years(0.0, demand_response.settlement_won or 0.0),
                 certainty=demand_response.certainty,
                 saving_reason=demand_response.settlement_label,
             )
@@ -289,9 +292,5 @@ def standalone_frame(rows: tuple[StandaloneRow, ...]) -> pd.DataFrame:
 
 
 def _payback(row: StandaloneRow) -> str:
-    """**표시 상한을 넘으면 「>50년」 이다** (50세션 3-7)."""
-    if row.payback_years is None:
-        return "미산출"
-    if row.payback_years <= 0:
-        return "즉시"
-    return payback_text(row.payback_years)
+    """**문구는 :func:`~kwise.measures.payback_label` 이 만든다** (S134 3절)."""
+    return payback_label(row.payback_years, row.investment_won)

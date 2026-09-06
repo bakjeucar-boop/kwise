@@ -59,6 +59,7 @@ from kwise.tariff import (
 __all__ = [
     "BASE_FEE_ON_CONTRACT_CONCLUSION",
     "BELOW_MINIMUM_CONCLUSION",
+    "IMMEDIATE",
     "NOT_VIABLE_CONCLUSION",
     "SPEC_TABLE_ROWS",
     "U_SHAPE_REASON",
@@ -86,6 +87,7 @@ __all__ = [
     "min_pcs_power_kw",
     "nameplate_capacity_kwh",
     "payback_display_cap_years",
+    "payback_label",
     "payback_text",
     "reference_targets",
     "refine_ess_target",
@@ -141,6 +143,44 @@ def payback_text(years: float | None, *, cap_years: float | None = None) -> str:
         return "—"
     cap = payback_display_cap_years() if cap_years is None else cap_years
     return f">{cap:,.0f}년" if years > cap else f"{years:,.1f}년"
+
+
+#: 투자가 없는 수단의 회수기간 칸. **괄호를 뗀다** — 투자비 칸이 이미 없다고
+#: 말하므로 「(투자 없음)」 이 같은 말을 한 번 더 한다 (53세션 1-5).
+IMMEDIATE = "즉시"
+
+#: 회수기간을 못 낸 까닭이 「투자비를 안 받았다」 일 때 (요구사항서 7.5).
+#: **0년으로 때우지 않는다** — 0 이면 「즉시 회수」 로 읽힌다.
+NO_INVESTMENT_INPUT = "미산출 — 투자비 미입력"
+
+
+def payback_label(years: float | None, investment_won: float | None) -> str:
+    """회수기간 한 칸. **문구를 만드는 자리는 여기 하나다** (S134 3절).
+
+    앞서는 화면·PPT·Word·Excel·배치 CLI 가 각자 적었고 **「즉시」 조건이 넷으로
+    갈려 있었다** — ``years <= 0`` · ``not investment_won`` · ``payback_years == 0``
+    · 조건이 아예 없는 것(Excel 선택요금 전환은 늘 「즉시」 였다). 그래서 절감이
+    0 인 조합 줄까지 「즉시」 라 적혔다.
+
+    **조건은 ``years <= 0`` 하나다.** 「즉시」 는 「투자한 돈이 곧 회수된다」 는
+    뜻이라 **절감이 없으면 「즉시」 가 아니다** — :func:`payback_years` 가 절감
+    ≤ 0 에 ``None`` 을 돌려 그 사실을 이미 담고 있는데, 투자비만 보는 조건은
+    그 ``None`` 을 못 본다.
+
+        회수기간이 없다 + 투자비 모름   미산출 — 투자비 미입력
+        회수기간이 없다 + 투자비 있음   —
+        회수기간 0 이하                즉시
+        그 밖                         :func:`payback_text` (표시 상한 「>50년」)
+
+    **투자비는 회수기간이 없을 때만 본다.** 회수기간이 나온 자리는 투자비를 이미
+    태운 값이므로 다시 묻지 않는다 — 먼저 물으면 ``payback(578.2)`` 처럼 투자비를
+    안 넘긴 호출이 사유로 바뀐다.
+    """
+    if years is None:
+        return NO_INVESTMENT_INPUT if investment_won is None else "—"
+    if years <= 0:
+        return IMMEDIATE
+    return payback_text(years)
 
 
 def snap_spec(
