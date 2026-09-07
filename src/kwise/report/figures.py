@@ -589,8 +589,12 @@ def tariff_option_png(
     names = tariff_parts(switch)
     width = 0.78 / len(names)
     palette = _series()
-    colors = dict(zip(TARIFF_PARTS, (palette[0], palette[1], palette[3], palette[2]), strict=True))
-    series = tuple((name, frame[f"{name}(원)"], colors[name]) for name in names)
+    # 아래 차액 막대의 ``colors`` 와 이름을 겹치지 않게 둔다 — 겹치면 mypy 가
+    # 문다(같은 이름에 dict 와 list 를 넣게 된다).
+    part_colors = dict(
+        zip(TARIFF_PARTS, (palette[0], palette[1], palette[3], palette[2]), strict=True)
+    )
+    series = tuple((name, frame[f"{name}(원)"], part_colors[name]) for name in names)
     middle = (len(series) - 1) / 2.0
     for index, (label, values, color) in enumerate(series):
         upper.bar(

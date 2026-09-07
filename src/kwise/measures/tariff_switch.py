@@ -92,9 +92,7 @@ class TariffSwitchResult:
         return tuple(sorted(self.quotes, key=lambda quote: quote.total_won))
 
 
-def _quote(
-    selection: TariffSelection, total_won: float, bill: BillingResult | None
-) -> OptionQuote:
+def _quote(selection: TariffSelection, total_won: float, bill: BillingResult | None) -> OptionQuote:
     """조합 하나의 값 (S140 2절).
 
     **조각은 요금 결과에서 그대로 옮긴다** — 여기서 더하거나 빼지 않는다.
