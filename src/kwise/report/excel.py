@@ -27,7 +27,6 @@ from kwise.compare import (
 )
 from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
-from kwise.magnitude import magnitude
 from kwise.measures import (
     DR_ADVISORY,
     NO_SAVING,
@@ -216,24 +215,20 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
         ]
     )
 
-    rows.append(("요금", "기본요금", f"{format_won(bill.total_base_won)} 원"))
-    charge = bill.power_factor
-    # **0 원을 「추가」 라 적지 않는다** (31세션 0-1). `is_rebate` 는 음수만 참이라
-    # 조정이 없는 92.0%(약관 제42조 간주값)에서 「추가, 기본요금의 +0.0%」 가 됐다 —
-    # 손대지 않은 자료가 전부 그 문구를 받는다. 세 갈래로 가른다.
-    if charge.total_won == 0:
-        power_factor_text = (
-            f"{format_won(bill.total_power_factor_won)} 원 "
-            f"(조정 없음, 주간 지상 {charge.lagging_pct:.1f}%)"
-        )
-    else:
-        power_factor_text = (
-            f"{format_won(bill.total_power_factor_won)} 원 "
-            f"({'감액' if charge.is_rebate else '추가'}, 기본요금의 "
-            f"{magnitude(abs(charge.total_ratio) * 100.0, '%')}, "
-            f"주간 지상 {charge.lagging_pct:.1f}%)"
-        )
-    rows.append(("요금", "역률요금", power_factor_text))
+    # **「기본요금」 은 역률 가감이 반영된 뒤의 금액이다** (S141 3절). 화면·PPT·
+    # Word 셋은 109세션부터 이 몫을 세는데 **이 시트만 안 접고 있었다** —
+    # 129세션이 「넷이 다른 값을 내는 자리가 하나 있다」 로 값을 본 자리이고,
+    # `large-b-pf85` 에서 452,804,556 대 459,143,820원으로 6,339,264원 갈렸다.
+    # 덧셈은 엔진이 한다 (:attr:`BillingResult.base_with_power_factor_won`).
+    #
+    # **역률요금 줄은 세우지 않는다.** 위 금액이 이미 담고 있어 따로 세우면
+    # 아래 합계가 역률을 두 번 센다 — 조각 구성을 화면·PPT·Word 셋과 맞춘다
+    # (기본요금 · 전력량요금 · 초과사용부가금 · 합계). **역률은 이 통합문서에서
+    # 사라지지 않는다** — 위 「적용 근거」 의 「적용 역률」 줄, 「요금 계산 명세」
+    # 시트의 역률요금(원) 열, 「부록 A 산출 근거」 의 역률 요금 줄 셋이 든다.
+    # 그 셋은 역률을 제 항목으로 세우는 표라 거기서는 기본요금이 **역률의 밑**
+    # 이다 (약관 제43조 · 「기본요금 × 역률 조정률」).
+    rows.append(("요금", "기본요금", f"{format_won(bill.base_with_power_factor_won)} 원"))
     rows.append(("요금", "전력량요금", f"{format_won(bill.total_energy_won)} 원"))
     # **부가금이 붙은 벌에서만 선다** (109세션). 0원인 벌에 한 줄을 더 두면
     # 「없는 것을 있다고」 적는 꼴이고, 붙은 벌에 안 두면 합계가 안 맞는다.

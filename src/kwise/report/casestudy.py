@@ -223,7 +223,14 @@ class CaseResult:
             # 0 으로 때우지 않고 그대로 둔다.
             "부하율(%)": (pattern.load_factor or 0.0) * 100.0,
             "기저부하 비율(%)": (pattern.base_load_ratio or 0.0) * 100.0,
-            "기본요금(원)": self.baseline.total_base_won,
+            # **역률 가감을 반영한 뒤의 금액이다** (S141 3절). 앞서는 이 한 줄
+            # 안에서 「기본요금(원)」 이 역률 전인데 아래 「기본요금 비중(%)」 은
+            # 역률 후라 **같은 줄의 두 칸이 서로 다른 몫을 셌다** — 기본요금(원)
+            # + 전력량요금(원) 이 총 요금(원) 에 못 미치기도 했다
+            # (`large-b-pf85` 조건에서 6,339,264원). 벌 여덟은 다 제42조 간주값
+            # (92%)이라 역률요금이 0원이고, 그래서 **케이스 산출물의 값은 안
+            # 움직인다** — 뜨지 않는 갈래는 없는 갈래와 같다.
+            "기본요금(원)": self.baseline.base_with_power_factor_won,
             "전력량요금(원)": self.baseline.total_energy_won,
             "총 요금(원)": self.baseline.total_won,
             "기본요금 비중(%)": self.base_with_power_factor_share * 100.0,
