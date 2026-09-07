@@ -44,6 +44,7 @@ from kwise.report.frames import (
     ess_day_frame,
     hourly_profile_frame,
     monthly_charge_frame,
+    monthly_charge_parts,
     monthly_peak_frame,
     peak_window,
     power_factor_day_frame,
@@ -57,6 +58,7 @@ from kwise.report.frames import (
     tariff_delta_frame,
     tariff_option_frame,
     tariff_option_long_frame,
+    tariff_parts,
     temperature_mean_frame,
     top_hour_frame,
 )
@@ -425,10 +427,26 @@ def daily_temperature_chart(usage: UsageData, temperature: pd.Series) -> alt.Lay
 # 갈라 둔다.
 _BAND_RANGE: dict[str, str] = {"경부하": "#c6dbef", "중간부하": "#6baed6", "최대부하": "#08519c"}
 _BASE_FEE_COLOR = "#737373"
+#: 초과사용부가금 색 (S140 2절). **파랑 넷 밖에서 고른다** — 계약전력을 넘겨
+#: 물게 된 몫이라 시간대 단가와 같은 계열에 두면 전력량요금처럼 읽힌다.
+#: :func:`tariff_delta_chart` 의 「증가」 와 같은 색이다.
+_EXCESS_COLOR = "#de2d26"
+
+#: 월별 요금 구성 막대의 조각 색. 순서는 :data:`MONTHLY_CHARGE_PARTS` 다.
+_CHARGE_PART_COLORS: dict[str, str] = {
+    "기본요금": _BASE_FEE_COLOR,
+    **_BAND_RANGE,
+    "초과사용부가금": _EXCESS_COLOR,
+}
 
 
-def _band_scale(*, with_base_fee: bool = False) -> alt.Scale:
-    colors = ({"기본요금": _BASE_FEE_COLOR} | _BAND_RANGE) if with_base_fee else _BAND_RANGE
+def _band_scale(parts: Sequence[str] = ()) -> alt.Scale:
+    """``parts`` 를 주면 그 조각만 도메인에 넣는다.
+
+    **없는 조각을 도메인에 두지 않는다** (S140 2절) — vega 는 도메인 값을
+    범례에 다 그리므로 부가금이 0원인 벌에도 이름이 하나 선다.
+    """
+    colors = {name: _CHARGE_PART_COLORS[name] for name in parts} if parts else _BAND_RANGE
     return alt.Scale(domain=list(colors), range=list(colors.values()))
 
 
@@ -474,6 +492,7 @@ def monthly_charge_chart(structure: ChargeStructure) -> alt.Chart:
     **칸 폭을 못박는다** (32세션 2절). 위 「막대 두께」 주석 참조.
     """
     frame = monthly_charge_frame(structure)
+    parts = monthly_charge_parts(structure)
     step = _month_step(int(frame["월"].nunique()))
     return (
         alt.Chart(frame)
@@ -484,8 +503,8 @@ def monthly_charge_chart(structure: ChargeStructure) -> alt.Chart:
             color=alt.Color(
                 "구분:N",
                 title=None,
-                sort=list(MONTHLY_CHARGE_PARTS),
-                scale=_band_scale(with_base_fee=True),
+                sort=list(parts),
+                scale=_band_scale(parts),
                 legend=LEGEND,
             ),
             # **쌓는 순서를 색 순서에 묶는다.** 주지 않으면 달마다 순서가 달라져
@@ -687,6 +706,16 @@ def combination_chart(comparison: ComparisonResult) -> alt.Chart:
     )
 
 
+#: 요금제별 그룹 막대의 조각 색. 순서는 :data:`TARIFF_PARTS` 다 — 부가금은
+#: 월별 요금 구성 막대와 같은 색을 쓴다 (S140 2절).
+_TARIFF_PART_COLORS: dict[str, str] = {
+    "기본요금": "#6baed6",
+    "전력량요금": "#fd8d3c",
+    "초과사용부가금": _EXCESS_COLOR,
+    "합계": "#31a354",
+}
+
+
 def sensitivity_chart(ranges: tuple[SensitivityRange, ...]) -> alt.LayerChart:
     frame = sensitivity_frame(ranges)
     base = alt.Chart(frame).encode(y=alt.Y("지표:N", title=None, sort=list(frame["지표"])))
@@ -723,18 +752,22 @@ def tariff_option_chart(switch: TariffSwitchResult) -> alt.Chart:
     """
     long = tariff_option_long_frame(switch)
     order = list(tariff_option_frame(switch)["요금제"])
+    parts = tariff_parts(switch)
     return (
         alt.Chart(long)
         .mark_bar()
         .encode(
             x=alt.X("요금제:N", title=None, sort=order),
-            xOffset=alt.XOffset("구분:N", sort=list(TARIFF_PARTS)),
+            xOffset=alt.XOffset("구분:N", sort=list(parts)),
             y=alt.Y("원:Q", title="요금 (원)", scale=_CUT_SCALE),
             color=alt.Color(
                 "구분:N",
                 title=None,
-                sort=list(TARIFF_PARTS),
-                scale=alt.Scale(domain=list(TARIFF_PARTS), range=["#6baed6", "#fd8d3c", "#31a354"]),
+                sort=list(parts),
+                scale=alt.Scale(
+                    domain=list(parts),
+                    range=[_TARIFF_PART_COLORS[name] for name in parts],
+                ),
                 legend=LEGEND,
             ),
             tooltip=["요금제", "구분", alt.Tooltip("원:Q", format=",.0f")],

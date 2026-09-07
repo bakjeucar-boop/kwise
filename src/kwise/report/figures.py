@@ -50,6 +50,7 @@ from kwise.report.frames import (
     BAND_LABELS,
     DAY_TYPE_LABELS,
     PEAK_ZOOM_HOURS,
+    TARIFF_PARTS,
     band_frame,
     combination_frame,
     contract_headroom_frame,
@@ -60,6 +61,7 @@ from kwise.report.frames import (
     hourly_profile_frame,
     month_labels,
     monthly_charge_frame,
+    monthly_charge_parts,
     monthly_peak_frame,
     peak_window,
     power_factor_day_frame,
@@ -69,6 +71,7 @@ from kwise.report.frames import (
     surplus_daily_frame,
     tariff_delta_frame,
     tariff_option_frame,
+    tariff_parts,
     temperature_mean_frame,
     top_hour_frame,
 )
@@ -577,23 +580,29 @@ def tariff_option_png(
     shape = size or (_SIZE[0], _SIZE[1] * 1.45)
     figure, (upper, lower) = plt.subplots(2, 1, figsize=shape, height_ratios=(3, 1), sharex=True)
 
-    width = 0.26
-    series = (
-        ("기본요금", frame["기본요금(원)"], _series()[0]),
-        ("전력량요금", frame["전력량요금(원)"], _series()[1]),
-        ("합계", frame["합계(원)"], _series()[2]),
-    )
+    # **부가금은 붙은 자료에서만 한 막대를 더 쓴다** (S140 2절). 조각이 셋이면
+    # 앞서와 같은 그림이고, 넷이면 폭을 줄여 칸 하나에 다 들어가게 한다.
+    #
+    # **색은 앞 셋을 그대로 두고 넷째만 더한다.** ``increase`` 를 부가금에
+    # 주었더니 **합계 막대와 같은 코랄**이 되어 그림에서 둘을 못 갈랐다 —
+    # 덱을 뽑아 보고서야 드러났다 (S140 2-7 · 결함 유형 ⑤).
+    names = tariff_parts(switch)
+    width = 0.78 / len(names)
+    palette = _series()
+    colors = dict(zip(TARIFF_PARTS, (palette[0], palette[1], palette[3], palette[2]), strict=True))
+    series = tuple((name, frame[f"{name}(원)"], colors[name]) for name in names)
+    middle = (len(series) - 1) / 2.0
     for index, (label, values, color) in enumerate(series):
         upper.bar(
-            positions + (index - 1) * width,
+            positions + (index - middle) * width,
             values.fillna(0.0) / 1e8,
             width=width,
             label=label,
             color=color,
         )
-    # **축을 0 부터 시작하지 않는다** (17세션 0절).
-    finite = [value / 1e8 for value in frame["합계(원)"] if pd.notna(value)]
-    finite += [value / 1e8 for value in frame["기본요금(원)"] if pd.notna(value)]
+    # **축을 0 부터 시작하지 않는다** (17세션 0절). **그리는 막대를 다 넣는다** —
+    # 빠뜨리면 그 막대가 축 아래로 잘린다 (S140 2절).
+    finite = [value / 1e8 for _, values, _ in series for value in values if pd.notna(value)]
     if finite:
         span = max(finite) - min(finite)
         upper.set_ylim(max(0.0, min(finite) - span * 0.15), max(finite) + span * 0.2)
@@ -1034,7 +1043,11 @@ def monthly_charge_png(
     months = list(dict.fromkeys(frame["월"]))
     labels = month_labels(months)
     positions = np.arange(len(months), dtype=float)
-    parts = {"기본요금": marks.base_fee} | marks.band
+    # **부가금은 붙은 자료에서만 한 조각을 더 쓴다** (S140 2절). 색은
+    # ``increase`` 다 — 계약전력을 넘겨 물게 된 몫이라 계시 파랑에 섞으면
+    # 전력량요금처럼 읽힌다.
+    colors = {"기본요금": marks.base_fee} | marks.band | {"초과사용부가금": marks.increase}
+    parts = {name: colors[name] for name in monthly_charge_parts(structure)}
 
     figure, axes = plt.subplots(figsize=size or _SIZE)
     bottom = np.zeros(len(months))

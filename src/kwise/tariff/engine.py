@@ -231,6 +231,22 @@ class BillingResult:
     notices: tuple[Notice, ...] = field(default=())
 
     @property
+    def base_with_power_factor_won(self) -> float:
+        """화면·PPT·Excel·Word 의 「기본요금」 조각이 세는 값 (S140 2절).
+
+        **역률요금까지다.** 기본요금의 ±% 조정이라 따로 세울 값이 아니고
+        (제43조), :meth:`annualize` 의 12개월 환산도 둘을 함께 묶는다.
+        **초과사용부가금은 안 접는다** (109세션) — 접으면 용어집에 박힌
+        기본요금 산식(:attr:`mean_base_demand_kw` 를 곱하는 문장)이 거짓이 된다.
+
+        **엔진 밖에서 다시 만들지 않는다.** 앞서 이 덧셈이 세 자리에 있었다 —
+        :attr:`~kwise.diagnose.structure.ChargeStructure.base_with_power_factor_won` ·
+        :meth:`annualize` · 선택요금 조합. 요금적용전력이 그 병으로 뿌리에서
+        두 번 돋았다 (⑭ 116세션 · ⑳ 118세션).
+        """
+        return self.total_base_won + self.total_power_factor_won
+
+    @property
     def mean_base_demand_kw(self) -> float:
         """기본요금이 **달마다 실제로 곱한 전력**의 월평균 (S139 2절).
 
@@ -291,9 +307,7 @@ class BillingResult:
             )
         return AnnualEstimate(
             factor=factor,
-            base_with_power_factor_won=(
-                (self.total_base_won + self.total_power_factor_won) * factor
-            ),
+            base_with_power_factor_won=self.base_with_power_factor_won * factor,
             energy_won=self.total_energy_won * factor,
             total_won=self.total_won * factor,
             energy_won_adjusted=self.total_energy_won_adjusted * factor,

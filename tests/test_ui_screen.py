@@ -3227,12 +3227,18 @@ def test_월별_요금_구성이_네_조각이다() -> None:
 
     기본요금이 달마다 같은 값으로 이어지는 것은 요금적용전력 12개월 규칙의
     모습이다 — 그 사실을 보이려고 선으로 빼지 않고 막대에 넣는다.
+
+    **이 벌은 부가금이 0원이라 넷이다** (S140 2절). 붙은 벌에서 다섯이 되는
+    것은 ``test_excess.py`` 의 조각 합 못이 문다.
     """
-    from kwise.report.frames import MONTHLY_CHARGE_PARTS, monthly_charge_frame
+    from kwise.report.frames import monthly_charge_frame, monthly_charge_parts
 
     structure = _structure()
+    assert structure.excess_won == 0.0, "이 벌은 부가금이 0 이어야 네 조각이다"
     frame = monthly_charge_frame(structure)
-    assert list(dict.fromkeys(frame["구분"])) == list(MONTHLY_CHARGE_PARTS)
+    parts = monthly_charge_parts(structure)
+    assert len(parts) == 4
+    assert list(dict.fromkeys(frame["구분"])) == list(parts)
     monthly = structure.monthly
     assert len(frame) == len(monthly) * 4
     for month, group in frame.groupby("월"):

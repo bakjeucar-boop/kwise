@@ -62,8 +62,12 @@ class ChargeStructure:
 
         앞서는 부르는 쪽 셋이 각각 ``base_won + total_power_factor_won`` 을 적고
         있었다. 세는 자리를 하나로 두면 다음에 무엇이 붙어도 한 곳만 고친다.
+
+        **덧셈은 엔진이 한다** (S140 2절) —
+        :attr:`~kwise.tariff.BillingResult.base_with_power_factor_won`. 여기와
+        ``annualize()`` 와 선택요금 조합이 각각 같은 식을 적고 있었다.
         """
-        return self.base_won + self.bill.total_power_factor_won
+        return self.bill.base_with_power_factor_won
 
     @property
     def base_with_power_factor_share(self) -> float:

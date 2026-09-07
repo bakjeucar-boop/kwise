@@ -254,13 +254,6 @@ def _bar_gap(
     return gap, bill.total_excess_won
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "막대의 조각 구성은 사람이 정할 자리 — "
-        "「월별 요금 구성 막대가 초과사용부가금을 안 담는다」"
-    ),
-)
 def test_월별_요금_구성_막대의_조각_합이_합계와_맞는다(
     sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
 ) -> None:
@@ -274,13 +267,61 @@ def test_월별_요금_구성_막대의_조각_합이_합계와_맞는다(
 
     **부가금 0 인 벌은 이미 맞는다** (``test_월별_요금_구성이_네_조각이다``).
     갈리는 것은 부가금이 서는 벌뿐이라 두 벌을 한 못이 문다.
+
+    **S140 2절에 xfail 을 걷었다.** 막대가 부가금 조각을 세우면서 어긋남이
+    122,451,200원(총액의 3.5%)에서 0 이 됐다. 못은 남는다 — 사실이 뒤집힌
+    것이 아니라 고쳐진 것이라 그 자리를 계속 물어야 한다.
     """
+    # **1원 미만으로 본다.** 34억을 float64 로 접었다 펴는 자리라 조각을 다
+    # 담아도 부스러기가 남는다 (4.8e-07원). ``approx(0.0)`` 의 기본 절대오차는
+    # 1e-12 라 그 부스러기에 걸린다 — 빠진 조각(1억 2,245만원)과는 열네 자리
+    # 떨어져 있어 이 잣대로도 걸러진다.
+    #
     # ① 부가금 0 인 기본 벌 — 지금도 맞는다.
     gap, excess = _bar_gap(sample_usage, sample_report, tariff, 12_000.0)
     assert excess == 0.0, "이 벌은 부가금이 0 이어야 한다"
-    assert gap == pytest.approx(0.0)
+    assert gap == pytest.approx(0.0, abs=1.0)
 
-    # ② 부가금이 서는 벌 — 조각 넷에 ``excess_won`` 이 없어 합계에 못 미친다.
+    # ② 부가금이 서는 벌 — 조각에 ``excess_won`` 이 있어야 합계와 맞는다.
     gap, excess = _bar_gap(sample_usage, sample_report, tariff, 3_000.0)
     assert excess > 0, "부가금이 서는 벌이어야 빠진 조각이 드러난다"
-    assert gap == pytest.approx(0.0)
+    assert gap == pytest.approx(0.0, abs=1.0)
+
+
+def test_요금제별_그룹_막대의_조각_합이_합계와_맞는다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """**합계가 조각 옆에 서는 자리다** (S140 1-3).
+
+    막대를 쌓지 않고 나란히 세우므로 읽는 사람이 조각을 더해 합계 막대와
+    맞댄다. 앞서 조각이 ``base_won``(역률 뺀 값) + ``energy_won`` 둘뿐이라
+    **역률요금과 부가금이 통째로 빠져 있었다** — `large-b-short` 조건에서
+    선택Ⅰ 122,451,200원 · 선택Ⅲ 166,377,600원, 역률 85% 조건에서 선택Ⅰ
+    6,339,264원이다.
+
+    **막대 못과 따로 둔다** — 재료가 다르다
+    (:func:`~kwise.report.frames.tariff_option_frame`).
+    """
+    from kwise.measures.tariff_switch import evaluate_tariff_switch
+    from kwise.report.frames import tariff_option_frame, tariff_parts
+
+    for contract_kw, power_factor_pct, wants in ((3_000.0, None, True), (12_000.0, 85.0, False)):
+        options = BillingOptions(contract_kw=contract_kw, power_factor_pct=power_factor_pct)
+        switch = evaluate_tariff_switch(
+            sample_usage,
+            tariff,
+            TariffSelection("general_b", "high_a", "I"),
+            options=options,
+            quality=sample_report,
+        )
+        parts = tariff_parts(switch)
+        assert ("초과사용부가금" in parts) is wants, (
+            f"계약 {contract_kw:,.0f} kW — 부가금 조각이 서는 조건과 어긋납니다: {parts}"
+        )
+        frame = tariff_option_frame(switch)
+        for _, row in frame.iterrows():
+            total = float(row["합계(원)"])
+            pieces = sum(float(row[f"{name}(원)"]) for name in parts if name != "합계")
+            assert pieces == pytest.approx(total), (
+                f"{row['요금제']} — 조각 합이 합계와 {pieces - total:,.0f}원 어긋납니다."
+            )

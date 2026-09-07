@@ -48,6 +48,17 @@ class OptionQuote:
     energy_won: float | None = None
     excess_won: float | None = None
     """초과사용부가금 (109세션). **없으면 참고 줄의 합계가 부분의 합과 어긋난다.**"""
+    power_factor_won: float | None = None
+    """역률요금 (S140 2절). 부가금과 같은 까닭으로 둔다 — 이것이 없으면 계산 근거
+    참고 줄이 역률 85% 벌에서 선택Ⅰ 6,339,264원 어긋난다."""
+    base_with_power_factor_won: float | None = None
+    """역률요금까지 담은 기본요금 (S140 2절).
+
+    **그룹 막대가 그리는 「기본요금」 이다.** :attr:`base_won` 은 역률요금을 뺀
+    값이라 그것으로 그리면 기본 + 전력량이 합계에 못 미친다 — 역률 85% 벌에서
+    선택Ⅰ 6,339,264원이다. 덧셈은 엔진 한 자리가 한다
+    (:attr:`~kwise.tariff.BillingResult.base_with_power_factor_won`).
+    """
 
     @property
     def key(self) -> str:
@@ -79,6 +90,27 @@ class TariffSwitchResult:
     def ranking(self) -> tuple[OptionQuote, ...]:
         """싼 순서. 화면 표를 이 순서로 그린다."""
         return tuple(sorted(self.quotes, key=lambda quote: quote.total_won))
+
+
+def _quote(
+    selection: TariffSelection, total_won: float, bill: BillingResult | None
+) -> OptionQuote:
+    """조합 하나의 값 (S140 2절).
+
+    **조각은 요금 결과에서 그대로 옮긴다** — 여기서 더하거나 빼지 않는다.
+    상세를 계산하지 않은 조합은 합계만 남고 조각이 ``None`` 이다.
+    """
+    if bill is None:
+        return OptionQuote(selection=selection, total_won=total_won)
+    return OptionQuote(
+        selection=selection,
+        total_won=total_won,
+        base_won=bill.total_base_won,
+        energy_won=bill.total_energy_won,
+        excess_won=bill.total_excess_won,
+        power_factor_won=bill.total_power_factor_won,
+        base_with_power_factor_won=bill.base_with_power_factor_won,
+    )
 
 
 def evaluate_tariff_switch(
@@ -148,19 +180,7 @@ def evaluate_tariff_switch(
             usage, table, selection, options=opts, quality=quality
         )
     quotes = tuple(
-        OptionQuote(
-            selection=selection,
-            total_won=totals[str(selection)],
-            base_won=(
-                detailed[str(selection)].total_base_won if str(selection) in detailed else None
-            ),
-            energy_won=(
-                detailed[str(selection)].total_energy_won if str(selection) in detailed else None
-            ),
-            excess_won=(
-                detailed[str(selection)].total_excess_won if str(selection) in detailed else None
-            ),
-        )
+        _quote(selection, totals[str(selection)], detailed.get(str(selection)))
         for selection in selections
     )
     quote_by_key = {quote.key: quote for quote in quotes}

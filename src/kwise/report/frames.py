@@ -76,6 +76,7 @@ __all__ = [
     "hourly_profile_frame",
     "month_labels",
     "monthly_charge_frame",
+    "monthly_charge_parts",
     "monthly_peak_frame",
     "power_factor_day_frame",
     "power_triangle_frame",
@@ -88,6 +89,7 @@ __all__ = [
     "tariff_delta_frame",
     "tariff_option_frame",
     "tariff_option_long_frame",
+    "tariff_parts",
     "temperature_mean_frame",
     "top_hour_frame",
 ]
@@ -168,7 +170,28 @@ def hourly_profile_frame(peak: PeakProfile, *, season: str | None = None) -> pd.
 
 #: 월별 요금 구성 막대의 쌓는 순서. **기본요금이 맨 아래다** — 사용량과 무관하게
 #: 깔리는 몫이라 밑단에 있어야 그 위의 전력량요금이 무엇에 얹혀 있는지 읽힌다.
-MONTHLY_CHARGE_PARTS: tuple[str, ...] = ("기본요금", "경부하", "중간부하", "최대부하")
+#:
+#: **맨 위가 초과사용부가금이다** (S140 2절). 화면 「현재 요금 구조」 표 · PPT 7장 ·
+#: Word 요금 구조 표 셋이 109세션부터 「기본요금 → 전력량요금 → 초과사용부가금」
+#: 순서로 서 있다 — 같은 순서를 쓴다. **조각 이름도 그 셋의 것을 그대로 쓴다.**
+MONTHLY_CHARGE_PARTS: tuple[str, ...] = (
+    "기본요금",
+    "경부하",
+    "중간부하",
+    "최대부하",
+    "초과사용부가금",
+)
+
+
+def monthly_charge_parts(structure: ChargeStructure) -> tuple[str, ...]:
+    """이 자료에서 **실제로 서는** 조각 (S140 2절).
+
+    **초과사용부가금은 붙은 자료에서만 한 칸을 더 쓴다** — 화면·PPT·Word·Excel
+    네 자리가 109세션부터 쓰는 틀이다. 0원인 벌에 조각을 두면 범례에 「없는
+    것을 있다고」 적는 꼴이고, 붙은 벌에 안 두면 **조각 합이 합계에 못 미친다**
+    (`large-b-short` 에서 122,451,200원 · 총액의 3.5%).
+    """
+    return MONTHLY_CHARGE_PARTS if structure.excess_won else MONTHLY_CHARGE_PARTS[:-1]
 
 
 def monthly_charge_frame(structure: ChargeStructure) -> pd.DataFrame:
@@ -177,7 +200,14 @@ def monthly_charge_frame(structure: ChargeStructure) -> pd.DataFrame:
     **기본요금에 역률요금을 합쳐 적는다.** 역률요금은 기본요금의 ±% 조정이라
     따로 세우면 막대에 뜻 없는 실오라기가 하나 늘고, 요금 엔진의 12개월 환산
     (:meth:`~kwise.tariff.BillingResult.annualize`)도 이미 둘을 함께 묶는다.
-    그래서 **네 조각의 합이 그달 청구액**(``total_won``)과 정확히 맞는다.
+
+    **초과사용부가금은 따로 세운다** (S140 2절). 기본요금에 접으면 용어집
+    (:data:`~kwise.report.narrative.GLOSSARY`)에 고정으로 박힌 기본요금 산식이
+    그 자리에서 거짓이 되므로 이름을 지키고 몫을 가른다 — 109세션이 화면·PPT
+    에서 고른 것과 같은 갈래다. 붙은 자료에서만 조각이 하나 는다
+    (:func:`monthly_charge_parts`).
+
+    그래서 **조각의 합이 그달 청구액**(``total_won``)과 정확히 맞는다.
 
     **기본요금이 달마다 같은 값으로 이어지는 것이 정상이다** (27세션 3-2).
     요금적용전력이 직전 12개월 최대로 결정되므로 한 번 최대가 서면 그 뒤로는
@@ -185,6 +215,7 @@ def monthly_charge_frame(structure: ChargeStructure) -> pd.DataFrame:
     둘이 되고, 주석으로 내리면 「전력량요금만 있는 요금」 처럼 읽힌다.
     """
     monthly = structure.monthly
+    parts = monthly_charge_parts(structure)
     rows: list[dict[str, object]] = []
     for month, row in monthly.iterrows():
         base = float(row["base_won"]) + float(row.get("power_factor_won", 0.0))
@@ -193,8 +224,9 @@ def monthly_charge_frame(structure: ChargeStructure) -> pd.DataFrame:
             "경부하": float(row.get("light_won", 0.0)),
             "중간부하": float(row.get("mid_won", 0.0)),
             "최대부하": float(row.get("peak_won", 0.0)),
+            "초과사용부가금": float(row.get("excess_won", 0.0)),
         }
-        total = sum(values.values())
+        total = sum(values[part] for part in parts)
         rows.extend(
             {
                 "월": str(month),
@@ -204,7 +236,7 @@ def monthly_charge_frame(structure: ChargeStructure) -> pd.DataFrame:
                 # 쌓는 순서. 그림 쪽에서 다시 정하면 달마다 밑단이 흔들린다.
                 "순서": order,
             }
-            for order, part in enumerate(MONTHLY_CHARGE_PARTS)
+            for order, part in enumerate(parts)
         )
     return pd.DataFrame(rows, columns=["월", "구분", "원", "합계(원)", "순서"])
 
@@ -770,7 +802,21 @@ DAY_TYPE_LABELS: dict[str, str] = {
 
 
 #: 그룹 막대의 세 항목. **순서가 곧 읽는 순서다** (17세션 1-2).
-TARIFF_PARTS: tuple[str, ...] = ("기본요금", "전력량요금", "합계")
+#: 요금제별 그룹 막대의 조각. **「기본요금 → 전력량요금 → 초과사용부가금」 은
+#: 화면 「현재 요금 구조」 표 · PPT 7장 · Word 요금 구조 표와 같은 순서다**
+#: (S140 2절). 「합계」 는 조각이 아니라 그 옆에 세우는 막대다.
+TARIFF_PARTS: tuple[str, ...] = ("기본요금", "전력량요금", "초과사용부가금", "합계")
+
+
+def tariff_parts(switch: TariffSwitchResult) -> tuple[str, ...]:
+    """이 자료에서 **실제로 서는** 조각 (S140 2절).
+
+    **초과사용부가금은 붙은 자료에서만 한 칸을 더 쓴다.** 0원이면 요금제마다
+    빈 막대가 하나씩 늘고 범례가 「없는 것을 있다고」 적는다.
+    """
+    if any(quote.excess_won for quote in switch.quotes):
+        return TARIFF_PARTS
+    return tuple(part for part in TARIFF_PARTS if part != "초과사용부가금")
 
 
 def tariff_option_frame(switch: TariffSwitchResult) -> pd.DataFrame:
@@ -779,23 +825,34 @@ def tariff_option_frame(switch: TariffSwitchResult) -> pd.DataFrame:
     **제도 순서(Ⅰ·Ⅱ·Ⅲ)로 늘어놓는다.** 절감액 순으로 정렬하면 자료마다
     Ⅱ·Ⅲ·Ⅰ 처럼 뒤섞여 "왜 이 순서인가" 를 먼저 묻게 된다. 어느 쪽이 유리한지는
     표식과 차액 차트가 말한다.
+
+    **「기본요금」 은 역률요금까지다** (S140 2절). ``base_won`` 은 그것을 뺀
+    값이라 그대로 그리면 조각 합이 합계에 못 미친다 — 역률 85% 벌에서 선택Ⅰ
+    6,339,264원 · 선택Ⅲ 8,613,321원이다. 화면 「현재 요금 구조」 표 · PPT ·
+    Word 셋이 세는 몫과 같다.
+
+    **초과사용부가금을 조각으로 세운다** (S140 2절 · 109세션의 틀). 안 세우면
+    `large-b-short` 에서 선택Ⅰ 122,451,200원 · 선택Ⅲ 166,377,600원이 합계와
+    어긋난다. 붙은 자료에서만 열이 선다 (:func:`tariff_parts`).
     """
     current = switch.current.key
     best = switch.best.key
     ordered = sorted(switch.quotes, key=lambda quote: option_sort_key(quote.selection.option))
+    parts = tariff_parts(switch)
     rows: list[dict[str, object]] = []
     for quote in ordered:
         mark = "현행" if quote.key == current else ("최적" if quote.key == best else "")
-        rows.append(
-            {
-                "요금제": option_label(quote.selection.option),
-                "표식": mark,
-                "기본요금(원)": quote.base_won,
-                "전력량요금(원)": quote.energy_won,
-                "합계(원)": quote.total_won,
-                "현행 대비(원)": quote.total_won - switch.current.total_won,
-            }
-        )
+        row: dict[str, object] = {
+            "요금제": option_label(quote.selection.option),
+            "표식": mark,
+            "기본요금(원)": quote.base_with_power_factor_won,
+            "전력량요금(원)": quote.energy_won,
+        }
+        if "초과사용부가금" in parts:
+            row["초과사용부가금(원)"] = quote.excess_won
+        row["합계(원)"] = quote.total_won
+        row["현행 대비(원)"] = quote.total_won - switch.current.total_won
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -809,18 +866,15 @@ def tariff_option_long_frame(switch: TariffSwitchResult) -> pd.DataFrame:
     **상세를 모르는 요금제도 막대를 세운다.** 값이 없으면 합계 하나만 세우고
     그 사실을 적는다 — 빼 버리면 선택지가 조용히 사라진다.
     """
+    names = tariff_parts(switch)
     rows: list[dict[str, object]] = []
     for _, row in tariff_option_frame(switch).iterrows():
         base, energy = row["기본요금(원)"], row["전력량요금(원)"]
-        parts: tuple[tuple[str, float], ...] = (
-            (
-                ("기본요금", base),
-                ("전력량요금", energy),
-                ("합계", row["합계(원)"]),
-            )
-            if pd.notna(base) and pd.notna(energy)
-            else (("합계", row["합계(원)"]),)
-        )
+        # 조각 이름에 「(원)」 을 붙이면 그대로 열 이름이다 — 「합계」 도 같다.
+        if pd.notna(base) and pd.notna(energy):
+            parts = tuple((name, row[f"{name}(원)"]) for name in names)
+        else:
+            parts = (("합계", row["합계(원)"]),)
         rows.extend(
             {"요금제": row["요금제"], "표식": row["표식"], "구분": name, "원": float(value)}
             for name, value in parts

@@ -367,7 +367,10 @@ def _tariff_switch(
     st.caption("현행 대비 차액", help=fmt.chart_tip("chart.tariff_delta"))
     # **② 그룹 막대** (17세션 1-2). 쌓으면 기본요금끼리·전력량요금끼리 견줄 수 없다.
     st.altair_chart(charts.tariff_option_chart(result), width="stretch")
-    st.caption("요금제별 기본·전력량·합계", help=fmt.chart_tip("chart.tariff_option"))
+    # **막대를 열거하지 않는다** (S140 2절). 부가금이 붙은 벌에서는 막대가
+    # 넷이라 「기본·전력량·합계」 가 그 자리에서 거짓이 된다 — Word 가 이미
+    # 쓰는 이름으로 맞춘다 (``document.py`` 의 「요금제별 요금 구성」).
+    st.caption("요금제별 요금 구성", help=fmt.chart_tip("chart.tariff_option"))
     # 본문에서 내리는 사실 둘은 :data:`_TARIFF_HIDDEN_FACTS` 가 쥔다 (27세션 4-3·4-4).
     _notices(partition_facts(result.notices, _TARIFF_HIDDEN_FACTS)[1])
     _worksheet(tariff_switch_worksheet(result))

@@ -207,10 +207,18 @@ def tariff_switch_worksheet(result: TariffSwitchResult) -> Worksheet:
             continue
         # **부가금이 있으면 항을 더한다** (109세션). 안 적으면 이 줄에서만
         # 「기본 + 전력량」 이 합계와 안 맞는다.
+        #
+        # **역률요금도 같다** (S140 2절). 위 ``_bill_rows`` 는 109세션부터 역률
+        # 행을 세우는데 이 줄만 안 세우고 있었다 — 역률 85% 벌에서 선택Ⅰ
+        # 6,339,264원이 어긋난다. **항 순서를 위 표와 맞춘다** (기본 · 전력량 ·
+        # 역률 · 부가금) — 「기본」 에 역률을 접으면 같은 표 안에서 그 낱말이
+        # 두 가지를 가리킨다.
         formula = (
             f"기본 {money.won_plain(quote.base_won, reason='—')}"
             f" + 전력량 {money.won_plain(quote.energy_won, reason='—')}"
         )
+        if quote.power_factor_won:
+            formula += f" + 역률 {money.won_plain(quote.power_factor_won, reason='—')}"
         if quote.excess_won:
             formula += f" + 부가금 {money.won_plain(quote.excess_won, reason='—')}"
         rows.append(
