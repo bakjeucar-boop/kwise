@@ -216,13 +216,27 @@ def _stop_app(process: subprocess.Popen[bytes], port: int) -> bool:
     return False
 
 
+def _wait_idle(page: object) -> None:
+    """Streamlit 이 다시 그리기를 끝낼 때까지 기다린다. **고정 대기를 쓰지 않는다.**
+
+    ``[data-testid="stApp"]`` 의 ``data-test-script-state`` 가 ``notRunning`` 이
+    될 때까지 본다. 고정 대기는 기계가 놀 때도 먼저 끝날 수 있고, 그러면 다시
+    그리는 도중에 누르게 되어 요소가 DOM 에서 떨어져 나간다 —
+    S140 이 세 판 다 ``전압구분`` 목록에서 ``element was detached`` 로 죽었다.
+    """
+    page.wait_for_selector(  # type: ignore[attr-defined]
+        '[data-testid="stApp"][data-test-script-state="notRunning"]',
+        timeout=RENDER_TIMEOUT_MS,
+    )
+
+
 def _pick(page: object, label: str, want: str) -> None:
     """Streamlit 드롭다운 하나를 고른다. 라벨로 상자를 찾고 목록에서 값을 누른다."""
+    _wait_idle(page)
     box = page.locator(f'[data-testid="stSelectbox"]:has-text("{label}")').first  # type: ignore[attr-defined]
     box.click()
-    page.wait_for_timeout(700)  # type: ignore[attr-defined]
     page.locator('[role="option"]', has_text=want).first.click()  # type: ignore[attr-defined]
-    page.wait_for_timeout(1_500)  # type: ignore[attr-defined]
+    _wait_idle(page)
 
 
 def _fill_contract(page: object, contract: Contract) -> None:
@@ -236,7 +250,7 @@ def _fill_contract(page: object, contract: Contract) -> None:
     kw = page.locator('[data-testid="stNumberInput"]:has-text("계약전력")').first.locator("input")  # type: ignore[attr-defined]
     kw.fill(f"{contract.contract_kw:.0f}")
     kw.press("Enter")
-    page.wait_for_timeout(1_500)  # type: ignore[attr-defined]
+    _wait_idle(page)
     _pick(page, "선택요금", contract.option)
     page.get_by_text("계약 정보 확정", exact=True).first.click()  # type: ignore[attr-defined]
 
