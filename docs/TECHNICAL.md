@@ -1737,7 +1737,7 @@ data\backup\     편집 직전 스냅샷 (최근 10개, .gitignore)
 |---|---|
 | `test_progress.py` | **계산 모듈에 `import streamlit` 이 없다.** AST 로 훑는다 |
 | `test_ui.py` | 매뉴얼 앵커 목록과 문서가 어긋나지 않는다 |
-| `test_casestudy.py` | 타당성 판정 118건 |
+| `test_casestudy.py` | 타당성 판정 132건 |
 
 ### 6.2 케이스 스터디 C1~C6 {#tech-casestudy}
 
