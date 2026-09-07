@@ -61,6 +61,7 @@ WHOLE_DOCS = (
     "docs/ENVIRONMENT.md",
     "docs/MANUAL.md",
     "docs/MANUAL_ANCHORS.md",
+    "docs/OPEN_ITEMS.md",
     "docs/REQUIREMENTS_kwise.md",
     "docs/TECHNICAL.md",
     "docs/TEST_DATA.md",

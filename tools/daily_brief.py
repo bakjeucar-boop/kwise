@@ -508,7 +508,7 @@ def build() -> str:
     for name in unread_rows(body):
         lines.append(f"  **「{name}」 행을 못 읽었다** — 칸 안의 세로줄은 \\| 로 적는다")
     # ⑤ 살아 있는 못은 「테스트 상태」 의 xfail 수가 담는다.
-    for key in ("테스트 상태", "케이스 스터디", "화면 감사", "살아 있는 못"):
+    for key in ("테스트 상태", "케이스 스터디", "화면 감사", "살아 있는 못", "미해결 갈래"):
         if key in state:
             lines.append(f"  · {key} — {clip(strip_md(state[key]), WRAP_AT - 14)}")
     lines.append("")
