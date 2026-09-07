@@ -154,6 +154,25 @@ def _engine_branch_files() -> int:
     return sum(1 for path in (PROJECT_ROOT / "tests").glob("test_*.py") if path.name not in ignored)
 
 
+def _deck_cases() -> int:
+    """덱 벌 수 — ``tools\\render_deck.py`` 의 ``CASES`` 를 센다 (S138 3절).
+
+    **들여오는 값을 재고 골랐다.** S137 은 「실물을 세려면 ``render_deck`` 을
+    들여와야 해서」 못을 안 지었는데, 이 시험이 이미 ``kwise`` 를 통째로
+    들이고 있어 **더 드는 것이 0.002초 · 모듈 하나**다. 맨 자리에서 재면
+    1.4초·1,747모듈이지만 그것은 이 시험이 이미 낸 값이다.
+
+    **글자로 세지 않는다** — ``key=`` 는 벌 말고 화면 버튼 하나를 더 물어
+    한 벌 많게 나온다.
+    """
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    try:
+        import render_deck
+    finally:
+        sys.path.pop(0)
+    return len(render_deck.CASES)
+
+
 def _open_items() -> int:
     """미해결 건수 — 갈래 머리말이 말하는 수의 합 (``tools\\daily_brief.py`` 와 같은 자리).
 
@@ -236,6 +255,9 @@ COUNTS: tuple[tuple[str, Callable[[], int], str], ...] = (
     ),
     # S131 2절 — 「다음 작업」 칸이 「미해결 59건」 이라 적고 있었는데 실물은 63 이었다.
     ("미해결 건수", _open_items, r"미해결\s*(\d[\d,]*)\s*건"),
+    # S138 3절 — 세 판이 「열하나」·「열둘」·「열넷」 을 서로 다른 칸에 적고 있었다.
+    # **고유어를 못이 못 무므로 문서 쪽을 숫자 꼴로 맞췄다** (앵커 때와 같다).
+    ("덱 벌 수", _deck_cases, r"덱 벌\s*\*{0,2}(\d[\d,]*)\*{0,2}\s*벌"),
 )
 
 
