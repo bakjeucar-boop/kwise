@@ -32,7 +32,7 @@
 
 **C7 은 자료가 실측이고 계약전력만 합성이다.** 그래서 R 이 아니라 C 다 —
 갈림의 잣대는 자료가 아니라 **조건**이다(C1 도 자료는 대형 실측 원본 그대로다).
-R1 만 계약전력까지 실제 값이고, C1~C7 은 다 지어낸 계약전력을 쓴다.
+R1 만 계약전력까지 실제 값이고, C1~C8 은 다 지어낸 계약전력을 쓴다.
 
 케이스는 **순차로** 돈다. 여덟 벌의 시계열을 동시에 들지 않는다 (메모리 규약).
 """
@@ -161,6 +161,12 @@ class CaseDefinition:
     ``contract_kw is not None`` 으로 가르면 안 된다 — C7 도 값을 박지만 그
     수는 지어낸 것이라 「실제 값」 이라 적으면 거짓이 된다 (S128).
     """
+    power_factor_pct: float | None = None
+    """주간 지상역률. ``None`` 이면 약관 제42조의 간주값(92%)이라 역률요금이 0원이다.
+
+    덱 벌 ``large-b-pf85`` 의 ``Case.power_factor_pct`` 와 같은 자리다 (S132).
+    **C8 하나만 값을 든다** — 나머지 여덟은 ``None`` 이라 한 원도 안 움직인다.
+    """
 
     @property
     def selection(self) -> TariffSelection:
@@ -278,7 +284,7 @@ class CaseStudy:
                 "항목": "기상 캐시 적중",
                 "값": (
                     f"{len(self.results) - self.weather_calls}/{len(self.results)} "
-                    "(C1~C7 은 좌표·기간이 같아 첫 건만 취득한다. 실측은 따로 선다)"
+                    "(C1~C8 은 좌표·기간이 같아 첫 건만 취득한다. 실측은 따로 선다)"
                 ),
             }
         )
@@ -332,6 +338,29 @@ def build_case_definitions(directory: Path) -> tuple[CaseDefinition, ...]:
             contract_type="general_b",
             note="계약전력 4,000 kW < 관측 최대 — 초과사용부가금이 서는 유일한 벌",
             contract_kw=SHORT_CONTRACT_KW,
+        )
+    )
+
+    # **C8 은 C1 에서 역률 하나만 갈았다** (S142 1절). 자료(대형 실측 정본)·
+    # 종별·전압·선택요금이 같고 계약전력도 같은 규칙(관측 최대 × 1.1)이라
+    # **갈리는 값은 전부 역률에서 온다.** 좌표도 C1~C7 과 같으므로 기상 요청이
+    # 늘지 않는다. 덱 벌 `large-b-pf85` 와는 계약전력이 다르다 — 그쪽은
+    # 6,000 kW 를 적는다.
+    #
+    # **올린 잣대는 S128 의 것 그대로다** — 「덱에만 있고 회귀에는 없다」.
+    # S132 가 안 올린 근거(「조건이 지어낸 값이다」)는 서지 않는다: C7 의
+    # 4,000 kW 도 지어낸 수이고 그 벌은 올라 있다. 그리고 **이 벌이 지키는
+    # 사실이 S141 에 생겼다** — 「기본요금」 이 역률 가감 반영 후라는 정의이고,
+    # 저장소의 다른 벌은 전부 간주 92% 라 역률요금이 0원이어서 그 정의가
+    # 갈려도 값이 한 자리도 안 움직인다 (결함 유형 ② — 뜨지 않는 갈래).
+    definitions.append(
+        CaseDefinition(
+            key="C8",
+            name="역률 미달형",
+            usage_path=large,
+            contract_type="general_b",
+            note="주간 지상역률 85% — 역률요금이 0원이 아닌 유일한 벌",
+            power_factor_pct=85.0,
         )
     )
 
@@ -511,7 +540,7 @@ def run_one_case(
     # 선다. 앞서는 기준선만 계약전력 없이 잡혀 요금적용전력 하한이 안 걸린
     # 총액에서 하한이 걸린 절감액을 빼고 있었고, 엔진이 그 판마다
     # ``tariff.floor_no_contract`` 를 냈다.
-    options = BillingOptions(contract_kw=contract_kw)
+    options = BillingOptions(contract_kw=contract_kw, power_factor_pct=definition.power_factor_pct)
     with runner.running("diagnose"):
         diagnosis = diagnose(usage, table, contract, quality=quality, options=options)
         baseline = calculate_bill(
@@ -741,7 +770,7 @@ def run_case_study(
     """케이스를 **순차로** 돌린다. 여덟 벌의 시계열을 동시에 들지 않는다.
 
     단위 발전 프로파일은 케이스마다 다시 만든다 (부하 인덱스에 정렬해야 한다).
-    C1~C7 은 좌표·기간이 같아 **첫 건만 취득하고 나머지는 캐시**를 타고,
+    C1~C8 은 좌표·기간이 같아 **첫 건만 취득하고 나머지는 캐시**를 타고,
     **실측(R1)은 좌표도 기간도 달라 요청이 하나 더 선다.**
     """
     started = time.perf_counter()

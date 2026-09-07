@@ -123,8 +123,15 @@ def _option(bill: BillingResult) -> str:
     return f"{bill.contract_label} {bill.voltage_label} {option_label(bill.selection.option)}"
 
 
-def _base_fee_row(bill: BillingResult, label: str = "기본요금") -> WorkRow:
+def _base_fee_row(bill: BillingResult, label: str = "역률 조정 전 기본요금") -> WorkRow:
     """기본요금 = 월평균 기본요금 기준전력 × 단가 × 개월수 (S139 2절).
+
+    **이름표에 「역률 조정 전」 을 붙인다** (S142 1절). 이 값은
+    ``total_base_won`` 이라 역률요금을 안 담는데, 「기본요금」 은 S141 이 역률
+    가감 반영 **후**로 정했고 Excel 요약 시트가 그 금액을 그 이름으로 적는다 —
+    같은 통합문서 안에서 한 이름이 두 금액을 가리키던 자리다 (결함 유형 ③ ·
+    `large-b-pf85` 에서 452,804,556 대 459,143,820원). 아래 「역률 요금」 줄을
+    더하면 그 금액이 되므로 **표는 그대로 검산된다.**
 
     **곱하는 것은 최대가 아니라 월평균이다.** 기본요금은 달마다 그 달의 기준
     전력으로 매겨지는데 앞서 여기가 기간 전체의 **최대**(``billing_demand_kw``)
@@ -175,7 +182,11 @@ def _bill_rows(bill: BillingResult, *, title: str) -> list[WorkRow]:
     rows = [WorkRow(title, "", ""), _base_fee_row(bill), *_energy_rows(bill)]
     if bill.total_power_factor_won:
         rows.append(
-            WorkRow("역률 요금", "기본요금 × 역률 조정률", _won(bill.total_power_factor_won))
+            WorkRow(
+                "역률 요금",
+                "역률 조정 전 기본요금 × 역률 조정률",
+                _won(bill.total_power_factor_won),
+            )
         )
     # **부가금이 있으면 반드시 선다** (109세션). 없으면 합계가 위 행들의 합과
     # 어긋나 계산 근거가 그 자리에서 거짓이 된다 — 교육용(갑) 300 kW 조건에서

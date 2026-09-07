@@ -681,7 +681,9 @@ def test_계산_근거가_화면_Excel_Word_에서_같다(
     screen = sheet.frame()
     assert list(screen.columns) == list(COLUMNS)
     # 산식과 대입값이 같은 줄에 있다.
-    base = screen[screen["구분"] == "기본요금"].iloc[0]
+    # **이름표는 「역률 조정 전 기본요금」 이다** (S142 1절). 「기본요금」 은
+    # 역률 가감 반영 후를 뜻하기로 정해졌고 이 줄은 그 밑이라 이름을 갈랐다.
+    base = screen[screen["구분"] == "역률 조정 전 기본요금"].iloc[0]
     assert "kW ×" in base["산식"] and "원/kW" in base["산식"]
     assert base["값"].endswith("원")
 
