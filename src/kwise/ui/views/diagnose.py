@@ -880,7 +880,7 @@ def _structure_block(usage: UsageData, diagnosis: Diagnosis, building: BuildingI
     # (109세션 — :attr:`ChargeStructure.base_with_power_factor_won`).
     #
     # **초과사용부가금은 붙은 자료에서만 한 칸을 더 쓴다** (109세션). 접으면
-    # 「기본요금 = 요금적용전력 × 단가 × 개월수」 라는 각주가 거짓이 되고,
+    # 「기본요금 = 월평균 기본요금 기준전력 × 단가 × 개월수」 라는 각주가 거짓이 되고,
     # 안 세우면 **기본 + 전력량 = 합계**가 깨진다. 0원이면 칸이 안 생기므로
     # 지금 자료의 문구 수는 그대로다.
     base_with_power_factor_won = structure.base_with_power_factor_won

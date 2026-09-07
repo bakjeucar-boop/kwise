@@ -231,6 +231,27 @@ class BillingResult:
     notices: tuple[Notice, ...] = field(default=())
 
     @property
+    def mean_base_demand_kw(self) -> float:
+        """기본요금이 **달마다 실제로 곱한 전력**의 월평균 (S139 2절).
+
+        계산 근거의 산식 문장이 곱하는 값이다. 곱하면 :attr:`total_base_won`
+        이 나온다 — 그것이 이 값을 두는 까닭이다.
+
+        **:attr:`billing_demand_kw` 가 아니다.** 그쪽은 기간 전체의 **최대**라
+        개월수에 곱하면 총액보다 늘 크다 (대형 실측 5,780,963.75원 · 1.3%).
+        **``base_demand_kw`` 열을 본다** — 계약전력 기준 종별(갑Ⅰ·교육용(갑)
+        저압 · 제68조 ②)에서는 그 달 요금적용전력이 아니라 **계약전력**이
+        기본요금을 매기므로 두 열이 갈린다. `large-a` 에서 66,571,213원 차다.
+
+        **엔진 밖에서 다시 만들지 않는다** — 요금적용전력이 그 병으로 뿌리에서
+        두 번 돋았다 (⑭ 116세션 · ⑳ 118세션).
+        """
+        if self.base_fee_months <= 0:
+            return 0.0
+        weighted = self.monthly["base_demand_kw"] * self.monthly["base_fee_factor"]
+        return float(weighted.sum()) / self.base_fee_months
+
+    @property
     def period_label(self) -> str:
         """'연간' 대신 쓰는 실제 기간 표기 (5.5)."""
         return (

@@ -219,7 +219,7 @@ def terms(pattern: LoadPattern | None = None) -> dict[str, Term]:
         ),
         "base_fee": Term(
             "기본요금",
-            "요금적용전력 × 단가 × 개월수.",
+            "월평균 기본요금 기준전력 × 단가 × 개월수.",
             "쓴 양과 무관하게 매달 같은 높이로 붙습니다.",
         ),
         "energy_fee": Term(

@@ -1377,7 +1377,7 @@ def _build_structure(
 
     base_with_power_factor_won = structure.base_with_power_factor_won
     # **초과사용부가금은 붙은 자료에서만 한 칸을 더 쓴다** (109세션). 기본요금에
-    # 접으면 아래 각주의 「기본요금 = 요금적용전력 × 단가 × 개월수」 가 그 자리에서
+    # 접으면 아래 각주의 「기본요금 = 월평균 기본요금 기준전력 × 단가 × 개월수」 가 그 자리에서
     # 거짓이 된다 — 그 산식은 용어집에 고정으로 박혀 덱마다 따라다닌다.
     chart_top = (
         _stats(

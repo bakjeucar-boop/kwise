@@ -25,9 +25,9 @@
     },
     {
       "이름": "기본요금 산식 문장",
-      "그물": "^(?!\\s*#).*(?:요금적용전력\\s*×\\s*(?:기본요금\\s*)?단가|kW\\s*×\\s*[^×]*원/kW)",
+      "그물": "^(?!\\s*#).*(?:(?:요금적용전력|기준전력)\\s*×\\s*(?:기본요금\\s*)?단가|kW\\s*×\\s*[^×]*원/kW)",
       "한 자리": ["src/kwise/report/narrative.py", "src/kwise/report/worksheet.py"],
-      "못": false,
+      "못": true,
       "비고": "기본요금을 「전력 × 단가 × 개월수」 로 **말이나 식으로 그리는** 자리. 값을 계산하는 자리(tariff/engine.py · measures/contract.py)는 곱셈 기호를 안 써서 안 걸린다 — 노리는 것이 그것이다. **주석 줄(`#`)은 그물이 뺀다** — 실물에 안 그려진다. 다만 같은 문장을 인용하는 주석이 셋 있다(report/columns.py · report/slides.py · ui/views/diagnose.py) — S139 1절이 값으로 셌고 고칠 때 함께 본다"
     },
     {
