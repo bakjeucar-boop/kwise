@@ -69,6 +69,7 @@ from kwise.report.notices import (
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
     UNPRICED_REASONS,
+    excess_not_measured_line,
     format_mwh,
     plain_text,
 )
@@ -1586,6 +1587,14 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
                 ["최대부하 사용량 비중", f"{float(share.get('peak', 0.0)):.1%}"],
             ],
         )
+        # **안 잰 벌에서는 위 표에 부가금 줄이 없는 까닭을 적는다** (S143 1절).
+        # 그 줄은 **금액의 진위**로 서므로 초과가 나는데 안 잰 벌과 초과가 없어
+        # 정말 0원인 벌이 이 표에서 한 글자도 다르지 않았다 — 화면과 Excel 은
+        # 안내를 통째로 실어 그 사실을 적는데 이 문서만 안 적고 있었다.
+        # 문장은 요금 엔진이 낸 것 그대로다 (새 어휘를 짓지 않는다).
+        not_measured = excess_not_measured_line(sections.bill)
+        if not_measured:
+            _para(document, not_measured)
 
     # ---- 계약전력 적정성
     adequacy = diagnosis.contract

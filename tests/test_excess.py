@@ -211,6 +211,74 @@ def test_안_쟀다는_사실이_실물_문구에_선다(
     assert on_contract != on_demand
 
 
+#: 「안 쟀다」 를 가르는 꼬리. **앞머리로 견주지 않는다** — 「초과사용부가금
+#: 대상」 까지는 두 갈래가 같은 말을 한다.
+NOT_MEASURED_TAIL = "총액에 안 들어 있습니다"
+
+
+def _rendered(
+    usage: UsageData,
+    report: QualityReport,
+    table: TariffTable,
+    selection: TariffSelection,
+    contract_kw: float,
+) -> dict[str, str]:
+    """{산출물 이름: 그려진 글자}. **실물을 그려서 본다.**"""
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.report.document import DocumentSections, build_document
+    from kwise.report.slides import build_slides
+
+    options = BillingOptions(contract_kw=contract_kw)
+    bill = calculate_bill(usage, table, selection, options=options, quality=report)
+    diagnosis = diagnose(
+        usage,
+        table,
+        ContractInfo(selection, contract_kw=contract_kw),
+        quality=report,
+        options=options,
+    )
+    sections = DocumentSections(usage=usage, bill=bill, diagnosis=diagnosis)
+    deck = build_slides(sections)
+    return {
+        "Word": "\n".join(item.text for item in build_document(sections).paragraphs),
+        "PPT": "\n".join(
+            shape.text_frame.text
+            for slide in deck.slides
+            for shape in slide.shapes
+            if shape.has_text_frame
+        ),
+    }
+
+
+def test_안_쟀다는_사실이_PPT_와_Word_에_선다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """**두 벌이 열 자리에서 한 글자도 안 달랐다** (S143 1절).
+
+    부가금이 서는지를 산출물 열 자리가 **금액의 진위**로 가른다 — 초과가 나는데
+    안 잰 벌(계약전력 기준 종별)과 초과가 없어 정말 0원인 벌은 그 값이 둘 다
+    0원이라 **갈릴 수가 없다.** S142 가 화면과 Excel 을 갈랐고 PPT·Word 는
+    안내를 통째로 싣는 자리가 없어 남아 있었다 (결함 유형 ②).
+
+    무는 것은 셋이다 — ① 안 잰 벌에서 그 문장이 두 산출물에 실제로 **뜨는가** ·
+    ② 0원인 벌에는 **안 뜨는가** · ③ 두 벌의 글자가 그 자리에서 **다른가**.
+    """
+    not_measured = _rendered(
+        sample_usage, sample_report, tariff, TariffSelection("general_a_1", "high_a", "I"), 3_000.0
+    )
+    really_zero = _rendered(
+        sample_usage, sample_report, tariff, TariffSelection("general_b", "high_a", "I"), 6_000.0
+    )
+    for name in ("Word", "PPT"):
+        assert NOT_MEASURED_TAIL in not_measured[name], (
+            f"{name} 가 갑Ⅰ 3,000 kW 벌에서 「안 쟀다」 를 안 적는다."
+        )
+        assert NOT_MEASURED_TAIL not in really_zero[name], (
+            f"{name} 가 을 6,000 kW 벌(초과 0)에서 「안 쟀다」 를 적는다."
+        )
+        assert not_measured[name] != really_zero[name], f"{name} 에서 두 벌의 글자가 같다."
+
+
 def test_요금_구성이_합계와_맞는다(
     sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
 ) -> None:

@@ -60,6 +60,7 @@ __all__ = [
     "AMI_BASIS_NOTICE",
     "MISSING_LIMIT_RATIO",
     "NOT_INCLUDED_NOTICE",
+    "OVER_CONTRACT_FACT",
     "TENTATIVE_BASE_FEE_BASIS_WARNING",
     "AnnualEstimate",
     "BillingOptions",
@@ -74,6 +75,11 @@ __all__ = [
 ]
 
 MISSING_LIMIT_RATIO = 0.05
+#: 계약전력을 넘었다는 안내의 사실 ID. **두 갈래가 같은 ID 로 다른 말을 한다** —
+#: 계약전력 기준 종별은 「산출하지 않았습니다」, 요금적용전력 기준 종별은
+#: 「청구 총액에 넣었습니다」 다. 이름을 세운 까닭은 **산출물이 그 문장을 뽑아
+#: 쓰기 때문**이다 (:func:`~kwise.report.notices.excess_not_measured_line`).
+OVER_CONTRACT_FACT = "quality.over_contract"
 PartialMonthPolicy = Literal["merge", "prorate"]
 # 월 지정은 Period·문자열·Timestamp 를 모두 받는다 (청구서에서 옮겨 적기 쉽게).
 type PeriodLike = pd.Period | str | pd.Timestamp
@@ -758,7 +764,7 @@ def calculate_bill(
                     "초과사용부가금 대상인데 이 종별은 산출하지 않았습니다 — "
                     "청구 총액에 안 들어 있습니다 "
                     "(한전 기본공급약관 제67조의3 제1항).",
-                    fact="quality.over_contract",
+                    fact=OVER_CONTRACT_FACT,
                 )
             )
         threshold = contract.threshold_kw
@@ -819,7 +825,7 @@ def calculate_bill(
                     f"계약전력 {opts.contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 "
                     "있습니다. 경부하 초과는 요금적용전력에 영향을 주지 않지만 "
                     f"초과사용부가금 대상입니다 — {tail}",
-                    fact="quality.over_contract",
+                    fact=OVER_CONTRACT_FACT,
                 )
             )
     if not opts.prior_peaks and not base_on_contract and not school:

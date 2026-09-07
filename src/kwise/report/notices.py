@@ -18,6 +18,7 @@ __all__ = [
     "TENTATIVE_BASE_FEE_BASIS_WARNING",
     "TRUNCATION_FOOTNOTE",
     "UNPRICED_REASONS",
+    "excess_not_measured_line",
     "format_mwh",
     "format_won",
     "plain_text",
@@ -36,7 +37,9 @@ from kwise.rules import diff_from_defaults
 from kwise.tariff import (
     AMI_BASIS_NOTICE,
     NOT_INCLUDED_NOTICE,
+    OVER_CONTRACT_FACT,
     TENTATIVE_BASE_FEE_BASIS_WARNING,
+    BillingResult,
 )
 
 #: 기준 데이터가 출고값 그대로일 때의 문구.
@@ -154,6 +157,25 @@ UNPRICED_REASONS: dict[str, str] = {
 #: 벗긴다. 화면이 물결표를 escape 하는 것(:func:`kwise.ui.text.markdown_safe`)과
 #: 같은 자리·같은 이유다.
 _MARKDOWN_MARKS = re.compile(r"\*\*|__|`")
+
+
+def excess_not_measured_line(bill: BillingResult) -> str:
+    """초과사용부가금을 **「안 쟀다」** 고 말하는 한 줄 (S143 1절). 없으면 빈 글자열.
+
+    **문장을 새로 짓지 않는다.** 요금 엔진이 이미 내는 안내
+    (:data:`~kwise.tariff.OVER_CONTRACT_FACT`)를 그대로 뽑는다 — 화면 진단
+    블록과 Excel 요약 시트 안내 블록은 안내를 통째로 실어 그 문장을 이미
+    적는데, **PPT 와 Word 는 안내를 통째로 싣는 자리가 없어** 초과가 나는데
+    안 잰 벌과 초과가 없어 정말 0원인 벌이 **열 자리에서 한 글자도 다르지
+    않았다** (S143 1절이 값으로 봤다 · 결함 유형 ②).
+
+    **가르는 것은 금액의 진위가 아니라** :attr:`~kwise.tariff.ExcessCharge.
+    applicable` 이다. 두 벌 다 부가금이 0원이라 금액으로는 갈릴 수가 없다 —
+    이것이 `src\\` 에서 그 값을 읽는 첫 자리다 (S142 2절에 0곳이었다).
+    """
+    if bill.excess.applicable:
+        return ""
+    return next((item.text for item in bill.notices if item.fact == OVER_CONTRACT_FACT), "")
 
 
 def plain_text(value: str) -> str:

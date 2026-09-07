@@ -56,6 +56,7 @@ from kwise.report.notices import (
     AMI_BASIS_NOTICE,
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
+    excess_not_measured_line,
     format_mwh,
     plain_text,
     rules_basis_line,
@@ -1367,7 +1368,16 @@ def _build_structure(
     #
     # **줄이 하나 늘었으므로 `_note_top` 에도 같이 넘긴다** (60세션 1절).
     # 한쪽에만 주면 각주가 두 줄로 흐르면서 그림 덩어리를 밑에서 밀어 올린다.
-    notes = (note, AMI_BASIS_NOTICE)
+    # **안 잰 벌에서는 지표 칸에 부가금이 없는 까닭을 셋째 줄이 말한다**
+    # (S143 1절). 그 칸은 **금액의 진위**로 서므로 초과가 나는데 안 잰 벌과
+    # 초과가 없어 정말 0원인 벌이 이 장에서 한 글자도 다르지 않았다 — 화면과
+    # Excel 은 안내를 통째로 실어 그 사실을 적는데 덱만 안 적고 있었다.
+    # 문장은 요금 엔진이 낸 것 그대로다 (새 어휘를 짓지 않는다).
+    #
+    # **줄이 하나 더 늘 수 있으므로 `notes` 한 자리에만 적는다** — 아래
+    # `_note_top` 과 `_note` 가 둘 다 이것을 받는다.
+    not_measured = excess_not_measured_line(sections.bill)
+    notes = (note, AMI_BASIS_NOTICE, *((not_measured,) if not_measured else ()))
     gap = geometry.block_gap_in
     left_width = geometry.content_width_in * 0.56
     right_width = geometry.content_width_in - left_width - gap
