@@ -70,6 +70,7 @@ __all__ = [
     "NO_SAVING",
     "ContractAdjustment",
     "ContractStatus",
+    "covering_contract_kw",
     "evaluate_contract_adjustment",
     "target_contract_kw",
 ]
@@ -133,8 +134,21 @@ def target_contract_kw(
     """
     values = [float(value) for value in monthly_demand_kw.values()]
     saturating = math.floor(min(values) / floor_ratio / step_kw + 1e-9) * step_kw
-    covering = math.ceil(observed_max_kw / step_kw - 1e-9) * step_kw
-    return max(saturating, covering)
+    return max(saturating, covering_contract_kw(observed_max_kw, step_kw))
+
+
+def covering_contract_kw(observed_max_kw: float, step_kw: float = 1.0) -> float:
+    """**관측 최대 아래로는 안 내린다** — 그 아래는 초과사용부가금 대상이다.
+
+    :func:`target_contract_kw` 의 「보전」 항이고, **계약전력 기준 종별
+    (제68조 ②)에서는 그것이 곧 목표다** (S142 3절) — 그 종별에는 하한이 없어
+    포화 항이 서지 않고, 기본요금이 계약전력에 그대로 붙으므로 관측 최대 바로
+    위가 가장 싼 값이다. 두 갈래가 같은 선을 쓰므로 **자리를 하나로 둔다.**
+
+    ``1e-9`` 을 빼고 올리는 까닭과 :func:`kwise.tariff.demand.round_kw` 와
+    못 모으는 까닭은 :func:`target_contract_kw` 에 적혀 있다.
+    """
+    return math.ceil(observed_max_kw / step_kw - 1e-9) * step_kw
 
 
 MARGIN_NOTICE = (
@@ -519,8 +533,53 @@ def evaluate_contract_adjustment(
         )
 
     if ratio is None:
-        # **차단이다.** 하한 비율이 없는 종별은 기본요금이 계약전력에 붙는 쪽이고
-        # (제68조 제2항), 그쪽은 아래 재계산의 전제 자체가 서지 않는다.
+        # **하한 비율이 없는 것은 두 뜻이다.** 계약전력 기준 종별(제68조 ②)이라
+        # 하한이 아예 없는 것이거나, 요금적용전력 기준인데 요금표에 그 비율이
+        # 빠진 것이다 — 엔진이 앞쪽을 `tariff.tentative_base_fee_basis`,
+        # 뒤쪽을 `tariff.floor_ratio_missing` 으로 갈라 적는다.
+        #
+        # **앞쪽은 목표를 낼 수 있다** (S142 3절 · ②-32). 그 종별은 기본요금이
+        # 계약전력에 그대로 붙으므로 계약전력을 관측 최대 바로 위까지 내리면
+        # 그 비율만큼 곧장 준다 — 114세션이 세운 규칙 「초과 0 안에서 총액
+        # 최저」 가 하한 비율을 안 쓰기 때문에 이 갈래에서도 그대로 선다.
+        #
+        # **가르는 잣대는 값이다** — 계약전력 기준이면 달마다의 기본요금 기준
+        # 전력이 모두 계약전력이라 그 평균도 계약전력이다. 요금표만 비어 있는
+        # 종별은 여기서 안 걸려 아래 「미확인」 으로 그대로 간다.
+        on_contract = math.isclose(bill.mean_base_demand_kw, contract_kw, rel_tol=1e-9)
+        covering = covering_contract_kw(max_demand, step_kw)
+        if on_contract and covering < contract_kw:
+            # **기본요금은 계약전력에 선형이다.** 산식을 여기 다시 적지 않고
+            # 비율로 옮긴다 — 엔진이 만든 값 하나가 밑이다 (⑭·⑳ 이 뿌리에서
+            # 두 번 돋은 그 모양을 피한다).
+            adjusted_base = bill.total_base_won * (covering / contract_kw)
+            # 역률요금은 그 달 기본요금에 대한 비율이라 함께 준다 (제43조 ②) —
+            # 아래 하한 갈래가 쓰는 것과 **같은 식**이다.
+            saving = (bill.total_base_won - adjusted_base) * (1.0 + bill.power_factor.total_ratio)
+            return ContractAdjustment(
+                status=ContractStatus.CONFIRMED,
+                contract_kw=contract_kw,
+                billing_demand_kw=billing_demand,
+                demand_before_floor_kw=before_floor,
+                max_demand_kw=max_demand,
+                over_contract_slots=over_slots,
+                contract_floor_ratio=None,
+                floor_kw=None,
+                target_contract_kw=covering,
+                current_base_won=bill.total_base_won,
+                adjusted_base_won=adjusted_base,
+                saving_won=saving,
+                annual_saving_won=annualize(saving, bill.base_fee_months),
+                saving_basis=(
+                    "기본요금이 계약전력에 붙는 종별이라 "
+                    f"계약전력을 관측 최대 위 {covering:,.0f} kW 로 내린 값과의 차"
+                ),
+                notices=tuple(notices),
+            )
+        # **차단이다.** 목표를 낼 수 없는 나머지 — 요금표에 하한 비율만 빠진
+        # 종별이거나, 관측 최대가 이미 계약전력 위라 **내릴 자리가 없는** 판이다
+        # (그 판은 하향이 아니라 상향 검토 대상이고 `contract.over_limit` 이
+        # 그렇게 적는다).
         notices.append(block(_UNKNOWN_NOTICE, fact="contract.floor_unknown"))
         return ContractAdjustment(
             status=ContractStatus.UNKNOWN,

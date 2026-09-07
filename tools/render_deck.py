@@ -143,6 +143,26 @@ CASES: tuple[Case, ...] = (
         sigungu=REGION,
     ),
     Case(
+        # **계약전력 기준 종별에서 초과가 나는 유일한 벌** (S142 3절).
+        # `small-a` 에서 **계약전력 하나만** 갈았다 — 200 kW 가 관측 최대
+        # 264.68 kW 아래라 초과 구간 5,076건이 서고, 그 종별은 제67조의3 ①
+        # 갈래라 부가금을 **산출하지 않는다.** 「0원」 과 「안 쟀다」 가 산출물
+        # 여섯에서 같은 모양이던 자리이고(S142 2절), 이 벌이 없으면 그 갈래가
+        # 실물에 한 번도 안 선다 — `large-b-short` 가 을에서 하는 일과 같다.
+        # 갑Ⅰ 은 계약전력 300 kW 미만이므로(기본공급약관 제57조 ②·④)
+        # 200 kW 는 성립하는 수다.
+        key="small-a-short",
+        title="소형 · 일반용(갑)Ⅰ 고압A · 계약전력 부족 200 kW",
+        csv=SMALL_CSV,
+        contract_type="general_a_1",
+        voltage="high_a",
+        option="",
+        contract_kw=200.0,
+        area_m2=1_000.0,
+        building_name="소형 사무빌딩(갑)",
+        sigungu=REGION,
+    ),
+    Case(
         key="large-b-over",
         title="대형 · 일반용(을) 고압A 선택Ⅰ · 계약전력 과다 20,000 kW",
         csv=LARGE_CSV,

@@ -58,6 +58,7 @@ from kwise.measures import (
 from kwise.measures.contract import (
     CONTRACT_AT_OBSERVED_MAX_NOTICE,
     TYPE_THRESHOLD_FACT,
+    covering_contract_kw,
     target_contract_kw,
 )
 from kwise.notices import texts
@@ -390,6 +391,57 @@ def test_floor_below_the_demand_yields_no_saving(
     )
     assert result.saving_won == pytest.approx(0.0)
     assert any("걸리지 않아" in note for note in texts(result.notices))
+
+
+def test_계약전력_기준_종별에서도_목표_계약전력을_낸다(tmp_path: Path, tariff: TariffTable) -> None:
+    """**하한 비율이 없다고 목표까지 없는 것이 아니다** (S142 3절 · ②-32).
+
+    제68조 ② 종별(갑Ⅰ·산업용(갑)Ⅰ·교육용(갑) 저압)은 하한 비율이 없어
+    ``ContractStatus.UNKNOWN`` 으로 빠지고 있었다 — 그런데 그 갈래는 기본요금이
+    **계약전력에 그대로 붙으므로** 관측 최대 바로 위까지 내리면 그 비율만큼
+    곧장 준다. 114세션의 규칙 「초과 0 안에서 총액 최저」 는 하한 비율을 안
+    쓰기 때문에 여기서도 그대로 선다.
+
+    **절감액을 식으로 맞대지 않는다** — 목표 계약전력으로 **요금 엔진을 다시
+    돌려** 그 기본요금과 맞댄다. 식을 여기 다시 적으면 실물이 갈려도 시험은
+    제 식으로 통과한다 (118세션이 ``.map(round_kw)`` 를 손으로 넣은 그 자국).
+
+    **초과가 나는 판은 여전히 안 낸다** — 그 판의 목표는 하향이 아니라 상향이라
+    성격이 다르고, 그 자리는 아직 열려 있다(미해결 「초과가 나는 벌에서 계약전력
+    조정이 목표도 부가금 금액도 안 낸다」). 여기서 함께 지킨다.
+    """
+    usage = load_usage(write_month(tmp_path / "flat.csv", 2023, 7, kwh=25.0))
+    selection = TariffSelection("general_a_1", "low", "single")
+    contract_kw = 150.0
+    options = BillingOptions(contract_kw=contract_kw)
+    bill = calculate_bill(usage, tariff, selection, options=options)
+    assert bill.contract_floor_ratio is None, "하한이 없는 종별이라야 이 갈래를 지난다"
+
+    result = evaluate_contract_adjustment(usage, bill, contract_kw=contract_kw)
+    assert result.status is ContractStatus.CONFIRMED
+    assert result.contract_floor_ratio is None
+    assert result.target_contract_kw == covering_contract_kw(usage.observed_max_kw)
+    # **관측 최대 아래로는 안 내린다** — 그 아래는 초과사용부가금 대상이다.
+    assert result.target_contract_kw is not None
+    assert result.target_contract_kw >= usage.observed_max_kw
+    assert result.target_contract_kw < contract_kw
+
+    then = calculate_bill(
+        usage,
+        tariff,
+        selection,
+        options=BillingOptions(contract_kw=result.target_contract_kw),
+    )
+    assert result.adjusted_base_won == pytest.approx(then.total_base_won)
+    assert result.saving_won == pytest.approx(bill.total_base_won - then.total_base_won)
+
+    # **초과가 나는 판은 그대로 「미확인」 이다.** 관측 최대가 계약전력 위다.
+    short_kw = usage.observed_max_kw * 0.8
+    short_options = BillingOptions(contract_kw=short_kw)
+    short_bill = calculate_bill(usage, tariff, selection, options=short_options)
+    short = evaluate_contract_adjustment(usage, short_bill, contract_kw=short_kw)
+    assert short.status is ContractStatus.UNKNOWN
+    assert short.target_contract_kw is None
 
 
 def test_목표는_가장_작은_달을_하한비율로_나눈_값이다(

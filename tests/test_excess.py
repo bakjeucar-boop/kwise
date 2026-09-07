@@ -170,6 +170,47 @@ def test_계약전력_기준_종별에는_이_구간표를_쓰지_않는다(
     assert bill.total_excess_won == 0.0
 
 
+def test_안_쟀다는_사실이_실물_문구에_선다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """**「0원」 과 「안 쟀다」 를 화면이 가른다** (S142 3절).
+
+    ``applicable`` 은 그 사실을 들고 있었으나 **읽는 자리가 `src\\` 에 0곳**이라
+    산출물 여섯이 전부 금액의 진위만 봤다 — 초과가 나는데 안 잰 벌과 초과가
+    없어 정말 0원인 벌이 한 글자도 다르지 않았다 (S142 2절이 값으로 봤다).
+    결함 유형 ②(뜨지 않는 경고는 없는 경고와 같다).
+
+    **말하는 자리는 `quality.over_contract` 안내 하나다.** 여기서 무는 것은
+    ① 그 갈래에서 실제로 뜨는가 · ② 「산출하지 않았다」 를 적는가 ·
+    ③ 요금적용전력 기준 갈래의 같은 사실 ID 와 **다른 말을 하는가** 셋이다.
+    """
+    contract_kw = 3_000.0
+
+    def _over_contract(selection: TariffSelection) -> str:
+        bill = calculate_bill(
+            sample_usage,
+            tariff,
+            selection,
+            options=BillingOptions(contract_kw=contract_kw),
+            quality=sample_report,
+        )
+        texts = [n.text for n in bill.notices if n.fact == "quality.over_contract"]
+        assert len(texts) == 1, f"{selection} 에서 안내가 {len(texts)}개다 — {texts}"
+        return texts[0]
+
+    # ① 계약전력 기준 종별 — 안 쟀다고 적는다.
+    on_contract = _over_contract(TariffSelection("general_a_1", "high_a", "I"))
+    assert "산출하지 않았습니다" in on_contract
+    assert "총액에 안 들어 있습니다" in on_contract
+
+    # ② 요금적용전력 기준 종별 — 금액을 총액에 넣었다고 적는다.
+    on_demand = _over_contract(TariffSelection("general_b", "high_a", "I"))
+    assert "청구 총액에 넣었습니다" in on_demand
+
+    # ③ **둘이 같은 말을 하면 안 된다.** 같아지는 순간 화면은 다시 못 가른다.
+    assert on_contract != on_demand
+
+
 def test_요금_구성이_합계와_맞는다(
     sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
 ) -> None:

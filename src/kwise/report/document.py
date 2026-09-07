@@ -425,6 +425,18 @@ def _contract_conclusion(contract: ContractAdjustment) -> str:
             f"{contract.target_contract_kw:,.0f} kW 로 낮추면 그만큼 기본요금이 줄어듭니다."
         )
     if contract.floor_kw is None:
+        # **하한이 없어도 목표는 있을 수 있다** (S142 3절 · ②-32). 계약전력
+        # 기준 종별(제68조 ②)은 기본요금이 계약전력에 그대로 붙으므로 관측
+        # 최대 바로 위까지 내리면 그 비율만큼 곧장 준다 — 목표와 절감액이
+        # 이미 같은 장에 그려져 있는데 이 줄만 「알 수 없습니다」 로 나가고
+        # 있었다 (`small-a` 에서 265 kW · 3,011,000원 옆에 그 문장이 섰다).
+        # 결함 유형 ①. **갈래가 배타적이라 한 판에 한 줄만 뜬다.**
+        if contract.target_contract_kw is not None:
+            return (
+                "기본요금이 계약전력에 붙는 종별이라 계약전력을 "
+                f"{contract.contract_kw:,.0f} → {contract.target_contract_kw:,.0f} kW 로 "
+                "낮추면 그만큼 기본요금이 줄어듭니다."
+            )
         return f"계약전력 {contract.contract_kw:,.0f} kW 의 하한 비율을 알 수 없습니다."
     return (
         f"계약전력 {contract.contract_kw:,.0f} kW 는 이미 적정합니다. 하한 "
