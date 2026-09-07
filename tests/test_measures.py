@@ -61,6 +61,7 @@ from kwise.measures.contract import (
     covering_contract_kw,
     target_contract_kw,
 )
+from kwise.money import won
 from kwise.notices import texts
 from kwise.pv import ArrayConfig, PvSystemConfig
 from kwise.quality import QualityReport
@@ -1240,6 +1241,43 @@ def test_후보가_최대수요_아래면_안_넘는다(
     assert result.no_saving
     assert result.saving_won == pytest.approx(0.0)
     assert "contract.floor_not_binding" in [item.fact for item in result.notices]
+
+
+def test_초과가_나는_벌에서_상향_목표와_몫을_적는다(
+    sample_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**초과가 나는 판에서 카드에 수가 하나도 없었다** (S143 2절).
+
+    `large-b-short`(을 고압A 선택Ⅰ · 계약전력 4,000 kW · 관측 최대 5,293.44 kW)
+    는 하한이 어느 달에도 안 걸려 목표가 ``None`` 이고 절감액이 0원이다 —
+    낮출 자리가 없는 것은 맞지만 **올릴 자리는 있다.** 114세션 규칙
+    「초과사용부가금이 0 인 값 가운데 총액 최저」 는 방향을 안 가리므로 이
+    갈래에서도 그대로 서고, 그 값이 관측 최대 바로 위 **5,294 kW** 다.
+
+    **몫은 총액 차이다.** 이 벌에서는 하한(계약전력의 30% = 1,588.2 kW)이
+    올라가도 요금적용전력 5,293 kW 아래라 기본요금이 한 원도 안 늘고,
+    **부가금 122,451,200원만 사라진다** — 그래서 몫이 부가금 전액과 같다.
+    """
+    selection = TariffSelection("general_b", "high_a", "I")
+    options = BillingOptions(contract_kw=4_000.0)
+    bill = calculate_bill(sample_usage, tariff, selection, options=options)
+    assert bill.total_excess_won > 0, "부가금이 서는 벌이어야 한다"
+
+    result = evaluate_contract_adjustment(
+        sample_usage, bill, contract_kw=4_000.0, table=tariff, options=options
+    )
+    assert result.target_contract_kw is None, "낮출 자리는 없는 판이다"
+
+    text = next(item.text for item in result.notices if item.fact == "contract.over_limit")
+    assert "5,294 kW" in text, f"상향 목표가 카드에 없다 — {text}"
+
+    # 몫이 부가금 전액과 같다 — 기본요금이 안 늘어나는 벌이다.
+    lifted = calculate_bill(
+        sample_usage, tariff, selection, options=BillingOptions(contract_kw=5_294.0)
+    )
+    assert lifted.total_excess_won == 0.0
+    assert bill.total_won - lifted.total_won == pytest.approx(bill.total_excess_won)
+    assert won(bill.total_excess_won, reason=NO_SAVING) in text, f"몫이 카드에 없다 — {text}"
 
 
 def test_목표가_현행과_같으면_낮출_자리가_없다(tariff: TariffTable) -> None:

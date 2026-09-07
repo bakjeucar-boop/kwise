@@ -434,6 +434,47 @@ def _crossed_quote(
     )
 
 
+def _over_limit_saving_won(
+    usage: UsageData,
+    bill: BillingResult,
+    table: TariffTable | None,
+    options: BillingOptions | None,
+    *,
+    target_kw: float,
+    contract_kw: float,
+) -> float | None:
+    """초과가 0 이 되는 계약전력에서 **총액이 얼마나 주는가.** 못 재면 ``None``.
+
+    **총액 차이다** — 계약전력을 올리면 초과사용부가금이 사라지는 대신
+    요금적용전력 하한(계약전력 × 비율)이 함께 올라 기본요금이 늘 수 있다.
+    기본요금 몫만 내면 그 둘 가운데 하나가 빠진다. 종별을 넘는 갈래
+    (:func:`_crossed_quote`)가 총액 차이를 내는 것과 같은 까닭이다.
+
+    **재지 못하는 자리 셋에서 ``None`` 이다.**
+
+    * 요금 데이터를 안 받았다 — 다시 계산할 수가 없다.
+    * ``ExcessCharge.applicable`` 이 거짓이다 — 계약전력 기준 종별(제68조 ②)은
+      부가금을 **산출하지 않으므로**(제67조의3 ①) 사라질 몫이 도구에 없다.
+      그 종별에서 계약전력을 올리면 기본요금만 늘어 **총액이 오른다** —
+      「올리면 준다」 는 그 자리에서 거짓이다.
+    * 차가 0 이하다 — 하한이 올라 기본요금 증가가 부가금을 먹는 판이다.
+      **없는 절감을 적지 않는다.**
+
+    현행 쪽은 ``bill`` 을 그대로 쓴다 — 이 함수의 부르는 쪽이 ``options`` 를
+    「``bill`` 을 계산할 때 쓴 것과 같은 것」 으로 받기 때문이다. 그 약속이
+    깨진 판(계약전력이 서로 다르다)에서는 **재지 않는다.**
+    """
+    if table is None or options is None or not bill.excess.applicable:
+        return None
+    if options.contract_kw is None or not math.isclose(options.contract_kw, contract_kw):
+        return None
+    lifted = calculate_bill(
+        usage, table, bill.selection, options=replace(options, contract_kw=target_kw)
+    )
+    saving = bill.total_won - lifted.total_won
+    return saving if saving > 0 else None
+
+
 def _retune_selection(
     usage: UsageData,
     table: TariffTable,
@@ -524,10 +565,29 @@ def evaluate_contract_adjustment(
     notices: list[Notice] = []
     if over_slots:
         # 1단계 진단이 내는 것과 **같은 사실**이다 (diagnose\contract.py).
+        #
+        # **얼마로 올려야 하는지와 그 몫을 같은 문장이 적는다** (S143 2절).
+        # 앞서는 「상향·초과 위약 검토 대상입니다」 로 끝나 **수가 하나도
+        # 없었다** — `large-b-short`(을 4,000 kW · 초과 5,050건)에서 몫이
+        # 122,451,200원인데 어느 산출물도 그 값을 안 냈다. 114세션 규칙
+        # 「초과사용부가금이 0 인 값 가운데 총액 최저」 가 방향을 안 가리므로
+        # **이 갈래에서도 그대로 선다** — 초과가 0 이 되는 가장 작은 계약전력이
+        # :func:`covering_contract_kw` 고, 그 위로는 하한이 걸릴 때까지 총액이
+        # 같으므로 동점 규칙(현행에 가장 가까운 값)이 그 값을 고른다.
+        #
+        # **문장을 더하지 않고 값을 채운다** — 안내 항목 수가 안 는다
+        # (S142 가 `quality.over_contract` 에 한 것과 같은 꼴이다).
+        covering = covering_contract_kw(max_demand, step_kw)
+        lifted = _over_limit_saving_won(
+            usage, bill, table, options, target_kw=covering, contract_kw=contract_kw
+        )
+        tail = f" 초과가 0 이 되는 계약전력은 {covering:,.0f} kW 입니다."
+        if lifted is not None:
+            tail += f" 그 계약전력에서 총액이 {won(lifted, reason=NO_SAVING)} 줍니다."
         notices.append(
             warn(
                 f"계약전력 {contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 있습니다. "
-                "하향이 아니라 상향·초과 위약 검토 대상입니다.",
+                "하향이 아니라 상향·초과 위약 검토 대상입니다." + tail,
                 fact="contract.over_limit",
             )
         )

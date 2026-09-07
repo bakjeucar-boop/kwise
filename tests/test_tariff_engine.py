@@ -1315,3 +1315,55 @@ def test_실측_소형_학교의_특례_전후가_91세션_값과_같다(tariff:
         3_343_181.0, abs=1.0
     )
     assert over_plain.total_won - over_special.total_won == pytest.approx(8_599_334.0, abs=1.0)
+
+
+#: 종별 문턱 안내의 사실 ID.
+_THRESHOLD_FACT = "tariff.contract_type_threshold"
+
+
+def _threshold_note(
+    usage: UsageData, tariff: TariffTable, selection: TariffSelection, contract_kw: float
+) -> str:
+    hits = [
+        item.text
+        for item in bill(usage, tariff, selection, contract_kw=contract_kw).notices
+        if item.fact == _THRESHOLD_FACT
+    ]
+    assert len(hits) <= 1, f"{selection} 에서 안내가 {len(hits)}개다 — {hits}"
+    return hits[0] if hits else ""
+
+
+def test_종별_문턱_안내가_전_종별에서_선다(tariff: TariffTable) -> None:
+    """**갈래가 `base_on_contract` 안에 갇혀 있었다** (S143 2절).
+
+    요금표는 종별마다 ``threshold_kw`` 와 ``threshold_direction`` 을 든다 —
+    갑Ⅰ·갑Ⅱ 는 300 kW **미만**, 을은 300 kW **이상**이다. 그런데 안내가
+    기본요금을 계약전력으로 매기는 갈래 **안**에 있어 을·갑Ⅱ·교육용(갑)
+    고압에서는 뜰 수가 없었다 — 덱 벌 `small-a2-was` 가 **갑Ⅱ 700 kW**,
+    곧 요금표가 스스로 금지하는 조합인데 한 마디도 안 했다 (결함 유형 ②).
+
+    **방향도 함께 문다.** 앞 식은 ``>= threshold`` 하나에 「미만」 을 말로 박아
+    두어 ``above`` 종별에서 뜻이 뒤집혔다 — 을은 300 kW 아래가 어긋나는 쪽이다.
+    """
+    if not _OFFICE_CASE.is_file():
+        pytest.skip(f"실측 파일이 없습니다: {_OFFICE_CASE}")
+    usage = load_usage(_OFFICE_CASE)
+
+    # ① 계약전력 기준 종별 — 앞서도 서던 갈래다. 문구가 안 바뀌어야 한다.
+    on_contract = _threshold_note(
+        usage, tariff, TariffSelection("general_a_1", "high_a", "I"), 700.0
+    )
+    assert "300 kW 미만 종별인데 계약전력이 700 kW" in on_contract
+
+    # ② 요금적용전력 기준 종별 — **여기가 안 서던 자리다.**
+    below = _threshold_note(usage, tariff, TariffSelection("general_a_2", "high_a", "II"), 700.0)
+    assert "300 kW 미만 종별인데 계약전력이 700 kW" in below
+
+    # ③ 방향이 뒤집힌 종별 — 을은 300 kW **이상**이다.
+    above = _threshold_note(usage, tariff, TariffSelection("general_b", "high_a", "I"), 200.0)
+    assert "300 kW 이상 종별인데 계약전력이 200 kW" in above
+
+    # ④ 경계 안이면 안 뜬다.
+    a2 = TariffSelection("general_a_2", "high_a", "II")
+    assert _threshold_note(usage, tariff, a2, 290.0) == ""
+    assert _threshold_note(usage, tariff, TariffSelection("general_b", "high_a", "I"), 300.0) == ""

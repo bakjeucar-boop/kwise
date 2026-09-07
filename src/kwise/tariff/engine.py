@@ -48,6 +48,8 @@ from kwise.tariff.schema import (
     TariffDataError,
     TariffSelection,
     TariffTable,
+    threshold_text,
+    within_type_threshold,
 )
 from kwise.tariff.school import (
     school_discount_rates_by_month,
@@ -767,15 +769,6 @@ def calculate_bill(
                     fact=OVER_CONTRACT_FACT,
                 )
             )
-        threshold = contract.threshold_kw
-        if threshold is not None and (opts.contract_kw or 0.0) >= threshold:
-            notices.append(
-                warn(
-                    f"{contract.label} 은 계약전력 {threshold:,.0f} kW 미만 종별인데 "
-                    f"계약전력이 {opts.contract_kw:,.0f} kW 입니다. 종별을 확인하십시오.",
-                    fact="tariff.contract_type_threshold",
-                )
-            )
     elif type_floor_ratio is None:
         notices.append(
             basis(
@@ -828,6 +821,31 @@ def calculate_bill(
                     fact=OVER_CONTRACT_FACT,
                 )
             )
+    # **종별 문턱은 갈래 밖에서 본다** (S143 2절). 앞서 이 검사는 위
+    # ``if base_on_contract:`` **안**에 있어 계약전력 기준 종별(갑Ⅰ·산업용(갑)Ⅰ·
+    # 교육용(갑) 저압)에서만 섰다 — 을·갑Ⅱ·교육용(갑) 고압은 `elif` 로 빠져
+    # **요금표가 스스로 금지하는 조합인데 한 마디도 안 했다**(덱 벌
+    # `small-a2-was` 가 갑Ⅱ 700 kW 다. 갑Ⅱ 는 300 kW **미만** 종별이다).
+    # 결함 유형 ②(만든 갈래가 실물에 한 번도 안 섰다).
+    #
+    # **방향도 요금 데이터가 정한다.** 앞 식은 `>= threshold` 하나에 「미만」 을
+    # 말로 박아 두어 `above` 종별(을·교육용(을))에서 **뜻이 뒤집힌다** — 을은
+    # 300 kW **이상**이라 어긋나는 것은 그 아래다. 판정과 어휘를 요금표 쪽
+    # 함수 둘에 맡긴다.
+    threshold = contract.threshold_kw
+    if (
+        opts.contract_kw is not None
+        and threshold is not None
+        and not within_type_threshold(opts.contract_kw, threshold, contract.threshold_direction)
+    ):
+        notices.append(
+            warn(
+                f"{contract.label} 은 계약전력 "
+                f"{threshold_text(threshold, contract.threshold_direction)} 종별인데 "
+                f"계약전력이 {opts.contract_kw:,.0f} kW 입니다. 종별을 확인하십시오.",
+                fact="tariff.contract_type_threshold",
+            )
+        )
     if not opts.prior_peaks and not base_on_contract and not school:
         # **근거다.** 요금적용전력이 왜 그 값인지 설명한다 — 툴팁과 보고서로 간다.
         # 25세션에 코드 식별자(``prior_peaks=``)와 요구사항서 번호를 걷어냈다.
