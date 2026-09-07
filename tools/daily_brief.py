@@ -499,7 +499,10 @@ def build() -> str:
     lines.append(f"# 지금 상태 — HEAD {head}{mark}")
     lines.append(f"  {clip(subject)}")
     if items:
-        lines.append(f"  미해결 {total_items(items)}건")
+        # 글자 수는 **「미해결」 칸의 raw 셀 그대로**를 센다 — 마크다운 기호를
+        # 포함하고 다른 칸은 안 본다 (S139 0절). 세는 자리를 여기 하나로 못
+        # 박은 까닭은 판마다 손으로 세어 세 판이 서로 다른 수를 냈기 때문이다.
+        lines.append(f"  미해결 {total_items(items)}건 · 칸 {len(state.get('미해결', '')):,}자")
     # **행이 사라지면 어느 행인지 말한다** (72세션 3절). 68세션 장치는 미해결이
     # 0건일 때만 걸려, 70세션에 「다음 작업」 이 사라졌을 때는 아무 소리도 안 났다.
     for name in unread_rows(body):
