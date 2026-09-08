@@ -3462,7 +3462,12 @@ def test_덱은_벌마다_제_좌표로_태양광을_돌린다() -> None:
     # **강릉이 아닌 벌이 있어야 이 시험이 무엇을 잡는다.** 전부 강릉이면
     # 상수를 먹여도 통과한다 — 뜨지 않는 갈래는 없는 갈래와 같다.
     off = [case for case in render_deck.CASES if case.sigungu != render_deck.REGION]
-    assert [case.key for case in off] == ["small-a2", "small-a2-was", "small-ind-a2"]
+    assert [case.key for case in off] == [
+        "small-a2",
+        "small-a2-was",
+        "small-ind-a1",
+        "small-ind-a2",
+    ]
 
 
 # ================================================= 60세션 12절 — T6 판정을 집행한다
