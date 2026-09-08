@@ -284,7 +284,8 @@ class CaseStudy:
                 "항목": "기상 캐시 적중",
                 "값": (
                     f"{len(self.results) - self.weather_calls}/{len(self.results)} "
-                    "(C1~C8 은 좌표·기간이 같아 첫 건만 취득한다. 실측은 따로 선다)"
+                    "(C1~C8 은 좌표·기간이 같아 첫 건만 취득한다. "
+                    "실측 R1~R3 도 서로 같아 그중 첫 건만 취득한다)"
                 ),
             }
         )
@@ -298,10 +299,12 @@ class CaseStudy:
 
 
 def build_case_definitions(directory: Path) -> tuple[CaseDefinition, ...]:
-    """``input\\cases\\`` 의 여섯과 **그 밖의 둘**로 케이스 정의를 만든다.
+    """``input\\cases\\`` 의 여섯과 **그 밖의 다섯**으로 케이스 정의를 만든다.
 
     **C4 만 산업용(을)이다** — 봄·가을 주말 할인 특례를 태우기 위해서다.
-    **R1 만 실측이고 갑Ⅱ 다** (95세션 0절).
+    **실측은 R1~R3 셋이고 종별이 저마다 다르다** (95세션 0절 · S150 4절) —
+    일반용(갑)Ⅱ · 산업용(갑)Ⅱ · 산업용(갑)Ⅰ 저압. **R3 만 계약전력 기준**
+    이라 그 갈래가 회귀에 서는 유일한 자리다.
     **C7 만 계약전력이 관측 최대 아래다** (S128). 둘 다 자료가 ``input\\``
     바로 아래에 있으므로 ``directory`` 의 어버이에서 찾는다.
     """
@@ -375,6 +378,47 @@ def build_case_definitions(directory: Path) -> tuple[CaseDefinition, ...]:
             contract_type="general_a_2",
             option="II",
             note="실측 (61세션). 갑Ⅱ 경로가 회귀에 서는 유일한 자리다",
+            region_key=YONGIN_REGION_KEY,
+            contract_kw=YONGIN_CONTRACT_KW,
+            contract_is_actual=True,
+        )
+    )
+
+    # **R2·R3 은 R1 에서 종별만 갈았다** (S150 4절). 자료도 계약전력도 용인
+    # 실측 그대로이므로 **R** 이다 — S128 이 세운 잣대에서 가르는 것은 자료가
+    # 아니라 조건이고(C7 은 자료가 실측인데 계약전력 4,000 kW 가 지어낸 값이라
+    # C 다), 이 둘은 계약전력까지 그 건물이 실제로 쓰는 290 kW 다.
+    #
+    # **올린 근거는 S142 의 잣대 하나다 — 「덱에만 있고 회귀에 없다」.**
+    # S150 2·3절이 덱 벌 `small-ind-a2`·`small-ind-a1` 을 세웠고, 그러면
+    # 산업용(갑)Ⅰ·Ⅱ 경로가 회귀에는 한 벌도 없는 종별로 남는다.
+    #
+    # **R3 은 저압이다** — 산업용(갑)Ⅰ 고압 행은 제59조 ⑤ 의 저압계량 예외
+    # 경로이고, 저압 행이 본래 자리다. 290 kW 는 약관 제23조 ②(저압 공급은
+    # 계약전력 500kW 미만)와 제59조 ② 1호(4kW 이상 300kW 미만) 둘 다 안쪽이다.
+    # 저압 행의 선택요금은 `single` 하나뿐이라 고압의 Ⅰ·Ⅱ 를 쓸 수 없다.
+    definitions.append(
+        CaseDefinition(
+            key="R2",
+            name="용인 실측 산업갑Ⅱ",
+            usage_path=yongin,
+            contract_type="industrial_a_2",
+            option="II",
+            note="실측 (S150). 산업용(갑)Ⅱ 경로가 회귀에 서는 유일한 자리다",
+            region_key=YONGIN_REGION_KEY,
+            contract_kw=YONGIN_CONTRACT_KW,
+            contract_is_actual=True,
+        )
+    )
+    definitions.append(
+        CaseDefinition(
+            key="R3",
+            name="용인 실측 산업갑Ⅰ저압",
+            usage_path=yongin,
+            contract_type="industrial_a_1",
+            voltage="low",
+            option="single",
+            note="실측 (S150). 계약전력 기준 종별이 회귀에 서는 유일한 자리다",
             region_key=YONGIN_REGION_KEY,
             contract_kw=YONGIN_CONTRACT_KW,
             contract_is_actual=True,

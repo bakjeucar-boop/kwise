@@ -2,7 +2,7 @@
 
 **타당성 판정이 하나라도 실패하면 계산 오류다.** 여기서 막는다.
 
-케이스 아홉(C1~C8 + 실측 R1)을 다 돌리면 100초쯤 걸린다. 회귀에서는
+케이스 열하나(C1~C8 + 실측 R1~R3)를 다 돌리면 180초쯤 걸린다. 회귀에서는
 **판정 결과만** 확인하고, 케이스 생성·경계 케이스는 가벼운 경로로 따로 본다.
 """
 
@@ -94,19 +94,25 @@ def weather_cache_state(case_dir: Path) -> WeatherCacheState:
 
 @pytest.fixture(scope="module")
 def study(case_dir: Path, tariff: TariffTable, weather_cache_state: WeatherCacheState) -> CaseStudy:
-    """케이스 아홉 × PV 4단계 × 감도 3종. **순차로 돈다.**"""
+    """케이스 열하나 × PV 4단계 × 감도 3종. **순차로 돈다.**"""
     return run_case_study(build_case_definitions(case_dir), tariff)
 
 
 # --------------------------------------------------------------------- 케이스 정의
 
 
-def test_six_synthetic_cases_and_one_measured(case_dir: Path) -> None:
-    """C4 만 산업용(을)이고 **R1 만 실측이자 갑Ⅱ 다**.
+def test_six_synthetic_cases_and_three_measured(case_dir: Path) -> None:
+    """C4 만 산업용(을)이고 **실측은 R1~R3 셋인데 종별이 저마다 다르다**.
 
     C4 는 봄·가을 주말 할인 특례를 태우려고 갈랐고, R1 은 갑Ⅱ 경로를 회귀에
     세우려고 붙였다 (95세션 0절) — C1~C6 는 `general_b`·`industrial_b` 라
     **갑Ⅱ 가 매 판 확인되는 자리가 없었다.**
+
+    **R2·R3 은 S150 에 붙었다.** 산업용(갑)Ⅱ·(갑)Ⅰ 이 덱에만 있고 회귀에는
+    없던 종별이라 같은 잣대(「덱에만 있고 회귀에 없다」)로 올렸다. 자료도
+    계약전력도 R1 과 같은 용인 실측이라 **갈리는 것은 종별과 전압뿐**이고,
+    그래서 C 가 아니라 R 이다. **R3 만 계약전력 기준**(`industrial_a_1` ·
+    저압)이라 그 갈래가 회귀에 서는 유일한 자리다.
 
     **C7 은 S128 에 붙었다** (②-32). 초과사용부가금이 실제로 서는 유일한
     벌이고, **자료는 실측이고 계약전력만 합성이다** — 그래서 R 이 아니라 C 다.
@@ -125,15 +131,24 @@ def test_six_synthetic_cases_and_one_measured(case_dir: Path) -> None:
         "C7",
         "C8",
         "R1",
+        "R2",
+        "R3",
     ]
     industrial = [item.key for item in definitions if item.contract_type == "industrial_b"]
     assert industrial == ["C4"]
     type_a_2 = [item.key for item in definitions if item.contract_type == "general_a_2"]
     assert type_a_2 == ["R1"]
+    # **산업용 갑 둘은 서로 다른 종별이다** (S150 4절). 한 종별에 둘이 서면
+    # 남은 하나가 회귀에서 통째로 빠진 것이라 여기서 걸린다.
+    assert [item.key for item in definitions if item.contract_type == "industrial_a_2"] == ["R2"]
+    assert [item.key for item in definitions if item.contract_type == "industrial_a_1"] == ["R3"]
 
-    # **좌표가 갈리는 것은 R1 하나다.** 나머지는 사전 취득분 격자에 걸리는 한
+    # **좌표가 갈리는 것은 실측 셋이다.** 나머지는 사전 취득분 격자에 걸리는 한
     # 좌표를 나눠 쓴다 — C7 도 여기 든다(기상 요청이 늘지 않는 까닭이다).
-    assert {item.region_key for item in definitions if item.key != "R1"} == {CASE_REGION_KEY}
+    measured_keys = {"R1", "R2", "R3"}
+    assert {item.region_key for item in definitions if item.key not in measured_keys} == {
+        CASE_REGION_KEY
+    }
 
     # **계약전력을 박는 벌은 둘이고, 그 뜻이 다르다.** R1 은 실제 값이고 C7 은
     # 지어낸 값이다 — `contract_kw` 가 있느냐로 가르면 C7 이 「실제 값」 으로
@@ -141,18 +156,19 @@ def test_six_synthetic_cases_and_one_measured(case_dir: Path) -> None:
     assumed = [item.key for item in definitions if item.contract_kw is None]
     assert assumed == ["C1", "C2", "C3", "C4", "C5", "C6", "C8"]
     actual = [item.key for item in definitions if item.contract_is_actual]
-    assert actual == ["R1"]
+    assert actual == ["R1", "R2", "R3"]
 
-    measured = next(item for item in definitions if item.key == "R1")
-    assert measured.region_key == "경기도/용인시"
-    assert measured.contract_kw == 290.0  # 이 건물이 실제로 쓰는 계약전력
+    for key in ("R1", "R2", "R3"):
+        measured = next(item for item in definitions if item.key == key)
+        assert measured.region_key == "경기도/용인시"
+        assert measured.contract_kw == 290.0  # 이 건물이 실제로 쓰는 계약전력
     short = next(item for item in definitions if item.key == "C7")
     assert short.contract_kw == 4_000.0  # 지어낸 값. 덱 벌 `large-b-short` 와 같다
     assert not short.contract_is_actual
 
-    # **역률을 박는 벌은 C8 하나다.** 나머지 여덟은 `None` 이라 약관 제42조의
+    # **역률을 박는 벌은 C8 하나다.** 나머지 열은 `None` 이라 약관 제42조의
     # 간주값(92%)이고 역률요금이 정확히 0원이다 — 그래서 「기본요금」 정의가
-    # 갈려도 그 여덟에서는 값이 한 자리도 안 움직인다 (S141 이 값으로 봤다).
+    # 갈려도 그 열에서는 값이 한 자리도 안 움직인다 (S141 이 값으로 봤다).
     lagging = {item.key: item.power_factor_pct for item in definitions}
     assert lagging["C8"] == 85.0
     assert [key for key, value in lagging.items() if value is not None] == ["C8"]
@@ -221,9 +237,10 @@ def test_케이스_스터디가_하한_갈래를_C6_에서_돈다(
     보는 이 못으로 옮겼다.** 안 도는 갈래를 세던 자리가 이제 **도는 갈래를
     센다.**
 
-    하한이 이기는 벌은 케이스 아홉 가운데 **C6 하나뿐이다** (107세션 2절 ㄴ ·
-    S128 에 C7 이, S142 에 C8 이 붙고도 그대로다 — C7 의 하한 1,200 kW 는 대상
-    수요 아래이고, C8 은 C1 과 계약전력이 같다).
+    하한이 이기는 벌은 케이스 열하나 가운데 **C6 하나뿐이다** (107세션 2절 ㄴ ·
+    S128 에 C7 이, S142 에 C8 이, S150 에 R2·R3 이 붙고도 그대로다 — C7 의 하한
+    1,200 kW 는 대상 수요 아래이고, C8 은 C1 과 계약전력이 같으며, R2·R3 은 R1 과
+    계약전력이 같아 하한 87 kW 가 최대수요 132.28 kW 에 진다).
     경부하가 요금적용전력 산정에서 빠지므로 대상 수요(2,801.0 kW)가 계약전력
     하한(12,012.7 × 30% = 3,603.81 kW) **아래**에 있다 — 그래서 열세 달이
     전부 걸린다.
@@ -412,7 +429,9 @@ def test_synthetic_cases_share_one_weather_request(
 
     **둘째 요청은 실측(R1)이다** (95세션 0절). 좌표(용인)도 기간(2025-08~2026-08)도
     합성과 다르므로 요청이 하나 더 서는 것이 정상이다 — **하나로 돌아가면 실측이
-    합성 좌표로 계산되고 있다는 뜻**이라 여기서 걸린다.
+    합성 좌표로 계산되고 있다는 뜻**이라 여기서 걸린다. **R2·R3 은 R1 과 좌표·
+    기간이 같아 요청이 안 는다** (S150 4절) — 늘면 종별만 갈았어야 할 벌이
+    자료나 좌표까지 갈렸다는 뜻이다.
     """
     assert weather_cache_state.requests == 2
 
@@ -427,11 +446,11 @@ def test_case_study_runs_sequentially_and_hits_the_weather_cache(
     캐시 상태에서 기대값을 끌어오므로 **찬 캐시에서도 더운 캐시에서도 같은
     성질을 잰다** — 취득은 요청 하나당 많아야 한 번이다.
 
-    캐시가 고장 나면 아홉 케이스가 저마다 취득해 9 가 되고, 여기서 걸린다.
+    캐시가 고장 나면 열한 케이스가 저마다 취득해 11 이 되고, 여기서 걸린다.
     """
     assert study.weather_calls == weather_cache_state.cold
     assert study.weather_calls <= weather_cache_state.requests
-    assert len(study.results) == 9
+    assert len(study.results) == 11
     assert study.elapsed_sec > 0
 
 
