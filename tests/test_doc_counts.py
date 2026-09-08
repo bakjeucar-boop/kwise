@@ -174,6 +174,19 @@ def _deck_cases() -> int:
     return len(render_deck.CASES)
 
 
+def _live_nails() -> int:
+    """살아 있는 xfail 못 수 — ``tests\\`` 전수에서 **데코레이터 줄**을 센다 (S147 6절).
+
+    **글자 `xfail` 로 세지 않는다.** 걷힌 못을 적은 주석·독스트링이 일곱 자리에
+    있어 그렇게 세면 0 이 아니라 7 이 나온다. 데코레이터는 줄 앞에 서므로
+    ``^\\s*@pytest.mark.xfail`` 만 센다 — 인용은 줄 가운데 있어 안 걸린다.
+    """
+    return sum(
+        len(re.findall(r"^\s*@pytest\.mark\.xfail", path.read_text(encoding="utf-8"), re.MULTILINE))
+        for path in (PROJECT_ROOT / "tests").rglob("*.py")
+    )
+
+
 def _open_items() -> int:
     """미해결 건수 — 갈래 머리말이 말하는 수의 합 (``tools\\daily_brief.py`` 와 같은 자리).
 
@@ -259,6 +272,10 @@ COUNTS: tuple[tuple[str, Callable[[], int], str], ...] = (
     # S138 3절 — 세 판이 「열하나」·「열둘」·「열넷」 을 서로 다른 칸에 적고 있었다.
     # **고유어를 못이 못 무므로 문서 쪽을 숫자 꼴로 맞췄다** (앵커 때와 같다).
     ("덱 벌 수", _deck_cases, r"덱 벌\s*\*{0,2}(\d[\d,]*)\*{0,2}\s*벌"),
+    # S147 6절 — 「살아 있는 못」 행이 **「0건」 인 채로 남는 것**을 막는다. 못이
+    # 하나 서는 순간 그 행이 거짓이 되는데 앞서는 사람이 세어 보고서야 알았다
+    # (S145·S146 이 그 행을 두고 두 판을 썼다).
+    ("살아 있는 못 수", _live_nails, r"살아 있는 못[^\n]{0,20}?\*{0,2}(\d[\d,]*)\*{0,2}\s*건"),
 )
 
 
