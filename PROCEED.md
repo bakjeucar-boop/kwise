@@ -638,6 +638,7 @@ docstring 안의 인용이다(`^\s*@pytest.mark.xfail` 로 좁히면 0곳).
 | `docs\TEST_DATA.md` | **7절 신설** — 산업용(갑)저압 실측 등재 |
 | `docs\BILL_CHECK.md` | **5-5 신설** — 두 실측을 나란히 뒀다 |
 | `docs\directives\S152.md` | 이 판 지시서 |
+| `docs\HANDOVER.md` | **신설** — 다음 창이 통째로 붙일 인수인계 (6절) |
 | `output\casestudy_20260908.xlsx` | 케이스 스터디 실행으로 덮였다 (값 불변) |
 
 **`src\`·`tests\`·`tools\`·`data\` 는 한 줄도 안 고쳤다.**
