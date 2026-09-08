@@ -484,6 +484,42 @@ def test_pv_lowers_the_daytime_power_factor() -> None:
     assert power_factor_after_pct(load, load * 0.0, power_factor_pct=92.0) == pytest.approx(92.0)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="S153 2절 — 역률 100 에서 후 역률이 100 을 넘어 lagging_adjustment_ratio 가 죽는다. "
+    "고치는 것은 다음 판이다 (멈춤 규칙).",
+)
+def test_역률_100_에서도_후_역률이_100_을_안_넘는다() -> None:
+    """**역률 100 갈래가 회귀에 한 번도 안 섰다** (S153 2절이 처음 세웠다).
+
+    케이스 열하나가 전부 92(간주) 아니면 85 라 이 자리가 안 뜬 채 남아 있었다.
+    덱 벌 ``small-ind-a1`` 을 청구서 값(역률 100)으로 갈아 끼우자 그 자리에서
+    화면이 통째로 죽었다 —
+
+        ValueError: 역률은 0~100% 여야 합니다: 100.00000000000001
+
+    뿌리는 :func:`power_factor_after_pct` 의 마지막 줄이다. 역률이 100 이면
+    ``tan(acos(1.0))`` 이 0 이라 무효전력이 0 이 되고, 그러면 마지막 줄이
+    ``100.0 * after / hypot(after, 0.0)`` 곧 **100 을 float 로 다시 만드는 식**이
+    된다. 그 나눗셈이 언제나 정확히 100.0 을 내지는 않는다 — ``after`` 를
+    0.001~200.000 kW 로 20만 점 훑으면 **27,111점(13.6%)** 이 100.0 이 아니고
+    갈래는 둘이다(``100.00000000000001`` · ``99.99999999999999``).
+
+    **넘는 쪽만 죽는다** — :func:`lagging_adjustment_ratio` 의 문이
+    ``0 < pct <= 100`` 이라 위로 넘친 ulp 하나가 예외가 되고, 아래로 모자란
+    쪽은 조용히 지나가며 아주 작은 감액 차이를 남긴다.
+
+    **한 점이 아니라 곡선이라 사실상 언제나 죽는다** — 태양광은 용량마다
+    이 계산을 다시 하므로 점 하나만 넘쳐도 화면이 멈춘다.
+
+    **이 판은 안 고쳤다** (S153 멈춤 규칙 · 계산은 이 판의 범위 밖이다).
+    """
+    index = pd.date_range("2024-03-04 00:15", periods=96, freq="15min")
+    load = pd.Series(0.007, index=index)
+    zero = pd.Series(0.0, index=index)
+    assert power_factor_after_pct(load, zero, power_factor_pct=100.0) <= 100.0
+
+
 def test_generation_outside_the_window_does_not_move_the_factor() -> None:
     """판정 창은 08~22시다. 창 밖 발전은 주간 지상역률에 영향이 없다."""
     index = pd.date_range("2024-03-04 00:15", periods=96, freq="15min")
