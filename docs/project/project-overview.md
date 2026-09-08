@@ -204,8 +204,19 @@ ESS 최소 용량 · 잉여 발생량과 시간대 분포. 연간 발전량·자
 안 보기 때문이다 (`src\kwise\io\usage.py`). 관측 최대까지 접으면 부하율이 조용히
 갈린다 — 그래서 안 접는다.
 
-**케이스 스터디 132/132 통과** (`tools\run_casestudy.py`).
-회귀값 셋은 케이스 스터디가 매번 확인한다.
+**케이스 스터디 132/132 통과** (`tools\run_casestudy.py`) — **그것이 지키는
+것은 단조·대소지 위 값이 아니다.** 판정 132건에 회귀값을 무는 것이 **0건**이고
+(`src\kwise\report\validity.py`), 절대값을 보는 자리는 0·±1%·1.0%·1e-9 같은
+**구조 상수**뿐이다. **「132/132 통과」 를 회귀 보증으로 읽지 마라** — 그 말의
+뜻은 「관계가 안 뒤집혔다」 다 (S149 2절).
+
+**위 값을 값으로 무는 것은 pytest 다** — 대형 넷은 `tests\test_diagnose.py` 의
+`test_peak_timestamp_matches_appendix_b`(5,293.44 kW) ·
+`test_billing_demand_follows_the_12_month_rule`(5,293 kW) ·
+`test_diagnose_works_without_contract_info`(49.0%) ·
+`test_charge_structure_shares_add_up`(13.5%), 용인 넷은
+`tests\test_casestudy.py` 의
+`test_용인_실측_회귀값이_그대로다_청구서_118kW_와는_다른_계열이다` 한 자리다.
 
 **90 이 104 가 된 것은 95세션에 용인 실측(R1)이 붙었기 때문이다** — 케이스
 하나가 판정 열넷을 낸다(기본 4 · 감도 3 · 수단 3 · ESS 4). 교차 판정 여섯은
