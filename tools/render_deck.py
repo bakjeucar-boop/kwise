@@ -360,6 +360,30 @@ CASES: tuple[Case, ...] = (
         sigungu=REGION,
     ),
     Case(
+        key="small-ind-a2",
+        title="용인 소규모 · 산업용(갑)Ⅱ 고압A 선택Ⅱ · 계약전력 290 kW",
+        csv=YONGIN_XLSX,
+        contract_type="industrial_a_2",
+        voltage="high_a",
+        option="II",
+        # **`small-a2` 에서 종별 한 칸만 갈았다** (S150 2절). 자료도 계약전력도
+        # 용인 실측 그대로이므로 **갈리는 값은 전부 종별에서 온다** — 단가가
+        # 일반용 8,230 원/kW 에서 산업용 7,470 원/kW 로 바뀌고 시간대 단가도
+        # 산업용 행을 탄다. 기본요금 기준은 둘 다 `billing_demand` 라 같다.
+        #
+        # **290 kW 는 성립하는 수다** — 산업용전력(갑)은 계약전력 4kW 이상
+        # 300kW 미만이고(기본공급약관 제59조 ② 1호) 고압A 는 표준전압 3,300V
+        # 이상 66,000V 이하 고객이다. 고압 고객이 갑Ⅱ 를 적용받는 것도 같은
+        # 조의 ⑤ 가 못을 박은 원칙이다.
+        #
+        # **선택요금은 둘뿐이다** — 일반용(갑)Ⅱ 는 Ⅰ~Ⅳ 인데 산업용(갑)Ⅱ 는
+        # Ⅰ·Ⅱ 이고 `transition`(선택Ⅲ·Ⅳ 로의 이행)이 없다 (S150 1절 표).
+        contract_kw=290.0,
+        area_m2=1_000.0,
+        building_name="용인 소규모 공장(산업용 갑Ⅱ)",
+        sigungu="경기도/용인시",
+    ),
+    Case(
         key="large-ind-b",
         title="대형 · 산업용(을) 고압A 선택Ⅰ",
         csv=LARGE_CSV,
