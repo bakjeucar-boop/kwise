@@ -175,5 +175,5 @@ S143 3절이 이름으로 다시 세운 표다. **판 번호로 무엇이 닫았
 - 60세션 항목 B — `DocumentSections.diagnosis` 를 필수로 바꿀 것인가
 - ESS 차익거래 운전 전략
 - 교육용(을)·산업용(을) 벌을 케이스 스터디에 올릴지
-- `data\source\` 의 줄끝을 `.gitattributes` 로 고정할지
+- `data\source\` 와 `PROCEED.md` 의 줄끝을 어떻게 둘지
 - `CLAUDE.md` 9항 1번 PC 의 `-n 4` 두 칸이 「모름」 인데 잴 것인지가 안 적혀 있다
