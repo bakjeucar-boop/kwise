@@ -544,8 +544,18 @@ $app.Quit()
 
 
 def export_png(pptx: Path, outdir: Path) -> bool:
-    """PowerPoint COM 으로 1600×900 png 를 뽑는다. 없으면 ``False``."""
+    """PowerPoint COM 으로 1600×900 png 를 뽑는다. 없으면 ``False``.
+
+    **뽑기 전에 낡은 png 를 지운다** (S156 2-3). PowerPoint 는 장마다 파일
+    하나를 덮어쓸 뿐 **남는 것을 안 지운다** — 20장짜리 벌을 뽑았던 폴더에
+    19장짜리를 뽑으면 스무 번째가 그대로 남아 세는 자리가 **19장을 20장이라
+    찍는다.** 수만 틀리는 것이 아니라 **낡은 장이 새 장처럼 열린다.**
+    """
     outdir.mkdir(parents=True, exist_ok=True)
+    for stale in outdir.iterdir():
+        # 라벨(`_이_덱은.txt`)은 남긴다 — 곧 새로 쓰인다.
+        if stale.suffix.lower() == ".png":
+            stale.unlink()
     script = _EXPORT_PS1.format(pptx=str(pptx.resolve()), outdir=str(outdir.resolve()))
     try:
         done = subprocess.run(
