@@ -61,6 +61,7 @@ from kwise.report.notices import (
 )
 from kwise.report.worksheet import Worksheet
 from kwise.tariff import BillingResult, TariffTable
+from kwise.tariff.labels import option_label
 
 __all__ = [
     "DEFAULT_OUTPUT_DIR",
@@ -331,7 +332,14 @@ def measure_summary_frame(
     if switch is not None:
         rows.append(
             {
-                "수단": f"선택요금 전환 ({switch.current.selection} → {switch.best.selection})",
+                # **`TariffSelection.__str__` 은 `종별/전압/선택` 이라 셀에
+                # 코드 열쇠가 그대로 나갔다** (S156 3-3). 전환은 **현행 종별·
+                # 전압 안에서만** 고르므로(`evaluate_tariff_switch`) 양쪽에서
+                # 갈리는 것은 선택요금 하나다 — 그것만 이름으로 적는다.
+                "수단": (
+                    f"선택요금 전환 ({option_label(switch.current.selection.option)} → "
+                    f"{option_label(switch.best.selection.option)})"
+                ),
                 "투자비(원)": format_won(0.0),
                 "절감액(원)": format_won(switch.saving_won),
                 "12개월 환산(원)": format_won(switch.annual_saving_won),

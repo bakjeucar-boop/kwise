@@ -587,7 +587,8 @@ def test_traceability_is_reported(sample_bill: BillingResult) -> None:
     """산출물에 적용 근거를 표기한다 (5.8)."""
     lines = sample_bill.traceability()
     assert any("2026-06-01 시행" in line for line in lines)
-    assert any("일반용전력(을) 고압A 선택I" in line for line in lines)
+    # **로마자 Ⅰ 이다** (S156 3-3) — 요금표는 `I` 로 담고 청구서는 `Ⅰ` 로 적는다.
+    assert any("일반용전력(을) 고압A 선택Ⅰ" in line for line in lines)
     assert any("7,220 원/kW" in line for line in lines)
 
 
@@ -1093,7 +1094,7 @@ def test_전환기간_요금은_선택Ⅰ_과_선택Ⅲ_중_낮은_쪽이다(tmp
     assert on_i.total_won == pytest.approx(3_687_643.2)
     # **고른 선택요금은 안 바뀐다** — 바뀌는 것은 그 기간에 청구되는 금액뿐이다.
     assert on_i.selection == A2_OPTION_I
-    assert "선택I" in "".join(on_i.traceability())
+    assert "선택Ⅰ" in "".join(on_i.traceability())  # 로마자 Ⅰ (S156 3-3)
     # 짝 쪽은 자동 비교를 받지 않는다. 짝의 짝이 없어 재귀가 한 번에 멈춘다.
     assert on_iii.transition_months == ()
     # **든 자리에 그 사실을 낸다.** 조문·부칙 번호는 매뉴얼로 간다.

@@ -62,7 +62,7 @@ from kwise.report.notices import (
     rules_basis_line,
 )
 from kwise.report.worksheet import COLUMNS
-from kwise.tariff.labels import SEASON_LABELS
+from kwise.tariff.labels import SEASON_LABELS, option_label
 
 __all__ = [
     "ANNUAL_BASIS_NOTE",
@@ -1017,7 +1017,8 @@ def _build_cover(
         guide,
         [
             sections.building,
-            f"{bill.contract_label} {bill.voltage_label} 선택{bill.selection.option}",
+            # **열쇠를 날로 적지 않는다** (S156 3-3) — 표지에 「선택single」 이 섰다.
+            f"{bill.contract_label} {bill.voltage_label} {option_label(bill.selection.option)}",
             f"분석 기간 {bill.period_start:%Y-%m-%d} ~ {bill.period_end:%Y-%m-%d}"
             f" · 작성일 {sections.prepared:%Y-%m-%d}",
         ],
@@ -1096,7 +1097,10 @@ def _build_building(
     rows = [
         ["항목", "내용"],
         ["건물명", sections.building],
-        ["계약종별", f"{bill.contract_label} {bill.voltage_label} 선택{bill.selection.option}"],
+        [
+            "계약종별",
+            f"{bill.contract_label} {bill.voltage_label} {option_label(bill.selection.option)}",
+        ],
         [
             "분석 기간",
             f"{bill.period_start:%Y-%m-%d} ~ {bill.period_end:%Y-%m-%d}"

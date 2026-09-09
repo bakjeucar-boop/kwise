@@ -794,15 +794,17 @@ def measure_entries(
     entries: dict[str, MeasureEntry] = {}
 
     if switch is not None:
-        now_option = switch.current.selection.option
-        best_option = switch.best.selection.option
+        # **열쇠를 날로 적지 않는다** (S156 3-3). 앞서는 `f"선택{option}"` 이라
+        # 저압 산업용 갑Ⅰ 에서 「선택single」 이 결론 문장으로 나갔다.
+        now_option = option_label(switch.current.selection.option)
+        best_option = option_label(switch.best.selection.option)
         entries["tariff_switch"] = MeasureEntry(
             kind=measure_kind("tariff_switch"),
             conclusion=(
-                f"선택{now_option} → 선택{best_option} 로 바꾸면 "
+                f"{now_option} → {best_option} 로 바꾸면 "
                 f"{_won(switch.saving_won)} 줄어듭니다."
                 if switch.switch_needed
-                else f"현행 선택{now_option} 이 이미 최선입니다. 바꿀 이유가 없습니다."
+                else f"현행 {now_option} 이 이미 최선입니다. 바꿀 이유가 없습니다."
             ),
             saving=_measure_saving(switch.annual_saving_won, switch.saving_won),
             saving_annual=_annual_saving(switch.annual_saving_won, switch.saving_won),
@@ -1392,7 +1394,10 @@ def _cover(document: DocumentType, sections: DocumentSections) -> None:
             ],
             ["작성일", f"{sections.prepared:%Y-%m-%d}"],
             ["적용 요금표 시행일", f"{bill.effective_date}"],
-            ["계약종별", f"{bill.contract_label} {bill.voltage_label} 선택{bill.selection.option}"],
+            [
+        "계약종별",
+        f"{bill.contract_label} {bill.voltage_label} {option_label(bill.selection.option)}",
+    ],
         ],
     )
     document.add_page_break()

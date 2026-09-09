@@ -287,7 +287,11 @@ class BillingResult:
         """산출물에 넣을 적용 근거 (5.8)."""
         return (
             f"적용 요금표: {self.effective_date} 시행",
-            f"계약종별: {self.contract_label} {self.voltage_label} 선택{self.selection.option}",
+            # **열쇠를 날로 적지 않는다** (S156 3-3). `f"선택{option}"` 은 `single`
+            # 을 「선택single」 로 내보내고 `I` 도 로마자가 아닌 ASCII 로 적는다 —
+            # 표기 규약은 `option_label` 한 자리다.
+            f"계약종별: {self.contract_label} {self.voltage_label} "
+            f"{option_label(self.selection.option)}",
             f"기본요금 단가: {self.base_rate_won_per_kw:,.0f} 원/kW",
             f"계절·시간대 구분: {self.tariff_label}",
             f"적용 역률: 주간(08~22시) 지상 {self.power_factor.lagging_pct:.1f}%, "

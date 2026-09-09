@@ -277,7 +277,9 @@ def test_summary_carries_the_traceability_lines(
         assert label in summary_text, label
         assert value in summary_text, line
     assert "2026-06-01 시행" in summary_text
-    assert "일반용전력(을) 고압A 선택I" in summary_text
+    # **로마자 Ⅰ 이다** (S156 3-3). 앞서는 ASCII `I` 였다 — `f"선택{option}"` 이
+    # 요금표의 열쇠를 그대로 적었기 때문이고, 표기 규약은 `option_label` 이다.
+    assert "일반용전력(을) 고압A 선택Ⅰ" in summary_text
 
 
 def test_summary_carries_the_not_included_notice(summary_text: str) -> None:
