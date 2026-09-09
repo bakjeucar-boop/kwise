@@ -18,7 +18,7 @@
 | `HEAD` | **`git rev-parse HEAD` 로 본다** — 이 문서를 담은 커밋보다 **뒤**에 마감 커밋이 온다. **수를 박지 않는다** | S153 0-1 이 그 병을 잡았다 |
 | `origin/master` | `HEAD` 와 같다 | S157 4절 |
 | 출발점 | `a02c42b` (S156 마감) · 작업 트리 **깨끗** | S157 0절 |
-| 덱 벌 | **17** — 정본은 `render_deck.CASES` 길이다. `grep 'key="'` 는 **18**(`app.button(key="build_ppt")` 가 섞인다) | S157 4-5 · **두 방법으로 쟀다** |
+| 덱 벌 | **17** — 정본은 `render_deck.CASES` 길이다(`BY_KEY` 도 17). `key="` 는 **18**(`app.button(key="build_ppt")` 가 섞인다) · `key=` 는 **20**(`region_key=`·`key=lambda` 가 더 섞인다) | S158 4-2 · **세 방법으로 쟀다** |
 | 케이스 벌 | **11** (C1~C8 · R1~R3) | `build_case_definitions` · S154 1-5 |
 | 요금표 | `data\tariff_kr_20260601.json` 하나 · `schema_version` 은 그 파일에서 읽는다 | S153 0-3 |
 | **이 판이 만진 것** | `tools\capture_screen.py` · `tests\test_deployment.py` · `docs\` 넷(`CAPTURES.md` · `OPEN_ITEMS.md` · `SCREEN_WORDING_S157.md` **새 파일** · `directives\S157.md`) · `HANDOVER.md` · `PROCEED.md` | S157 |
