@@ -1094,6 +1094,14 @@ def _build_building(
     # 자료가 얼마나 성한지는 그 표를 **읽는 데 붙는 단서**이지 제목 다음에 와야
     # 할 결론이 아니다. 표가 그만큼 넓게 앉는다.
     note = narrative.building_lead(quality)
+    # **12개월 미만 경고를 PPT 도 낸다** (S156 4-1). Excel 은 「요금」 안내로,
+    # Word 는 부록 참고로 같은 사실을 싣는데 **PPT 만 0건이었다** — 덱은
+    # 수단 카드의 주의사항(`_cautions`)으로만 안내를 실어서 요금 쪽 안내가
+    # 어느 장에도 못 앉았다. **문구를 새로 짓지 않는다** — 계산 모듈이 낸 글을
+    # 그대로 꺼내 이 장 각주에 얹는다. 분석 기간을 적는 장이 여기다.
+    short_period = next(
+        (item.text for item in bill.notices if item.fact == "quality.short_period"), ""
+    )
     rows = [
         ["항목", "내용"],
         ["건물명", sections.building],
@@ -1134,12 +1142,12 @@ def _build_building(
         top=top,
         width=geometry.content_width_in,
         height=min(
-            _table_room_above(guide, top=top, note_top=_note_top(guide, note)),
+            _table_room_above(guide, top=top, note_top=_note_top(guide, note, short_period)),
             0.44 * len(rows),
         ),
         widths=(0.26, 0.74),
     )
-    _note(slide, guide, note)
+    _note(slide, guide, note, short_period)
 
 
 def _build_usage_pattern(
@@ -1424,7 +1432,14 @@ def _build_structure(
         slide,
         guide,
         figures.monthly_charge_png(structure, size=WIDE_FIGURE),
-        "월별 요금 구성 — 기본요금은 직전 12개월 최대수요로 정해져 매달 같습니다.",
+        # **이름을 고쳐서 푼다** (S156 4-2). 「직전 12개월 최대수요」 는
+        # 요금적용전력 기준 종별의 말이라 **계약전력으로 매기는 갑Ⅰ·갑Ⅱ 에서
+        # 거짓이다** — `small-ind-a1` 은 다섯 달 다 계약전력 75 kW 로 매겨진다.
+        # **값은 옳고 이름만 어긋났다** (S154 2-2 가 값으로 갈랐다). 같은 장의
+        # 각주가 이미 쓰는 「기본요금 기준전력」 이 두 갈래에서 다 참이고,
+        # `columns.py` 의 `base_demand_kw` · `worksheet.py` · 용어집이 함께 쓰는
+        # 이름이다 — 새 문구를 짓지 않고 그 이름으로 맞춘다.
+        "월별 요금 구성 — 기본요금은 기준전력으로 매겨져 매달 같습니다.",
         left=geometry.margin_in,
         top=chart_top,
         width=left_width,
@@ -2074,7 +2089,7 @@ def _build_combination(
             size=scale.body,
             color=colors.ink,
         )
-        rows = [["조합", "절감액"], ["—", "—"]]
+        rows = [["조합", "기간 절감액"], ["—", "—"]]
         _table(
             slide,
             guide,
@@ -2119,7 +2134,14 @@ def _build_combination(
         color=colors.ink,
     )
     table_top = top + 0.42 + 0.62 + gap
-    rows = [["조합", "절감액", "회수기간"]]
+    # **기준을 이름이 말한다** (S156 4-4). 이 장은 `saving_won`(분석 기간 값)을
+    # 쓰는데 「개선안별 요약」 장은 12개월 환산값을 쓰고 :data:`ANNUAL_BASIS_NOTE`
+    # 로 그 사실을 적는다 — 한 덱 안에서 **기준이 다른 두 수가 라벨 없이 나란히**
+    # 섰다. `small-ind-a1`(122일)에서 갈림이 세 배쯤 된다. Excel 은 열 이름
+    # 둘(「절감액(원)」·「12개월 환산 절감액(원)」)로 가르고 Word 는 한 칸에 함께
+    # 적는데 **PPT 만 안 갈랐다.** 각주를 하나 더 두지 않고 **이름을 고친다** —
+    # 「기간 평균 / 연평균」 을 가르는 `frames.py` 의 규약과 같은 꼴이다.
+    rows = [["조합", "기간 절감액", "회수기간"]]
     rows.extend(
         [item.name, _won(item.saving_won), _payback(item.payback_years, item.investment_won)]
         for item in comparison.combinations
@@ -2154,7 +2176,7 @@ def _build_combination(
         slide,
         guide,
         [
-            ("총 절감액", _won(best.saving_won)),
+            ("기간 총 절감액", _won(best.saving_won)),
             ("투자비", slide_investment(_won(best.investment_won))),
             ("회수기간", _payback(best.payback_years, best.investment_won)),
         ],
@@ -2167,7 +2189,7 @@ def _build_combination(
         slide,
         guide,
         figures.combination_png(comparison),
-        "조합별 절감액과 투자비",
+        "조합별 기간 절감액과 투자비",
         left=right_left,
         top=chart_top,
         width=half,

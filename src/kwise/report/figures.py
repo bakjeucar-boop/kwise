@@ -1053,12 +1053,19 @@ def monthly_charge_png(
     colors = {"기본요금": marks.base_fee} | marks.band | {"초과사용부가금": marks.increase}
     parts = {name: colors[name] for name in monthly_charge_parts(structure)}
 
+    # **단위를 자료의 크기가 고른다** (S156 4-3). 억원 고정은 대형 사업장의
+    # 단위다 — `small-ind-a1` 은 달마다 200만원대라 눈금이
+    # 「0.0000 ~ 0.0200 억원」 이 되어 **넷째 자리를 세어야 금액을 읽는다.**
+    # 값은 안 갈린다. 가장 큰 달이 1억을 넘으면 억원, 아니면 만원이다.
+    highest = float(frame["합계(원)"].max()) if len(frame) else 0.0
+    scale, unit = (1e8, "억원") if highest >= 1e8 else (1e4, "만원")
+
     figure, axes = plt.subplots(figsize=size or _SIZE)
     bottom = np.zeros(len(months))
     for part, color in parts.items():
         values = np.array(
             [
-                float(frame[(frame["월"] == month) & (frame["구분"] == part)]["원"].sum()) / 1e8
+                float(frame[(frame["월"] == month) & (frame["구분"] == part)]["원"].sum()) / scale
                 for month in months
             ]
         )
@@ -1066,7 +1073,7 @@ def monthly_charge_png(
         bottom += values
     axes.set_xticks(list(positions))
     axes.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
-    axes.set_ylabel("요금 (억원)")
+    axes.set_ylabel(f"요금 ({unit})")
     add_legend(axes)
     return render_png(figure)
 

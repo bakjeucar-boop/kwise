@@ -253,8 +253,10 @@ def _with_warnings(report: QualityReport) -> QualityReport:
         # **주의** — 연간 환산 결과의 신뢰도가 달라진다.
         messages.append(
             warn(
-                f"기간이 {report.period_days:.0f}일로 12개월 미만입니다. "
-                "연간 환산 결과에 경고를 붙여야 합니다.",
+                # **일수를 여기 다시 적지 않는다** (S156 4-5) — `:.0f` 가 반올림이라
+                # 364.99 가 「365일」 로 찍혀 문장이 제 말을 부정했다. 일수는 기간을
+                # 적는 자리가 이미 말한다.
+                "분석 기간이 12개월 미만입니다. 연간 환산 결과에 경고를 붙여야 합니다.",
                 fact="quality.short_period",
             )
         )
