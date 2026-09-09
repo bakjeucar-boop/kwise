@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
@@ -126,6 +127,21 @@ def _weather_grids() -> int:
 
 def _test_functions(name: str) -> int:
     return len(re.findall(r"^def test_", _read(f"tests/{name}"), re.MULTILINE))
+
+
+def _mypy_files() -> int:
+    """맨 ``mypy`` 가 검사하는 파일 수 — ``files=`` 세 뿌리의 ``.py``.
+
+    **뿌리를 여기 적지 않는다** — ``pyproject.toml`` 에서 읽는다. 뿌리가
+    늘면 이 못이 함께 따라간다.
+    """
+    roots = tomllib.loads(_read("pyproject.toml"))["tool"]["mypy"]["files"]
+    return sum(
+        1
+        for root in roots
+        for path in (PROJECT_ROOT / root).rglob("*.py")
+        if "__pycache__" not in path.parts
+    )
 
 
 def _manual_sections() -> int:
@@ -267,6 +283,11 @@ COUNTS: tuple[tuple[str, Callable[[], int], str], ...] = (
         _engine_branch_files,
         r"아래\s*(\d[\d,]*)\s*파일",
     ),
+    # S159 0-2절 — 미해결 「맨 `mypy` 가 `checked 168` 인데 「현재 상태」 는 169 라
+    # 적는다」 가 전제 뒤집힘으로 닫힌 자리다. **못을 지운 자리에 못을 세운다** —
+    # 뿌리 수와 「현재 상태」 의 「169파일」 이 갈리면 그때 빨개진다. 세 판(S151·
+    # S152·S158)이 사람 눈으로 재고 있었다.
+    ("mypy 검사 파일 수", _mypy_files, r"그대로\s*\*{0,2}(\d[\d,]*)\*{0,2}파일"),
     # S131 2절 — 「다음 작업」 칸이 「미해결 59건」 이라 적고 있었는데 실물은 63 이었다.
     ("미해결 건수", _open_items, r"미해결\s*(\d[\d,]*)\s*건"),
     # S138 3절 — 세 판이 「열하나」·「열둘」·「열넷」 을 서로 다른 칸에 적고 있었다.
@@ -374,6 +395,55 @@ def test_미해결_항목_본문은_상한을_넘지_않는다() -> None:
     assert not over, (
         f"미해결 항목 본문이 {ITEM_BODY_CAP}자를 넘습니다 — {' · '.join(over)}. "
         "몸을 세션 절로 옮기고 칸에는 이름과 「몸은 N세션 절에 있다」 만 남기십시오."
+    )
+
+
+def test_미해결_갈래의_머리말과_줄_수가_같다() -> None:
+    """**줄을 세는 셋째 방법** (S159 0-3절).
+
+    S158 이 「② 93건」 이라 적었는데 브리핑이 편 줄은 **94**였다 —
+    ②-83 「「운영시간 외 부하」 가 화면·PPT 70.1% · Excel 85.8% 다」 의
+    이름 안에 **띄운 가운뎃점**이 있어 :func:`daily_brief.split_top` 이
+    그 자리에서 항목을 갈랐다. 이름이 두 조각이 되고 뒤 조각만 본문을
+    가져가므로 **앞 조각은 이름만 남아 조용하다.**
+
+    **S158 의 두 방법이 이것을 못 봤다** — 절 제목 합과
+    :func:`daily_brief.total_items` 가 **둘 다 머리말에서 나온 수**다.
+    같은 뿌리를 두 번 세면 뿌리가 틀려도 같은 수가 나온다. 그래서 이 못은
+    **줄을 센다.**
+
+    **뭉친 줄은 제가 담는 수를 말한다** — ① 의 「청구서 4」 한 줄이 넷이다
+    (68세션 2절). 본문 괄호가 없고 끝이 맨 수인 줄만 그렇게 읽는다.
+    """
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    try:
+        import daily_brief
+    finally:
+        sys.path.pop(0)
+
+    items = daily_brief.open_items(daily_brief.current_state(_read("PROCEED.md")))
+    assert items, "미해결 칸을 못 읽었습니다 — PROCEED.md 「현재 상태」 를 보십시오."
+
+    def holds(text: str) -> int:
+        """이 줄이 담는 건수. 「청구서 4」 는 넷이고 나머지는 하나다."""
+        name, body = daily_brief.item_parts(text)
+        lumped = re.fullmatch(r".+?\s+(\d+)", name)
+        return int(lumped.group(1)) if not body and lumped else 1
+
+    counted: dict[str, tuple[str, int]] = {}
+    for item in items:
+        head, seen = counted.get(item.sym, (item.name, 0))
+        counted[item.sym] = (head, seen + holds(item.text))
+
+    off = [
+        f"{sym} 머리말 {daily_brief.group_count(name, seen)} · 줄 {seen}"
+        for sym, (name, seen) in counted.items()
+        if daily_brief.group_count(name, seen) != seen
+    ]
+    assert not off, (
+        f"미해결 갈래의 머리말과 줄 수가 어긋납니다 — {' · '.join(off)}. "
+        "줄이 많으면 항목 이름 안의 띄운 가운뎃점이 항목을 가른 것이니 "
+        "붙여 쓰고, 적으면 항목이 사라진 것입니다."
     )
 
 
