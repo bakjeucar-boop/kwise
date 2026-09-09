@@ -206,8 +206,18 @@ SPOTS: tuple[Spot, ...] = (
     ),
     Spot(
         key="데이터품질-산업갑1저압",
-        title="1단계 · 진단 › 데이터 품질 (12개월 미만 경고가 서는 자리)",
+        title="1단계 · 진단 › 데이터 품질 (5개월 실측)",
         anchor="데이터 품질",
+        wait_for="데이터 품질",
+        usage=IND_LOW_XLSX,
+    ),
+    Spot(
+        key="기간경고-산업갑1저압",
+        title="1단계 · 진단 › 지표 넷과 안내 (12개월 미만 경고가 서는 자리)",
+        # **경고는 「데이터 품질」 이 아니라 그 위 안내 블록에 있다**
+        # (`views\diagnose.py::_notice_block` · 「경고는 위쪽이 이미 냈다」).
+        # S157 2절에 데이터 품질로 찍었더니 경고가 화면 밖으로 밀렸다.
+        anchor="분석 기간",
         wait_for="데이터 품질",
         usage=IND_LOW_XLSX,
     ),
@@ -398,11 +408,17 @@ def _set_lagging(page: object, pct: float) -> None:
     받는 값이 아니라 **계약 정보 옆 칸**이 받는 값이라 자리를 못 찾고 있었다.
     """
     _wait_idle(page)
-    page.get_by_text("역률 (선택)", exact=True).first.click()  # type: ignore[attr-defined]
-    _wait_idle(page)
     box = page.locator(  # type: ignore[attr-defined]
         '[data-testid="stNumberInput"]:has-text("주간 지상역률")'
     ).first.locator("input")
+    # **펴졌는지 보고 누른다.** 확정 단추가 화면을 다시 그리는 사이에 눌러
+    # 접힌 칸을 도로 접는 일이 났다 — S157 2절에 `역률-97` 이 그렇게 죽었다
+    # (같은 명령의 `역률-98` 은 살았다). **누른 횟수가 아니라 결과를 본다.**
+    for _ in range(3):
+        if box.is_visible():
+            break
+        page.get_by_text("역률 (선택)", exact=True).first.click()  # type: ignore[attr-defined]
+        _wait_idle(page)
     box.fill(f"{pct:.1f}")
     box.press("Enter")
     _wait_idle(page)
