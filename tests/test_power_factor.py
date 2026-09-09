@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import itertools
+from dataclasses import replace
 
 import pandas as pd
 import pytest
@@ -515,6 +516,69 @@ def test_목표가_상한_아래면_사유가_안_서고_악화_경고가_그대
     facts = {item.fact for item in result.notices}
     assert "power_factor.no_headroom" not in facts
     assert "power_factor.target_below_current" in facts
+
+
+def test_상한_이상이면_전력삼각형이_개선_후를_안_그린다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """**그림이 카드와 같은 사실을 말한다** (S156 1-2).
+
+    카드는 「개선 여지 없음」 을 내는데 그림은 **「개선 후 — 역률 97% · 14°」**
+    를 그리고 있었다 — 현재 100% 에서 각이 **0.0° → 14.1° 로 넓어지는 것을
+    개선이라 부르고**, 현재 97% 에서는 두 삼각형이 **완전히 겹친다**(둘 다
+    14.1°). 결함 유형 ① 이다.
+
+    **눈금을 0.025 로 둔다** (S155 1-4 의 교훈). 성긴 눈금은 경계를 건너뛴다 —
+    96.9 · 97.0 · 97.1 이 다 점 위에 서도록 훑는다.
+
+    :func:`dataclasses.replace` 로 역률만 갈아 끼운다. ``no_headroom`` 은
+    :func:`~kwise.measures.has_no_headroom` 을 부르는 **진짜 프로퍼티**라
+    시험이 판정을 다시 적지 않는다.
+    """
+    from kwise.report.frames import power_triangle_frame
+
+    base = evaluate_power_factor(
+        sample_usage, tariff, CURRENT, current_pct=92.0, quality=sample_report
+    )
+    cap = lagging_rebate_cap_pct()
+    counted = {True: 0, False: 0}
+    for step in range(201):
+        current = 95.0 + step * 0.025
+        result = replace(base, current_pct=current)
+        frame = power_triangle_frame(result)
+        labels = list(frame["구분"])
+        counted[result.no_headroom] += 1
+        if result.no_headroom:
+            assert labels == ["현재"], f"역률 {current:.3f}% 에서 {labels} 를 그립니다."
+            # **각이 넓어지는 자리가 없어야 한다** — 그리는 각은 현재 역률의 것뿐이다.
+            assert float(frame["역률(%)"].iloc[0]) == pytest.approx(current)
+        else:
+            assert labels == ["개선 전", "개선 후"], f"역률 {current:.3f}% 에서 {labels}."
+            assert float(frame["각도(도)"].iloc[1]) < float(frame["각도(도)"].iloc[0])
+    # 훑은 창이 경계를 실제로 건넜는가 — 한쪽만 세면 못이 안 문 것을 모른다.
+    assert counted[True] and counted[False]
+    assert 96.9 < cap < 97.1
+
+
+def test_상한_이상이면_화면_삼각형에도_개선_후가_없다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """**그림을 쓰는 자리까지 따라간다** (S156 1-1).
+
+    ``power_triangle_frame`` 을 PPT·Word 의 :func:`~kwise.report.figures.
+    power_triangle_png` 와 화면의 ``power_triangle_chart`` 둘이 읽는다
+    (Excel 은 그림을 하나도 안 싣는다). png 는 글자를 되읽을 수 없으므로
+    **되읽히는 쪽**을 문다.
+    """
+    from kwise.ui.charts import power_triangle_chart
+
+    result = evaluate_power_factor(
+        sample_usage, tariff, CURRENT, current_pct=100.0, quality=sample_report
+    )
+    assert result.no_headroom
+    spec = str(power_triangle_chart(result).to_dict())
+    assert "개선 후" not in spec
+    assert "개선 전" not in spec
 
 
 # --------------------------------------------------------------------- PV 도입 전후

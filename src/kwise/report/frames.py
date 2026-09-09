@@ -947,9 +947,22 @@ def power_triangle_frame(result: PowerFactorResult) -> pd.DataFrame:
 
     **유효전력을 1 로 두고 견준다.** 역률 개선 설비는 무효전력만 줄이므로 유효전력은
     그대로다 — 각이 좁아지는 것이 개선의 전부다.
+
+    **상한 이상이면 삼각형이 하나다** (S156 1-2). 현재 100% · 목표 97% 에서
+    「개선 후」 를 그리면 각이 **0.0° → 14.1° 로 넓어지고**, 현재 97% 에서는
+    두 삼각형이 **완전히 겹친다**(둘 다 14.1°) — 어느 쪽도 개선이 아니다.
+    같은 산출물의 카드는 :data:`~kwise.measures.NO_HEADROOM_LABEL` 로
+    「개선 여지 없음」 을 말하는데 그림만 「개선 후」 를 그리고 있었다.
+    판정은 :func:`~kwise.measures.has_no_headroom` 한 자리가 쥔다 — 여기서
+    상한을 다시 적지 않는다.
     """
+    pairs = (
+        (("현재", result.current_pct),)
+        if result.no_headroom
+        else (("개선 전", result.current_pct), ("개선 후", result.target_pct))
+    )
     rows: list[dict[str, object]] = []
-    for label, pct in (("개선 전", result.current_pct), ("개선 후", result.target_pct)):
+    for label, pct in pairs:
         ratio = max(min(pct / 100.0, 1.0), 1e-6)
         angle = math.degrees(math.acos(ratio))
         rows.append(

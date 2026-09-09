@@ -710,7 +710,11 @@ def _power_factor(
     triangle_col, day_col = st.columns(2)
     with triangle_col:
         st.altair_chart(charts.power_triangle_chart(result), width="stretch")
-        st.caption("전력삼각형 — 개선 전후", help=fmt.chart_tip("chart.power_triangle"))
+        # 상한 이상이면 삼각형이 하나라 「개선 전후」 가 거짓이다 (S156 1-2).
+        st.caption(
+            "전력삼각형" if result.no_headroom else "전력삼각형 — 개선 전후",
+            help=fmt.chart_tip("chart.power_triangle"),
+        )
     with day_col:
         if day is not None:
             st.altair_chart(
