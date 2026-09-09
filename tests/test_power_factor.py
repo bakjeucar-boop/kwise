@@ -25,6 +25,7 @@ from kwise.measures import (
     SolarCurve,
     evaluate_power_factor,
     evaluate_tariff_switch,
+    has_no_headroom,
 )
 from kwise.measures.solar import day_window_mask, power_factor_after_pct
 from kwise.notices import texts
@@ -463,6 +464,59 @@ def test_power_factor_saving_is_independent_of_sensitivity(
     assert next(iter(savings)) == pytest.approx(sample_bill.total_base_won * 0.010)
 
 
+@pytest.mark.parametrize("current", [97.0, 98.0, 99.0, 100.0])
+def test_감액_상한_이상이면_카드가_절감액_0_과_사유를_낸다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    current: float,
+) -> None:
+    """**카드를 없애지 않는다 — 세우고 사유를 적는다** (S155 1-2).
+
+    상한(97%) 이상이면 현재도 목표도 약관 나목이 상한으로 접으므로 요금이 한 원도
+    안 갈린다. 그런데 기본 목표가 상한이라 ``target < current`` 가 되어 카드가
+    「개선이 아니라 악화이며 … 요금이 늘어납니다」 를 내고 있었다 — **있지도 않은
+    손해를 말한다.** 절감액은 음수가 아니라 정확히 0 이다.
+
+    판정은 :func:`~kwise.measures.has_no_headroom` 한 자리가 쥔다. 상한 값을
+    시험이 다시 적지 않고 그 함수에서 읽는다.
+    """
+    result = evaluate_power_factor(
+        sample_usage, tariff, CURRENT, current_pct=current, quality=sample_report
+    )
+    assert has_no_headroom(current, result.target_pct)
+    assert result.no_headroom
+    assert result.saving_won == pytest.approx(0.0)
+    assert result.annual_saving_won == pytest.approx(0.0)
+    facts = {item.fact for item in result.notices}
+    assert "power_factor.no_headroom" in facts
+    # **「악화」 는 안 나온다** — 그 경고는 상한 아래에서 목표를 낮출 때만 선다.
+    assert "power_factor.target_below_current" not in facts
+    assert any("개선할 것이 없" in message for message in texts(result.notices))
+
+
+@pytest.mark.parametrize("current", [95.0, 97.0])
+def test_목표가_상한_아래면_사유가_안_서고_악화_경고가_그대로다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable, current: float
+) -> None:
+    """**갈래가 넓어지지 않았다는 반대쪽 못** (25세션 1절 · S155 1-2).
+
+    ``97 → 92`` 가 이 못의 알맹이다. **현재가 상한이어도 목표가 상한 아래면
+    정말로 악화다** — 받고 있던 감액 1.0% 를 잃는다. 판정을 현재 역률만 보고
+    했다가 이 자리에서 「개선할 것이 없다」 를 내보냈고
+    ``test_ui_screen.py::test_역률_목표를_현재보다_낮춰도_화면이_살아_있다`` 가
+    그 자리를 값으로 물었다.
+    """
+    result = evaluate_power_factor(
+        sample_usage, tariff, CURRENT, current_pct=current, target_pct=92.0, quality=sample_report
+    )
+    assert result.saving_won < 0
+    assert not result.no_headroom
+    facts = {item.fact for item in result.notices}
+    assert "power_factor.no_headroom" not in facts
+    assert "power_factor.target_below_current" in facts
+
+
 # --------------------------------------------------------------------- PV 도입 전후
 
 
@@ -484,11 +538,6 @@ def test_pv_lowers_the_daytime_power_factor() -> None:
     assert power_factor_after_pct(load, load * 0.0, power_factor_pct=92.0) == pytest.approx(92.0)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="S153 2절 — 역률 100 에서 후 역률이 100 을 넘어 lagging_adjustment_ratio 가 죽는다. "
-    "고치는 것은 다음 판이다 (멈춤 규칙).",
-)
 def test_역률_100_에서도_후_역률이_100_을_안_넘는다() -> None:
     """**역률 100 갈래가 회귀에 한 번도 안 섰다** (S153 2절이 처음 세웠다).
 
@@ -512,12 +561,40 @@ def test_역률_100_에서도_후_역률이_100_을_안_넘는다() -> None:
     **한 점이 아니라 곡선이라 사실상 언제나 죽는다** — 태양광은 용량마다
     이 계산을 다시 하므로 점 하나만 넘쳐도 화면이 멈춘다.
 
-    **이 판은 안 고쳤다** (S153 멈춤 규칙 · 계산은 이 판의 범위 밖이다).
+    **S155 1절에 뒤집혔다 — `xfail(strict=True)` 를 걷었다.**
+    :func:`power_factor_after_pct` 의 마지막 줄을 ``min(100.0, …)`` 로 닫았다.
+    참값은 ``hypot(after, reactive) >= after`` 라 100 을 못 넘으므로 접는 것이
+    자릿수 찌꺼기만 지운다. 걷기 전에 이 못이 **XPASS(strict) 로 빨개지는 것을
+    먼저 보고** 걷었다.
     """
     index = pd.date_range("2024-03-04 00:15", periods=96, freq="15min")
     load = pd.Series(0.007, index=index)
     zero = pd.Series(0.0, index=index)
     assert power_factor_after_pct(load, zero, power_factor_pct=100.0) <= 100.0
+
+
+def test_역률_100_에서_어느_용량도_조정률_문을_안_두드린다() -> None:
+    """**한 점이 아니라 곡선을 훑는다** (S155 1-4).
+
+    S154 가 값으로 봤다 — 용량 스물하나 가운데 **24·52·60 kWp 셋**만 넘겼고
+    두 끝(0 과 최대)은 정확히 100.0 이었다. **맨손으로 두 끝만 재면 안 잡힌다.**
+    그래서 곡선을 그대로 훑어 :func:`lagging_adjustment_ratio` 의 문
+    (``0 < pct <= 100``)이 **한 번도 안 열리는 것**을 확인한다.
+
+    **눈금을 0.1 kWp 로 둔다** (S155 1-4). 1 kWp 정수 눈금으로 200점을 훑었더니
+    **한 점도 안 넘겨** 소스를 되돌려도 초록이었다 — 무는지 모르는 못은 없는
+    못과 같다. 같은 범위를 0.1 로 훑으면 2,001점 가운데 **92점**이 문다.
+    """
+    index = pd.date_range("2024-03-04 00:15", periods=96, freq="15min")
+    load = pd.Series(1_000.0, index=index)
+    unit = pd.Series(0.0, index=index)
+    unit[(index.hour >= 9) & (index.hour < 17)] = 0.5
+    for step in range(2_001):
+        capacity = step * 0.1
+        after = power_factor_after_pct(load, unit * capacity, power_factor_pct=100.0)
+        assert after <= 100.0, f"용량 {capacity:.1f} kWp 에서 {after!r} 가 100 을 넘었습니다."
+        # 넘겼으면 여기서 ValueError 로 죽는다 — 그것이 S153 이 잡은 자리다.
+        lagging_adjustment_ratio(after)
 
 
 def test_generation_outside_the_window_does_not_move_the_factor() -> None:

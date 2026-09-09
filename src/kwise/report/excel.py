@@ -29,6 +29,7 @@ from kwise.diagnose import Diagnosis
 from kwise.io import UsageData
 from kwise.measures import (
     DR_ADVISORY,
+    NO_HEADROOM_LABEL,
     NO_SAVING,
     OFFSET_SCENARIO,
     ContractAdjustment,
@@ -394,8 +395,15 @@ def measure_summary_frame(
     if power_factor is not None:
         rows.append(
             {
+                # **상한 이상이면 「개선」 이라 적지 않는다** (S155 1-3). 판정은
+                # :func:`~kwise.measures.has_no_headroom` 한 자리가 쥔다.
                 "수단": (
-                    f"역률 개선 ({power_factor.current_pct:.1f} → {power_factor.target_pct:.1f}%)"
+                    f"역률 개선 (현재 {power_factor.current_pct:.1f}% · {NO_HEADROOM_LABEL})"
+                    if power_factor.no_headroom
+                    else (
+                        f"역률 개선 "
+                        f"({power_factor.current_pct:.1f} → {power_factor.target_pct:.1f}%)"
+                    )
                 ),
                 "투자비(원)": format_won(power_factor.investment_won),
                 "절감액(원)": format_won(power_factor.saving_won),

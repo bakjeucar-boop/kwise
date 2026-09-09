@@ -30,7 +30,7 @@ from kwise.measures.ess import EssResult, payback_text
 from kwise.measures.power_factor import PowerFactorResult
 from kwise.measures.solar import SolarCurve, SolarPoint
 from kwise.measures.tariff_switch import TariffSwitchResult
-from kwise.tariff import BillingResult
+from kwise.tariff import BillingResult, lagging_adjustment_ratio
 from kwise.tariff.labels import option_label
 
 __all__ = [
@@ -364,15 +364,26 @@ def demand_response_worksheet(result: DemandResponseResult) -> Worksheet:
 # --------------------------------------------------------------------- 7.4
 
 
+def _adjustment_gap_pct(result: PowerFactorResult) -> float:
+    """현재 → 목표에서 **기본요금 조정률이 몇 %p 갈리나.** 감액 쪽이 양수다."""
+    now = lagging_adjustment_ratio(result.current_pct)
+    target = lagging_adjustment_ratio(result.target_pct)
+    return (now - target) * 100.0
+
+
 def power_factor_worksheet(result: PowerFactorResult) -> Worksheet:
     """7.4 역률 개선 — **92% 기준 대비 조정률.**"""
     rows = [
         WorkRow("현재 역률", "주간(08~22시) 지상", f"{result.current_pct:,.1f}%"),
         WorkRow("목표 역률", "", f"{result.target_pct:,.1f}%"),
+        # **접힌 뒤의 역률로 잰다** (S155 1-3). 앞서는 `(목표 − 현재) × 0.2` 라
+        # 약관 나목의 간주(60~97 밖은 접는다)를 빼고 세었다 — 현재 100%·목표
+        # 97% 에서 **−0.6%p** 가 뜨는데 실제로는 둘 다 97 로 접혀 **0.0%p** 이고,
+        # 같은 표의 절감액은 0원이라 한 장에서 두 말이 갈렸다.
         WorkRow(
             "조정률",
-            "기준 92% 대비 매 1%당 기본요금의 0.2%",
-            f"{(result.target_pct - result.current_pct) * 0.2:+,.1f}%p",
+            "기준 92% 대비 매 1%당 기본요금의 0.2% (60~97% 밖은 간주)",
+            f"{_adjustment_gap_pct(result):+,.1f}%p",
         ),
         WorkRow("현재 역률 요금", "", _won(result.current_charge_won)),
         WorkRow("목표 역률 요금", "", _won(result.target_charge_won)),

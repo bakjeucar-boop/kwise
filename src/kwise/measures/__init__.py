@@ -136,9 +136,11 @@ from kwise.measures.ess_cost import (
 )
 from kwise.measures.netload import NetLoad, apply_generation, with_load
 from kwise.measures.power_factor import (
+    NO_HEADROOM_LABEL,
     PowerFactorResult,
     default_target_pct,
     evaluate_power_factor,
+    has_no_headroom,
 )
 from kwise.measures.pv_cost import (
     PV_COST_BASIS_NOTE,
@@ -212,6 +214,7 @@ __all__ = [
     "MARGIN_SHORT",
     "MEASURE_CATALOG",
     "NOT_VIABLE_CONCLUSION",
+    "NO_HEADROOM_LABEL",
     "NO_SAVING",
     "OFFSET_SCENARIO",
     "PRICING_BANDS",
@@ -297,6 +300,7 @@ __all__ = [
     "evaluate_tariff_switch",
     "excess_slots_by_day",
     "excess_table",
+    "has_no_headroom",
     "high_rate_discharge_hours",
     "light_band_mask",
     "load_ess_cost_model",

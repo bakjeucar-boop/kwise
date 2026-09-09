@@ -283,7 +283,14 @@ def power_factor_after_pct(
     reactive = before * math.tan(math.acos(ratio))
     if after <= 0:
         return 0.0
-    return 100.0 * after / math.hypot(after, reactive)
+    # **100 을 넘겨 돌려주지 않는다** (S155 1절). `hypot(after, reactive)` 는
+    # 언제나 `after` 이상이므로 참값은 100 을 못 넘는데, 역률 100 이면
+    # `reactive = before × tan(acos(1.0)) = 0.0` 이라 식이 `100.0 * after / after`
+    # 가 되고 나눗셈이 자리를 하나 넘겨 `100.00000000000001` 이 나온다.
+    # 그 값이 :func:`~kwise.tariff.lagging_adjustment_ratio` 의 범위 검사에
+    # 걸려 태양광 곡선이 통째로 죽었다 (S154 1-2 가 값으로 봤다 — 용량
+    # 스물하나 가운데 24·52·60 kWp 셋).
+    return min(100.0, 100.0 * after / math.hypot(after, reactive))
 
 
 @dataclass(frozen=True)

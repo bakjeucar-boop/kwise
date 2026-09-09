@@ -52,10 +52,17 @@ from kwise.tariff import (
 )
 
 __all__ = [
+    "NO_HEADROOM_LABEL",
     "PowerFactorResult",
     "default_target_pct",
     "evaluate_power_factor",
+    "has_no_headroom",
 ]
+
+#: 개선 여지가 없을 때 산출물·화면이 함께 쓰는 **한 낱말** (S155 1-3).
+#: 문구를 자리마다 새로 짓지 않는다 — 한 사실을 여러 자리에서 다르게 말하면
+#: 그것이 결함 유형 ③ 이다.
+NO_HEADROOM_LABEL = "개선 여지 없음"
 
 
 def default_target_pct() -> float:
@@ -65,6 +72,23 @@ def default_target_pct() -> float:
     ``data\rules_kr.json`` 에 있다.
     """
     return lagging_rebate_cap_pct()
+
+
+def has_no_headroom(current_pct: float, target_pct: float) -> bool:
+    """현재도 목표도 감액 상한 이상이라 **요금이 한 원도 안 갈리는가** (제43조 ② 1호 나).
+
+    **판정은 이 자리 하나다** (S155 1-2). 카드·산출물·화면이 저마다
+    ``>= 97`` 을 다시 적으면 상한이 개정될 때 자리마다 갈린다 — 상한은
+    ``data\rules_kr.json`` 에서 읽고 코드에 수를 두지 않는다.
+
+    **두 역률을 다 본다.** 현재만 보면 「현재 97% · 목표 92%」 가 걸리는데
+    그 자리는 **정말로 악화**다 (목표가 상한 아래라 감액을 잃는다). 상한 위에서
+    약관 나목이 둘을 같은 값으로 접을 때만 요금이 안 갈린다 — S155 1-2 가
+    ``tests\test_ui_screen.py::test_역률_목표를_현재보다_낮춰도_화면이_살아_있다``
+    로 그 자리를 값으로 봤다.
+    """
+    cap = lagging_rebate_cap_pct()
+    return current_pct >= cap and target_pct >= cap
 
 
 @dataclass(frozen=True, eq=False)
@@ -101,6 +125,11 @@ class PowerFactorResult:
     def is_penalty_removal(self) -> bool:
         """추가요금을 없애는 쪽인가. 감액을 받는 쪽보다 금액이 크다."""
         return self.current_charge_won > 0
+
+    @property
+    def no_headroom(self) -> bool:
+        """개선할 것이 없는가 — 판정은 :func:`has_no_headroom` 한 자리다."""
+        return has_no_headroom(self.current_pct, self.target_pct)
 
 
 def evaluate_power_factor(
@@ -148,7 +177,19 @@ def evaluate_power_factor(
 
     effective_target = min(target_pct, cap)
     notices: list[Notice] = []
-    if target_pct < current_pct:
+    if has_no_headroom(current_pct, target_pct):
+        # **「악화」 라고 말하지 않는다** (S155 1-2). 현재가 이미 상한 이상이면
+        # 기본 목표(=상한)가 현재보다 낮게 잡히는데, 두 역률이 다 상한으로
+        # 접히므로 요금은 한 원도 안 갈린다 — 절감액이 음수가 아니라 **0** 이다.
+        # 아래 「악화」 경고를 그대로 내보내면 화면이 있지도 않은 손해를 말한다.
+        notices.append(
+            basis(
+                f"현재 지상역률 {current_pct:.1f}% 는 감액 상한 {cap:.0f}% 이상이라 "
+                "개선할 것이 없습니다. 절감액은 0원입니다.",
+                fact="power_factor.no_headroom",
+            )
+        )
+    elif target_pct < current_pct:
         # **내려가는 목표도 계산한다** (25세션 1절). 21세션까지는 여기서
         # ``ValueError`` 를 던졌고, 화면이 그것을 그대로 띄워 앱이 죽었다.
         # 계산은 성립한다 — 두 역률에서 요금을 각각 다시 낼 뿐이고, 92% 아래로

@@ -31,6 +31,7 @@ from kwise.io import UsageData
 from kwise.measures import (
     CURTAIL_SCENARIO,
     EXTERNAL_SCENARIO,
+    NO_HEADROOM_LABEL,
     NO_SAVING,
     OFFSET_SCENARIO,
     SHORTEST_PAYBACK,
@@ -696,7 +697,11 @@ def _power_factor(
     _overview(spec)
     columns = st.columns(4)
     columns[0].metric("현재 역률", fmt.pct(result.current_pct))
-    columns[1].metric("도입 후", fmt.pct(result.target_pct))
+    # 상한 이상이면 「도입 후 97.0%」 가 거짓이다 — 두 역률이 다 상한으로 접혀
+    # 요금이 안 갈린다 (S155 1-3). 판정은 `has_no_headroom` 한 자리가 쥔다.
+    columns[1].metric(
+        "도입 후", NO_HEADROOM_LABEL if result.no_headroom else fmt.pct(result.target_pct)
+    )
     columns[2].metric("절감액", fmt.won_year(result.annual_saving_won))
     columns[3].metric(
         "회수기간", fmt.payback(result.payback_years, investment_won=result.investment_won)

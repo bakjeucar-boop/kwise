@@ -28,6 +28,7 @@ import pandas as pd
 
 from kwise import money
 from kwise.measures import (
+    NO_HEADROOM_LABEL,
     NO_SAVING,
     Certainty,
     ContractAdjustment,
@@ -190,8 +191,11 @@ def standalone_rows(
         rows.append(
             StandaloneRow(
                 kind=measure_kind("power_factor"),
+                # 상한 이상이면 「개선」 이 아니다 (S155 1-3).
                 reduction=(
-                    f"{power_factor.current_pct:,.1f}% → {power_factor.target_pct:,.1f}% 개선"
+                    f"{power_factor.current_pct:,.1f}% · {NO_HEADROOM_LABEL}"
+                    if power_factor.no_headroom
+                    else f"{power_factor.current_pct:,.1f}% → {power_factor.target_pct:,.1f}% 개선"
                 ),
                 annual_saving_won=power_factor.annual_saving_won,
                 investment_won=power_factor.investment_won,
