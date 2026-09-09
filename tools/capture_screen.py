@@ -34,7 +34,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -62,6 +62,10 @@ class Contract:
     voltage: str
     contract_kw: float
     option: str
+    #: 주간 지상역률 (%). ``None`` 이면 「역률 (선택)」 을 안 건드린다 —
+    #: 약관 제42조 간주값(지상 92%)이 그대로 선다. 값을 주면 그 접힌 칸을 펴서
+    #: 넣고 「역률 반영」 까지 누른다 (S157 1절 · 미해결 ②-43).
+    lagging_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +79,18 @@ class Spot:
     #: 앵커가 뜨기 전에 먼저 기다릴 글자. 없으면 앵커를 그대로 기다린다.
     wait_for: str = ""
     contract: Contract | None = None
+    #: 누를 탭 (`kwise.ui.nav.TABS`). 비면 1단계에 머문다.
+    #:
+    #: **세 단계는 탭이라 한 실행에 다 그려지는데**(`nav.py`) 뷰포트에는 고른
+    #: 탭 하나만 보인다. 도구가 탭을 안 눌러 **2·3단계 자리가 하나도 없었다** —
+    #: 미해결 ②-8 의 뿌리가 이것이다 (S157 1절).
+    tab: str = ""
+    #: 켤 개선안 카드 이름 조각. **2·3단계는 카드를 켜야 내용이 선다** —
+    #: 카드는 접힌 채로 시작한다 (`views\measures.py`).
+    measures: tuple[str, ...] = ()
+    #: 올릴 사용량 파일. 비면 ``--usage`` 를 쓴다. **벌마다 자료가 다르다** —
+    #: 산업용(갑)Ⅰ 저압은 제 실측이 있어야 역률 100 이 선다.
+    usage: Path | None = None
 
 
 #: 용인 소규모 건물 · 갑Ⅱ 고압A 선택Ⅱ (61세션에 확보한 실측).
@@ -94,6 +110,35 @@ EDUCATION_A_HIGH = Contract(
     voltage="고압A",
     contract_kw=300.0,
     option="선택Ⅰ",
+)
+
+#: 화면 감사(`tools\screen_audit.py` 의 `CASES`)가 세는 **넷**과 같은 조건이다.
+#: **같은 조건으로 찍어야 문구 수와 그림을 맞대 볼 수 있다** (S157 2-1).
+GENERAL_B = Contract("일반용전력(을)", "고압A", 6_000.0, "선택Ⅱ")
+GENERAL_A1_LOW = Contract("일반용전력(갑)Ⅰ", "저압", 200.0, "전체시간")
+EDUCATION_A_LOW = Contract("교육용전력(갑)", "저압", 200.0, "전체시간")
+
+#: **다섯째 — `render_deck.py` 의 `small-ind-a1` 벌과 같은 조건이다.**
+#: S155·S156 이 고친 자리가 이 벌에서만 그려진다 — 실물 청구서가 따라온 실측이라
+#: **역률이 100** 이고, 그래서 상한(97%) 위 갈래와 「삼각형이 선이 되는」 자리가
+#: 여기서만 선다. 자료도 이 벌 것을 쓴다 (`usage`).
+SMALL_IND_A1 = Contract("산업용전력(갑)Ⅰ", "저압", 75.0, "전체시간", lagging_pct=100.0)
+IND_LOW_XLSX = PROJECT_ROOT / "input" / "전력사용량_산업용(갑)저압.xlsx"
+
+#: 역률 상한(97%) 갈래를 화면으로 보는 조건. **자료가 아니라 역률이 가른다** —
+#: 같은 을 조건에서 주간 지상역률만 갈아 세 자리를 뽑는다 (S157 2-2).
+GENERAL_B_PF98 = replace(GENERAL_B, lagging_pct=98.0)
+GENERAL_B_PF97 = replace(GENERAL_B, lagging_pct=97.0)
+
+#: 2단계에서 켤 카드. **이름은 화면 표기**(`kwise.ui.labels.measure_title`)다 —
+#: 코드의 7.x 가 아니라 1~6 으로 뜬다.
+ALL_MEASURES: tuple[str, ...] = (
+    "1. 선택요금 전환",
+    "2. 계약전력 조정",
+    "3. 경제성DR",
+    "4. 역률 개선",
+    "5. 태양광",
+    "6. ESS",
 )
 
 SPOTS: tuple[Spot, ...] = (
@@ -128,6 +173,91 @@ SPOTS: tuple[Spot, ...] = (
         title="앱 첫 화면 (파일을 올리기 전)",
         anchor="kWise",
         wait_for="",
+    ),
+    # ------------------------------------------------- 1단계 · 감사 조건 넷과 다섯째
+    Spot(
+        key="요금구조-을",
+        title="1단계 · 진단 › 현재 요금 구조 (일반용(을) 고압A 선택Ⅱ · 6,000 kW)",
+        anchor="현재 요금 구조",
+        wait_for="피크 특성",
+        contract=GENERAL_B,
+    ),
+    Spot(
+        key="요금구조-갑1",
+        title="1단계 · 진단 › 현재 요금 구조 (일반용(갑)Ⅰ 저압 · 200 kW)",
+        anchor="현재 요금 구조",
+        wait_for="피크 특성",
+        contract=GENERAL_A1_LOW,
+    ),
+    Spot(
+        key="요금구조-교육갑저압",
+        title="1단계 · 진단 › 현재 요금 구조 (교육용(갑) 저압 · 200 kW)",
+        anchor="현재 요금 구조",
+        wait_for="피크 특성",
+        contract=EDUCATION_A_LOW,
+    ),
+    Spot(
+        key="요금구조-산업갑1저압",
+        title="1단계 · 진단 › 현재 요금 구조 (산업용(갑)Ⅰ 저압 · 75 kW · 역률 100)",
+        anchor="현재 요금 구조",
+        wait_for="피크 특성",
+        contract=SMALL_IND_A1,
+        usage=IND_LOW_XLSX,
+    ),
+    Spot(
+        key="데이터품질-산업갑1저압",
+        title="1단계 · 진단 › 데이터 품질 (12개월 미만 경고가 서는 자리)",
+        anchor="데이터 품질",
+        wait_for="데이터 품질",
+        usage=IND_LOW_XLSX,
+    ),
+    # ------------------------------------------------- 2단계 · 역률 상한 갈래 셋
+    Spot(
+        key="역률-98",
+        title="2단계 › 역률 개선 (현재 98% · 상한 위 — 「개선 여지 없음」)",
+        anchor="전력삼각형",
+        wait_for="피크 특성",
+        contract=GENERAL_B_PF98,
+        tab="2단계 · 개선 수단",
+        measures=("4. 역률 개선",),
+    ),
+    Spot(
+        key="역률-97",
+        title="2단계 › 역률 개선 (현재 97% · 정확히 상한 — 두 삼각형이 겹친다)",
+        anchor="전력삼각형",
+        wait_for="피크 특성",
+        contract=GENERAL_B_PF97,
+        tab="2단계 · 개선 수단",
+        measures=("4. 역률 개선",),
+    ),
+    Spot(
+        key="역률-100",
+        title="2단계 › 역률 개선 (산업용(갑)Ⅰ 저압 · 역률 100 — 삼각형이 선이 된다)",
+        anchor="전력삼각형",
+        wait_for="피크 특성",
+        contract=SMALL_IND_A1,
+        usage=IND_LOW_XLSX,
+        tab="2단계 · 개선 수단",
+        measures=("4. 역률 개선",),
+    ),
+    # ------------------------------------------------- 2·3단계 전체
+    Spot(
+        key="수단",
+        title="2단계 · 개선 수단 (카드 여섯을 다 켠 머리)",
+        anchor="2단계 · 개선 수단",
+        wait_for="피크 특성",
+        contract=GENERAL_B,
+        tab="2단계 · 개선 수단",
+        measures=ALL_MEASURES,
+    ),
+    Spot(
+        key="조합",
+        title="3단계 · 개선안 조합 (합산효과까지)",
+        anchor="합산효과",
+        wait_for="피크 특성",
+        contract=GENERAL_B,
+        tab="3단계 · 개선안 조합",
+        measures=ALL_MEASURES,
     ),
 )
 
@@ -253,6 +383,65 @@ def _fill_contract(page: object, contract: Contract) -> None:
     _wait_idle(page)
     _pick(page, "선택요금", contract.option)
     page.get_by_text("계약 정보 확정", exact=True).first.click()  # type: ignore[attr-defined]
+    if contract.lagging_pct is not None:
+        _set_lagging(page, contract.lagging_pct)
+
+
+def _set_lagging(page: object, pct: float) -> None:
+    """「역률 (선택)」 을 펴서 주간 지상역률을 넣고 **반영까지 누른다.**
+
+    **접힌 칸이라 펴야 보인다** (`views\\diagnose.py::_power_factor_block`).
+    반영 단추는 값이 갈렸을 때만 서므로 **계약 정보 확정 뒤에** 부른다 — 확정
+    전에는 `form` 이 없어 단추 자체가 안 그려진다.
+
+    이것이 미해결 ②-43 「화면 캡처 도구가 역률을 못 준다」 다. 역률은 화면이
+    받는 값이 아니라 **계약 정보 옆 칸**이 받는 값이라 자리를 못 찾고 있었다.
+    """
+    _wait_idle(page)
+    page.get_by_text("역률 (선택)", exact=True).first.click()  # type: ignore[attr-defined]
+    _wait_idle(page)
+    box = page.locator(  # type: ignore[attr-defined]
+        '[data-testid="stNumberInput"]:has-text("주간 지상역률")'
+    ).first.locator("input")
+    box.fill(f"{pct:.1f}")
+    box.press("Enter")
+    _wait_idle(page)
+    page.get_by_text("역률 반영", exact=True).first.click()  # type: ignore[attr-defined]
+    _wait_idle(page)
+
+
+def _anchor(page: object, text: str) -> object:
+    """앵커 글자를 **보이는 것 가운데** 찾는다.
+
+    **숨은 탭의 글자를 물면 안 된다** (S157 1절). 세 단계가 한 실행에 다
+    그려지므로 안 고른 탭의 글도 DOM 에 있다 — `조합` 자리가 앵커 「합산효과」
+    를 기다리다 2단계의 「… 3단계 합산효과에서 별도로 산정합니다」 를 잡고
+    **5분을 꼬박 기다리다 죽었다.** 그 글은 영영 안 보인다.
+
+    ``exact`` 로 좁히는 것만으로는 모자란다 — 접힌 카드 안의 같은 글자도
+    DOM 에 있다.
+    """
+    return page.get_by_text(text, exact=True).locator("visible=true").first  # type: ignore[attr-defined]
+
+
+def _open_tab(page: object, name: str) -> None:
+    """단계 탭 하나를 누른다. **셋이 다 그려져 있어도 보이는 것은 하나다.**"""
+    _wait_idle(page)
+    page.get_by_role("tab", name=name).first.click()  # type: ignore[attr-defined]
+    _wait_idle(page)
+
+
+def _turn_on(page: object, label: str) -> None:
+    """개선안 카드 하나를 켠다. **카드는 접힌 채로 시작한다** (`views\\measures.py`).
+
+    체크박스 라벨이 곧 카드 이름이라 그 상자를 눌러야 한다 — 켜기 전에는
+    같은 글자가 화면에 그 하나뿐이고, 켠 뒤에 확장 패널 제목으로 하나 더 생긴다.
+    """
+    _wait_idle(page)
+    page.locator(  # type: ignore[attr-defined]
+        f'[data-testid="stCheckbox"]:has-text("{label}")'
+    ).first.click()
+    _wait_idle(page)
 
 
 def capture(spot: Spot, usage: Path, out_dir: Path, *, port: int, width: int, height: int) -> Path:
@@ -286,12 +475,25 @@ def capture(spot: Spot, usage: Path, out_dir: Path, *, port: int, width: int, he
                     page.wait_for_timeout(4_000)
                 if spot.contract is not None:
                     _fill_contract(page, spot.contract)
-                    page.wait_for_selector(f"text={spot.anchor}", timeout=RENDER_TIMEOUT_MS)
+                # **카드는 2단계 탭 안에 있다.** 켜는 일을 먼저 하고 탭을 옮긴다 —
+                # 3단계 자리도 2단계에서 켠 것을 본다 (`views\compare.py`).
+                if spot.measures:
+                    _open_tab(page, "2단계 · 개선 수단")
+                    for label in spot.measures:
+                        _turn_on(page, label)
+                if spot.tab:
+                    _open_tab(page, spot.tab)
+                    if spot.tab.startswith("3단계"):
+                        # **누르지 않으면 합산효과가 통째로 빠진다** (33세션 5절).
+                        page.get_by_text("합산효과 계산", exact=True).first.click()
+                        _wait_idle(page)
+                if spot.contract is not None or spot.tab:
+                    _anchor(page, spot.anchor).wait_for(timeout=RENDER_TIMEOUT_MS)  # type: ignore[attr-defined]
                 page.wait_for_timeout(6_000)
                 # **요소 기준으로 스크롤한다.** `window.scrollTo` 는 안 먹는다 —
                 # Streamlit 은 창이 아니라 내부 컨테이너가 스크롤한다 (64세션 5절).
-                anchor = page.get_by_text(spot.anchor, exact=True).first
-                anchor.evaluate("el => el.scrollIntoView({block: 'start'})")
+                anchor = _anchor(page, spot.anchor)
+                anchor.evaluate("el => el.scrollIntoView({block: 'start'})")  # type: ignore[attr-defined]
                 page.wait_for_timeout(2_500)
                 page.screenshot(path=str(png))
             finally:
@@ -321,8 +523,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.list:
         for spot in SPOTS:
-            mark = " (계약 정보 확정)" if spot.contract is not None else ""
-            print(f"  {spot.key:8s} {spot.title}{mark}")
+            marks = []
+            if spot.contract is not None:
+                marks.append("계약 정보 확정")
+            if spot.contract is not None and spot.contract.lagging_pct is not None:
+                marks.append(f"역률 {spot.contract.lagging_pct:.0f}%")
+            if spot.measures:
+                marks.append(f"카드 {len(spot.measures)}")
+            if spot.usage is not None:
+                marks.append(spot.usage.name)
+            mark = f"  ({' · '.join(marks)})" if marks else ""
+            print(f"  {spot.key:22s} {spot.title}{mark}")
         return 0
 
     _require_playwright()
@@ -331,8 +542,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     unknown = [key for key in keys if key not in BY_KEY]
     if unknown:
         parser.error(f"모르는 자리: {', '.join(unknown)} — --list 로 확인하십시오")
-    if not args.usage.exists():
-        parser.error(f"사용량 파일이 없습니다: {args.usage}")
+    # **벌마다 자료가 다를 수 있다** — 자리가 제 것을 들면 그것이 이긴다.
+    wanted = {BY_KEY[key].usage or args.usage for key in keys}
+    missing = sorted(str(path) for path in wanted if not path.exists())
+    if missing:
+        parser.error(f"사용량 파일이 없습니다: {', '.join(missing)}")
 
     out_dir = args.out if args.out is not None else cache_root() / "screens"
     for key in keys:
@@ -340,7 +554,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"[{spot.key}] {spot.title}")
         png = capture(
             spot,
-            args.usage,
+            spot.usage or args.usage,
             out_dir,
             port=args.port or _free_port(),
             width=args.width,

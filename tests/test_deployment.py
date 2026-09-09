@@ -610,3 +610,55 @@ def test_모은_사실은_한_자리를_지킨다() -> None:
             f"「{fact.name}」 을 만드는 자리가 {[str(home) for home in fact.homes]} "
             f"밖에 섰습니다 — {[str(site).strip() for site in strays]}"
         )
+
+
+# ---------------------------------------- S157 1절 — 캡처 도구가 2·3단계에 닿는가
+
+
+def _capture_screen() -> ModuleType:
+    """``tools\\capture_screen.py`` 를 불러온다 (`count_sites` 와 같은 방식)."""
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    try:
+        import capture_screen
+    finally:
+        sys.path.pop(0)
+    return capture_screen
+
+
+def test_캡처_도구가_세_단계에_다_닿는다() -> None:
+    """**2·3단계에 갈 자리가 있고 그 이름이 화면과 같은가** (S157 1-3).
+
+    미해결 ②-8 이 「``capture_screen.py`` 가 2·3단계에 못 간다」 였다. 뿌리는
+    자리가 죄다 1단계였다는 것이고, 세 단계가 **탭**이라(`kwise.ui.nav`) 도구가
+    탭을 안 누르면 뷰포트에 1단계만 남는다.
+
+    **브라우저를 띄우지 않는다.** 여기서 무는 것은 「탭과 카드 이름이 화면
+    것과 같은가」 뿐이다 — 실물로 닿는지는 도구를 돌려 png 로 본다. 화면
+    쪽에서 탭이나 카드 이름을 갈면 도구가 **조용히** 못 누르게 되는데
+    (playwright 는 못 찾으면 상한까지 기다린다 — S157 1절에 5분을 잃었다),
+    그 어긋남을 커밋 전에 잡는 것이 이 못이다.
+    """
+    sys.path.insert(0, str(PROJECT_ROOT / "src"))
+    try:
+        from kwise.measures import MEASURE_CATALOG
+        from kwise.ui.labels import measure_title
+        from kwise.ui.nav import TABS
+    finally:
+        sys.path.pop(0)
+    capture_screen = _capture_screen()
+
+    tabs = {spot.tab for spot in capture_screen.SPOTS if spot.tab}
+    assert tabs == set(TABS[1:]), (
+        f"2·3단계 자리가 빠졌습니다 — 도구가 누르는 탭은 {sorted(tabs)} 이고 "
+        f"화면의 탭은 {list(TABS)} 입니다."
+    )
+
+    cards = {measure_title(kind.title) for kind in MEASURE_CATALOG}
+    used = {label for spot in capture_screen.SPOTS for label in spot.measures}
+    strays = sorted(used - cards)
+    assert not strays, (
+        f"화면에 없는 카드 이름을 누르려 합니다 — {strays}. 화면의 카드는 {sorted(cards)} 입니다."
+    )
+    assert used == cards, (
+        f"카드 여섯을 다 켜는 자리가 없습니다 — 안 켜는 것 {sorted(cards - used)}."
+    )
