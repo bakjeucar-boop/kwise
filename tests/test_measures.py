@@ -2403,6 +2403,94 @@ def test_금액을_못_내면_더하지_않는다(surplus_case: SurplusCase, tar
     assert combined.surplus_scenario == EXTERNAL_SCENARIO
 
 
+def test_태양광_계산_근거_표는_스스로_산수로_맞는다(
+    surplus_case: SurplusCase, tariff: TariffTable
+) -> None:
+    """**부분의 합이 절감액이어야 한다** (S159 3-1 · S127 과 같은 모양).
+
+    앞서 이 표는 「절감액 · **기본 + 전력량**」 이라 적으면서 그 둘의 합보다
+    **70,637원 큰 값**을 냈다(용인 실측 · 32 kWp · 역률 100 · 상계거래).
+    절사 탓이 아니다 — 빠진 것이 둘이었다:
+
+        역률 몫   기본요금이 줄면 역률 감액(기본요금 × 조정률)도 함께 준다
+        잉여      고른 잉여 처리의 수익
+
+    절감액은 :func:`~kwise.measures.solar.solar_point` 에서 **요금 전체의
+    차**로 나오는데 ``base_saving_won``·``energy_saving_won`` 은 기본과
+    전력량만 담기 때문이다.
+
+    **표에 그려진 글자를 읽어 센다** — 식을 여기서 다시 적으면 실물이
+    갈려도 제 식으로 통과한다(결함 유형 ⑤). 두 칸이 각자 천 원 절사되므로
+    줄 수만큼 어긋날 수 있다.
+    """
+    from kwise.report.worksheet import solar_worksheet
+
+    point = solar_point(
+        surplus_case.usage,
+        tariff,
+        CURRENT,
+        surplus_case.unit,
+        surplus_case.capacity_kwp,
+        cost=PvCostInput.of_unit_cost(2_000_000.0),
+    )
+    combined = with_surplus_revenue(
+        point, revenue_won=1_000_000.0, scenario=OFFSET_SCENARIO, base_fee_months=1.0
+    )
+    assert combined.surplus_revenue_won > 0, "잉여가 실려야 이 못이 무는 자리가 선다"
+
+    frame = solar_worksheet(_curve((point,)), combined).frame()
+    shown = {
+        str(row["구분"]).strip(): int(str(row["값"]).removesuffix("원").replace(",", ""))
+        for _, row in frame.iterrows()
+        if str(row["값"]).endswith("원")
+    }
+    total = shown.pop("절감액")
+    parts = {name: won for name, won in shown.items() if "절감" in name or name.startswith("잉여")}
+    assert len(parts) >= 3, f"구성 줄이 셋은 서야 한다 — {sorted(parts)}"
+    assert abs(sum(parts.values()) - total) <= 1_000 * (len(parts) + 1), (
+        f"태양광 계산 근거 표의 부분 합이 절감액과 갈립니다 — {parts} 대 {total}"
+    )
+
+
+def test_용량_비교_표의_절감액은_자가소비만이라고_이름에_적는다(
+    surplus_case: SurplusCase, tariff: TariffTable
+) -> None:
+    """**한 화면에서 517만원과 509만원이었다** (S159 3-4 · ②-79 갈래).
+
+    카드는 :func:`~kwise.measures.solar.with_surplus_revenue` 를 **탄** 점을
+    쓰고 용량 비교 표는 곡선의 점을 그대로 쓴다 — **둘 다 옳은데 이름이
+    같았다.** 값을 맞추지 않는다(41세션이 잉여를 카드 안에 두기로 정했다).
+    이름으로 가른다.
+
+    **열 이름과 값을 함께 문다** — 이름만 물면 값이 카드 쪽으로 바뀌어도
+    통과하고, 값만 물면 이름이 도로 「절감액」 이 돼도 통과한다.
+    """
+    from kwise.report.frames import CAPACITY_COLUMNS, solar_capacity_table
+
+    point = solar_point(
+        surplus_case.usage,
+        tariff,
+        CURRENT,
+        surplus_case.unit,
+        surplus_case.capacity_kwp,
+        cost=PvCostInput.of_unit_cost(2_000_000.0),
+    )
+    combined = with_surplus_revenue(
+        point, revenue_won=1_000_000.0, scenario=OFFSET_SCENARIO, base_fee_months=1.0
+    )
+    assert combined.total_saving_won > point.total_saving_won, "잉여가 실려야 두 값이 갈린다"
+
+    column = "자가소비 절감액(원)"
+    assert column in CAPACITY_COLUMNS
+    assert "절감액(원)" not in CAPACITY_COLUMNS, "맨 「절감액」 은 카드 값과 이름이 겹친다"
+
+    curve = _curve((point,))
+    frame = solar_capacity_table(curve, verdict=curve.verdict())
+    row = frame.loc[frame["용량(kWp)"] == point.capacity_kwp].iloc[0]
+    assert float(row[column]) == pytest.approx(point.total_saving_won)
+    assert float(row[column]) != pytest.approx(combined.total_saving_won)
+
+
 def test_합산효과에_잉여를_더한다(surplus_case: SurplusCase, tariff: TariffTable) -> None:
     """**14세션의 결정을 뒤집는다** (48세션). 전제가 41세션에 사라졌다."""
     baseline = calculate_bill(surplus_case.usage, tariff, CURRENT)

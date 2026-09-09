@@ -808,7 +808,15 @@ def _peak_block(diagnosis: Diagnosis) -> None:
         columns[0].metric("관측 최대수요", fmt.kw(peak.peak_kw))
         columns[1].metric("요금적용전력", fmt.kw(peak.billing_demand_kw))
     else:
-        columns[0].metric("최대수요 = 요금적용전력", fmt.kw(peak.peak_kw))
+        # **접었을 때 적는 것은 요금적용전력이다** (S159 3-2 · ②-81 갈래).
+        # 접는 문턱이 1% 라 **꼭 같지는 않다** — 용인 실측이 관측 최대
+        # 132.28 kW · 요금적용전력 132.0 kW 인데 이 칸이 `peak_kw` 를 적어
+        # **「= 요금적용전력」 이라 적으면서 132.3 을 냈다.** Excel 진단·PPT
+        # 장05·3단계 계산 근거는 다 132.0 이라 이 자리만 갈렸다.
+        # 값을 정하는 자리는 `tariff\demand.py` 의 `apply_contract_floor`
+        # 하나이고 화면은 그 값을 읽기만 한다 — **관측 최대는 안 접는다**
+        # (`io\usage.py` 의 부하율이 그 값을 쓴다).
+        columns[0].metric("최대수요 = 요금적용전력", fmt.kw(peak.billing_demand_kw))
         columns[1].metric("상위 구간 정오 비중", fmt.ratio_pct(diagnosis.summary.pv_midday_share))
     columns[2].metric(
         "상위 구간 주말 비중",

@@ -412,8 +412,36 @@ def solar_worksheet(curve: SolarCurve, point: SolarPoint | None = None) -> Works
         WorkRow("잉여", "", _kwh(best.surplus_kwh), level=1),
         WorkRow("기본요금 절감", "요금적용전력 저감 × 단가", _won(best.base_saving_won)),
         WorkRow("전력량요금 절감", "자가소비 × 계시별 단가", _won(best.energy_saving_won)),
-        WorkRow("절감액", "기본 + 전력량", _won(best.total_saving_won), total=True),
     ]
+    # **부분이 합계와 안 맞는 표는 결과를 오독하게 한다** (S159 3-1 · ②-80 갈래).
+    # 「기본 + 전력량」 이라 적혀 있었는데 그 둘의 합이 절감액과 70,637원 어긋났다
+    # — 절사 탓이 아니다. 절감액은 :func:`~kwise.measures.solar.solar_point` 에서
+    # **요금 전체의 차**(`base_bill.total_won - bill.total_won`)로 나오는데
+    # `base_saving_won`·`energy_saving_won` 은 **기본과 전력량만** 담는다.
+    #
+    # 그래서 여기서 남는 몫을 **값으로 되짚어** 두 줄로 세운다. 짓지 않고 뺀다 —
+    # 새 계산을 만들면 표와 계산이 또 갈린다.
+    #
+    #     역률 몫   기본요금이 줄면 역률 감액(기본요금 × 조정률)도 함께 준다
+    #     잉여      고른 잉여 처리의 수익 (:func:`~kwise.measures.solar.with_surplus_revenue`)
+    parts = ["기본", "전력량"]
+    factor_won = (
+        best.total_saving_won
+        - best.base_saving_won
+        - best.energy_saving_won
+        - best.surplus_revenue_won
+    )
+    if round(factor_won):
+        rows.append(WorkRow("역률 감액 변화", "기본요금이 줄면 역률 감액도 준다", _won(factor_won)))
+        parts.append("역률")
+    # **0원 줄은 안 세운다** (`CLAUDE.md` 「화면 문구」). 더해도 합계가 안
+    # 움직이므로 표가 어긋나지 않고, 고른 잉여 처리가 무엇인지는 카드 각주가
+    # 이미 적는다(「자가소비로 줄인 요금 … + 잉여 출력제어 0원」). 기본값인
+    # 출력제어가 0원이라 이 줄을 늘 세우면 **네 조건 전부에서 두 줄이 는다.**
+    if best.surplus_scenario and round(best.surplus_revenue_won):
+        rows.append(WorkRow(f"잉여 {best.surplus_scenario}", "", _won(best.surplus_revenue_won)))
+        parts.append("잉여")
+    rows.append(WorkRow("절감액", " + ".join(parts), _won(best.total_saving_won), total=True))
     if best.investment_won is not None:
         rows.append(WorkRow("투자비", "용량 × kWp당 단가", _won(best.investment_won)))
     if best.payback_years is not None:

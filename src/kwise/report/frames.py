@@ -305,7 +305,7 @@ CAPACITY_COLUMNS: tuple[str, ...] = (
     "필요 면적(m²)",
     "연간 발전량(kWh)",
     "자가소비율",
-    "절감액(원)",
+    "자가소비 절감액(원)",
     "투자비(원)",
     "회수기간(년)",
     "표식",
@@ -319,6 +319,13 @@ CAPACITY_COLUMNS: tuple[str, ...] = (
 
 **가른 값이 사라진 것은 아니다** — 카드의 절감액 툴팁·계산 근거 표·Excel
 「태양광 용량 곡선」 시트가 그대로 낸다. 열이 하나 줄어 표가 가벼워졌다.
+
+**이름이 「자가소비 절감액」 이다** (S159 3-4 · ②-79 갈래). 곡선의 점은
+:func:`~kwise.measures.solar.with_surplus_revenue` 를 타기 **전** 값이라
+잉여 수익을 안 담는다 — 카드는 담는다. 그래서 한 화면에서 카드가 517만원,
+바로 아래 표의 같은 용량 줄이 509만원이었고 **둘 다 옳은데 이름이 같았다.**
+값을 맞추지 않는다 — 41세션이 잉여 처리를 태양광 카드 안에 두기로 정했고,
+표는 잉여를 고르기 전의 용량 비교라 자가소비만 보는 것이 맞다.
 """
 
 
@@ -468,7 +475,8 @@ def solar_capacity_table(
             "연간 발전량(kWh)": [annualize(point.generation_kwh, months) for point in ordered],
             "자가소비율": [point.self_consumption_ratio for point in ordered],
             # **합계 하나로 낸다** (51세션 2절). 줄을 가르는 것이 이 값이다.
-            "절감액(원)": [annualize(point.total_saving_won, months) for point in ordered],
+            # **잉여는 안 담긴다** (S159 3-4) — 곡선의 점은 잉여를 고르기 전이다.
+            "자가소비 절감액(원)": [annualize(point.total_saving_won, months) for point in ordered],
             "투자비(원)": [point.investment_won for point in ordered],
             "회수기간(년)": [point.payback_years for point in ordered],
             "표식": [mark(point) for point in ordered],

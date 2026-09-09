@@ -1515,6 +1515,54 @@ def test_같은_값이면_피크_지표를_한_줄로_접는다(app: AppTest) ->
     assert "관측 최대수요" not in labels
 
 
+def test_접은_피크_지표는_요금적용전력을_적는다(app: AppTest) -> None:
+    """**「= 요금적용전력」 이라 적으면서 관측 최대를 냈다** (S159 3-2 · ②-81 갈래).
+
+    접는 문턱이 1% 라 **꼭 같지는 않다.** 용인 실측이 관측 최대 132.28 kW ·
+    요금적용전력 132.0 kW 인데 이 칸이 132.3 을 냈고, Excel 진단·PPT 장05 ·
+    3단계 계산 근거는 다 132.0 이라 **1단계 화면만 갈렸다.**
+
+    **여기서 값을 다시 내지 않는다** — 화면에 그려진 두 지표를 맞댄다.
+    바로 위 지표 카드의 「최대수요」 가 관측 최대(소수 그대로)이므로,
+    접은 칸이 그것과 **같으면** 관측 최대를 적고 있다는 뜻이다. 접혔으니
+    요금적용전력은 관측 최대 이하이고 문턱 안(1%)이다.
+    """
+    values = {item.label: item.value for item in app.metric}
+    observed = values["최대수요"]
+    folded = values["최대수요 = 요금적용전력"]
+
+    def _kw(text: str) -> float:
+        return float(text.removesuffix(" kW").replace(",", ""))
+
+    assert folded != observed, (
+        f"접은 칸이 관측 최대를 그대로 적습니다 ({folded}) — 「= 요금적용전력」 이라 "
+        "적는 칸은 접힌 값을 냅니다."
+    )
+    assert _kw(folded) <= _kw(observed)
+    assert _kw(folded) >= _kw(observed) * 0.99, "접는 문턱 밖이면 두 칸으로 갈려야 한다"
+
+
+def test_월별_명세_표가_달을_하나도_빼지_않는다(app: AppTest) -> None:
+    """**표만 한 달이 짧으면 위 요약과 어긋난다** (S159 4절 · ②-82 갈래).
+
+    S158 이 사용자 산출물에서 표 **12행** · 계량일수 338일을 봤는데 바로 위
+    요약은 365일이었다. 저장소에서는 재현되지 않았다(13행) — `_monthly_table`
+    이 행을 자르지 않는다. **재현이 안 된다고 못을 안 세우면 다음에 슬라이스가
+    끼어도 조용하다.**
+
+    **달 수를 자료에서 센다** — 화면이 쓰는 프레임을 다시 읽으면 잘려도 같이
+    잘린다(결함 유형 ⑤). 부분 월도 한 달로 센다.
+    """
+    frame = next(
+        item.value for item in app.dataframe if "계량 일수" in list(item.value.columns)
+    )
+    months = load_usage(SAMPLE).kw.index.to_period("M").nunique()
+    assert len(frame) == months, (
+        f"월별 명세 표가 {len(frame)}행인데 자료의 달은 {months}개입니다 — "
+        "표가 달을 빼면 계량일수·사용량 합이 위 요약과 어긋납니다."
+    )
+
+
 def test_하한이_지면_판정_줄이_선다() -> None:
     """**여유율 입력을 걷어냈다** (13세션 → 83세션).
 
@@ -4423,7 +4471,8 @@ def test_회수기간이_같은_줄에_동률을_찍는다() -> None:
     assert verdict.best is not None
     assert TIED_PAYBACK not in str(marks[verdict.best.capacity_kwp])
     # **절감액 열 하나가 그 줄들을 가른다.**
-    savings = [frame.loc[frame["용량(kWp)"] == capacity, "절감액(원)"].iloc[0] for capacity in tied]
+    column = "자가소비 절감액(원)"
+    savings = [frame.loc[frame["용량(kWp)"] == capacity, column].iloc[0] for capacity in tied]
     assert len(set(savings)) == len(savings), "동률 줄의 절감액이 같으면 가를 것이 없다"
 
 

@@ -3464,6 +3464,7 @@ def test_덱은_벌마다_제_좌표로_태양광을_돌린다() -> None:
     off = [case for case in render_deck.CASES if case.sigungu != render_deck.REGION]
     assert [case.key for case in off] == [
         "small-a2",
+        "small-a2-pf100-offset",
         "small-a2-was",
         "small-ind-a1",
         "small-ind-a2",

@@ -1261,7 +1261,9 @@ def _peak_stats(sections: DocumentSections) -> list[tuple[str, str]]:
         items.append(("관측 최대수요", f"{peak.peak_kw:,.0f} kW"))
         items.append(("요금적용전력", f"{peak.billing_demand_kw:,.0f} kW"))
     else:
-        items.append(("최대수요 = 요금적용전력", f"{peak.peak_kw:,.0f} kW"))
+        # **화면과 같은 값을 적는다** (S159 3-2). 접는 문턱이 1% 라 둘이 꼭
+        # 같지는 않으므로 「= 요금적용전력」 이라 적는 칸은 그 값을 낸다.
+        items.append(("최대수요 = 요금적용전력", f"{peak.billing_demand_kw:,.0f} kW"))
     items.append(("상위 구간 정오 비중", _pct(diagnosis.summary.pv_midday_share)))
     items.append(
         (

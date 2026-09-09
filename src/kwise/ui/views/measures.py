@@ -1428,7 +1428,10 @@ def _capacity_view(frame: pd.DataFrame) -> pd.DataFrame:
             # **절감 열은 하나다** (51세션 2절). 회수기간이 용량과 거의 무관해
             # 세 줄이 같은 값을 내는데(16세션) 줄을 가르는 것은 이 합계다 —
             # 두 수를 사람이 더하게 두면 세 배 차이가 한눈에 안 들어온다.
-            "절감액": [fmt.won_year(value) for value in frame["절감액(원)"]],
+            # **「자가소비」 를 이름에 단다** (S159 3-4). 카드는 잉여 수익을 담고
+            # 이 표는 안 담는다 — 둘 다 옳은데 이름이 같아 한 화면에서 517만원과
+            # 509만원이 나란히 섰다. 값을 맞추지 않고 이름으로 가른다.
+            "자가소비 절감액": [fmt.won_year(value) for value in frame["자가소비 절감액(원)"]],
             "투자비": [
                 fmt.won_short(value, reason="미산출 — 단가 미입력") for value in frame["투자비(원)"]
             ],
