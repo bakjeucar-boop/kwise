@@ -526,6 +526,33 @@ def test_세_방법이_세는_수의_차가_뭉친_몫과_같다() -> None:
     )
 
 
+#: ``docs\OPEN_ITEMS.md`` 갈래 표의 「지금」 열 — `| 나 | **24** | 26 | …`.
+BRANCH_TABLE_NOW = re.compile(r"^\| ([가-마]|합) \| \*\*(\d+)\*\* \|", re.M)
+
+
+def test_갈래_표의_지금_열이_갈래_절_제목과_같다() -> None:
+    """**합만 보면 갈래끼리 주고받은 것을 못 본다** (S165 0-2절).
+
+    S161~S164 네 판이 절 제목의 수는 갈면서 표를 「지금 (S160)」 에 두었다 —
+    표가 나 26 · 라 28 · 마 30 인데 절 제목은 나 24 · 라 27 · 마 33 이었다.
+    **합이 둘 다 98 이라** :func:`test_갈래_절_제목의_합이_미해결_건수와_같다` 는
+    초록이었다. 그래서 갈래마다 맞댄다.
+    """
+    text = _read("docs/OPEN_ITEMS.md")
+    heads = dict(BRANCH_HEAD.findall(text))
+    table = dict(BRANCH_TABLE_NOW.findall(text))
+    assert len(heads) == 5 and len(table) == 6, (
+        f"갈래 절 제목 {len(heads)}개 · 표 행 {len(table)}개만 잡혔습니다."
+    )
+
+    heads["합"] = str(sum(int(count) for count in heads.values()))
+    off = [f"{b} 표 {table[b]} · 절 {heads[b]}" for b in heads if table[b] != heads[b]]
+    assert not off, (
+        f"갈래 표 「지금」 열이 절 제목과 다릅니다 — {' · '.join(off)}. "
+        "항목을 닫거나 열었으면 `docs\\OPEN_ITEMS.md` 의 표도 함께 고치십시오."
+    )
+
+
 #: 「다음 작업」 칸의 상한 (S146 6절).
 #:
 #: **지금이 2,194자이고 그것이 두 판치다.** 3,000자면 두 판치가 넉넉히 들고
