@@ -68,6 +68,7 @@ __all__ = [
     "CAPACITY_ROWS",
     "DATE_FORMAT",
     "DATE_LABEL_EXPR",
+    "FLAT_TITLE",
     "LEGEND",
     "LEGEND_BELOW",
     "MONTHLY_CHARGE_PARTS",
@@ -214,6 +215,16 @@ LEGEND_BELOW = alt.Legend(
     strokeColor=None,
     padding=0,
 )
+
+#: 세로축 이름을 **축 위에 가로로** 얹는다 (S163 2-4).
+#:
+#: vega 는 세로축 이름을 90° 돌려 적는다 — 한글은 그렇게 두면 글자가 세로로 한
+#: 자씩 쌓여 안 읽힌다(「요금 (원)」 이 「원 금 요」 처럼). 왼쪽에 가로로 눕히면
+#: 이번에는 그림 폭을 먹으므로 **축 위 왼쪽**에 둔다. png 쪽은 같은 병을
+#: :func:`kwise.report.figures.money_axis_title` 이 이미 이렇게 고쳤다.
+#:
+#: **이름씨는 여기 없다** — 축마다 제 이름을 ``title=`` 로 준다.
+FLAT_TITLE = alt.Axis(titleAngle=0, titleAlign="left", titleBaseline="bottom", titleX=0, titleY=-8)
 
 
 def monthly_peak_chart(peak: PeakProfile, *, split: bool = True) -> alt.LayerChart:
@@ -762,7 +773,7 @@ _DAY_TYPE_COLORS = alt.Scale(
 # 범례에는 셋이 남아 그림에 없는 것을 가리켰다.
 
 
-def tariff_option_chart(switch: TariffSwitchResult) -> alt.Chart:
+def tariff_option_chart(switch: TariffSwitchResult) -> alt.LayerChart:
     """요금제별 기본·전력량·합계 **그룹 막대** (17세션 1-2).
 
     쌓지 않고 나란히 세운다. 누적은 합계만 보이고 **기본요금끼리·전력량요금끼리
@@ -771,31 +782,54 @@ def tariff_option_chart(switch: TariffSwitchResult) -> alt.Chart:
     **축을 0 부터 시작하지 않는다** (17세션 0절). 35억 위에서 5천만원이 움직이는
     것을 0 부터 그리면 막대 셋이 같은 높이로 보인다. 얼마나 줄어드는지는
     :func:`tariff_delta_chart` 가 따로 낸다.
+
+    **단위는 자료의 크기가 고른다** (S163 2-1). 원 눈금(70,000,000)은 바로 위
+    차액 막대가 만원으로 접히는 것과 자가 달랐다 — 같은 카드에서 두 자를 읽었다.
+    위아래가 **같은 단위가 된다는 뜻은 아니다**: 대형 벌은 합계 33.5억 · 차액
+    5,358만원이라 저마다 제 단위를 고른다 (PPT 도 S162 2절에 그렇게 정했다).
     """
     long = tariff_option_long_frame(switch)
     order = list(tariff_option_frame(switch)["요금제"])
     parts = tariff_parts(switch)
-    return (
-        alt.Chart(long)
-        .mark_bar()
-        .encode(
-            x=alt.X("요금제:N", title=None, sort=order),
-            xOffset=alt.XOffset("구분:N", sort=list(parts)),
-            y=alt.Y("원:Q", title="요금 (원)", scale=_CUT_SCALE),
-            color=alt.Color(
-                "구분:N",
-                title=None,
-                sort=list(parts),
-                scale=alt.Scale(
-                    domain=list(parts),
-                    range=[_TARIFF_PART_COLORS[name] for name in parts],
-                ),
-                legend=LEGEND,
-            ),
-            tooltip=["요금제", "구분", alt.Tooltip("원:Q", format=",.0f")],
-        )
-        .properties(height=300)
+    unit = money.axis_unit(long["원"])
+    fold = money.AXIS_UNITS[unit]
+    shown = f"요금({unit})"
+    framed = long.assign(
+        **{shown: [float(value) / fold for value in long["원"]]},
+        라벨=[money.on_axis(float(value), unit) for value in long["원"]],
     )
+    values = list(framed[shown])
+    span = (max(values) - min(values)) or 1.0
+    # **막대 위에 값이 서므로 그만큼 위를 비운다** (S163 2-3). vega 는 자료에 딱
+    # 맞춰 domain 을 잡으므로 가장 높은 막대의 라벨이 그림 밖으로 나간다.
+    domain = [max(0.0, min(values) - span * 0.15), max(values) + span * 0.15]
+    scale = alt.Scale(domain=domain, zero=False, nice=False)
+    base = alt.Chart(framed).encode(
+        # **가로축 이름을 눕힌다** (S163 2-4). vega 는 이름씨 축의 눈금 이름을
+        # 기본으로 −90° 돌려 적어 「선택Ⅰ」 이 한 글자씩 세로로 쌓였다.
+        x=alt.X("요금제:N", title=None, sort=order, axis=alt.Axis(labelAngle=0)),
+        xOffset=alt.XOffset("구분:N", sort=list(parts)),
+    )
+    # **축 이름은 막대 켜에만 준다.** 켜 둘에 같은 이름을 실으면 그려지는 축은
+    # 하나인데 스펙에는 둘이라 화면 감사가 문구를 두 번 센다 (S163 2-9).
+    bars = base.mark_bar().encode(
+        y=alt.Y(f"{shown}:Q", title=f"요금 ({unit})", scale=scale, axis=FLAT_TITLE),
+        color=alt.Color(
+            "구분:N",
+            title=None,
+            sort=list(parts),
+            scale=alt.Scale(
+                domain=list(parts),
+                range=[_TARIFF_PART_COLORS[name] for name in parts],
+            ),
+            legend=LEGEND,
+        ),
+        tooltip=["요금제", "구분", alt.Tooltip("원:Q", format=",.0f")],
+    )
+    labels = base.mark_text(baseline="bottom", dy=-3, fontSize=9).encode(
+        y=f"{shown}:Q", text="라벨:N"
+    )
+    return (bars + labels).properties(height=300)
 
 
 def tariff_delta_chart(switch: TariffSwitchResult) -> alt.LayerChart:
@@ -816,11 +850,15 @@ def tariff_delta_chart(switch: TariffSwitchResult) -> alt.LayerChart:
     unit = money.axis_unit(frame["현행 대비(원)"])
     fold = money.AXIS_UNITS[unit]
     shown = f"현행 대비({unit})"
+    # **「현행」 은 한 자리에만 선다** (S163 1-2). 금액이 0 이라 적는 「현행」 과
+    # 표식 「현행」 이 겹쳐 라벨이 「현행 · 현행」 이 됐다 — 어느 요금제가 현행인지
+    # 말하는 것은 **표식** 쪽이므로 금액 자리에서는 지운다.
     labelled = frame.assign(
         **{shown: [float(value) / fold for value in frame["현행 대비(원)"]]},
         설명=[
-            (money.on_axis(float(value), unit) if abs(value) >= 1 else "현행")
-            + (f" · {mark}" if mark else "")
+            " · ".join(
+                part for part in (money.delta_amount(float(value), mark, unit), mark) if part
+            )
             for value, mark in zip(frame["현행 대비(원)"], frame["표식"], strict=True)
         ],
     )

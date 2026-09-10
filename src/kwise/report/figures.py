@@ -624,10 +624,14 @@ def tariff_option_png(
     # **축을 0 부터 시작하지 않는다** (17세션 0절). **그리는 막대를 다 넣는다** —
     # 빠뜨리면 그 막대가 축 아래로 잘린다 (S140 2절). 위에는 값 라벨이 서므로
     # 그만큼 더 비운다.
+    #
+    # **비우는 몫은 라벨 한 줄이면 된다** (S163 2-6). S162 가 0.55 를 주었더니
+    # 가장 큰 막대가 6,888만원인데 눈금이 10,000만원까지 올라가 위쪽 3할이
+    # 비었다 — 눈금 상한을 자료가 정하게 두는 것이 이 값의 뜻이다.
     finite = [value / fold for _, values, _ in series for value in values if pd.notna(value)]
     if finite:
         span = max(finite) - min(finite)
-        upper.set_ylim(max(0.0, min(finite) - span * 0.15), max(finite) + span * 0.55)
+        upper.set_ylim(max(0.0, min(finite) - span * 0.15), max(finite) + span * 0.15)
     money_axis_title(upper, unit)
     add_legend(upper)
 
@@ -656,10 +660,14 @@ def tariff_option_png(
         min(min(scaled, default=0.0), 0.0) - pad * 2.4,
         max(max(scaled, default=0.0), 0.0) + pad * 2.4,
     )
+    # **「현행」 은 한 자리에만 선다** (S163 1-2). 금액이 0 이라 적는 「현행」 이
+    # 아래 x 눈금 이름의 표식 「현행」 과 겹쳐 선택Ⅱ 밑에 두 줄로 섰다 — 어느
+    # 요금제가 현행인지 말하는 것은 **눈금 이름** 쪽이므로 금액 자리에서는 지운다.
     lower.bar_label(
         bars,
         labels=[
-            "현행" if abs(amount) < 1 else money.on_axis(amount, delta_unit) for amount in amounts
+            money.delta_amount(amount, mark, delta_unit)
+            for amount, mark in zip(amounts, delta["표식"], strict=True)
         ],
         padding=3,
         fontsize=8,

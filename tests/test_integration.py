@@ -802,11 +802,12 @@ def test_요금제_그래프가_그룹_막대이고_차액_차트가_따로_있�
     from kwise.ui.charts import tariff_delta_chart, tariff_option_chart
 
     _usage, switch, _pf, _day, _base = _material()
+    # **막대와 값 라벨 두 켜다** (S163 2-3). 켜를 나눠도 그룹 막대라는 사실과
+    # 축을 자른다는 사실은 그대로 무는다 — 자리만 켜 안으로 들어갔다.
     grouped = tariff_option_chart(switch).to_dict()
-    assert "xOffset" in grouped["encoding"], list(grouped["encoding"])
-    assert grouped["encoding"]["y"]["scale"]["zero"] is False
-    # **축 제목에 그 사실을 적지 않는다** (21세션 5절). 눈금을 보면 안다.
-    assert grouped["encoding"]["y"]["title"] == "요금 (원)"
+    bars = grouped["layer"][0]["encoding"]
+    assert "xOffset" in bars, list(bars)
+    assert bars["y"]["scale"]["zero"] is False
 
     delta = tariff_delta_chart(switch).to_dict()
     fields = {layer["encoding"]["x"].get("field") for layer in delta["layer"]}
@@ -907,6 +908,94 @@ def test_차액_막대의_축과_라벨이_같은_단위다() -> None:
     assert len(seen) == 1, (
         f"한 그림 안에 단위가 둘입니다 — {sorted(seen)}. "
         f"축 제목 {titles} · 열 {fields} · 라벨 {labels}."
+    )
+
+
+# ================================================================ S163 · 선택요금 카드의 두 그림
+#
+# S162 가 PPT 를 고치는 동안 **화면 아래 그룹 막대는 원 고정으로 남아 있었다** —
+# 같은 카드 위아래에서 만원과 원을 함께 읽었다. 못 넷이 그 자리를 문다.
+
+
+def test_선택요금_카드의_두_그림이_금액_축을_접는다() -> None:
+    """**같은 카드에서 두 자를 읽고 있었다** (S163 ㄱ).
+
+    위 차액 막대는 만원으로 접히는데 아래 그룹 막대는 y 눈금이 원 고정
+    (70,000,000)이었다. 두 그림 다 :func:`kwise.money.axis_unit` 을 지나야 한다.
+
+    **두 그림이 같은 단위가 된다는 뜻은 아니다** (S163 2-2). 대형 벌은 합계가
+    33.5억이고 차액이 5,358만원이라 한 단위로 묶으면 아래가 0.05억이 된다 —
+    PPT 도 S162 2절에 위아래 칸이 저마다 고르게 두었다. **여기서 무는 것은
+    「접었느냐」 지 「같으냐」 가 아니다.**
+    """
+    from kwise.money import AXIS_UNITS
+    from kwise.ui.charts import tariff_delta_chart, tariff_option_chart
+
+    _usage, switch, _pf, _day, _base = _material()
+    unit = re.compile("|".join(AXIS_UNITS))
+    titles = [
+        layer["encoding"][axis]["title"]
+        for chart, axis in (
+            (tariff_option_chart(switch), "y"),
+            (tariff_delta_chart(switch), "x"),
+        )
+        for layer in chart.to_dict()["layer"]
+        if layer["encoding"].get(axis, {}).get("title")
+    ]
+    bare = [text for text in titles if not unit.search(text)]
+    assert not bare, f"금액 축이 접은 단위를 안 적습니다 — {bare}. `money.axis_unit` 을 지나십시오."
+
+
+def test_차액_금액_자리는_표식이_현행이면_비운다() -> None:
+    """**「현행」 이 한 그림에 두 번 섰다** (S163 1-2).
+
+    현행 요금제는 차액이 0 이라 금액 자리에도 「현행」 을 적고 있었는데, 어느
+    요금제가 현행인지는 **표식**이 이미 말한다 — 화면 라벨이 「현행 · 현행」,
+    PPT 는 x 눈금 이름 밑에 두 줄이었다. **화면과 PPT 가 이 문 하나를 지난다.**
+    """
+    from kwise.money import delta_amount
+
+    assert delta_amount(0.0, "현행", "만원") == ""
+    assert delta_amount(-53_579_556.0, "최적", "만원") == "-5,358만원"
+    assert delta_amount(-25_928_097.0, "", "만원") == "-2,593만원"
+
+
+def test_화면_차액_라벨에_현행이_두_번_서지_않는다() -> None:
+    """위 시험이 무는 규칙이 **그려지는 글자**에 실제로 닿는지 본다 (S163 ㅂ)."""
+    from kwise.ui.charts import tariff_delta_chart
+
+    _usage, switch, _pf, _day, _base = _material()
+    spec = tariff_delta_chart(switch).to_dict()
+    labels = [
+        str(row["설명"]) for table in spec["datasets"].values() for row in table if "설명" in row
+    ]
+    twice = [text for text in labels if text.count("현행") > 1]
+    assert not twice, f"한 라벨에 「현행」 이 두 번 섭니다 — {twice}."
+
+
+def test_그룹_막대_눈금_상한이_자료_최대에_붙는다() -> None:
+    """**위쪽 3할이 비어 있었다** (S163 ㅅ).
+
+    막대 위에 값 라벨을 세우면서 위를 span 의 55% 만큼 비웠더니, 가장 큰 막대가
+    6,888만원인데 눈금이 10,000만원까지 올라갔다. 비우는 몫은 **라벨 한 줄**이면
+    된다 — 눈금 상한은 자료가 정한다.
+
+    **PPT 쪽은 값으로 못 물었다** (S163 2-8). ``tariff_option_png`` 는 그림을
+    굽고 닫으므로 축 범위를 되읽을 자리가 없다 — png 로 눈으로 봤다.
+    """
+    from kwise.ui.charts import tariff_option_chart
+
+    _usage, switch, _pf, _day, _base = _material()
+    spec = tariff_option_chart(switch).to_dict()
+    scale = spec["layer"][0]["encoding"]["y"]["scale"]
+    field = spec["layer"][0]["encoding"]["y"]["field"]
+    highest = max(
+        float(row[field]) for table in spec["datasets"].values() for row in table if field in row
+    )
+    top = float(scale["domain"][1])
+    assert top <= highest * 1.25, (
+        f"눈금 상한 {top:,.0f} 이 자료 최대 {highest:,.0f} 에서 "
+        f"{top / highest - 1:.0%} 떠 있습니다 — 라벨 한 줄만 비우십시오."
     )
 
 

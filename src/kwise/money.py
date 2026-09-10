@@ -30,6 +30,7 @@ __all__ = [
     "TRUNCATION_FOOTNOTE",
     "TRUNCATION_UNIT_WON",
     "axis_unit",
+    "delta_amount",
     "on_axis",
     "truncate_won",
     "won",
@@ -103,6 +104,18 @@ def on_axis(value: float, unit: str) -> str:
     """
     folded = value / AXIS_UNITS[unit]
     return f"{folded:,.2f}{unit}" if abs(folded) < 10 else f"{folded:,.0f}{unit}"
+
+
+def delta_amount(value: float, mark: str, unit: str) -> str:
+    """차액 막대의 **금액 자리** — 표식이 「현행」 이면 비운다 (S163 1-2).
+
+    현행 요금제는 차액이 0 이라 금액 자리에도 「현행」 을 적고 있었다. 어느
+    요금제가 현행인지 말하는 것은 **표식** 쪽이라 한 그림에 「현행」 이 두 번
+    섰다 — 화면은 라벨이 「현행 · 현행」, PPT 는 x 눈금 이름 밑에 두 줄이었다.
+
+    **화면과 PPT 가 함께 지난다.** 두 자리에 따로 적으면 또 갈린다.
+    """
+    return "" if mark == "현행" else on_axis(value, unit)
 
 
 def won_plain(value: float | None, *, reason: str) -> str:
