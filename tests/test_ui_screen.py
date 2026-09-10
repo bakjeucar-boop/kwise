@@ -3965,23 +3965,20 @@ def test_합산효과에_회수기간이_있다(stage3: AppTest) -> None:
     assert "투자비" in str(payback.delta)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "S164 2절 — 3단계 한 화면에서 「단순 합」 이라는 같은 이름이 값이 다른 두 자리에 "
-        "붙는다. 요약표 합계 행은 simple_sum_won(rows) 라 경제성DR 을 담고, 지표와 "
-        "계산 근거 표는 simple_sum_won(picked, combinable_only=True) 라 안 담는다. "
-        "덱 벌 small-a2-pf100-offset 에 DR 정산 단가 120 원/kWh 를 얹어 재니 "
-        "588만원 대 517만원(차 71만원 = DR 절감액)이었다. 어느 쪽이 옳은지는 사람이 정한다."
-    ),
-)
 def test_단순_합이라는_이름이_한_값만_가리킨다(sample_diagnosis: Any, sample_switch: Any) -> None:
-    """**같은 이름이 두 값을 가리키지 않는다** (S164 2절).
+    """**같은 이름이 두 값을 가리키지 않는다** (S164 2절 · S165 1절에 걷었다).
 
     화면 3단계는 「단순 합」 을 두 번 적는다 — 요약표 합계 행과 합산효과 지표다.
-    앞은 켠 수단 전부를 더하고 뒤는 조합 재계산에 들어가는 것만 더하므로,
-    경제성DR 처럼 조합 밖에 있는 수단에 금액이 붙으면 두 수가 갈린다.
+    S164 까지 앞은 켠 수단 전부를, 뒤는 ``combinable_only=True`` 로 조합 재계산에
+    들어가는 것만 더해 **덱 벌에 DR 120 원/kWh 를 얹으면 588만원 대 517만원**이었다.
+
+    **xfail 을 걷은 까닭** — 사람이 「담는 쪽」 으로 정했고 S165 가 인자를 걷어
+    두 자리가 같은 식 하나를 부른다. 그래서 이제는 ① DR 이 합에 담기는지와
+    ② **인자가 다시 생기지 않는지**를 문다 — 인자가 있으면 부르는 쪽마다 다르게
+    줄 수 있고, 그것이 S164 가 본 병이었다.
     """
+    import inspect
+
     from kwise import money
     from kwise.measures import evaluate_demand_response
     from kwise.report import simple_sum_won, standalone_frame, standalone_rows
@@ -3993,9 +3990,10 @@ def test_단순_합이라는_이름이_한_값만_가리킨다(sample_diagnosis:
 
     # 요약표 합계 행 — 화면에 그려지는 글자 그대로 본다.
     table_row = str(standalone_frame(rows).iloc[-1]["연간 절감액"])
-    # 합산효과 지표와 계산 근거 표가 쓰는 값 (`ui\views\compare.py::_combined_block`).
-    metric = money.won_short(simple_sum_won(rows, combinable_only=True), reason="—")
-    assert table_row == metric, (table_row, metric)
+    with_dr = (sample_switch.annual_saving_won or 0.0) + demand_response.settlement_won
+    assert table_row == money.won_short(with_dr, reason="—"), (table_row, with_dr)
+    # 합산효과 지표와 계산 근거 표가 쓰는 식 (`ui\views\compare.py::_combined_block`).
+    assert list(inspect.signature(simple_sum_won).parameters) == ["rows"]
 
 
 def test_투자가_없는_조합은_즉시다() -> None:

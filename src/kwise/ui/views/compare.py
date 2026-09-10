@@ -446,10 +446,13 @@ def _combined_block(
 
     **단순 합도 고른 것만 더한다** (16세션 5절). 조합에서 뺀 수단을 단순 합에
     넣으면 차이가 상호작용이 아니라 「뺀 만큼」이 되어 뜻이 달라진다.
+
+    **다만 조합 밖 수단(경제성DR)은 담는다** (S165 1절) — 요약표 합계 행과 같은
+    식이다. 그래서 DR 정산금이 있으면 「차이」 에 그 몫이 함께 선다.
     """
     combined = comparison.combinations[-1]
     picked = tuple(row for row in rows if row.key in set(chosen))
-    simple = simple_sum_won(picked, combinable_only=True)
+    simple = simple_sum_won(picked)
     actual = combined.annual_saving_won
     gap = actual - simple
     ratio = gap / simple if simple else None

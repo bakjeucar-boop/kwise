@@ -232,18 +232,16 @@ def standalone_rows(
     return tuple(rows)
 
 
-def simple_sum_won(rows: tuple[StandaloneRow, ...], *, combinable_only: bool = False) -> float:
+def simple_sum_won(rows: tuple[StandaloneRow, ...]) -> float:
     """**단순 합.** 모르는 금액은 0 으로 세지 않고 그냥 뺀다.
 
-    Args:
-        combinable_only: 합산효과와 견줄 때 켠다. 조합 재계산에 들어가지 않는
-            수단(경제성DR·잉여)까지 더하면 같은 것을 비교하는 것이 아니다.
+    **켠 수단을 다 담는다 — 조합 밖 수단(경제성DR)도 담는다** (S165 1절).
+    ``combinable_only`` 인자를 걷었다. 요약표 합계 행은 DR 을 담고 합산효과 지표는
+    안 담아 **한 화면에서 「단순 합」 이 588만원과 517만원**이었다. 조합 재계산에
+    못 들어가는 것은 합성 계산의 사정이지 「켠 것들의 합」 이라는 이름과는 상관이
+    없다 — 사람이 담는 쪽으로 정했다.
     """
-    return sum(
-        row.annual_saving_won or 0.0
-        for row in rows
-        if row.annual_saving_won is not None and (row.combinable or not combinable_only)
-    )
+    return sum(row.annual_saving_won or 0.0 for row in rows)
 
 
 def standalone_frame(rows: tuple[StandaloneRow, ...]) -> pd.DataFrame:
