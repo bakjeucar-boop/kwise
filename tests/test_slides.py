@@ -1971,6 +1971,42 @@ def test_부하패턴_문장_둘이_각각_갈린다(sample_diagnosis: Diagnosis
     )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "S164 3-3 — 4장과 7장이 피크 여지를 반대로 말한다. 4장은 부하율만 보고 "
+        "(41.1% < 70% → 「피크를 낮출 여지가 큽니다」), 7장은 기본요금 비중만 본다 "
+        "(19.9% < 20% → 「피크를 낮춰도 줄어드는 몫이 작습니다」). **둘 다 제 잣대로는 "
+        "옳다** — 두 문장이 서로를 모를 뿐이다. 값은 덱 벌 small-a2-pf100-offset 에서 "
+        "잰 것이고, 문턱은 data\\assumptions.json 의 narrative.load_factor_flat(0.70) 과 "
+        "narrative.base_fee_share_low(0.20) 이다. 어느 쪽을 고칠지는 사람이 정한다."
+    ),
+)
+def test_두_장이_피크_여지를_반대로_말하지_않는다(sample_diagnosis: Diagnosis) -> None:
+    """**한 사실을 두 잣대로 말하면 덱 안에서 뜻이 갈린다** (S164 3-3)."""
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from kwise.report.narrative import pattern_lead, structure_lead
+
+    pattern = replace(sample_diagnosis.pattern, load_factor=0.411, base_load_ratio=1.008)
+    share = 0.199
+    structure = SimpleNamespace(
+        base_won=share * 100.0,
+        energy_won=(1 - share) * 100.0,
+        total_won=100.0,
+        bill=SimpleNamespace(total_power_factor_won=0.0, total_excess_won=0.0),
+        base_with_power_factor_won=share * 100.0,
+        base_with_power_factor_share=share,
+    )
+    page4 = pattern_lead(pattern)
+    page7 = structure_lead(structure)  # type: ignore[arg-type]
+
+    assert not (
+        "피크를 낮출 여지가 큽니다" in page4 and "피크를 낮춰도 줄어드는 몫이 작습니다" in page7
+    ), (page4, page7)
+
+
 def test_요금구조가_세_갈래다() -> None:
     """**가운데를 가운데라고 적는다** (53세션 4-6)."""
     from types import SimpleNamespace

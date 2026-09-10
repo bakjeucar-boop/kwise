@@ -64,6 +64,13 @@
       "한 자리": [],
       "못": false,
       "비고": "이름이 같은 도우미를 센다 — 몸통이 같은지는 이 그물이 안 본다. S136 3절에 몸통을 맞대고 「모으지 않는다」 로 판정했다 — 이름만 같고 꼴이 둘이다(summary·slides 는 money.won_short 짧은 꼴, worksheet·document 는 money.won 긴 꼴) · None 사유가 넷 다 다르다 · 표기 규칙 자체는 이미 kwise.money 한 자리가 쥔다. 넷은 「어느 꼴에 어느 사유」 라는 모듈마다 다른 선택을 파일 안에 한 번 적는 지역 껍데기다. 그래서 못도 안 박는다. **S145 판정 — 자료로 둔다.** 위 넷과 성격이 다르다 — 저것들은 자리를 세는 그물이고 이것은 S136 이 끝낸 판정의 근거를 남긴 자리다. 다시 열지 마라"
+    },
+    {
+      "이름": "「단순 합」 금액",
+      "그물": "\\bsimple_sum_won\\(",
+      "한 자리": ["src/kwise/report/standalone.py"],
+      "못": false,
+      "비고": "「단순 합」 이라는 이름으로 **금액을 만드는** 자리를 센다 (S164 2-1). 자리 셋 가운데 하나가 정의(report/standalone.py)이고 부름이 둘인데, 그 둘이 **같은 이름에 다른 값을 매긴다** — 3단계 요약표 합계 행은 simple_sum_won(rows) 라 경제성DR 을 담고, 합산효과 지표는 simple_sum_won(picked, combinable_only=True) 라 안 담는다. 갈림은 combinable_only 인자 하나이고 그것을 주는 자리는 ui/views/compare.py 한 곳이다. **그물이 못 보는 것**: 값을 **넘겨받아 적기만 하는** 셋째 표기 자리(report/worksheet.py::combination_worksheet 의 WorkRow(\"단순 합\", …) — 지표가 쓴 값을 그대로 받는다) · 금액 없이 **문장으로만** 「단순 합이 아니다」 라고 적는 여덟 자리(compare/combination.py 둘 · report/document.py · report/narrative.py · report/slides.py · report/standalone.py · ui/anchors.py · ui/views/compare.py) · 주석과 독스트링을 안 가른다. **세는 그물이다 — 못은 안 박는다.** 값이 갈리는 것은 tests\\test_ui_screen.py 의 test_단순_합이라는_이름이_한_값만_가리킨다 가 xfail 못으로 문다"
     }
   ]
 }

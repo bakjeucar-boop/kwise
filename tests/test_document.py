@@ -484,6 +484,56 @@ def test_수단이_7장_순서로_나온다(
     assert [item.kind.number for item in built] == ["7.1", "7.2", "7.4"]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "S164 3-1 — 화면 요약표와 PPT 8장 표가 같은 수단을 안 센다. 화면은 "
+        "standalone_rows 라 결과(EssResult)가 없으면 줄을 안 세우고, PPT 는 "
+        "measure_entries 라 최소 규격 미달 갈래에서 「미산출」 항목을 세운다. "
+        "덱 벌 small-a2-pf100-offset 에서 화면 다섯 줄(ESS 없음) 대 PPT 여섯 줄이었고, "
+        "같은 화면의 「검토 범위」 는 「검토함 — … 6. ESS / 미검토 — 없음」 이다. "
+        "덱 벌 열여덟 가운데 열둘이 이 모양이다. 어느 쪽이 옳은지는 사람이 정한다."
+    ),
+)
+def test_화면_요약표와_보고서_요약표가_같은_수단을_센다() -> None:
+    """**같은 사실을 만드는 자리가 둘이면 갈린다** (S164 3-1).
+
+    ESS 필요 출력이 상업용 최소 규격에 못 미치는 자리다 — 화면은 줄을 빼고
+    보고서는 「미산출」 로 세운다. 값은 덱 벌 ``small-a2-pf100-offset`` 에서 잰 것이다.
+    """
+    from kwise.measures import EssOptimum, EssTargetCurve
+    from kwise.report import standalone_rows
+
+    optimum = EssOptimum(
+        target_kw=0.0,
+        payback_years=None,
+        curve_target_kw=0.0,
+        window_kw=0.0,
+        widened=0,
+        at_edge=False,
+        viable=False,
+        below_minimum=True,
+        required_power_kw=25.3,
+        required_capacity_kwh=30.0,
+        required_discharge_hours=1.17,
+        minimum_power_kw=50.0,
+    )
+    curve = EssTargetCurve(
+        points=(),
+        best=None,
+        baseline_demand_kw=132.0,
+        observed_peak_kw=132.3,
+        base_fee_won_per_kw=8_230.0,
+        min_power_kw=50.0,
+        step_kw=1.0,
+        round_trip=0.9,
+        dod=0.9,
+    )
+    screen = standalone_rows(ess=None)
+    deck = measure_entries(ess=None, ess_optimum=optimum, ess_curve=curve)
+    assert [item.kind.key for item in deck] == [row.key for row in screen]
+
+
 def test_켜지_않은_수단은_보고서에_없다(entries: tuple[object, ...]) -> None:
     """**'보지 않은 것' 이 '검토했더니 이만큼' 으로 둔갑하면 안 된다.**"""
     numbers = {item.kind.number for item in entries}  # type: ignore[attr-defined]

@@ -3965,6 +3965,39 @@ def test_합산효과에_회수기간이_있다(stage3: AppTest) -> None:
     assert "투자비" in str(payback.delta)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "S164 2절 — 3단계 한 화면에서 「단순 합」 이라는 같은 이름이 값이 다른 두 자리에 "
+        "붙는다. 요약표 합계 행은 simple_sum_won(rows) 라 경제성DR 을 담고, 지표와 "
+        "계산 근거 표는 simple_sum_won(picked, combinable_only=True) 라 안 담는다. "
+        "덱 벌 small-a2-pf100-offset 에 DR 정산 단가 120 원/kWh 를 얹어 재니 "
+        "588만원 대 517만원(차 71만원 = DR 절감액)이었다. 어느 쪽이 옳은지는 사람이 정한다."
+    ),
+)
+def test_단순_합이라는_이름이_한_값만_가리킨다(sample_diagnosis: Any, sample_switch: Any) -> None:
+    """**같은 이름이 두 값을 가리키지 않는다** (S164 2절).
+
+    화면 3단계는 「단순 합」 을 두 번 적는다 — 요약표 합계 행과 합산효과 지표다.
+    앞은 켠 수단 전부를 더하고 뒤는 조합 재계산에 들어가는 것만 더하므로,
+    경제성DR 처럼 조합 밖에 있는 수단에 금액이 붙으면 두 수가 갈린다.
+    """
+    from kwise import money
+    from kwise.measures import evaluate_demand_response
+    from kwise.report import simple_sum_won, standalone_frame, standalone_rows
+
+    assert sample_diagnosis.dr is not None
+    demand_response = evaluate_demand_response(sample_diagnosis.dr, unit_price_won_per_kwh=120.0)
+    assert demand_response.settlement_won, "정산금이 0 이면 두 수가 애초에 안 갈린다."
+    rows = standalone_rows(switch=sample_switch, demand_response=demand_response)
+
+    # 요약표 합계 행 — 화면에 그려지는 글자 그대로 본다.
+    table_row = str(standalone_frame(rows).iloc[-1]["연간 절감액"])
+    # 합산효과 지표와 계산 근거 표가 쓰는 값 (`ui\views\compare.py::_combined_block`).
+    metric = money.won_short(simple_sum_won(rows, combinable_only=True), reason="—")
+    assert table_row == metric, (table_row, metric)
+
+
 def test_투자가_없는_조합은_즉시다() -> None:
     """투자비가 0 인 수단만 고르면 회수기간은 「즉시」 다 (28세션 2절)."""
     from kwise.measures import payback_years
