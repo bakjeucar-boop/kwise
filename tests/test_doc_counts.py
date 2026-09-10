@@ -41,6 +41,8 @@ import sys
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -203,18 +205,28 @@ def _live_nails() -> int:
     )
 
 
-def _open_items() -> int:
-    """미해결 건수 — 갈래 머리말이 말하는 수의 합 (``tools\\daily_brief.py`` 와 같은 자리).
-
-    브리핑이 세는 수를 **여기서 다시 세지 않는다.** 그 도구를 불러 쓴다.
-    """
+def _brief() -> ModuleType:
+    """``tools\\daily_brief.py`` 를 불러 온다 — 세는 자리는 그 도구 하나다."""
     sys.path.insert(0, str(PROJECT_ROOT / "tools"))
     try:
         import daily_brief
     finally:
         sys.path.pop(0)
-    state = daily_brief.current_state(_read("PROCEED.md"))
-    return daily_brief.total_items(daily_brief.open_items(state))
+    return daily_brief
+
+
+def _open_lines() -> list[Any]:
+    """미해결 칸이 편 줄."""
+    brief = _brief()
+    return list(brief.open_items(brief.current_state(_read("PROCEED.md"))))
+
+
+def _open_items() -> int:
+    """미해결 건수 — 갈래 머리말이 말하는 수의 합 (``tools\\daily_brief.py`` 와 같은 자리).
+
+    브리핑이 세는 수를 **여기서 다시 세지 않는다.** 그 도구를 불러 쓴다.
+    """
+    return _brief().total_items(_open_lines())
 
 
 #: (이름, 실물을 세는 함수, 문서에서 그 수를 찾는 표식).
@@ -398,6 +410,16 @@ def test_미해결_항목_본문은_상한을_넘지_않는다() -> None:
     )
 
 
+def _holds(text: str) -> int:
+    """이 줄이 담는 건수. 「청구서 4」 는 넷이고 나머지는 하나다 (68세션 2절).
+
+    본문 괄호가 없고 이름 끝이 맨 수인 줄만 그렇게 읽는다.
+    """
+    name, body = _brief().item_parts(text)
+    lumped = re.fullmatch(r".+?\s+(\d+)", name)
+    return int(lumped.group(1)) if not body and lumped else 1
+
+
 def test_미해결_갈래의_머리말과_줄_수가_같다() -> None:
     """**줄을 세는 셋째 방법** (S159 0-3절).
 
@@ -424,16 +446,10 @@ def test_미해결_갈래의_머리말과_줄_수가_같다() -> None:
     items = daily_brief.open_items(daily_brief.current_state(_read("PROCEED.md")))
     assert items, "미해결 칸을 못 읽었습니다 — PROCEED.md 「현재 상태」 를 보십시오."
 
-    def holds(text: str) -> int:
-        """이 줄이 담는 건수. 「청구서 4」 는 넷이고 나머지는 하나다."""
-        name, body = daily_brief.item_parts(text)
-        lumped = re.fullmatch(r".+?\s+(\d+)", name)
-        return int(lumped.group(1)) if not body and lumped else 1
-
     counted: dict[str, tuple[str, int]] = {}
     for item in items:
         head, seen = counted.get(item.sym, (item.name, 0))
-        counted[item.sym] = (head, seen + holds(item.text))
+        counted[item.sym] = (head, seen + _holds(item.text))
 
     off = [
         f"{sym} 머리말 {daily_brief.group_count(name, seen)} · 줄 {seen}"
@@ -475,6 +491,40 @@ def test_갈래_절_제목의_합이_미해결_건수와_같다() -> None:
         f"갈래 절 제목의 합이 {declared} 인데 실물은 {actual} 입니다 — "
         + " · ".join(f"{branch} {count}" for branch, count in rows)
         + ". 항목을 닫거나 열었으면 `docs\\OPEN_ITEMS.md` 의 갈래 절 제목도 함께 고치십시오."
+    )
+
+
+def test_세_방법이_세는_수의_차가_뭉친_몫과_같다() -> None:
+    """**세 수는 어긋나도 좋다 — 그 차가 뭉침과 같기만 하면 된다** (S162 0-4절).
+
+    세는 자리가 셋이고 S162 착수에 **96 · 96 · 93** 이었다 —
+    ① ``docs\\OPEN_ITEMS.md`` 갈래 절 제목의 합 · ② :func:`daily_brief.total_items` ·
+    ③ 브리핑이 편 **줄**. 셋째가 셋 적은 것은 결함이 아니다 — ①-1 「청구서 4」
+    한 줄이 넷을 담기 때문이고(68세션 2절) **뭉침이 옳은 꼴이라 펴지 않는다.**
+
+    그래서 **같아지게 만들지 않고 그 관계를 문다** — ① = ② 이고
+    ① − ③ = **뭉쳐 더 담은 몫**이다. 앞선 두 못은 ①을 ②에(S161 0-2절),
+    ②를 갈래별 줄에(S159 0-3절) 각각 맞대므로 **세 수가 한 자리에 서는 곳이
+    없었다.** 여기가 그 자리다.
+
+    **기대값을 적지 않는다** — 셋 다 문서에서 가져온다.
+    """
+    rows = BRANCH_HEAD.findall(_read("docs/OPEN_ITEMS.md"))
+    assert len(rows) == 5, f"갈래 절 제목을 못 읽었습니다 — {len(rows)}개만 잡혔습니다."
+
+    items = _open_lines()
+    assert items, "미해결 칸을 못 읽었습니다 — PROCEED.md 「현재 상태」 를 보십시오."
+
+    declared = sum(int(count) for _branch, count in rows)
+    counted = _brief().total_items(items)
+    lumped = sum(_holds(item.text) - 1 for item in items)
+    names = [
+        _brief().item_parts(item.text)[0] for item in items if _holds(item.text) > 1
+    ]
+    assert declared == counted == len(items) + lumped, (
+        f"세는 세 방법이 어긋납니다 — 절 제목 합 {declared} · 건수 {counted} · "
+        f"줄 {len(items)} + 뭉친 몫 {lumped}(뭉친 줄: {' · '.join(names) or '없음'}). "
+        "줄이 적은 것은 뭉침이라 정상이나 그 차는 뭉친 몫과 같아야 합니다."
     )
 
 
