@@ -810,7 +810,104 @@ def test_요금제_그래프가_그룹_막대이고_차액_차트가_따로_있�
 
     delta = tariff_delta_chart(switch).to_dict()
     fields = {layer["encoding"]["x"].get("field") for layer in delta["layer"]}
-    assert "현행 대비(원)" in fields
+    # **차액 축은 원이 아니라 그 자료의 단위다** (S162 2-2). 눈금이 원인데 막대
+    # 라벨만 만원이라 한 그림에서 두 자를 읽고 있었다 — 이제 열 이름이 단위를
+    # 지고 축 제목이 같은 단위를 적는다. 원값은 툴팁에 그대로 남는다.
+    assert fields & {"현행 대비(만원)", "현행 대비(억원)"}, fields
+
+
+# ===================================================================== S162 · 그림의 금액 표기
+#
+# 못 셋이 같은 자리를 세 각도에서 문다 — **표기를 짓는 문** · **축 이름이 설 자리** ·
+# **한 그림 안의 단위**. 셋 다 S162 1절이 값으로 재고 3절이 고친 자리다.
+
+#: 금액을 억·만원으로 접는 나눔수. **그림이 제 자리에서 적으면 안 되는 수**다.
+MONEY_FOLDS = re.compile(r"1e8|1e4|100_000_000|10_000\b")
+
+
+def test_그림이_금액_단위를_밖에서_다시_짓지_않는다() -> None:
+    """**표기를 쥔 문은 `kwise.money` 하나다** (S162 2-1).
+
+    화면 차액 막대는 축이 원 눈금인데 라벨만 만원이었고(94만원), PPT 는 그림
+    셋이 억원 고정이라 200만원대 자료에서 「0.01억」 이 됐다. 뿌리는 표기 함수가
+    없는 것이 아니라 **그림이 그 문을 안 지나고 제 자리에서 나눈 것**이다 —
+    `figures.py` 는 `money` 를 들이지도 않았다.
+
+    단위를 고르는 셈(:func:`kwise.money.axis_unit`)과 그 단위로 접는 표기
+    (:func:`kwise.money.on_axis`)를 한 자리에 두고, 그림은 그것만 쓴다.
+    """
+    for name in ("src/kwise/report/figures.py", "src/kwise/ui/charts.py"):
+        source = Path(name).read_text(encoding="utf-8")
+        found = [
+            f"{name}:{index}"
+            for index, line in enumerate(source.splitlines(), start=1)
+            if MONEY_FOLDS.search(line)
+        ]
+        assert not found, (
+            f"그림이 금액을 제 자리에서 접습니다 — {' · '.join(found)}. "
+            "`money.axis_unit` 으로 단위를 고르고 `money.AXIS_UNITS` 로 나누십시오."
+        )
+        assert "from kwise import money" in source, f"{name} 이 표기 문을 안 지납니다."
+
+
+def test_차액_막대가_갈래마다_축_이름_자리를_남긴다() -> None:
+    """**빠진 축 이름은 아무 말도 하지 않는다** (S162 1-2 · 3-1).
+
+    높이가 140 으로 박혀 있어 요금제가 넷인 벌에서 한 행이 **15px** 밖에 못
+    받았다 — 겹치는 눈금 이름을 지우는 것이 vega 의 기본값이라 「선택Ⅱ ·
+    선택Ⅲ」 이 그림에서 **소리 없이 사라졌다.** 캡처로 눈으로 보고 잡았다.
+
+    **그려진 글자를 여기서 셀 수는 없다**(브라우저가 있어야 한다). 그 대신
+    빠짐을 정하는 값 — **한 행이 받는 세로**를 문다.
+    """
+    from kwise.ui.charts import _AXIS_ROOM, _ROW_MIN, tariff_delta_chart
+
+    _usage, switch, _pf, _day, _base = _material()
+    spec = tariff_delta_chart(switch).to_dict()
+    rows = len(
+        {row["요금제"] for table in spec["datasets"].values() for row in table if "요금제" in row}
+    )
+    room = (float(spec["height"]) - _AXIS_ROOM) / rows
+    assert room >= _ROW_MIN, (
+        f"한 행이 {room:.1f}px 밖에 못 받습니다 (갈래 {rows} · 높이 {spec['height']}) — "
+        f"{_ROW_MIN}px 아래면 vega 가 축 이름을 걸러 냅니다. `charts.bar_height` 를 쓰십시오."
+    )
+
+
+def test_차액_막대의_축과_라벨이_같은_단위다() -> None:
+    """**한 그림에서 두 자를 읽고 있었다** (S162 2-2).
+
+    x 눈금은 원(1,000,000)인데 막대 라벨은 만원(94만원)이었다. 축 제목 · 열
+    이름 · 막대 라벨 셋이 **같은 단위 낱말**을 써야 한 자로 읽힌다.
+    """
+    from kwise.money import AXIS_UNITS
+    from kwise.ui.charts import tariff_delta_chart
+
+    _usage, switch, _pf, _day, _base = _material()
+    spec = tariff_delta_chart(switch).to_dict()
+    unit = re.compile("|".join(AXIS_UNITS))
+
+    titles = [
+        layer["encoding"]["x"].get("title")
+        for layer in spec["layer"]
+        if layer["encoding"]["x"].get("title")
+    ]
+    fields = [
+        layer["encoding"]["x"].get("field")
+        for layer in spec["layer"]
+        if layer["encoding"]["x"].get("field")
+    ]
+    rows = [row for table in spec["datasets"].values() for row in table]
+    labels = [str(row["설명"]) for row in rows if "설명" in row]
+    # **축 제목이 단위를 적어야 견줄 것이 생긴다** — 「(원)」 처럼 접지 않은 단위를
+    # 적으면 라벨의 만원과 어긋난 채로 아무 못도 안 문다.
+    bare = [text for text in titles if not unit.search(text)]
+    assert not bare, f"축 제목이 접은 단위를 안 적습니다 — {bare}."
+    seen = {found.group(0) for text in [*titles, *fields, *labels] if (found := unit.search(text))}
+    assert len(seen) == 1, (
+        f"한 그림 안에 단위가 둘입니다 — {sorted(seen)}. "
+        f"축 제목 {titles} · 열 {fields} · 라벨 {labels}."
+    )
 
 
 def test_화면에_상세_미산출이_없다() -> None:

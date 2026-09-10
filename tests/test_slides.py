@@ -2625,22 +2625,12 @@ def test_DR_문장이_날_수로_세_갈래다(sample_diagnosis: Diagnosis) -> N
 # ===================================================================== 53세션 · 5절 차액 라벨
 
 
-def test_차액_라벨이_0선_반대쪽에_선다() -> None:
-    """**막대 안쪽에 있어 읽히지 않았다** (53세션 5절).
-
-    「-0.54억」 이 파란 막대 위에 얹혀 있었다. 0 선 건너편은 어느 자료에서도
-    비어 있으므로 그쪽에 두면 겹칠 일이 없다.
-    """
-    from kwise.report.figures import delta_label_place
-
-    pad = 0.05
-    down, down_align = delta_label_place(-0.54, pad)
-    assert down > 0 and down_align == "bottom", (down, down_align)
-    up, up_align = delta_label_place(0.31, pad)
-    assert up < 0 and up_align == "top", (up, up_align)
-    # 「현행」(0) 은 줄어드는 쪽과 같은 자리에 선다 — 겹칠 막대가 없다.
-    zero, zero_align = delta_label_place(0.0, pad)
-    assert zero > 0 and zero_align == "bottom"
+# **「차액 라벨이 0 선 반대쪽에 선다」 는 S162 3-2 에 걷었다.** 53세션이 그리로
+# 보낸 까닭은 막대 안쪽에서 글자가 막대 위에 얹혀 안 읽힌 것인데, 건너편에는
+# **x 눈금과 눈금 이름**이 서 있어 거기서 다시 겹쳤다(「0.01억」). 이제
+# ``bar_label`` 이 **막대 끝 바깥**에 두므로 그 함수 자체가 없어졌고, 자리는
+# 라이브러리가 정한다 — 무는 못을 세우려면 그림을 구워 Axes 를 봐야 해
+# **png 로 눈으로 본다**(S162 3-3).
 
 
 # ===================================================================== 53세션 · 6절 계약전력

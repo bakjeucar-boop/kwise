@@ -78,6 +78,7 @@ __all__ = [
     "TIME_TOOLTIP_FORMAT",
     "band_donut_chart",
     "band_frame",
+    "bar_height",
     "combination_chart",
     "combination_frame",
     "daily_temperature_chart",
@@ -124,6 +125,27 @@ __all__ = [
 ]
 
 _HEIGHT = 260
+
+#: 가로 막대 한 행에 남겨야 하는 세로 (S162 3-1). 이보다 좁으면 **vega 가 축
+#: 이름을 걸러 낸다** — 겹치는 눈금 이름을 지우는 것이 vega 의 기본값이라
+#: 그림은 아무 말 없이 이름 몇을 뺀 채 선다.
+_ROW_MIN = 30
+
+#: 축·눈금·눈금 이름이 먹는 세로. ``height`` 는 **그림 전체**의 높이다 —
+#: streamlit 이 ``autosize: fit`` 으로 태우므로 축이 먹은 만큼 그림 자리가 준다.
+#: 140 짜리 차액 그림을 캡처해 재니 막대 자리가 75px 뿐이었다 (S162 1-2).
+_AXIS_ROOM = 65
+
+
+def bar_height(rows: int) -> int:
+    """가로 막대 그림의 높이 — **행 수에 따라 늘린다** (S162 3-1).
+
+    140 으로 박아 두었더니 요금제가 넷인 벌에서 한 행이 **15px** 밖에 못 받아
+    vega 가 축 이름 둘을 걸러 냈다 — 「선택Ⅱ · 선택Ⅲ」 이 그림에서 사라졌고
+    **빠졌다는 말은 어디에도 없다.**
+    """
+    return max(140, _AXIS_ROOM + _ROW_MIN * rows)
+
 
 # ===================================================================== 17세션 0절 · 스케일
 #
@@ -788,15 +810,22 @@ def tariff_delta_chart(switch: TariffSwitchResult) -> alt.LayerChart:
     글자 폭만큼 넓혀 **그림을 왼쪽으로 줄인다** — 글자가 그림 안에 남는다.
     """
     frame = tariff_delta_frame(switch)
+    # **축과 라벨이 같은 자로 읽혀야 한다** (S162 2-2). 축은 원 눈금(1,000,000)인데
+    # 라벨만 만원(94만원)이라 한 그림에서 두 자를 읽고 있었다. 단위는 자료의
+    # 크기가 고른다 — `money.axis_unit`.
+    unit = money.axis_unit(frame["현행 대비(원)"])
+    fold = money.AXIS_UNITS[unit]
+    shown = f"현행 대비({unit})"
     labelled = frame.assign(
+        **{shown: [float(value) / fold for value in frame["현행 대비(원)"]]},
         설명=[
-            (money.won_short(value, reason="—") if abs(value) >= 1 else "현행")
+            (money.on_axis(float(value), unit) if abs(value) >= 1 else "현행")
             + (f" · {mark}" if mark else "")
             for value, mark in zip(frame["현행 대비(원)"], frame["표식"], strict=True)
-        ]
+        ],
     )
     order = list(frame["요금제"])
-    values = [*(float(value) for value in frame["현행 대비(원)"]), 0.0]
+    values = [*(float(value) / fold for value in frame["현행 대비(원)"]), 0.0]
     low, high = min(values), max(values)
     span = (high - low) or 1.0
     # 왼쪽은 막대만, 오른쪽은 **막대 + 글자**가 들어간다.
@@ -807,8 +836,8 @@ def tariff_delta_chart(switch: TariffSwitchResult) -> alt.LayerChart:
         .encode(
             y=alt.Y("요금제:N", title=None, sort=order),
             x=alt.X(
-                "현행 대비(원):Q",
-                title="현행 대비 (원) — 왼쪽이 절감",
+                f"{shown}:Q",
+                title=f"현행 대비 ({unit}) — 왼쪽이 절감",
                 scale=alt.Scale(domain=domain, nice=False),
             ),
             color=alt.Color(
@@ -825,10 +854,10 @@ def tariff_delta_chart(switch: TariffSwitchResult) -> alt.LayerChart:
     labels = (
         alt.Chart(labelled)
         .mark_text(align="left", dx=6, fontWeight="bold")
-        .encode(y=alt.Y("요금제:N", sort=order), x="현행 대비(원):Q", text="설명:N")
+        .encode(y=alt.Y("요금제:N", sort=order), x=f"{shown}:Q", text="설명:N")
     )
     zero = alt.Chart(pd.DataFrame({"기준": [0.0]})).mark_rule(color="#525252").encode(x="기준:Q")
-    return (zero + bars + labels).properties(height=140)
+    return (zero + bars + labels).properties(height=bar_height(len(frame)))
 
 
 def dr_daily_chart(profile: DrProfile) -> alt.LayerChart | alt.FacetChart:

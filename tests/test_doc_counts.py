@@ -518,9 +518,7 @@ def test_세_방법이_세는_수의_차가_뭉친_몫과_같다() -> None:
     declared = sum(int(count) for _branch, count in rows)
     counted = _brief().total_items(items)
     lumped = sum(_holds(item.text) - 1 for item in items)
-    names = [
-        _brief().item_parts(item.text)[0] for item in items if _holds(item.text) > 1
-    ]
+    names = [_brief().item_parts(item.text)[0] for item in items if _holds(item.text) > 1]
     assert declared == counted == len(items) + lumped, (
         f"세는 세 방법이 어긋납니다 — 절 제목 합 {declared} · 건수 {counted} · "
         f"줄 {len(items)} + 뭉친 몫 {lumped}(뭉친 줄: {' · '.join(names) or '없음'}). "

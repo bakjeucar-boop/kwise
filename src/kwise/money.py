@@ -21,12 +21,16 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 
 __all__ = [
+    "AXIS_UNITS",
     "NO_SAVING",
     "ROUNDING_FOOTNOTE",
     "TRUNCATION_FOOTNOTE",
     "TRUNCATION_UNIT_WON",
+    "axis_unit",
+    "on_axis",
     "truncate_won",
     "won",
     "won_plain",
@@ -65,6 +69,40 @@ def truncate_won(value: float) -> float:
     처리하면 손실 항목만 한 단위 더 커 보인다.
     """
     return float(math.trunc(value / TRUNCATION_UNIT_WON) * TRUNCATION_UNIT_WON)
+
+
+#: 금액 **축**이 쓰는 단위와 그 나눔수 (S162 2절).
+AXIS_UNITS: dict[str, float] = {"만원": _MAN, "억원": _EOK}
+
+
+def axis_unit(values: Iterable[float | None]) -> str:
+    """금액 축의 단위 — **자료의 크기가 고른다** (S156 4-3 을 넓혔다).
+
+    억원 고정은 대형 사업장의 단위다. ``small-ind-a1`` 은 달마다 200만원대라
+    눈금이 「0.0000 ~ 0.0200 억원」 이 되어 **넷째 자리를 세어야 금액을 읽는다.**
+    가장 큰 값이 1억을 넘으면 억원, 아니면 만원이다. **값은 안 갈린다.**
+
+    ``monthly_charge_png`` 하나가 제 자리에서 하던 셈을 여기로 옮겼다 —
+    같은 판단을 그림마다 새로 적으면 한 덱 안에서 갈린다.
+    """
+    highest = max(
+        (abs(float(value)) for value in values if value is not None and value == value),
+        default=0.0,
+    )
+    return "억원" if highest >= _EOK else "만원"
+
+
+def on_axis(value: float, unit: str) -> str:
+    """축 단위로 접은 금액 — ``5.20억원`` · ``1,082만원``.
+
+    **막대에 붙는 값 라벨은 축과 같은 자로 읽혀야 한다** (S162 2-2). 축은 원
+    눈금인데 라벨만 만원이면 한 그림에서 두 자를 읽게 된다.
+
+    자리가 좁은 카드에는 :func:`won_short` 를 쓴다 — 그쪽은 축이 없어 「1억
+    2,340만원」 처럼 두 단위를 함께 적을 수 있다.
+    """
+    folded = value / AXIS_UNITS[unit]
+    return f"{folded:,.2f}{unit}" if abs(folded) < 10 else f"{folded:,.0f}{unit}"
 
 
 def won_plain(value: float | None, *, reason: str) -> str:

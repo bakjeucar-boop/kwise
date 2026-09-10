@@ -34,6 +34,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
 
+from kwise import money
 from kwise.compare import ComparisonResult
 from kwise.diagnose import ChargeStructure, PeakProfile
 from kwise.diagnose.dr import DrProfile
@@ -93,7 +94,6 @@ __all__ = [
     "daily_temperature_png",
     "daily_usage_png",
     "date_axis",
-    "delta_label_place",
     "dr_daily_png",
     "ess_day_png",
     "hourly_profile_png",
@@ -453,6 +453,20 @@ def top_hour_png(peak: PeakProfile, *, size: tuple[float, float] | None = None) 
     return render_png(figure)
 
 
+def money_axis_title(axes: Axes, text: str) -> None:
+    """금액 세로축의 이름을 **축 위에 가로로** 얹는다 (S162 3-2).
+
+    ``set_ylabel`` 은 이름을 90° 돌려 적는다 — 한글은 그렇게 두면 글자가 세로로
+    쌓여 안 읽힌다(「현행 대비 (억원)」 이 그랬다). 왼쪽에 가로로 눕히면 이번에는
+    그림 폭을 먹으므로 **축 위 왼쪽**에 둔다.
+    """
+    axes.set_ylabel("")
+    axes.set_title(text, loc="left", fontsize=9, pad=6)
+    # 눈금도 라벨과 같은 꼴로 읽히게 한다 — 「10000」 옆에 「6,294만원」 이 서면
+    # 같은 수를 두 꼴로 읽는다.
+    axes.yaxis.set_major_formatter(FuncFormatter(lambda value, _pos: f"{value:,.0f}"))
+
+
 def combination_png(comparison: ComparisonResult) -> bytes:
     """조합별 절감액과 투자비 (4장).
 
@@ -463,15 +477,19 @@ def combination_png(comparison: ComparisonResult) -> bytes:
     frame = combination_frame(comparison)
     positions = range(len(frame))
     height = 0.38
+    # **단위는 자료의 크기가 고른다** (S162 2절 · `money.axis_unit`). 억원 고정은
+    # 대형 사업장의 단위라 작은 벌에서는 가로축이 「0.000~0.035 억원」 이 됐다.
+    unit = money.axis_unit([*frame["절감액(원)"], *frame["투자비(원)"]])
+    fold = money.AXIS_UNITS[unit]
     figure, axes = plt.subplots(figsize=(9.0, max(2.4, 0.9 * len(frame))))
     axes.barh(
         [pos + height / 2 for pos in positions],
-        frame["절감액(원)"] / 1e8,
+        frame["절감액(원)"] / fold,
         height=height,
         label="절감액",
         color=_series()[0],
     )
-    investment = frame["투자비(원)"].fillna(0.0) / 1e8
+    investment = frame["투자비(원)"].fillna(0.0) / fold
     axes.barh(
         [pos - height / 2 for pos in positions],
         investment,
@@ -485,7 +503,7 @@ def combination_png(comparison: ComparisonResult) -> bytes:
     axes.set_yticks(list(positions))
     axes.set_yticklabels(frame["조합"], fontsize=9)
     axes.invert_yaxis()
-    axes.set_xlabel("억원")
+    axes.set_xlabel(unit)
     add_legend(axes)
     return render_png(figure)
 
@@ -548,20 +566,6 @@ def contract_headroom_png(
     return render_png(figure)
 
 
-def delta_label_place(value: float, pad: float) -> tuple[float, str]:
-    """차액 라벨의 자리 — **0 선 반대쪽** (53세션 5절).
-
-    막대 끝에 붙여 두면 파란 막대 위에 검은 글씨가 얹혀 읽히지 않는다.
-    0 선 건너편은 어느 자료에서도 비어 있으므로 겹칠 일이 없다.
-
-    Returns:
-        (y 좌표, ``va``). 줄어드는 쪽(음수)이면 선 위, 늘어나는 쪽이면 선 아래다.
-    """
-    if value <= 0:
-        return pad * 0.35, "bottom"
-    return -pad * 0.35, "top"
-
-
 def tariff_option_png(
     switch: TariffSwitchResult, *, size: tuple[float, float] | None = None
 ) -> bytes:
@@ -596,21 +600,35 @@ def tariff_option_png(
     )
     series = tuple((name, frame[f"{name}(원)"], part_colors[name]) for name in names)
     middle = (len(series) - 1) / 2.0
+    # **단위는 자료의 크기가 고른다** (S162 2절). 위아래 칸은 자릿수가 다른 값을
+    # 그리므로(35억 위의 5천만원) 저마다 제 단위를 고른다 — 축과 그 칸의 라벨이
+    # 같은 자로 읽히기만 하면 된다.
+    unit = money.axis_unit([value for _, values, _ in series for value in values])
+    fold = money.AXIS_UNITS[unit]
     for index, (label, values, color) in enumerate(series):
-        upper.bar(
+        bars = upper.bar(
             positions + (index - middle) * width,
-            values.fillna(0.0) / 1e8,
+            values.fillna(0.0) / fold,
             width=width,
             label=label,
             color=color,
         )
+        # **막대 위에 값을 적는다** (S162 2-3). 눈금만으로는 조각끼리 견주는 일이
+        # 눈대중이 된다 — 이 그림이 하는 말이 바로 그 견줌이다.
+        upper.bar_label(
+            bars,
+            labels=[money.on_axis(float(value), unit) for value in values.fillna(0.0)],
+            padding=2,
+            fontsize=7,
+        )
     # **축을 0 부터 시작하지 않는다** (17세션 0절). **그리는 막대를 다 넣는다** —
-    # 빠뜨리면 그 막대가 축 아래로 잘린다 (S140 2절).
-    finite = [value / 1e8 for _, values, _ in series for value in values if pd.notna(value)]
+    # 빠뜨리면 그 막대가 축 아래로 잘린다 (S140 2절). 위에는 값 라벨이 서므로
+    # 그만큼 더 비운다.
+    finite = [value / fold for _, values, _ in series for value in values if pd.notna(value)]
     if finite:
         span = max(finite) - min(finite)
-        upper.set_ylim(max(0.0, min(finite) - span * 0.15), max(finite) + span * 0.2)
-    upper.set_ylabel("억원")
+        upper.set_ylim(max(0.0, min(finite) - span * 0.15), max(finite) + span * 0.55)
+    money_axis_title(upper, unit)
     add_legend(upper)
 
     # **줄어드는 쪽과 늘어나는 쪽을 색으로 가른다.** 가이드의 두 포인트색이
@@ -621,29 +639,32 @@ def tariff_option_png(
         for value in delta["현행 대비(원)"]
     ]
     amounts = [float(value) for value in delta["현행 대비(원)"]]
-    scaled = [value / 1e8 for value in amounts]
-    lower.bar(positions, scaled, width=0.5, color=colors)
+    delta_unit = money.axis_unit(amounts)
+    delta_fold = money.AXIS_UNITS[delta_unit]
+    scaled = [value / delta_fold for value in amounts]
+    bars = lower.bar(positions, scaled, width=0.5, color=colors)
     lower.axhline(0.0, color=chart_palette().text, linewidth=1.0)
-    # **차액 라벨을 0 선 반대쪽에 둔다** (53세션 5절). 막대 끝에 붙여 두면 파란
-    # 막대 위에 검은 글씨가 얹혀 읽히지 않았다 — 「-0.54억」 이 그랬다.
-    # 0 선 건너편은 언제나 비어 있으므로 어느 자료에서도 겹치지 않는다.
+    # **차액 라벨을 막대 끝 바깥에 둔다** (53세션 5절을 S162 3-2 에 고쳤다).
+    # 막대 안쪽은 글자가 막대 위에 얹혀 안 읽히고(53세션), 0 선 건너편은
+    # **x 눈금과 겹친다**(S162 ㅁ — 「0.01억」 이 눈금선에 얹혔다). 끝 바깥은
+    # 어느 쪽도 아니다 — ``bar_label`` 이 부호를 보고 위아래를 고른다.
     reach = max((abs(value) for value in scaled), default=0.0) or 1.0
-    pad = reach * 0.10
+    # 라벨이 막대 끝 바깥에 서므로 **양쪽으로 그만큼 비운다** — 0.10 으로는
+    # 「-3,492만원」 이 축 밖으로 밀려 x 눈금 이름에 닿았다 (S162 3-3).
+    pad = reach * 0.16
     lower.set_ylim(
-        min(min(scaled, default=0.0), 0.0) - pad,
+        min(min(scaled, default=0.0), 0.0) - pad * 2.4,
         max(max(scaled, default=0.0), 0.0) + pad * 2.4,
     )
-    for index, (amount, value) in enumerate(zip(amounts, scaled, strict=True)):
-        offset, align = delta_label_place(value, pad)
-        lower.text(
-            index,
-            offset,
-            "현행" if abs(amount) < 1 else f"{value:,.2f}억",
-            ha="center",
-            va=align,
-            fontsize=8,
-        )
-    lower.set_ylabel("현행 대비 (억원)")
+    lower.bar_label(
+        bars,
+        labels=[
+            "현행" if abs(amount) < 1 else money.on_axis(amount, delta_unit) for amount in amounts
+        ],
+        padding=3,
+        fontsize=8,
+    )
+    money_axis_title(lower, f"현행 대비 ({delta_unit})")
     lower.set_xticks(list(positions))
     lower.set_xticklabels(
         [
@@ -1053,12 +1074,11 @@ def monthly_charge_png(
     colors = {"기본요금": marks.base_fee} | marks.band | {"초과사용부가금": marks.increase}
     parts = {name: colors[name] for name in monthly_charge_parts(structure)}
 
-    # **단위를 자료의 크기가 고른다** (S156 4-3). 억원 고정은 대형 사업장의
-    # 단위다 — `small-ind-a1` 은 달마다 200만원대라 눈금이
-    # 「0.0000 ~ 0.0200 억원」 이 되어 **넷째 자리를 세어야 금액을 읽는다.**
-    # 값은 안 갈린다. 가장 큰 달이 1억을 넘으면 억원, 아니면 만원이다.
-    highest = float(frame["합계(원)"].max()) if len(frame) else 0.0
-    scale, unit = (1e8, "억원") if highest >= 1e8 else (1e4, "만원")
+    # **단위를 자료의 크기가 고른다** (S156 4-3). 그 셈은 S162 2절에
+    # :func:`kwise.money.axis_unit` 으로 옮겼다 — 그림마다 새로 적으면 한 덱
+    # 안에서 갈린다. 값은 안 갈린다.
+    unit = money.axis_unit(frame["합계(원)"])
+    scale = money.AXIS_UNITS[unit]
 
     figure, axes = plt.subplots(figsize=size or _SIZE)
     bottom = np.zeros(len(months))
