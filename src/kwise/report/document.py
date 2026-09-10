@@ -68,7 +68,9 @@ from kwise.report.notices import (
     DATA_SOURCES,
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
+    UNPRICED,
     UNPRICED_REASONS,
+    ess_unpriced_reason,
     excess_not_measured_line,
     format_mwh,
     plain_text,
@@ -123,7 +125,7 @@ CHAPTER_COMPARISON = "조합 비교"
 CHAPTER_SCOPE = "검토 범위와 한계"
 
 _FIGURE_WIDTH = Inches(6.3)
-_UNPRICED = "미산출"
+_UNPRICED = UNPRICED
 
 
 # ===================================================================== 수단 한 항목
@@ -1137,8 +1139,8 @@ def measure_entries(
             conclusion=body_lines(ess_optimum.notices)[0]
             if ess_optimum.notices
             else NOT_VIABLE_CONCLUSION,
-            saving=f"{_UNPRICED} — 최소 규격에 못 미쳐 사양을 정하지 않았습니다.",
-            saving_annual=f"{_UNPRICED} — 최소 규격에 못 미쳐 사양을 정하지 않았습니다.",
+            saving=ess_unpriced_reason(ess_optimum, ess_curve),
+            saving_annual=ess_unpriced_reason(ess_optimum, ess_curve),
             has_saving=False,
             investment=f"{_UNPRICED} — 사양 미정",
             payback=_UNPRICED,
@@ -1175,7 +1177,6 @@ def measure_entries(
             else None
         )
         lines = body_lines(ess_optimum.notices)
-        reason = "성립하는 목표가 없어" if measured else "성립하지 않아"
         facts = (
             (
                 ("요금적용전력", f"{ess_curve.baseline_demand_kw:,.0f} kW"),
@@ -1192,8 +1193,8 @@ def measure_entries(
         entries["ess"] = MeasureEntry(
             kind=measure_kind("ess"),
             conclusion=lines[0] if lines else NOT_VIABLE_CONCLUSION,
-            saving=f"{_UNPRICED} — {reason} 사양을 정하지 않았습니다.",
-            saving_annual=f"{_UNPRICED} — {reason} 사양을 정하지 않았습니다.",
+            saving=ess_unpriced_reason(ess_optimum, ess_curve),
+            saving_annual=ess_unpriced_reason(ess_optimum, ess_curve),
             has_saving=False,
             investment=f"{_UNPRICED} — 사양 미정",
             payback=_UNPRICED,

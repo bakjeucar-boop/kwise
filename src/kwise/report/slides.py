@@ -56,6 +56,7 @@ from kwise.report.notices import (
     AMI_BASIS_NOTICE,
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
+    UNPRICED,
     excess_not_measured_line,
     format_mwh,
     plain_text,
@@ -150,7 +151,7 @@ LAYOUTS: tuple[str, ...] = (
     "fact_stat_chart",
 )
 
-_UNPRICED = "미산출"
+_UNPRICED = UNPRICED
 
 #: 참고용 작은 글씨 앞에 붙이는 표식 (53세션 1-1).
 #:

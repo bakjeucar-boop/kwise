@@ -484,25 +484,23 @@ def test_수단이_7장_순서로_나온다(
     assert [item.kind.number for item in built] == ["7.1", "7.2", "7.4"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "S164 3-1 — 화면 요약표와 PPT 8장 표가 같은 수단을 안 센다. 화면은 "
-        "standalone_rows 라 결과(EssResult)가 없으면 줄을 안 세우고, PPT 는 "
-        "measure_entries 라 최소 규격 미달 갈래에서 「미산출」 항목을 세운다. "
-        "덱 벌 small-a2-pf100-offset 에서 화면 다섯 줄(ESS 없음) 대 PPT 여섯 줄이었고, "
-        "같은 화면의 「검토 범위」 는 「검토함 — … 6. ESS / 미검토 — 없음」 이다. "
-        "덱 벌 열여덟 가운데 열둘이 이 모양이다. 어느 쪽이 옳은지는 사람이 정한다."
-    ),
-)
-def test_화면_요약표와_보고서_요약표가_같은_수단을_센다() -> None:
-    """**같은 사실을 만드는 자리가 둘이면 갈린다** (S164 3-1).
+@pytest.mark.parametrize("below_minimum", [True, False], ids=["최소_규격_미달", "성립_안_함"])
+def test_화면_요약표와_보고서_요약표가_같은_수단을_센다(below_minimum: bool) -> None:
+    """**같은 사실을 만드는 자리가 둘이면 갈린다** (S164 3-1 · S165 2절에 걷었다).
 
-    ESS 필요 출력이 상업용 최소 규격에 못 미치는 자리다 — 화면은 줄을 빼고
-    보고서는 「미산출」 로 세운다. 값은 덱 벌 ``small-a2-pf100-offset`` 에서 잰 것이다.
+    ESS 결과가 없는 자리다 — S164 까지 화면은 줄을 빼고 보고서는 「미산출」 로
+    세웠다. 값은 덱 벌 ``small-a2-pf100-offset`` 에서 잰 것이다(필요 출력 25.3 kW
+    < 상업용 최소 50 kW).
+
+    **xfail 을 걷은 까닭** — 사람이 「세우는 쪽」 으로 정했고 S165 가 판정과 사유
+    낱말을 :func:`kwise.report.notices.ess_unpriced_reason` 하나로 모아 두 표가
+    함께 지난다. **갈래 둘을 다 문다** — S164 는 최소 규격 미달 하나만 봐서,
+    보고서의 ESS 갈래 하나만 끄면 다른 갈래가 대신 서 못이 안 물었다.
+    **사유 낱말도 맞댄다** — 줄만 서고 말이 다르면 같은 병이 글자로 옮겨 간다.
     """
     from kwise.measures import EssOptimum, EssTargetCurve
-    from kwise.report import standalone_rows
+    from kwise.report import standalone_frame, standalone_rows
+    from kwise.report.slides import split_reason
 
     optimum = EssOptimum(
         target_kw=0.0,
@@ -512,7 +510,7 @@ def test_화면_요약표와_보고서_요약표가_같은_수단을_센다() ->
         widened=0,
         at_edge=False,
         viable=False,
-        below_minimum=True,
+        below_minimum=below_minimum,
         required_power_kw=25.3,
         required_capacity_kwh=30.0,
         required_discharge_hours=1.17,
@@ -529,9 +527,16 @@ def test_화면_요약표와_보고서_요약표가_같은_수단을_센다() ->
         round_trip=0.9,
         dod=0.9,
     )
-    screen = standalone_rows(ess=None)
+    screen = standalone_rows(ess=None, ess_optimum=optimum, ess_curve=curve)
     deck = measure_entries(ess=None, ess_optimum=optimum, ess_curve=curve)
-    assert [item.kind.key for item in deck] == [row.key for row in screen]
+    assert [item.kind.key for item in deck] == [row.key for row in screen] == ["ess"]
+
+    shown = standalone_frame(screen).iloc[0]
+    entry = deck[0]
+    assert shown["연간 절감액"] == entry.saving_annual
+    # PPT 8장 칸은 사유를 떼고 머리말만 둔다 — 화면은 투자비·회수기간을 그 머리말로 적는다.
+    assert shown["투자비"] == split_reason(entry.investment)[0]
+    assert shown["회수기간"] == entry.payback
 
 
 def test_켜지_않은_수단은_보고서에_없다(entries: tuple[object, ...]) -> None:

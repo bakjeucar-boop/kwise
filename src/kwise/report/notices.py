@@ -7,6 +7,10 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from kwise.measures import EssOptimum, EssTargetCurve
 
 __all__ = [
     "AMI_BASIS_NOTICE",
@@ -17,7 +21,9 @@ __all__ = [
     "RULES_UNCHANGED",
     "TENTATIVE_BASE_FEE_BASIS_WARNING",
     "TRUNCATION_FOOTNOTE",
+    "UNPRICED",
     "UNPRICED_REASONS",
+    "ess_unpriced_reason",
     "excess_not_measured_line",
     "format_mwh",
     "format_won",
@@ -148,6 +154,28 @@ UNPRICED_REASONS: dict[str, str] = {
         "합산 안 함 — 예비 규칙 미정. 매 평일 한 사이클을 온전히 돌렸을 때의 잠재값입니다."
     ),
 }
+
+#: 금액을 못 낸 칸의 머리말. **글자는 여기 하나다** (S165 2절) — 앞서는
+#: ``document.py`` 와 ``slides.py`` 에 같은 글자가 따로 있었다.
+UNPRICED = "미산출"
+
+
+def ess_unpriced_reason(optimum: EssOptimum | None, curve: EssTargetCurve | None) -> str:
+    """ESS 결과가 없어도 **줄을 세우는** 자리의 절감액 사유. 안 세우면 빈 글자열 (S165 2절).
+
+    켠 수단이 표에서 사라지면 「검토하지 않았다」 와 구분되지 않는다 (48세션).
+    갈래는 둘이다 — 필요 출력이 최소 규격에 못 미친다 · 성립하는 목표가 없다.
+    **화면 요약표와 PPT·Word 가 이 하나를 지난다** — 앞서는 보고서만 줄을 세우고
+    화면은 뺐다(덱 벌 열여덟 가운데 열둘).
+    """
+    if optimum is None or curve is None:
+        return ""
+    if optimum.below_minimum:
+        return f"{UNPRICED} — 최소 규격에 못 미쳐 사양을 정하지 않았습니다."
+    if not optimum.viable:
+        reason = "성립하는 목표가 없어" if optimum.points else "성립하지 않아"
+        return f"{UNPRICED} — {reason} 사양을 정하지 않았습니다."
+    return ""
 
 
 #: 마크다운 강조 표식 (38세션 1-2 · 39세션 2-6).

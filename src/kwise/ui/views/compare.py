@@ -795,6 +795,8 @@ class _MeasureResults:
             solar_certainty=self.solar_certainty,
             solar_investment_reason=self.solar_unpriced_reason,
             ess=self.ess,
+            ess_optimum=self.ess_optimum,
+            ess_curve=self.ess_curve,
             surplus=self.surplus,
             base_fee_months=self.base_fee_months or None,
         )

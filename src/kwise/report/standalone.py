@@ -33,7 +33,9 @@ from kwise.measures import (
     Certainty,
     ContractAdjustment,
     DemandResponseResult,
+    EssOptimum,
     EssResult,
+    EssTargetCurve,
     MeasureKind,
     PowerFactorResult,
     SolarPoint,
@@ -44,7 +46,7 @@ from kwise.measures import (
     payback_years,
 )
 from kwise.report.columns import option_label
-from kwise.report.notices import UNPRICED_REASONS
+from kwise.report.notices import UNPRICED, UNPRICED_REASONS, ess_unpriced_reason
 
 __all__ = [
     "SIMPLE_SUM_LABEL",
@@ -98,6 +100,12 @@ class StandaloneRow:
     3단계 요약만 「0원」 이라 적으면 두 화면이 다른 말을 한다.
     """
     investment_reason: str = ""
+    payback_reason: str = ""
+    """회수기간 칸에 적을 말. 비우면 :func:`~kwise.measures.payback_label` 이 적는다.
+
+    **사양을 못 정한 ESS 줄**이 쓴다 (S165 2절) — 그 줄은 투자비를 안 넣은 것이
+    아니라 살 물건이 없으므로 「투자비 미입력」 이 아니다. PPT 8장과 같은 말을 쓴다.
+    """
     notes: tuple[str, ...] = field(default=())
 
     @property
@@ -123,12 +131,19 @@ def standalone_rows(
     solar_certainty: Certainty | None = None,
     solar_investment_reason: str = "",
     ess: EssResult | None = None,
+    ess_optimum: EssOptimum | None = None,
+    ess_curve: EssTargetCurve | None = None,
     surplus: SurplusResult | None = None,
     base_fee_months: float | None = None,
 ) -> tuple[StandaloneRow, ...]:
     """켠 수단을 **7장 순서 그대로** 한 줄씩. 계산하지 않고 옮기기만 한다.
 
     Args:
+        ess_optimum, ess_curve: ESS 결과가 없을 때 **줄을 세울지와 그 사유**를
+            정한다 (S165 2절). 판정은 :func:`~kwise.report.notices.ess_unpriced_reason`
+            하나가 하고 PPT 8장(:func:`~kwise.report.document.measure_entries`)도
+            그것을 지난다 — 앞서는 화면만 줄을 빼 「검토함 — …6. ESS」 아래
+            표에 ESS 가 없었다.
         surplus: **41세션부터 쓰이지 않는다.** 잉여는 개선안이 아니라 태양광의
             결과라 표에서 줄이 빠졌다. 부르는 쪽이 그대로 넘겨도 되게 남겨 둔다.
         base_fee_months: 기간을 12개월로 환산하는 데 쓴다 (28세션 3절). 기본값을
@@ -227,6 +242,22 @@ def standalone_rows(
                 certainty=ess.certainty,
             )
         )
+    elif unpriced := ess_unpriced_reason(ess_optimum, ess_curve):
+        rows.append(
+            StandaloneRow(
+                kind=measure_kind("ess"),
+                reduction="—",
+                annual_saving_won=None,
+                investment_won=None,
+                payback_years=None,
+                certainty=Certainty.HIGH,
+                saving_reason=unpriced,
+                # 「— 사양 미정」 은 뗐다 — 절감액 칸이 이미 사양을 못 정했다고
+                # 적는다(S165 2-4). PPT 8장 칸과 같은 머리말만 둔다.
+                investment_reason=UNPRICED,
+                payback_reason=UNPRICED,
+            )
+        )
     # **7.7 잉여 활용을 41세션에 뺐다.** 개선안이 아니라 태양광의 결과다 —
     # 상계 수익은 태양광 카드 안에서 낸다 (:mod:`kwise.measures.surplus`).
     return tuple(rows)
@@ -295,4 +326,4 @@ def standalone_frame(rows: tuple[StandaloneRow, ...]) -> pd.DataFrame:
 
 def _payback(row: StandaloneRow) -> str:
     """**문구는 :func:`~kwise.measures.payback_label` 이 만든다** (S134 3절)."""
-    return payback_label(row.payback_years, row.investment_won)
+    return row.payback_reason or payback_label(row.payback_years, row.investment_won)
