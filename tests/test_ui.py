@@ -973,3 +973,31 @@ def test_줄_것이_없으면_0원이_아니다() -> None:
     assert won_year(1_000_000.0, zero_reason=NO_SAVING).endswith("/년")
     # 미산출은 여전히 사유다 — 「없음」 과 「모른다」 는 다르다.
     assert won_year(None, reason="미산출 — 하한 미확인").startswith("미산출")
+
+
+# ===================================================================== S161 · 표를 내는 한 자리
+
+
+def test_화면_표는_한_자리를_지난다() -> None:
+    r"""**`st.dataframe` 을 `ui\tables.py` 밖에서 부르지 않는다** (S161 2절).
+
+    열세 자리가 저마다 부르고 있었고 **아무도 표기를 안 지났다** — 월별 명세가
+    `118936.77419354838` 을, DR 감축 여력 표가 `30.929400469628767` 을, 3단계
+    계산 근거 표가 `**기본요금 기반이 달라집니다.**` 를 그대로 냈다. 자리를 모아
+    놓아도 **밖에서 다시 지으면 같은 자리로 돌아온다** — 그것을 여기서 막는다.
+
+    ``report\slides.py`` 의 `plain_text` 못과 같은 꼴이다 (38세션 1-2).
+    """
+    root = Path(__file__).resolve().parent.parent
+    home = root / "src" / "kwise" / "ui" / "tables.py"
+    outside = [
+        f"{path.relative_to(root)}:{number}"
+        for path in (root / "src" / "kwise").rglob("*.py")
+        if path != home
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if "st.dataframe(" in line
+    ]
+    assert not outside, (
+        "표를 내는 자리가 tables.py 밖에 있습니다 — " + " · ".join(outside) + ". "
+        "`from kwise.ui import tables` 로 들여와 `tables.show(...)` 를 부르십시오."
+    )

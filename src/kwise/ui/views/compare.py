@@ -85,7 +85,7 @@ from kwise.report.worksheet import (
     tariff_switch_worksheet,
 )
 from kwise.tariff import BillingResult, TariffTable
-from kwise.ui import callout
+from kwise.ui import callout, tables
 from kwise.ui import text as fmt
 from kwise.ui.anchors import manual_tip
 from kwise.ui.artifacts import recall, remember
@@ -410,7 +410,7 @@ def _standalone_block(rows: tuple[StandaloneRow, ...]) -> None:
     frame = standalone_frame(rows)
     if not frame.empty:
         frame = frame.assign(**{"수단": [measure_title(str(value)) for value in frame["수단"]]})
-    st.dataframe(
+    tables.show(
         frame,
         hide_index=True,
         width="stretch",
@@ -505,7 +505,7 @@ def _combined_block(
         contract_extra_won=extra_won,
     )
     with st.expander("계산 근거", expanded=False):
-        st.dataframe(sheet.frame(), hide_index=True, width="stretch")
+        tables.show(sheet.frame(), hide_index=True, width="stretch")
 
 
 def _interaction_reasons(

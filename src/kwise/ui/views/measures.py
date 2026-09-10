@@ -66,7 +66,7 @@ from kwise.report.worksheet import (
     tariff_switch_worksheet,
 )
 from kwise.tariff import TariffTable
-from kwise.ui import callout, charts
+from kwise.ui import callout, charts, tables
 from kwise.ui import text as fmt
 from kwise.ui.anchors import manual_tip
 from kwise.ui.building import BuildingInfo
@@ -574,7 +574,7 @@ def _demand_response(
     if result.low_load_days or off_days:
         with st.expander(f"저부하 평일 {result.low_load_days}일", expanded=False):
             if result.low_load_days:
-                st.dataframe(result.low_load_day_table, hide_index=True, width="stretch")
+                tables.show(result.low_load_day_table, hide_index=True, width="stretch")
             _off_day_picker(result, off_days)
     if not result.low_load_days:
         st.write("저부하 평일이 없어 감축 가능량을 0 으로 두었습니다.")
@@ -1039,7 +1039,7 @@ def _solar(
     # 이름을 `density` 로 두면 위쪽 라디오 선택값(문자열)을 덮는다.
     density_preset = presets.density(inputs.density_key or presets.default.key)
     st.markdown("**용량별 비교**")
-    st.dataframe(
+    tables.show(
         _capacity_view(
             charts.solar_capacity_table(
                 curve,
@@ -1345,7 +1345,7 @@ def _surplus_carry(result: SurplusResult) -> None:
     carried = settlement.carried
     if not carried:
         return
-    st.dataframe(
+    tables.show(
         {
             "월": [item.month for item in carried],
             "차감": [fmt.kwh(item.deducted_kwh) for item in carried],
@@ -1626,7 +1626,7 @@ def _ess(
         return
 
     spec = frames.ess_spec_frame(optimum, baseline_demand_kw=curve.baseline_demand_kw)
-    st.dataframe(_ess_spec_view(spec), hide_index=True, width="stretch")
+    tables.show(_ess_spec_view(spec), hide_index=True, width="stretch")
     # **캡션이 표와 어긋나면 안 된다** (59세션 3절). 계약전력 과다 자료는 저감량이
     # 전 줄 0 kW 인데 「목표를 낮추면 저감량은 는다」 고 적혔다 — 문구를 더하는
     # 것이 아니라 **한 줄을 다른 한 줄로 바꾼다.**
@@ -1826,7 +1826,7 @@ def _worksheet(sheet: Worksheet) -> None:
     if not sheet:
         return
     with st.expander("계산 근거", expanded=False):
-        st.dataframe(sheet.frame(), hide_index=True, width="stretch")
+        tables.show(sheet.frame(), hide_index=True, width="stretch")
 
 
 _HANDLERS = {

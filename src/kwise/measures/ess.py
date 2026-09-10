@@ -313,6 +313,18 @@ def nameplate_capacity_kwh(delivered_kwh: float, *, round_trip: float, dod: floa
     return delivered_kwh / math.sqrt(round_trip) / dod
 
 
+#: 용량 산정 기준의 **사람이 읽는 이름** (S161 2절).
+#:
+#: `daily` 는 코드 열쇠다 — 근거 줄이 그것을 그대로 적어 산출물 넷이
+#: 「용량 산정 기준: daily」 를 냈다. 뜻은 :func:`size_for_target` 의
+#: ``basis`` 설명에 이미 있었고 이름만 없었다.
+SIZING_BASIS_LABELS: dict[str, str] = {
+    "daily": "하루 최대",
+    "event": "연속 초과 구간 최대",
+    "total": "기간 합계",
+}
+
+
 def size_for_target(
     excess: PeakExcess,
     *,
@@ -1220,7 +1232,7 @@ def evaluate_ess(
     # 17세션까지 이것들이 전부 확인사항에 쌓여 스물둘이 됐다. 툴팁으로 내린다.
     notices += [
         basis(
-            f"용량 산정 기준: {sizing_basis} "
+            f"용량 산정 기준: {SIZING_BASIS_LABELS.get(sizing_basis, sizing_basis)} "
             f"(하루 최대 {excess.max_daily_excess_kwh:,.1f} kWh, "
             f"연속 구간 최대 {excess.max_event_excess_kwh:,.1f} kWh, "
             f"기간 합계 {excess.total_excess_kwh:,.1f} kWh).",

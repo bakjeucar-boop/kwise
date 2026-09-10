@@ -47,7 +47,7 @@ from kwise.measures import (
 from kwise.notices import Notice, dedupe
 from kwise.report import narrative
 from kwise.report.appendix import basis_data_frame, known_limits, worksheet_frame
-from kwise.report.columns import localize
+from kwise.report.columns import display_frame, localize, season_label, value_label
 from kwise.report.notices import (
     CONTRACT_CHANGE_WARNING,
     DATA_SOURCES,
@@ -696,12 +696,15 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
                 # 된다** — 역률 85% 에서 99.8% 다.
                 ("기본요금 비중", f"{structure.base_with_power_factor_share:.1%}"),
                 ("전력량요금 비중", f"{structure.energy_share:.1%}"),
+                # **열쇠를 그대로 적지 않는다** (S161 2절). `light`·`spring_fall`
+                # 은 코드 이름이고 사람이 읽는 이름은 번역표가 이미 쥔다
+                # (:data:`~kwise.report.columns.VALUE_LABELS` · `SEASON_LABELS`).
                 *(
-                    (f"{band} 사용량 비중", f"{share:.1%}")
+                    (f"{value_label('band', band)} 사용량 비중", f"{share:.1%}")
                     for band, share in structure.band_share.items()
                 ),
                 *(
-                    (f"{season} 사용량 비중", f"{share:.1%}")
+                    (f"{season_label(season)} 사용량 비중", f"{share:.1%}")
                     for season, share in structure.season_share.items()
                 ),
             ]
@@ -820,7 +823,14 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
             sheets["감도 상세"] = sections.sensitivity
         else:
             sheets["감도"] = sections.sensitivity
-    return {name: truncate_money_columns(sheets[name]) for name in SHEET_ORDER if name in sheets}
+    # **표기는 한 문에서 한다** (S161 2절). 절사 뒤에 :func:`display_frame` 이
+    # 자릿수를 접고 마크다운 표식을 벗기고 불리언을 한글로 적는다 — 시트마다
+    # 하면 새 시트가 붙을 때 빠뜨리고, 그 빠뜨림이 조용하다.
+    return {
+        name: display_frame(truncate_money_columns(sheets[name]))
+        for name in SHEET_ORDER
+        if name in sheets
+    }
 
 
 def truncate_money_columns(frame: pd.DataFrame) -> pd.DataFrame:

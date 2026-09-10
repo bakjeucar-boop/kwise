@@ -35,7 +35,7 @@ from kwise.rules import (
     set_value,
 )
 from kwise.tariff import load_tariff
-from kwise.ui import callout
+from kwise.ui import callout, tables
 from kwise.ui.anchors import manual_tip
 from kwise.ui.cache import apply_rule_edit
 from kwise.ui.rules_view import (
@@ -175,7 +175,7 @@ def _ess_cost_block() -> None:
             callout.caution("계수 조정됨 — 자동 산출값이 아닙니다.")
         # **비활성 구간도 목록에 둔다** (50세션 3-5). 향후 상업용 소용량 제품이
         # 나오면 살릴 자리다 — 지우면 그런 구간이 있었다는 사실까지 사라진다.
-        st.dataframe(
+        tables.show(
             capacity_band_frame(model.with_coefficients(fixed_won=fixed, per_kwh_won=per_kwh)),
             hide_index=True,
             width="stretch",
@@ -288,7 +288,7 @@ def _restore_block() -> None:
         diffs = diff_from_defaults(origin)
         callout.caution(preview.message)
         if diffs:
-            st.dataframe(diff_frame(diffs), hide_index=True, width="stretch")
+            tables.show(diff_frame(diffs), hide_index=True, width="stretch")
         columns = st.columns(2)
         if columns[0].button("확인했습니다 — 출고값으로 되돌립니다", type="primary"):
             result = apply_rule_edit(restore_defaults(origin, confirmed=True))
@@ -327,7 +327,7 @@ def _history_block() -> None:
         if not records:
             st.write("아직 변경이 없습니다.")
             return
-        st.dataframe(
+        tables.show(
             [
                 {
                     "시각": record.changed_at,

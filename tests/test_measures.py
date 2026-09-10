@@ -1782,6 +1782,21 @@ def test_breakeven_unit_cost_is_reversed_from_ten_years(sample_ess: EssResult) -
     assert result.payback_target_years == 10.0
 
 
+def test_용량_산정_기준을_사람이_읽는_이름으로_적는다(sample_ess: EssResult) -> None:
+    """**`daily` 는 코드 열쇠다** (S161 2절).
+
+    근거 줄이 그것을 그대로 적어 화면 툴팁·PPT·Word·Excel 부록 A 가 통틀어
+    「용량 산정 기준: daily」 를 냈다. 뜻은 :func:`size_for_target` 의 ``basis``
+    설명에 이미 있었고 **이름만 없었다.**
+    """
+    from kwise.measures.ess import SIZING_BASIS_LABELS
+
+    line = next(item.text for item in sample_ess.notices if item.fact == "ess.sizing_basis")
+    assert line.startswith("용량 산정 기준: 하루 최대"), line
+    for key in SIZING_BASIS_LABELS:
+        assert f": {key} " not in line, f"열쇠 {key!r} 가 그대로 실렸습니다 — {line}"
+
+
 def test_ess_saving_comes_mostly_from_the_base_fee(sample_ess: EssResult) -> None:
     """피크컷의 절감은 기본요금이 대부분이다.
 

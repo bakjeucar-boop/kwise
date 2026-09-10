@@ -48,11 +48,13 @@ from kwise.report import (
     load_batch_config,
     measure_summary_frame,
     no_pv_sensitivity_frame,
+    plain_text,
     result_path,
     run_batch,
     strip_timezone,
     write_workbook,
 )
+from kwise.report.columns import DISPLAY_DECIMALS
 from kwise.tariff import BillingResult, TariffSelection, TariffTable
 from tests._synthetic import write_month
 
@@ -303,7 +305,10 @@ def test_summary_carries_every_known_limit(summary_text: str) -> None:
     """
     assert len(KNOWN_LIMITS) == 18
     for limit in KNOWN_LIMITS:
-        assert limit in summary_text, limit
+        # **마크다운 표식은 벗겨져 실린다** (S161 2절). Excel 은 별표를 그리지
+        # 않으므로 시트에 그대로 두면 `**대한민국 전용 도구입니다.**` 로 뜬다 —
+        # 항목이 다 실리는지를 보는 이 못은 그대로 두고 꼴만 실물에 맞춘다.
+        assert plain_text(limit) in summary_text, limit
     assert any("제42조" in limit for limit in KNOWN_LIMITS)  # 30분 누적 계량
     assert any("제43조 ③" in limit for limit in KNOWN_LIMITS)  # 첫 달 예고
     assert any("순편익가격" in limit for limit in KNOWN_LIMITS)  # DR 단가 미산출
@@ -431,6 +436,101 @@ def test_diagnosis_sheet_keeps_the_two_populations_apart(
     values = sample_sheets["진단"]["값"]
     assert values["요금적용전력 대상 슬롯"] == f"{sample_diagnosis.peak.demand_eligible_slots:,}"
     assert values["상위 100구간 주말 건수 (요금적용전력 대상)"] == "0"
+
+
+def test_진단_시트가_계시와_계절을_사람이_읽는_이름으로_적는다(
+    sample_sheets: dict[str, pd.DataFrame],
+) -> None:
+    """**`light`·`spring_fall` 은 코드 열쇠다** (S161 2절).
+
+    이름은 :data:`~kwise.report.columns.VALUE_LABELS` · `SEASON_LABELS` 가 이미
+    쥐고 있었는데 이 시트만 그 문을 안 지나 여섯 줄이 열쇠로 서 있었다.
+
+    **부록 B 는 밖이다** — 그쪽은 기준 데이터 원문을 싣는 자리라 열쇠가 자료다.
+    """
+    index = [str(name) for name in sample_sheets["진단"].index]
+    shares = [name for name in index if name.endswith("사용량 비중")]
+    assert len(shares) == 6, f"비중 줄이 여섯이어야 합니다 — {shares}"
+    for name in shares:
+        assert not re.search(r"\b(light|mid|peak|spring_fall|summer|winter)\b", name), name
+    for expected in ("경부하 사용량 비중", "봄·가을 사용량 비중"):
+        assert expected in shares, f"{expected} 줄이 없습니다 — {shares}"
+
+
+#: 표식과 열쇠를 안 그리는 자리에 그것이 실렸는지 본다 (S161 2절).
+MARKDOWN_MARKS = re.compile(r"\*\*|__|`")
+
+
+def test_계산_근거_표가_마크다운_표식을_안_싣는다() -> None:
+    """**표 칸은 마크다운을 안 그린다** (S161 2절).
+
+    같은 줄이 툴팁(:meth:`Worksheet.lines`)으로도 가고 그쪽은 굵게 그리므로 낳는
+    자리에서 뗄 수가 없다 — 화면 3단계 「이유 1」 칸이
+    `**기본요금 기반이 달라집니다.**` 를 표식째 냈다. **벗기는 자리는
+    :meth:`Worksheet.frame` 하나다** — 화면 둘과 Excel 부록 A 가 그것을 쓴다.
+    """
+    from kwise.report.worksheet import COLUMNS, WorkRow, Worksheet
+
+    sheet = Worksheet(
+        key="probe",
+        title="확인용",
+        rows=(WorkRow(label="**이유 1**", formula="`a` × __b__", value="**1,000원**"),),
+    )
+    frame = sheet.frame()
+    for column in COLUMNS:
+        for value in frame[column]:
+            assert not MARKDOWN_MARKS.search(str(value)), f"{column} = {value!r}"
+    # **툴팁 쪽은 그대로 둔다** — 그 자리는 마크다운을 그린다.
+    assert "**이유 1**" in "\n".join(sheet.lines())
+
+
+def test_엑셀_시트에_마크다운_표식이_남지_않는다(
+    sample_sheets: dict[str, pd.DataFrame],
+) -> None:
+    """**Excel 은 별표를 그리지 않는다** (S161 2절).
+
+    같은 문구가 화면(`st.markdown`)으로도 가고 그쪽은 굵게 그리므로 낳는 자리에서
+    뗄 수가 없다 — PPT·Word 가 :func:`~kwise.report.notices.plain_text` 로
+    적는 순간 벗기고 있었는데 **Excel 만 그 문이 없었다.** 요약 시트 일곱 칸과
+    부록 C 아홉 칸이 `**대한민국 전용 도구입니다.**` 로 서 있었다.
+    """
+    found: list[str] = []
+    for name, frame in sample_sheets.items():
+        for column in frame.columns:
+            if MARKDOWN_MARKS.search(str(column)):
+                found.append(f"{name} 열 이름 {column!r}")
+            for value in frame[column]:
+                if isinstance(value, str) and MARKDOWN_MARKS.search(value):
+                    found.append(f"{name}!{column} {value[:40]!r}")
+    assert not found, f"마크다운 표식이 시트에 남았습니다 — {' · '.join(found[:5])}"
+
+
+def test_엑셀_시트가_날값을_그대로_싣지_않는다(
+    sample_sheets: dict[str, pd.DataFrame],
+) -> None:
+    """**열 이름 꼬리가 자릿수를 정한다** (S161 2절).
+
+    「조합 비교」 회수기간이 `15.47137949227301` 이었고 **같은 시트의 다른 열은
+    다 절사돼 있었다** — 규칙이 없는 것이 아니라 한 자리가 규칙 밖이었다.
+
+    **꼬리가 없는 열은 이 못 밖이다** — 「감도」 의 기준값·범위와 「요금 계산
+    명세」 의 일할 계수가 그렇다(지표 이름이 열이 아니라 줄에 있다). 미해결에
+    이름으로 남겼다.
+    """
+    over: list[str] = []
+    for name, frame in sample_sheets.items():
+        for column in frame.columns:
+            label = str(column)
+            decimals = next(
+                (digits for tail, digits in DISPLAY_DECIMALS if label.endswith(tail)), None
+            )
+            if decimals is None or not pd.api.types.is_numeric_dtype(frame[column]):
+                continue
+            for value in frame[column]:
+                if pd.isna(value) or float(value) == round(float(value), decimals):
+                    continue
+                over.append(f"{name}!{label} = {value!r} (자릿수 {decimals})")
+    assert not over, f"날값이 시트에 남았습니다 — {' · '.join(over[:5])}"
 
 
 # --------------------------------------------------------------------- 조합 절감액은 재계산이다

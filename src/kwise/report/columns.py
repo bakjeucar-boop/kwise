@@ -16,16 +16,20 @@ from collections.abc import Iterable
 
 import pandas as pd
 
+from kwise.report.notices import plain_text
 from kwise.tariff.labels import OPTION_LABELS, SEASON_LABELS, option_label, season_label
 
 __all__ = [
     "COLUMN_LABELS",
+    "DISPLAY_DECIMALS",
     "OPTION_LABELS",
     "SEASON_LABELS",
     "VALUE_LABELS",
     "column_label",
+    "display_frame",
     "localize",
     "option_label",
+    "round_columns",
     "season_label",
     "value_label",
 ]
@@ -126,3 +130,84 @@ def localize(frame: pd.DataFrame, *, index_name: str | None = None) -> pd.DataFr
 def localized_columns(names: Iterable[str]) -> list[str]:
     """열 목록을 한글로. 순서를 지킨다."""
     return [column_label(name) for name in names]
+
+
+# ─────────────────────────────────── 표에 낼 때 (S161 2절)
+#
+# **사람이 읽는 표에 날값을 내지 않는다.** 열 이름은 이미 여기서 한글이 되고
+# 값 번역표(:data:`VALUE_LABELS`)도 여기 있는데, **수와 표식은 그 문을 안
+# 지났다** — 화면 월별 명세가 `118936.77419354838` · `0.0006944444444444445` 을
+# 그대로 냈고 Excel 「조합 비교」 회수기간이 `15.47137949227301` 이었다.
+#
+# **자릿수는 열 이름 꼬리로 가른다.** 열마다 손으로 적으면 표가 늘 때마다
+# 빠뜨리고, 그 빠뜨림이 조용하다 — 같은 자료가 화면과 Excel 에서 다른 꼴로
+# 나오는 것이 곧 이 결함이다.
+
+#: 열 이름 꼬리와 자릿수. **위에서부터 처음 맞는 것을 쓴다.**
+#:
+#: 자료가 소수 두 자리(15분 실측 kW·kWh)라 `(kW)`·`(kWh)` 는 **두 자리**다 —
+#: 한 자리로 접으면 15분 칸의 0.04 kWh 가 0.0 이 되어 **표기가 아니라 값을
+#: 잃는다.** `(원)` 은 이미 천 원 단위로 절사돼 오므로 0 이다.
+DISPLAY_DECIMALS: tuple[tuple[str, int], ...] = (
+    ("(원)", 0),
+    ("(kW)", 2),
+    ("(kWp)", 2),
+    ("(kWh)", 2),
+    ("(MWh)", 2),
+    ("(년)", 1),
+    ("(%)", 1),
+    ("(h)", 2),
+    ("(일)", 1),
+    ("률", 4),
+    ("율", 4),
+)
+
+# **불리언은 안 건드린다** (S161 2절에 값으로 보고 되돌렸다). 미해결이 「영어
+# 불리언」 이라 적은 자리 둘은 둘 다 영문 글자가 아니었다 — 화면은
+# `st.column_config.CheckboxColumn` 이 체크로 그리고, Excel 은 **셀 자체가
+# 불리언**이라 `TRUE`/`FALSE` 는 Excel 이 붙이는 표기다. 「예」/「아니오」 로
+# 바꾸면 자료가 글자가 되어 `COUNTIF`·필터가 죽고 시험의 `결측.sum()` 도 깨진다
+# (`tests\test_report.py::test_timeseries_sheet_carries_every_slot` 가 그 자리다).
+
+
+def round_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """수치 열을 **열 이름 꼬리가 정한 자릿수로 접은** 사본.
+
+    **낼 때만 접는다.** 계산 프레임은 날값 그대로다 — 접은 값으로 계산하면
+    합계가 어긋나고 회귀 시험이 무는 값이 흔들린다
+    (:func:`kwise.report.excel.truncate_money_columns` 와 같은 자리·같은 이유).
+    """
+    rounded = frame.copy()
+    for name in rounded.columns:
+        if not pd.api.types.is_numeric_dtype(rounded[name]) or pd.api.types.is_bool_dtype(
+            rounded[name]
+        ):
+            continue
+        label = str(name)
+        decimals = next((digits for tail, digits in DISPLAY_DECIMALS if label.endswith(tail)), None)
+        if decimals is not None:
+            rounded[name] = rounded[name].round(decimals)
+    return rounded
+
+
+def display_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """산출물 표의 **출구** — 자릿수를 접고 마크다운 표식을 벗긴다.
+
+    Excel 은 마크다운을 그리지 않는다 — PPT·Word 가 적는 순간 벗기는 것
+    (:func:`kwise.report.notices.plain_text`)과 같은 자리인데 **Excel 만 그
+    문이 없었다.**
+    """
+    shown = round_columns(frame)
+    for name in shown.columns:
+        column = shown[name]
+        if not (
+            pd.api.types.is_numeric_dtype(column)
+            or pd.api.types.is_bool_dtype(column)
+            or pd.api.types.is_datetime64_any_dtype(column)
+        ):
+            # **`object` 로만 거르지 않는다** — pandas 가 글자 열을 `str` dtype 으로
+            # 잡으면 그 조건이 거짓이 되어 표식이 그대로 실린다 (S161 2절에 겪었다).
+            shown[name] = column.map(
+                lambda value: plain_text(value) if isinstance(value, str) else value
+            )
+    return shown.rename(columns={name: plain_text(str(name)) for name in shown.columns})

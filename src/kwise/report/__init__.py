@@ -16,7 +16,13 @@ from kwise.report.batch import (
     run_case,
     summary_frame,
 )
-from kwise.report.columns import COLUMN_LABELS, column_label, localize
+from kwise.report.columns import (
+    COLUMN_LABELS,
+    column_label,
+    display_frame,
+    localize,
+    round_columns,
+)
 from kwise.report.design import (
     ChartPalette,
     DesignGuide,
@@ -76,6 +82,7 @@ from kwise.report.notices import (
     NOT_INCLUDED_NOTICE,
     UNPRICED_REASONS,
     format_won,
+    plain_text,
 )
 from kwise.report.slides import (
     DECK_TITLE,
@@ -148,6 +155,7 @@ __all__ = [
     "combination_frame",
     "daily_usage_frame",
     "design_path",
+    "display_frame",
     "document_bytes",
     "document_path",
     "export_document",
@@ -162,7 +170,9 @@ __all__ = [
     "measure_summary_frame",
     "monthly_peak_frame",
     "no_pv_sensitivity_frame",
+    "plain_text",
     "result_path",
+    "round_columns",
     "run_batch",
     "run_case",
     "sensitivity_frame",

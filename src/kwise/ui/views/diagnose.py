@@ -43,7 +43,7 @@ from kwise.quality import (
 from kwise.report import localize, narrative
 from kwise.tariff import AMI_BASIS_NOTICE, TENTATIVE_BASE_FEE_BASIS_WARNING, TariffTable
 from kwise.tariff.labels import SEASON_LABELS
-from kwise.ui import callout, charts
+from kwise.ui import callout, charts, tables
 from kwise.ui import text as fmt
 from kwise.ui.anchors import manual_tip
 from kwise.ui.building import BuildingInfo, intensity_kwh_per_m2, narrow_contract_types
@@ -316,7 +316,7 @@ def _column_block(usage: UsageData) -> None:
             )
         st.caption("자동 판정이 빗나갔으면 여기서 고칩니다.", help=manual_tip("column-detection"))
         if detection.date_candidates or detection.energy_candidates:
-            st.dataframe(
+            tables.show(
                 pd.DataFrame(
                     [
                         {"역할": role, "열": item.column, "점수": item.score, "근거": item.reason}
@@ -658,7 +658,7 @@ def _quality_block(usage: UsageData, quality: QualityReport) -> None:
     frame = missing_month_frame(quality)
     if not frame.empty:
         with st.expander("결측 구간", expanded=False):
-            st.dataframe(frame, hide_index=True, width="stretch")
+            tables.show(frame, hide_index=True, width="stretch")
     # **확인사항을 달지 않는다** (18세션 2절). 13세션에 위쪽 경고에서 여기 확인사항
     # 으로 내렸고, 16세션에 :func:`missing_lines` 가 같은 사실을 정리했다. 두 조치가
     # 겹쳐 **같은 사실이 다섯 번** 나왔다 — 본문 줄 + 확인사항 두 건이 최장 연속
@@ -983,7 +983,12 @@ def _monthly_table(monthly: pd.DataFrame) -> None:
     # 적는 꼴이다. 역률요금은 반대다: 0원이 곧 「조정 없음」 이라 늘 선다.
     if "excess_won" in columns and not monthly["excess_won"].any():
         columns.remove("excess_won")
-    st.dataframe(
+    # **날값을 내지 않는다** (S161 2절). 접지 않으면 금액 칸이
+    # `118936.77419354838` · 결측률이 `0.0006944444444444445` 로 선다 — Excel 은
+    # 같은 표를 절사해 싣고 있어 **같은 자료가 두 꼴로 나왔다.** 접는 자리는
+    # `ui\tables.py` 한 곳이고 **열 이름이 한글이 된 뒤에 접는다** — 자릿수를
+    # 가르는 것이 열 이름 꼬리라 `localize` 앞에 두면 하나도 안 걸린다.
+    tables.show(
         localize(monthly[columns], index_name="월"),
         width="stretch",
         column_config={

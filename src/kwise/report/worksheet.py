@@ -30,6 +30,7 @@ from kwise.measures.ess import EssResult, payback_text
 from kwise.measures.power_factor import PowerFactorResult
 from kwise.measures.solar import SolarCurve, SolarPoint
 from kwise.measures.tariff_switch import TariffSwitchResult
+from kwise.report.notices import plain_text
 from kwise.tariff import BillingResult, lagging_adjustment_ratio
 from kwise.tariff.labels import option_label
 
@@ -80,13 +81,19 @@ class Worksheet:
         return bool(self.rows)
 
     def frame(self) -> pd.DataFrame:
-        """구분 · 산식 · 값. **화면과 Excel 이 이것을 그대로 쓴다.**"""
+        """구분 · 산식 · 값. **화면과 Excel 이 이것을 그대로 쓴다.**
+
+        **표 칸은 마크다운을 안 그린다** (S161 2절). 같은 줄이 툴팁(:meth:`lines`)
+        으로도 가고 그쪽은 굵게 그리므로 낳는 자리에서 뗄 수가 없다 — 적는 순간
+        벗긴다. 화면 3단계 「이유 1」 칸이 `**기본요금 기반이 달라집니다.**` 를
+        표식째 내고 있었고 Excel 부록 A 도 같은 줄을 실었다.
+        """
         return pd.DataFrame(
             [
                 {
-                    COLUMNS[0]: f"{_INDENT * row.level}{row.label}",
-                    COLUMNS[1]: row.formula,
-                    COLUMNS[2]: row.value,
+                    COLUMNS[0]: plain_text(f"{_INDENT * row.level}{row.label}"),
+                    COLUMNS[1]: plain_text(row.formula),
+                    COLUMNS[2]: plain_text(row.value),
                 }
                 for row in self.rows
             ],
