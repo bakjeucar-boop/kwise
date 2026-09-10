@@ -92,6 +92,7 @@ __all__ = [
     "tariff_parts",
     "temperature_mean_frame",
     "top_hour_frame",
+    "whole_percents",
 ]
 
 BAND_LABELS: dict[str, str] = {"light": "경부하", "mid": "중간부하", "peak": "최대부하"}
@@ -252,11 +253,37 @@ BAND_FRAME_COLUMNS: dict[str, list[object]] = {
 }
 
 
+def whole_percents(shares: Sequence[float]) -> list[int]:
+    """비중을 **합이 100 이 되는 정수**로 접는다 (S160 2-3).
+
+    저마다 따로 반올림하면 합이 100 이 아니다 — 겨울이 49.3514 · 31.3891 ·
+    19.2595 라 **49 + 31 + 19 = 99** 로 그려졌다. 날값 합은 100.000000 이므로
+    틀린 것은 계산이 아니라 **접는 법**이다.
+
+    **잔차를 가장 큰 몫에 주는 최대잔여법**으로 맞춘다 — 저마다 반올림하고
+    남는 잔차(±1)를 **비중이 가장 큰 조각**에 준다. 가장 큰 조각에서 한 칸이
+    상대적으로 가장 덜 움직인다.
+
+    **계산값은 안 건드린다.** 갈리는 것은 표시뿐이고, 조각의 크기는 날값인
+    「비중」 이 그린다.
+    """
+    folded = [round(share * 100) for share in shares]
+    residual = 100 - sum(folded)
+    # **몫이 통째로 0 인 표는 접지 않는다** — 없는 계절에서 100 을 첫 조각에
+    # 몰아 주면 빈 표가 「경부하 100%」 로 보인다.
+    if residual and any(shares):
+        folded[max(range(len(folded)), key=shares.__getitem__)] += residual
+    return folded
+
+
 def band_frame(structure: ChargeStructure, *, season: str | None = None) -> pd.DataFrame:
     """계시별 사용량 구성. ``season`` 을 주면 그 계절만 (30세션 5-2).
 
     비중은 **그 계절 안에서 다시 잰다.** 전체 대비로 두면 세 계절의 막대가 각각
     3분의 1 길이로 그려져 무엇의 구성인지 알 수 없다.
+
+    **백분율 라벨은 :func:`whole_percents` 하나가 만든다** (S160 2-3) — 계절이
+    넷이면 넷 다 이 자리를 지난다.
     """
     kwh = structure.band_kwh
     if season is not None:
@@ -275,7 +302,8 @@ def band_frame(structure: ChargeStructure, *, season: str | None = None) -> pd.D
             # **이름과 비중을 한 조각에 적는다** (34세션 1절). 원이 넷이라 범례를
             # 달면 같은 이름이 네 번 실린다.
             "라벨": [
-                f"{name} {share * 100:.0f}%" for name, share in zip(names, shares, strict=True)
+                f"{name} {percent}%"
+                for name, percent in zip(names, whole_percents(shares), strict=True)
             ],
             # 조각 순서. 자료 순서에 맡기면 계절마다 색이 돈다.
             "순서": list(range(len(names))),

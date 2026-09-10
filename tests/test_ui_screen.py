@@ -1406,6 +1406,38 @@ def test_계시별_사용량_구성의_세_조각이_그_계절_안에서_1이_�
     assert parts == pytest.approx(total)
 
 
+def test_계시별_구성_라벨의_백분율_합이_100_이다() -> None:
+    """**셋을 따로 반올림하면 합이 100 이 아니다** (S160 2-3).
+
+    `small-a2-pf100-offset` 겨울이 49.3514 · 31.3891 · 19.2595 라
+    **49 + 31 + 19 = 99** 로 그려졌다 — 날값 합은 100.000000 이므로 틀린 것은
+    계산이 아니라 접는 법이다.
+    """
+    import re
+
+    from kwise.report.frames import band_frame, whole_percents
+
+    # **S160 1-1 이 저장소에서 잰 겨울 날값이다.** 이 셋이 그 결함을 그대로 낸다.
+    winter = [0.493514, 0.313891, 0.192595]
+    assert [round(share * 100) for share in winter] == [49, 31, 19]  # 따로 접으면 99
+    assert whole_percents(winter) == [50, 31, 19]  # 잔차는 가장 큰 몫으로 간다
+    assert sum(whole_percents(winter)) == 100
+
+    # 잔차가 음수인 쪽도 맞춘다 — 셋을 올려 접으면 101 이 된다.
+    assert sum(whole_percents([0.335, 0.335, 0.33])) == 100
+    # **몫이 통째로 0 인 표는 안 건드린다** — 빈 계절이 「100%」 로 보이면 안 된다.
+    assert whole_percents([0.0, 0.0, 0.0]) == [0, 0, 0]
+
+    # 실물에서도 계절마다 합이 100 이다. 계절이 넷이면 넷 다 이 자리를 지난다.
+    structure = _structure()
+    seasons: list[str | None] = [str(season) for season in structure.band_season_kwh.index]
+    seasons.append(None)
+    for season in seasons:
+        labels = list(band_frame(structure, season=season)["라벨"])
+        percents = [int(re.search(r"(\d+)%$", str(text)).group(1)) for text in labels]  # type: ignore[union-attr]
+        assert sum(percents) == 100, (season, labels)
+
+
 def test_월별_요금_구성이_다시_막대다() -> None:
     """**33세션에 원으로 바꿨다가 34세션에 되돌렸다** (지시가 잘못 전달됐다).
 

@@ -661,3 +661,60 @@ def test_날짜_꼴이_섞여도_같은_날로_본다(
         off_days=(dt.date(2023, 5, 1),),
     )
     assert text.annual_reducible_kwh == date.annual_reducible_kwh
+
+
+# ======================================================== S160 2-2 · 접는 자리
+
+
+#: **S160 1-1 이 `small-a2-pf100-offset` 에서 잰 날값이다.** 접기 전 값을 남겨
+#: 두어야 「접은 값을 다시 곱했는가」 를 시험이 되짚을 수 있다.
+YONGIN_BASELINE_KW = 36.29270989408422
+YONGIN_THRESHOLD_KW = 43.55125187290106
+
+
+def test_저부하_기준선_줄은_접은_값으로_다시_곱하지_않는다() -> None:
+    """**곱하는 밑은 언제나 날값이다** (S160 2-1).
+
+    Excel 진단이 이 줄을 저 혼자 지으면서 두 값을 `,.0f` 로 접어
+    「36 kW × 1.2 = 44 kW」 로 적었다 — **36 × 1.2 는 43.2 이지 44 가 아니다.**
+    화면·PPT·부록 A 는 같은 사실을 「36.3 kW × 1.2 = 43.6 kW」 로 적었다.
+    """
+    from kwise.report.worksheet import low_load_threshold_line
+
+    line = low_load_threshold_line(YONGIN_BASELINE_KW, YONGIN_THRESHOLD_KW)
+    assert line == "36.3 kW × 1.2 = 43.6 kW", line
+
+    # **접은 값으로 다시 곱하면 다른 수가 나온다** — 그 사실이 이 못의 근거다.
+    folded = round(YONGIN_BASELINE_KW) * (YONGIN_THRESHOLD_KW / YONGIN_BASELINE_KW)
+    assert f"{folded:,.1f}" == "43.2"
+    assert "43.2" not in (line or "")
+
+    # 기준선이나 문턱이 없으면 줄을 안 짓는다 — 부르는 쪽이 「산출 보류」 를 적는다.
+    assert low_load_threshold_line(None, YONGIN_THRESHOLD_KW) is None
+    assert low_load_threshold_line(YONGIN_BASELINE_KW, None) is None
+
+
+def test_기준선_줄을_밖에서_다시_짓지_않는다() -> None:
+    """**자리를 하나로 모았다** (S160 2-2).
+
+    화면·PPT·부록 A 는 :func:`~kwise.report.worksheet.demand_response_worksheet`
+    를 지나고 Excel 은 :func:`~kwise.report.worksheet.low_load_threshold_line` 을
+    부른다. 밖에서 이 두 값에 서식을 다시 먹이면 자릿수가 또 갈린다.
+    """
+    import re
+
+    from kwise.report import worksheet
+
+    # 서식만 문다 — 형힌트(`weekend_baseline_kw: float`)와 독스트링은 콜론 뒤가
+    # 빈칸이라 안 걸린다. f-문자열 서식은 `{…:,.1f}` 처럼 콜론 뒤가 `,` 나 `.` 다.
+    net = re.compile(r"(?:weekend_baseline_kw|low_load_threshold_kw):[,.]")
+    home = Path(worksheet.__file__).resolve()
+    root = home.parent.parent
+    strays = [
+        f"{path.relative_to(root)}:{number}: {line.strip()}"
+        for path in sorted(root.rglob("*.py"))
+        if path.resolve() != home
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if net.search(line)
+    ]
+    assert not strays, "기준선·문턱에 서식을 직접 먹이는 자리가 있습니다: " + " · ".join(strays)

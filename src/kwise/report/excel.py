@@ -59,7 +59,7 @@ from kwise.report.notices import (
     format_won,
     rules_basis_line,
 )
-from kwise.report.worksheet import Worksheet
+from kwise.report.worksheet import Worksheet, low_load_threshold_line
 from kwise.tariff import BillingResult, TariffTable
 from kwise.tariff.labels import option_label
 
@@ -670,10 +670,11 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
                 ("DR 운영 시간대", dr.window_label),
                 (
                     "DR 저부하 판정 기준선 (주말·공휴일 평균 × 배수)",
-                    f"{dr.weekend_baseline_kw:,.0f} kW × {dr.low_load_multiple:.2g} = "
-                    f"{dr.low_load_threshold_kw:,.0f} kW"
-                    if dr.weekend_baseline_kw is not None and dr.low_load_threshold_kw is not None
-                    else "산출 보류 — 주말·공휴일 관측치 없음",
+                    # **줄을 여기서 짓지 않는다** (S160 2-2) — 화면·PPT·부록 A 와
+                    # 같은 자리에서 받는다. 여기서 따로 지었을 때 이 칸만 두 값을
+                    # `,.0f` 로 접어 「36 kW × 1.2 = 44 kW」 가 됐다.
+                    low_load_threshold_line(dr.weekend_baseline_kw, dr.low_load_threshold_kw)
+                    or "산출 보류 — 주말·공휴일 관측치 없음",
                 ),
                 ("DR 저부하 평일", f"{dr.low_load_days_count}일"),
                 (

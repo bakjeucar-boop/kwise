@@ -41,6 +41,8 @@ __all__ = [
     "contract_worksheet",
     "demand_response_worksheet",
     "ess_worksheet",
+    "low_load_multiple_text",
+    "low_load_threshold_line",
     "power_factor_worksheet",
     "solar_worksheet",
     "tariff_switch_worksheet",
@@ -113,6 +115,33 @@ def _kw(value: float | None, *, decimals: int = 1) -> str:
 
 def _kwh(value: float | None, *, decimals: int = 0) -> str:
     return "미산출" if value is None else f"{value:,.{decimals}f} kWh"
+
+
+def low_load_multiple_text(baseline_kw: float | None, threshold_kw: float | None) -> str:
+    """저부하 문턱의 배수. **날값끼리 나눈다** — 접은 값으로 나누면 배수가 흔들린다."""
+    if not baseline_kw or threshold_kw is None:
+        return "배수"
+    return f"{threshold_kw / baseline_kw:,.2g}"
+
+
+def low_load_threshold_line(baseline_kw: float | None, threshold_kw: float | None) -> str | None:
+    """``36.3 kW × 1.2 = 43.6 kW`` — DR 저부하 판정 기준선 한 줄 (S160 2-2).
+
+    **자리를 하나로 모은다.** 이 줄을 Excel 진단이 따로 지으면서 두 값을 저 혼자
+    `,.0f` 로 접었다 — 화면·PPT·부록 A 는 `,.1f` 라 같은 사실이 「36 kW × 1.2 =
+    44 kW」 와 「36.3 kW × 1.2 = 43.6 kW」 두 벌로 섰다. **접은 값끼리 등호를
+    세우면 셈이 안 맞는다** — 36 × 1.2 는 43.2 이지 44 가 아니다.
+
+    값 자체는 늘 날값에서 나온다 (:mod:`kwise.diagnose.dr` 이 ``기준선 × 배수``
+    를 날값으로 계산한다). 여기서 하는 일은 **표시 직전의 반올림 하나**다.
+
+    Returns:
+        기준선이나 문턱이 없으면 ``None``.
+    """
+    if baseline_kw is None or threshold_kw is None:
+        return None
+    multiple = low_load_multiple_text(baseline_kw, threshold_kw)
+    return f"{_kw(baseline_kw)} × {multiple} = {_kw(threshold_kw)}"
 
 
 # --------------------------------------------------------------------- 7.1
@@ -326,14 +355,13 @@ def demand_response_worksheet(result: DemandResponseResult) -> Worksheet:
     """7.3 경제성DR — **기준선 → 문턱 → 저부하일 → 감축량.**"""
     baseline = result.weekend_baseline_kw
     threshold = result.low_load_threshold_kw
-    multiple = (
-        f"기준선 × {threshold / baseline:,.2g}"
-        if baseline and threshold is not None
-        else "기준선 × 배수"
-    )
     rows: list[WorkRow] = [
         WorkRow("기준선", "주말·공휴일 판정 시간대 평균", _kw(baseline)),
-        WorkRow("저부하 문턱", multiple, _kw(threshold)),
+        WorkRow(
+            "저부하 문턱",
+            f"기준선 × {low_load_multiple_text(baseline, threshold)}",
+            _kw(threshold),
+        ),
         WorkRow(
             "저부하 평일", f"거래 가능일 {result.eligible_days}일 중", f"{result.low_load_days}일"
         ),
