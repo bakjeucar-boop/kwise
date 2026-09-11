@@ -248,11 +248,16 @@ def evaluate_demand_response(
     if missing:
         inputs = " · ".join(name for name, _ in missing)
         outcomes = "과 ".join(outcome for _, outcome in missing)
+        # **「감축 가능량만 참고」 는 정산 단가가 없을 때만 선다** (S167 1절). 합치기
+        # 전(22세션)에는 정산 단가 줄에만 있던 말인데 합치면서 조건이 「둘 중 하나라도
+        # 없음」 으로 넓어졌다 — 화면에는 하루전에너지가격 칸이 없어 단가를 넣어도
+        # 이 말이 정산금 곁에 섰다.
+        only_kwh = "감축 가능량(kWh)만 참고하십시오 — " if unit_price_won_per_kwh is None else ""
         notices.append(
             block(
                 f"{inputs}{_object_particle(inputs)} 입력하지 않아 "
                 f"{outcomes}{_object_particle(outcomes)} 산출하지 않았습니다. "
-                "감축 가능량(kWh)만 참고하십시오 — 정산 단가는 전력거래소 월별 "
+                f"{only_kwh}정산 단가는 전력거래소 월별 "
                 "순편익가격과 사업자 수수료에, 위약금은 하루전에너지가격에 달려 "
                 "있습니다 (전력시장운영규칙 별표26).",
                 fact="dr.no_price",

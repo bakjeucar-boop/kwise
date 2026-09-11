@@ -421,6 +421,26 @@ def test_단가가_없으면_사유를_낸다(sample_diagnosis: Diagnosis) -> No
     assert "리스크을" not in blocked[0].text
 
 
+def test_감축_가능량만_참고하라는_말은_정산_단가가_없을_때만_선다(
+    sample_diagnosis: Diagnosis,
+) -> None:
+    """**단가를 넣으면 정산금이 서므로 「감축 가능량만 참고」 는 거짓이 된다** (S167 1절).
+
+    22세션이 차단 두 줄을 한 줄로 합치며 이 말의 조건이 「둘 중 하나라도 없음」 으로
+    넓어졌고, 화면에는 하루전에너지가격 칸이 없어 단가를 넣어도 정산금 곁에 섰다.
+    **화면과 같은 조건**(하루전에너지가격 없음)에서 단가만 바꿔 두 판을 맞댄다.
+    """
+    profile = sample_diagnosis.dr
+    assert profile is not None
+    phrase = "감축 가능량(kWh)만 참고하십시오"
+
+    def says(price: float | None) -> bool:
+        result = evaluate_demand_response(profile, unit_price_won_per_kwh=price)
+        return any(phrase in item.text for item in result.notices)
+
+    assert (says(None), says(120.0)) == (True, False)
+
+
 def test_단가가_있으면_정산금을_낸다(sample_diagnosis: Diagnosis) -> None:
     profile = sample_diagnosis.dr
     assert profile is not None
