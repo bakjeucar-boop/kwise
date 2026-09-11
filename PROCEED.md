@@ -356,6 +356,51 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 (`report\batch.py:224`)는 이 인자를 안 넘겨 **늘 9~18시**다. 겹침 창은 감축량·등록 용량·저부하 판정·일별 평균
 넷이 다 쓴다(`_operating_window(starts, windows)` 575줄).
 
+### 2절 · 이름 셋 — 「정산 단가」 · 「SMP」 · 「하루전에너지가격」 (조사)
+
+**2-1. 전수** (`src` · `data\*.json` · `tools` · `docs\*.md` Grep 과 1절 `before` 판 네 산출물 글자)
+
+| 이름 | 자리 | 뜻 | 값이 어디서 |
+|---|---|---|---|
+| 정산 단가 | 화면 DR 체크·칸(`ui\views\measures.py:486·489`) · `evaluate_demand_response(unit_price_won_per_kwh=)` · `DemandResponseResult.unit_price_won_per_kwh` | DR — 사업자가 고객에게 주는 kWh 당 값(라벨 「사업자 제시값」) | **사용자 입력뿐** — 화면 칸 · 배치 YAML `dr_unit_price_won_per_kwh`(`report\batch.py:325`) |
+| 정산 단가 | `UNPRICED_REASON` 「미산출 — 정산 단가 미입력」(`demand_response.py:57`) — 화면 3단계 표 · Excel `수단별 결과!4` C·D · PPT 장11 · Word 표8 | DR | 이름뿐(사유) |
+| 정산 단가 | 차단 `dr.no_price`(243·260) — 화면·Word · `DR_ADVISORY`(61) — Excel `수단별 결과!4` F·`부록 C!27` · Word · 카드 머리(`ui\spec.py:127`) · `report\notices.py:104` — Excel `요약!34`·`부록 C!11` · Word · `report\document.py:899` Word · 앵커(`ui\anchors.py:185`) · 문서(MANUAL 761·819·1533·1960 · TECHNICAL 527·1918 · REQUIREMENTS 77·659·671·1864 · TEST_DATA 473·485 · OPEN_ITEMS 551 · MANUAL_ANCHORS 36) | DR | **설명뿐** |
+| 정산 단가 | `measures\surplus.py:338·394` 독스트링 「상계 잔여(의) 정산 단가」 | **상계 잔여 SMP 단가**(`smp_price_won_per_kwh`) | 기준 데이터 — **화면·산출물에는 이 이름으로 안 뜬다** |
+| SMP | DR 근거 `dr.no_base_fee_saving`(`demand_response.py:227`) 「SMP 기준으로 산발적으로 입찰하므로」 — 화면 툴팁 · Word 문단72·155 · 독스트링 6 · TECHNICAL 530 · REQUIREMENTS 673 | 계통한계가격(시장 가격) | **설명뿐** |
+| SMP | 태양광 칸 「SMP 단가 (원/kWh) — 0 이면 미산출」(`measures.py:1292`) · 적용 단가 줄 「상계거래 SMP 120원/kWh」(`surplus.py:146`) — 화면 캡션 · Excel `수단별 결과!7` · PPT 장14 · Word 문단172 · `assumptions.json` `surplus.offset.smp_price_won_per_kwh` 「상계거래(SMP) 단가」 — Excel `부록 B!84` · Word 표21 · `surplus.py` 29·121·142·165·212·223·241·584·586 · 주석(`render_deck.py:290` · `state.py:180` · `document.py:748·750`) · 문서(MANUAL 1398~1458 · TECHNICAL 979~1038 · REQUIREMENTS 904·926·933 · TEST_DATA 142~485) | 계통한계가격 — 상계 잔여를 그 대표값 하나로 정산 | 기준 데이터 판단값 120 · 화면에서 고친다 |
+| 하루전에너지가격 | `shortfall_penalty_won`(`demand_response.py:69·78`) · `evaluate_demand_response(day_ahead_price_won_per_kwh=)` · 주의 `dr.penalty_risk`(197) 「× Max(하루전에너지가격, 0)」 — 화면·Word 문단66 · 차단 `dr.no_price`(244·261) · 독스트링 25·73·165 · REQUIREMENTS 665 | **모든 건물**의 실적위약금 가격(`max(0, 값)`) | 배치 YAML `dr_day_ahead_price_won_per_kwh`(`batch.py:94·326`) 하나 · **화면 칸 없음** |
+
+**2-2. 규칙 원문** — 정본은 `data\source\2026-04_전력시장운영규칙.pdf`(`SOURCES.md` · `.gitignore` 라 **2번 PC 에는
+없다**). 검색용 사본이 없어 스크래치 `rule2026.py` 가 pypdf 로 1,324쪽을 떴다. **[별표 26] 수요반응자원의 정산 기준**:
+
+- **Ⅰ.1** (pdf 856쪽 · 인쇄 838쪽) — 「자발적 수요감축에 따른 감축계획량에 포함된 계획감축량은 **지역별 SMP로
+  정산한다**.」 가. 표준DR, 중소형DR, 국민DR(수도권/비수도권) `SLRPi,t = SLRi,t × SMPt × 1000` · 나. 제주DR,
+  국민DR(제주권) (858쪽 · 인쇄 840쪽) `SLRPi,t = SLRi,t × DA_SMPt × 1000` · 「`DA_SMPt : 하루전에너지가격(원/kWh)`」
+- **5.가 실적위약금** (872쪽 · 인쇄 854쪽) — 「… 차감한 값에 **계통한계가격(제주지역은 하루전에너지가격)**과 미
+  이행에 대한 위약금계수를 곱하여 시간대별로 정산한다.」 1) 표준DR·중소형DR·국민DR(수도권/비수도권)
+  `PPCi,t = {SSRi,t – Min{Max(SRi,t, 0), SSRi,t}} × SMPt × PPCF × 1000` · 2) 제주DR·국민DR(제주권) `… ×
+  Max(DA_SMPt, 0) × PPCF × 1000` · 「PPCF … 1을 적용」
+- **순편익가격** (201쪽 · 용어 정의 20호) — 「수요반응자원을 보유한 수요관리사업자가 전력시장에 입찰할 수 있는
+  **최소가격**(원/kWh)」
+
+2024-02 판 검색용 txt(31633~31743 · 32381~32426 · 6641줄)도 정산 가격 자리의 글이 같다 — 2026-04 판은 개정 연혁
+(2025.12.8 · 2026.4.28)이 붙고 감축계획량 식의 항이 바뀌었을 뿐이다.
+
+**2-3. 판정 — 코드의 「정산 단가」 는 2-2 의 어느 값도 아니다.** 규칙이 정하는 것은 거래소가 **수요관리사업자에게**
+주는 계획감축량 정산금의 단가(육지 SMP · 제주 하루전에너지가격)이고, 코드의 값은 화면 라벨대로 **사업자가 고객에게
+주는 값**이다. 둘 사이(사업자 몫)는 규칙 밖 계약이다. **판정 밖 둘** — ① 곱하는 양이 규칙의 감축인정량(SLR)이
+아니라 코드의 연간 감축 가능량이다 ② 설명 글 넷(`dr.no_price` · `notices.py:104` · `document.py:899` · 독스트링
+10)이 「정산 단가는 **순편익가격**과 사업자 수수료에 달려 있다」 고 적는데 규칙은 **SMP 로 정산**하고 순편익가격은
+입찰 최소가격이다 — 이름이 아니라 서술이라 아래 판정 표에 안 넣고 미해결로 올린다.
+
+**2-4. 두 뜻인 자리마다 판정**
+
+| 이름 | 두 뜻 | 판정 | 이 판 |
+|---|---|---|---|
+| 정산 단가 | DR(화면·산출물 전부) · 상계 잔여 SMP 단가(`surplus.py:338·394` 독스트링) | **이름 갈이** — 독스트링 둘을 「SMP 단가」 로. 화면·산출물은 이미 한 뜻 | 3절에 고친다 |
+| SMP | DR 설명(계통한계가격) · 태양광 상계 잔여 단가 | **두 뜻이 아니다** — 둘 다 계통한계가격이고 태양광은 그 대표값 하나를 「단가」 로 쓴다고 이름에 적혀 있다. S167 0-3 이 가른 「시장 가격 일반 · 상계 잔여 단가 값」 은 **뜻이 아니라 쓰임(설명 · 값)의 차이**다 | 안 고친다 |
+| 하루전에너지가격 | 코드 — 모든 건물의 위약금 가격 · 규칙 — **제주** DR 의 정산·위약금 가격(육지는 SMP · `Max(·,0)` 도 제주 식에만) | **계산에 닿는다** — 이름만 「SMP」 로 갈면 `shortfall_penalty_won` 의 `max(0.0, …)` 와 주의 글의 식이 육지 식과 어긋난 채 남고, 식을 고치면 계산이다. 화면에는 값이 안 들어온다(배치만) | **안 고친다 · 미해결** |
+
 ---
 ## 오늘 (2026-09-11) 167세션 — **수정 판. 「차이」 를 고치고 DR 단가 갈래를 값으로 봤다**
 
