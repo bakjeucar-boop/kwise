@@ -273,6 +273,75 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - 앞은 2026-08-25 — **56·57·58세션.** 58세션이 **잉여 단가 기본값**을 기준 데이터에 두어 「외부 판매 미산출」 을 없앴고, **적용 단가 한 줄**을 화면·PPT·Excel·Word 가 함께 쓰게 했다. 기본 선택은 출력제어 그대로라 **금액 불변**. 앞선 둘은 — 56세션이 ESS 음수의 원인을 **계약종별 갑/을**에서 찾았고(갑은 기본요금이 계약전력에 붙는다), 57세션이 **잉여 처리를 화면 앞으로** 냈다 — 기본을 **출력제어**로, 「버리기」 를 「출력제어」 로, 잉여 수익을 캐시 열쇠에서 빼 **시나리오를 바꿔도 요금이 다시 안 돈다** (6.5초 → 0.9초). **금액 불변**
 
 ---
+## 오늘 (2026-09-11) 167세션 — **수정 판. 「차이」 를 고치고 DR 단가 갈래를 값으로 봤다**
+
+**작업 PC — 1번 PC** (Intel Core Ultra 7 258V · 31.5 GB · `-n auto` = 8). 출발점
+`ca62670` = `origin/master` · 작업 트리 **깨끗** · `git pull` up to date. 지시서는
+`docs\directives\S167.md`.
+
+### 0절 · 착수와 DR 단가 갈래 (조사)
+
+**0-1. 착수 회귀** — **1,744 passed · 0 failed · 2 xfailed · skip 0 · 수집 1,746 ·
+4분 01초(pytest 239.7초) · 깨끗한 판**(다른 프로젝트 python 0개). 수집이 S166 마감
+1,746 과 같다.
+
+**0-2. DR 카드에 단가 칸이 있다.** `ui\views\measures.py::_demand_response`(486~498줄) —
+체크 「**정산 단가를 안다 (사업자 제시값)**」(기본 꺼짐 · 키 없음)를 켜야 칸
+「**정산 단가 (원/kWh)**」(`st.number_input` · 최소 0.0 · 기본 0.0 · 걸음 1.0 · 키
+`measure_demand_response_unit_price`)가 선다. 0 은 `unit_price or None` 으로 「안 넣음」 이다.
+**S164·S166 스크래치는 위젯을 세우지 않았다** — 둘 다 이 체크를 누르고 이 칸에 120 을
+넣었다(S164 2절 · S166 2-3 기록). **하루전에너지가격 칸은 화면에 없다.** 그래서 S166 보고
+6항 「칸이 없어서 … 단가를 넣어도 늘 뜹니다」 는 **맞다** — 「칸」 은 하루전에너지가격 칸,
+「단가」 는 정산 단가라 가리키는 칸이 다르다. 값(덱 벌 `small-a2-pf100-offset` · 1번 PC ·
+37.5초): 단가 없음 → 차단 「정산 단가 · 하루전에너지가격을 입력하지 않아 …」, **120 원/kWh →
+「하루전에너지가격을 입력하지 않아 위약금 리스크를 산출하지 않았습니다. 감축 가능량(kWh)만
+참고하십시오 — …」 와 같은 카드의 지표 「정산금 71만원」 이 함께 선다.**
+
+**0-3. 이름 전수** (`src`·`data\*.json` Grep · 화면은 위 판의 `screen_audit.collect`)
+
+| 이름 | 자리 | 뜻 · 어디서 오나 |
+|---|---|---|
+| 정산 단가 | 화면 DR 체크·칸(위) · `DemandResponseResult.unit_price_won_per_kwh` · 차단 `dr.no_price` · 표 사유 `UNPRICED_REASON` · 카드 머리 `ui\spec.py:127` · Excel 한계 `report\notices.py:104` · Word `document.py:899` · 앵커 `anchors.py:185` | DR 감축량(kWh)에 곱해 **정산금**을 내는 값. **사용자 입력뿐**(기본값 없음 · `demand_response.py:10`) |
+| 정산 단가 | `measures\surplus.py:394` 독스트링 「상계 잔여의 정산 단가」 | **상계 잔여 SMP 단가**(`smp_price_won_per_kwh`) — 화면에는 이 이름으로 안 뜬다 |
+| 하루전에너지가격 | `evaluate_demand_response(day_ahead_price_won_per_kwh=)` · 주의 `dr.penalty_risk` · 차단 `dr.no_price` | **위약금 리스크**(`shortfall_penalty_won`)용. 들어오는 자리는 배치 YAML `dr_day_ahead_price_won_per_kwh`(`report\batch.py:94·326`) 하나 |
+| SMP | DR 근거 `dr.no_base_fee_saving` 「SMP 기준으로 산발적으로 입찰하므로」 | 시장 가격 일반 — **값으로 안 쓴다** |
+| SMP | 태양광 칸 「SMP 단가 (원/kWh) — 0 이면 미산출」(`measures.py:1292`) · `surplus.py` · `assumptions.json` `surplus.offset.smp_price_won_per_kwh` | **상계 잔여 정산 단가** — 기준 데이터 참고값, 화면에서 고친다 |
+| 에너지가격 · 순편익가격 | 앞은 「하루전에너지가격」 안에서만 · 뒤는 DR 차단·Excel·Word 설명 | 순편익가격은 값이 아니라 설명이다 |
+
+**한 이름이 두 뜻인 자리 둘** — 「정산 단가」(DR 정산 단가 · 상계 잔여 SMP 단가 — 뒤는 독스트링만)와
+「SMP」(DR 은 시장 가격 일반 · 태양광은 상계 잔여 단가 값). **「정산 단가」 와 「하루전에너지가격」 은
+코드에서 다른 두 값이다** — 앞은 정산금, 뒤는 위약금으로만 간다. 규칙 원문(`2024-02_전력시장운영규칙_검색용.txt`
+31633~31743줄)은 자발적 수요감축 계획감축량을 「지역별 SMP로 정산」 하고(가 · 육지 `SLRP = SLR × SMP × 1000`,
+나 · 제주 변수표 `DA_SMP : 하루전에너지가격`) 위약금은 `Max(하루전에너지가격, 0)` 이다. 코드의 「정산 단가」 는
+사용자가 사업자에게서 받는 값(순편익가격과 수수료)이라 규칙의 SMP 와 같은 것인지는 **판정하지 않았다**(조문 좁게).
+이름은 안 고쳤다.
+
+**0-4. 단가가 금액이 되는 길 전수**
+
+| 단 | 자리 |
+|---|---|
+| 들어오는 곳 | 화면 — 위 칸(키 `measure_demand_response_unit_price`) · 배치 — `report\batch.py:325` `dr_unit_price_won_per_kwh` · 케이스 스터디 — **없다**(`casestudy.py:769` 단가 없이 부른다) |
+| 계산 | `measures\demand_response.py:185` `settlement = annual_kwh × unit_price` — 카드는 `_demand_response`, 3단계는 `ui\views\compare.py:913` `_measure_results` 가 **같은 키를 `measure_float` 로 다시 읽어** 따로 부른다 |
+| 화면 2단계 | 지표 「정산금」(`measures.py:582`) · 계산 근거 「정산금」 줄(`report\worksheet.py:386` `demand_response_worksheet`) |
+| 화면 3단계 | `report\standalone.py:193` `standalone_rows` → 요약표 「연간 절감액」·「단순 합」 행(`standalone_frame`) · `simple_sum_won` → 합산효과 「단순 합」 지표·계산 근거(`compare.py:455·504`) |
+| Excel | `report\excel.py:385` `measure_summary_frame`(「수단별 결과」 C·D열 `settlement_label`) · `demand_response_worksheet`(부록 A) |
+| PPT · Word | `report\document.py:880` `measure_entries`(절감액 · 회수기간 · `has_saving`) → `slides.py`(장08·11·17) · `build_document` |
+
+**0-5. 단가를 넣은 벌을 회귀에 세우려면**
+
+- **`Case` 에 필드를 붙여도 열여덟은 안 움직인다** — 스크래치가 `build_deck` 이 심는 세션 값을
+  열여덟 다 떠서, 기본 `None` 필드를 붙인 `Case` 와 맞대니 **18/18 같다** · 단가 키를 심는 벌 **0** ·
+  `label_text` 18/18 같다(화면은 안 띄웠다).
+- **덱 벌 하나에 드는 것** — `tools\render_deck.py` 한 파일 약 40줄(필드와 설명 ~8 · 새 벌과 주석 ~25 ·
+  `label_text` 한 줄 · `build_deck` ~8). **체크에 키가 없어** 세션 값으로 못 켠다 — `build_deck` 이 한 판
+  돌린 뒤 체크를 누르고 칸에 넣어 한 판 더 돌려야 한다(또는 `src` 체크에 키를 붙인다). 문서의 「덱 벌
+  18벌」 두 자리(`PROCEED.md` 현재 상태)가 19 로 가야 `test_doc_counts` 가 통과한다.
+- **케이스 스터디** — 지금 160 = 벌 열하나 × 14 + 교차 6. 벌을 새로 세우면 **+14**, 있는 벌에 단가만
+  주면 **+0**(DR 판정은 「거래 가능일 < 전체 일수」 하나라 단가를 안 본다). 단가를 쓰려면
+  `casestudy.CaseDefinition` 에 필드(배치의 것과 다른 클래스다)와 `casestudy.py:769` 한 줄, 판정 한 줄
+  (「정산금 = 연간 감축 × 단가」 → 단가 준 벌마다 +1)이 든다. 이 판에서 벌을 짓지 않았다.
+
+---
 ## 오늘 (2026-09-11) 166세션 — **조사 판. DR 을 그냥 더해도 되는가를 값으로 봤다**
 
 **작업 PC — 1번 PC** (Intel Core Ultra 7 258V · 31.5 GB · `-n auto` = 8). 출발점
