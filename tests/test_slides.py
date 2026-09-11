@@ -1946,7 +1946,7 @@ def test_결측_갈래가_셋이다(sample_report: QualityReport) -> None:
 
 
 def test_부하패턴_문장_둘이_각각_갈린다(sample_diagnosis: Diagnosis) -> None:
-    """**조합이 넷이다** (53세션 4-2). 부하율이 높으면 「짧은 피크」 가 아니다."""
+    """**조합이 넷이다** (53세션 4-2). 부하율이 높으면 배수를 안 적고 「고르게」 다."""
     from dataclasses import replace
 
     from kwise.report.narrative import base_load_high, load_factor_flat, pattern_lead
@@ -1956,7 +1956,8 @@ def test_부하패턴_문장_둘이_각각_갈린다(sample_diagnosis: Diagnosis
     high = base_load_high() + 0.05
     low = base_load_high() - 0.05
     base = replace(sample_diagnosis.pattern, load_factor=peaky, base_load_ratio=high)
-    assert "짧은 피크" in pattern_lead(base)
+    # **배수는 부하율의 역수다** (S169 2절) — 각주 「평균 수요 ÷ 최대 수요」 를 뒤집은 값.
+    assert f"최대 수요가 평균 수요의 {1 / peaky:.1f}배입니다" in pattern_lead(base)
     # **「좁습니다」 를 쓰지 않는다** (59세션 6절). 폭이 좁다는 말로 읽혀 무엇이
     # 좁은지 되묻게 된다 — 뜻은 「여력이 제한적이다」 이다.
     assert "충전 여력이 제한적입니다" in pattern_lead(base)
@@ -1971,26 +1972,34 @@ def test_부하패턴_문장_둘이_각각_갈린다(sample_diagnosis: Diagnosis
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "S164 3-3 — 4장과 7장이 피크 여지를 반대로 말한다. 4장은 부하율만 보고 "
-        "(41.1% < 70% → 「피크를 낮출 여지가 큽니다」), 7장은 기본요금 비중만 본다 "
-        "(19.9% < 20% → 「피크를 낮춰도 줄어드는 몫이 작습니다」). **둘 다 제 잣대로는 "
-        "옳다** — 두 문장이 서로를 모를 뿐이다. 값은 덱 벌 small-a2-pf100-offset 에서 "
-        "잰 것이고, 문턱은 data\\assumptions.json 의 narrative.load_factor_flat(0.70) 과 "
-        "narrative.base_fee_share_low(0.20) 이다. 어느 쪽을 고칠지는 사람이 정한다."
-    ),
+@pytest.mark.parametrize(
+    ("load_factor", "share"),
+    [
+        # 네 갈래 — 부하율 문턱 0.70 · 비중 문턱 0.20 의 아래·위 (S165 3-2).
+        # ① 은 덱 벌 열다섯(small-a2-pf100-offset 41.1% · 19.9%), ② 는 셋이고
+        # ③ · ④ 는 저장소에 벌이 없어 값을 손으로 넣는다 (S169 2-4).
+        pytest.param(0.411, 0.199, id="①둘다아래"),
+        pytest.param(0.411, 0.234, id="②부하율만아래"),
+        pytest.param(0.80, 0.199, id="③비중만아래"),
+        pytest.param(0.80, 0.40, id="④둘다위"),
+    ],
 )
-def test_두_장이_피크_여지를_반대로_말하지_않는다(sample_diagnosis: Diagnosis) -> None:
-    """**한 사실을 두 잣대로 말하면 덱 안에서 뜻이 갈린다** (S164 3-3)."""
+def test_두_장이_피크_여지를_반대로_말하지_않는다(
+    sample_diagnosis: Diagnosis, load_factor: float, share: float
+) -> None:
+    """**한 사실을 두 잣대로 말하면 덱 안에서 뜻이 갈린다** (S164 3-3 · S169 2절).
+
+    4장은 부하율(kW 의 모양)만 보고 7장은 기본요금 비중(원의 몫)만 본다 — 둘이
+    서로를 모른다. S168 까지는 4장이 모양 값으로 「피크를 낮출 여지가 큽니다」
+    라는 **원의 결론**까지 적어 덱 벌 열다섯에서 7장과 반대로 말했다. 이제 결론은
+    7장 하나가 내고 **4장은 원을 말하지 않는다** — 그 사실을 네 갈래에서 문다.
+    """
     from dataclasses import replace
     from types import SimpleNamespace
 
     from kwise.report.narrative import pattern_lead, structure_lead
 
-    pattern = replace(sample_diagnosis.pattern, load_factor=0.411, base_load_ratio=1.008)
-    share = 0.199
+    pattern = replace(sample_diagnosis.pattern, load_factor=load_factor, base_load_ratio=1.008)
     structure = SimpleNamespace(
         base_won=share * 100.0,
         energy_won=(1 - share) * 100.0,
@@ -2002,8 +2011,13 @@ def test_두_장이_피크_여지를_반대로_말하지_않는다(sample_diagno
     page4 = pattern_lead(pattern)
     page7 = structure_lead(structure)  # type: ignore[arg-type]
 
+    for money_word in ("여지", "기본요금", "몫"):
+        assert money_word not in page4, (page4, page7)
     assert not (
         "피크를 낮출 여지가 큽니다" in page4 and "피크를 낮춰도 줄어드는 몫이 작습니다" in page7
+    ), (page4, page7)
+    assert not (
+        "사용량을 줄이는 쪽의 여지가 큽니다" in page4 and "최대수요를 낮추는 방안을 먼저" in page7
     ), (page4, page7)
 
 

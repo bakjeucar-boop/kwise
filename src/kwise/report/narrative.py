@@ -501,20 +501,21 @@ def solar_saving_breakdown(
 
 
 def pattern_lead(pattern: LoadPattern) -> str:
-    """4장 — **부하율과 기저부하로 두 문장.** 어느 수단을 볼지가 여기서 갈린다."""
+    """4장 — **부하율과 기저부하로 두 문장.** 피크를 낮출지는 7장이 말한다."""
+    # **첫 문장은 모양만 말한다** (S169 2절). 앞서는 「짧은 피크 하나가 기본요금을
+    # 끌어올리고 있어 피크를 낮출 여지가 큽니다」 로 원의 결론까지 적어, 기본요금
+    # 비중만 보는 7장(:func:`structure_lead`)과 덱 벌 열다섯에서 반대로 말했다.
+    # 부하율은 kW 의 모양이라 원의 몫을 모른다 — 그 결론은 7장이 낸다. 계약전력
+    # 기준 종별(제68조 ②)에서는 피크가 기본요금을 안 움직여 앞 문장이 거짓이기도 했다.
+    # 배수는 부하율의 역수라 곁의 각주(평균 수요 ÷ 최대 수요)를 뒤집은 말이다 —
+    # **낱말도 각주의 것을 쓴다.** 「최대수요」 지표는 다음 장이 낸다(38세션 2-1).
     factor = pattern.load_factor
     if factor is None:
         first = "부하율을 산출하지 못했습니다."
     elif factor >= load_factor_flat():
-        first = (
-            f"부하율 {_pct(factor)}로 하루 내내 고르게 써, 피크 저감보다 "
-            "사용량을 줄이는 쪽의 여지가 큽니다."
-        )
+        first = f"부하율 {_pct(factor)}로 하루 내내 고르게 씁니다."
     else:
-        first = (
-            f"부하율 {_pct(factor)}로 짧은 피크 하나가 기본요금을 끌어올리고 있어 "
-            "피크를 낮출 여지가 큽니다."
-        )
+        first = f"부하율 {_pct(factor)}로 최대 수요가 평균 수요의 {1 / factor:.1f}배입니다."
     base = pattern.base_load_ratio
     if base is None:
         return first
