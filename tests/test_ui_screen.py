@@ -3996,6 +3996,53 @@ def test_단순_합이라는_이름이_한_값만_가리킨다(sample_diagnosis:
     assert list(inspect.signature(simple_sum_won).parameters) == ["rows"]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason=(
+        "S166 4절 — 화면 3단계 합산효과의 「차이」 칸이 경제성DR 정산금을 담는다. 「단순 합」 은 "
+        "DR 을 담고(S165 1절) 「합산효과」 는 조합 재계산이라 DR 을 안 담으므로 차이에 정산금이 "
+        "음수로 섞인다. 덱 벌 small-a2-pf100-offset + DR 120 원/kWh 에서 −25,056원 → "
+        "−730,895.6원이고 그 차가 정산금 705,839.6원과 같다(S166 2-3). 어떻게 고칠지는 다음 "
+        "판이 정한다."
+    ),
+)
+def test_합산효과의_차이는_DR_정산_단가를_넣어도_안_움직인다() -> None:
+    """**DR 은 요금에 닿지 않는다 — 그러면 「차이」 도 DR 단가에 안 움직여야 한다** (S166 4절).
+
+    DR 은 조합(``CombinationSpec``)에 칸이 없어 합산효과가 단가와 무관하다(S166 2-2).
+    그러므로 같은 화면에서 정산 단가만 넣었을 때 「차이」 칸이 움직이면, 그 움직임이 곧
+    칸이 담은 정산금이다. **식을 다시 적지 않고 화면에 뜨는 두 값을 맞댄다.**
+
+    전제가 깨지면(단가가 안 먹었다) ``pytest.fail`` 로 멈춘다 — ``AssertionError`` 가
+    아니므로 xfail 에 삼켜지지 않는다. 무는지 모르는 못이 되지 않게 한다.
+    """
+    from kwise.ui.state import input_key
+
+    def stage3_value(screen: AppTest, label: str) -> str:
+        items = list(screen.metric)
+        labels = [str(item.label) for item in items]
+        if _STAGE3_FIRST not in labels:
+            pytest.fail(f"3단계 지표가 없습니다: {labels}")
+        start = labels.index(_STAGE3_FIRST)
+        return next(str(item.value) for item in items[start:] if str(item.label) == label)
+
+    screen = _running(option="I", measure_on_demand_response=True, **STAGE3_MEASURES)
+    if screen.exception:
+        pytest.fail(str(screen.exception))
+    unpriced = stage3_value(screen, "차이")
+
+    box = next(item for item in screen.checkbox if str(item.label).startswith("정산 단가를 안다"))
+    box.check().run()
+    screen.number_input(key=input_key("demand_response", "unit_price")).set_value(120.0).run()
+    settlement = [str(item.value) for item in screen.metric if str(item.label) == "정산금"]
+    if screen.exception or not settlement or settlement[0] in ("0원", "—"):
+        pytest.fail(f"정산 단가가 화면에 안 먹었습니다: {settlement} · {screen.exception}")
+
+    priced = stage3_value(screen, "차이")
+    assert priced == unpriced, (unpriced, priced, settlement)
+
+
 def test_투자가_없는_조합은_즉시다() -> None:
     """투자비가 0 인 수단만 고르면 회수기간은 「즉시」 다 (28세션 2절)."""
     from kwise.measures import payback_years
