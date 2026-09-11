@@ -336,6 +336,41 @@ def test_문서가_적은_수가_실물과_같다(name: str, count: Callable[[],
     )
 
 
+def test_화면_감사_네_수가_개요와_현재_상태에서_같다() -> None:
+    """``project-overview.md`` 4절의 감사 수가 「현재 상태」 의 「화면 감사」 칸과 같다 (S167 4절).
+
+    **감사를 여기서 돌리지 않는다** — 한 판 35초이고 태양광 기상이 들어 시험의
+    기상 격리(``conftest.isolated_weather_archive``)와 부딪친다. 대신 판마다 감사를
+    돌려 적는 칸과 맞댄다. **한계** — 그 칸마저 낡으면 둘이 같이 낡아 안 잡힌다.
+    S166 이 본 개요는 S153 판 값(957·807·961·808)에 열세 판을 서 있었다.
+
+    조건 이름은 ``tools\\screen_audit.py`` 의 ``CASES`` 에서 읽는다 — 조건이 늘면 따라간다.
+    """
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    try:
+        import screen_audit
+    finally:
+        sys.path.pop(0)
+    overview = next(
+        line
+        for line in _read("docs/project/project-overview.md").splitlines()
+        if "실주행 문구" in line
+    )
+    state = next(line for line in _proceed_now().splitlines() if line.startswith("| 화면 감사 |"))
+
+    def counts(text: str, template: str) -> dict[str, int]:
+        hits = {
+            name: re.search(template.format(re.escape(name)), text) for name in screen_audit.CASES
+        }
+        return {name: int(hit.group(1).replace(",", "")) for name, hit in hits.items() if hit}
+
+    measured = counts(state, r"\*\*{} (\d[\d,]*)\*\*")
+    assert len(measured) == len(screen_audit.CASES), (
+        f"「화면 감사」 칸에서 {measured} 만 읽었습니다."
+    )
+    assert counts(overview, r"(?<!\S){} (\d[\d,]*)") == measured, (overview, measured)
+
+
 # ------------------------------------- 번호가 아니라 이름으로 부른다 (S131 2절)
 
 #: 이름 대신 번호로 부른 자리 — 「②-32」 처럼 갈래 표식에 번호가 붙은 꼴.
