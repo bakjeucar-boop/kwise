@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from kwise.diagnose.dr import (
+    BID_WINDOW,
     DrProfile,
     DrResourceType,
     dr_bid_restriction_months,
@@ -222,7 +223,7 @@ def evaluate_demand_response(
         ),
         # **시간대와 한도는 카드 본문이 이미 낸다** (25세션 3-3 · D). 여기서는
         # 본문에 없는 사실 하나만 적는다 — 왜 창이 둘로 갈라져 있는가.
-        basis("점심시간(12–13시)은 운영 시간대에서 빠집니다.", fact="dr.window_rule"),
+        basis(f"점심시간(12–13시)은 {BID_WINDOW}에서 빠집니다.", fact="dr.window_rule"),
         basis(
             "**기본요금 절감은 계산하지 않았습니다.** SMP 기준으로 산발적으로 입찰하므로 "
             "참여일이 연중 최대수요일과 겹칠 확률이 낮습니다. 편익은 정산금 하나로 봅니다.",

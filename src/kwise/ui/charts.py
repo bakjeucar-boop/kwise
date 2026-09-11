@@ -20,7 +20,7 @@ import pandas as pd
 from kwise import money
 from kwise.compare import ComparisonResult, SensitivityRange
 from kwise.diagnose import ChargeStructure, PeakProfile
-from kwise.diagnose.dr import DrProfile
+from kwise.diagnose.dr import JUDGE_WINDOW, DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
     CapacityVerdict,
@@ -33,6 +33,7 @@ from kwise.report.days import RepresentativeDay
 from kwise.report.frames import (
     BAND_LABELS,
     CAPACITY_ROWS,
+    DR_WINDOW_MEAN,
     MONTHLY_CHARGE_PARTS,
     PEAK_ZOOM_HOURS,
     TARIFF_PARTS,
@@ -899,7 +900,7 @@ def tariff_delta_chart(switch: TariffSwitchResult) -> alt.LayerChart:
 
 
 def dr_daily_chart(profile: DrProfile) -> alt.LayerChart | alt.FacetChart:
-    """연간 일별 운영시간대 평균 부하 (15세션 2-2).
+    """연간 일별 판정 시간대 평균 부하 (15세션 2-2).
 
     **기준선 근처로 내려온 평일이 감축 가능일이다.** 주말·공휴일 평균을 가로선으로
     깔고 저부하 평일에 표식을 찍으면 그 사실이 그림 하나로 읽힌다.
@@ -910,12 +911,14 @@ def dr_daily_chart(profile: DrProfile) -> alt.LayerChart | alt.FacetChart:
         .mark_circle(size=26, opacity=0.75)
         .encode(
             x=alt.X("날짜:T", title="날짜", axis=date_axis()),
-            y=alt.Y("운영시간대 평균(kW):Q", title="운영 시간대 평균 부하 (kW)", scale=_CUT_SCALE),
+            y=alt.Y(
+                f"{DR_WINDOW_MEAN}:Q", title=f"{JUDGE_WINDOW} 평균 부하 (kW)", scale=_CUT_SCALE
+            ),
             color=alt.Color("구분:N", title=None, scale=_DAY_TYPE_COLORS, legend=LEGEND),
             tooltip=[
                 date_tooltip(),
                 "구분",
-                alt.Tooltip("운영시간대 평균(kW):Q", format=",.0f"),
+                alt.Tooltip(f"{DR_WINDOW_MEAN}:Q", format=",.0f"),
                 "저부하 평일",
             ],
         )
@@ -944,10 +947,10 @@ def dr_daily_chart(profile: DrProfile) -> alt.LayerChart | alt.FacetChart:
             .mark_point(size=170, shape="triangle-down", filled=True, color="crimson")
             .encode(
                 x=alt.X("날짜:T", axis=date_axis()),
-                y="운영시간대 평균(kW):Q",
+                y=f"{DR_WINDOW_MEAN}:Q",
                 tooltip=[
                     date_tooltip(),
-                    alt.Tooltip("운영시간대 평균(kW):Q", format=",.0f"),
+                    alt.Tooltip(f"{DR_WINDOW_MEAN}:Q", format=",.0f"),
                 ],
             )
         )

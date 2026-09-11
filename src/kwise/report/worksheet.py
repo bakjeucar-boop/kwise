@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from kwise import money
+from kwise.diagnose.dr import JUDGE_WINDOW
 from kwise.measures.contract import NO_SAVING, ContractAdjustment
 from kwise.measures.demand_response import DemandResponseResult
 from kwise.measures.ess import EssResult, payback_text
@@ -363,7 +364,7 @@ def demand_response_worksheet(result: DemandResponseResult) -> Worksheet:
     baseline = result.weekend_baseline_kw
     threshold = result.low_load_threshold_kw
     rows: list[WorkRow] = [
-        WorkRow("기준선", "주말·공휴일 판정 시간대 평균", _kw(baseline)),
+        WorkRow("기준선", f"주말·공휴일 {JUDGE_WINDOW} 평균", _kw(baseline)),
         WorkRow(
             "저부하 문턱",
             f"기준선 × {low_load_multiple_text(baseline, threshold)}",

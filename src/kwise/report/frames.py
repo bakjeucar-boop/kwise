@@ -18,7 +18,7 @@ import pandas as pd
 
 from kwise.compare import ComparisonResult, SensitivityRange
 from kwise.diagnose import ChargeStructure, PeakProfile
-from kwise.diagnose.dr import DrProfile
+from kwise.diagnose.dr import JUDGE_WINDOW, DrProfile
 from kwise.io import UsageData, slot_start
 from kwise.measures import (
     AREA_EXCEEDED,
@@ -54,6 +54,7 @@ __all__ = [
     "CAPACITY_COLUMNS",
     "CAPACITY_ROWS",
     "DAY_TYPE_LABELS",
+    "DR_WINDOW_MEAN",
     "ESS_SPEC_CAPTION",
     "ESS_SPEC_HEADER",
     "ESS_SPEC_ROWS",
@@ -941,15 +942,19 @@ def tariff_delta_frame(switch: TariffSwitchResult) -> pd.DataFrame:
     )
 
 
+#: 일별 판정 시간대 평균 열. 화면 그림 툴팁에 이 이름이 그대로 뜬다 (S168 3절).
+DR_WINDOW_MEAN = f"{JUDGE_WINDOW} 평균(kW)"
+
+
 def dr_daily_frame(profile: DrProfile) -> pd.DataFrame:
-    """연간 일별 운영시간대 평균 부하 (15세션 2-2).
+    """연간 일별 판정 시간대 평균 부하 (15세션 2-2).
 
     **기준선 근처로 내려온 평일이 감축 가능일이다.** 요일 갈래를 색으로 나누고
     저부하 평일에 표식을 찍으면 그 사실이 그림 하나로 읽힌다.
     """
     series = profile.daily_window_kw
     if series is None or not len(series):
-        return pd.DataFrame(columns=["날짜", "구분", "운영시간대 평균(kW)", "저부하 평일"])
+        return pd.DataFrame(columns=["날짜", "구분", DR_WINDOW_MEAN, "저부하 평일"])
     eligible = set(profile.eligible_day_index)
     low = set(profile.low_load_days)
     rows: list[dict[str, object]] = []
@@ -967,7 +972,7 @@ def dr_daily_frame(profile: DrProfile) -> pd.DataFrame:
             {
                 "날짜": stamp.date(),
                 "구분": DAY_TYPE_LABELS[kind],
-                "운영시간대 평균(kW)": float(value),
+                DR_WINDOW_MEAN: float(value),
                 "저부하 평일": stamp in low,
             }
         )

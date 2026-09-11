@@ -24,6 +24,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from kwise.diagnose.dr import BID_WINDOW
 from kwise.measures import MEASURE_CATALOG, TIER_NONE, MeasureKind
 
 __all__ = [
@@ -90,9 +91,11 @@ _OVERVIEW: dict[str, str] = {
         "기본요금은 최대수요와 하한(계약전력의 30%) 중 큰 쪽으로 매겨집니다. "
         "계약전력을 낮추면 하한이 함께 내려갑니다."
     ),
+    # **시각을 적지 않고 이름을 적는다** (S168 3절). 「09–20시」 는 규칙 값의 처음과
+    # 끝만 이어 점심이 빠져 있었고, 카드 캡션의 판정 시간대와 한 카드 안에서 갈렸다.
     "demand_response": (
         "전력거래소가 감축을 요청할 때 자발적으로 입찰해 사용량을 줄이고 정산금을 "
-        "받습니다. 설비 투자가 없습니다. 평일 09–20시에 하루 최대 2회 참여할 수 "
+        f"받습니다. 설비 투자가 없습니다. 평일 {BID_WINDOW}에 하루 최대 2회 참여할 수 "
         "있으며, 낙찰 후 이행하지 못하면 6개월 입찰 제한을 받습니다."
     ),
     "power_factor": (

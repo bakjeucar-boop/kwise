@@ -31,7 +31,7 @@ from typing import Protocol
 
 from kwise import money
 from kwise.diagnose import ChargeStructure, ImprovementSummary, PeakProfile
-from kwise.diagnose.dr import DrProfile
+from kwise.diagnose.dr import JUDGE_WINDOW, DrProfile
 from kwise.diagnose.summary import PvPotential
 from kwise.quality import (
     DEFAULT_NIGHT_HOURS,
@@ -282,7 +282,7 @@ def terms(pattern: LoadPattern | None = None) -> dict[str, Term]:
         ),
         "low_load_day": Term(
             "저부하 평일",
-            "평일 가운데 운영시간대 부하가 쉬는 날 수준까지 내려온 날.",
+            f"평일 가운데 {JUDGE_WINDOW} 부하가 쉬는 날 수준까지 내려온 날.",
             "연간 참여 일수 제한이 없어 이 날 수가 실질 제약입니다.",
         ),
     }

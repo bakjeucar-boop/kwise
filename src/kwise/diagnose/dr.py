@@ -63,7 +63,9 @@ from kwise.rules import assumption, rule_value
 from kwise.tariff import HolidayCalendar
 
 __all__ = [
+    "BID_WINDOW",
     "DR_OFF_DAYS_FACT",
+    "JUDGE_WINDOW",
     "LIBRARY_HOLIDAY_GAPS",
     "PARTICIPATION_NOTICE",
     "DrPotential",
@@ -114,9 +116,19 @@ LIBRARY_HOLIDAY_GAPS: tuple[str, ...] = (
     "임시공휴일은 요금표 관행에 맞춰 계량에서 빼므로 거래일 판정에는 평일로 남습니다.",
 )
 
+#: DR 시간대 두 계열의 이름 (S168 3절). **이름은 여기 한 곳에만 둔다.** 앞서는
+#: 「운영 시간대」 한 말이 옆단 건물 값 · 카드 캡션(겹침) · 점심 툴팁(시장) 셋을
+#: 가리켰고, 카드 개요는 이름 없이 「09–20시」 로 적었다. 매뉴얼 7.3 이 이미 쓰는
+#: 두 말을 화면·산출물이 따른다. 「운영 시간대」 는 옆단 **건물** 값에만 남는다.
+BID_WINDOW = "입찰 시간대"
+"""제도가 정한 시장 시간대 (``dr.market_hours``). 건물과 무관하다."""
+JUDGE_WINDOW = "판정 시간대"
+"""입찰 시간대 ∩ 건물 운영 시간대 (:func:`overlap_windows`). 감축 여력을 재는 창이다."""
+
 PARTICIPATION_NOTICE = (
     "연간 참여 일수 제한은 없으나 하루 최대 2회(총 {daily:,.0f}시간)이며 평일 "
-    "{window}에만 가능합니다. 낙찰 후 감축을 이행하지 못하면 {months:,.0f}개월 "
+    f"{JUDGE_WINDOW}"
+    "({window})에만 가능합니다. 낙찰 후 감축을 이행하지 못하면 {months:,.0f}개월 "
     "입찰 제한을 받을 수 있으므로 감축 가능량은 보수적으로 산정했습니다. "
     "실제 참여는 수요관리사업자와 상담해 결정하십시오."
 )
@@ -602,7 +614,7 @@ def dr_profile(
         info(
             "**연간 참여 일수 제한은 없습니다** (14세션에 바로잡았습니다). 남는 제약은 "
             f"하루 {dr_max_events_per_day()}회 × 최대 {dr_event_hours()[1]:,.0f}시간"
-            f"(하루 {daily_cap:,.0f}시간)과 운영 시간대"
+            f"(하루 {daily_cap:,.0f}시간)과 {JUDGE_WINDOW}"
             f"({_window_label(windows)}) 뿐이므로, 실질 제약은 「감축할 여력이 있는 날이 "
             "며칠이냐」 하나입니다.",
             fact="dr.no_annual_cap",
@@ -647,7 +659,7 @@ def dr_profile(
         # **차단** — 감축 가능량이 나오지 않는다.
         notices.append(
             block(
-                "주말·공휴일 또는 평일의 운영 시간대 관측치가 없어 저부하 평일을 "
+                f"주말·공휴일 또는 평일의 {JUDGE_WINDOW} 관측치가 없어 저부하 평일을 "
                 "찾지 못했습니다. 감축 가능량을 산출하지 않습니다.",
                 fact="dr.no_window_data",
             )
@@ -674,7 +686,7 @@ def dr_profile(
         # 자리가 달라 같은 수가 두 값으로 보이기까지 했다 (2,604.6 과 2,605).
         # 여기 남는 것은 본문에 없는 사실 — 그 평균을 며칠에서 쟀는가다.
         basis(
-            f"기준선은 주말·공휴일 {weekend_days}일의 운영 시간대 평균이며, 건물이 사실상 "
+            f"기준선은 주말·공휴일 {weekend_days}일의 {JUDGE_WINDOW} 평균이며, 건물이 사실상 "
             "비어 있을 때의 수준입니다.",
             fact="dr.baseline",
         )
@@ -693,7 +705,7 @@ def dr_profile(
     if not low_days or normal_mean is None:
         notices.append(
             warn(
-                f"저부하 평일이 없습니다 — 대상일 {len(day_mean)}일 가운데 운영 시간대 "
+                f"저부하 평일이 없습니다 — 대상일 {len(day_mean)}일 가운데 {JUDGE_WINDOW} "
                 f"평균이 문턱 {threshold:,.0f} kW 이하인 날이 없습니다. 감축은 실제 운영 "
                 "축소를 뜻하므로 생산·재실 영향과 함께 검토하십시오.",
                 fact="dr.no_low_days",

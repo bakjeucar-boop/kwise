@@ -335,7 +335,7 @@ class SurplusResult:
     def applied_price_note(self) -> str:
         """적용 단가 한 줄. **네 산출물이 이 한 곳에서 읽는다** (58세션).
 
-        상계 잔여 정산 단가는 :class:`OffsetSettlement` 이 이미 「적용했는가」 를
+        상계 잔여 SMP 단가는 :class:`OffsetSettlement` 이 이미 「적용했는가」 를
         가려 두었다 — 현금 정산 구간이 아니면 ``None`` 이다.
 
         **잉여가 없으면 빈 문자열이다.** 팔 것이 없는데 단가를 밝히면 없는
@@ -391,7 +391,8 @@ def evaluate_surplus(
             읽는다 — 없으면 ``usage`` 를 쓴다 (차감 여지를 크게 잡는 쪽이다).
         capacity_kwp: 설비 용량. 상계 구간 판정에 쓴다 (:func:`surplus_options`).
         external_price_won_per_kwh: 잉여 판매 단가. 없으면 금액을 비운다.
-        smp_price_won_per_kwh: 상계 잔여의 정산 단가. 없으면 잔여 kWh 만 낸다.
+        smp_price_won_per_kwh: 상계 잔여의 SMP 단가. 없으면 잔여 kWh 만 낸다.
+            「정산 단가」 는 경제성DR 의 사업자 제시값에만 쓴다 (S168 2절).
     """
     opts = options if options is not None else BillingOptions()
     index = pd.DatetimeIndex(usage.kw.index)

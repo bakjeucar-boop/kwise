@@ -26,7 +26,7 @@ import pandas as pd
 import streamlit as st
 
 from kwise.diagnose import Diagnosis
-from kwise.diagnose.dr import dr_event_hours, dr_max_events_per_day
+from kwise.diagnose.dr import JUDGE_WINDOW, dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData
 from kwise.measures import (
     CURTAIL_SCENARIO,
@@ -544,14 +544,14 @@ def _demand_response(
         ),
     )
     st.caption(
-        f"운영 시간대 {fmt.markdown_safe(diagnosis.dr.window_label)} · 하루 한도 "
+        f"{JUDGE_WINDOW} {fmt.markdown_safe(diagnosis.dr.window_label)} · 하루 한도 "
         f"{dr_max_events_per_day()}회 × 최대 {fmt.hours(dr_event_hours()[1], decimals=0)} "
         f"(하루 {fmt.hours(result.daily_hours_cap, decimals=0)}) · 참여 가능 시간 합 "
         f"{fmt.hours(result.participation_hours, decimals=0)}"
     )
     if result.weekend_baseline_kw is not None and result.low_load_threshold_kw is not None:
         st.caption(
-            f"저부하 판정 기준선은 주말·공휴일 운영 시간대 평균 "
+            f"저부하 판정 기준선은 주말·공휴일 {JUDGE_WINDOW} 평균 "
             f"{fmt.kw(result.weekend_baseline_kw)} 이고, 그 "
             f"{diagnosis.dr.low_load_multiple:.2g}배인 "
             f"{fmt.kw(result.low_load_threshold_kw)} 이하인 평일을 셌습니다."
@@ -559,7 +559,7 @@ def _demand_response(
     # **기준선 근처로 내려온 평일이 감축 가능일이다** (15세션 2-2). 요일 갈래를
     # 색으로 나누고 저부하 평일에 표식을 찍으면 그 사실이 그림 하나로 읽힌다.
     st.altair_chart(charts.dr_daily_chart(diagnosis.dr), width="stretch")
-    st.caption("일별 판정 시간대 평균 부하", help=fmt.chart_tip("chart.dr_daily"))
+    st.caption(f"일별 {JUDGE_WINDOW} 평균 부하", help=fmt.chart_tip("chart.dr_daily"))
     # **어떤 날인지 보여 준다.** 창립기념일·워크숍처럼 사무실을 비우는 날일 가능성이
     # 높아, 목록을 보면 사용자가 스스로 맞는 날인지 판정할 수 있다 (14세션 4절).
     #

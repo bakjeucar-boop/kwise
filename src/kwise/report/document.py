@@ -34,7 +34,7 @@ from docx.text.paragraph import Paragraph
 from kwise import money
 from kwise.compare import SCENARIO_NAME_CAVEAT, ComparisonResult, SensitivityRange
 from kwise.diagnose import ContractAdequacy, Diagnosis
-from kwise.diagnose.dr import DR_OFF_DAYS_FACT, DrProfile
+from kwise.diagnose.dr import DR_OFF_DAYS_FACT, JUDGE_WINDOW, DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
     MEASURE_CATALOG,
@@ -910,7 +910,7 @@ def measure_entries(
                 if dr_profile is not None
                 else None
             ),
-            figure_caption="일별 운영시간대 평균 부하 — 붉은 선 아래가 감축 가능일입니다.",
+            figure_caption=f"일별 {JUDGE_WINDOW} 평균 부하 — 붉은 선 아래가 감축 가능일입니다.",
         )
 
     if power_factor is not None:

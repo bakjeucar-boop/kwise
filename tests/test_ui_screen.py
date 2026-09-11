@@ -2754,6 +2754,46 @@ def test_화면_문구를_실주행으로_모은다(screen_lines: tuple[Any, ...
     assert {"본문", "툴팁", "라벨", "지표", "표"} <= slots, slots
 
 
+def test_DR_시간대_두_계열은_화면에서_이름이_갈린다(screen_lines: tuple[Any, ...]) -> None:
+    """**한 이름이 두 시각을 가리키지 않는다** (S168 3-6).
+
+    S167 까지 「운영 시간대」 한 말이 옆단 건물 값 · DR 카드 캡션(겹침) · 점심
+    툴팁(시장) 셋에 붙어 있었고, 카드 개요는 이름 없이 「09–20시」 였다. 겹침을
+    다시 계산하지 않는다 — **화면에 뜬 글자에서** 「이름 + 시각」 짝만 떠서 본다.
+
+    ① 이름마다 시각이 하나다 ② 두 계열의 시각이 이 화면에서 실제로 갈린다(안
+    갈리면 ① 이 헛돈다) ③ 옆단 건물 슬라이더의 이름이 DR 카드에 안 뜬다
+    ④ DR 카드에 이름 없이 뜬 시각이 없다 — 점심 한 자리만 빼고. ④ 가 없으면 개요를
+    옛 「평일 09–20시」 로 되돌려도 통과했다 (S168 3-6 되돌려 본 셋째 판).
+    """
+    from kwise.diagnose.dr import BID_WINDOW, JUDGE_WINDOW
+
+    building = next(
+        item.text
+        for item in screen_lines
+        if item.where == "옆단" and item.kind == "SelectSlider" and item.slot == "라벨"
+    )
+    one = r"\d{1,2}\s*\\?[~–]\s*\d{1,2}\s*시"
+    pair = re.compile(
+        rf"({re.escape(BID_WINDOW)}|{re.escape(JUDGE_WINDOW)})\s*\(?(?:평일\s*)?"
+        rf"({one}(?:\s*·\s*{one})?)"
+    )
+    seen: dict[str, set[tuple[str, ...]]] = {}
+    for item in screen_lines:
+        if "경제성DR" in item.where or item.where == "옆단":
+            for name, glyph in pair.findall(item.text):
+                seen.setdefault(name, set()).add(tuple(re.findall(r"\d{1,2}", glyph)))
+    card = [item.text for item in screen_lines if "경제성DR" in item.where]
+
+    assert {BID_WINDOW, JUDGE_WINDOW} <= set(seen), f"이름 + 시각 짝이 안 떴다: {seen}"
+    assert all(len(values) == 1 for values in seen.values()), f"한 이름이 두 시각이다: {seen}"
+    assert seen[BID_WINDOW] != seen[JUDGE_WINDOW], f"두 계열이 이 화면에서 안 갈린다: {seen}"
+    assert not [text for text in card if building in text], f"「{building}」 가 DR 카드에 떴다"
+    lunch = re.compile(rf"점심시간\({one}\)")
+    bare = [text for text in card if re.search(one, lunch.sub("", pair.sub("", text)))]
+    assert not bare, f"이름 없이 뜬 시각: {bare}"
+
+
 def test_툴팁까지_escape_한다(screen_lines: tuple[Any, ...]) -> None:
     """**렌더 직전 문자열에 맨 물결표가 없다** (25세션 2절).
 

@@ -26,6 +26,7 @@ from kwise.compare import (
     sensitivity_range_frame,
 )
 from kwise.diagnose import Diagnosis
+from kwise.diagnose.dr import JUDGE_WINDOW
 from kwise.io import UsageData
 from kwise.measures import (
     DR_ADVISORY,
@@ -667,7 +668,7 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
                     f"{dr.registered_capacity_kw:,.0f} kW",
                 ),
                 ("DR 평균 기준 여력", f"{dr.mean_reducible_kw:,.0f} kW"),
-                ("DR 운영 시간대", dr.window_label),
+                (f"DR {JUDGE_WINDOW}", dr.window_label),
                 (
                     "DR 저부하 판정 기준선 (주말·공휴일 평균 × 배수)",
                     # **줄을 여기서 짓지 않는다** (S160 2-2) — 화면·PPT·부록 A 와

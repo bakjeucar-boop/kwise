@@ -37,7 +37,7 @@ from matplotlib.ticker import FuncFormatter
 from kwise import money
 from kwise.compare import ComparisonResult
 from kwise.diagnose import ChargeStructure, PeakProfile
-from kwise.diagnose.dr import DrProfile
+from kwise.diagnose.dr import JUDGE_WINDOW, DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
     ContractAdjustment,
@@ -50,6 +50,7 @@ from kwise.report.design import ChartPalette, load_design_guide
 from kwise.report.frames import (
     BAND_LABELS,
     DAY_TYPE_LABELS,
+    DR_WINDOW_MEAN,
     PEAK_ZOOM_HOURS,
     TARIFF_PARTS,
     band_frame,
@@ -685,7 +686,7 @@ def tariff_option_png(
 
 
 def dr_daily_png(profile: DrProfile, *, size: tuple[float, float] | None = None) -> bytes:
-    """연간 일별 운영시간대 평균 부하 (3장 · 7.3).
+    """연간 일별 판정 시간대 평균 부하 (3장 · 7.3).
 
     **기준선 근처로 내려온 평일이 감축 가능일이다.**
     """
@@ -696,7 +697,7 @@ def dr_daily_png(profile: DrProfile, *, size: tuple[float, float] | None = None)
     for kind, group in frame.groupby("구분", sort=False):
         axes.scatter(
             group["날짜"],
-            group["운영시간대 평균(kW)"],
+            group[DR_WINDOW_MEAN],
             s=8,
             label=str(kind),
             color=palette.get(str(kind), _series()[0]),
@@ -713,13 +714,13 @@ def dr_daily_png(profile: DrProfile, *, size: tuple[float, float] | None = None)
     if len(low):
         axes.scatter(
             low["날짜"],
-            low["운영시간대 평균(kW)"],
+            low[DR_WINDOW_MEAN],
             s=70,
             marker="v",
             color=chart_palette().highlight,
             label="저부하 평일",
         )
-    axes.set_ylabel("운영 시간대 평균 부하 (kW)")
+    axes.set_ylabel(f"{JUDGE_WINDOW} 평균 부하 (kW)")
     date_axis(axes)
     axes.tick_params(axis="x", rotation=45, labelsize=8)
     add_legend(axes, ncol=3)

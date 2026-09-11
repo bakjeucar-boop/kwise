@@ -28,6 +28,7 @@ from dataclasses import dataclass
 
 import streamlit as st
 
+from kwise.diagnose.dr import BID_WINDOW
 from kwise.pv import list_provinces, list_sigungu
 from kwise.quality import DEFAULT_OPERATING_HOURS
 from kwise.rules import assumption
@@ -224,7 +225,7 @@ def render_sidebar() -> BuildingInfo:
         # 해석하므로 한 줄에 둘이 들어가면 그 사이가 취소선이 된다.
         help=(
             "평일 이 시간대 밖의 부하를 따로 셉니다. 경제성DR 의 저부하일 판정에도 씁니다.\n\n"
-            "제도가 정한 DR 입찰 시간대(평일 09–12시·13–20시)와는 다른 값입니다."
+            f"제도가 정한 DR {BID_WINDOW}(평일 09–12시·13–20시)와는 다른 값입니다."
         ),
     )
 
