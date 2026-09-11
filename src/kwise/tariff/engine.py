@@ -972,11 +972,11 @@ def calculate_bill(
             fact="tariff.missing_adjusted_basis",
         ),
         # **참고** — 미포함 요금요소와 계절 비대칭. 전제 설명이다.
+        # 「PV 의 기본요금 기여는 7~9월에 집중」 을 걷었다 (S170 2절) — 계약전력 기준이거나
+        # 하한이 전 달에 걸린 벌에서는 그 기여가 0원이라 거짓이었다.
         info(NOT_INCLUDED_NOTICE, fact="tariff.not_included"),
         info(
-            "봄·가을 피크 저감은 기본요금 절감 가치가 거의 없습니다. 태양광 발전이 "
-            "가장 강한 계절이 봄·가을이므로, PV 의 기본요금 기여는 7~9월에 집중되고 "
-            "12~2월에는 발전이 약해 비대칭이 큽니다.",
+            "봄·가을 피크 저감은 기본요금 절감 가치가 거의 없습니다.",
             fact="tariff.season_asymmetry",
         ),
     ]

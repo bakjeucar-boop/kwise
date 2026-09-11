@@ -870,7 +870,13 @@ def measure_entries(
                 lambda: figures.contract_headroom_png(contract, size=MEASURE_STRIP_FIGURE),
                 "계약전력 조정 · 하한 판정",
             ),
-            figure_caption=_CONTRACT_HEADROOM_CAPTION,
+            # **점선은 하한이 있을 때만 그려진다** (S170 2절 · `figures.contract_headroom_png`).
+            # 계약형(제68조 ②)은 하한을 안 걸어 점선이 없는데 캡션만 그것을 말했다.
+            figure_caption=(
+                _CONTRACT_HEADROOM_CAPTION
+                if contract.floor_kw is not None
+                else "붉은 선이 계약전력입니다."
+            ),
             # **「없음」 옆에 까닭이 서야 한다** (59세션 9절). 왜 안 주는지를
             # 계산이 이미 안내로 내고 있었고(화면 판정 줄에 있다), 슬라이드만
             # 그것을 안 읽었다. **문장을 새로 짓지 않는다.**
@@ -1701,11 +1707,13 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
             ]
         )
     _add_table(document, rows)
+    # 「ESS 가 피크를 낮추면 기본요금 기반이 달라집니다」 를 걷었다 (S170 2절) — 계약형 ·
+    # 하한형 벌에서는 피크를 낮춰도 기본요금이 곱하는 전력이 그대로다.
     _para(
         document,
         "**조합마다 요금을 다시 계산했습니다.** 수단별 절감액의 단순 합이 아닙니다 — "
-        "태양광이 사용량을 줄이면 최적 선택요금이 바뀌고, ESS 가 피크를 낮추면 "
-        "기본요금 기반이 달라집니다.",
+        "태양광이 사용량을 줄이면 최적 선택요금이 바뀌고, 한 수단이 낮춘 최대수요가 "
+        "다른 수단의 기준이 됩니다.",
     )
     _add_figure(
         document, figures.combination_png(comparison), f"그림 {number}-1. 조합별 절감액과 투자비"

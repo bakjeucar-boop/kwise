@@ -1310,7 +1310,8 @@ def _build_peak_summary(
         slide,
         guide,
         figures.monthly_peak_png(diagnosis.peak, size=FULL_FIGURE),
-        "월별 최대수요 — 붉은 점선이 기본요금을 매기는 요금적용전력입니다.",
+        # 「기본요금을 매기는」 을 뗐다 (S170 2절) — 계약형 벌에서는 계약전력이 매긴다.
+        "월별 최대수요 — 붉은 점선이 요금적용전력입니다.",
         left=geometry.margin_in,
         top=body,
         width=geometry.content_width_in,

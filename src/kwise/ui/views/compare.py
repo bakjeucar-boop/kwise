@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -534,22 +535,27 @@ def _interaction_reasons(
             f"{option_label(combined.selection.option)} 로 계산했으므로, 현행 "
             "요금제를 기준으로 낸 2단계 값과 계약전력·역률·ESS 절감액이 다릅니다."
         )
-    if "ess" in keys or "solar" in keys:
+    # **기본요금이 실제로 곱한 전력이 움직였을 때만 적는다** (S170 2절). 계약형(제68조 ②)은
+    # 계약전력이, 하한이 전 달에 걸린 벌은 하한이 곱해져 태양광·ESS 를 켜도 그대로다 —
+    # 그 일곱 벌에서 이 줄이 「6,000 kW 에서 6,000 kW 로 내려갔고」 까지 적었다.
+    moved = not math.isclose(combined.bill.mean_base_demand_kw, baseline.bill.mean_base_demand_kw)
+    if ("ess" in keys or "solar" in keys) and moved:
         reasons.append(
             "**기본요금 기반이 달라집니다.** 요금적용전력이 "
             f"{fmt.kw(baseline.billing_demand_kw)} 에서 "
             f"{fmt.kw(combined.billing_demand_kw)} 로 내려갔고, 그 위에서 남은 수단의 "
             "절감액이 다시 매겨집니다."
         )
-    if "power_factor" in keys and ("solar" in keys or "ess" in keys):
+    # 역률 감액도 같다 — 기본요금이 안 움직이면 감액도 안 움직인다 (S170 2절).
+    if "power_factor" in keys and ("solar" in keys or "ess" in keys) and moved:
         reasons.append(
             "**역률 감액은 기본요금에 비례합니다.** 태양광·ESS 가 기본요금을 낮추면 "
             "역률 감액도 함께 줄어 단순 합보다 작아집니다."
         )
     if "contract" in keys and ("solar" in keys or "ess" in keys):
         reasons.append(
-            "**계약전력을 더 낮출 수 있습니다.** 태양광·ESS 로 요금적용전력이 "
-            "내려가면 하한에 걸리는 계약전력도 함께 내려갑니다 (아래 참조)."
+            "**계약전력을 더 낮출 수 있습니다.** 태양광·ESS 로 최대수요가 "
+            "내려가면 낮출 수 있는 계약전력도 함께 내려갑니다 (아래 참조)."
         )
     return reasons
 

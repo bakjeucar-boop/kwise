@@ -2013,11 +2013,12 @@ def test_두_장이_피크_여지를_반대로_말하지_않는다(
 
     for money_word in ("여지", "기본요금", "몫"):
         assert money_word not in page4, (page4, page7)
+    assert not ("피크를 낮출 여지가 큽니다" in page4 and "줄어드는 몫이 작습니다" in page7), (
+        page4,
+        page7,
+    )
     assert not (
-        "피크를 낮출 여지가 큽니다" in page4 and "피크를 낮춰도 줄어드는 몫이 작습니다" in page7
-    ), (page4, page7)
-    assert not (
-        "사용량을 줄이는 쪽의 여지가 큽니다" in page4 and "최대수요를 낮추는 방안을 먼저" in page7
+        "사용량을 줄이는 쪽의 여지가 큽니다" in page4 and "기본요금을 줄이는 방안을 먼저" in page7
     ), (page4, page7)
 
 
@@ -2049,11 +2050,14 @@ def test_요금구조가_세_갈래다() -> None:
     # **뒷문장이 지침에서 결과로 바뀌었다** (59세션 7절). 「단가가 낮은 시간대로
     # 부하를 옮기거나 사용량을 줄이는 방안」 은 앞말에서 곧바로 따라오는 말이라
     # 읽는 사람이 얻는 것이 없었다 — 높음 갈래의 거울 문장으로 바꿨다.
-    assert "피크를 낮춰도 줄어드는 몫이 작습니다" in low
+    # **수단(피크)을 이름하지 않는다** (S170 2절) — 계약형·하한형에서는 피크를 낮춰도
+    # 기본요금이 안 준다.
+    assert "기본요금을 줄여도 전체에서 줄어드는 몫이 작습니다" in low
     assert "단가가 낮은 시간대로 부하를 옮기거나" not in low
     # **갈래는 그대로 셋이다** (54세션). 뒷문장이 셋을 가르는 자리다.
     assert "함께 큽니다" in lead((base_fee_share_low() + base_fee_share_high()) / 2)
-    assert "최대수요를 낮추는 방안을 먼저" in lead(base_fee_share_high() + 0.05)
+    # **수단을 이름하지 않는다** (S170 2절) — 「최대수요를 낮추는」 은 피크형만의 길이다.
+    assert "기본요금을 줄이는 방안을 먼저" in lead(base_fee_share_high() + 0.05)
     tails = {
         lead(base_fee_share_low() - 0.05).split(" — ", 1)[-1],
         lead((base_fee_share_low() + base_fee_share_high()) / 2).split(" — ", 1)[-1],
