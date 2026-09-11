@@ -4027,7 +4027,11 @@ def test_합산효과의_차이는_DR_정산_단가를_넣어도_안_움직인�
         start = labels.index(_STAGE3_FIRST)
         return next(str(item.value) for item in items[start:] if str(item.label) == label)
 
-    screen = _running(option="I", measure_on_demand_response=True, **STAGE3_MEASURES)
+    screen = _running(
+        option="I",
+        on=("tariff_switch", "contract", "demand_response", "power_factor", "ess"),
+        measure_ess_target=5_170.0,
+    )
     if screen.exception:
         pytest.fail(str(screen.exception))
     unpriced = stage3_value(screen, "차이")
