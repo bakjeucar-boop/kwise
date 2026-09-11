@@ -3996,26 +3996,18 @@ def test_단순_합이라는_이름이_한_값만_가리킨다(sample_diagnosis:
     assert list(inspect.signature(simple_sum_won).parameters) == ["rows"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "S166 4절 — 화면 3단계 합산효과의 「차이」 칸이 경제성DR 정산금을 담는다. 「단순 합」 은 "
-        "DR 을 담고(S165 1절) 「합산효과」 는 조합 재계산이라 DR 을 안 담으므로 차이에 정산금이 "
-        "음수로 섞인다. 덱 벌 small-a2-pf100-offset + DR 120 원/kWh 에서 −25,056원 → "
-        "−730,895.6원이고 그 차가 정산금 705,839.6원과 같다(S166 2-3). 어떻게 고칠지는 다음 "
-        "판이 정한다."
-    ),
-)
-def test_합산효과의_차이는_DR_정산_단가를_넣어도_안_움직인다() -> None:
-    """**DR 은 요금에 닿지 않는다 — 그러면 「차이」 도 DR 단가에 안 움직여야 한다** (S166 4절).
+def test_합산효과가_DR_정산금을_담아_차이는_단가에_안_움직인다() -> None:
+    """**「차이」 는 조합 재계산의 몫뿐이다** (S166 4절에 박고 S167 2절에 xfail 을 걷었다).
 
-    DR 은 조합(``CombinationSpec``)에 칸이 없어 합산효과가 단가와 무관하다(S166 2-2).
-    그러므로 같은 화면에서 정산 단가만 넣었을 때 「차이」 칸이 움직이면, 그 움직임이 곧
-    칸이 담은 정산금이다. **식을 다시 적지 않고 화면에 뜨는 두 값을 맞댄다.**
+    S166 이 박을 때는 「단순 합」 만 DR 정산금을 담아(S165 1절) 「차이」 에 정산금이
+    음수로 섞였다 — 대형 표본에서 단가를 넣으면 185만원/년 → −227만원/년. 사람이
+    「합산효과에도 담는다」 로 정했고 S167 2절이 그렇게 고쳤다. DR 은 조합
+    (``CombinationSpec``)에 칸이 없어(S166 2-2) 상호작용이 0 이므로 그대로 얹는다.
 
-    전제가 깨지면(단가가 안 먹었다) ``pytest.fail`` 로 멈춘다 — ``AssertionError`` 가
-    아니므로 xfail 에 삼켜지지 않는다. 무는지 모르는 못이 되지 않게 한다.
+    **그래서 둘을 문다** — ① 단가만 넣었을 때 「차이」 가 그대로이고 ② 「합산효과」 는
+    움직인다(정산금이 담긴다). ② 가 없으면 두 합이 다 DR 을 빼도 ① 이 통과한다.
+    **식을 다시 적지 않고 화면에 뜨는 값을 맞댄다.** 전제가 깨지면(단가가 안 먹었다)
+    ``pytest.fail`` 로 멈춘다.
     """
     from kwise.ui.state import input_key
 
@@ -4034,7 +4026,7 @@ def test_합산효과의_차이는_DR_정산_단가를_넣어도_안_움직인�
     )
     if screen.exception:
         pytest.fail(str(screen.exception))
-    unpriced = stage3_value(screen, "차이")
+    unpriced = {label: stage3_value(screen, label) for label in ("합산효과", "차이")}
 
     box = next(item for item in screen.checkbox if str(item.label).startswith("정산 단가를 안다"))
     box.check().run()
@@ -4043,8 +4035,9 @@ def test_합산효과의_차이는_DR_정산_단가를_넣어도_안_움직인�
     if screen.exception or not settlement or settlement[0] in ("0원", "—"):
         pytest.fail(f"정산 단가가 화면에 안 먹었습니다: {settlement} · {screen.exception}")
 
-    priced = stage3_value(screen, "차이")
-    assert priced == unpriced, (unpriced, priced, settlement)
+    priced = {label: stage3_value(screen, label) for label in ("합산효과", "차이")}
+    assert priced["차이"] == unpriced["차이"], (unpriced, priced, settlement)
+    assert priced["합산효과"] != unpriced["합산효과"], (unpriced, priced, settlement)
 
 
 def test_투자가_없는_조합은_즉시다() -> None:

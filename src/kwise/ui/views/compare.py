@@ -448,12 +448,16 @@ def _combined_block(
     넣으면 차이가 상호작용이 아니라 「뺀 만큼」이 되어 뜻이 달라진다.
 
     **다만 조합 밖 수단(경제성DR)은 담는다** (S165 1절) — 요약표 합계 행과 같은
-    식이다. 그래서 DR 정산금이 있으면 「차이」 에 그 몫이 함께 선다.
+    식이다. **합산효과도 그 정산금을 담는다** (S167 2절) — 한쪽만 담으면 「차이」 에
+    정산금이 음수로 섞였다. DR 은 요금에 닿지 않아 조합 재계산에 칸이 없으므로
+    상호작용은 0 으로 두고 그대로 얹는다. 그래서 「차이」 는 조합 재계산의 몫뿐이다.
     """
     combined = comparison.combinations[-1]
     picked = tuple(row for row in rows if row.key in set(chosen))
     simple = simple_sum_won(picked)
-    actual = combined.annual_saving_won
+    actual = combined.annual_saving_won + simple_sum_won(
+        tuple(row for row in picked if not row.combinable)
+    )
     gap = actual - simple
     ratio = gap / simple if simple else None
 
