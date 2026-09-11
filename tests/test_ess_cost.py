@@ -2115,6 +2115,28 @@ def test_출고층이_현재_항목을_다_갖는다() -> None:
         assert not extra, f"{origin} — 현재에 없는 출고 항목: {extra}"
 
 
+def test_출고층이_현재_판과_글자까지_같다() -> None:
+    """**항목 수가 같아도 글자가 갈릴 수 있다** (S170 3절).
+
+    위 시험은 열쇠만 센다 — 56세션은 항목이 **빠진** 것이었다. S31 이 「견주다」 를
+    「비교」 로 고치면서 ``data\\assumptions.json`` 한쪽만 고쳐 ``ess.payback_target_years``
+    의 비고가 **139세션 동안** 두 사본에서 갈려 있었다(「비교한다」 대 「견준다」).
+    출고 복원을 누르면 걷은 낱말이 돌아온다. 값·설명·근거 칸을 다 맞대려고
+    JSON 을 통째로 비교한다 — 줄끝은 읽을 때 접힌다.
+    """
+    data = Path(__file__).resolve().parent.parent / "data"
+    for name in ("rules_kr.json", "assumptions.json"):
+        current = json.loads((data / name).read_text(encoding="utf-8"))
+        factory = json.loads((data / "defaults" / name).read_text(encoding="utf-8"))
+        gaps = [
+            (key, item, factory["items"].get(key))
+            for key, item in current["items"].items()
+            if factory["items"].get(key) != item
+        ]
+        assert not gaps, f"{name} — 출고층과 글자가 갈린 항목: {gaps[:3]}"
+        assert current == factory, f"{name} — 항목 밖 칸이 갈린다"
+
+
 def test_계산_조건이_산출물에_실린다() -> None:
     """**실물만 보고 재현 조건을 알 수 있어야 한다** (56세션 3절).
 
