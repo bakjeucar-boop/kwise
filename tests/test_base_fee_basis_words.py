@@ -72,12 +72,6 @@ def peak_claims(texts: list[str]) -> list[str]:
     return found
 
 
-def _warning_head() -> str:
-    from kwise.report import CONTRACT_CHANGE_WARNING
-
-    return CONTRACT_CHANGE_WARNING.split(". ")[0]
-
-
 # ===================================================================== 실물 두 벌
 
 
@@ -197,18 +191,16 @@ def test_기본요금이_피크에_안_매이는_벌에서_피크를_기준으�
 ) -> None:
     """계약형 · 하한형 벌의 네 산출물에 「피크가 기본요금을 정한다」 가 없다.
 
-    **그물이 살아 있는지 같은 판에서 본다** — 이 판이 안 고친 요구사항서 9.4 필수 경고
-    (「기본요금은 직전 12개월 중 최대수요로 결정됩니다」)가 두 벌에 다 서 있고, 그물은
-    그것을 잡아야 한다. 잡은 것 가운데 그 경고만 빼고 0 이어야 한다 — 경고는 아래
-    xfail 못이 따로 문다.
+    **S172 에 마지막 하나가 사라져 0 이 됐다** — 앞서는 요구사항서 9.4 필수 경고
+    (「기본요금은 직전 12개월 중 최대수요로 결정됩니다」)가 두 벌에 다 서서, 그물이
+    살아 있는지를 그것으로 봤다. 그 문장을 걷었으므로 이제 잡을 것이 없다.
 
-    **반대쪽도 같은 판에서 본다** — 「기본요금을 계약전력으로 매깁니다」 류는 계약형에만
-    서고 하한형(요금적용전력 기준)에는 없다. 한 벌을 두 번 띄우지 않으려고 한 시험에 둔다.
+    **그물이 살아 있는지는 아래 반대쪽이 본다** — 「기본요금을 계약전력으로 매깁니다」
+    류는 계약형에만 서고 하한형(요금적용전력 기준)에는 없다. 그 줄이 죽으면
+    「계약형 벌에 기준 문장이 안 섰다」 로 빨개진다. 한 벌을 두 번 띄우지 않으려고
+    한 시험에 둔다.
     """
-    claims = peak_claims(list(rendered.texts))
-    head = _warning_head()
-    assert any(head in claim for claim in claims), f"{rendered.key} — 그물이 경고를 못 잡았다"
-    assert [claim for claim in claims if head not in claim] == [], rendered.key
+    assert peak_claims(list(rendered.texts)) == [], rendered.key
 
     hits = [text for text in rendered.texts if CONTRACT_CLAIM.search(text)]
     if rendered.key == "large-a":
@@ -242,12 +234,9 @@ def test_갈래를_모르는_상수가_기본요금을_피크에_매지_않는�
     assert peak_claims([text for text in texts if isinstance(text, str)]) == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="요구사항서 9.4 필수 경고가 갈래를 안 가린다 — 원문이라 S170 에 안 고쳤다 (미해결)",
-)
 def test_계약전력_변경_경고가_기본요금을_피크에_매지_않는다() -> None:
-    """**경고 글자 하나를 문다.** 고치면 XPASS 로 빨개진다 — 그때 xfail 을 걷는다."""
+    """**경고 글자 하나를 문다.** S172 에 요구사항서 9.4 와 사본 셋에서 첫 문장
+    (「기본요금은 직전 12개월 중 최대수요로 결정됩니다」)을 걷어 xfail 을 걷었다."""
     from kwise.report import CONTRACT_CHANGE_WARNING
 
     assert peak_claims([CONTRACT_CHANGE_WARNING]) == []
