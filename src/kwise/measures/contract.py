@@ -152,7 +152,7 @@ def covering_contract_kw(observed_max_kw: float, step_kw: float = 1.0) -> float:
 
 
 MARGIN_NOTICE = (
-    "기본요금은 직전 12개월 중 최대수요로 결정됩니다. 계약전력을 하향할 경우, "
+    "계약전력을 하향할 경우, "
     "예측 오차와 기상 변동을 고려하여 충분한 여유를 확보하십시오. "
     "한 번의 초과가 12개월간 적용됩니다."
 )
