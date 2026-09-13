@@ -2160,6 +2160,24 @@ def test_계약전력_추가_하향을_조합_기준으로_판정한다(stage3: 
     assert "하한에 걸리지 않아 낮출 이유가 없습니다" in body
 
 
+def test_계산_근거가_판정과_반대로_계약전력을_더_낮출_수_있다고_말하지_않는다(
+    stage3: AppTest,
+) -> None:
+    """**켠 수단 이름만 보고 서던 이유 줄을 걷었다** (S175 3절).
+
+    계약·ESS 를 켠 이 화면은 위 시험대로 「낮출 이유가 없습니다」 인데, 계산 근거 표가
+    「계약전력을 더 낮출 수 있습니다」 를 함께 냈다 (S174 — 함께 서는 벌 15). 목표가
+    서는 벌에서는 본문 목표 줄이 값과 함께 같은 사실을 말한다.
+    """
+    assert not stage3.exception, stage3.exception
+    tables = " ".join(
+        " ".join(str(value) for value in frame.value.astype(str).to_numpy().ravel())
+        for frame in stage3.dataframe
+    )
+    assert "기본요금 기반이 달라집니다" in tables, "계산 근거 이유 칸을 못 읽었습니다."
+    assert "더 낮출 수 있습니다" not in tables
+
+
 def _after(metrics: list[tuple[str, str]], anchor: str, offset: int) -> str:
     """카드 안에서 ``anchor`` 로부터 몇 칸 뒤의 지표 값. 카드 경계를 잡는 방법이다."""
     index = next(position for position, (label, _) in enumerate(metrics) if label == anchor)
