@@ -378,6 +378,34 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 **2-4. 판정 — 지시서가 파일 둘을 박았기 때문이고, 박을 수밖에 없던 것은 묶음 정의가 없어서다.** 구간 ㄱ 은 뿌리가 다르다 —
 전체를 돌렸지만 행을 적기 전에 돌렸다(미해결 「세션 행을 무는 못이 마감 회귀 뒤에 적히는 행을 못 본다」 · S152).
 
+### 3절 — 기록을 무는 시험을 전수로 셌다
+
+**3-1. 방법 — 스크래치 `docreaders.py`(ast).** `tests\test_*.py` 의 시험 함수마다 **독스트링을 뺀** 문자열 상수에
+`.md` · `PROCEED` · `CLAUDE` · `README` · `docs` · `directives` · `MANUAL` 따위가 있는지 보고, 모듈 상수·도우미·픽스처는
+이름으로 따라갔다(고정점). `tools\` 함수 가운데 문서를 읽는 것(`read_proceed` · `open_items` …)은 **그 모듈 이름이 시험 파일에
+나올 때만** 따라갔다 — 첫 판이 `build` 이름 겹침으로 `test_integration.py` 를 잘못 잡았다. 첫 판은 독스트링도 세어
+`test_casestudy` · `test_measures` 둘 · `test_ess_cost` 를 잘못 잡았다. 걸러진 **62함수 · 6파일** 을 손으로 열어 셋을 더 뺐다 —
+실물 기록이 아니라 임시 파일·표본을 읽는 것.
+
+| 파일 | 실물 기록을 읽는 시험 | 무는 대상 | 뺀 것 (까닭) |
+|---|---|---|---|
+| `test_doc_counts.py` | **11 — 전부** | `PROCEED.md` 「현재 상태」·「pytest 분할 실행」 · `docs\OPEN_ITEMS.md` · `docs\project\project-overview.md` · `docs\CALC_LOGIC.md` · `WHOLE_DOCS` 문서들의 수 | — |
+| `test_deployment.py` | **6** — `test_docs_point_at_one_entry_point` · `test_dev_tools_are_installed_through_the_dev_extra` · `test_documented_tool_paths_exist` · `test_documented_python_version_matches_the_project` · `test_environment_doc_repeats_the_actual_mypy_scope` · `test_저장소에_제어문자가_없다` | `README.txt` · `PROCEED.md` · `CLAUDE.md` · `docs\ENVIRONMENT.md` · `MANUAL.md` · `TECHNICAL.md` · `docs\directives\S*.md` · 저장소 전체 제어문자 | `test_제어문자_검사가_심은_자리를_잡는다` (임시 `.md`) |
+| `test_daily_brief.py` | **1** — `test_지금_마지막_세션_행에는_경고가_안_뜬다` | `PROCEED.md` 세션 목록표 마지막 행 | 19 (`_built`·`_items` 가 `read_proceed` 를 표본으로 갈아 끼운다) |
+| `test_docsite.py` | **16** | `docs\MANUAL.md` · `TECHNICAL.md` · `CAPTURES.md` 와 생성 html | `test_원본이_없으면_만들지_않고_실패한다` (임시 `없음.md`) |
+| `test_ui.py` | **1** — `test_앵커_문서가_정본과_같다` | `docs\MANUAL_ANCHORS.md` | `test_툴팁에_링크가_없다` (툴팁 글자에 `MANUAL.html` 이 없음을 볼 뿐) |
+| `test_ui_screen.py` | **5** — `test_콘덴서와_자동역률조정장치라는_말이_없다` · `test_무인시간이라는_말이_사라졌다` · `test_화면_문구_원칙이_규약에_있다` · `test_견주다를_화면에_쓰지_않는다` · `test_공휴일_한계를_문서에_남겼다` | `docs\` 아래 `.md` 전부 · `CLAUDE.md` 「화면 문구」 · `MANUAL.md` · `TECHNICAL.md` | — |
+| **합** | **40함수 · 6파일** | | |
+
+**3-2. 문서 못 두 파일 밖 — 23함수 · 4파일**(`test_daily_brief` 1 · `test_docsite` 16 · `test_ui` 1 · `test_ui_screen` 5).
+S173~S175 이 마감에 문서를 고치고 돌린 두 파일은 40 가운데 **17** 만 쥐었다.
+
+**3-3. 지금 돌렸다 — 45 passed · failed 0**(파라미터 포함 45건 · 3.23초 · 벽시계 6.0초 · 2번 PC · 앞뒤 남의 python 0). 빨간 것 없음.
+
+**3-4. 「코드를 안 고친 판」 이 돌려야 하는 묶음 — 119건 · 6.53초(벽시계 9.3초 · 2번 PC).** 파일 넷은 통째로 넣었다 —
+`test_doc_counts` · `test_deployment` · `test_daily_brief` · `test_docsite`(표본 시험도 기록을 읽는 도구의 식을 문다 · 넷 합 1초 안팎) —
+그리고 `test_ui` 1 · `test_ui_screen` 5 를 함수로 넣었다. 49(문서 못) + 26(`test_daily_brief`) + 44 = **119 passed**.
+
 ---
 ## 오늘 (2026-09-13) 175세션 — **수정 판. 3단계가 판정과 반대로 말하는 줄을 걷었다**
 
