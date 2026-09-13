@@ -35,6 +35,7 @@ r"""문서가 적은 「수」 를 실물과 맞댄다 (121세션).
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import sys
@@ -712,4 +713,83 @@ def test_갈래_넷이_시험_파일을_빠짐없이_한_번씩_문다() -> None
         "① 이 거르는 파일과 ②③④ 가 부르는 파일이 다릅니다 — "
         f"① 만 거르는 것 {sorted(engine_skips - seen)} · "
         f"②③④ 만 부르는 것 {sorted(seen - engine_skips)}"
+    )
+
+
+# ============================================ 기록 묶음 (S176 5절)
+#
+# S173~S175 지시서가 문서 못 두 파일을 박아 세션 행 대조 시험이 빨간 채 두 판을
+# 넘겼다. 묶음은 `records` 마커 하나다 (`CLAUDE.md` 9항). **묶음 목록을 여기 다시
+# 적지 않는다** — 마커를 읽어 기록을 읽는 시험이 그 밖에 있는지만 본다.
+
+#: 기록·문서 경로로 읽히는 문자열 — `.md` 로 끝나는 이름 · `docs` 폴더.
+RECORD_PATH = re.compile(r"\.md$|^docs(?:[/\\]|$)")
+
+#: 경로 문자열 없이 기록을 읽는 도구 함수.
+RECORD_READERS = frozenset({"read_proceed"})
+
+
+def _records_outside(tree: ast.Module) -> list[str]:
+    """``records`` 마커 없이 기록을 읽는 시험 함수 이름.
+
+    시험 함수 몸과 그것이 부르는 모듈 이름(상수·도우미·픽스처)을 따라가며
+    독스트링이 아닌 문자열이 :data:`RECORD_PATH` 에 걸리는지 본다.
+    """
+    units: dict[str, ast.AST] = {}
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+            units[node.name] = node
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            units.update({t.id: node for t in targets if isinstance(t, ast.Name)})
+
+    def marked(node: ast.AST) -> bool:
+        return any(isinstance(n, ast.Attribute) and n.attr == "records" for n in ast.walk(node))
+
+    if "pytestmark" in units and marked(units["pytestmark"]):
+        return []
+    docstrings = {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef))
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+    }
+
+    def reads(name: str, seen: set[str]) -> bool:
+        seen.add(name)
+        for n in ast.walk(units[name]):
+            if (
+                isinstance(n, ast.Constant)
+                and isinstance(n.value, str)
+                and id(n) not in docstrings
+                and RECORD_PATH.search(n.value)
+            ):
+                return True
+            # 이름 · 속성 · 인자(픽스처) 를 함께 따라간다.
+            ref = getattr(n, "id", None) or getattr(n, "attr", None) or getattr(n, "arg", None)
+            if ref in RECORD_READERS or (ref in units and ref not in seen and reads(ref, seen)):
+                return True
+        return False
+
+    return [
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name.startswith("test_")
+        and not any(marked(d) for d in node.decorator_list)
+        and reads(node.name, set())
+    ]
+
+
+def test_기록을_읽는_시험은_records_묶음_안에_있다() -> None:
+    """**기록을 고친 판이 도는 묶음에서 빠지는 시험이 없어야 한다** (S176 5절)."""
+    outside = {
+        path.name: names
+        for path in sorted((PROJECT_ROOT / "tests").glob("test_*.py"))
+        if (names := _records_outside(ast.parse(path.read_text(encoding="utf-8"))))
+    }
+    assert outside == {}, (
+        f"기록·문서를 읽는데 records 묶음 밖인 시험이 있습니다 — {outside}. "
+        "@pytest.mark.records 를 붙이십시오 (CLAUDE.md 9항)."
     )
