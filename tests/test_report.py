@@ -22,8 +22,10 @@ from typer.testing import CliRunner
 from kwise.cli import app
 from kwise.compare import CombinationSpec, ComparisonResult, evaluate_combination
 from kwise.diagnose import Diagnosis
+from kwise.diagnose.contract import _MARGIN_NOTICE
 from kwise.io import UsageData
 from kwise.measures import (
+    MARGIN_NOTICE,
     NO_SAVING,
     Certainty,
     ContractStatus,
@@ -295,6 +297,19 @@ def test_summary_carries_the_contract_change_warning(summary_text: str) -> None:
     """요구사항서 9.4 — 한 번의 초과가 12개월간 적용된다."""
     assert CONTRACT_CHANGE_WARNING in summary_text
     assert "한 번의 초과가 12개월간 적용됩니다" in summary_text
+
+
+@pytest.mark.records
+def test_요구사항서_9_4_원문과_글자_사본_셋이_한_글자다() -> None:
+    """요구사항서 9.4 원문을 읽어 코드 사본 셋과 맞댄다 (S177 5-2).
+
+    못들이 코드 글자만 물어 **원문을 옛 글자로 되돌려도 초록**이었다 (S172 4-3).
+    원문에서 문장이 빠지거나 되살아나도, 사본 하나만 갈려도 운다.
+    """
+    text = (PROJECT_ROOT / "docs" / "REQUIREMENTS_kwise.md").read_text(encoding="utf-8")
+    section = text.split("### 9.4 필수 경고", 1)[1].split("\n#", 1)[0]
+    quote = " ".join(line[1:].strip() for line in section.splitlines() if line.startswith(">"))
+    assert {CONTRACT_CHANGE_WARNING, MARGIN_NOTICE, _MARGIN_NOTICE} == {quote}
 
 
 def test_summary_carries_every_known_limit(summary_text: str) -> None:
