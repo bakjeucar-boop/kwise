@@ -51,6 +51,9 @@ from kwise.report.excel import SHEET_ORDER
 from kwise.rules import describe_items
 from kwise.ui.anchors import ANCHORS
 
+#: 파일 전체가 기록 묶음이다 (S176 4절) — 새 시험도 저절로 붙는다.
+pytestmark = pytest.mark.records
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA = PROJECT_ROOT / "data"
 DOCS = PROJECT_ROOT / "docs"

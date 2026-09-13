@@ -2344,6 +2344,7 @@ def test_판정을_가르는_수가_7_2_카드에_선다() -> None:
 BANNED_WORDS = ("콘덴서", "APFR")
 
 
+@pytest.mark.records
 def test_콘덴서와_자동역률조정장치라는_말이_없다() -> None:
     """**「역률 개선」 으로만 적는다** (16세션 6-2). 화면·산출물·문서 전부다.
 
@@ -3126,6 +3127,7 @@ def test_입력_끝값을_훑어도_화면이_죽지_않는다() -> None:
 # ======================================================== 26세션 · 용어와 단위
 
 
+@pytest.mark.records
 def test_무인시간이라는_말이_사라졌다() -> None:
     """**「운영시간 외」 로 바꿨다** (26세션 0-2).
 
@@ -3151,6 +3153,7 @@ def test_무인시간이라는_말이_사라졌다() -> None:
     assert "unattended" not in inspect.getsource(load_pattern)
 
 
+@pytest.mark.records
 def test_화면_문구_원칙이_규약에_있다() -> None:
     """**앞으로의 판단 기준이다** (26세션 0-1). 규약 파일에 없으면 잊힌다."""
     body = Path("CLAUDE.md").read_text(encoding="utf-8")
@@ -3504,6 +3507,7 @@ def test_버린_행이_없으면_줄이_없다(app: AppTest) -> None:
     assert not [item for item in rendered if "읽지 못한 행" in item], rendered
 
 
+@pytest.mark.records
 def test_견주다를_화면에_쓰지_않는다() -> None:
     """**'견주다' 를 '비교' 로 바꿨다** (31세션 1-3).
 
@@ -4244,6 +4248,7 @@ def test_요금_계산은_쉬는_날에_흔들리지_않는다() -> None:
     assert "dr_off_days" not in calendar_call, "달력에 섞였습니다."
 
 
+@pytest.mark.records
 def test_공휴일_한계를_문서에_남겼다() -> None:
     """**다음 사람이 같은 조사를 다시 하지 않도록** (29세션).
 

@@ -406,6 +406,33 @@ S173~S175 이 마감에 문서를 고치고 돌린 두 파일은 40 가운데 **
 `test_doc_counts` · `test_deployment` · `test_daily_brief` · `test_docsite`(표본 시험도 기록을 읽는 도구의 식을 문다 · 넷 합 1초 안팎) —
 그리고 `test_ui` 1 · `test_ui_screen` 5 를 함수로 넣었다. 49(문서 못) + 26(`test_daily_brief`) + 44 = **119 passed**.
 
+### 4절 — 회귀 묶음을 부르는 자리를 하나로 모았다
+
+**4-1. 꼴 — pytest 마커 `records`.** `pyproject.toml` `[tool.pytest.ini_options]` 에 `markers` 한 줄(`--strict-markers` 라
+등록이 없으면 수집이 깨진다) · 파일 넷(`test_doc_counts` · `test_deployment` · `test_daily_brief` · `test_docsite`)에
+`pytestmark = pytest.mark.records` · 함수 여섯(`test_ui.py::test_앵커_문서가_정본과_같다` · `test_ui_screen.py` 다섯)에
+`@pytest.mark.records`. 부르는 명령은 `.venv\Scripts\python.exe -m pytest tests -m records -rf --tb=no` 한 줄.
+
+고른 까닭 — 잣대 셋에 대어 봤다.
+
+| 후보 | 새 시험 0 | 한 줄 | 손 목록 없이 붙나 |
+|---|---|---|---|
+| **마커** (고름) | 예 | 예 | **파일 넷 안의 새 시험은 저절로** · 밖은 데코레이터 한 줄 — 빠뜨리면 5절 못이 문다 |
+| `tools\` 스크립트가 파일 목록을 쥔다 | 예 | 예 | 아니다 — 목록이 또 하나의 낡을 자리다(지금 지시서가 박은 두 파일과 같은 병) |
+| `conftest.py` 가 수집 때 ast 로 저절로 표지 | 예 | 예 | 예 — 그러나 매 판 수집마다 휴리스틱이 돌고, 3-1 이 보였듯 잘못 잡는 것(이름 겹침·임시 `.md`)이 조용히 묶음에 든다 |
+
+마커는 pytest 가 이미 쥔 장치라 도구가 새로 안 들고, 저장소에 `pytestmark` 는 **처음**이다(전에 0곳).
+
+**4-2. 돌렸다 — `119 passed, 1640 deselected in 7.93s`**(벽시계 10.8초 · 2번 PC · 앞뒤 남의 python 0). 119 + 1,640 = 수집 1,759.
+**3-4 명시 목록과 노드 id 로 맞댔다** — `--collect-only` 두 판 119 · 119 · 차 **0**. 1절의 빨간 시험이던
+`test_지금_마지막_세션_행에는_경고가_안_뜬다` 와 3-2 의 23함수가 다 들어 있다. 전체 수집을 거치므로 파일을 박은 3-4(9.3초)보다 1.5초 길다.
+`ruff check` 통과 · `ruff format --check` 가 짚은 한 자리는 `test_ui_screen.py:1588`(S175 가 적은 옛 자리 · 이 판 무접촉).
+
+**4-3. `CLAUDE.md` 9항에 적었다** — `-rf` 문단 바로 뒤(「규약은 이 자리 하나다」 가 pytest 명령을 쥔 자리). 명령 한 줄 ·
+「지시서는 파일 이름을 박지 않고 이 한 줄을 부른다」 · 「기록을 다 고친 뒤에 돌린다」. `collaboration.md` 는 안 고쳤다 —
+명령을 두 곳에 두면 다시 갈린다. 기존 규약과 충돌 없음(갈래 넷 명령은 그대로이고 `test_갈래_넷이_시험_파일을_빠짐없이_한_번씩_문다` 는
+파일을 안 부르는 명령을 뺀다). 고친 뒤 묶음 **119 passed**(7.03초).
+
 ---
 ## 오늘 (2026-09-13) 175세션 — **수정 판. 3단계가 판정과 반대로 말하는 줄을 걷었다**
 

@@ -31,6 +31,9 @@ from kwise.docsite import (
 )
 from kwise.ui.anchors import ANCHORS, MANUAL_FILENAME, anchor_keys, manual_tip
 
+#: 파일 전체가 기록 묶음이다 (S176 4절) — 새 시험도 저절로 붙는다.
+pytestmark = pytest.mark.records
+
 DOCS = Path("docs")
 SOURCES = ("TECHNICAL.md", "MANUAL.md")
 TARGETS = ("TECHNICAL.html", "MANUAL.html")

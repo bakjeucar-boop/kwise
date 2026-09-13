@@ -145,4 +145,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
+# S176 4절 — 기록·문서를 읽는 시험 묶음. 코드를 안 고친 판은 `pytest tests -m records` 한 줄로 부른다.
+markers = ["records: PROCEED.md · CLAUDE.md · docs\\ 따위 기록·문서를 읽는 시험"]
 filterwarnings = ["error::FutureWarning"]

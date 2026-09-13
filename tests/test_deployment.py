@@ -24,6 +24,9 @@ from types import ModuleType
 
 import pytest
 
+#: 파일 전체가 기록 묶음이다 (S176 4절) — 새 시험도 저절로 붙는다.
+pytestmark = pytest.mark.records
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = PROJECT_ROOT / "src" / "kwise"
 ENTRY_POINT = PROJECT_ROOT / "streamlit_app.py"

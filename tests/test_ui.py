@@ -87,6 +87,7 @@ def test_툴팁에_링크가_없다() -> None:
     assert "MANUAL.html" not in tip
 
 
+@pytest.mark.records
 def test_앵커_문서가_정본과_같다() -> None:
     """``docs\\MANUAL_ANCHORS.md`` 는 생성물이다. 어긋나면 다시 내보내야 한다."""
     from kwise.ui.anchors import ANCHOR_DOC_FILENAME, anchor_document
