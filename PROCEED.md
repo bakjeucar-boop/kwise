@@ -421,6 +421,48 @@ S183 3-4 가 「R1~R3 품질 경고 한 줄이 빠진다 — xlsx 칸에 서는�
 
 **3-5. `records` 마커 — 해당 없음.** 이 절이 넓힌 못이 0 이다(1-7 의 조합 목표 못도 기록을 안 읽어 안 붙였다).
 
+### 4절 — 못 잣대와 중복 계산
+
+**4-1. `docs\HANDOVER.md` 6절 표 19행 + 이 판에 박은 1 = 20 못 — 확인 3 · 이번 판에 확인 안 함 17 · 한 번도 확인 안 함 0.** S183 의 「확인 안 한 13」 은 전부 앞 판에 되돌림 기록이 있는 못이었다 — 「한 번도」 는 0 이다.
+
+| 못 | 마지막으로 되돌려 확인한 세션 |
+|---|---|
+| `test_quality.py::test_꼭_365일치_자료는_12개월_미만으로_판정되지_않는다` | **S184** (1-5 · 자리마다 4/4) |
+| `test_compare.py::test_3단계_화면과_산출물이_같은_조합에서_같은_계약전력_목표를_낸다` (새 · 살아 있는 못) | **S184** (1-7 · 두 쪽 모음 XPASS) |
+| `test_measures.py::test_카드_절감액은_그_수단만_켠_청구서_총액_차다` | **S184** (3-2 · 틀린 식 여섯) |
+| `test_doc_counts.py::test_문서가_적은_수가_실물과_같다[살아 있는 못 수]` | S183 |
+| `test_base_fee_basis_words.py::test_계약전력_변경_경고가_기본요금을_피크에_매지_않는다` | S183 |
+| `test_report.py::test_요구사항서_9_4_원문과_글자_사본_셋이_한_글자다` | S183 |
+| `test_base_fee_basis_words.py::test_기본요금이_피크에_안_매이는_벌에서_피크를_기준으로_말하지_않는다` | S183 |
+| `test_docsite.py::test_매뉴얼이_기본요금을_요금적용전력으로_단정하지_않는다[424 · 476 · 527 · 750]` | S182 |
+| `test_docsite.py::test_매뉴얼이_인용한_하향_경고가_산출물_글자와_같다` | S182 |
+| `test_report.py::test_요약_시트에_계약전력_변경_경고가_한_번만_선다` | S182 |
+| `test_report.py::test_summary_carries_the_contract_change_warning` | S182 |
+| `test_diagnose.py::test_계약형_벌의_산출물_글자에_12개월간_적용이_없다` | S181 |
+| `test_measures.py::test_penalty_warning_only_when_lowering_helps` | S181 |
+| `test_document.py::test_Word_7_2_주의사항에_같은_경고가_두_번_서지_않는다` | S181 |
+| `test_diagnose.py::test_contract_warnings_only_when_lowering_helps` | S181 |
+| `test_document.py::test_한계와_추적성이_마지막_장에_있다` | S181 |
+| `test_slides.py::test_두_장이_피크_여지를_반대로_말하지_않는다` | S180 |
+| `test_slides.py::test_요금구조가_세_갈래다` | S179 |
+| `test_doc_counts.py::test_기록을_읽는_시험은_records_묶음_안에_있다` | S176 |
+| `test_ui_screen.py::test_계산_근거가_판정과_반대로_계약전력을_더_낮출_수_있다고_말하지_않는다` | S175 |
+
+**4-2. 한 번도 확인 안 함 0 ≤ 2 — 되돌릴 것이 없다.**
+
+**4-3. 마지막 조합(태양광 또는 ESS)이 한 판에 세 번 계산된다 — 결과는 같다.** 스크래치 `s4_3.py` 가 앱을 띄워 `evaluate_combination` 호출마다 부른 자리 · 명세 · 결과(총액 · 절감액 · 목표 · 계약전력 몫) · 소요를 적었다(1번 PC).
+
+| 벌 | 세 번 부른 자리 | 결과 가짓수 | 세 번의 소요(초) | 호출 합 |
+|---|---|---:|---|---|
+| `large-a` | `compare_combinations` · `sensitivity._held_selection` · `sensitivity_comparison`(s=1.0) | **1** | 0.34 · 0.31 · 0.15 | 9번 1.91초 |
+| `large-b` | 같다(「+ ESS 목표 5,180 kW」) | **1** | 0.51 · 0.56 · 0.24 | 10번 2.88초 |
+| `small-a2` | 같다(「+ 태양광 80 kWp」) | **1** | 9.12 · 9.22 · 2.36 | 8번 24.44초 |
+
+- 겹친 몫 — 뒤 두 번 합 `large-a` 0.46초 · `large-b` 0.80초 · `small-a2` **11.58초(호출 합의 47%)**.
+- 까닭 — 비교표는 `ui\cache.py:444` 열쇠 `compare|{token}|{명세 묶음}|…` 로, 감도는 `:712` 열쇠 `sensitivity|{token}|{명세}|…` 로 **따로 기억한다.** `evaluate_combination` 자리에는 기억이 없다.
+  감도가 `_held_selection`(`sensitivity.py:147`)에서 **비교표가 이미 계산한 그 조합을 통째로 다시 돌려** 선택요금을 고르고, 기준 시나리오(s=1.0 · `retune_selection=False` · 고른 선택요금)가 같은 부하 · 같은 선택요금으로 한 번 더 돈다. 세 명세는 `retune_selection` 하나만 갈린다(명세 가짓수 2).
+- **결과가 안 갈려 멈추지 않았다 · 안 고쳤다 · 이름으로 올렸다.** 2-3 의 「벌마다 짝 후보 3」 이 이 셋이다.
+
 ## 오늘 (2026-09-14) 183세션 — **못이 제 일을 다 하는지 넷을 값으로 보고, 정책 둘의 재료를 뽑았다 — 미해결 115 → 114**
 
 ### 0절 — 판을 연다
