@@ -39,6 +39,7 @@ from kwise.measures import (
     dispatch_peak_shaving,
     evaluate_contract_adjustment,
     evaluate_ess,
+    evaluate_power_factor,
     evaluate_surplus,
     evaluate_tariff_switch,
     excess_table,
@@ -2850,3 +2851,120 @@ def test_요금표를_안_주면_다시_고르지_않는다(
     )
     assert adjustment.target_contract_kw == pytest.approx(4_000.0)
     assert adjustment.retuned_selection is None
+
+
+# ------------------------------------------------- 귀속 기준 ㄱ — 카드는 청구서 총액 차다
+
+
+@dataclass(frozen=True)
+class DeckCondition:
+    """덱 벌 한 벌의 계약 조건 (`tools\\render_deck.py::CASES` 와 같은 값)."""
+
+    key: str
+    selection: TariffSelection
+    contract_kw: float
+    power_factor_pct: float | None
+    solar_kwp: float
+    ess_target_kw: float | None
+
+
+ATTRIBUTION_CONDITIONS = (
+    # 계약형 — 선택요금 · 계약전력 · 역률 · 태양광이 선다(ESS 는 잰 점이 없다).
+    DeckCondition(
+        "large-a", TariffSelection("general_a_1", "high_a", "I"), 6_000.0, None, 1_600.0, None
+    ),
+    # 피크형 — 역률 85% 라 기본요금을 움직이는 수단이 역률요금을 함께 끈다(S181 3-3).
+    DeckCondition("large-b-pf85", CURRENT, 6_000.0, 85.0, 1_600.0, 5_180.0),
+)
+
+
+@pytest.mark.parametrize("condition", ATTRIBUTION_CONDITIONS, ids=lambda c: c.key)
+def test_카드_절감액은_그_수단만_켠_청구서_총액_차다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_unit_pv: pd.Series,
+    condition: DeckCondition,
+) -> None:
+    """**귀속 기준 ㄱ(차액 귀속)의 못이다** (S182 1절 · `collaboration.md` 「계산에 관한 것」).
+
+    카드 절감액 = 현행 청구서 총액 − **그 수단 하나만 켠** 청구서 총액 + 청구 밖 몫.
+    S181 3-6 이 덱 벌 열여덟 · 77칸에서 잔차 0 을 봤다. 카드 이름이 원인을 말하지
+    않아도 되는 까닭이 이 등식이다 — 식이 항목 하나를 떼면(원인 귀속) 여기서 빨개진다.
+
+    청구서는 **여기서 따로 다시 뽑는다** — 결과 객체가 든 청구서를 쓰면 제 식으로
+    통과한다(결함 유형 ⑤). DR 은 청구서를 안 바꿔 카드가 곧 청구 밖 몫이라 뺐다.
+    태양광은 잉여를 고르지 않은 점이라 청구 밖 몫이 0 이다.
+    """
+    usage, sel = sample_usage, condition.selection
+    opts = BillingOptions(
+        contract_kw=condition.contract_kw, power_factor_pct=condition.power_factor_pct
+    )
+    baseline = calculate_bill(usage, tariff, sel, options=opts, quality=sample_report)
+
+    def gap(selection: TariffSelection, usage_on: UsageData, options: BillingOptions) -> float:
+        bill = calculate_bill(usage_on, tariff, selection, options=options, quality=sample_report)
+        return baseline.total_won - bill.total_won
+
+    cards: dict[str, tuple[float, float]] = {}
+
+    switch = evaluate_tariff_switch(usage, tariff, sel, quality=sample_report, options=opts)
+    cards["선택요금"] = (switch.saving_won, gap(switch.best.selection, usage, opts))
+
+    contract = evaluate_contract_adjustment(
+        usage, baseline, contract_kw=condition.contract_kw, table=tariff, options=opts
+    )
+    if contract.target_contract_kw is not None and contract.saving_won is not None:
+        moved = contract.crossed_selection or contract.retuned_selection or sel
+        after = replace(opts, contract_kw=contract.target_contract_kw)
+        cards["계약전력"] = (contract.saving_won, gap(moved, usage, after))
+
+    power_factor = evaluate_power_factor(
+        usage,
+        tariff,
+        sel,
+        current_pct=condition.power_factor_pct,
+        target_pct=97.0,
+        baseline=baseline,
+        quality=sample_report,
+        options=opts,
+    )
+    cards["역률"] = (
+        power_factor.saving_won,
+        gap(sel, usage, replace(opts, power_factor_pct=97.0)),
+    )
+
+    point = solar_point(
+        usage,
+        tariff,
+        sel,
+        sample_unit_pv,
+        condition.solar_kwp,
+        power_factor_pct=condition.power_factor_pct,
+        baseline=baseline,
+        quality=sample_report,
+        options=opts,
+    )
+    net = apply_generation(usage, sample_unit_pv * condition.solar_kwp)
+    cards["태양광"] = (
+        point.total_saving_won - point.surplus_revenue_won,
+        gap(sel, net.usage, opts),
+    )
+
+    if condition.ess_target_kw is not None:
+        ess = evaluate_ess(
+            usage,
+            tariff,
+            sel,
+            target_kw=condition.ess_target_kw,
+            cost=EssCostInput.of_unit_cost(ESS_COST_WON_PER_KW),
+            baseline=baseline,
+            quality=sample_report,
+            options=opts,
+        )
+        after_ess = with_load(usage, ess.dispatch.net_kw, source_suffix=" + ESS")
+        cards["ESS"] = (ess.total_saving_won, gap(sel, after_ess, opts))
+
+    residual = {name: card - total for name, (card, total) in cards.items()}
+    assert {name for name, won in residual.items() if abs(won) > 0.01} == set(), residual
+    assert len(cards) >= 4, f"수단 넷은 서야 이 못이 무는 자리가 선다 — {sorted(cards)}"
