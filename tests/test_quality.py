@@ -292,21 +292,14 @@ def test_short_period_warning(tmp_path: Path) -> None:
     assert any("12개월 미만" in message for message in texts(report.notices))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "S155 3절 — 기간을 첫·끝 라벨 사이로 재 한 슬롯(15분)을 잃는다 · "
-        "고치는 길이 둘이라 사람이 정한다"
-    ),
-)
 def test_꼭_365일치_자료는_12개월_미만으로_판정되지_않는다(
     tmp_path: Path, tariff: TariffTable
 ) -> None:
-    """**365일을 빠짐없이 올려도 「12개월 미만」 이다** (S155 3절 · S182 5절에 박았다).
+    """**365일을 빠짐없이 올리면 「12개월 미만」 이 아니다** (S155 3절 · S182 5절 xfail · S184 1절).
 
     라벨이 구간 끝이라 첫 라벨이 ``00:15`` 인데 기간을 첫 라벨과 끝 라벨 사이로 재
-    364.989… 일이 된다(`io\\usage.py` 의 ``period_days``). 문턱(365)을 낮출지 기간에
-    한 슬롯을 더할지는 사람이 정한다 — 어느 쪽으로 고쳐도 이 못이 빨개진다.
+    364.989… 일이 됐다. S184 가 길 ㄱ(기간에 한 슬롯을 더해 잰다 · `io\\usage.py` 의
+    ``period_days``)으로 고쳤고 문턱(365)은 그대로다.
 
     **품질 문턱만이 아니라 같은 판정을 내는 자리 넷을 다 문다** (S183 2-2). 앞서는
     품질 하나만 물어 그 문턱만 갈아도 XPASS 였다 — 업로드 경고 · 요금 안내(Excel

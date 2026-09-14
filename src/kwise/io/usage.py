@@ -636,7 +636,9 @@ def load_usage_bytes(
 
     start = pd.Timestamp(index[0])
     end = pd.Timestamp(index[-1])
-    period_days = (end - start).total_seconds() / 86400.0
+    # 라벨이 구간 끝이라 첫 라벨과 끝 라벨 사이만 재면 첫 슬롯 한 칸을 잃는다 —
+    # 꼭 365일치가 364.99일로 「12개월 미만」 이 됐다 (S155 3절 · S184 1절 길 ㄱ).
+    period_days = (end - start).total_seconds() / 86400.0 + interval / 1440.0
 
     meta = UsageMeta(
         source_name=filename,

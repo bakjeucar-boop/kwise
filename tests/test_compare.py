@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 import pytest
 
@@ -20,7 +22,12 @@ from kwise.compare import (
     sensitivity_ranges,
 )
 from kwise.io import UsageData
-from kwise.measures import Certainty, dispatch_peak_shaving, lowest_certainty
+from kwise.measures import (
+    Certainty,
+    ContractAdjustment,
+    dispatch_peak_shaving,
+    lowest_certainty,
+)
 from kwise.measures.solar import power_factor_after_pct, power_factor_floor_pct
 from kwise.notices import texts
 from kwise.quality import QualityReport
@@ -841,3 +848,61 @@ def test_수단이_없으면_다시_고르지_않는다(
     )
     assert result.bill.selection == FLIP18_CURRENT
     assert result.saving_won == pytest.approx(0.0)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "S183 4절 — 화면은 원 부하 · 조합은 조합 부하로 목표를 잰다 · "
+        "어느 쪽으로 모을지 사람이 정한다"
+    ),
+)
+def test_3단계_화면과_산출물이_같은_조합에서_같은_계약전력_목표를_낸다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_unit_pv: pd.Series,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**화면 「계약전력 추가 하향」 목표 = PPT·Excel·Word 가 읽는 조합 목표** (S174 · S183 4절).
+
+    화면(`ui\\views\\compare.py::_contract_headroom`)은 **원 부하**로, 조합
+    (`compare\\combination.py::_quote`)은 **태양광·ESS 뒤 조합 부하**로 목표를 잰다.
+    계약형 벌에서는 목표가 관측 최대에 붙어 둘이 갈린다 — 덱 `large-a` 5,294 대 5,143 kW ·
+    이 표본(합성 청천 1,600 kWp)은 5,294 대 4,976 kW. 어느 부하로 모을지는 사람이 정한다 —
+    **부하를 고르는 코드는 안 고쳤다** (S184 1-7). 어느 쪽으로 모아도 이 못이 빨개진다.
+    """
+    from kwise.ui.pipeline import ContractForm
+    from kwise.ui.views import compare as compare_view
+
+    form = ContractForm("general_a_1", "high_a", "I", contract_kw=6_000.0)
+    opts = form.billing_options()
+    baseline = calculate_bill(
+        sample_usage, tariff, form.selection, options=opts, quality=sample_report
+    )
+    combined = evaluate_combination(
+        sample_usage,
+        tariff,
+        CombinationSpec(
+            "태양광 + 계약전력", form.selection, pv_capacity_kwp=1_600.0, contract_kw=6_000.0
+        ),
+        baseline_bill=baseline,
+        unit_pv_kw_per_kwp=sample_unit_pv,
+        quality=sample_report,
+        options=opts,
+    )
+    seen: list[ContractAdjustment] = []
+    real = compare_view.evaluate_contract_adjustment
+
+    def grab(*args: Any, **kwargs: Any) -> ContractAdjustment:
+        seen.append(real(*args, **kwargs))
+        return seen[-1]
+
+    monkeypatch.setattr(compare_view, "evaluate_contract_adjustment", grab)
+    monkeypatch.setattr(compare_view.st, "write", lambda *args, **kwargs: None)
+    compare_view._contract_headroom(sample_usage, tariff, form, combined, None)
+
+    assert combined.contract_adjustment is not None and len(seen) == 1
+    screen, report = seen[0].target_contract_kw, combined.contract_adjustment.target_contract_kw
+    assert screen is not None and report is not None  # 전제 — 두 자리 다 목표가 선다
+    assert screen == pytest.approx(report), (screen, report)
