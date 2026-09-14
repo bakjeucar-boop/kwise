@@ -581,7 +581,7 @@ def test_검토_범위를_넘겨받으면_그것을_쓴다(
 def test_한계와_추적성이_마지막_장에_있다(full_document: DocumentType) -> None:
     text = _all_text(full_document)
     assert "기후환경요금" in text  # 미포함 요금요소 (5.1)
-    assert "한 번의 초과가 12개월간 적용됩니다" in text  # 계약전력 경고 (9.4)
+    assert "충분한 여유를 확보하십시오" in text  # 계약전력 경고 (9.4)
     assert "인증·신고용 산출물이 아닙니다" in text  # 알려진 한계 (부록 D)
     assert "적용 요금표:" in text  # 추적성 (5.8)
     assert "Open-Meteo" in text  # 출처

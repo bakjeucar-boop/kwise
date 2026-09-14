@@ -294,9 +294,9 @@ def test_summary_carries_the_not_included_notice(summary_text: str) -> None:
 
 
 def test_summary_carries_the_contract_change_warning(summary_text: str) -> None:
-    """요구사항서 9.4 — 한 번의 초과가 12개월간 적용된다."""
+    """요구사항서 9.4 — 하향할 때 여유를 두라."""
     assert CONTRACT_CHANGE_WARNING in summary_text
-    assert "한 번의 초과가 12개월간 적용됩니다" in summary_text
+    assert "충분한 여유를 확보하십시오" in summary_text
 
 
 @pytest.mark.records

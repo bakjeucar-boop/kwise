@@ -604,34 +604,29 @@ def test_contract_warnings_only_when_lowering_helps(
     binding = assess(1.0)
     assert binding.reducible
     assert any("여유를 확보" in message for message in texts(binding.notices))
-    assert any("12개월간 적용" in message for message in texts(binding.notices))
+    assert not any("12개월간 적용" in message for message in texts(binding.notices))
 
     assert not any("여유를 확보" in message for message in texts(assess(0.3).notices))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "S179 2절 — 계약형(제68조 ②)에서 9.4 경고가 「12개월간 적용」 을 말하는데 "
-        "요금은 넘은 값을 싣지 않는다"
-    ),
-)
-def test_계약형에서_12개월간_적용을_말하면_요금이_넘은_값을_싣는다(
+def test_계약형_벌의_산출물_글자에_12개월간_적용이_없다(
     sample_usage: UsageData, tariff: TariffTable
 ) -> None:
-    """**경고가 서는 벌에서 그 말이 참이어야 한다** (S179 2절).
+    """**경고가 서는 계약형 벌에서 「12개월간 적용」 을 말하지 않는다** (S179 2절 · S180 4절).
 
     `large-a`(갑Ⅰ 고압A 6,000 kW)와 같은 판이다. 기본요금이 계약전력에 붙는 종별이라
     계약전력을 관측 최대 위로 내릴 자리가 있어 1단계 경고가 선다. 그런데 계약전력을
     한 달만 넘게 두면(2023-07 · 5,293.4 kW) 뒤 달 기본요금 기준전력은 **계약전력
-    그대로**다 — 넘은 값이 한 달도 안 실린다. 옛 뒤 문장도, 사람이 정한 새 글자
-    「계약전력을 한 번 초과하면 그 값이 12개월간 요금에 적용됩니다」 도 같은 사실을
-    말하므로 이 벌에서 거짓이다.
+    그대로**다 — 넘은 값이 한 달도 안 실린다. 그래서 9.4 뒤 문장 「한 번의 초과가
+    12개월간 적용됩니다」 가 이 갈래에서 거짓이었고 S180 이 원문과 사본 셋에서 뺐다.
 
-    **고쳐지는 날 스스로 빨개진다** — 경고가 갈래를 보고 그 말을 빼거나, 요금이
-    넘은 값을 싣게 되면 XPASS 다. 어느 쪽으로 고칠지는 사람이 정한다.
+    S179 가 xfail(strict) 로 박은 못을 보통 시험으로 갈았다. 요금이 여전히 넘은 값을
+    안 싣는지와 **산출물이 싣는 글자** 셋 — 진단 안내 · 수단 안내 · 늘 서는 경고
+    (Excel 요약 · Word 끝 장 · Word 7.2 · 화면 7.2) — 에 그 말이 없는지를 함께 문다.
     """
     from dataclasses import replace
+
+    from kwise.report import CONTRACT_CHANGE_WARNING
 
     selection = TariffSelection("general_a_1", "high_a", "I")
     options = BillingOptions(contract_kw=6_000.0)
@@ -640,10 +635,14 @@ def test_계약형에서_12개월간_적용을_말하면_요금이_넘은_값을
         sample_usage, bill, contract_kw=6_000.0, table=tariff, options=options
     )
     adequacy = assess_contract(adjustment, billing_demand_kw=adjustment.demand_before_floor_kw)
-    # 경고가 서는 판인지는 경고 글자가 아니라 조건으로 본다 — 글자를 보면 말을 뺀
-    # 날에도 xfail 로 남아 스스로 안 빨개진다.
+    # 경고가 서는 판인지는 경고 글자가 아니라 조건으로 본다.
     assert adequacy.reducible, "계약형 벌에 낮출 자리가 없다 — 판이 틀렸다"
-    warned = any("12개월간 적용" in message for message in texts(adequacy.notices))
+    carried_words = (
+        *texts(adequacy.notices),
+        *texts(adjustment.notices),
+        CONTRACT_CHANGE_WARNING,
+    )
+    assert not any("12개월간 적용" in words for words in carried_words)
 
     peaks = bill.monthly["max_demand_kw"].sort_values(ascending=False)
     trial_kw = float(round((peaks.iloc[0] + peaks.iloc[1]) / 2))
@@ -653,8 +652,8 @@ def test_계약형에서_12개월간_적용을_말하면_요금이_넘은_값을
     over = monthly[monthly["max_demand_kw"] > trial_kw]
     assert len(over) == 1, over.index
     after = monthly.loc[monthly.index > over.index[0], "base_demand_kw"]
-    carried = bool((after >= round(float(over["max_demand_kw"].iloc[0]))).all())
-    assert not warned or carried, after.tolist()
+    # 요금은 여전히 넘은 값을 안 싣는다 — 싣게 되면 뺀 말을 되살릴지 다시 정한다.
+    assert not (after >= round(float(over["max_demand_kw"].iloc[0]))).any(), after.tolist()
 
 
 def test_over_contract_slots_are_flagged(

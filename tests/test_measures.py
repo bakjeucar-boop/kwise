@@ -689,7 +689,8 @@ def test_penalty_warning_only_when_lowering_helps(
         sample_usage, sample_bill, contract_kw=7_000.0, contract_floor_ratio=1.0
     )
     assert any("위약금" in message for message in texts(binding.notices))
-    assert any("12개월간 적용" in message for message in texts(binding.notices))
+    assert any("여유를 확보" in message for message in texts(binding.notices))
+    assert not any("12개월간 적용" in message for message in texts(binding.notices))
 
     slack = evaluate_contract_adjustment(
         sample_usage, sample_bill, contract_kw=7_000.0, contract_floor_ratio=0.3
