@@ -361,6 +361,30 @@ S185 2-3 표와 목표 · 몫 · 조합 절감액이 원 단위로 같다 — �
 
 **1-6. 넘는 벌은 이 절에서 안 봤다** — 목표가 움직인 셋만 봤다.
 
+### 2절 — 마지막 확인이 세 판 이상 지난 못 여섯을 되돌려 확인했다
+
+**2-1. `docs\HANDOVER.md` 6절 못 표 22못 — 마지막 확인이 S183 이전(세 판 이상 지남)인 못 17.** S183 넷 · S182 넷 · S181 다섯 · S180 · S179 · S176 · S175 하나씩.
+S185 가 낸 13 은 그 판 기준(S182 이전)이다 — 판이 하나 지나 S183 넷이 더해졌다(13 + 4 = 17). 나머지 다섯은 S184 둘 · S185 셋.
+
+**2-2. 고른 여섯 — 상수 한 줄을 옛 글자로 갈아 끼우면 되살아나고 시험 하나가 6초 안에 도는 것.** 여섯 다 요구사항서 9.4 경고 사본을 문다.
+되살림은 스크래치 plugin `s186_revert.py`(`-p` · 환경변수 열쇠 · import 시점에 모듈 속성을 간다 · `src\` 무접촉). 옛 글자는 git 에서 떴다 — S180 4절(`d7e127c`) 앞 「… 확보하십시오. 한 번의 초과가 12개월간 적용됩니다.」 · S172 3절(`2be0329`) 앞 `measures` 사본 「기본요금은 직전 12개월 중 최대수요로 결정됩니다. …」.
+안 고른 열하나는 앱을 띄워 산출물 넷을 뜨거나(`test_기본요금이_피크에_안_매이는_벌…` · `stage3` 못) · 매뉴얼 · 시험 파일을 갈아야 되살아난다(매뉴얼 단정 넷 · 기록 묶음 못 · 살아 있는 못 수).
+
+평소 **6 passed**(한 명령 6.4초). 되살린 판마다 —
+
+| 못 | 되살린 것 | 결과 |
+|---|---|---|
+| `test_report.py::test_요구사항서_9_4_원문과_글자_사본_셋이_한_글자다` (S183) | `diagnose\contract.py::_MARGIN_NOTICE` 를 S180 앞 글자로 | **1 failed** `:349` 집합이 둘로 갈렸다 |
+| `test_base_fee_basis_words.py::test_계약전력_변경_경고가_기본요금을_피크에_매지_않는다` (S183) | `measures` 사본을 S172 앞 글자로 | **1 failed** `:253` `{'measures.contract'}` |
+| `test_docsite.py::test_매뉴얼이_인용한_하향_경고가_산출물_글자와_같다` (S182) | `report\notices.py::CONTRACT_CHANGE_WARNING` 을 S180 앞 글자로 | **1 failed** `:381` 인용 ≠ 경고 |
+| `test_report.py::test_summary_carries_the_contract_change_warning` (S182) | `report\excel.py` 가 쥔 `CONTRACT_CHANGE_WARNING` 을 S180 앞 글자로 | **1 failed** `:315` 「필수 안내」 칸 ≠ 원문 |
+| `test_diagnose.py::test_contract_warnings_only_when_lowering_helps` (S181) | `diagnose\contract.py::_MARGIN_NOTICE` 를 S180 앞 글자로 | **1 failed** `:645` (S181 기록 `:607` 에서 줄이 밀렸다) |
+| `test_measures.py::test_penalty_warning_only_when_lowering_helps` (S181) | `measures\contract.py::MARGIN_NOTICE` 를 S180 앞 글자로 | **1 failed** `:694` (S181 기록 `:693`) |
+
+**2-3. 안 빨개진 못 0.**
+
+**2-4. 원복 — 되돌린 파일이 없다**(plugin 이 프로세스 안에서만 갈았다). `git status --short` 가 이 절을 적은 `PROCEED.md` 하나 · `git diff --stat -- src tests tools data` 빈 줄.
+
 ## 오늘 (2026-09-14) 185세션 — **갈리지 않은 25,392원을 갈랐다(두 판이 다른 옵션을 쟀다) · 조합 목표를 ㄷ 으로 모았다**
 
 ### 0절 — 판을 연다
