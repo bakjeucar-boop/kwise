@@ -361,6 +361,72 @@ CONTRACT_CHANGE_WARNING · 12개월간 적용 · MARGIN_NOTICE」 가 나오는 
 
 **1-6. 원복 — `git status --short` 빈 줄 · `git diff --stat` 빈 줄.**
 
+### 2절 — 무엇을 잴 수 있는 꼴인지 먼저 봤다 (코드만 읽었다)
+
+**2-1. 청구서는 항목 넷으로 쪼개져 있다.** `tariff\engine.py::BillingResult` 가 드는 금액 이름 —
+`total_base_won`(기본요금) · `total_power_factor_won`(역률요금) · `total_energy_won`(전력량요금 · 학교 특례 할인 뺀 값) · `total_excess_won`(초과사용부가금) ·
+`total_won` = 넷의 합(`engine.py:1015`) · 곁에 `total_energy_won_adjusted` · `total_won_adjusted`(결측 보정 · 회수기간 참고용). 달별 표 `monthly` 도 같은 넷
+(`base_won` · `power_factor_won` · `energy_won` · `excess_won`)에 전력량을 시간대 셋(`light_won` · `mid_won` · `peak_won`)과 `discount_won` · `school_discount_won` 으로 더 쪼갠다.
+기후환경요금 · 연료비조정요금 · 부가세 · 기금은 **항목 자체가 없다**(`NOT_INCLUDED_NOTICE`). 「그 밖」 항목은 없다.
+
+**총액만 드는 자리**(청구서가 아닌 결과 객체) —
+- `measures\contract.py::ContractAdjustment` — `saving_won` 한 수 · `current_base_won` / `adjusted_base_won` 는 **역률 뺀 기본요금**뿐 · `crossed_total_won` / `current_total_won` 은 총액뿐.
+- `measures\demand_response.py::DemandResponseResult` — `settlement_won` 한 수(청구서 밖 · 연간 kWh × 단가라 **처음부터 연간 값**).
+- `measures\solar.py::SolarPoint` — `base_saving_won` · `energy_saving_won` · `total_saving_won`(잉여 수익 포함) · `power_factor_extra_won`(총액에 **안 든** 가상 몫). 역률·부가금 몫 칸이 없다.
+- `measures\ess.py::EssResult` — `base_saving_won` · `energy_saving_won` · `total_saving_won`. 역률·부가금 몫 칸이 없다.
+- `compare\combination.py::CombinationResult` — `saving_won` 한 수(청구서 `bill` 은 든다) · `contract_saving_won` 한 수.
+- `ui\views\compare.py::_contract_headroom` — 「추가 절감」 한 수.
+
+**2-2. 금액 반올림은 계산 안에 없다 — 표시에서 한 번 접힌다.** `tariff\` · `measures\` · `compare\` 에서 원 단위 `round` · `floor` · `trunc` · `money.` 0곳이다.
+계산 안에서 접는 것은 **kW** 둘 — `tariff\demand.py::round_kw`(요금적용전력 · 계약전력을 1 kW 로 · `apply_contract_floor` 한 자리) · `tariff\excess.py:71` 초과 비율 `round(ratio, 9)`.
+**원 접힘은 표시 직전 한 번**이고 항목과 합계를 저마다 접는다 — `money.truncate_won`(천 원 절사 · 0 쪽 · Excel · Word · 본문) ·
+`money.won_short`(만원 반올림 · 화면 카드 `fmt.won_year`). 그래서 3절은 **엔진이 낸 float 그대로** 재고, 0 이 아닌 칸마다 접힘 폭 둘(카드 ±5,000원 · 절사 1,000원)
+안인지를 함께 적는다. 카드 절감액은 12개월 환산(× 12 ÷ 기본요금 개월수)이라 3절은 **관측 기간 값**으로 재고 환산 계수를 벌마다 적는다 — 선형이라 0/비0 판정이 안 갈린다.
+
+**2-3. 수단 여섯이 저마다 직접 바꾸는 물리량**(엔진에 넣는 입력 기준).
+
+| 수단 | 직접 바꾸는 것 | 코드 | 그 입력을 직접 받는 청구 항목 |
+|---|---|---|---|
+| 선택요금 전환 | **종별 안의 선택요금**(단가표) | `tariff_switch.py:186` 두 선택의 `calculate_bill` | 기본(`base_won_per_kw`) · 전력량(시간대 단가) · 초과(`excess_charges` 가 기본요금 단가를 받는다 `engine.py:643`) |
+| 계약전력 조정 | **계약전력 kW** (종별을 넘는 갈래는 **종별·선택요금**도) | `contract.py:616` 계약형 · `:700` 하한 · `:728` 종별 넘음 | 기본(하한 `apply_contract_floor` · 계약형 곱) · 초과(`contract_kw`) · 넘는 갈래는 전력량도 |
+| 경제성DR | **없음 — 청구서 입력을 안 바꾼다** | `demand_response.py:186` kWh × 단가 | 없음(정산금은 청구 밖) |
+| 역률 개선 | **주간 지상역률 %** | `power_factor.py:175` 두 역률의 `calculate_bill` | 역률 |
+| 태양광 | **사용량 시계열**(순부하) + 잉여 수익(청구 밖) | `solar.py:680` · `:790` | 전력량(kWh) · 기본(요금적용전력) · 초과(달 최대) |
+| ESS | **사용량 시계열**(충방전 뒤 순부하) | `ess.py:1116` · `:1133` | 전력량 · 기본 · 초과 |
+
+**역률요금은 어느 수단에서도 「기본요금 × 역률 비율」 이다**(`engine.py:658` · 비율은 역률 %만으로 정해진다). 그래서 기본요금을 움직이는 수단은 모두 역률요금을
+**간접으로** 함께 움직인다 — 역률 수단 밖에서 역률 항목은 늘 이 경로다. 위 표 넷째 열은 그 간접 경로를 **안 넣은** 목록이다.
+
+**2-4. 2단계 카드와 3단계 조합은 다른 식이다.**
+
+| 자리 | 식 | 코드 |
+|---|---|---|
+| 카드 · 선택요금 | 현행 청구서 총액 − 최적 선택 청구서 총액 | `tariff_switch.py:186` |
+| 카드 · 계약전력(하한·계약형) | **(현행 기본 − 목표 기본) × (1 + 현행 역률 비율)** — 청구서를 목표에서 다시 안 뽑는다 | `contract.py:616` · `:700` |
+| 카드 · 계약전력(종별 넘음) | 같은 옵션·계약전력으로 다시 뽑은 현행 총액 − 넘어간 종별 최적 총액 | `contract.py:351` |
+| 카드 · 역률 | 현행 역률 청구서 총액 − 목표 역률 청구서 총액 | `power_factor.py:175` |
+| 카드 · DR | 연간 감축 kWh × 정산 단가(없으면 미산출) | `demand_response.py:186` |
+| 카드 · 태양광 | 기준 총액 − 순부하 청구서 총액 **+ 고른 잉여 수익** (역률 %는 그대로 · 역률 악화는 총액 밖 `power_factor_extra_won`) | `solar.py:680` · `:790` |
+| 카드 · ESS | 기준 총액 − 충방전 뒤 청구서 총액 | `ess.py:1133` |
+| 3단계 합산효과 | 기준 총액 − 조합 청구서 총액 + **조합 청구서 위의 계약전력 식 몫** + 잉여 수익 (+ 조합 밖 DR 연간 정산금) · 조합 청구서는 역률을 목표 → 태양광 악화로 갈고 부하를 태양광 → ESS 로 물린 뒤 선택요금을 다시 고른다 | `combination.py:457` · `:510` · `:640` · `compare.py:459` |
+| 3단계 「계약전력 추가 하향」 | 조합 청구서 위 계약전력 식(원부하 관측 최대 · 현행 역률 옵션) 12개월 값 − 2단계 카드 12개월 값 | `compare.py:574` · `:584` |
+
+**같은 식인 자리는 선택요금 · 역률 · ESS 셋이다**(총액 차). 태양광은 총액 차 + 청구 밖 몫, 계약전력(하한·계약형)은 **청구서를 다시 안 뽑는 비율식**,
+DR 은 청구 밖이다. 3단계는 총액 차에 계약전력 비율식을 **더한다**.
+
+**2-5. 3절에서 뽑을 열 — 여기서 정하고 한 번에 돌린다.** 측정은 덱 벌마다 `render_deck` 과 같은 세션 상태로 앱을 띄워(`streamlit.testing`) 3단계
+`_measure_results` 의 반환(2단계 카드와 같은 결과 한 벌 · `compare.py:198` 「2단계에서 이미 계산한 값을 옮긴다」)과 `_contract_headroom` 의 인자·반환을 가로챈다.
+화면 결과를 새로 계산하지 않고, **항목 차액을 내려고 그 수단 하나만 켠 청구서만** 엔진으로 다시 뽑는다(스크래치 `s3_attr.py`).
+
+| 표 | 열 |
+|---|---|
+| ㄱ 수단 × 벌 | 벌 · 갈래 · 수단 · 켜짐/건너뜀 사유 · 환산 계수 · **카드 절감액(기간)** · Δ기본 · Δ역률 · Δ전력량 · Δ초과 · Δ합계(= 넷의 합) · 청구 밖 몫(잉여 수익 · DR 정산금) · 직접 항목(2-3 넷째 열) · 직접 합 · **차 = 카드 − 직접 합** · **잔차 = 카드 − Δ합계 − 청구 밖** · 접힘 폭 안(±5,000 · 1,000) |
+| ㄴ 추가 하향 | 벌 · 갈래 · 2단계 목표 · 조합 목표 · 같음/다름 · 2단계 12개월 · 조합 12개월 · **추가 절감(반환)** · 그 가운데 기본 몫 · 역률 몫 · 두 역률 비율 · 조합 선택요금 · 종별 넘음 |
+| ㄷ 겹침 | 항목 · 벌 · Δ가 0 이 아닌 수단들(직접 · 간접 구분) |
+| ㄹ 잔차 | 수단 · 벌 · 잔차 금액 |
+
+**0 이 아니다** = 절댓값 **0.01원 초과**(float 끝자리 잡음과 가른다 · 잡음의 최댓값을 함께 적는다). 모수 — 덱 벌은 `tools\render_deck.py::CASES` 를 센다(3-1).
+
 ---
 ## 오늘 (2026-09-14) 180세션 — **9.4 뒤 문장을 갈래 전수로 재고 뺐다 — 계약형 넷에서 0달 · 이력에 세운 판단 없음. 부딪침 못이 짝의 양쪽을 문다**
 
