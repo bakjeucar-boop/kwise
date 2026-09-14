@@ -291,6 +291,98 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - 앞은 2026-08-25 — **56·57·58세션.** 58세션이 **잉여 단가 기본값**을 기준 데이터에 두어 「외부 판매 미산출」 을 없앴고, **적용 단가 한 줄**을 화면·PPT·Excel·Word 가 함께 쓰게 했다. 기본 선택은 출력제어 그대로라 **금액 불변**. 앞선 둘은 — 56세션이 ESS 음수의 원인을 **계약종별 갑/을**에서 찾았고(갑은 기본요금이 계약전력에 붙는다), 57세션이 **잉여 처리를 화면 앞으로** 냈다 — 기본을 **출력제어**로, 「버리기」 를 「출력제어」 로, 잉여 수익을 캐시 열쇠에서 빼 **시나리오를 바꿔도 요금이 다시 안 돈다** (6.5초 → 0.9초). **금액 불변**
 
 ---
+## 오늘 (2026-09-14) 184세션 — **365일 기간 재기를 길 ㄱ 으로 고치고, 조합 목표 두 축이 코드에서 갈라지는지 쟀다**
+
+### 0절 — 판을 연다
+
+**0-1. 1번 PC 다.** Intel Core Ultra 7 258V · RAM **31.5 GB** · `os.cpu_count()` **8** (→ `-n auto` 일꾼 8).
+
+**0-2. `git pull` — Already up to date · HEAD `b9e8787` = `origin/master` · 워크트리 깨끗.**
+
+**0-3. 남의 python — 판 앞 0** (회귀 앞 · 중간 · 뒤는 5절).
+
+**0-4. `daily_brief` — 미해결 114건 · 미해결 칸 38,746자 · 「다음 작업」 칸 2,313자**(스크래치 `s0_state.py` 가 `current_state` 칸 길이를 쟀다).
+
+**0-5. 용인 벌 기상 캐시가 있다** — `PROJECT_CACHE`(`AppData\Local\kwise\cache`) 에 `openmeteo_37.2500_127.2500_20250827_20260829_Asia-Seoul.parquet`.
+
+**0-6. 이 판이 건드릴 이름(`docs\OPEN_ITEMS.md` 그대로)** — 가 「꼭 365일치 자료가 「12개월 미만」 으로 판정된다」 ·
+마 「3단계 화면의 계약전력 추가 하향 목표가 PPT·Excel·Word 의 조합 목표와 다른 부하를 잰다」(지시서의 「3단계 조합 목표를 재는 부하가 둘이다」 — 문서 이름을 따른다).
+
+**0-7. 기준선 케이스 스터디 — 160/160 · 기상 취득 0회 · 도구 129.5초 / 벽시계 2분 23초**(1번 PC · 앞 남의 python 0).
+회귀값 여덟 — C1 5,293.0 kW · 49.0% · 13.5% · R1 132.0 kW · 41.1% · 20.0% · R2 18.3% · R3 27.4%. xlsx 를 스크래치 `cs_base.xlsx` 로 떠 두고 `git checkout` 으로 저장소 판을 되살렸다.
+
+### 1절 — 365일 기간 재기를 길 ㄱ 으로 고쳤다
+
+**1-1. 지금 글자 — S183 과 같다(재기 한 자리 · 문턱 넷).** 재기 `io\usage.py:637` `start = pd.Timestamp(index[0])` · `:638` `end = pd.Timestamp(index[-1])` · `:639` `period_days = (end - start).total_seconds() / 86400.0`.
+문턱 `usage.py:705` `if period_days < 365:` · `quality\checks.py:132` `return self.period_days >= 365.0` · `tariff\engine.py:312` `if self.period_days < 365:` · `engine.py:892` `if period_days < 365:`.
+
+**1-2. 고친 자리 전수 1 — `usage.py:639`** 에 `+ interval / 1440.0`(주석 두 줄). 문턱 넷은 안 건드렸다. 환산 배율은 `base_fee_months` 로 재므로(`engine.py:310`) `period_days` 는 판정 넷과 표시(`fmt.days` · PPT · Word `:.0f` · `slides.py:1186` `>= 350`)만 읽는다.
+
+**1-3. 산식은 이미 한 자리다 — 모을 것 0.** `src\` · `tools\` 에서 `86400` 은 `usage.py:639` 하나. `period_days=` 로 값을 넣는 곳은 `usage.py:651·674`(같은 변수) · `checks.py:230·371` · `engine.py:1007`(넘김뿐) · `measures\netload.py::with_load` 는 `replace(meta, …)` 로 그대로 들고 간다.
+이름만 같은 다른 양 둘 — `measures\arbitrage.py:326` `period_days=sum(days.values())`(평일 수) · `report\frames.py:1209` 날짜 포함 일수(기온 기준선). 시험에 기간 값을 박은 곳 0.
+
+**1-4. 회귀값 여덟 불변 — 멈추지 않았다.** 고친 뒤 케이스 스터디 160/160 · 기상 취득 0회 · 도구 110.1초 / 벽시계 1분 58초(1번 PC · 앞 남의 python 0).
+xlsx 칸 대조(스크래치 `xdiff.py` · `fillna` 뒤) — 시트 8 · **갈린 칸 23 = 「케이스」 `소요(초)` 11 · 「성능」 `값` 12** · 나머지 0.
+S183 3-4 가 「R1~R3 품질 경고 한 줄이 빠진다 — xlsx 칸에 서는지는 안 봤다」 고 적은 자리 — **안 선다.** `CaseResult.warnings`(`casestudy.py:802`) 를 `report\` · `tools\` 에서 읽는 곳 0 이라 칸이 안 갈린다.
+
+**1-5. xfail 을 걷고 보통 시험으로 갈았다 — 네 자리 4/4 빨감.** 고친 뒤 먼저 `[XPASS(strict)]` 1 failed 를 봤고, 데코레이터를 걷어 1 passed.
+되돌림은 src 를 안 고치고 스크래치 plugin `s1_revert.py`(`-p`)로 **한 자리만 한 슬롯 뺀 기간을 보게** 했다 — 품질 `checks._with_warnings` · 업로드 `usage._build_warnings` · 요금 `calculate_bill` 에 옛 기간 메타 · 환산 `BillingResult.annualize`.
+판마다 **1 failed 이고 빨간 집합이 그 자리 이름 하나**(`{'품질'}` · `{'업로드'}` · `{'요금'}` · `{'환산'}`) · 넷을 함께 걸어도 1 failed. 안 무는 자리 0.
+
+**1-6. 건너뛰지 않았다**(1-4 에서 안 멈췄다).
+
+**1-7. 살아 있는 못 1 → 0 → 1 — 조합 목표 부하 못을 xfail(strict=True) 로 박았다.** `tests\test_compare.py::test_3단계_화면과_산출물이_같은_조합에서_같은_계약전력_목표를_낸다`.
+표본 × 갑Ⅰ 고압A 선택Ⅰ 6,000 kW × 합성 청천 1,600 kWp 로 `evaluate_combination` 을 돌리고, 화면 `_contract_headroom` 을 `st.write` 만 막아 직접 불러 화면 목표와 `combined.contract_adjustment` 를 맞댄다 — **화면 5,294 대 조합 4,976 kW**(call 2.52초 · 1번 PC). 부하를 고르는 코드는 안 고쳤다.
+- 평소 **1 xfailed** · `--runxfail` **1 failed**(`5294.0 == 4976.0`).
+- 스크래치 plugin `s1_7_gather.py` 로 한쪽으로 모았다 — 조합의 `evaluate_contract_adjustment` 첫 인자를 원 부하로 → **`[XPASS(strict)]`** · 화면의 첫 인자를 조합 `_quote` 가 받은 조합 부하로 → **`[XPASS(strict)]`**.
+- 곁 확인 — `test_quality.py` · `test_compare.py` · `test_tariff_engine.py` 137 passed · 1 xfailed · `test_io_usage.py` · `test_io_columns.py` 72 passed · `test_doc_counts.py` 29 passed.
+
+### 2절 — 조합 목표 두 축 (재기만 했다 · src 0줄)
+
+**2-1. 목표와 금액은 함수 경계로 안 갈려 있다 — 한 함수가 한 반환으로 둘을 낸다.**
+- 화면 `ui\views\compare.py:560` `_contract_headroom(usage, table, form, combined, standalone) -> float | None` — `:574~582` `evaluate_contract_adjustment(usage, combined.bill, contract_kw=form.contract_kw, table=table, options=form.billing_options())` 한 번 · 목표 `adjustment.target_contract_kw` 와 금액 `adjustment.annual_saving_won − standalone` 을 같은 반환에서 읽는다.
+- 조합 `compare\combination.py:370` `_quote(working, table, spec, selection, opts, quality) -> tuple[BillingResult, ContractAdjustment | None]` — `:379` `calculate_bill(working, …)` 뒤 `:382~391` `evaluate_contract_adjustment(working, bill, contract_kw=spec.contract_kw, contract_floor_ratio=spec.contract_floor_ratio, table=table, options=opts)`. `_price`(`:405`) 가 후보마다 부르고 `_net_cost` 로 고른다 · `evaluate_combination` `:583` 이 `_price` 를 한 번 부른다.
+- 함수 `measures\contract.py:522` `evaluate_contract_adjustment(usage, bill, *, contract_kw, contract_floor_ratio=None, step_kw=1.0, table=None, options=None) -> ContractAdjustment` — **목표를 받는 인자가 없다.**
+  목표 — `:555` `max_demand = usage.observed_max_kw` · `:557` 달별 수요(`bill`) · 계약형 `:608` `covering_contract_kw(max_demand, step_kw)` · 하한형 `:681` `target_contract_kw(monthly_demand, ratio, step_kw, observed_max_kw=max_demand)` · 종별 넘기 `:714` `_crossed_quote(usage, …)` 가 금액이 크면 목표를 갈아 끼운다(`:724~726`).
+  금액 — 계약형 `:613·616`(`bill.total_base_won` × 비율) · 하한형 `:688~700` `_base_fee_won(bill, …)` · 넘기 `_crossed_quote` 가 **`usage` 로 청구서를 처음부터 다시 뽑는다**(`:415·429`) · 재선정 `_retune_selection(usage, …)`(`:748`).
+  따로 선 것은 목표 도우미 둘(`:79` `target_contract_kw` · `:140` `covering_contract_kw` — 순수 함수)뿐이고, 넘기 갈래는 목표와 금액이 한 비교(`quote.saving_won > saving`)로 함께 정해진다.
+
+**2-2. 된다 — 인자 하나를 뚫어야 한다.** 스크래치 `s2.py` 가 덱 벌을 `render_deck.build_deck` 과 같은 세션 상태로 띄워(PPT 안 굽는다) `_contract_headroom` · `_quote` 인자를 가로챘고,
+조합 부하 · 조합 청구서 · 조합 옵션을 그대로 두고 **메타의 관측 최대 하나만 원 부하 값으로 갈아** `evaluate_contract_adjustment` 를 불렀다(길 ㄷ 좁은 꼴 · 덱 여덟 벌 2분 18초 · 1번 PC). 12개월 환산 원/년.
+
+| 벌 | 화면 목표 · 금액 | 지금 조합 목표 · 금액 | ㄷ 목표 · 금액 |
+|---|---|---|---|
+| `large-a` | 5,294 · 69,148,708 | 5,143 · 83,938,305 | **5,294 · 69,148,708** |
+| `small-a` | 265 · 3,428,910 | 258 · 4,114,692 | **265 · 3,428,910** |
+| `small-ind-a1` | 53 · 1,515,083 | 31 · 3,030,167 | **53 · 1,515,083** |
+| `small-b` · `small-b-sell` | 299 · 21,808,571 | 299 · 19,550,421 | 299 · 19,550,421 |
+| `small-a2-was` | 282 · 15,850,168 | 282 · 14,422,246 | 282 · 14,422,246 |
+| `large-b-over` | 12,998 · 99,599,721 | 12,998 · 99,599,721 | 같다 |
+| `small-edu-a-over` | 649 · 2,658,312 | 649 · 2,658,312 | 같다 |
+
+- **ㄷ 목표는 여덟 벌 다 화면 목표와 같다.** 금액은 계약형 셋만 움직여 화면 금액과 같아진다. **종별을 넘는 셋은 조합 금액 그대로이고 화면 금액과 갈린 채 남는다** — 화면이 원 부하로 넘긴 종별 청구서를 다시 뽑기 때문이다.
+- 목표를 밖에서 박는 꼴도 쟀다 — 도우미 둘을 monkeypatch 로 2단계 카드 목표에 고정하니 계약형 셋 금액이 위 ㄷ 과 같고, 조합 부하로 그 목표에서 청구서를 다시 뽑은 총액 차와 **1e-6원 안에서 같다**(차액 귀속이 선다). 2단계 목표가 조합 목표와 다른 셋(`large-b-over` 13,881 · `small-a2-was` 299 · `small-edu-a-over` 694)은 목표가 움직여 좁은 꼴과 다르다 — 「원 부하 목표」 가 관측 최대만인지 2단계 카드 목표인지 두 뜻이다.
+- 몇 줄(좁은 꼴) — `evaluate_contract_adjustment` 인자 1 + `:555` 1 · `_quote` 인자 1 + 전달 1 · `_price` 인자 1 + `_quote` 두 호출 2 · `evaluate_combination` `:583` 1 = **약 8줄(독스트링 뺌)**. **짜 보지 않았다 — 자리를 센 것이다.** 화면은 안 고쳐도 목표가 같아진다 · 금액까지 한 값으로 두려면 `_contract_headroom` 이 `combined.contract_adjustment` 를 읽게 갈아야 한다.
+
+**2-3. S183 값 그대로 — 어긋남 0.** 덱 18 전수(4분 52초 · 1번 PC · 앞 남의 python 0).
+- 두 목표가 갈리는 벌 **3/18** — `large-a` 5,294 대 5,143 · `small-a` 265 대 258 · `small-ind-a1` 53 대 31(셋 다 계약형 · `contract_floor_ratio` None). 같은 값 7 · 둘 다 없다 8 — S183 과 같은 벌.
+- 조합 목표로 낮추면 원 부하 초과 **68 · 51 · 34 슬롯 · 3달씩**(2023-06~08 · 2023-06~08 · 2026-06~08) · 조합 부하 초과 **0** · 화면 목표 기준 원 부하 · 조합 부하 초과 **0**.
+- 첫 판 짝짓기가 틀렸다 — `large-a` 조합 부하 초과가 1 슬롯으로 나왔는데, **감도 시나리오가 같은 이름 · 같은 선택요금으로 `_quote` 를 다시 불러** 조합 부하를 덮어썼다. 이름 · 선택요금 · 조합 부하 관측 최대로 짝지어 다시 쟀다(S183 과 같은 방법 · 벌마다 짝 후보 3 — 4-3 재료).
+
+**2-4. 세 길 — 권하지 않는다.**
+
+| 무엇 | ㄱ 원 부하로 모은다 | ㄴ 조합 부하로 모은다 | ㄷ 목표 원 부하 · 금액 조합 재계산 |
+|---|---|---|---|
+| 건드리나 | 조합 `_quote` 가 원 부하로 판정을 부르게 — 원 부하를 `_price` · `_quote` 로 넘긴다 · 화면 그대로 | 화면 `_contract_headroom` 이 `combined.contract_adjustment` 를 읽게(화면은 조합 부하를 안 든다) | 판정 함수에 관측 최대 인자 하나 · 조합 경로 셋이 원 부하 관측 최대를 넘긴다(약 8줄) · 화면 목표는 이미 같다 |
+| 되돌리기 | 같은 자리 | 한 자리 | 같은 자리 |
+| 드는 것 | 조합 목표 3벌 · 계약형 셋 금액 −14,789,597 · −685,782 · −1,515,083(ㄷ 과 같다) · 넘는 셋 금액도 움직인다(S183 4-4 +2,283,542 · +1,407,724) · ② 산출물 · 1-7 못 XPASS · 케이스 회귀 안 선다(`casestudy.py` 에 `evaluate_combination` 0 → 여덟 불변) | 화면 목표 3벌(5,294→5,143 · 265→258 · 53→31) · 화면 금액 · 그 목표면 원 부하가 68 · 51 · 34 슬롯 넘는다(부가금 미산출 갈래) · ④ 화면(`test_ui_screen.py` 「계약전력 추가 하향」 2곳) · 1-7 못 XPASS · 케이스 회귀 안 선다 | 조합 금액 계약형 셋만(−14,789,597 · −685,782 · −1,515,083) · 넘는 셋 조합 금액 그대로 · 화면 금액과 넘는 셋에서 갈린 채 남는다(21,808,571 대 19,550,421 · 15,850,168 대 14,422,246) · ② 산출물 · 1-7 못 XPASS · 케이스 회귀 안 선다 |
+| 모르는 것 | 넘는 셋의 S183 +2,283,542 · +1,407,724 와 이 판 화면 − 조합 차 2,258,150 · 1,427,922 가 안 맞는다 — 안 갈랐다 · 빨개질 시험 이름은 안 돌렸다 | 태양광이 멈춘 날 원 부하 초과를 어느 문장이 말하나 · 빨개질 시험 이름은 안 돌렸다 | 넘기 갈래에서 목표(원 부하 관측 최대)와 금액(조합 부하 종별 청구서)이 다른 부하를 보는 것을 참이라 할지 · 빨개질 시험 이름은 안 돌렸다 |
+
+**2-5. 부가금으로 안 이어진다 — 셋 다 제67조의3 제1항 갈래.** 조합 목표를 계약전력으로 원 부하 청구서를 다시 뽑았다(현행 선택 · 화면 옵션).
+- `excess.applicable` **거짓** · 달 0 · `total_excess_won` 0원 — 셋 다. 기본요금 기준 전력 평균 = 목표(5,143 · 258 · 31)라 **12개월 창이 안 선다 — S180 이 지금도 참이다.**
+- 대상월 — 제67조의3 ③ 산식에는 대상월이 없다(`tariff\excess.py` 머리글 「12개월 창도, 30% 하한도, 대상월도 여기에는 없다」).
+- 가정으로 ③ 을 걸면(`excess_charges` 를 직접 · **청구액이 아니다**) — `large-a` 06 1.30% 예고 · 07 2.93% ×1.5 · 08 2.81% ×1.5 / `small-a` 06 0.96% 예고 · 07 2.59% ×1.5 · 08 2.48% ×1.5 / `small-ind-a1` 06 8.23% 예고 · 07 1.88% ×1.5 · **08 70.58% ×4.0**.
+
 ## 오늘 (2026-09-14) 183세션 — **못이 제 일을 다 하는지 넷을 값으로 보고, 정책 둘의 재료를 뽑았다 — 미해결 115 → 114**
 
 ### 0절 — 판을 연다
