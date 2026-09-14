@@ -152,8 +152,7 @@ def covering_contract_kw(observed_max_kw: float, step_kw: float = 1.0) -> float:
 
 
 MARGIN_NOTICE = (
-    "계약전력을 하향할 경우, "
-    "예측 오차와 기상 변동을 고려하여 충분한 여유를 확보하십시오."
+    "계약전력을 하향할 경우, 예측 오차와 기상 변동을 고려하여 충분한 여유를 확보하십시오."
 )
 _PENALTY_NOTICE = (
     "계약전력 하향은 되돌리기 어렵고 초과 시 위약금이 발생합니다. "
