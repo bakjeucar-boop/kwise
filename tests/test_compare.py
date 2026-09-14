@@ -872,6 +872,8 @@ def test_3단계_화면과_산출물이_같은_조합에서_같은_계약전력_
     이 표본(합성 청천 1,600 kWp)은 5,294 대 4,976 kW. 어느 부하로 모을지는 사람이 정한다 —
     **부하를 고르는 코드는 안 고쳤다** (S184 1-7). 어느 쪽으로 모아도 이 못이 빨개진다.
     """
+    import streamlit as st
+
     from kwise.ui.pipeline import ContractForm
     from kwise.ui.views import compare as compare_view
 
@@ -892,14 +894,15 @@ def test_3단계_화면과_산출물이_같은_조합에서_같은_계약전력_
         options=opts,
     )
     seen: list[ContractAdjustment] = []
-    real = compare_view.evaluate_contract_adjustment
+    # 화면 모듈이 쥔 이름을 그대로 감싼다 — 그 이름을 갈아 끼운 판도 이 못이 본다.
+    real = vars(compare_view)["evaluate_contract_adjustment"]
 
     def grab(*args: Any, **kwargs: Any) -> ContractAdjustment:
         seen.append(real(*args, **kwargs))
         return seen[-1]
 
     monkeypatch.setattr(compare_view, "evaluate_contract_adjustment", grab)
-    monkeypatch.setattr(compare_view.st, "write", lambda *args, **kwargs: None)
+    monkeypatch.setattr(st, "write", lambda *args, **kwargs: None)
     compare_view._contract_headroom(sample_usage, tariff, form, combined, None)
 
     assert combined.contract_adjustment is not None and len(seen) == 1
