@@ -328,3 +328,25 @@ def test_캡처_목록이_매뉴얼_자리와_맞는다() -> None:
     listed = set(re.findall(r"\*\*(C-\d+)\*\*", (DOCS / "CAPTURES.md").read_text(encoding="utf-8")))
     assert captures == listed, f"매뉴얼 {sorted(captures)} vs 목록 {sorted(listed)}"
     assert len(captures) >= 8
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="S170 1-3 — 매뉴얼 넷이 계약형 · 하한형 조건 없이 기본요금을 요금적용전력으로 단정한다",
+)
+def test_매뉴얼이_기본요금을_요금적용전력으로_단정하지_않는다() -> None:
+    """**계약형(제68조 ②) · 하한형에서 거짓인 단정을 조건 없이 적지 않는다** (S170 1-3 · S180 5절).
+
+    S180 판 줄 번호로 424 · 476 · 527 · 750 이다. 같은 매뉴얼 514행은 계약형 종별을
+    따로 적는데 이 넷은 조건 없이 선다 — 1절이 벌로 잰 값으로 계약형 넷에서 넘은
+    값이 뒤 달 기본요금에 0달 실린다. **줄 번호가 아니라 글자로 문다** — 줄이
+    밀려도 단정이 남아 있으면 xfail 이고, 고쳐지는 날 스스로 빨개진다.
+    """
+    manual = (DOCS / "MANUAL.md").read_text(encoding="utf-8")
+    claims = (
+        "기본요금은 관측 최대수요가 아니라 **요금적용전력**으로 매긴다",  # 424
+        "**기본요금 비중이 높다** → 피크 저감(태양광·ESS·계약전력)의 효과가 크다",  # 476
+        "**밑단(기본요금)이 같은 높이로 이어지는 것이 정상이다.** 요금적용전력이 직전",  # 527
+        "**한 번의 초과가 12개월간 기본요금을 올린다.**",  # 750
+    )
+    assert [claim for claim in claims if claim in manual] == []

@@ -1993,6 +1993,10 @@ def test_두_장이_피크_여지를_반대로_말하지_않는다(
     서로를 모른다. S168 까지는 4장이 모양 값으로 「피크를 낮출 여지가 큽니다」
     라는 **원의 결론**까지 적어 덱 벌 열다섯에서 7장과 반대로 말했다. 이제 결론은
     7장 하나가 내고 **4장은 원을 말하지 않는다** — 그 사실을 네 갈래에서 문다.
+
+    **짝의 양쪽을 문다** (S180 5절). 앞서는 4장 글자만 물어 7장만 옛 글자로
+    되돌리면 초록이었다(S179 1절). 7장은 비중만 보고 갈래를 모르므로 **피크를
+    낮추는 길을 이름하지 않는다**(S170 2절) — 그 사실을 7장 쪽에서 문다.
     """
     from dataclasses import replace
     from types import SimpleNamespace
@@ -2013,6 +2017,8 @@ def test_두_장이_피크_여지를_반대로_말하지_않는다(
 
     for money_word in ("여지", "기본요금", "몫"):
         assert money_word not in page4, (page4, page7)
+    for peak_word in ("피크", "최대수요"):
+        assert peak_word not in page7, (page4, page7)
     assert not ("피크를 낮출 여지가 큽니다" in page4 and "줄어드는 몫이 작습니다" in page7), (
         page4,
         page7,
