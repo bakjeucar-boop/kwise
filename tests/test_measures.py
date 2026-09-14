@@ -2968,3 +2968,38 @@ def test_카드_절감액은_그_수단만_켠_청구서_총액_차다(
     residual = {name: card - total for name, (card, total) in cards.items()}
     assert {name for name, won in residual.items() if abs(won) > 0.01} == set(), residual
     assert len(cards) >= 4, f"수단 넷은 서야 이 못이 무는 자리가 선다 — {sorted(cards)}"
+
+
+def test_계약전력_카드는_역률_감액_벌에서도_청구서_총액_차다(tariff: TariffTable) -> None:
+    """**위 못이 못 무는 계약전력 식의 역률 몫을 문다** (S185 3-4).
+
+    위 못의 두 조건에는 그 몫이 설 자리가 없다 — `large-a` 는 역률 입력이 없어 비율 0 ·
+    `large-b-pf85` 는 계약전력 카드가 안 선다(S184 3-2). 덱 18 전수에서 그 몫이 서는 벌은
+    `small-ind-a1`(계약형 · 역률 100 · 목표 53 kW · 역률 몫 −4,884원) 하나라 제 자료로 본다.
+    """
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+    import render_deck
+
+    from kwise.quality import check_quality
+
+    case = render_deck.BY_KEY["small-ind-a1"]
+    usage = load_usage(case.csv)
+    quality = check_quality(usage)
+    sel = TariffSelection(case.contract_type, case.voltage, case.option)
+    opts = BillingOptions(contract_kw=case.contract_kw, power_factor_pct=case.power_factor_pct)
+    baseline = calculate_bill(usage, tariff, sel, options=opts, quality=quality)
+    contract = evaluate_contract_adjustment(
+        usage, baseline, contract_kw=case.contract_kw, table=tariff, options=opts
+    )
+    assert baseline.power_factor.total_ratio != 0.0  # 전제 — 역률 몫이 선다
+    assert contract.target_contract_kw is not None and contract.saving_won is not None
+    after = calculate_bill(
+        usage,
+        tariff,
+        sel,
+        options=replace(opts, contract_kw=contract.target_contract_kw),
+        quality=quality,
+    )
+    assert contract.saving_won == pytest.approx(baseline.total_won - after.total_won, abs=0.01)
