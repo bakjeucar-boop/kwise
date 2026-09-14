@@ -528,6 +528,7 @@ def evaluate_contract_adjustment(
     step_kw: float = 1.0,
     table: TariffTable | None = None,
     options: BillingOptions | None = None,
+    observed_max_kw: float | None = None,
 ) -> ContractAdjustment:
     """하한 판정과, 하한이 이기는 경우의 목표 계약전력·절감액을 낸다.
 
@@ -542,6 +543,9 @@ def evaluate_contract_adjustment(
         options: ``bill`` 을 계산할 때 쓴 것과 **같은** 요금 옵션.
             ``table`` 과 짝이다 — 다른 옵션으로 다시 계산하면 총액 차이가
             종별이 아니라 옵션 때문에 갈린다.
+        observed_max_kw: 목표의 보전 선(관측 최대). None 이면 ``usage`` 의 값이다.
+            조합은 **원 부하** 값을 넘기고 금액은 ``usage``(조합 부하)로 잰다 (S185 2절 ·
+            태양광이 멈춘 날 원 부하가 목표를 넘지 않게).
 
     Raises:
         ValueError: ``table`` 만 주고 ``options`` 를 안 줬을 때.
@@ -552,7 +556,7 @@ def evaluate_contract_adjustment(
         raise ValueError("table 을 주면 options 도 함께 줘야 합니다 (같은 옵션으로 다시 계산한다).")
 
     ratio = contract_floor_ratio if contract_floor_ratio is not None else bill.contract_floor_ratio
-    max_demand = usage.observed_max_kw
+    max_demand = usage.observed_max_kw if observed_max_kw is None else observed_max_kw
     billing_demand = float(bill.billing_demand_kw)
     monthly_demand: dict[Any, float] = {
         month: float(value) for month, value in bill.monthly[_demand_column(bill.monthly)].items()

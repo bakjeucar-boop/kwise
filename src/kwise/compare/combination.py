@@ -374,8 +374,9 @@ def _quote(
     selection: TariffSelection,
     opts: BillingOptions,
     quality: QualityReport | None,
+    observed_max_kw: float,
 ) -> tuple[BillingResult, ContractAdjustment | None]:
-    """후보 하나의 요금과 계약전력 조정."""
+    """후보 하나의 요금과 계약전력 조정. 목표는 원 부하 관측 최대로, 금액은 조합 부하로 (S185)."""
     bill = calculate_bill(working, table, selection, options=opts, quality=quality)
     if spec.contract_kw is None:
         return bill, None
@@ -388,6 +389,7 @@ def _quote(
         # 다시 계산하는 자리이므로 여기서 빼면 조합만 옛 값을 낸다.
         table=table,
         options=opts,
+        observed_max_kw=observed_max_kw,
     )
     return bill, adjustment
 
@@ -408,6 +410,7 @@ def _price(
     spec: CombinationSpec,
     opts: BillingOptions,
     quality: QualityReport | None,
+    observed_max_kw: float,
 ) -> tuple[BillingResult, ContractAdjustment | None]:
     """조합 부하의 요금. **수단을 켰으면 선택요금을 다시 고른다** (S112 3절 · ⑱).
 
@@ -425,9 +428,9 @@ def _price(
     계약전력에서의 최적인가」 가 조합마다 달라져 **조합끼리 못 견준다.**
     """
     if not spec.retune_selection or not (spec.has_pv or spec.has_ess):
-        return _quote(working, table, spec, spec.selection, opts, quality)
+        return _quote(working, table, spec, spec.selection, opts, quality, observed_max_kw)
     quotes = {
-        candidate: _quote(working, table, spec, candidate, opts, quality)
+        candidate: _quote(working, table, spec, candidate, opts, quality, observed_max_kw)
         for candidate in switchable_selections(table, spec.selection)
     }
     best = min(quotes, key=lambda item: _net_cost(*quotes[item]))
@@ -580,7 +583,7 @@ def evaluate_combination(
                 )
             )
 
-    bill, adjustment = _price(working, table, spec, opts, quality)
+    bill, adjustment = _price(working, table, spec, opts, quality, usage.observed_max_kw)
     contract_saving = adjustment.saving_won if adjustment is not None else None
     if adjustment is not None:
         notices.extend(adjustment.notices)

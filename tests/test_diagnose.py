@@ -414,6 +414,44 @@ def test_하한_비율을_모르면_1단계도_미산출이다(
     assert "contract.floor_unknown" in {item.fact for item in adequacy.notices}
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "S170 1절 — 계약형 벌에서 계약전력 조정의 까닭이 「하한 비율이 요금 데이터에 없어」 다 · "
+        "어느 갈래로 들지는 계산 흐름이라 안 고쳤다"
+    ),
+)
+def test_계약형_벌에서_계약전력_조정의_까닭이_하한을_대지_않는다(
+    sample_usage: UsageData, tariff: TariffTable, sample_report: QualityReport
+) -> None:
+    """**계약형은 하한이 없는 종별이다 — 「하한 비율이 요금 데이터에 없어」 는 거짓 까닭이다**.
+
+    S170 1절. Excel 요약은 진단 안내(`diagnose\\contract.py::_FLOOR_UNKNOWN` ·
+    `report\\excel.py` 「품질·진단」)를, 화면 계약전력 카드는 조정 안내
+    (`measures\\contract.py::_UNKNOWN_NOTICE`)를 뜬다. 갑Ⅰ 고압A 에서 낮출 자리가 있는
+    판(6,000 kW)과 관측 최대가 계약전력 위인 판(5,000 kW) 둘을 본다 — 덱 `small-a-short` 가
+    뒤 갈래다. 갈래 경로는 안 고쳤다 (S185 2-6).
+    """
+    selection = TariffSelection("general_a_1", "high_a", "I")
+    said: list[str] = []
+    for contract_kw in (6_000.0, 5_000.0):
+        options = BillingOptions(contract_kw=contract_kw)
+        bill = calculate_bill(
+            sample_usage, tariff, selection, options=options, quality=sample_report
+        )
+        assert bill.mean_base_demand_kw == pytest.approx(contract_kw)  # 전제 — 계약형
+        adjustment = evaluate_contract_adjustment(
+            sample_usage, bill, contract_kw=contract_kw, table=tariff, options=options
+        )
+        adequacy = assess_contract(adjustment, billing_demand_kw=bill.billing_demand_kw)
+        said += [
+            text
+            for text in texts((*adjustment.notices, *adequacy.notices))
+            if "하한 비율이 요금 데이터에 없어" in text
+        ]
+    assert said == []
+
+
 def test_1단계_적정성이_2단계_조정과_같은_말을_한다(
     sample_usage: UsageData, sample_bill: BillingResult, tariff: TariffTable
 ) -> None:

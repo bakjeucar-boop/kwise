@@ -850,13 +850,6 @@ def test_수단이_없으면_다시_고르지_않는다(
     assert result.saving_won == pytest.approx(0.0)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "S183 4절 — 화면은 원 부하 · 조합은 조합 부하로 목표를 잰다 · "
-        "어느 쪽으로 모을지 사람이 정한다"
-    ),
-)
 def test_3단계_화면과_산출물이_같은_조합에서_같은_계약전력_목표를_낸다(
     sample_usage: UsageData,
     sample_report: QualityReport,
@@ -866,11 +859,11 @@ def test_3단계_화면과_산출물이_같은_조합에서_같은_계약전력_
 ) -> None:
     """**화면 「계약전력 추가 하향」 목표 = PPT·Excel·Word 가 읽는 조합 목표** (S174 · S183 4절).
 
-    화면(`ui\\views\\compare.py::_contract_headroom`)은 **원 부하**로, 조합
-    (`compare\\combination.py::_quote`)은 **태양광·ESS 뒤 조합 부하**로 목표를 잰다.
-    계약형 벌에서는 목표가 관측 최대에 붙어 둘이 갈린다 — 덱 `large-a` 5,294 대 5,143 kW ·
-    이 표본(합성 청천 1,600 kWp)은 5,294 대 4,976 kW. 어느 부하로 모을지는 사람이 정한다 —
-    **부하를 고르는 코드는 안 고쳤다** (S184 1-7). 어느 쪽으로 모아도 이 못이 빨개진다.
+    화면(`ui\\views\\compare.py::_contract_headroom`)은 **원 부하**로 목표를 잰다. 조합
+    (`compare\\combination.py::_quote`)은 조합 부하로 쟀다 — 계약형 벌에서 목표가 관측 최대에
+    붙어 둘이 갈렸다(덱 `large-a` 5,294 대 5,143 kW · 이 표본 합성 청천 1,600 kWp 는 5,294 대
+    4,976 kW). **S185 2절이 길 ㄷ 으로 모았다** — 조합도 목표는 원 부하 관측 최대로, 금액은
+    조합 부하로 잰다. 한쪽만 옛 부하로 되돌리면 이 못이 빨개진다.
     """
     import streamlit as st
 
