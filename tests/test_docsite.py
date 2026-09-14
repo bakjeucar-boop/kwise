@@ -330,23 +330,52 @@ def test_캡처_목록이_매뉴얼_자리와_맞는다() -> None:
     assert len(captures) >= 8
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="S170 1-3 — 매뉴얼 넷이 계약형 · 하한형 조건 없이 기본요금을 요금적용전력으로 단정한다",
-)
-def test_매뉴얼이_기본요금을_요금적용전력으로_단정하지_않는다() -> None:
-    """**계약형(제68조 ②) · 하한형에서 거짓인 단정을 조건 없이 적지 않는다** (S170 1-3 · S180 5절).
-
-    S180 판 줄 번호로 424 · 476 · 527 · 750 이다. 같은 매뉴얼 514행은 계약형 종별을
-    따로 적는데 이 넷은 조건 없이 선다 — 1절이 벌로 잰 값으로 계약형 넷에서 넘은
-    값이 뒤 달 기본요금에 0달 실린다. **줄 번호가 아니라 글자로 문다** — 줄이
-    밀려도 단정이 남아 있으면 xfail 이고, 고쳐지는 날 스스로 빨개진다.
-    """
+def _manual_items() -> list[str]:
+    """매뉴얼을 문단 · 목록 항목 하나씩으로 가르고 줄바꿈을 한 칸으로 편다."""
     manual = (DOCS / "MANUAL.md").read_text(encoding="utf-8")
-    claims = (
-        "기본요금은 관측 최대수요가 아니라 **요금적용전력**으로 매긴다",  # 424
-        "**기본요금 비중이 높다** → 피크 저감(태양광·ESS·계약전력)의 효과가 크다",  # 476
-        "**밑단(기본요금)이 같은 높이로 이어지는 것이 정상이다.** 요금적용전력이 직전",  # 527
-        "**한 번의 초과가 12개월간 기본요금을 올린다.**",  # 750
-    )
-    assert [claim for claim in claims if claim in manual] == []
+    items: list[str] = []
+    for block in re.split(r"\n\s*\n", manual):
+        for item in re.split(r"\n(?=- )", block):
+            items.append(" ".join(line.strip() for line in item.splitlines()))
+    return items
+
+
+#: 기본요금이 무엇에 붙는지 말하는 글자 — 걸리는 항목은 **그 항목 안에서** 갈래를 적는다.
+BASE_FEE_CLAIMS = {
+    "424": "관측 최대수요가 아니라 **요금적용전력**으로",
+    "476": "**기본요금 비중이 높다** →",
+    "527": "**밑단(기본요금)이 같은 높이로 이어지는 것이 정상이다.**",
+    "750": "12개월간 기본요금을 올린다",
+}
+
+
+@pytest.mark.parametrize("anchor", BASE_FEE_CLAIMS.values(), ids=BASE_FEE_CLAIMS.keys())
+def test_매뉴얼이_기본요금을_요금적용전력으로_단정하지_않는다(anchor: str) -> None:
+    """**계약형(제68조 ②)에서 거짓인 단정을 갈래 없이 적지 않는다** (S170 1-3 · S182 3절).
+
+    S182 에 xfail 을 걷고 보통 시험으로 갈았다. 앞 판은 옛 글자 넷을 전문에서 부분
+    문자열로 물어 **넷을 다 고쳐야** 반응하고 조건을 앞에 붙인 고침을 못 알아봤다
+    (S181 1-2). 이제 **항목마다 따로** 문다 — 글자가 선 문단 · 목록 항목 안에 같은
+    매뉴얼 「기본요금이 계약전력에 붙는 종별」(초과사용부가금 절)과 같은 꼴의 갈래
+    이름이 있어야 한다. 이름 앞의 번호는 S180 판 줄 번호다.
+    """
+    hits = [item for item in _manual_items() if anchor in item]
+    assert hits, f"글자가 매뉴얼에서 사라졌다 — 못을 옮겨라: {anchor}"
+    bare = [item for item in hits if "계약전력에 붙는 종별" not in item]
+    assert bare == [], bare
+
+
+def test_매뉴얼이_인용한_하향_경고가_산출물_글자와_같다() -> None:
+    """**매뉴얼의 인용은 산출물 경고 글자 그대로다** (S181 1-3 · S182 3절).
+
+    S180 이 요구사항서 9.4 원문과 사본 셋에서 「한 번의 초과가 12개월간 적용됩니다」
+    를 뺐는데 매뉴얼 인용은 옛 글자로 남았다 — 매뉴얼 못(위)이 그 줄을 안 물었다.
+    인용 바로 뒤 「이 경고는 **낮출 자리가 있을 때만 나온다**」 문단으로 자리를 찾는다.
+    """
+    from kwise.report.notices import CONTRACT_CHANGE_WARNING
+
+    items = _manual_items()
+    after = next(i for i, item in enumerate(items) if "이 경고는 **낮출 자리가 있을 때만" in item)
+    quote = items[after - 1]
+    assert quote.startswith("> "), quote
+    assert quote.replace(" > ", " ").removeprefix("> ") == CONTRACT_CHANGE_WARNING
