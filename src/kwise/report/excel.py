@@ -300,7 +300,8 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
         groups.append(("조합", sections.comparison.notices))
     for label, notices in groups:
         for item in dedupe(notices):
-            rows.append((f"안내 · {item.severity}", label, item.text))
+            if item.text != CONTRACT_CHANGE_WARNING:  # 위 「필수 안내」 줄과 같은 글자 (S182 4-3)
+                rows.append((f"안내 · {item.severity}", label, item.text))
     return rows
 
 

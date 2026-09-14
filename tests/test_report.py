@@ -293,10 +293,50 @@ def test_summary_carries_the_not_included_notice(summary_text: str) -> None:
     assert "부가가치세" in summary_text
 
 
-def test_summary_carries_the_contract_change_warning(summary_text: str) -> None:
-    """요구사항서 9.4 — 하향할 때 여유를 두라."""
-    assert CONTRACT_CHANGE_WARNING in summary_text
-    assert "충분한 여유를 확보하십시오" in summary_text
+def _requirements_9_4() -> str:
+    """요구사항서 9.4 필수 경고 원문 — 인용 줄을 한 줄로 편다."""
+    text = (PROJECT_ROOT / "docs" / "REQUIREMENTS_kwise.md").read_text(encoding="utf-8")
+    section = text.split("### 9.4 필수 경고", 1)[1].split("\n#", 1)[0]
+    return " ".join(line[1:].strip() for line in section.splitlines() if line.startswith(">"))
+
+
+@pytest.mark.records
+def test_summary_carries_the_contract_change_warning(
+    sample_sheets: dict[str, pd.DataFrame],
+) -> None:
+    """요구사항서 9.4 — 하향할 때 여유를 두라.
+
+    **「필수 안내」 칸이 원문과 통째로 같아야 한다** (S182 4-1). 앞서는 상수를 제
+    상수와 맞대고 조각 「충분한 여유를 확보하십시오」 를 찾아, 사본을 옛 글자로
+    되돌려도 초록이었다 — 옛 글자가 새 글자를 품는다(S181 1-5).
+    """
+    summary = sample_sheets["요약"].reset_index()
+    required = [str(row[-1]) for row in summary.itertuples(index=False) if row[-2] == "필수 안내"]
+    assert required == [_requirements_9_4()]
+
+
+def test_요약_시트에_계약전력_변경_경고가_한_번만_선다(
+    sample_usage: UsageData, tariff: TariffTable
+) -> None:
+    """**낮출 자리가 있는 벌에서 두 번 섰다** (S180 7절 · S182 4-3).
+
+    「필수 안내」 줄과, 진단이 낸 같은 글자의 안내(`contract.margin`)가 안내 블록에
+    또 실렸다. 계약전력 20,000 kW 는 하한이 최대수요를 넘어 진단이 그 안내를 낸다.
+    """
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.tariff import BillingOptions, calculate_bill
+
+    options = BillingOptions(contract_kw=20_000.0)
+    bill = calculate_bill(sample_usage, tariff, CURRENT, options=options)
+    diagnosis = diagnose(
+        sample_usage, tariff, ContractInfo(CURRENT, contract_kw=20_000.0), options=options
+    )
+    assert any(item.fact == "contract.margin" for item in diagnosis.notices), "전제가 안 섰다"
+    sections = ReportSections(
+        usage=sample_usage, bill=bill, diagnosis=diagnosis, include_timeseries=False
+    )
+    summary = build_sheets(sections)["요약"]
+    assert (summary.reset_index().to_numpy().astype(str) == CONTRACT_CHANGE_WARNING).sum() == 1
 
 
 @pytest.mark.records
@@ -306,10 +346,7 @@ def test_요구사항서_9_4_원문과_글자_사본_셋이_한_글자다() -> N
     못들이 코드 글자만 물어 **원문을 옛 글자로 되돌려도 초록**이었다 (S172 4-3).
     원문에서 문장이 빠지거나 되살아나도, 사본 하나만 갈려도 운다.
     """
-    text = (PROJECT_ROOT / "docs" / "REQUIREMENTS_kwise.md").read_text(encoding="utf-8")
-    section = text.split("### 9.4 필수 경고", 1)[1].split("\n#", 1)[0]
-    quote = " ".join(line[1:].strip() for line in section.splitlines() if line.startswith(">"))
-    assert {CONTRACT_CHANGE_WARNING, MARGIN_NOTICE, _MARGIN_NOTICE} == {quote}
+    assert {CONTRACT_CHANGE_WARNING, MARGIN_NOTICE, _MARGIN_NOTICE} == {_requirements_9_4()}
 
 
 def test_summary_carries_every_known_limit(summary_text: str) -> None:
