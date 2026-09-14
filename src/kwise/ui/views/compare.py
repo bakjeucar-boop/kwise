@@ -601,7 +601,7 @@ def _contract_headroom(
     if adjustment.annual_saving_won is None:
         text += f" 금액은 {adjustment.saving_basis}."
     elif extra > 0:
-        text += f" 추가 절감 **{fmt.won_short(extra)}/년**."
+        text += f" 조합 시 추가 절감 **{fmt.won_short(extra)}/년**."
     st.write(text)
     return extra if extra > 0 else None
 

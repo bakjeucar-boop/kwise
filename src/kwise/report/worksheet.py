@@ -579,6 +579,6 @@ def combination_worksheet(
         rows.append(WorkRow(f"이유 {index}", "", reason, level=1))
     if contract_extra_won:
         rows.append(
-            WorkRow("계약전력 추가 하향", "조합 부하 기준 재산정", _won(contract_extra_won))
+            WorkRow("조합 시 추가 절감", "조합 부하 기준 재산정", _won(contract_extra_won))
         )
     return Worksheet("combination", "합산효과 계산 근거", tuple(rows))
