@@ -441,6 +441,18 @@ S185 가 낸 13 은 그 판 기준(S182 이전)이다 — 판이 하나 지나 S
 
 **4-7. 기록 묶음 — 127 passed · 0 xfailed · 1,647 deselected · 실패 줄 0**(`-m records -rf` · 1번 PC · 8.05초 · 수집 1,774). 3절 · 4절 기록을 다 고친 뒤에 돌렸다 · 앞 판과 같은 수. 5절을 적은 뒤 한 번 더 돌린다(5-4).
 
+### 5절 — 닫기
+
+**5-1. `docs\directives\S186.md` 에 지시서 본문을 그대로 앉혔다**(`ruff format --check` 「1 file already formatted」).
+
+**5-2. 앱 — 이 판이 띄운 것은 셋이다.** `render_deck` · `s186_1` 은 `streamlit.testing`(포트 없음) · 브라우저 캡처 세 판은 판마다 「포트 닫힘」 을 찍었다. 마감에 8500~8600 대 LISTEN 0.
+
+**5-3. 돌고 있는 것 — streamlit 0 · pythonw 0 · python 0 · playwright 크로미움 0.** 이 판은 뒤로 보낸 실행이 0 이다.
+
+**5-4. 이 절을 적은 뒤 기록 묶음을 한 번 더 돌렸다 — 127 passed · 1,647 deselected · 실패 줄 0.** 커밋 · `git push` 뒤 HEAD 와 `origin/master` 가 같은 것을 봤다.
+
+**곁 — 프로젝트 지식 파일을 오늘(09-14) 고친 판** — `docs\project\collaboration.md` S182 1절 · `CLAUDE.md` S179 6절 · `docs\project\project-overview.md` 없음. 이 판은 셋 다 안 고쳤다.
+
 ## 오늘 (2026-09-14) 185세션 — **갈리지 않은 25,392원을 갈랐다(두 판이 다른 옵션을 쟀다) · 조합 목표를 ㄷ 으로 모았다**
 
 ### 0절 — 판을 연다
