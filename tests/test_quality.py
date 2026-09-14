@@ -291,6 +291,28 @@ def test_short_period_warning(tmp_path: Path) -> None:
     assert any("12개월 미만" in message for message in texts(report.notices))
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "S155 3절 — 기간을 첫·끝 라벨 사이로 재 한 슬롯(15분)을 잃는다 · "
+        "고치는 길이 둘이라 사람이 정한다"
+    ),
+)
+def test_꼭_365일치_자료는_12개월_미만으로_판정되지_않는다(tmp_path: Path) -> None:
+    """**365일을 빠짐없이 올려도 「12개월 미만」 이다** (S155 3절 · S182 5절에 박았다).
+
+    라벨이 구간 끝이라 첫 라벨이 ``00:15`` 인데 기간을 첫 라벨과 끝 라벨 사이로 재
+    364.989… 일이 된다(`io\\usage.py` 의 ``period_days``). 문턱(365)을 낮출지 기간에
+    한 슬롯을 더할지는 사람이 정한다 — 어느 쪽으로 고쳐도 이 못이 빨개진다.
+    """
+    dates = pd.date_range("2025-01-01", "2025-12-31").strftime("%Y-%m-%d")
+    rows = [(label, 100.0) for date in dates for label in make_labels(date)]
+    report = check_quality(load_usage(write_csv(tmp_path / "year.csv", rows)))
+    assert len(dates) == 365 and report.missing_slots == 0  # 전제 — 꼭 365일치다
+    assert report.has_full_year
+    assert not any("12개월 미만" in message for message in texts(report.notices))
+
+
 def test_clean_data_has_no_warnings(tmp_path: Path) -> None:
     """문제가 없으면 조용하다. 기간 경고만 남는다."""
     rows = [(label, 100.0) for date in march_2024_dates() for label in make_labels(date)]
