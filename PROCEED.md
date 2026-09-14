@@ -603,6 +603,27 @@ R1 요금적용전력 · 부하율 · 기본요금 비중 / R2 · R3 기본요�
 | 항목 주인 표와 엔진 항목 이름이 한 벌이다 | 주인 표 열쇠 = `BillingResult` 금액 넷 | `tests\test_tariff_engine.py` | ㄷ |
 | 3단계 추가 절감 = 기본 몫 + 역률 몫 (+ 선택요금 재선정 몫을 따로) | 3-4 분해가 반환값과 맞는다 | `tests\test_ui_screen.py` 픽스처 `stage3` 곁 · 조건 `large-a` · `small-ind-a1` | 셋 공통 |
 
+### 5절 — 회귀 (전체 pytest 는 안 돌렸다 · 코드를 안 고친 판)
+
+**5-1. 워크트리 깨끗 · 판 시작(`f0d99bc`) 뒤 `src\` · `data\` · `docs\MANUAL.md` · `docs\MANUAL.html` 0줄**(`git diff f0d99bc HEAD --stat -- …` 빈 줄 · 그때까지 갈린 파일은 `PROCEED.md` 하나). 1절 되돌림 넷이 전부 원복됐다.
+
+**5-2. 1절이 쓴 시험 파일 아홉을 다시 돌렸다 — 676 passed · 1 xfailed · 0 failed**(수집 677 = 1-4 판 638 + `test_docsite.py` 39 · 실패 줄 0 · XFAIL 은 매뉴얼 못 하나 ·
+`-n auto --dist load -rfx` · 1번 PC · 일꾼 8 · 1분 53초). 1절은 시험 파일을 안 고쳤다(`src\` 사본 · 매뉴얼을 임시로 갈았다).
+
+**5-3. 기록 묶음은 6-8 에서 돌린다**(기록을 다 고친 뒤).
+
+**5-4. 정적 검사 — `ruff check .` 통과 · `ruff format --check .` 어긋남 9 · 통과 234 · `scan_ctrl` 0곳(제어문자 0 · 탭 0).** ruff 0.16.1.
+- **통과 234 = S180 마감 233 + 1** — 늘어난 하나는 **`docs\directives\S180.md`** 다(S180 이 6-5 에서 233 을 잰 뒤 7절에 앉혔다). 어긋난 9 는 `tests\test_ui_screen.py:1588` 이 첫 줄로 선다(이름 아홉은 안 뗬다).
+- **세는 대상에 `.md` 가 든다 — 값으로 봤다.** `ruff format --check -v .` 의 `format_path` 243줄을 뽑으니 **.py 172 · .md 71**(243 = 234 + 9)이다. `docs` 만 주면 「69 files already formatted」 ·
+  `docs\directives\S180.md` 하나만 주면 「1 file already formatted」. `PROCEED.md` 는 `[tool.ruff.format] exclude` 로 빠진다(경로로 직접 주면 「would be reformatted」 — 제외는 폴더 훑기에만 건다).
+  이 판이 `docs\directives\S181.md` 를 앉히면 **235** 가 된다(6-7 뒤에는 안 쟀다).
+- **S179 보고 233 · S180 기록 「종전 232」 의 한 칸 — 까닭이 안 갈렸다.** 저장소 기록은 S179 쪽도 **232** 다 — `8f0582b:PROCEED.md` 179세션 절 6절(1024행 「어긋남 9 · 통과 232」) ·
+  같은 커밋의 「현재 상태」 · `docs\HANDOVER.md` 1절(「통과 **232**」). **233 이라는 수는 저장소에 없다** — S179 보고 원문을 이 판이 못 보므로 그 보고가 언제 잰 수인지 안 갈린다.
+- 맨 `mypy` · `mypy tests tools` 는 안 돌렸다(지시서 5-4 목록 밖 · `src\` · `tests\` 0줄).
+
+**5-5. 소요 — 1번 PC · 일꾼 8.** 1-4 여덟 파일 110.8초 · 3절 측정 4분 48초 · 5-2 아홉 파일 1분 53초. 남의 python — 판 앞 0 · 3절 앞뒤 0 · 0 · 회귀 앞(5-1) 0 · 회귀 뒤 0.
+**판 중간은 안 쟀다 · python 밖(`claude.exe` · `msedge.exe` 따위)도 안 쟀다 — 깨끗한 판이라 부르지 않는다.**
+
 ---
 ## 오늘 (2026-09-14) 180세션 — **9.4 뒤 문장을 갈래 전수로 재고 뺐다 — 계약형 넷에서 0달 · 이력에 세운 판단 없음. 부딪침 못이 짝의 양쪽을 문다**
 
