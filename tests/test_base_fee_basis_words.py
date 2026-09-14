@@ -235,11 +235,22 @@ def test_갈래를_모르는_상수가_기본요금을_피크에_매지_않는�
 
 
 def test_계약전력_변경_경고가_기본요금을_피크에_매지_않는다() -> None:
-    """**경고 글자 하나를 문다.** S172 에 요구사항서 9.4 와 사본 셋에서 첫 문장
-    (「기본요금은 직전 12개월 중 최대수요로 결정됩니다」)을 걷어 xfail 을 걷었다."""
+    """**경고 글자 사본 셋을 문다.** S172 에 요구사항서 9.4 와 사본 셋에서 첫 문장
+    (「기본요금은 직전 12개월 중 최대수요로 결정됩니다」)을 걷어 xfail 을 걷었다.
+
+    앞서는 `report\\notices.py` 하나만 읽어 나머지 두 사본을 옛 글자로 되돌려도
+    초록이었다 (S172 4-3 · S183 2-3 에 다시 봤다). 셋을 따로 넘겨 어느 사본이
+    말했는지 이름으로 남긴다."""
+    from kwise.diagnose.contract import _MARGIN_NOTICE
+    from kwise.measures import MARGIN_NOTICE
     from kwise.report import CONTRACT_CHANGE_WARNING
 
-    assert peak_claims([CONTRACT_CHANGE_WARNING]) == []
+    copies = {
+        "report.notices": CONTRACT_CHANGE_WARNING,
+        "measures.contract": MARGIN_NOTICE,
+        "diagnose.contract": _MARGIN_NOTICE,
+    }
+    assert {name for name, text in copies.items() if peak_claims([text])} == set()
 
 
 def test_조합_이유는_기본요금이_곱한_전력이_움직였을_때만_선다() -> None:

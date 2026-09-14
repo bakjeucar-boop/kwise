@@ -329,6 +329,37 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 **1-6. 안 빨개진 못 0 ≤ 2 — 고칠 것이 없다.**
 
+### 2절 — 그물 구멍
+
+**2-1. 표본 요약 못(`test_report.py::test_summary_carries_the_contract_change_warning`)은 표본을 바꿔도 「두 번 선다」 를 못 문다 — 안 바꿨다.** 스크래치 `s2_1.py`(표본 × 을 고압A 선택Ⅰ).
+- 표본 5,500 kW — 진단 `contract.*` 사실 **0** · `reducible` 거짓 · 막는 것은 하한이다(**하한 1,650 kW < 관측 최대 5,293.44 kW** · `target_contract_kw` None). 요약 경고 칸 **1**(「계약전력 변경 경고 · 필수 안내」) · 0.86초.
+- 20,000 kW — `contract.margin` 이 선다 · 하한 6,000 kW · 목표 13,881 kW · 걸린 달 13 · 경고 칸 **1** · 1.62초(**+0.76초 · 30초 안쪽**).
+- `report\excel.py:303` 거름을 임시로 걷자 20,000 kW 판 경고 칸이 **2**(「필수 안내」 + 「안내 · 주의 · 품질·진단」)가 됐는데 **`필수 안내 == [원문]` 은 두 판 다 참** — 이 못은 「필수 안내」 칸만 읽어 둘째 칸을 안 본다.
+  그 자리는 S182 못 `test_요약_시트에_계약전력_변경_경고가_한_번만_선다`(20,000 kW)가 문다. 표본을 바꾸면 소요만 늘고 무는 것은 같아 안 바꿨다. `git checkout HEAD -- src/kwise/report/excel.py`.
+
+**2-2. 365일 xfail 못은 품질 문턱 하나만 물었다 — 넷으로 넓혔다.** 같은 판정 「12개월 미만」 을 내는 자리가 넷이다 — `quality\checks.py:132·252`(품질 안내 · 화면 1단계 · Excel 「품질·진단」) ·
+`io\usage.py:705`(업로드 경고 `UsageMeta.warnings`) · `tariff\engine.py:892`(요금 안내 `quality.short_period` — Excel 「요금」 · PPT 기간 각주 `slides.py:1103` · Word 부록) · `tariff\engine.py:312`(12개월 환산 안내).
+미해결 이름(「꼭 365일치 자료가 「12개월 미만」 으로 판정된다」)은 판정 전체를 가리키는데 못은 첫째만 봤다. 합성 365일 자료로 `calculate_bill` 을 한 번 더 뽑아 넷을 `{품질 · 업로드 · 요금 · 환산}` 이름으로 문다(0.2초 남짓).
+- 평소 **1 xfailed** · `--runxfail` **1 failed** — `{'업로드', '요금', '품질', '환산'}` 넷 다 지금 말한다.
+- **S182 5-3 의 임시 고침(품질 문턱만 364.98)을 다시 걸자 이제 1 xfailed** — 넓히기 전에는 `[XPASS(strict)]` 였다. 문턱 하나만 가는 고침을 「고쳤다」 로 안 읽는다. `git checkout HEAD -- src/kwise/quality/checks.py`.
+- `test_quality.py` 전체 32 passed · 1 xfailed — 넓히다 빨개진 시험 없음.
+
+**2-3. 9.4 그물 구멍 둘 — 지금도 그대로였다.** 사본 셋을 하나씩 S172 앞 글자(「기본요금은 직전 12개월 중 최대수요로 결정됩니다. 」 를 앞에 붙인 꼴)로 되살려 `test_base_fee_basis_words.py` 전체와 S177 원문 못을 함께 돌렸다(판마다 44~46초 · 1번 PC · 일꾼 8).
+
+| 되살린 사본 | ㄱ 빠른 못(피크 주장) | S177 원문 못 | ㄴ 느린 그물 `large-a` | ㄴ `large-b-over` |
+|---|---|---|---|---|
+| `report\notices.py` | 빨감 | 빨감 | 빨감 | 빨감 |
+| `measures\contract.py` | **통과** | 빨감 | **통과** | 빨감 |
+| `diagnose\contract.py` | **통과** | 빨감 | 빨감 | 빨감 |
+
+판마다 `git checkout HEAD --` 뒤 src 0. 빠른 그물 전체로는 S177 원문 못이 셋을 다 물지만, 피크 주장을 무는 못은 `notices.py` 하나만 읽었다.
+
+**2-4. ㄱ 을 메웠다 · ㄴ 은 구조라 안 넓혔다.**
+- ㄱ — `test_계약전력_변경_경고가_기본요금을_피크에_매지_않는다` 가 사본 셋을 `{report.notices · measures.contract · diagnose.contract}` 이름으로 받는다. 하나씩 되살리니 **셋 다 1 failed** — `{'report.notices'}` · `{'measures.contract'}` · `{'diagnose.contract'}`. 되돌린 뒤 1 passed.
+- ㄴ — `large-a` 는 계약전력 기준 종별이라 `measures\contract.py:609~636` 갈래(`ratio is None` · `on_contract`)가 목표를 내고 **곧장 돌아가 `MARGIN_NOTICE` 를 안 싣는다**(그 사본은 `:785` 하한 갈래에만 선다). 그 벌 산출물에 그 사본이 설 자리가 없어 안 넓혔다.
+
+**2-5. `records` 마커 — 둘 다 안 붙였다.** 넓힌 두 못은 기록(`PROCEED.md` · `CLAUDE.md` · `docs\`)을 안 읽는다. `test_doc_counts.py` 29 passed(묶음 밖 기록 읽기 못 포함).
+
 ---
 
 ## 오늘 (2026-09-14) 182세션 — **귀속 기준 ㄱ 을 글과 못으로 박고 이름 · 매뉴얼 · 9.4 그물을 고쳤다 — 미해결 121 → 115**

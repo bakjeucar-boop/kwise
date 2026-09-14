@@ -19,6 +19,7 @@ from kwise.quality import (
     monthly_missing,
     peak_hour_skew,
 )
+from kwise.tariff import TariffSelection, TariffTable, calculate_bill
 from tests._synthetic import (
     label_timestamps,
     make_labels,
@@ -298,19 +299,33 @@ def test_short_period_warning(tmp_path: Path) -> None:
         "고치는 길이 둘이라 사람이 정한다"
     ),
 )
-def test_꼭_365일치_자료는_12개월_미만으로_판정되지_않는다(tmp_path: Path) -> None:
+def test_꼭_365일치_자료는_12개월_미만으로_판정되지_않는다(
+    tmp_path: Path, tariff: TariffTable
+) -> None:
     """**365일을 빠짐없이 올려도 「12개월 미만」 이다** (S155 3절 · S182 5절에 박았다).
 
     라벨이 구간 끝이라 첫 라벨이 ``00:15`` 인데 기간을 첫 라벨과 끝 라벨 사이로 재
     364.989… 일이 된다(`io\\usage.py` 의 ``period_days``). 문턱(365)을 낮출지 기간에
     한 슬롯을 더할지는 사람이 정한다 — 어느 쪽으로 고쳐도 이 못이 빨개진다.
+
+    **품질 문턱만이 아니라 같은 판정을 내는 자리 넷을 다 문다** (S183 2-2). 앞서는
+    품질 하나만 물어 그 문턱만 갈아도 XPASS 였다 — 업로드 경고 · 요금 안내(Excel
+    「요금」 · PPT 기간 각주 · Word 부록이 읽는다) · 12개월 환산 안내가 그대로 남는다.
     """
     dates = pd.date_range("2025-01-01", "2025-12-31").strftime("%Y-%m-%d")
     rows = [(label, 100.0) for date in dates for label in make_labels(date)]
-    report = check_quality(load_usage(write_csv(tmp_path / "year.csv", rows)))
+    usage = load_usage(write_csv(tmp_path / "year.csv", rows))
+    report = check_quality(usage)
     assert len(dates) == 365 and report.missing_slots == 0  # 전제 — 꼭 365일치다
-    assert report.has_full_year
-    assert not any("12개월 미만" in message for message in texts(report.notices))
+    bill = calculate_bill(usage, tariff, TariffSelection("general_b", "high_a", "I"))
+    said = {
+        "품질": texts(report.notices),
+        "업로드": usage.meta.warnings,
+        "요금": texts(bill.notices),
+        "환산": texts(bill.annualize().notices),
+    }
+    short = {where for where, messages in said.items() if any("12개월 미만" in m for m in messages)}
+    assert report.has_full_year and short == set(), short
 
 
 def test_clean_data_has_no_warnings(tmp_path: Path) -> None:
