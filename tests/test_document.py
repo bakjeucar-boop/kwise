@@ -578,13 +578,30 @@ def test_검토_범위를_넘겨받으면_그것을_쓴다(
     assert sections.scope() == (("7.3 경제성DR",), ("7.1 선택요금 전환",))
 
 
+def _chapter_text(document: DocumentType, title: str) -> str:
+    """제목(Heading 1)에 ``title`` 이 든 장의 문단 글자 — 다음 Heading 1 앞까지."""
+    lines: list[str] = []
+    inside = False
+    for item in document.paragraphs:
+        if _style_name(item) == "Heading 1":
+            inside = title in item.text
+        elif inside:
+            lines.append(item.text)
+    return "\n".join(lines)
+
+
 def test_한계와_추적성이_마지막_장에_있다(full_document: DocumentType) -> None:
-    text = _all_text(full_document)
+    """**문서 전체가 아니라 그 장 안을 본다** (S190 1절).
+
+    계약전력 경고는 2장 · 3장에도 서므로 문서 전체 글자로는 마지막 장에서
+    빠진 것을 못 가른다(S189 3-3). 인증 한계 문장은 부록 C 에 선다.
+    """
+    text = _chapter_text(full_document, CHAPTER_SCOPE)
     assert "기후환경요금" in text  # 미포함 요금요소 (5.1)
     assert "충분한 여유를 확보하십시오" in text  # 계약전력 경고 (9.4)
-    assert "인증·신고용 산출물이 아닙니다" in text  # 알려진 한계 (부록 D)
     assert "적용 요금표:" in text  # 추적성 (5.8)
     assert "Open-Meteo" in text  # 출처
+    assert "인증·신고용 산출물이 아닙니다" in _chapter_text(full_document, "부록 C")  # 알려진 한계
 
 
 # ===================================================================== 감도
