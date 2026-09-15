@@ -449,16 +449,6 @@ def test_미해결_항목_본문은_상한을_넘지_않는다() -> None:
     )
 
 
-def _holds(text: str) -> int:
-    """이 줄이 담는 건수. 「청구서 4」 는 넷이고 나머지는 하나다 (68세션 2절).
-
-    본문 괄호가 없고 이름 끝이 맨 수인 줄만 그렇게 읽는다.
-    """
-    name, body = _brief().item_parts(text)
-    lumped = re.fullmatch(r".+?\s+(\d+)", name)
-    return int(lumped.group(1)) if not body and lumped else 1
-
-
 def test_미해결_갈래의_머리말과_줄_수가_같다() -> None:
     """**줄을 세는 셋째 방법** (S159 0-3절).
 
@@ -473,8 +463,9 @@ def test_미해결_갈래의_머리말과_줄_수가_같다() -> None:
     같은 뿌리를 두 번 세면 뿌리가 틀려도 같은 수가 나온다. 그래서 이 못은
     **줄을 센다.**
 
-    **뭉친 줄은 제가 담는 수를 말한다** — ① 의 「청구서 4」 한 줄이 넷이다
-    (68세션 2절). 본문 괄호가 없고 끝이 맨 수인 줄만 그렇게 읽는다.
+    **뭉친 줄을 넷으로 읽지 않는다** (S189 1절) — ① 의 「청구서 4」 한 줄이
+    넷을 담아 줄이 셋 적었고 옛 ``_holds`` 가 그 끝 수를 읽어 메웠다. S189 가
+    그 줄을 ``docs\\TECHNICAL.md`` 7.2 의 이름 넷으로 폈다 — 한 줄이 한 건이다.
     """
     sys.path.insert(0, str(PROJECT_ROOT / "tools"))
     try:
@@ -488,7 +479,7 @@ def test_미해결_갈래의_머리말과_줄_수가_같다() -> None:
     counted: dict[str, tuple[str, int]] = {}
     for item in items:
         head, seen = counted.get(item.sym, (item.name, 0))
-        counted[item.sym] = (head, seen + _holds(item.text))
+        counted[item.sym] = (head, seen + 1)
 
     off = [
         f"{sym} 머리말 {daily_brief.group_count(name, seen)} · 줄 {seen}"
@@ -533,18 +524,14 @@ def test_갈래_절_제목의_합이_미해결_건수와_같다() -> None:
     )
 
 
-def test_세_방법이_세는_수의_차가_뭉친_몫과_같다() -> None:
-    """**세 수는 어긋나도 좋다 — 그 차가 뭉침과 같기만 하면 된다** (S162 0-4절).
+def test_세_방법이_세는_수가_같다() -> None:
+    """**세 수가 한 자리에 선다** (S162 0-4절 · S189 1절에 뭉친 몫 허용을 걷었다).
 
-    세는 자리가 셋이고 S162 착수에 **96 · 96 · 93** 이었다 —
     ① ``docs\\OPEN_ITEMS.md`` 갈래 절 제목의 합 · ② :func:`daily_brief.total_items` ·
-    ③ 브리핑이 편 **줄**. 셋째가 셋 적은 것은 결함이 아니다 — ①-1 「청구서 4」
-    한 줄이 넷을 담기 때문이고(68세션 2절) **뭉침이 옳은 꼴이라 펴지 않는다.**
-
-    그래서 **같아지게 만들지 않고 그 관계를 문다** — ① = ② 이고
-    ① − ③ = **뭉쳐 더 담은 몫**이다. 앞선 두 못은 ①을 ②에(S161 0-2절),
-    ②를 갈래별 줄에(S159 0-3절) 각각 맞대므로 **세 수가 한 자리에 서는 곳이
-    없었다.** 여기가 그 자리다.
+    ③ 브리핑이 편 **줄**. S162~S188 은 ③ 이 셋 적은 것을 「청구서 4」 한 줄의
+    뭉침이라 보고 **차가 뭉친 몫과 같은지**만 물었다 — 그 사이 스무 판이 검산마다
+    「차 3 은 뭉침」 을 적었다. S189 가 그 줄을 이름 넷으로 폈으므로 셋이 같아야
+    한다. **한 줄에 여럿을 담아 적으면 여기서 빨개진다.**
 
     **기대값을 적지 않는다** — 셋 다 문서에서 가져온다.
     """
@@ -556,12 +543,9 @@ def test_세_방법이_세는_수의_차가_뭉친_몫과_같다() -> None:
 
     declared = sum(int(count) for _branch, count in rows)
     counted = _brief().total_items(items)
-    lumped = sum(_holds(item.text) - 1 for item in items)
-    names = [_brief().item_parts(item.text)[0] for item in items if _holds(item.text) > 1]
-    assert declared == counted == len(items) + lumped, (
+    assert declared == counted == len(items), (
         f"세는 세 방법이 어긋납니다 — 절 제목 합 {declared} · 건수 {counted} · "
-        f"줄 {len(items)} + 뭉친 몫 {lumped}(뭉친 줄: {' · '.join(names) or '없음'}). "
-        "줄이 적은 것은 뭉침이라 정상이나 그 차는 뭉친 몫과 같아야 합니다."
+        f"줄 {len(items)}. 줄이 적으면 한 줄이 여러 건을 담은 것이니 이름마다 한 줄로 펴십시오."
     )
 
 

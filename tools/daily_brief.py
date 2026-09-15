@@ -211,9 +211,9 @@ COUNT = re.compile(r"(\d+)\s*건")
 def group_count(name: str, lines: int) -> int:
     """갈래 머리말이 말하는 **건수**. 없으면 줄 수로 갈음한다.
 
-    「청구서 4」 한 줄이 넷을 담는다 — 줄을 세면 ① 이 4건이 되는데 머리말은
-    7건이다. **뭉침이지 실종이 아니므로**(「4」 가 적혀 있다) 펴지 않고
-    **세는 쪽을 고친다.**
+    68세션에 「청구서 4」 한 줄이 넷을 담아 줄과 머리말이 갈렸고 세는 쪽을
+    고쳤다. **S189 가 그 줄을 이름 넷으로 폈다** — 지금은 줄과 머리말이 같고
+    둘이 갈리면 ``tests\\test_doc_counts.py`` 의 세 방법 못이 문다.
     """
     found = COUNT.search(name)
     return int(found.group(1)) if found else lines
@@ -265,11 +265,7 @@ def missing_groups(raw: str, items: list[Item]) -> list[str]:
 
 
 def total_items(items: list[Item]) -> int:
-    """미해결 **건수.** 갈래 머리말이 말하는 수를 더한다.
-
-    줄을 세면 ① 이 4가 되는데 머리말은 7이다 — 「청구서 4」 한 줄이 넷을
-    담기 때문이다. **머리말이 7이면 총계도 그 7을 담아야 한다.**
-    """
+    """미해결 **건수.** 갈래 머리말이 말하는 수를 더한다 — 줄은 따로 센다 (S189 1절)."""
     counted: dict[str, tuple[str, int]] = {}
     for item in items:
         head, seen = counted.get(item.sym, (item.name, 0))
