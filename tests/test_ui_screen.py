@@ -741,6 +741,45 @@ def test_엑셀을_내려받아도_결과가_남는다(compare_app: AppTest) -> 
     )
 
 
+def _diagnosis_cells(payload: bytes) -> list[str]:
+    """만들어 둔 Excel 의 「진단」 시트 값. **파일 안의 값을 읽는다.**"""
+    import io
+
+    import openpyxl
+
+    book = openpyxl.load_workbook(io.BytesIO(payload), read_only=True)
+    return [
+        str(cell.value) for row in book["진단"].iter_rows() for cell in row if cell.value is not None
+    ]
+
+
+def test_입력을_갈면_받는_파일도_갈린다() -> None:
+    """**받는 파일이 지금 화면의 입력을 따라와야 한다** (S193 2절).
+
+    산출물 지문이 사용량·기준 데이터·조합 수만 물던 때는 운영 시간대를 갈아도
+    내려받기 자리가 **만들 때의 파일을 그대로 내밀었다** — 화면은 70.1% 인데
+    받는 덱은 70.8% 였다 (192세션 절 1-3 N1 · S193 1-2).
+
+    **열쇠를 다시 적지 않는다** — 입력을 갈면 내밀던 파일이 사라지고, 다시
+    만들면 파일 안의 값이 갈리는지를 묻는다.
+    """
+    from kwise.ui.artifacts import ARTIFACT_KEY
+
+    screen = _running(building_hours=(9, 18))
+    screen.button(key="build_excel").click().run(timeout=600)
+    assert not screen.exception, screen.exception
+    assert len(screen.download_button) == 1
+    before = _diagnosis_cells(screen.session_state[ARTIFACT_KEY]["excel"].payload)
+
+    screen.session_state["building_hours"] = (8, 17)
+    screen.run(timeout=600)
+    assert len(screen.download_button) == 0, "입력을 갈았는데 옛 파일을 계속 내밉니다."
+
+    screen.button(key="build_excel").click().run(timeout=600)
+    after = _diagnosis_cells(screen.session_state[ARTIFACT_KEY]["excel"].payload)
+    assert after != before, "입력을 갈고 다시 만들었는데 파일 안의 값이 그대로입니다."
+
+
 def test_수단_화면이_기준선을_한_번_밝힌다() -> None:
     """**독립 평가라는 사실과 기준선**이 화면에 한 번은 적혀 있어야 한다 (14세션 2절).
 
