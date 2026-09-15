@@ -295,6 +295,70 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - 앞은 2026-08-25 — **56·57·58세션.** 58세션이 **잉여 단가 기본값**을 기준 데이터에 두어 「외부 판매 미산출」 을 없앴고, **적용 단가 한 줄**을 화면·PPT·Excel·Word 가 함께 쓰게 했다. 기본 선택은 출력제어 그대로라 **금액 불변**. 앞선 둘은 — 56세션이 ESS 음수의 원인을 **계약종별 갑/을**에서 찾았고(갑은 기본요금이 계약전력에 붙는다), 57세션이 **잉여 처리를 화면 앞으로** 냈다 — 기본을 **출력제어**로, 「버리기」 를 「출력제어」 로, 잉여 수익을 캐시 열쇠에서 빼 **시나리오를 바꿔도 요금이 다시 안 돈다** (6.5초 → 0.9초). **금액 불변**
 
 ---
+## 오늘 (2026-09-15) 188세션 — **기간 값을 적는 자리 스물셋에 이름 「기간」 을 달았다 — 고치는 판 · 값 불변 · 계산 다섯 폴더 0줄**
+
+### 0절 — 판을 연다
+
+**0-1. 1번 PC 다.** Intel Core Ultra 7 258V · RAM **31.5 GB** · `os.cpu_count()` **8** (→ `-n auto` 일꾼 8). pytest 는 통째로 돌린다.
+
+**0-2. `git pull` — Already up to date · HEAD `6d117e2` = `origin/master` · 워크트리 깨끗.**
+
+**0-3. 남의 python — 판 앞 0** (1번 PC 는 셋을 센다 — 판 앞 · 회귀 앞 · 회귀 뒤. 뒤 둘은 5절).
+
+**0-4. `daily_brief` — 미해결 120건 · 미해결 칸 40,237자 · 「다음 작업」 칸 2,028자**(스크래치 `state_len.py`).
+
+**0-5. 용인 벌 기상 캐시가 있다** — `PROJECT_CACHE\weather\openmeteo_37.2500_127.2500_20250827_20260829_Asia-Seoul.parquet`(145,221바이트).
+
+**0-6. 이 판이 건드릴 미해결의 지금 이름**(`docs\OPEN_ITEMS.md` 「마」 소제목 「12개월 미만 벌의 기간 표기 넷 — 한 결정에 매인다」 1016 · 1019 · 1021 · 1024줄 그대로) — 「PPT 개선안별 요약 장이 12개월 미만 벌에서 큰 글자는 기간 값을 적고 표와 각주는 12개월 환산을 적는다」 · 「Word 요약과 조합 표가 12개월 미만 벌에서 기간 값을 기간이라 적지 않는다」 · 「12개월 미만 벌에서 장08 밖 여섯 자리가 기간 값과 12개월 환산을 이름 없이 함께 적는다」 · 「PPT 잉여 활용 장 표의 연 수익이 12개월 미만 벌에서 기간 값이다」.
+
+### 1절 — 다는 자리 스물셋을 지금 파일에서 다시 찾았다 (고치지 않았다)
+
+**1-1. 187세션 절 1-2 의 「이름도 짝도 없는 기간 자리 23」 — 지금 소스에서 23 이다.** 줄 번호는 이 판 HEAD `6d117e2` 값이다. 「만드는 코드」 칸이 같은 자리는 **한 줄을 고치면 둘 이상이 함께 달린다.**
+
+| # | 산출물 · 자리 | 만드는 코드 | 읽는 필드 (기간 값) | 지금 글자 |
+|---|---|---|---|---|
+| S10 | 화면 2단계 카드 계산 근거 표 (선택요금 · 역률 · 태양광 · ESS) | `ui\views\measures.py:377 · 740 · 1090 · 1758` → `report\worksheet.py:276 · 426 · 449 · 450 · 480 · 542~544` | `saving_won` · `total_saving_won` · `base_saving_won` · `energy_saving_won` | 「절감액」 · 「기본요금 절감」 · 「전력량요금 절감」 |
+| S11 | 화면 2단계 선택요금 그림 가로축 | `ui\charts.py:879` | 「현행 대비(원)」 = `quote.total_won − current.total_won` (`frames.py:891`) | 「현행 대비 ({unit}) — 왼쪽이 절감」 |
+| P1 | PPT 장08 머리 문장 | `report\narrative.py:812` ← `slides.py:1481~1482` | `summary.no_investment_saving_won` | 「설비 투자 없이 {N}을 줄일 수 있습니다」 |
+| P2 | PPT 장08 지표 | `report\slides.py:1488` | 같은 값 | 「투자 없이 가능한 절감액」 |
+| P4 | PPT 수단 장 결론 문장 (선택요금 · 역률 · 태양광) | `report\document.py:807 · 362 · 364 · 575` (`MeasureEntry.conclusion` — **W5 와 같은 코드**) | `switch.saving_won` · `power_factor.saving_won` · `solar.total_saving_won` | 「… 로 바꾸면 {N} 줄어듭니다」 외 셋 |
+| P6 | PPT 태양광 장 각주 | `report\document.py:1023` → `narrative.py:502` (화면 `measures.py:1145` 는 같은 함수에 12개월 값을 넣고 「절감액 = 」 을 떼어 쓴다) | `solar.self_consumption_saving_won` · `surplus_revenue_won` | 「절감액 = 자가소비로 줄인 요금 {N} + 잉여 …」 |
+| P8 | PPT 잉여 활용 장 표 머리 | `report\document.py:601` `SURPLUS_SCENARIO_HEADER` (값은 `:703`) | `ScenarioResult.revenue_won` | 「연 수익」 |
+| P12 | PPT 부록 계산 근거 표 | `slides.py:2248` → `worksheet.py` (S10 줄 + 계약전력 `:325 · 350 · 341`) | S10 과 같다 + `contract.saving_won` | 「절감액」 · 「기본요금 절감」 · 「전력량요금 절감」 · 「역률요금 절감」 |
+| P13 | PPT 선택요금 장 그림 아래 칸 세로축 | `report\figures.py:676` (**W11 과 같은 코드**) | 「현행 대비(원)」 | 「현행 대비 ({delta_unit})」 |
+| X1 | Excel 요약 「개선 여지」 두 줄 | `report\excel.py:257 · 261` | `tariff_switch_saving_won` · `contract_saving_won` | 「선택요금 전환」 · 「계약전력 조정」 |
+| X2 | Excel 진단 | `report\excel.py:654` | `contract.saving_won` | 「계약전력 조정 절감액」 |
+| X13 | Excel 부록 A 산출 근거 | `excel.py:813` → `worksheet.py` | P12 와 같다 | P12 와 같다 |
+| W1 | Word 1장 결론 | `report\document.py:1423` | `no_investment_saving_won` | 「투자 없이 {N} 를 줄일 수 있습니다.」 |
+| W2 | Word 1장 표 세 줄 | `document.py:1430 · 1434 · 1438` | `no_investment_saving_won` · `tariff_switch_saving_won` · `contract_saving_won` | 「투자 없이 가능한 절감액」 · 「선택요금 전환」 · 「계약전력 조정」 |
+| W3 | Word 1장 표 | `document.py:1444` | `best.saving_won` | 「총 절감액」 |
+| W4 | Word 2장 계약전력 적정성 표 | `document.py:1638` (값 `:302`) | `adequacy.saving_won` | 「예상 절감액」 |
+| W5 | Word 3장 결론 문장 | P4 와 같은 코드 | P4 와 같다 | P4 와 같다 |
+| W7 | Word 3장 계약전력 표 | `document.py:1662` 줄 이름 (값 `:837` `_contract_saving(contract, contract.saving_won)`) | `contract.saving_won` | 「절감액」 |
+| W11 | Word 3장 선택요금 그림 | P13 과 같은 코드 | P13 과 같다 | P13 과 같다 |
+| W12 | Word 4장 권장안 문장 | `document.py:1694` | `best.saving_won` | 「{N} 를 줄이고」 |
+| W13 | Word 4장 조합 표 머리 | `document.py:1698` | `item.saving_won` | 「절감액」 |
+| W14 | Word 4장 조합 그림 캡션 | `document.py:1719` (그림 `figures.combination_png` 은 PPT 조합 장과 같고 그 장 캡션 `slides.py:2196` 은 이미 「조합별 기간 절감액과 투자비」) | `item.saving_won` | 「조합별 절감액과 투자비」 |
+| W16 | Word 부록 A 계산 근거 | `document.py:1787` → `worksheet.py` | P12 와 같다 | P12 와 같다 |
+
+- **고치는 파일은 일곱이다** — `report\worksheet.py` · `ui\charts.py` · `report\narrative.py` · `report\slides.py` · `report\document.py` · `report\figures.py` · `report\excel.py`. `worksheet.py` 하나가 넷(S10 · P12 · X13 · W16) · `document.py` 결론 네 줄이 둘(P4 · W5) · `figures.py:676` 하나가 둘(P13 · W11)을 단다.
+
+**1-2. S187 표와 어긋나는 자리 — 수는 23 으로 같다 · 어긋난 것은 줄 번호 하나와 칸 셋.**
+
+- **P8 줄 번호** — S187 은 `document.py:703`(값을 적는 줄)을 적었다. 이름은 `:601` 의 머리 상수에 있다.
+- **W7 과 W6 이 한 줄 이름을 쓴다** — `document.py:1662` 의 「절감액」 줄이 계약전력(W7 · 기간 값 하나) · 선택요금 · 역률 · 태양광 · ESS(W6 · 「기간 (12개월 환산 M)」) · 경제성DR(W8 · 정산금) 모두의 이름이다. **W7 만 달 수가 없다** — 줄 이름을 달면 W6 이 함께 달리고 W8(일수 환산 정산금)은 달면 틀린다. 가르는 잣대는 2절에 적는다.
+- **P12 · X13 · W16 의 계약전력 계산 근거에 「역률요금 절감」 줄(`worksheet.py:341`)이 있다** — S187 2-5 는 화면(S10)만 셌고 화면에는 계약전력 표가 없어 그 줄이 안 셌다. 산출물 셋에서는 같은 「항목 절감 줄」 이다.
+- **P6 의 함수를 화면이 함께 쓴다** — `ui\views\measures.py:1145` 가 12개월 값을 넣고 글자 「절감액 = 」 을 떼어 쓴다. 함수 안 글자를 고치면 화면에 「기간 」 이 12개월 값 앞에 남는다 — 이름은 부르는 자리(`document.py:1023`)에서 단다.
+
+**1-3. PPT 잉여 활용 장 머리 「연 수익」 — `report\document.py:601` `SURPLUS_SCENARIO_HEADER = ("활용 방안", "연 수익", "비고")`.** 그 열의 값은 `surplus_page` 가 `:703` 에서 `_won(item.revenue_won)` 으로 적는다 — `ScenarioResult.revenue_won` 은 기간 값이다(S187 `small-ind-a1` 외부 판매 2,242,635원 · 12개월이면 6,727,905원). 머리를 쓰는 곳은 `surplus_page` 하나(`:698`)이고 PPT 가 `slides.py:2048` 에서 그 줄을 그대로 싣는다. Word 는 이 표를 안 싣는다.
+
+**1-4. 안 건드리는 셋 — 12개월 값을 적는데 이름이 없는 자리(확인만).**
+
+- **M2 PPT 수단 장** — 지표 「절감액」 `slides.py:1587` `entry.slide_saving`(= `saving_annual` · 12개월) 대 같은 장 결론 문장(P4 · 기간).
+- **M4 덱 안 장 사이** — 수단 장 지표 「절감액」(`slides.py:1587` · 12개월) 대 부록 계산 근거 「절감액」(P12 · 기간). 이 판이 부록 쪽을 달면 **이름이 갈리되 12개월 쪽은 여전히 이름이 없다.**
+- **M5 화면 2단계 카드** — 지표 「절감액」 `ui\views\measures.py:355 · 705 · 983 · 1692`(`annual_saving_won` · 값 꼬리 「/년」) 대 같은 카드 접힘 계산 근거(S10 · 기간).
+- 곁 — `slides.py:1911` 도 `entry.slide_saving` 을 「절감액」 으로 적는다(M2 와 같은 필드).
+
 ## 오늘 (2026-09-15) 187세션 — **같은 금액을 자리마다 다른 기간으로 적는 자리를 전수로 쟀다 · 오래된 못 여섯을 되돌려 확인했다 — 재는 판 · `src\` 0줄**
 
 ### 0절 — 판을 연다
