@@ -118,7 +118,9 @@ from kwise.ui.state import (
     enabled_measures,
     ess_pricing,
     get_combination_pick,
+    get_form,
     get_solar_inputs,
+    input_key,
     measure_float,
     reference_day,
     session_id,
@@ -136,6 +138,11 @@ __all__ = ["render"]
 #: 화면에서만 가리던 것을 만드는 자리에서 지웠다. 장치는 남긴다: 화면에 없는
 #: 사실을 계산이 또 낼 수 있다.
 _HIDDEN_FACTS: frozenset[str] = frozenset()
+
+#: 「태양광 계산」 을 누르기 전 위젯 값 — 산출물은 저장된 태양광 입력만 읽는다.
+_SOLAR_WIDGETS = frozenset(
+    input_key("solar", f) for f in ("system_loss", "azimuth", "wall_azimuth")
+)
 
 #: **산출물 만들기가 실패했을 때 기록이 나가는 자리** (82세션 1절).
 #:
@@ -1123,7 +1130,19 @@ def _download_block(
     """
     st.subheader("내려받기")
     count = 0 if comparison is None else len(comparison.combinations)
-    token = f"{usage_token(usage)}|{rules_stamp()}|{count}"
+    # **결과를 가르는 입력을 다 문다** (S193 2절). 조합 수만 물어 운영 시간대 ·
+    # 잉여 처리 · 역률을 갈아도 옛 파일을 내밀었다. 「계산」 전 태양광 위젯은
+    # 결과에 안 닿으므로 뺀다 — 넣으면 입력하는 동안 파일이 사라진다.
+    measure_inputs = {
+        key: st.session_state[key]
+        for key in sorted(map(str, st.session_state.keys()))
+        if key.startswith("measure_") and key not in _SOLAR_WIDGETS
+    }
+    hours, region = (building.operating_hours, building.region_key) if building else ((), "")
+    token = (
+        f"{usage_token(usage)}|{rules_stamp()}|{count}|{get_form()}|{get_solar_inputs()}"
+        f"|{get_combination_pick()}|{hours}|{region}|{measure_inputs}"
+    )
     excel_tab, deck_tab = st.tabs(["Excel — 분석자용", "PPT 보고서 — 의사결정자용"])
 
     with excel_tab:
