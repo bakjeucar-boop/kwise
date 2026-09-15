@@ -18,6 +18,8 @@ from pathlib import Path
 import pytest
 from docx import Document as ReadDocument
 from docx.document import Document as DocumentType
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 
 from kwise import money
 from kwise.compare import ComparisonResult, SensitivityRange
@@ -67,8 +69,14 @@ def _all_text(document: DocumentType) -> str:
     return "\n".join(parts)
 
 
-def _table_with_header(document: DocumentType, *header: str) -> object:
-    for table in document.tables:
+def _table_with_header(document: DocumentType, *header: str, chapter: str = "") -> object:
+    """``chapter`` 를 주면 그 장 안의 표만 본다 (S191 1절)."""
+    tables = (
+        [item for item in _chapter_blocks(document, chapter) if isinstance(item, Table)]
+        if chapter
+        else document.tables
+    )
+    for table in tables:
         if tuple(cell.text for cell in table.rows[0].cells) == header:
             return table
     raise AssertionError(f"머리글 {header} 인 표가 없습니다.")
@@ -550,7 +558,8 @@ def test_켜지_않은_수단은_보고서에_없다(entries: tuple[object, ...]
 
 
 def test_검토_범위가_마지막_장에_있다(full_document: DocumentType) -> None:
-    table = _table_with_header(full_document, "구분", "수단")
+    """**그 장 안의 표를 본다** — 문서 전체에서 찾으면 다른 장에 서도 초록이다 (S191 1절)."""
+    table = _table_with_header(full_document, "구분", "수단", chapter=CHAPTER_SCOPE)
     rows = {row.cells[0].text: row.cells[1].text for row in table.rows[1:]}  # type: ignore[attr-defined]
     assert rows["검토함"] == "7.1 선택요금 전환, 7.2 계약전력 조정"
     assert "7.5 태양광" in rows["미검토"]
@@ -578,16 +587,23 @@ def test_검토_범위를_넘겨받으면_그것을_쓴다(
     assert sections.scope() == (("7.3 경제성DR",), ("7.1 선택요금 전환",))
 
 
-def _chapter_text(document: DocumentType, title: str) -> str:
-    """제목(Heading 1)에 ``title`` 이 든 장의 문단 글자 — 다음 Heading 1 앞까지."""
-    lines: list[str] = []
+def _chapter_blocks(document: DocumentType, title: str) -> list[Paragraph | Table]:
+    """제목(Heading 1)에 ``title`` 이 든 장의 문단과 표 — 다음 Heading 1 앞까지, 본문 차례대로."""
+    blocks: list[Paragraph | Table] = []
     inside = False
-    for item in document.paragraphs:
-        if _style_name(item) == "Heading 1":
+    for item in document.iter_inner_content():
+        if isinstance(item, Paragraph) and _style_name(item) == "Heading 1":
             inside = title in item.text
         elif inside:
-            lines.append(item.text)
-    return "\n".join(lines)
+            blocks.append(item)
+    return blocks
+
+
+def _chapter_text(document: DocumentType, title: str) -> str:
+    """제목(Heading 1)에 ``title`` 이 든 장의 문단 글자 — 다음 Heading 1 앞까지."""
+    return "\n".join(
+        item.text for item in _chapter_blocks(document, title) if isinstance(item, Paragraph)
+    )
 
 
 def test_한계와_추적성이_마지막_장에_있다(full_document: DocumentType) -> None:
@@ -650,7 +666,7 @@ def test_감도_범위가_조합_장에_실린다(
             sensitivity=ranges,
         )
     )
-    table = _table_with_header(document, "지표", "기준값과 범위")
+    table = _table_with_header(document, "지표", "기준값과 범위", chapter=CHAPTER_COMPARISON)
     cell = table.rows[1].cells[1].text  # type: ignore[attr-defined]
     assert "범위" in cell
     assert "~" in cell
