@@ -749,7 +749,10 @@ def _diagnosis_cells(payload: bytes) -> list[str]:
 
     book = openpyxl.load_workbook(io.BytesIO(payload), read_only=True)
     return [
-        str(cell.value) for row in book["진단"].iter_rows() for cell in row if cell.value is not None
+        str(cell.value)
+        for row in book["진단"].iter_rows()
+        for cell in row
+        if cell.value is not None
     ]
 
 

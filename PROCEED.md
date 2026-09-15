@@ -432,6 +432,20 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 **4-4. 되돌림 원복 — `git checkout HEAD -- src\kwise\ui\views\compare.py` 뒤 `git status --short` 는 `M tests/test_ui_screen.py` 하나 · `git diff --stat` 도 그 파일 39줄뿐이다.** `src\` 는 2절 커밋 상태 그대로다.
 
+### 5절 — 회귀
+
+**5-1. 계산 코드 0줄** — `git diff --stat 8156ee2 HEAD -- src\kwise\tariff src\kwise\measures src\kwise\diagnose src\kwise\pv src\kwise\compare` 빈 출력. 판 전체는 세 파일이다 — `PROCEED.md` · `src\kwise\ui\views\compare.py`(20/1) · `tests\test_ui_screen.py`(39 더함).
+
+**5-2. pytest — 1번 PC 앞단 통째로 · `-n auto --dist load -rf --tb=no --durations=25` — 1,775 passed · 1 xfailed · 0 failed · skip 0 · 수집 1,776.** 로그에 `FAILED` · `ERROR` 줄 0 · 경고 1(`io\usage.py` 날짜 형식 추정). 앞 판(수집 1,775 · 1,774 passed · 1 xfailed · skip 0)에서 **못 하나만큼 늘었다** — 4-1 의 새 못이다.
+
+**5-3. 소요 4분 47초(pytest 287.74초 · 벽시계 289.2초) · 1번 PC · 일꾼 8 · 남의 python 판 앞 0 · 회귀 앞 0 · 회귀 뒤 0 — 깨끗한 판이다.** 상한 8분까지 **3분 13초** 남는다. 가장 긴 단계는 **165.61초 `test_casestudy.py::test_every_validity_check_passes` 의 setup**(모듈 픽스처 `study`)이고, 둘째가 77.21초 `test_base_fee_basis_words.py::…[large-b-over]` setup 이다. S170 깨끗한 판(1,752건 3분 43초 · 가장 긴 단계 205.1초)과 견주면 건수가 24 늘고 벽시계가 64초 늘었다 — **까닭은 안 갈랐다**(파일별 전표를 안 떴다).
+
+**5-4. 화면 감사 — 을 955 · 갑Ⅰ 806 · 교육갑 962 · 교육갑저압 807 · ①② 규칙 위반 화면 넷 · 소스 다 없음**(33.6초). 앞 판과 네 수가 같다.
+
+**5-5. 케이스 스터디 — 160/160 · 기상 취득 0회 · 도구 105.4초 / 벽시계 113.0초**(1번 PC · 남의 python 0). 회귀값 여덟 — C1 5,293.0 kW · 49.0% · 13.5% · R1 132.0 kW · 41.1% · 20.0% · R2 18.3% · R3 27.4% — 불변. 새 파일 `output\casestudy_20260916.xlsx` 를 저장소의 `casestudy_20260915.xlsx` 와 칸 단위로 맞댔다(스크래치 `xdiff.py` · `fillna` 뒤) — 시트 8 · **갈린 칸 22 = 「케이스」 `소요(초)` 11 · 「성능」 `값` 11** · 나머지 0. 어제 판을 덮어쓰지 않았으므로 되살릴 것이 없다.
+
+**5-6. 정적 검사 — `ruff check .` 통과 · `ruff format --check .` 어긋남 9 · 통과 246**(S193.md 를 앉히기 전) · 맨 `mypy` **10건**(2파일 · checked 171) · `mypy tests tools` **36건**(10파일 · checked 60) · `scan_ctrl` 제어문자 0 · 탭 0. 앞 판과 같다. **`ruff check` 는 첫 판에 새 못의 도우미 한 줄이 101자라 빨갰다** — 줄을 넷으로 접고 그 못을 다시 돌려(통과) 다섯을 다시 쟀다. pytest 전체는 그 접기 앞에 돈 판이다(글자만 갈렸다).
+
 ---
 ## 오늘 (2026-09-15) 192세션 — **실물에서 나온 어긋남 열여덟을 다시 세우고 뿌리를 값으로 갈랐다 — 재는 판 · `src\` 0줄**
 
