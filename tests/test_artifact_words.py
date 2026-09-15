@@ -17,7 +17,10 @@
 
 from __future__ import annotations
 
+import ast
 import re
+from collections import Counter
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -171,3 +174,102 @@ def test_감사_도구와_같은_정규식을_쓴다() -> None:
     import screen_audit
 
     assert screen_audit.CODE_WORDS.pattern == CODE_WORDS.pattern
+
+
+# ===================================================================== 기간 이름 (S188)
+
+#: 읽는 소스 뿌리. **모듈 속성으로 둔다** — 되돌려 확인할 때 옛 판 사본을 가리킨다.
+SRC = Path(__file__).resolve().parent.parent / "src" / "kwise"
+
+#: (파일, 문자열 조각, 그 조각이 서는 수). 조각은 문자열 상수 **한 덩이 전체**다 —
+#: f-string 은 ``{}`` 사이 글자 하나하나가 한 덩이다. 수가 0 인 줄은 옛 이름이다.
+PERIOD_NAME_PIECES: tuple[tuple[str, str, int], ...] = (
+    # 계산 근거 표 — 화면 2단계 · PPT 부록 · Excel 부록 A · Word 부록 A (S10 · P12 · X13 · W16)
+    ("report/worksheet.py", "기간 절감액", 6),
+    ("report/worksheet.py", "기간 기본요금 절감", 2),
+    ("report/worksheet.py", "기간 전력량요금 절감", 2),
+    ("report/worksheet.py", "기간 역률요금 절감", 1),
+    ("report/worksheet.py", "절감액", 0),
+    ("report/worksheet.py", "기본요금 절감", 0),
+    ("report/worksheet.py", "전력량요금 절감", 0),
+    ("report/worksheet.py", "역률요금 절감", 0),
+    # 선택요금 그림 축 — 화면 (S11) · PPT · Word (P13 · W11)
+    ("ui/charts.py", "기간 현행 대비 (", 1),
+    ("ui/charts.py", "현행 대비 (", 0),
+    ("report/figures.py", "기간 현행 대비 (", 1),
+    ("report/figures.py", "현행 대비 (", 0),
+    # PPT 장08 (P1 · P2)
+    ("report/narrative.py", "설비 투자 없이 기간에 ", 1),
+    ("report/narrative.py", "설비 투자 없이 ", 0),
+    ("report/slides.py", "투자 없이 가능한 기간 절감액", 1),
+    ("report/slides.py", "투자 없이 가능한 절감액", 0),
+    # 결론 문장 — PPT 수단 장 · Word 3장 (P4 · W5) 넷 + Word 4장 권장안 (W12).
+    # 이어 적은 f-string 은 한 덩이로 합쳐지므로 앞 글자까지 한 조각이다.
+    ("report/document.py", " 로 바꾸면 기간에 ", 1),
+    ("report/document.py", " 로 바꾸면 ", 0),
+    ("report/document.py", " 로 올리면 추가요금이 없어지고 감액을 받아 기간에 ", 1),
+    ("report/document.py", " 로 올리면 추가요금이 없어지고 감액을 받아 ", 0),
+    ("report/document.py", " 로 올리면 기간에 ", 1),
+    ("report/document.py", " 로 올리면 ", 0),
+    ("report/document.py", " kWh 를 발전해 기간에 ", 1),
+    ("report/document.py", " kWh 를 발전해 ", 0),
+    ("report/document.py", "」 입니다. 기간에 ", 1),
+    ("report/document.py", "」 입니다. ", 0),
+    # PPT 태양광 각주 (P6) · 잉여 장 머리 (P8)
+    ("report/document.py", "기간 ", 1),
+    ("report/document.py", "기간 수익", 1),
+    ("report/document.py", "연 수익", 0),
+    # Word 1장 (W1 · W2 · W3) · 2장 (W4) · 3장 계약전력 (W7) · 4장 표와 그림 (W13 · W14)
+    ("report/document.py", "투자 없이 기간에 ", 1),
+    ("report/document.py", "투자 없이 ", 0),
+    ("report/document.py", "투자 없이 가능한 기간 절감액", 1),
+    ("report/document.py", "투자 없이 가능한 절감액", 0),
+    ("report/document.py", "선택요금 전환 (기간)", 1),
+    ("report/document.py", "계약전력 조정 (기간)", 1),
+    ("report/document.py", "기간 총 절감액", 1),
+    ("report/document.py", "총 절감액", 0),
+    ("report/document.py", "예상 기간 절감액", 1),
+    ("report/document.py", "예상 절감액", 0),
+    ("report/document.py", "기간 절감액", 2),
+    ("report/document.py", "-1. 조합별 기간 절감액과 투자비", 1),
+    ("report/document.py", "-1. 조합별 절감액과 투자비", 0),
+    # Excel 요약 · 진단 (X1 · X2)
+    ("report/excel.py", "선택요금 전환 (기간)", 1),
+    ("report/excel.py", "계약전력 조정 (기간)", 1),
+    ("report/excel.py", "계약전력 조정 기간 절감액", 1),
+    ("report/excel.py", "계약전력 조정 절감액", 0),
+)
+
+
+def _string_pieces(path: Path) -> Counter[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return Counter(
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    )
+
+
+def test_기간_값을_적는_자리에_기간_이름이_선다() -> None:
+    """**기간 값을 적는 스물셋 자리에 「기간」 이 선다** (S188 · 길 ㄴ).
+
+    12개월 미만 벌(`small-ind-a1` · 122일)에서 같은 이름 「절감액」 이 세 배 다른
+    두 값을 가리켰다 — 이 자리들은 관측 기간 값을 적고 카드 지표·PPT 수단 장은
+    12개월 환산을 적는다. 이름은 기간 길이로 갈리지 않으므로 **덱 벌 열여덟
+    전부에서 선다.**
+
+    **소스를 문다 — 실물을 안 굽는다.** 스물셋은 네 산출물 × 여러 벌에 흩어져
+    있어 실물로 물려면 벌마다 산출물 넷을 구워야 하고(한 벌 10~15초 · 1번 PC)
+    그 자료는 `input\\` 이라 저장소 밖이다. 대신 한계가 있다 — **조각이 서 있어도
+    그 글자가 실물에 실리는지는 못 본다**(화면 감사가 산출물을 소스로만 보는 것과
+    같은 한계). 실물은 S188 4절이 두 벌에서 봤다.
+    """
+    pieces: dict[str, Counter[str]] = {}
+    wrong = []
+    for relative, piece, expected in PERIOD_NAME_PIECES:
+        if relative not in pieces:
+            pieces[relative] = _string_pieces(SRC / relative)
+        got = pieces[relative][piece]
+        if got != expected:
+            wrong.append(f"{relative} 「{piece}」 {got} ≠ {expected}")
+    assert wrong == [], wrong

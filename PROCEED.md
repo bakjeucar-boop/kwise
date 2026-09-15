@@ -389,7 +389,35 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 **2-4. 새 안내를 붙이지 않았다** — 줄 · 각주 · 캡션을 하나도 안 더했다. 스물셋 다 **있는 이름을 고쳐** 풀었다(문장 다섯은 문장 안에 한 낱말).
 
+**2-5 앞 — 곁 확인.** `ruff check .` 통과 · `ruff format --check .` 어긋남 9 · 통과 241 — 고치기 전과 같다(`git stash` 로 맞댔다). 영향권 시험 파일 여섯(`test_measures` · `test_document` · `test_slides` · `test_report` · `test_artifact_words` · `test_diagnose`)과 넷(`test_slides` · `test_integration` · `test_casestudy` · `test_ess_cost`)을 먼저 돌렸다 — 각주 결함을 고친 뒤 **315 passed**(229.8초 · 1번 PC) · `test_document` 42 passed(W7 갈래를 가른 뒤).
+
 **2-5. 고친 자리 23 = 1절 23.** 코드 줄로는 서른넷(`worksheet.py` 11 · `document.py` 16 · `excel.py` 3 · `charts.py` · `figures.py` · `narrative.py` · `slides.py` 1씩)이고 한 줄이 여럿을 다는 자리는 1-1 표 「만드는 코드」 칸 그대로다. 23 밖으로 번진 자리 0.
+
+### 3절 — 이름을 무는 못
+
+**3-1. 박은 못 — `tests\test_artifact_words.py::test_기간_값을_적는_자리에_기간_이름이_선다`.** 파일 일곱의 문자열 상수를 `ast` 로 모아 **조각 한 덩이 전체**가 서는 수를 `PERIOD_NAME_PIECES` 46줄과 맞댄다 — 새 이름 조각은 제 수(예 `worksheet.py` 「기간 절감액」 6)만큼 서고 옛 이름 조각(「절감액」 · 「연 수익」 · 「 로 바꾸면 」 …)은 0 이어야 한다. 23 자리가 다 한 줄 이상에 걸린다. 한 판 0.52초.
+**덱 벌 18 전부에서 선다** — 다는 글자가 기간 길이(`base_fee_months` · `period_days`)로 갈리는 갈래가 없다. 조건이 붙은 둘은 수단 · 내용으로 갈린다(W7 은 계약전력 칸 · P6 은 고른 잉여가 있을 때) — 배율 1 인 열일곱에서도 같다.
+
+**3-2. 소스 리터럴을 문다 — 까닭: 스물셋이 네 산출물 × 벌에 흩어져 실물로 물면 벌마다 산출물 넷을 구워야 하고(한 벌 10.0~14.7초 · 1번 PC · 4절 스크래치) 덱 벌 자료가 `input\`(저장소 밖)이라 2번 PC 에서 skip 된다.**
+한계를 못 독스트링에 적었다 — **조각이 서 있어도 그 글자가 실물에 실리는지는 못 본다.** 지시서가 든 「②-59」 는 저장소에서 그 번호로 안 찾아진다(grep 0 · 「② 59」 는 S136 지시서의 건수뿐) — 같은 한계를 쥔 미해결 「`screen_audit` 이 산출물을 소스 리터럴로만 본다」(라)의 뜻으로 읽었다. 실물은 4절이 두 벌에서 본다.
+
+**3-3. 되돌려 확인 — 스크래치 plugin `s188_revert.py`(시험 모듈의 `SRC` 를 사본으로 돌린다) · 몰이 `s188_revert_run.py`(파일 일곱을 스크래치에 복사하고 고른 파일만 `git show 6d117e2:` 옛 글자로 간다).** `src\` 무접촉.
+
+| 판 | 결과 |
+|---|---|
+| 평소 (지금 글자 사본) | passed · 1.9초 |
+| 옛 판 일곱 전부 | **failed · 어긋남 46 = 표 46줄 전부** |
+| 옛 `worksheet.py` 만 | failed · 8 (새 넷 0 · 옛 넷 6 · 2 · 2 · 1) |
+| 옛 `ui\charts.py` 만 | failed · 2 |
+| 옛 `figures.py` 만 | failed · 2 |
+| 옛 `narrative.py` 만 | failed · 2 |
+| 옛 `slides.py` 만 | failed · 2 |
+| 옛 `document.py` 만 | failed · 26 |
+| 옛 `excel.py` 만 | failed · 4 |
+
+- **안 빨개진 판 0 · 8/8 빨감.** 판마다 1.9~2.0초.
+
+**3-4. 원복 — 되돌린 저장소 파일이 없다.** `git status --short` 는 이 못을 더한 `tests\test_artifact_words.py` 한 줄 · `git diff --stat -- src` 0줄.
 
 ## 오늘 (2026-09-15) 187세션 — **같은 금액을 자리마다 다른 기간으로 적는 자리를 전수로 쟀다 · 오래된 못 여섯을 되돌려 확인했다 — 재는 판 · `src\` 0줄**
 
