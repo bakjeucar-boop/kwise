@@ -273,7 +273,12 @@ def tariff_switch_worksheet(result: TariffSwitchResult) -> Worksheet:
             WorkRow(f"참고 {option_label(quote.selection.option)}", formula, _won(quote.total_won))
         )
     if rows:
-        rows.append(WorkRow("절감액", "현행 합계 − 최적 합계", _won(result.saving_won), total=True))
+        # **절감 줄에 「기간」 을 단다** (S188 · 길 ㄴ). 이 표의 금액은 관측 기간
+        # 값인데 곁의 카드 지표·PPT 수단 장은 12개월 환산이라, 12개월 미만 벌에서
+        # 같은 이름 「절감액」 이 세 배 다른 두 값을 가리켰다 (`small-ind-a1`).
+        rows.append(
+            WorkRow("기간 절감액", "현행 합계 − 최적 합계", _won(result.saving_won), total=True)
+        )
     return Worksheet("tariff_switch", "선택요금 전환 계산 근거", tuple(rows))
 
 
@@ -322,7 +327,7 @@ def contract_worksheet(result: ContractAdjustment) -> Worksheet:
     if result.crosses_type:
         rows.append(WorkRow("현행 종별 총 요금", "", _won(result.current_total_won)))
         rows.append(WorkRow(f"{result.crossed_label} 총 요금", "", _won(result.crossed_total_won)))
-        rows.append(WorkRow("절감액", "현행 − 바뀐 종별", _won(result.saving_won), total=True))
+        rows.append(WorkRow("기간 절감액", "현행 − 바뀐 종별", _won(result.saving_won), total=True))
     elif result.current_base_won is not None and result.adjusted_base_won is not None:
         rows.append(WorkRow("현재 기본요금", "", _won(result.current_base_won)))
         rows.append(WorkRow("조정 후 기본요금", "", _won(result.adjusted_base_won)))
@@ -338,7 +343,7 @@ def contract_worksheet(result: ContractAdjustment) -> Worksheet:
         formula = "현재 − 조정 후"
         if power_factor_cut:
             rows.append(
-                WorkRow("역률요금 절감", "기본요금이 줄면 함께 준다", _won(power_factor_cut))
+                WorkRow("기간 역률요금 절감", "기본요금이 줄면 함께 준다", _won(power_factor_cut))
             )
             formula = "현재 − 조정 후 + 역률요금 절감"
         # **0원과 「없음」 을 가른다** (S124 · ②-27). 낮출 자리가 없어 줄 것이
@@ -347,7 +352,7 @@ def contract_worksheet(result: ContractAdjustment) -> Worksheet:
         # 그 어휘를 쓰고 있었는데 **절감액 줄만 0원으로 남아 있었다.**
         rows.append(
             WorkRow(
-                "절감액",
+                "기간 절감액",
                 formula,
                 NO_SAVING if result.no_saving else _won(result.saving_won),
                 total=True,
@@ -423,7 +428,7 @@ def power_factor_worksheet(result: PowerFactorResult) -> Worksheet:
         ),
         WorkRow("현재 역률 요금", "", _won(result.current_charge_won)),
         WorkRow("목표 역률 요금", "", _won(result.target_charge_won)),
-        WorkRow("절감액", "현재 − 목표 (요금 재계산)", _won(result.saving_won), total=True),
+        WorkRow("기간 절감액", "현재 − 목표 (요금 재계산)", _won(result.saving_won), total=True),
     ]
     return Worksheet("power_factor", "역률 개선 계산 근거", tuple(rows))
 
@@ -446,8 +451,8 @@ def solar_worksheet(curve: SolarCurve, point: SolarPoint | None = None) -> Works
             level=1,
         ),
         WorkRow("잉여", "", _kwh(best.surplus_kwh), level=1),
-        WorkRow("기본요금 절감", "요금적용전력 저감 × 단가", _won(best.base_saving_won)),
-        WorkRow("전력량요금 절감", "자가소비 × 계시별 단가", _won(best.energy_saving_won)),
+        WorkRow("기간 기본요금 절감", "요금적용전력 저감 × 단가", _won(best.base_saving_won)),
+        WorkRow("기간 전력량요금 절감", "자가소비 × 계시별 단가", _won(best.energy_saving_won)),
     ]
     # **부분이 합계와 안 맞는 표는 결과를 오독하게 한다** (S159 3-1 · ②-80 갈래).
     # 「기본 + 전력량」 이라 적혀 있었는데 그 둘의 합이 절감액과 70,637원 어긋났다
@@ -477,7 +482,7 @@ def solar_worksheet(curve: SolarCurve, point: SolarPoint | None = None) -> Works
     if best.surplus_scenario and round(best.surplus_revenue_won):
         rows.append(WorkRow(f"잉여 {best.surplus_scenario}", "", _won(best.surplus_revenue_won)))
         parts.append("잉여")
-    rows.append(WorkRow("절감액", " + ".join(parts), _won(best.total_saving_won), total=True))
+    rows.append(WorkRow("기간 절감액", " + ".join(parts), _won(best.total_saving_won), total=True))
     if best.investment_won is not None:
         rows.append(WorkRow("투자비", "용량 × kWp당 단가", _won(best.investment_won)))
     if best.payback_years is not None:
@@ -539,9 +544,9 @@ def ess_worksheet(result: EssResult) -> Worksheet:
         rows.append(WorkRow("투자비", "출력 × kW당 단가", _won(result.investment_won), total=True))
     rows.extend(
         [
-            WorkRow("기본요금 절감", "요금적용전력 저감 × 단가", _won(result.base_saving_won)),
-            WorkRow("전력량요금 절감", "충·방전 단가차", _won(result.energy_saving_won)),
-            WorkRow("절감액", "요금 재계산 차액", _won(result.total_saving_won), total=True),
+            WorkRow("기간 기본요금 절감", "요금적용전력 저감 × 단가", _won(result.base_saving_won)),
+            WorkRow("기간 전력량요금 절감", "충·방전 단가차", _won(result.energy_saving_won)),
+            WorkRow("기간 절감액", "요금 재계산 차액", _won(result.total_saving_won), total=True),
         ]
     )
     if result.payback_years is not None:

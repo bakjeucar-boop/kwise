@@ -1419,7 +1419,7 @@ def test_ppt_에_잉여_장이_없고_태양광_장이_진다(
         for entry in measure_entries(solar=chosen, surplus=surplus, surplus_free_kwp=2_048.0)
         if entry.kind.key == "solar"
     )
-    assert noted.slide_note.startswith("절감액 = 자가소비로 줄인 요금"), noted.slide_note
+    assert noted.slide_note.startswith("기간 절감액 = 자가소비로 줄인 요금"), noted.slide_note
     assert "잉여 외부 판매" in noted.slide_note
     assert any("자격요건은 판정하지 않았습니다" in line for line in solar.cautions)
 

@@ -359,9 +359,9 @@ def _power_factor_conclusion(result: PowerFactorResult) -> str:
         return (
             f"지상역률 {current} 는 기준 {standard} 에 못 미쳐 기본요금에 추가요금이 "
             f"붙습니다. {target} 로 올리면 추가요금이 없어지고 감액을 받아 "
-            f"{_won(result.saving_won)} 줄어듭니다."
+            f"기간에 {_won(result.saving_won)} 줄어듭니다."
         )
-    return f"지상역률을 {current} → {target} 로 올리면 {_won(result.saving_won)} 줄어듭니다."
+    return f"지상역률을 {current} → {target} 로 올리면 기간에 {_won(result.saving_won)} 줄어듭니다."
 
 
 #: 계약전력 그림의 캡션 (53세션 6-3 · 83세션에 하한 선을 넣으며 고쳤다).
@@ -572,7 +572,7 @@ def _solar_conclusion(
     parts = [
         f"태양광 {solar.capacity_kwp:,.0f} kWp 를 설치하면 연 "
         f"{solar.generation_kwh:,.0f} kWh 를 발전해 "
-        f"{_won(solar.total_saving_won)} 줄어듭니다."
+        f"기간에 {_won(solar.total_saving_won)} 줄어듭니다."
     ]
     # **면적 상한과 자가소비 한계를 같은 층위로 나열하지 않는다** (53세션 4-12).
     # 51세션까지는 「(설치 면적 2,000 m² · 2,038 kWp 까지는 전량 자가소비)」 였는데,
@@ -598,7 +598,9 @@ def _solar_conclusion(
 
 
 #: 잉여 시나리오 표의 머리글 (53세션 3-2).
-SURPLUS_SCENARIO_HEADER: tuple[str, ...] = ("활용 방안", "연 수익", "비고")
+#: **「연 수익」 이 아니라 「기간 수익」 이다** (S188) — 값 ``revenue_won`` 이 관측
+#: 기간 값이라 12개월 미만 벌에서 이름과 값이 어긋났다.
+SURPLUS_SCENARIO_HEADER: tuple[str, ...] = ("활용 방안", "기간 수익", "비고")
 
 #: 잉여 활용 장의 각주. **자격요건을 판정하지 않는다는 것을 밝힌다.**
 #
@@ -804,7 +806,7 @@ def measure_entries(
             kind=measure_kind("tariff_switch"),
             conclusion=(
                 f"{now_option} → {best_option} 로 바꾸면 "
-                f"{_won(switch.saving_won)} 줄어듭니다."
+                f"기간에 {_won(switch.saving_won)} 줄어듭니다."
                 if switch.switch_needed
                 else f"현행 {now_option} 이 이미 최선입니다. 바꿀 이유가 없습니다."
             ),
@@ -1020,11 +1022,15 @@ def measure_entries(
             # 절감액에 잉여 수익이 얹혀 있는데 그 사실이 어디에도 없었다 —
             # 화면은 절감액 물음표가 늘 이 줄을 낸다 (57세션). 잉여 장과
             # 겹치지 않는다: 그쪽은 **어느 것을 골랐나**를 표식으로 말한다.
-            surplus_note = narrative.solar_saving_breakdown(
+            # **「기간」 은 여기서 단다** (S188) — 넘기는 금액이 관측 기간 값이다.
+            # 화면은 같은 함수에 12개월 값을 넣고 「절감액 = 」 을 떼어 쓴다. 고른
+            # 잉여가 없으면 빈 글이라 이름도 안 단다 — 달면 각주가 「기간 · 」 로 선다.
+            breakdown = narrative.solar_saving_breakdown(
                 self_consumption_won=solar.self_consumption_saving_won,
                 surplus_scenario=solar.surplus_scenario,
                 surplus_revenue_won=solar.surplus_revenue_won,
             )
+            surplus_note = f"기간 {breakdown}" if breakdown else ""
         # **역률 영향을 큰 글자에 녹이지 않는다** (59세션 12절 · 목록 P6).
         # 태양광이 유효전력만 상쇄해 역률이 떨어지고 역률요금이 는다 — 사실이고
         # 계산이 이미 내고 있다(``power_factor_extra_won``). 그러나 카드의
@@ -1420,28 +1426,30 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
     _conclusion(
         document,
         (
-            f"투자 없이 {_won(free)} 를 줄일 수 있습니다."
+            f"투자 없이 기간에 {_won(free)} 를 줄일 수 있습니다."
             if free is not None
             else "투자 없이 가능한 절감액은 계약 정보가 있어야 산출됩니다."
         ),
     )
 
+    # **금액 줄에 「기간」 을 단다** (S188) — 이 장의 금액은 관측 기간 값이고
+    # 3장 표는 12개월 환산을 괄호로 곁들인다.
     rows = [["항목", "값"]]
-    rows.append(["투자 없이 가능한 절감액", _won(free)])
+    rows.append(["투자 없이 가능한 기간 절감액", _won(free)])
     if summary is not None:
         rows.append(
             [
-                "선택요금 전환",
+                "선택요금 전환 (기간)",
                 _won(summary.tariff_switch_saving_won),
             ]
         )
-        rows.append(["계약전력 조정", _won(summary.contract_saving_won)])
+        rows.append(["계약전력 조정 (기간)", _won(summary.contract_saving_won)])
         rows.append(["태양광 피크 기여 가능성", str(summary.pv_potential)])
 
     best = sections.comparison.best if sections.comparison is not None else None
     if best is not None:
         rows.append(["권장 조합", best.name])
-        rows.append(["총 절감액", _won(best.saving_won)])
+        rows.append(["기간 총 절감액", _won(best.saving_won)])
         rows.append(["투자비", _won(best.investment_won)])
         rows.append(["회수기간", _payback_text(best.payback_years, best.investment_won)])
     _add_table(document, rows)
@@ -1635,7 +1643,7 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
                     else NO_SAVING,
                 ],
                 [
-                    "예상 절감액",
+                    "예상 기간 절감액",
                     _contract_adequacy_saving(adequacy),
                 ],
             ],
@@ -1659,7 +1667,10 @@ def _chapter_measures(document: DocumentType, sections: DocumentSections, number
             document,
             [
                 ["항목", "값"],
-                ["절감액", entry.saving],
+                # **계약전력 칸만 「기간」 을 단다** (S188). 그 칸은 관측 기간 값
+                # 하나이고, 다른 수단 칸은 「(12개월 환산 M)」 이 곁에서 가르며
+                # 경제성DR 정산금은 일수로 환산한 값이다.
+                ["기간 절감액" if entry.kind.key == "contract" else "절감액", entry.saving],
                 ["투자비", entry.investment],
                 ["회수기간", entry.payback],
             ],
@@ -1691,11 +1702,13 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
     baseline = comparison.combinations[0].selection if comparison.combinations else None
     _conclusion(
         document,
-        f"권장안은 「{best.composition(baseline)}」 입니다. {_won(best.saving_won)} 를 줄이고 "
+        f"권장안은 「{best.composition(baseline)}」 입니다. "
+        f"기간에 {_won(best.saving_won)} 를 줄이고 "
         f"투자비는 {_won(best.investment_won)}, 회수기간은 "
         f"{_payback_text(best.payback_years, best.investment_won)} 입니다.",
     )
-    rows = [["조합", "요금제", "절감액", "투자비", "회수기간"]]
+    # PPT 조합 장과 같은 이름이다 (S156 4-4 · S188).
+    rows = [["조합", "요금제", "기간 절감액", "투자비", "회수기간"]]
     for item in comparison.combinations:
         rows.append(
             [
@@ -1716,7 +1729,9 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
         "다른 수단의 기준이 됩니다.",
     )
     _add_figure(
-        document, figures.combination_png(comparison), f"그림 {number}-1. 조합별 절감액과 투자비"
+        document,
+        figures.combination_png(comparison),
+        f"그림 {number}-1. 조합별 기간 절감액과 투자비",
     )
 
     if sections.sensitivity:

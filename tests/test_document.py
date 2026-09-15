@@ -195,7 +195,7 @@ def test_차트_3종이_삽입된다(diagnosis_only: DocumentType) -> None:
 def test_조합_차트가_더해진다(full_document: DocumentType) -> None:
     # 진단 3장 + 조합 1장 + 수단별 차트 (15세션 2절 — 화면과 같은 프레임을 쓴다).
     assert len(full_document.inline_shapes) >= 4
-    assert "조합별 절감액과 투자비" in _all_text(full_document)
+    assert "조합별 기간 절감액과 투자비" in _all_text(full_document)
 
 
 def test_수단별_차트가_보고서에도_실린다(full_document: DocumentType) -> None:
@@ -291,7 +291,7 @@ def test_조합_비교가_표로_나온다(full_document: DocumentType) -> None:
     조합이 조합 부하에서 선택요금을 다시 고르게 되면서 **조합마다 다를 수
     있다** — 열이 없으면 2단계가 권한 하나로 전부 낸 줄 읽는다.
     """
-    table = _table_with_header(full_document, "조합", "요금제", "절감액", "투자비", "회수기간")
+    table = _table_with_header(full_document, "조합", "요금제", "기간 절감액", "투자비", "회수기간")
     assert len(table.rows) >= 2  # type: ignore[attr-defined]
     body = [cell.text for cell in table.rows[1].cells]  # type: ignore[attr-defined]
     assert body[0]

@@ -673,7 +673,8 @@ def tariff_option_png(
         padding=3,
         fontsize=8,
     )
-    money_axis_title(lower, f"현행 대비 ({delta_unit})")
+    # 청구서 두 장의 차라 **관측 기간 값**이다 (S188 · 화면 그림과 같은 이름).
+    money_axis_title(lower, f"기간 현행 대비 ({delta_unit})")
     lower.set_xticks(list(positions))
     lower.set_xticklabels(
         [

@@ -876,7 +876,8 @@ def tariff_delta_chart(switch: TariffSwitchResult) -> alt.LayerChart:
             y=alt.Y("요금제:N", title=None, sort=order),
             x=alt.X(
                 f"{shown}:Q",
-                title=f"현행 대비 ({unit}) — 왼쪽이 절감",
+                # 청구서 두 장의 차라 **관측 기간 값**이다 (S188 · 카드 지표는 12개월).
+                title=f"기간 현행 대비 ({unit}) — 왼쪽이 절감",
                 scale=alt.Scale(domain=domain, nice=False),
             ),
             color=alt.Color(

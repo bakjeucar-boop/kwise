@@ -254,11 +254,12 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
     if diagnosis is not None:
         summary = diagnosis.summary
         switch_won = format_won(summary.tariff_switch_saving_won, reason="미산출 — 계약 정보 없음")
-        rows.append(("개선 여지", "선택요금 전환", f"{switch_won} 원 (투자 불필요)"))
+        # 관측 기간 값이다 — 「수단별 결과」 시트는 12개월 환산 열을 곁에 둔다 (S188).
+        rows.append(("개선 여지", "선택요금 전환 (기간)", f"{switch_won} 원 (투자 불필요)"))
         rows.append(
             (
                 "개선 여지",
-                "계약전력 조정",
+                "계약전력 조정 (기간)",
                 # **단위 없는 맨 「0」 이 서 있었다** (83세션 6). 다섯 자리를
                 # 같은 말로 맞춘다.
                 NO_SAVING
@@ -651,7 +652,7 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
                     else NO_SAVING,
                 ),
                 (
-                    "계약전력 조정 절감액",
+                    "계약전력 조정 기간 절감액",
                     NO_SAVING
                     if contract.saving_won == 0.0
                     else format_won(contract.saving_won, reason=UNPRICED_REASONS["contract"]),

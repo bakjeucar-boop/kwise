@@ -809,7 +809,9 @@ def measure_summary_lead(diagnosis: SummarySource, saving_text: str) -> str:
             "설비 투자 없이 줄일 수 있는 몫은 없습니다 — 현행 요금제와 계약전력이 이미 적정합니다."
         )
     names = " · ".join(label for _won, label in priced[:2])
-    return f"설비 투자 없이 {saving_text}을 줄일 수 있습니다 — {names}입니다."
+    # **「기간에」 를 단다** (S188) — 1단계 요약은 관측 기간 값만 있고 같은 장의
+    # 표는 12개월 환산이다.
+    return f"설비 투자 없이 기간에 {saving_text}을 줄일 수 있습니다 — {names}입니다."
 
 
 #: 조합 장 — **조합은 다시 계산한다.** 캡션에 있던 사실을 해석 줄로 올렸다.

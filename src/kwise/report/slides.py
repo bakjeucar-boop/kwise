@@ -1485,7 +1485,7 @@ def _build_measure_summary(
                 slide,
                 guide,
                 [
-                    ("투자 없이 가능한 절감액", saving),
+                    ("투자 없이 가능한 기간 절감액", saving),
                     ("검토한 수단", f"{len(sections.measures)}개"),
                 ],
                 left=geometry.margin_in,

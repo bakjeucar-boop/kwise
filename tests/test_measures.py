@@ -846,7 +846,7 @@ def test_넘는_판의_근거표는_총액_둘의_차이를_적는다(
     # 기본요금 두 줄은 이 갈래에 서지 않는다 — 서면 빼기가 어긋난다.
     assert "조정 후 기본요금" not in shown
     assert formula["목표 계약전력"] == "일반용전력(갑)Ⅱ 문턱 바로 아래"
-    assert formula["절감액"] == "현행 − 바뀐 종별"
+    assert formula["기간 절감액"] == "현행 − 바뀐 종별"
 
     def _won_of(label: str) -> int:
         return int(shown[label].removesuffix("원").replace(",", ""))
@@ -856,7 +856,7 @@ def test_넘는_판의_근거표는_총액_둘의_차이를_적는다(
     # 있다 — 100세션이 잡은 것은 22,642,000 − 25,809,000 = 21,810,000 처럼
     # **상대가 아예 다른** 어긋남이라 이 여유로도 그대로 잡힌다. 절사 자체는
     # 미해결 ②-29 다.
-    gap = _won_of("현행 종별 총 요금") - _won_of("일반용전력(갑)Ⅱ 총 요금") - _won_of("절감액")
+    gap = _won_of("현행 종별 총 요금") - _won_of("일반용전력(갑)Ⅱ 총 요금") - _won_of("기간 절감액")
     assert abs(gap) <= 1_000
 
 
@@ -901,13 +901,13 @@ def test_두_줄_갈래의_근거표는_역률_몫까지_적는다(
     def _won_of(label: str) -> int:
         return int(shown[label].removesuffix("원").replace(",", ""))
 
-    assert formula["절감액"] == "현재 − 조정 후 + 역률요금 절감"
+    assert formula["기간 절감액"] == "현재 − 조정 후 + 역률요금 절감"
     # 네 칸이 각자 천원 절사되므로 앞 셋의 합이 절감액과 1,000원까지 어긋난다.
     gap = (
         _won_of("현재 기본요금")
         - _won_of("조정 후 기본요금")
-        + _won_of("역률요금 절감")
-        - _won_of("절감액")
+        + _won_of("기간 역률요금 절감")
+        - _won_of("기간 절감액")
     )
     assert abs(gap) <= 1_000
 
@@ -915,8 +915,8 @@ def test_두_줄_갈래의_근거표는_역률_몫까지_적는다(
     plain, plain_formula, _ = _contract_sheet(
         sample_usage, tariff, contract_kw=20_000.0, power_factor_pct=None
     )
-    assert "역률요금 절감" not in plain
-    assert plain_formula["절감액"] == "현재 − 조정 후"
+    assert "기간 역률요금 절감" not in plain
+    assert plain_formula["기간 절감액"] == "현재 − 조정 후"
 
 
 def test_낮출_자리가_없으면_근거표의_절감액은_없음이다(
@@ -933,7 +933,7 @@ def test_낮출_자리가_없으면_근거표의_절감액은_없음이다(
     )
     assert result.no_saving, "낮출 자리가 없는 벌이어야 한다"
     assert shown["목표 계약전력"] == NO_SAVING
-    assert shown["절감액"] == NO_SAVING
+    assert shown["기간 절감액"] == NO_SAVING
 
 
 def test_넘는_판의_안내는_종별이_바뀐다고_말한다(
@@ -2461,7 +2461,7 @@ def test_태양광_계산_근거_표는_스스로_산수로_맞는다(
         for _, row in frame.iterrows()
         if str(row["값"]).endswith("원")
     }
-    total = shown.pop("절감액")
+    total = shown.pop("기간 절감액")
     parts = {name: won for name, won in shown.items() if "절감" in name or name.startswith("잉여")}
     assert len(parts) >= 3, f"구성 줄이 셋은 서야 한다 — {sorted(parts)}"
     assert abs(sum(parts.values()) - total) <= 1_000 * (len(parts) + 1), (
