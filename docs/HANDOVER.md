@@ -423,25 +423,26 @@ S172 가 적은 둘이 아니라 **넷**이다(`test_report.py:299` · `test_doc
 | `tests\test_compare.py::test_3단계_화면과_산출물이_같은_조합에서_같은_계약전력_목표를_낸다` | 화면 「계약전력 추가 하향」 목표 = 조합 목표 | S185 — 이번 판에 확인 안 함 |
 | `tests\test_measures.py::test_계약전력_카드는_역률_감액_벌에서도_청구서_총액_차다` | `small-ind-a1` 계약전력 카드 = 청구서 총액 차(역률 몫 포함) | S185 — 이번 판에 확인 안 함 |
 | `tests\test_quality.py::test_꼭_365일치_자료는_12개월_미만으로_판정되지_않는다` | 365일 자료에서 넷이 「12개월 미만」 을 안 말한다 | S187 — 이번 판에 확인 안 함 |
-| `tests\test_measures.py::test_카드_절감액은_그_수단만_켠_청구서_총액_차다` | 카드 = 그 수단만 켠 청구서 총액 차 | S184 — 이번 판에 확인 안 함(틀린 식을 결과 객체에 다시 짜 넣어야 되살아난다) |
+| `tests\test_measures.py::test_카드_절감액은_그_수단만_켠_청구서_총액_차다` | 카드 = 그 수단만 켠 청구서 총액 차 | **S189** — 선택요금 카드를 전력량요금 차만으로(스크래치 plugin) 두 인자 다 빨감 |
 | `tests\test_report.py::test_요구사항서_9_4_원문과_글자_사본_셋이_한_글자다` | 원문 = 사본 셋 | S186 — 이번 판에 확인 안 함 |
 | `tests\test_base_fee_basis_words.py::test_계약전력_변경_경고가_기본요금을_피크에_매지_않는다` | 사본 셋에 피크 주장이 없다 | S186 — 이번 판에 확인 안 함 |
-| `tests\test_doc_counts.py::test_문서가_적은_수가_실물과_같다[살아 있는 못 수]` | 「살아 있는 못」 칸 = xfail 데코레이터 수 | S183 — 이번 판에 확인 안 함(`tests\` 파일을 갈아야 되살아난다) |
-| `tests\test_base_fee_basis_words.py::test_기본요금이_피크에_안_매이는_벌에서_피크를_기준으로_말하지_않는다` | 계약형 · 하한형 두 벌 네 산출물 | S183 — 이번 판에 확인 안 함(앱을 띄워 산출물 넷 · 약 96초) |
+| `tests\test_doc_counts.py::test_문서가_적은_수가_실물과_같다[살아 있는 못 수]` | 「살아 있는 못」 칸 = xfail 데코레이터 수 | **S189** — `test_quality.py` 읽기에 xfail 하나를 얹어(`Path.read_text` 가로채기) 「실물 2 · 칸 1」 빨감 |
+| `tests\test_base_fee_basis_words.py::test_기본요금이_피크에_안_매이는_벌에서_피크를_기준으로_말하지_않는다` | 계약형 · 하한형 두 벌 네 산출물 | **S189** — 진단 사본 `_MARGIN_NOTICE` 앞에 S172 앞 첫 문장을 되살려 두 벌 다 빨감(앱 · 56초) |
 | `tests\test_docsite.py::test_매뉴얼이_인용한_하향_경고가_산출물_글자와_같다` | 매뉴얼 인용 = 경고 글자 | S186 — 이번 판에 확인 안 함 |
 | `tests\test_report.py::test_summary_carries_the_contract_change_warning` | 요약 「필수 안내」 칸 = 원문 | S186 — 이번 판에 확인 안 함 |
-| `tests\test_docsite.py::test_매뉴얼이_기본요금을_요금적용전력으로_단정하지_않는다[424 · 476 · 527 · 750]` | 매뉴얼 네 자리 갈래 | S182 — 이번 판에 확인 안 함(매뉴얼 파일을 갈아야 되살아난다) |
+| `tests\test_docsite.py::test_매뉴얼이_기본요금을_요금적용전력으로_단정하지_않는다[424 · 476 · 527 · 750]` | 매뉴얼 네 자리 갈래 | **S189** — 매뉴얼 읽기에서 424 문단을 `03d039b` 앞 글자로 갈아 `[424]` 빨감(나머지 셋 초록) |
 | `tests\test_report.py::test_요약_시트에_계약전력_변경_경고가_한_번만_선다` | 요약 경고 칸 1개(20,000 kW) | S187 — 이번 판에 확인 안 함 |
 | `tests\test_measures.py::test_penalty_warning_only_when_lowering_helps` | 수단 안내 경고 | S186 — 이번 판에 확인 안 함 |
 | `tests\test_diagnose.py::test_contract_warnings_only_when_lowering_helps` | 진단 안내 경고 | S186 — 이번 판에 확인 안 함 |
 | `tests\test_diagnose.py::test_계약형_벌의_산출물_글자에_12개월간_적용이_없다` | 계약형 판 글자 | S187 — 이번 판에 확인 안 함 |
 | `tests\test_document.py::test_Word_7_2_주의사항에_같은_경고가_두_번_서지_않는다` | Word 7.2 중복 | S187 — 이번 판에 확인 안 함 |
-| `tests\test_document.py::test_한계와_추적성이_마지막_장에_있다` | Word 마지막 장 | S181 — 이번 판에 확인 안 함(무는 글자가 옛 글자에도 들어 있어 무엇을 되살릴지 안 선다) |
+| `tests\test_document.py::test_한계와_추적성이_마지막_장에_있다` | Word 마지막 장 | **S189** — 마지막 장 추적성 목록을 빼면 빨감 · **계약전력 주의 문단만 빼면 초록**(2장 `document.py:1652` 에 같은 문단 · 미해결 「라」) |
 | `tests\test_slides.py::test_두_장이_피크_여지를_반대로_말하지_않는다` | PPT 장04 × 장07 | S187 — 이번 판에 확인 안 함 |
 | `tests\test_slides.py::test_요금구조가_세_갈래다` | PPT 장07 | S187 — 이번 판에 확인 안 함 |
-| `tests\test_doc_counts.py::test_기록을_읽는_시험은_records_묶음_안에_있다` | 묶음 밖 기록 읽기 | S176 — 이번 판에 확인 안 함(시험 파일을 갈아야 되살아난다) |
-| `tests\test_ui_screen.py::test_계산_근거가_판정과_반대로_계약전력을_더_낮출_수_있다고_말하지_않는다` | `stage3` 계산 근거 표 | S175 — 이번 판에 확인 안 함 |
-| `tests\test_artifact_words.py::test_기간_값을_적는_자리에_기간_이름이_선다` | 기간 자리 스물셋의 「기간」 이름 조각(소스 · 파일 일곱) | **S188** — 옛 판 `6d117e2` 글자 사본으로 `SRC` 를 돌리자 일곱 다 46줄 · 한 파일씩 2~26줄 어긋나 8/8 failed |
+| `tests\test_doc_counts.py::test_기록을_읽는_시험은_records_묶음_안에_있다` | 묶음 밖 기록 읽기 | **S189** — `test_report.py` 읽기에서 요약 경고 시험의 `records` 마커를 떼 빨감 |
+| `tests\test_ui_screen.py::test_계산_근거가_판정과_반대로_계약전력을_더_낮출_수_있다고_말하지_않는다` | `stage3` 계산 근거 표 | **S189** — `_interaction_reasons` 에 `92d73cd` 앞 이유 줄을 되살려 빨감(앱 · 10초) |
+| `tests\test_artifact_words.py::test_기간_값을_적는_자리에_기간_이름이_선다` | 기간 자리 스물셋의 「기간」 이름 조각(소스 · 파일 일곱) | S188 — 이번 판에 확인 안 함 |
+| `tests\test_doc_counts.py::test_세_방법이_세는_수가_같다` (S189 에 뭉친 몫 허용을 걷었다) | 절 제목 합 = `total_items` = 브리핑이 편 줄 | **S189** — 미해결 ① 을 옛 「청구서 4」 로 읽히자 「118 · 118 · 115」 빨감(머리말 못도 「① 7 · 줄 4」 빨감) |
 
 **앞 판 기록 — S185 가 살아 있는 못을 1 → 0 → 1 로 갈았다.** 2절이 조합 목표를 ㄷ 으로 모으자 조합 목표 xfail 이 `[XPASS(strict)]` 로 빨개져 보통 시험으로 갈았고,
 조합 쪽만 옛 부하 · 화면 쪽만 조합 부하로 하나씩 되돌려(스크래치 plugin) 둘 다 빨감을 봤다. 같은 절에서 계약형 까닭 못을 xfail(strict) 로 박았고, 3절이 계약전력 카드 역률 몫 시험을 곁에 박았다.
