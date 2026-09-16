@@ -102,6 +102,14 @@ def _after_pct(usage: UsageData, unit: pd.Series, capacity: float, start: float)
     )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "S198 2절 — 정본이 뒤집혔다 (요구사항서 8.1). 태양광 전 역률의 출발점이 "
+        "목표(97%)가 아니라 원 부하 역률이다 · 아래 ② 의 기대값이 낡았고 이 판에서 "
+        "갱신하지 않는다 · 빨간 값은 91.1163158109249 대 96.6383108636579 다"
+    ),
+)
 def test_조합이_태양광이_떨어뜨린_역률로_요금을_다시_계산한다(
     sample_usage: UsageData,
     sample_report: QualityReport,
@@ -154,6 +162,60 @@ def test_조합이_태양광이_떨어뜨린_역률로_요금을_다시_계산�
     assert on.saving_won > off.saving_won
 
 
+def test_조합의_태양광_전_역률은_원_부하_역률이고_수단의_목표가_아니다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_unit_pv: pd.Series,
+) -> None:
+    """**정본을 문다** — 요구사항서 8.1 (S198 에 사람이 정했다).
+
+    태양광이 역률을 떨어뜨릴 때 그 **떨어지기 전의 값**은 그 벌의 **원 부하 역률**
+    이고, 역률 개선 수단의 목표가 아니다. 무효전력은 부하가 정하는 것이지 우리가
+    고른 목표가 정하지 않기 때문이다.
+
+    **식을 다시 적지 않는다** — 조합이 실제로 요금을 낸 청구서의 역률을 읽는다.
+    잣대 둘 다 그 값 하나만 본다.
+
+    S197 까지는 ``opts`` 를 읽어 **목표(97%)** 가 출발점이었고, 그래서 역률이
+    감액 상한 위인 벌에서 **있지도 않은 무효전력**이 생겨 개선이 악화로 나왔다
+    (S196 3-2 · 덱 벌에서 조합 절감액 25,055.99원).
+    """
+    kwargs = {
+        "baseline_bill": sample_bill,
+        "unit_pv_kw_per_kwp": sample_unit_pv,
+        "quality": sample_report,
+    }
+
+    def combined(target: float | None, current: float | None = None) -> float:
+        result = evaluate_combination(
+            sample_usage,
+            tariff,
+            CombinationSpec("태양광", CURRENT, pv_capacity_kwp=PV_KWP, power_factor_pct=target),
+            options=None if current is None else BillingOptions(power_factor_pct=current),
+            **kwargs,
+        )
+        return result.bill.power_factor.lagging_pct
+
+    # ① **수단을 켜도 꺼도 출발점이 같다.** 목표를 출발점으로 쓰면 둘이 갈린다.
+    assert combined(97.0) == pytest.approx(combined(None))
+
+    # ② **원 부하 역률이 100 이면 무효전력이 없어 태양광이 못 떨어뜨린다.**
+    #    목표(97)를 출발점으로 쓰면 무효전력이 생겨 97 아래로 내려간다.
+    assert combined(97.0, current=100.0) == pytest.approx(100.0)
+    assert combined(None, current=100.0) == pytest.approx(100.0)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "S198 2절 — 정본이 뒤집혔다 (요구사항서 8.1). ③ 갈래가 「목표 97 에서 시작하면 "
+        "기준 위로 남는다」 를 전제하는데 출발점이 원 부하 역률(92)이 되어 91.1% 로 "
+        "떨어지고 경고가 뜬다 · 경고는 맞고 기대값이 낡았다 · 이 판에서 갱신하지 않는다 · "
+        "①② 갈래는 여전히 선다"
+    ),
+)
 def test_역률이_기준_아래로_떨어지면_조합이_말한다(
     sample_usage: UsageData,
     sample_report: QualityReport,
