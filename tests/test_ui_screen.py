@@ -4926,3 +4926,74 @@ def test_조건_넷이_함께_서는_벌이_저장소에_있다() -> None:
     assert screen.session_state["building_info"].floor_area_m2 == case.floor_area_m2, (
         f"{case.key} — 연면적이 화면까지 안 갔습니다."
     )
+
+
+# ============================================ S196 4절 — 0원 수단을 거르는 잣대가 갈린다
+
+
+def test_여지_없는_수단을_2단계는_빼고_3단계_조합은_담는다() -> None:
+    """**지금 어긋나 있다는 사실을 문다** (S196 4-1). 하나로 모이면 스스로 빨개진다.
+
+    59세션이 열아홉 판을 서 있다 78세션에 알린 그 꼴이다 — **옳은 값을 무는 못이
+    아니라 지금 값을 무는 못**이다. 두 자리가 같아지는 날 아래 마지막 줄이 실패하고,
+    그때 이 시험을 걷는다.
+
+    **어긋남은 한 벌 안에 있다** (S196 2-2). 역률 100 인 벌에서
+
+        2단계 개선안별 요약   「100.0% · 개선 여지 없음」 · 연간 절감액 「0원」
+        3단계 조합 비교      같은 수단이 조합 이름과 「수단」 열에 그대로 선다
+
+    **그것이 글자만의 일이 아니다** — 그 조각이 조합에 들어가 있으면 태양광 뒤
+    역률의 출발점이 이 벌의 실제 역률(100)이 아니라 **목표(97)** 가 되어
+    (`compare\\combination.py` 의 ``before_pct``) 조합 절감액이 **25,055.99원 준다**
+    (S196 3-2 · 체크를 풀어 값으로 쟀다).
+
+    **소스 글자를 다시 적지 않는다** — 화면에 실제로 그려진 표 두 개를 읽는다.
+    벌은 `test_조건_넷이_함께_서는_벌이_저장소에_있다` 와 같은 잣대로 고른다.
+    """
+    import sys
+
+    sys.path.insert(0, str(Path("tools").resolve()))
+    import render_deck
+
+    case = next(
+        item
+        for item in render_deck.CASES
+        if item.power_factor_pct == 100.0 and item.floor_area_m2
+    )
+    screen = render_deck.build_app(case).run()
+    assert not screen.exception, screen.exception
+
+    frames = [item.value for item in screen.dataframe]
+
+    # ── 자리 A — 2단계 개선안별 요약
+    summary = next(
+        frame
+        for frame in frames
+        if "개선 방안" in list(frame.columns) and "연간 절감액" in list(frame.columns)
+    )
+    rows = [row for row in summary.to_dict("records") if "역률" in str(row["수단"])]
+    assert len(rows) == 1, f"{case.key} — 요약표에 역률 행이 {len(rows)}개입니다."
+    assert "개선 여지 없음" in str(rows[0]["개선 방안"]), (
+        f"{case.key} — 2단계가 역률을 「개선 여지 없음」 이라 적지 않습니다: {rows[0]}"
+    )
+    assert str(rows[0]["연간 절감액"]) == "0원", (
+        f"{case.key} — 2단계 역률 절감액이 「0원」 이 아닙니다: {rows[0]['연간 절감액']}"
+    )
+
+    # ── 자리 B — 3단계 계산 근거. **그 0원 조각이 조합에 들어 있다는 실물 증거다.**
+    #
+    # 조합 비교 표는 화면에 `st.dataframe` 으로 안 뜬다(Excel·PPT 쪽이다). 화면에
+    # 남은 값은 계산 근거 표의 「차이」 칸이고, **그 차이가 통째로 이 조각 몫이다** —
+    # 체크를 풀면 0 이 된다 (S196 3-2).
+    basis = next(
+        frame
+        for frame in frames
+        if list(frame.columns) == ["구분", "산식", "값"]
+        and "차이" in [str(row["구분"]) for row in frame.to_dict("records")]
+    )
+    gap = next(str(row["값"]) for row in basis.to_dict("records") if str(row["구분"]) == "차이")
+    assert gap not in ("0원", "-0원"), (
+        f"{case.key} — 단순 합과 합산효과의 차이가 「{gap}」 입니다. 2단계와 3단계의 "
+        "잣대가 하나로 모였다면 이 시험을 걷으십시오 (S196 4-1 · 3-2)."
+    )
