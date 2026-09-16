@@ -712,7 +712,8 @@ def test_조합_비교_열쇠가_잉여_수익을_안_본다() -> None:
     source = inspect.getsource(cache.cached_comparison)
     assert "stripped" in source
     assert "surplus_revenue_won=None" in source
-    assert 'key = f"compare|{token}|{stripped}|{options_key}|{stamp}"' in source
+    # **발전 프로파일 지문이 S194 2절에 붙었다.** 잉여 수익은 여전히 없다.
+    assert 'key = f"compare|{token}|{unit_token(_unit)}|{stripped}|{options_key}|{stamp}"' in source
     assert "with_surplus_revenue" in source
 
 

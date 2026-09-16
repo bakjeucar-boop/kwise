@@ -21,7 +21,13 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from kwise.io import ColumnDetection, ColumnDetectionError, load_usage, override_columns
+from kwise.io import (
+    ColumnDetection,
+    ColumnDetectionError,
+    UsageData,
+    load_usage,
+    override_columns,
+)
 from kwise.notices import texts
 from kwise.rules import ItemDiff, ItemView, RuleOrigin, describe_items, expiry_warnings
 from kwise.rules.expiry import ExpiryWarning
@@ -790,7 +796,7 @@ def test_특례가_캐시_열쇠를_가른다() -> None:
     assert form_token(off) != form_token(replace(off, school_exception=True))
 
 
-def test_발전_프로파일을_갈면_잉여도_갈린다(usage: object, table: TariffTable) -> None:
+def test_발전_프로파일을_갈면_잉여도_갈린다(usage: UsageData, table: TariffTable) -> None:
     """**결과를 가르는 것은 열쇠에 있어야 한다** (S194 2절 · 결함 유형 ④).
 
     발전 프로파일은 밑줄 인자라 해시에서 빠진다. 방위·경사각처럼 **용량을 안
@@ -804,7 +810,7 @@ def test_발전_프로파일을_갈면_잉여도_갈린다(usage: object, table:
     """
     from kwise.ui.cache import cached_surplus, unit_token, usage_token
 
-    index = pd.DatetimeIndex(usage.kw.index)  # type: ignore[attr-defined]
+    index = pd.DatetimeIndex(usage.kw.index)
     noon = pd.Series(0.0, index=index)
     noon[index.hour == 12] = 1.0
     morning = pd.Series(0.0, index=index)
@@ -817,7 +823,7 @@ def test_발전_프로파일을_갈면_잉여도_갈린다(usage: object, table:
             usage,
             table,
             unit,
-            usage_token(usage),  # type: ignore[arg-type]
+            usage_token(usage),
             unit_token(unit),
             form,
             5_000.0,

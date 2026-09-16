@@ -470,6 +470,25 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 - **못이 안 무는 자리 둘을 이름으로 올린다** — `cached_comparison` 과 `cached_sensitivity` 는 `session_memo` 를 쓰므로 세션이 있어야 하고, 합성 프로파일로 바로 부를 수 없다. 이 판은 **실물로는 봤고(1-3 · 2-2 · 3-2) 못으로는 안 물렸다.** 3-4 에 이름으로 넣는다.
 
+### 5절 — 회귀
+
+**5-1. 계산 코드 0줄** — `git diff --stat 2970eb0 HEAD -- src\kwise\tariff src\kwise\measures src\kwise\diagnose src\kwise\pv src\kwise\compare` 빈 출력. 폴더마다 0줄이다. 판 전체는 여섯 파일이다 — `PROCEED.md` · `src\kwise\ui\cache.py`(27/2) · `src\kwise\ui\views\compare.py`(3/0) · `src\kwise\ui\views\measures.py`(2/0) · `tests\test_ui.py`(새 못) · `tests\test_compare.py`(옛 못의 문자열 한 줄).
+
+**5-2. pytest — 1번 PC 앞단 통째로 · `-n auto --dist load -rf --tb=no --durations=25` — 1,776 passed · 1 xfailed · 0 failed · skip 0 · 수집 1,777.** 로그에 `FAILED` · `ERROR` 줄 0 · 경고 1(`io\usage.py` 날짜 형식 추정 — 앞 판과 같다). 앞 판(수집 1,776 · 1,775 passed · 1 xfailed · skip 0)에서 **못 하나만큼 늘었다** — 4-1 의 새 못이다.
+
+- **첫 판에 한 건이 빨갰다** — `tests\test_compare.py::test_조합_비교_열쇠가_잉여_수익을_안_본다`(57세션 2절)가 **열쇠 문자열을 소스에서 그대로 찾는다.** 2절이 그 문자열에 지문 한 조각을 더해 어긋났다. **뜻은 그대로 두고 문자열만 맞췄다** — 그 못의 나머지 셋(`stripped` · `surplus_revenue_won=None` · `with_surplus_revenue`)이 「잉여 수익이 열쇠에 없다」 는 뜻을 계속 문다. **그 못은 열쇠를 다시 적는 꼴이라 열쇠를 고칠 때마다 함께 깨진다** — 이 판에서 안 고쳤다.
+- **mypy 가 10 → 11 · 36 → 37 로 먼저 늘었다** — 새 못이 `usage` 를 `object` 로 받아 생긴 것이라 그 인자만 `UsageData` 로 적고 딸린 억제 둘을 뗐다. 그 뒤 다시 10 · 36 이다.
+
+**5-3. 소요 4분 35초(pytest 274.08초 · 벽시계 275초) · 1번 PC · 일꾼 8 — 깨끗한 판이다.** 남의 python 판 앞 **0** · 회귀 앞 **0** · 회귀 뒤 **0**. 상한 8분까지 **3분 25초** 남는다. 가장 긴 단계는 **161.64초 `test_casestudy.py::test_every_validity_check_passes` 의 setup**(모듈 픽스처 `study`)이고 둘째가 71.94초 `test_base_fee_basis_words.py::…[large-b-over]` setup 이다. 앞 판(1,776건 4분 47초 · 가장 긴 단계 165.61초)에서 건수가 하나 늘고 벽시계가 12초 줄었다 — **까닭은 안 갈랐다.**
+
+**5-4. 화면 감사 — 을 955 · 갑Ⅰ 806 · 교육갑 962 · 교육갑저압 807 · ①② 규칙 위반 없음.** 네 수가 앞 판과 같다. 이 판은 화면 문구를 안 건드렸다.
+
+**5-5. 케이스 스터디 — 160/160 · 기상 취득 0회 · 도구 111.1초 / 벽시계 119초**(1번 PC · 남의 python 0). 회귀값 여덟 — C1 5,293.0 kW · 49.0% · 13.5% · R1 132.0 kW · 41.1% · 20.0% · R2 18.3% · R3 27.4% — **불변.** 새 판이 어제와 같은 날이라 `output\casestudy_20260916.xlsx` 를 덮어썼다 — 저장소 판과 칸 단위로 맞대니(스크래치 `xdiff.py` · `fillna` 뒤) **시트 8 · 갈린 칸 23 = 「케이스」 `소요(초)` 11 + 「성능」 `값` 12** 이고 **그 12 가 전부 소요다**(케이스 열하나 + 전체 소요 105.4 → 111.1초 · `xdiff2.py` 가 이름으로 폈다). 소요 밖은 0 이라 **`git checkout HEAD -- output\casestudy_20260916.xlsx` 로 되살렸다.**
+
+**5-6. 정적 검사 다섯 — 앞 판과 같다.** `ruff check .` **통과** · `ruff format --check .` **어긋남 9 · 통과 247** · 맨 `mypy` **10건**(2파일 · checked 171) · `mypy tests tools` **36건**(10파일 · checked 60) · `scan_ctrl` **제어문자 0 · 탭 0**(약관 원문에서 건너뛴 1,272곳은 정상).
+
+- **format 통과가 246 → 247 로 늘었다** — 0-7 이 미리 값으로 봤다. `S193.md` 가 통과 쪽이라 이 판의 셈에 들었고, S193 보고의 246 은 그 파일을 **앉히기 전** 값이었다. **S194 는 `S194.md` 를 앉히므로 다음 판이 248 이 맞다.**
+
 ---
 ## 오늘 (2026-09-16) 193세션 — **산출물 지문이 입력을 문다 · 어제 어긋남 셋을 갈랐다**
 
