@@ -4997,3 +4997,65 @@ def test_여지_없는_수단을_2단계는_빼고_3단계_조합은_담는다()
         f"{case.key} — 단순 합과 합산효과의 차이가 「{gap}」 입니다. 2단계와 3단계의 "
         "잣대가 하나로 모였다면 이 시험을 걷으십시오 (S196 4-1 · 3-2)."
     )
+
+
+def test_역률_체크를_풀면_차이가_0원이고_요약표에는_남는다() -> None:
+    """**짝의 다른 쪽을 문다** (S197 4-2). 위 못과 한 쌍이다.
+
+    S197 1-5 가 값으로 봤다 — 단순 합과 합산효과는 **같은 수단 집합**을 보고,
+    그 벌의 차이 25,055.99원은 **역률 조각 하나**에서 나온다. 체크를 풀면
+    단순 합은 한 원도 안 움직이고(역률 카드가 0원이다) 차이가 **0원**이 된다.
+
+    **두 못이 양쪽을 문다** — 위 못은 조합 쪽만 갈리면 빨개지고, 이 못은
+    단순 합 쪽만 갈리면 빨개진다. 한쪽만 고치면 매뉴얼 5장이 말한 대로
+    「차이가 상호작용이 아니라 뺀 만큼」 이 된다.
+
+    **뺀 수단도 개선안별 요약에는 남는다** (매뉴얼 5장 · 16세션) — 얼마짜리를
+    뺐는지 보여야 뺄지 말지 정할 수 있다. 그 사실도 함께 문다.
+
+    **소스 글자를 다시 적지 않는다** — 화면에 그려진 표 두 개를 읽는다.
+    고치는 것은 세션 키 ``combination_pick`` 하나이고 ``src\\`` 는 안 건드린다.
+    """
+    import sys
+
+    sys.path.insert(0, str(Path("tools").resolve()))
+    import render_deck
+
+    case = next(
+        item
+        for item in render_deck.CASES
+        if item.power_factor_pct == 100.0 and item.floor_area_m2
+    )
+    app = render_deck.build_app(case)
+    app.session_state["combination_pick"] = tuple(
+        key for key in render_deck.ALL_MEASURES if key != "power_factor"
+    )
+    screen = app.run()
+    assert not screen.exception, screen.exception
+
+    frames = [item.value for item in screen.dataframe]
+
+    # ── 뺀 수단도 개선안별 요약에는 남는다
+    summary = next(
+        frame
+        for frame in frames
+        if "개선 방안" in list(frame.columns) and "연간 절감액" in list(frame.columns)
+    )
+    rows = [row for row in summary.to_dict("records") if "역률" in str(row["수단"])]
+    assert len(rows) == 1, f"{case.key} — 조합에서 뺀 역률 행이 요약표에 {len(rows)}개입니다."
+    assert str(rows[0]["연간 절감액"]) == "0원", (
+        f"{case.key} — 조합에서 뺀 역률의 절감액이 「{rows[0]['연간 절감액']}」 입니다."
+    )
+
+    # ── 그 조각을 빼면 차이가 통째로 사라진다
+    basis = next(
+        frame
+        for frame in frames
+        if list(frame.columns) == ["구분", "산식", "값"]
+        and "차이" in [str(row["구분"]) for row in frame.to_dict("records")]
+    )
+    gap = next(str(row["값"]) for row in basis.to_dict("records") if str(row["구분"]) == "차이")
+    assert gap in ("0원", "-0원"), (
+        f"{case.key} — 역률을 뺐는데 차이가 「{gap}」 입니다. 그 벌의 차이는 전부 "
+        "역률 조각 몫이어야 합니다 (S197 1-5)."
+    )
