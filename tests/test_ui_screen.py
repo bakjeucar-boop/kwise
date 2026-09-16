@@ -4869,3 +4869,60 @@ def test_산출물을_못_만들면_예외가_traceback_까지_남는다(
     assert records[0].exc_info[0] is ValueError, "예외 종류가 남아야 한다."
     dump = "".join(traceback.format_exception(*records[0].exc_info))
     assert "음수_높이로_터진다" in dump, "터진 자리가 traceback 에 있어야 한다."
+
+
+# ==================================================== S195 4절 — 조건 넷이 함께 서는 벌
+
+
+def test_조건_넷이_함께_서는_벌이_저장소에_있다() -> None:
+    """**역률 100 · 잉여 있음 · 조합에 0원 수단 · 연면적 입력이 한 벌에 선다** (S195 4-1).
+
+    S192 3-2 가 덱 18 · 케이스 11 을 세어 **0 · 0** 이었다. 그 넷이 함께 서는
+    자리가 없어 S192 가 실물에서 찾은 어긋남 열여덟 가운데 여섯이 「조건에서
+    안 선다」 로 남았다 — 뜨지 않는 갈래는 없는 갈래와 같다.
+
+    **이름으로 찾지 않는다.** 벌 이름을 글자로 맞대면 이름만 남기고 조건을
+    빼도 초록이다. 후보는 **정의의 값**으로 고르고(역률·연면적), 나머지 둘은
+    **화면에 실제로 그려진 것**으로 판정한다 — 잣대는 S195 1-1 그대로다.
+
+        역률 100    7.4 카드의 「현재 역률」 지표값
+        잉여 있음    접힘 「잉여 처리」 — `_surplus_handling` 이 `total_kwh <= 0`
+                    이면 그리기 전에 돌아가므로 **있고 없음이 곧 그 조건**이다
+        0원 수단     2단계 수단 카드의 지표값 「0원/년」
+        연면적       `BuildingInfo.floor_area_m2`
+
+    한 벌만 띄운다 — 열여덟을 다 띄우면 이 시험 하나가 6분이다.
+    """
+    import sys
+
+    sys.path.insert(0, str(Path("tools").resolve()))
+    import render_deck
+
+    candidates = [
+        case
+        for case in render_deck.CASES
+        if case.power_factor_pct == 100.0 and case.floor_area_m2
+    ]
+    assert candidates, (
+        "역률 100 과 연면적을 함께 든 덱 벌이 하나도 없습니다 — "
+        "S192 3-2 의 0/18 로 돌아갔습니다."
+    )
+
+    case = candidates[0]
+    screen = render_deck.build_app(case).run()
+    assert not screen.exception, screen.exception
+
+    강 = [str(item.value) for item in screen.metric if str(item.label) == "현재 역률"]
+    assert 강 == [f"{case.power_factor_pct:,.1f}%"], f"{case.key} — 현재 역률 지표가 {강} 입니다."
+
+    접힘 = [str(item.label) for item in screen.expander]
+    assert "잉여 처리" in 접힘, (
+        f"{case.key} — 접힘 「잉여 처리」 가 없습니다. 이 벌에서 잉여가 0 입니다."
+    )
+
+    영원 = [label for label, value in _stage2_metrics(screen) if value == "0원/년"]
+    assert 영원, f"{case.key} — 2단계에 절감액 0원인 수단이 없습니다."
+
+    assert screen.session_state["building_info"].floor_area_m2 == case.floor_area_m2, (
+        f"{case.key} — 연면적이 화면까지 안 갔습니다."
+    )

@@ -102,7 +102,7 @@ def study(case_dir: Path, tariff: TariffTable, weather_cache_state: WeatherCache
 
 
 def test_six_synthetic_cases_and_three_measured(case_dir: Path) -> None:
-    """C4 만 산업용(을)이고 **실측은 R1~R3 셋인데 종별이 저마다 다르다**.
+    """C4 만 산업용(을)이고 **실측은 R1~R4 넷인데 조건이 저마다 다르다**.
 
     C4 는 봄·가을 주말 할인 특례를 태우려고 갈랐고, R1 은 갑Ⅱ 경로를 회귀에
     세우려고 붙였다 (95세션 0절) — C1~C6 는 `general_b`·`industrial_b` 라
@@ -119,6 +119,12 @@ def test_six_synthetic_cases_and_three_measured(case_dir: Path) -> None:
 
     **C8 은 S142 에 붙었다.** 역률요금이 0원이 아닌 유일한 벌이고, 자료는
     실측이고 **역률만 합성**이다 — 같은 잣대라 이것도 C 다.
+
+    **R4 는 S195 에 붙었다.** R1 에서 역률만 100 으로 갈아 **92 초과 감액
+    갈래**를 회귀에 세웠다 — 열하나가 간주 92 아니면 미달 85 뿐이라 그 갈래가
+    한 번도 안 섰다. **C8 과 갈리는 것은 잣대가 보는 둘이다** — C8 은
+    계약전력이 관측 최대 × 1.1 로 지어낸 값이라 C 이고, R4 는 자료도
+    계약전력(290 kW)도 그 건물이 실제로 쓰는 값이라 **R** 이다.
     """
     definitions = build_case_definitions(case_dir)
     assert [item.key for item in definitions] == [
@@ -133,11 +139,13 @@ def test_six_synthetic_cases_and_three_measured(case_dir: Path) -> None:
         "R1",
         "R2",
         "R3",
+        "R4",
     ]
     industrial = [item.key for item in definitions if item.contract_type == "industrial_b"]
     assert industrial == ["C4"]
+    # **갑Ⅱ 는 이제 둘이다** (S195). R4 가 R1 에서 역률만 갈았으므로 종별이 같다.
     type_a_2 = [item.key for item in definitions if item.contract_type == "general_a_2"]
-    assert type_a_2 == ["R1"]
+    assert type_a_2 == ["R1", "R4"]
     # **산업용 갑 둘은 서로 다른 종별이다** (S150 4절). 한 종별에 둘이 서면
     # 남은 하나가 회귀에서 통째로 빠진 것이라 여기서 걸린다.
     assert [item.key for item in definitions if item.contract_type == "industrial_a_2"] == ["R2"]
@@ -145,7 +153,7 @@ def test_six_synthetic_cases_and_three_measured(case_dir: Path) -> None:
 
     # **좌표가 갈리는 것은 실측 셋이다.** 나머지는 사전 취득분 격자에 걸리는 한
     # 좌표를 나눠 쓴다 — C7 도 여기 든다(기상 요청이 늘지 않는 까닭이다).
-    measured_keys = {"R1", "R2", "R3"}
+    measured_keys = {"R1", "R2", "R3", "R4"}
     assert {item.region_key for item in definitions if item.key not in measured_keys} == {
         CASE_REGION_KEY
     }
@@ -156,9 +164,9 @@ def test_six_synthetic_cases_and_three_measured(case_dir: Path) -> None:
     assumed = [item.key for item in definitions if item.contract_kw is None]
     assert assumed == ["C1", "C2", "C3", "C4", "C5", "C6", "C8"]
     actual = [item.key for item in definitions if item.contract_is_actual]
-    assert actual == ["R1", "R2", "R3"]
+    assert actual == ["R1", "R2", "R3", "R4"]
 
-    for key in ("R1", "R2", "R3"):
+    for key in ("R1", "R2", "R3", "R4"):
         measured = next(item for item in definitions if item.key == key)
         assert measured.region_key == "경기도/용인시"
         assert measured.contract_kw == 290.0  # 이 건물이 실제로 쓰는 계약전력
@@ -166,12 +174,15 @@ def test_six_synthetic_cases_and_three_measured(case_dir: Path) -> None:
     assert short.contract_kw == 4_000.0  # 지어낸 값. 덱 벌 `large-b-short` 와 같다
     assert not short.contract_is_actual
 
-    # **역률을 박는 벌은 C8 하나다.** 나머지 열은 `None` 이라 약관 제42조의
-    # 간주값(92%)이고 역률요금이 정확히 0원이다 — 그래서 「기본요금」 정의가
-    # 갈려도 그 열에서는 값이 한 자리도 안 움직인다 (S141 이 값으로 봤다).
+    # **역률을 박는 벌은 둘이고 갈래가 반대다** (S195). C8 은 기준 92 **미달**
+    # 이라 추가요금 쪽이고 R4 는 감액 상한 97 **초과**라 감액 쪽이다. 나머지 열은
+    # `None` 이라 약관 제42조의 간주값(92%)이고 역률요금이 정확히 0원이다 —
+    # 그래서 「기본요금」 정의가 갈려도 그 열에서는 값이 한 자리도 안 움직인다
+    # (S141 이 값으로 봤다).
     lagging = {item.key: item.power_factor_pct for item in definitions}
     assert lagging["C8"] == 85.0
-    assert [key for key, value in lagging.items() if value is not None] == ["C8"]
+    assert lagging["R4"] == 100.0
+    assert [key for key, value in lagging.items() if value is not None] == ["C8", "R4"]
 
 
 def test_case_profiles_differ_where_they_should(case_dir: Path) -> None:
@@ -295,8 +306,8 @@ def test_케이스_스터디가_초과사용부가금_갈래를_C7_에서_돈다
     assert 0 < len(charged) < len(c7.baseline.monthly)
 
 
-def test_케이스_스터디가_역률요금_갈래를_C8_에서_돈다(study: CaseStudy) -> None:
-    """**회귀가 역률요금 갈래를 밟는 유일한 자리다** (S142 1절).
+def test_케이스_스터디가_역률요금_갈래를_C8_과_R4_에서_돈다(study: CaseStudy) -> None:
+    """**회귀가 역률요금 갈래를 밟는 자리 둘이고 부호가 반대다** (S142 1절 · S195 4-1).
 
     S141 이 「기본요금」 을 역률 가감 반영 **후**로 정하고 산출물 넷을 그 정의로
     맞췄는데 **회귀는 그것을 못 봤다** — 케이스 여덟이 전부 약관 제42조의
@@ -304,29 +315,43 @@ def test_케이스_스터디가_역률요금_갈래를_C8_에서_돈다(study: C
     정의가 다시 갈려도 **한 자리도 안 움직인다** (결함 유형 ② — 뜨지 않는
     갈래는 없는 갈래와 같다). C7 이 부가금 갈래에 대해 닫은 것과 같은 모양이다.
 
+    **S195 에 감액 쪽이 붙었다.** C8 하나일 때는 **추가요금 갈래만** 돌고
+    있었다 — 약관 제43조 ②는 기준 92% 미달에 추가요금을, 초과에 감액을 매기는데
+    감액 쪽(97% 상한)을 밟는 벌이 회귀에 하나도 없었다. R4 가 역률 100 으로
+    그 자리를 세운다. **부호까지 본다** — 둘을 「0이 아니다」 로만 묶으면 감액이
+    추가요금 쪽으로 뒤집혀도 초록이다.
+
     **수를 여기 다시 적지 않는다** — 역률요금은 요금표가 갈리면 움직인다.
     보는 것은 **갈래가 서느냐**와 **요약 행이 어느 쪽 금액을 내느냐**다.
     """
     charge = {
         result.definition.key: result.baseline.total_power_factor_won for result in study.results
     }
-    assert charge["C8"] > 0, f"C8 에서 역률요금 갈래가 죽었다 — {charge}"
-    others = {key: value for key, value in charge.items() if key != "C8"}
-    assert set(others.values()) == {0.0}, f"C8 말고 역률요금이 붙은 벌이 생겼다 — {charge}"
+    assert charge["C8"] > 0, f"C8 에서 역률요금 추가 갈래가 죽었다 — {charge}"
+    assert charge["R4"] < 0, f"R4 에서 역률요금 감액 갈래가 죽었다 — {charge}"
+    others = {key: value for key, value in charge.items() if key not in {"C8", "R4"}}
+    assert set(others.values()) == {0.0}, f"C8·R4 말고 역률요금이 붙은 벌이 생겼다 — {charge}"
 
     # **요약 행의 「기본요금(원)」 은 역률을 담는다** (S141 이 정한 정의).
-    # 담지 않으면 정확히 `total_power_factor_won` 만큼 모자란다.
-    c8 = study.find("C8")
-    row = c8.summary_row()
-    assert float(row["기본요금(원)"]) == pytest.approx(
-        c8.baseline.total_base_won + c8.baseline.total_power_factor_won
-    )
+    # 담지 않으면 정확히 `total_power_factor_won` 만큼 모자란다. **두 벌 다 본다** —
+    # 담는 자리가 한 쪽 부호에서만 맞을 수 있다.
+    for key in ("C8", "R4"):
+        result = study.find(key)
+        row = result.summary_row()
+        assert float(row["기본요금(원)"]) == pytest.approx(
+            result.baseline.total_base_won + result.baseline.total_power_factor_won
+        ), key
 
     # **C1 과 갈리는 것은 역률뿐이다.** 자료·종별·계약전력 규칙이 같으므로
     # 기본요금 밑(역률 조정 전)이 한 원도 다르지 않아야 한다.
-    c1 = study.find("C1")
+    c8, c1 = study.find("C8"), study.find("C1")
     assert c8.baseline.total_base_won == pytest.approx(c1.baseline.total_base_won)
     assert c8.contract_kw == pytest.approx(c1.contract_kw)
+
+    # **R4 와 R1 도 같은 꼴이다** (S195). 갈리는 것이 역률뿐이라 밑이 같아야 한다.
+    r4, r1 = study.find("R4"), study.find("R1")
+    assert r4.baseline.total_base_won == pytest.approx(r1.baseline.total_base_won)
+    assert r4.contract_kw == pytest.approx(r1.contract_kw)
 
 
 def test_pv_zero_saves_exactly_nothing(study: CaseStudy) -> None:
@@ -446,11 +471,13 @@ def test_case_study_runs_sequentially_and_hits_the_weather_cache(
     캐시 상태에서 기대값을 끌어오므로 **찬 캐시에서도 더운 캐시에서도 같은
     성질을 잰다** — 취득은 요청 하나당 많아야 한 번이다.
 
-    캐시가 고장 나면 열한 케이스가 저마다 취득해 11 이 되고, 여기서 걸린다.
+    캐시가 고장 나면 열두 케이스가 저마다 취득해 12 가 되고, 여기서 걸린다.
     """
     assert study.weather_calls == weather_cache_state.cold
     assert study.weather_calls <= weather_cache_state.requests
-    assert len(study.results) == 11
+    # **S195 2-2 에 `R4` 가 붙어 11 → 12 다.** 새 벌이 낸 수이지 기대값을 갱신한
+    # 것이 아니다 — R1 과 좌표·기간이 같아 기상 요청은 안 늘었다.
+    assert len(study.results) == 12
     assert study.elapsed_sec > 0
 
 

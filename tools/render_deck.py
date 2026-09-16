@@ -32,6 +32,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from kwise.report.figures import FigureFailureCollector  # noqa: E402
 
 if TYPE_CHECKING:  # streamlit 을 도구 시작에 들이지 않는다 — 형에만 쓴다
+    from streamlit.testing.v1 import AppTest
+
     from kwise.ui.pipeline import SolarInputs
 
 APP = PROJECT_ROOT / "src" / "kwise" / "ui" / "app.py"
@@ -562,11 +564,15 @@ def _first_option(contract_type: str, voltage: str) -> str:
     return options[0] if options else ""
 
 
-def build_deck(case: Case, *, timeout: int = 1800) -> bytes:
-    """화면을 띄워 덱 바이트를 받는다."""
+def build_app(case: Case, *, timeout: int = 1800) -> AppTest:
+    """이 벌의 조건을 세션에 심은 앱. **아직 안 돌렸다.**
+
+    **`build_deck` 의 몸에서 꺼냈다** (S195 4-1). 안에 있으면 덱 바이트를 받는
+    길 말고는 이 조건을 쓸 수가 없어, 조건이 실제로 서는지 묻는 시험이 **세션
+    설정을 통째로 베껴 쓰게 된다** — 베낀 쪽은 필드가 하나 늘어도 안 따라온다.
+    """
     from streamlit.testing.v1 import AppTest
 
-    from kwise.ui.artifacts import ARTIFACT_KEY
     from kwise.ui.pipeline import ContractForm
 
     app = AppTest.from_file(str(APP), default_timeout=timeout)
@@ -596,7 +602,14 @@ def build_deck(case: Case, *, timeout: int = 1800) -> bytes:
     for key in ALL_MEASURES:
         state[f"measure_on_{key}"] = True
     state["combination_pick"] = ALL_MEASURES
+    return app
 
+
+def build_deck(case: Case, *, timeout: int = 1800) -> bytes:
+    """화면을 띄워 덱 바이트를 받는다."""
+    from kwise.ui.artifacts import ARTIFACT_KEY
+
+    app = build_app(case, timeout=timeout)
     app.run()
     if app.exception:
         raise RuntimeError(f"{case.key} — 화면이 예외로 멈췄다: {app.exception}")

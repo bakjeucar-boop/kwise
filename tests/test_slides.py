@@ -3518,6 +3518,7 @@ def test_덱은_벌마다_제_좌표로_태양광을_돌린다() -> None:
         "small-a2-was",
         "small-ind-a1",
         "small-ind-a2",
+        "small-a2-pf100-offset-area",  # S195 2-1 에 붙었다 — 용인이다
     ]
 
 
