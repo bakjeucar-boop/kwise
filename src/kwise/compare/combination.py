@@ -455,6 +455,9 @@ def evaluate_combination(
         baseline_bill: 절감액의 기준선.
     """
     opts = options if options is not None else BillingOptions()
+    # **원 부하의 역률이다** — 아래 태양광 조각이 출발점으로 쓴다 (S198 정본).
+    # 목표로 갈아 끼우기 **전**에 잡는다.
+    original_pct = opts.power_factor_pct
     if spec.power_factor_pct is not None:
         # 역률은 **요금 옵션**이다. 부하를 바꾸지 않고 기본요금 조정액만 바꾼다.
         opts = replace(opts, power_factor_pct=spec.power_factor_pct)
@@ -492,10 +495,18 @@ def evaluate_combination(
         # 결정은 기록에 없다 (76세션 조사).
         #
         # **떨어진 뒤에서 개선이 시작한다** (77세션에 사람이 정했다 — 갈래 ㄴ).
-        # 역률 수단을 켰으면 목표(97%)가 PV 전 값이고 **PV 가 그것을 끌어내린다**
-        # — 목표에 못 미칠 수 있고 그것이 정상이다. 도구는 설비 크기를 모르므로
-        # (투자비가 사용자 입력이다) 「악화분까지 끌어올린다」 로 두면 더 큰 설비를
-        # 값 없이 가정하는 셈이 된다. 역률 수단을 껐으면 끌어올릴 주체가 아예 없다.
+        # PV 가 역률을 끌어내리고 그 아래에서 개선이 시작한다 — 목표에 못 미칠 수
+        # 있고 그것이 정상이다. 도구는 설비 크기를 모르므로 (투자비가 사용자
+        # 입력이다) 「악화분까지 끌어올린다」 로 두면 더 큰 설비를 값 없이
+        # 가정하는 셈이 된다.
+        #
+        # **출발점은 원 부하 기준이다** (S198 에 사람이 정했다). 곧 태양광이
+        # 끌어내리기 **전**의 그 벌의 역률이며, 역률 수단을 켰는지와 무관하다 —
+        # 무효전력은 부하가 정하는 것이지 우리가 고른 목표가 정하지 않는다
+        # (:func:`power_factor_after_pct` 가 P 와 역률로 Q 를 되짚는다).
+        # S197 까지는 ``opts`` 를 읽어 역률 수단을 켠 벌에서 **목표(97%)** 가
+        # 출발점이 됐고, 역률 100 인 벌에서 있지도 않은 무효전력이 생겨
+        # 조합 절감액이 25,055.99원 줄었다 (S196 3-2 · S198 2-2).
         #
         # **조합마다 다시 잰다.** 조합마다 PV 용량이 달라 악화분도 다르므로
         # 2단계 곡선의 한 점을 가져다 쓸 수 없다.
@@ -504,9 +515,7 @@ def evaluate_combination(
         # 쓴다 — ESS 도 계량 유효전력을 줄이므로 같은 이유로 역률을 떨어뜨리지만,
         # 도구가 PCS 의 무효전력 거동을 모르고 여기서 범위를 넓히면 두 자리가
         # 다른 규칙을 쓰게 된다. **봤다는 사실만 남긴다.**
-        before_pct = (
-            opts.power_factor_pct if opts.power_factor_pct is not None else deemed_lagging_pct()
-        )
+        before_pct = original_pct if original_pct is not None else deemed_lagging_pct()
         after_pct = power_factor_after_pct(
             usage.kw, generation, power_factor_pct=before_pct, interval_minutes=interval
         )
