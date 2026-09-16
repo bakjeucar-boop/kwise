@@ -93,6 +93,14 @@ class Case:
     **야간 진상은 두지 않는다** — 기본값이 없고 모르면 산출하지 않는 것이 규약이다
     (`ContractForm.leading_power_factor_pct`).
     """
+    floor_area_m2: float | None = None
+    """옆단 「연면적」. ``None`` 이면 안 넣은 것이고 원단위 줄이 화면에 없다.
+
+    **:attr:`area_m2` 와 다른 자리다** (S195 1-1). 그쪽은 **태양광 설치 가능
+    면적**이라 용량을 정하고, 이쪽은 건물 연면적이라 진단에 원단위
+    (kWh/m²·년) 한 줄을 얹는다 (`ui\\building.py::intensity_kwh_per_m2`).
+    **S194 까지 이 필드가 없어 덱 벌 열여덟이 다 연면적 0 이었다.**
+    """
 
     @property
     def province(self) -> str:
@@ -493,6 +501,43 @@ CASES: tuple[Case, ...] = (
         building_name="대형 공장(산업용 을)",
         sigungu=REGION,
     ),
+    Case(
+        # **조건 넷이 함께 서는 첫 벌이다** (S195 2-1). S192 3-2 가 센
+        # 「역률 100 · 잉여 있음 · 조합에 0원 수단 · 연면적 입력」 이 덱 18 ·
+        # 케이스 11 어디에도 함께 선 적이 없다 — **막은 것은 연면적 하나**다.
+        # S195 1-2 가 전수로 다시 재니 나머지 셋은 `small-a2-pf100-offset` 과
+        # `small-ind-a1` 두 벌에서 이미 함께 서고 있었다.
+        #
+        # `small-a2-pf100-offset` 에서 **연면적 한 칸만 더했다** — 그 벌은
+        # 그대로 두고 조건만 옮겨 세운다(그 벌이 `small-a2` 에서 셋만 갈아
+        # 선 것과 같은 꼴이다).
+        #
+        #     연면적   (없음) → **3,000 m²**
+        #
+        # **3,000 m² 는 사람이 실물을 뽑을 때 넣은 값이다** (S192 1-1 조건표).
+        # 지어낸 수가 아니라 그 판을 재현하는 수다.
+        #
+        # **밑 벌을 이것으로 고른 까닭은 회귀에 짝이 있어서다** (S195 1-4).
+        # 자료·계약전력(290 kW)·종별이 케이스 `R1 용인 실측` 과 같아 **덱과
+        # 회귀를 한 쌍으로** 세울 수 있다 — `small-ind-a1` 은 종별이 산업용
+        # (갑)Ⅰ 이라 회귀 쪽 짝(`R3`)과 전압이 갈린다.
+        key="small-a2-pf100-offset-area",
+        title=(
+            "용인 소규모 · 일반용(갑)Ⅱ 고압A 선택Ⅱ · 역률 100 · "
+            "태양광 32 kWp · 잉여 상계 · 연면적 3,000 m²"
+        ),
+        csv=YONGIN_XLSX,
+        contract_type="general_a_2",
+        voltage="high_a",
+        option="II",
+        contract_kw=290.0,
+        area_m2=400.0,
+        building_name="용인 소규모 건물(조건 넷)",
+        sigungu="경기도/용인시",
+        surplus_use="상계거래(한전)",
+        power_factor_pct=100.0,
+        floor_area_m2=3_000.0,
+    ),
 )
 
 BY_KEY = {case.key: case for case in CASES}
@@ -538,6 +583,11 @@ def build_deck(case: Case, *, timeout: int = 1800) -> bytes:
     state["building_province"] = case.province
     state["building_sigungu"] = case.sigungu
     state["building_name"] = case.building_name
+    # **연면적은 위젯 키로 심는다** (S195 2-1). 옆단이 매 실행 `BuildingInfo` 를
+    # 다시 짓고 그 값을 위젯에서 읽으므로, `building_info` 를 직접 넣으면 첫
+    # 실행에 덮인다.
+    if case.floor_area_m2 is not None:
+        state["building_area"] = case.floor_area_m2
     # **태양광은 「계산」 을 누른 상태로 시작한다.** 위젯에 키가 없어 면적을
     # 세션으로 심을 수 없다 — 눌린 결과(``solar_inputs``)를 바로 넣는다.
     state["solar_inputs"] = solar_inputs_for(case)
@@ -653,6 +703,8 @@ def label_text(case: Case, titles: Sequence[str] = (), failures: Sequence[str] =
         lines.append(f"잉여 처리   {case.surplus_use}")
     if case.power_factor_pct is not None:
         lines.append(f"주간 지상역률 {case.power_factor_pct:,.1f}%")
+    if case.floor_area_m2 is not None:
+        lines.append(f"연면적      {case.floor_area_m2:,.0f} m²")
     lines += [f"    {line}" for line in failures]
     if titles:
         # **장 수는 벌마다 다르다.** 갈리는 것은 수단 장이 아니라 **부록 장**이다 —

@@ -165,7 +165,8 @@ class CaseDefinition:
     """주간 지상역률. ``None`` 이면 약관 제42조의 간주값(92%)이라 역률요금이 0원이다.
 
     덱 벌 ``large-b-pf85`` 의 ``Case.power_factor_pct`` 와 같은 자리다 (S132).
-    **C8 하나만 값을 든다** — 나머지 여덟은 ``None`` 이라 한 원도 안 움직인다.
+    **둘만 값을 든다** — C8 이 85(미달 추가요금) · R4 가 100(초과 감액)이고
+    나머지 열은 ``None`` 이라 한 원도 안 움직인다 (S195 2-2).
     """
 
     @property
@@ -285,7 +286,7 @@ class CaseStudy:
                 "값": (
                     f"{len(self.results) - self.weather_calls}/{len(self.results)} "
                     "(C1~C8 은 좌표·기간이 같아 첫 건만 취득한다. "
-                    "실측 R1~R3 도 서로 같아 그중 첫 건만 취득한다)"
+                    "실측 R1~R4 도 서로 같아 그중 첫 건만 취득한다)"
                 ),
             }
         )
@@ -299,12 +300,13 @@ class CaseStudy:
 
 
 def build_case_definitions(directory: Path) -> tuple[CaseDefinition, ...]:
-    """``input\\cases\\`` 의 여섯과 **그 밖의 다섯**으로 케이스 정의를 만든다.
+    """``input\\cases\\`` 의 여섯과 **그 밖의 여섯**으로 케이스 정의를 만든다.
 
     **C4 만 산업용(을)이다** — 봄·가을 주말 할인 특례를 태우기 위해서다.
-    **실측은 R1~R3 셋이고 종별이 저마다 다르다** (95세션 0절 · S150 4절) —
-    일반용(갑)Ⅱ · 산업용(갑)Ⅱ · 산업용(갑)Ⅰ 저압. **R3 만 계약전력 기준**
-    이라 그 갈래가 회귀에 서는 유일한 자리다.
+    **실측은 R1~R4 넷이고 셋은 종별이, 하나는 역률이 다르다** (95세션 0절 ·
+    S150 4절 · S195 2-2) — 일반용(갑)Ⅱ · 산업용(갑)Ⅱ · 산업용(갑)Ⅰ 저압 ·
+    일반용(갑)Ⅱ 역률 100. **R3 만 계약전력 기준**이라 그 갈래가 회귀에 서는
+    유일한 자리이고, **R4 만 역률 92 초과**라 감액 갈래가 서는 유일한 자리다.
     **C7 만 계약전력이 관측 최대 아래다** (S128). 둘 다 자료가 ``input\\``
     바로 아래에 있으므로 ``directory`` 의 어버이에서 찾는다.
     """
@@ -422,6 +424,36 @@ def build_case_definitions(directory: Path) -> tuple[CaseDefinition, ...]:
             region_key=YONGIN_REGION_KEY,
             contract_kw=YONGIN_CONTRACT_KW,
             contract_is_actual=True,
+        )
+    )
+
+    # **R4 는 R1 에서 역률 한 칸만 갈았다** (S195 2-2). 덱 벌
+    # `small-a2-pf100-offset-area` 와 **한 쌍**이다 — 자료도 계약전력도
+    # 계약종별도 같고 역률 100 도 같아 덱·화면과 회귀를 맞대 볼 수 있다.
+    #
+    # **R 이다** (S128 잣대). 가르는 것은 자료가 아니라 조건인데, 그 잣대가
+    # 보는 둘(자료 · 계약전력)이 **둘 다 그 건물이 실제로 쓰는 값**이다 —
+    # 용인 실측 자료와 290 kW. 역률 100 은 세 번째 값이라 잣대에 안 든다.
+    #
+    # **이 벌이 여는 것은 92 초과 감액 갈래다** — 케이스 열하나가 여태 간주
+    # 92(열) 아니면 미달 85(C8) 뿐이라 **감액 상한 97% 위 갈래가 회귀에 한
+    # 번도 안 섰다**(S195 1-2). 7.4 역률 개선이 0원으로 서는 자리이기도 하다.
+    #
+    # **연면적과 조합은 여기서 안 선다** (S195 2-2). `CaseDefinition` 에
+    # 연면적 필드가 없고, 케이스 스터디는 **조합 자체를 계산하지 않는다** —
+    # 필드를 더해도 읽는 자리가 없다. 그 둘은 덱 쪽 짝이 쥔다.
+    definitions.append(
+        CaseDefinition(
+            key="R4",
+            name="용인 실측 역률 100",
+            usage_path=yongin,
+            contract_type="general_a_2",
+            option="II",
+            note="실측 (S195). 역률 92 초과 감액 갈래가 회귀에 서는 유일한 자리다",
+            region_key=YONGIN_REGION_KEY,
+            contract_kw=YONGIN_CONTRACT_KW,
+            contract_is_actual=True,
+            power_factor_pct=100.0,
         )
     )
     return tuple(definitions)
