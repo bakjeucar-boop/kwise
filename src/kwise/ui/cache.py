@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from pandas.util import hash_pandas_object
 
 from kwise.compare import (
     ComparisonResult,
@@ -93,6 +94,7 @@ __all__ = [
     "ess_cost_model",
     "form_token",
     "rules_stamp",
+    "unit_token",
     "upload_digest",
     "usage_token",
 ]
@@ -191,6 +193,26 @@ def usage_token(usage: UsageData) -> str:
         )
     )
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def unit_token(unit: pd.Series | None) -> str:
+    """발전 프로파일의 지문 (S194 2절). 없으면 빈 문자열이다.
+
+    **프로파일은 밑줄 인자(``_unit``)라 열쇠에 안 든다.** 방위·경사각·시스템
+    손실처럼 **용량을 안 바꾸는 입력**을 고쳐 다시 계산하면 프로파일만 갈리는데,
+    그것을 대표하는 값이 열쇠에 없으면 곡선(``cached_solar``, 열쇠에 ``inputs``
+    가 있다)은 새 값인데 **잉여와 조합만 옛 값**이 된다 — 용인 벌에서 방위를
+    남동으로 한 번 계산한 뒤 남으로 다시 계산하면 잉여가 527 이 아니라 458 kWh
+    로 남았다 (S193 3-2 · S194 1-3).
+
+    **``SolarInputs`` 를 열쇠에 세지 않고 프로파일 자체를 잰다.** 조합 비교와
+    감도는 태양광이 없는 조합도 받으므로 그 인자가 설 자리가 아니고, 입력 필드를
+    하나씩 세면 새 필드가 늘 때마다 같은 자리로 다시 샌다.
+    """
+    if unit is None:
+        return ""
+    digest = hash_pandas_object(unit, index=True).to_numpy().tobytes()
+    return hashlib.sha256(digest).hexdigest()[:16]
 
 
 def form_token(form: ContractForm) -> str:
@@ -441,7 +463,7 @@ def cached_comparison(
     )
     scenario = next((spec.surplus_scenario for spec in specs if spec.surplus_scenario), "")
     stripped = tuple(replace(spec, surplus_revenue_won=None, surplus_scenario="") for spec in specs)
-    key = f"compare|{token}|{stripped}|{options_key}|{stamp}"
+    key = f"compare|{token}|{unit_token(_unit)}|{stripped}|{options_key}|{stamp}"
     base = session_memo(
         key,
         lambda: compare_combinations(
@@ -660,12 +682,14 @@ def cached_surplus(
     _table: TariffTable,
     _unit: pd.Series,
     token: str,
+    unit_key: str,
     form: ContractForm,
     capacity_kwp: float,
     external_price_won_per_kwh: float | None,
     stamp: str,
     smp_price_won_per_kwh: float | None = None,
 ) -> SurplusResult:
+    """``unit_key`` 는 **열쇠에 들어가야 한다** — :func:`unit_token` 이 만든다."""
     net = apply_generation(_usage, _unit * capacity_kwp)
     return evaluate_surplus(
         _usage,
@@ -709,4 +733,5 @@ def cached_sensitivity(
         )
         return frame, sensitivity_ranges(frame)
 
-    return session_memo(f"sensitivity|{token}|{spec}|{options_key}|{stamp}", build)
+    key = f"sensitivity|{token}|{unit_token(_unit)}|{spec}|{options_key}|{stamp}"
+    return session_memo(key, build)

@@ -105,6 +105,7 @@ from kwise.ui.cache import (
     cached_tariff_switch,
     cached_unit_pv,
     rules_stamp,
+    unit_token,
     usage_token,
 )
 from kwise.ui.context import AnalysisContext
@@ -634,6 +635,7 @@ def _chosen_surplus(
             table,
             unit_profile,
             usage_token(usage),
+            unit_token(unit_profile),
             form,
             capacity_kwp,
             external,
@@ -1012,6 +1014,7 @@ def _measure_results(
                 table,
                 unit_profile,
                 token,
+                unit_token(unit_profile),
                 form,
                 capacity,
                 external,
