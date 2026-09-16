@@ -790,6 +790,47 @@ def test_특례가_캐시_열쇠를_가른다() -> None:
     assert form_token(off) != form_token(replace(off, school_exception=True))
 
 
+def test_발전_프로파일을_갈면_잉여도_갈린다(usage: object, table: TariffTable) -> None:
+    """**결과를 가르는 것은 열쇠에 있어야 한다** (S194 2절 · 결함 유형 ④).
+
+    발전 프로파일은 밑줄 인자라 해시에서 빠진다. 방위·경사각처럼 **용량을 안
+    바꾸는 입력**을 고치면 프로파일만 갈리는데, 그것을 대표하는 값이 열쇠에
+    없으면 곡선은 새 값인데 **잉여만 옛 값**이 된다 — 용인 벌에서 방위를 남동으로
+    한 번 계산한 뒤 남으로 다시 계산하니 잉여가 527 이 아니라 458 kWh 로
+    남았다 (S193 3-2 · 194세션 절 1-3).
+
+    **열쇠 코드를 다시 적지 않는다** — 프로파일 둘로 실제 결과를 받아 맞댄다.
+    기상을 안 받는다 — 시각만 다른 합성 프로파일 둘이면 족하다.
+    """
+    from kwise.ui.cache import cached_surplus, unit_token, usage_token
+
+    index = pd.DatetimeIndex(usage.kw.index)  # type: ignore[attr-defined]
+    noon = pd.Series(0.0, index=index)
+    noon[index.hour == 12] = 1.0
+    morning = pd.Series(0.0, index=index)
+    morning[index.hour == 9] = 1.0
+
+    form = ContractForm(contract_type="general_a_2", voltage="high_a", option="II")
+
+    def surplus(unit: pd.Series) -> float:
+        result = cached_surplus(
+            usage,
+            table,
+            unit,
+            usage_token(usage),  # type: ignore[arg-type]
+            unit_token(unit),
+            form,
+            5_000.0,
+            None,
+            "stamp",
+        )
+        return float(result.total_kwh)
+
+    assert unit_token(noon) != unit_token(morning)
+    assert surplus(noon) > 0.0
+    assert surplus(noon) != surplus(morning), "프로파일을 갈았는데 잉여가 그대로입니다."
+
+
 def test_교육용은_선택지_둘로_갈리고_나머지는_하나다(table: TariffTable) -> None:
     """**종별을 쪼개지 않는다. 라벨 하나가 종별과 특례로 풀린다** (97세션 3절).
 
