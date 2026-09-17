@@ -12,6 +12,7 @@ import pytest
 
 from kwise.compare import (
     SCENARIO_NAME_CAVEAT,
+    CombinationResult,
     CombinationSpec,
     ComparisonResult,
     compare_combinations,
@@ -175,8 +176,11 @@ def test_조합의_태양광_전_역률은_원_부하_역률이고_수단의_목
     이고, 역률 개선 수단의 목표가 아니다. 무효전력은 부하가 정하는 것이지 우리가
     고른 목표가 정하지 않기 때문이다.
 
-    **식을 다시 적지 않는다** — 조합이 실제로 요금을 낸 청구서의 역률을 읽는다.
-    잣대 둘 다 그 값 하나만 본다.
+    **식을 다시 적지 않는다** — 조합이 실제로 낸 경고와 청구서의 역률을 읽는다.
+
+    **출발점은 경고가 적는 태양광 뒤 역률로 본다** (S202). 켠 역률 수단이 있으면
+    청구서는 그 목표를 쓰므로(S202 2절) 청구서 역률로는 출발점이 안 보인다 —
+    S201 까지 이 못은 청구서 역률을 맞대 출발점을 봤다.
 
     S197 까지는 ``opts`` 를 읽어 **목표(97%)** 가 출발점이었고, 그래서 역률이
     감액 상한 위인 벌에서 **있지도 않은 무효전력**이 생겨 개선이 악화로 나왔다
@@ -188,23 +192,87 @@ def test_조합의_태양광_전_역률은_원_부하_역률이고_수단의_목
         "quality": sample_report,
     }
 
-    def combined(target: float | None, current: float | None = None) -> float:
-        result = evaluate_combination(
+    def combined(target: float | None, current: float | None = None) -> CombinationResult:
+        return evaluate_combination(
             sample_usage,
             tariff,
             CombinationSpec("태양광", CURRENT, pv_capacity_kwp=PV_KWP, power_factor_pct=target),
             options=None if current is None else BillingOptions(power_factor_pct=current),
             **kwargs,
         )
-        return result.bill.power_factor.lagging_pct
 
-    # ① **수단을 켜도 꺼도 출발점이 같다.** 목표를 출발점으로 쓰면 둘이 갈린다.
-    assert combined(97.0) == pytest.approx(combined(None))
+    def drop_warnings(result: CombinationResult) -> list[str]:
+        return [item.text for item in result.notices if item.fact == "solar.power_factor_drop"]
+
+    # ① **수단을 켜도 꺼도 출발점이 같다.** 목표(97)를 출발점으로 쓰면 태양광 뒤가
+    #    기준 위로 남아 켠 쪽 경고가 사라진다.
+    off = combined(None)
+    assert len(drop_warnings(off)) == 1
+    assert f"{off.bill.power_factor.lagging_pct:.1f}%" in drop_warnings(off)[0]
+    assert drop_warnings(combined(97.0)) == drop_warnings(off)
 
     # ② **원 부하 역률이 100 이면 무효전력이 없어 태양광이 못 떨어뜨린다.**
-    #    목표(97)를 출발점으로 쓰면 무효전력이 생겨 97 아래로 내려간다.
-    assert combined(97.0, current=100.0) == pytest.approx(100.0)
-    assert combined(None, current=100.0) == pytest.approx(100.0)
+    assert combined(None, current=100.0).bill.power_factor.lagging_pct == pytest.approx(100.0)
+
+
+def test_조합에_켠_역률_수단은_태양광_뒤에도_목표로_요금을_낸다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_unit_pv: pd.Series,
+) -> None:
+    """**켠 역률 수단의 몫이 태양광이 낀 조합에서도 선다** (S202 2절).
+
+    S201 까지는 태양광 조각이 켠 수단의 목표를 태양광 뒤 역률로 덮어 몫이
+    덱 19벌 다 0 이었다. 2단계 카드와 같은 잣대 — 출발점은 원 부하 역률 ·
+    도달점은 목표 — 로 요금을 낸다.
+
+    값은 표본 벌(을 고압A 선택Ⅰ · 원 부하 간주 92 · 500 kWp · 태양광 뒤
+    91.1163%)에서 켬과 끔 조합 절감액의 차다.
+    """
+    kwargs = {
+        "baseline_bill": sample_bill,
+        "unit_pv_kw_per_kwp": sample_unit_pv,
+        "quality": sample_report,
+    }
+
+    def combined(target: float | None) -> CombinationResult:
+        spec = CombinationSpec("태양광", CURRENT, pv_capacity_kwp=PV_KWP, power_factor_pct=target)
+        return evaluate_combination(sample_usage, tariff, spec, **kwargs)
+
+    on, off = combined(97.0), combined(None)
+    assert on.bill.power_factor.lagging_pct == 97.0
+    assert on.saving_won - off.saving_won == pytest.approx(5_894_646.67, abs=0.01)
+
+
+def test_역률_100_벌은_태양광이_낀_조합에서도_역률_몫이_0_이다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_unit_pv: pd.Series,
+) -> None:
+    """**원 부하 역률이 감액 상한 위면 켠 수단의 몫이 0 이다** (S202 2-4).
+
+    목표 97 과 원 부하 100 이 약관 감액 상한(97)에서 같은 비율로 접힌다 — 2단계
+    카드가 「개선 여지 없음 · 0원」 이라 적는 것과 같다. 위 못과 **갈라 박았다** —
+    한 못에 두면 앞 벌이 빨개질 때 이 벌을 못 본다.
+    """
+    kwargs = {
+        "baseline_bill": sample_bill,
+        "unit_pv_kw_per_kwp": sample_unit_pv,
+        "quality": sample_report,
+        "options": BillingOptions(power_factor_pct=100.0),
+    }
+
+    def combined(target: float | None) -> CombinationResult:
+        spec = CombinationSpec("태양광", CURRENT, pv_capacity_kwp=PV_KWP, power_factor_pct=target)
+        return evaluate_combination(sample_usage, tariff, spec, **kwargs)
+
+    on, off = combined(97.0), combined(None)
+    assert (on.bill.power_factor.lagging_pct, off.bill.power_factor.lagging_pct) == (97.0, 100.0)
+    assert on.saving_won - off.saving_won == 0.0
 
 
 @pytest.mark.xfail(
