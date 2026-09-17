@@ -519,7 +519,7 @@ def evaluate_combination(
         after_pct = power_factor_after_pct(
             usage.kw, generation, power_factor_pct=before_pct, interval_minutes=interval
         )
-        opts = replace(opts, power_factor_pct=after_pct)
+        opts = opts if spec.has_power_factor else replace(opts, power_factor_pct=after_pct)
         if after_pct < power_factor_floor_pct():
             notices.append(
                 warn(
