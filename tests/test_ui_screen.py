@@ -5123,7 +5123,9 @@ def test_역률_이유_줄은_조합_역률_몫의_방향과_반대로_말하지
         "큰 벌에서만 문다 — 조건이 떨어졌으면 벌을 다시 고르십시오 (S204 1-4)."
     )
 
-    lines = [value for label, value in rows_on.items() if label.startswith("이유") and "역률" in value]
+    lines = [
+        value for label, value in rows_on.items() if label.startswith("이유") and "역률" in value
+    ]
     assert len(lines) == 1, f"{case.key} — 역률 이유 줄이 {len(lines)}개입니다: {lines}"
     assert not re.search(r"작아|줄어든다|줄어듭니다", lines[0].split(".", 1)[1]), (
         f"{case.key} — 역률 몫이 카드보다 {interaction:,.0f}원 큰데 이유 줄이 "
