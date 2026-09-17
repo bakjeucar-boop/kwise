@@ -2517,10 +2517,16 @@ def test_계약전력_각주가_하한_미결착을_말한다(
     )
 
 
-def test_역률이_세_갈래다(
+def test_역률_결론이_네_갈래다(
     sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult
 ) -> None:
-    """**기준 미달이면 감액이 아니라 추가요금 회피다** (53세션 4-11)."""
+    """**기준 미달이면 감액이 아니라 추가요금 회피다** (53세션 4-11).
+
+    **넷째 갈래를 S206 2-2 가 앞에 세웠다** — 감액 상한 이상이면 정본(S154)대로
+    「개선할 것이 없다」 로 적고 목표를 말하지 않는다. 그래서 `(97, 97)` 은 이제
+    그 갈래이고, 옛 「올릴 여지가 없습니다」 는 **상한 아래에서 목표가 현재보다
+    낮은** 갈래(`(95, 90)`)에 남는다 — 이름을 「세 갈래」 에서 갈았다.
+    """
     from kwise.measures import evaluate_power_factor
     from kwise.report.document import measure_entries
     from kwise.tariff import TariffSelection
@@ -2545,7 +2551,8 @@ def test_역률이_세_갈래다(
     assert "추가요금이 붙습니다" in penalty, penalty
     assert "추가요금이 없어지고 감액을 받아" in penalty
     assert "올리면" in conclusion(92.0, 97.0)
-    assert "올릴 여지가 없습니다" in conclusion(97.0, 97.0)
+    assert "개선할 것이 없습니다" in conclusion(97.0, 97.0)
+    assert "올릴 여지가 없습니다" in conclusion(95.0, 90.0)
 
 
 def test_태양광_괄호가_면적과_한계를_나란히_놓지_않는다() -> None:
