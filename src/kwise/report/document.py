@@ -78,7 +78,7 @@ from kwise.report.notices import (
 from kwise.report.worksheet import COLUMNS, Worksheet
 from kwise.tariff import BillingResult, TariffTable
 from kwise.tariff.labels import option_label
-from kwise.tariff.power_factor import lagging_standard_pct
+from kwise.tariff.power_factor import lagging_rebate_cap_pct, lagging_standard_pct
 
 __all__ = [
     "CHAPTER_COMPARISON",
@@ -350,9 +350,20 @@ def _power_factor_conclusion(result: PowerFactorResult) -> str:
         추가요금   기준 미달. 없애는 쪽이 감액보다 금액이 크다
         감액       기준 이상에서 더 올린다
         여지 없음  목표가 현재보다 높지 않다 (이미 상한이거나 내리는 쪽)
+
+    **상한 이상이면 목표를 말하지 않는다** (S206 2-2). 정본은 감액 상한 이상을
+    「개선할 것이 없다」 로 처리하라 하는데(S154), 「여지 없음」 갈래가 **목표
+    97% 와 방향(「올릴」)을 세워** 같은 Word 안에서 계산이 낸 정본 말
+    (`power_factor.no_headroom` 안내)과 다른 말을 하고 있었다. 갈래를 하나 앞에
+    세워 **그 안내와 같은 말**을 쓴다 — 판정은
+    :func:`~kwise.measures.has_no_headroom` 한 자리가 쥐고(속성
+    ``no_headroom``) 상한 값은 ``data\\rules_kr.json`` 에서 읽는다.
     """
     current = f"{result.current_pct:,.0f}%"
     target = f"{result.target_pct:,.0f}%"
+    if result.no_headroom:
+        cap = f"{lagging_rebate_cap_pct():,.0f}%"
+        return f"지상역률 {current} 는 감액 상한 {cap} 이상이라 개선할 것이 없습니다."
     if result.improvement_pct <= 0:
         return f"지상역률 {current} 에서 목표 {target} 로 올릴 여지가 없습니다."
     if result.is_penalty_removal:

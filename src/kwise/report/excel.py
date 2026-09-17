@@ -423,12 +423,21 @@ def measure_summary_frame(
                 "회수기간": payback_label(
                     power_factor.payback_years, power_factor.investment_won
                 ),
+                # **상한 이상이면 투입 제어를 권하지 않는다** (S206 2-2). 끝
+                # 문장은 **설비를 들이는 쪽에 주는 권고**인데 상한 이상에서는
+                # 들일 설비가 없다 — 위 「수단」 칸이 같은 판정으로 「개선 여지
+                # 없음」 을 적고 금액 셋이 0 인 자리다. S155 가 「수단」 칸만
+                # 갈랐고 비고가 안 따라왔다.
                 "비고": (
                     f"주간(08~22시) 지상역률 기준 92%, 매 1%당 기본요금의 0.2% "
                     f"(한전 기본공급약관 제43조). 현재 역률요금 "
                     f"{format_won(power_factor.current_charge_won)} 원 → "
-                    f"{format_won(power_factor.target_charge_won)} 원. "
-                    "야간 진상 95% 조항에 걸리지 않도록 시간대별 투입을 제어하십시오."
+                    f"{format_won(power_factor.target_charge_won)} 원."
+                    + (
+                        ""
+                        if power_factor.no_headroom
+                        else " 야간 진상 95% 조항에 걸리지 않도록 시간대별 투입을 제어하십시오."
+                    )
                 ),
             }
         )
