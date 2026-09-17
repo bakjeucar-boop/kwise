@@ -939,3 +939,76 @@ def test_Word_7_2_주의사항에_같은_경고가_두_번_서지_않는다(
 
     assert block.count(CONTRACT_CHANGE_WARNING) == 1, block
     assert "주의사항" in block, "주의사항 자리 자체가 사라지면 안 된다."
+
+
+def _row_value(document: DocumentType, chapter: str, label: str) -> str:
+    """그 장 안 표에서 첫 칸이 ``label`` 인 행의 끝 칸. 하나여야 한다."""
+    found = [
+        [cell.text for cell in row.cells][-1]
+        for item in _chapter_blocks(document, chapter)
+        if isinstance(item, Table)
+        for row in item.rows
+        if row.cells[0].text == label
+    ]
+    assert len(found) == 1, (chapter, label, found)
+    return found[0]
+
+
+def test_계약전력_절감_칸_네_자리가_없음을_한_판정으로_적는다(
+    sample_usage: UsageData,
+    sample_bill: BillingResult,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+) -> None:
+    """**Word 1장만 「0원」 이었다** (S205 2절 · 덱 10벌).
+
+    같은 사실(계약전력을 낮출 자리가 없다)을 Word 1장 · Word 2장 · Excel 요약 ·
+    Excel 진단 네 칸이 적는데, 판정이 넷(없음 · 날값 0 두 곳 · ``not reducible``)이라
+    1장만 「0원」 을 적었다. **지은 문서와 시트의 칸을 읽어** 네 칸이 서로 같고
+    「없음」 인지가 :attr:`ContractAdjustment.no_saving` 과 같은지 문다.
+
+    두 판을 본다 — 엔진이 낸 「낮출 자리 없음」(계약 7,000 kW) 과, 목표는 있는데
+    절감이 0.0 인 판(`money.NO_SAVING` 의 「0 — 계산해서 0원」). 뒤 판은 날값 0 으로
+    가르던 Excel 두 칸이 「없음」 을 적는 자리다.
+    """
+    from dataclasses import replace
+
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.report import ReportSections, build_sheets
+
+    engine = diagnose(
+        sample_usage,
+        tariff,
+        ContractInfo(sample_bill.selection, contract_kw=7_000.0),
+        quality=sample_report,
+    )
+    assert engine.contract is not None and engine.contract.adjustment.no_saving, "전제가 안 섰다"
+    assert engine.summary.contract_saving_won == 0.0
+    adequacy = engine.contract
+    targeted = replace(
+        engine,
+        contract=replace(
+            adequacy, adjustment=replace(adequacy.adjustment, target_contract_kw=6_900.0)
+        ),
+    )
+
+    for diagnosis in (engine, targeted):
+        assert diagnosis.contract is not None
+        word = build_document(
+            DocumentSections(usage=sample_usage, bill=sample_bill, diagnosis=diagnosis)
+        )
+        sheets = build_sheets(
+            ReportSections(
+                usage=sample_usage, bill=sample_bill, diagnosis=diagnosis, include_timeseries=False
+            )
+        )
+        summary = [[str(cell) for cell in row] for row in sheets["요약"].reset_index().to_numpy()]
+        cells = {
+            "Word 1장": _row_value(word, CHAPTER_SUMMARY, "계약전력 조정 (기간)"),
+            "Word 2장": _row_value(word, CHAPTER_DIAGNOSIS, "예상 기간 절감액"),
+            "Excel 요약": next(row[-1] for row in summary if "계약전력 조정 (기간)" in row),
+            "Excel 진단": str(sheets["진단"]["값"]["계약전력 조정 기간 절감액"]),
+        }
+        said = {place: text == money.NO_SAVING for place, text in cells.items()}
+        expected = diagnosis.contract.adjustment.no_saving
+        assert set(said.values()) == {expected}, (expected, cells)
