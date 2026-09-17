@@ -523,6 +523,73 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 **4-6. 되돌림 원복** — plugin 은 프로세스 안에서만 갈았다 · `git status` 가 `tests/test_compare.py` 하나(`git diff --numstat` 78 · 10) · `ruff check` · `ruff format --check` 통과.
 
+### 5절 — 회귀
+
+**5-1. 고친 자리 — 계산 한 줄.** `git diff --numstat dd36d1d HEAD` 가 셋 — `src/kwise/compare/combination.py` **1 · 1** · `tests/test_compare.py` 78 · 10 · `PROCEED.md`. 폴더마다 — **`src\kwise\ui\` 0줄 · `data\` 0줄 · `src\kwise\measures\` 0줄 · `tools\` 0줄**(같은 명령을 네 경로로 좁혀 빈 줄).
+
+**5-2. pytest — 1번 PC 앞단 통째로 · `-n auto --dist load -rf --tb=no --durations=0` — 1,779 passed · 4 xfailed · 0 failed · skip 0 · 수집 1,783.** `FAILED` · `ERROR` 줄 0 · 경고 1. 수집은 `--collect-only` 가 36파일 합 **1,783** 으로 따로 냈다(스크래치 `s202_collect.py` · 첫 줄에 BOM 이 붙어 첫 판은 35파일 1,777 로 셌다 — 빠진 줄은 `tests/test_artifact_words.py: 6`). 「skipped」 가 든 줄 넷은 시험 이름이다. **앞 판(수집 1,781 · 1,777 passed · 4 xfailed)에서 새 못 둘만큼 늘었다**(`test_compare.py` 37 → 39).
+
+**5-3. 소요 4분 55초(벽시계 294.6초 · pytest 293.25초) — 깨끗한 판이다.** 1번 PC · 일꾼 8 · 남의 python **판 앞 0 · 회귀 앞 0 · 회귀 뒤 0 · 케이스 스터디 앞 0 · 뒤 0**(2-7 판 앞 · 뒤도 0). **상한 8분까지 3분 05초 남는다.**
+
+`--durations=0`(스크래치 `s199_durations.py` 복사본) — **도구 합 1,565.29초**(단계 1,449개 · **0.005초 아래 3,900단계가 빠진다 — 많아야 19.5초**). 일꾼 여덟이 고르게 나누면 **195.66초**이고 가장 긴 단계 181.53초(`test_casestudy.py::test_every_validity_check_passes` 의 setup)가 그보다 짧아 **하한은 195.66초**다. 격차(벽시계 − 도구 합/8) **98.9초**.
+
+| 파일 | 건수 | 도구 합 | 몫 |
+|---|---:|---:|---:|
+| `test_ui_screen.py` | 271 | 511.7 | 32.7% |
+| `test_ess_cost.py` | 96 | 212.4 | 13.6% |
+| `test_integration.py` | 65 | 183.7 | 11.7% |
+| `test_casestudy.py` | 23 | 182.8 | 11.7% |
+| (상위 넷 합) | **455 (25.5%)** | **1,090.6** | **69.7%** |
+| `test_slides.py` | 131 | 105.6 | 6.7% (다섯까지 76.4%) |
+
+- **앞 세 판과 방향만 적는다**(건수가 둘 늘었다 · 한 판씩이다 · 까닭으로 단정하지 않는다). S199 4분 54초(1,567.06 · 가장 긴 단계 182.60 · 격차 97.8) · S200 5분 18초(1,567.39 · 204.83 · 122.4) · S201 4분 58초(1,600.59 · 185.71 · 98.0) · **S202 4분 55초(1,565.29 · 181.53 · 98.9)**. 벽시계 · 가장 긴 단계 · 격차가 S199 · S201 쪽이다.
+
+상위 스물다섯 (초 · 단계 · 시험):
+
+| 초 | 단계 | 시험 |
+|---:|---|---|
+| 181.53 | setup | `test_casestudy.py::test_every_validity_check_passes` |
+| 70.59 | setup | `test_base_fee_basis_words.py::…[large-b-over]` |
+| 37.97 | call | `test_ess_cost.py::test_회수기간이_없는_줄에는_표식이_없다` |
+| 37.95 | call | `test_ess_cost.py::test_후보가_없으면_성립하지_않는다고_말한다` |
+| 37.35 | call | `test_ess_cost.py::test_저감량은_실제로_내려간_만큼이다` |
+| 26.29 | setup | `test_ui_screen.py::test_특례를_켠_화면도_같은_잣대다` |
+| 25.52 | setup | `test_ui_screen.py::test_특례를_켠_화면이_기간_전체_적용과_과소_산출을_함께_말한다` |
+| 25.19 | call | `test_ui_screen.py::test_조건_넷이_함께_서는_벌이_저장소에_있다` |
+| 24.75 | call | `test_ui_screen.py::test_역률_체크를_풀면_차이가_0원이고_요약표에는_남는다` |
+| 19.42 | setup | `test_base_fee_basis_words.py::…[large-a]` |
+| 15.68 | call | `test_ui_screen.py::test_수단을_함께_켜도_카드_값이_불변이다[contract]` |
+| 15.02 | setup | `test_ui_screen.py::test_다른_종별_화면도_같은_잣대다[교육갑-맨…]` |
+| 14.73 | setup | `test_ui_screen.py::test_잠정_경고는_한_번만_뜬다[교육갑]` |
+| 14.65 | call | `test_ui_screen.py::test_입력_끝값을_훑어도_화면이_죽지_않는다` |
+| 14.39 | call | `test_ui_screen.py::test_여지_없는_수단을_2단계는_빼고_3단계_조합은_담는다` |
+| 14.06 | call | `test_integration.py::test_입력을_바꾸면_묵은_결과라고_적는다` |
+| 13.35 | setup | `test_ui_screen.py::test_3단계가_세_부분으로_나뉜다` |
+| 12.87 | call | `test_integration.py::test_참고는_선정_용량과_다를_때만_적는다` |
+| 12.86 | call | `test_ui_screen.py::test_낮출_자리가_없어도_지표는_낸다` |
+| 12.21 | call | `test_integration.py::test_3단계_요약이_2단계_카드와_같다` |
+| 11.81 | call | `test_ui_screen.py::test_같은_지문이_화면에_두_번_나오지_않는다` |
+| 11.73 | call | `test_integration.py::test_계산한_뒤에는_방위_라벨에_상대_발전량이_붙는다` |
+| 11.69 | call | `test_integration.py::test_계산한_용량을_먼저_적는다` |
+| 11.60 | call | `test_ui_screen.py::test_수단을_함께_켜도_카드_값이_불변이다[tariff_switch]` |
+| 11.40 | setup | `test_ui_screen.py::test_모든_날짜_축이_한국식이다` |
+
+**5-4. 화면 감사 — 네 수 불변(32.2초).** 을 **955** · 갑Ⅰ **806** · 교육갑 **962** · 교육갑저압 **807** · ① · ② 규칙 위반 네 벌 · 소스 다 **없음** · 중복 후보 5 · 4 · 5 · 4. `ui\` 0줄이고 3단계 합산효과 금액은 감사 조건(을 6,000 kW 따위)에서 글자 수를 안 바꾼다.
+
+**5-5. 케이스 스터디 — 174/174 · 기상 취득 0회 · 도구 121.6초 / 벽시계 2분 11초 · 남의 python 앞 0 · 뒤 0.** 회귀값 여덟 — C1 **5,293.0 kW · 49.0% · 13.5%** · R1 **132.0 kW · 41.1% · 20.0%** · R2 **18.3%** · R3 **27.4%**(R4 132.0 kW · 41.1% · 19.9%). 저장소 판(2-7 에서 뜬 `casestudy_20260916.xlsx` 복사본 · 이 판 앞에도 `git diff --quiet` 같음)과 새 `casestudy_20260917.xlsx` 를 칸 단위로 맞대니(`fillna` 뒤) **시트 여덟이 같고 갈린 칸 22 가 전부 소요**다(「케이스」 `소요(초)` 12 · 「성능」 `값` 10). **금액·수치 칸 0 — 이 판이 움직인 값이 케이스 스터디에 없다**(조합을 계산하는 자리가 없다는 예상과 같다). 새 파일은 지웠다.
+
+**5-6. 정적 검사 다섯 — 앞 판과 같다.**
+
+| 무엇 | 지금 | 앞 판 |
+|---|---|---|
+| `ruff check .` | **통과** | 통과 |
+| `ruff format --check .` | 어긋남 **9** · 통과 **255** | 9 · 255 |
+| 맨 `mypy` | **10건** (171파일) | 10건 |
+| `mypy tests tools` | **36건** (60파일) | 36건 |
+| `tools\scan_ctrl.py` | **0곳** (제어문자 0 · 탭 0) | 0곳 |
+
+이 판이 `docs\directives\S202.md` 를 앉히면 다음 판 format 통과는 **256** 이다.
+
 ---
 ## 오늘 (2026-09-17) 201세션 — **태양광 뒤 역률 가정이 어디서 오는지 갈랐다 · ㅁ 는 조합 역률 몫 0 을 안 연다 · 고치지 않았다**
 
