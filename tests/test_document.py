@@ -1012,3 +1012,68 @@ def test_계약전력_절감_칸_네_자리가_없음을_한_판정으로_적는
         said = {place: text == money.NO_SAVING for place, text in cells.items()}
         expected = diagnosis.contract.adjustment.no_saving
         assert set(said.values()) == {expected}, (expected, cells)
+
+
+#: 상한 이상에서 **안 서야 하는** 말 — 목표를 세우는 결론과 설비 투입 권고.
+_TARGET_SENTENCE = "올릴 여지가 없습니다"
+_CONTROL_ADVICE = "시간대별 투입을 제어"
+
+
+@pytest.mark.parametrize(
+    ("current_pct", "no_headroom"), [(100.0, True), (92.0, False)], ids=["역률_100", "역률_92"]
+)
+def test_감액_상한_이상이면_산출물이_목표도_투입_제어도_말하지_않는다(
+    sample_usage: UsageData,
+    sample_bill: BillingResult,
+    sample_diagnosis: Diagnosis,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    current_pct: float,
+    no_headroom: bool,
+) -> None:
+    """**상한 이상인 벌에 목표와 권고가 서 있었다** (S206 1-4 · 2절 · 덱 3벌).
+
+    정본은 감액 상한 이상을 「개선할 것이 없다」 로 처리한다(S154). 그런데 자리
+    둘이 그 말을 안 따랐다 — Word 3.4 · PPT 장12 의 결론이 **목표(97%)와 방향
+    (「올릴」)을 세웠고**, Excel 「수단별 결과」 비고가 **설비 투입 제어를 권했다.**
+
+    **지은 문서와 지은 프레임의 글자를 읽는다** — 소스 문자열을 찾지 않는다.
+    **두 벌을 다 문다**(상한 이상 · 기준 92) — 한쪽만 보면 다른 쪽이 갈려도
+    초록이다. 상한 값은 :func:`~kwise.tariff.power_factor.lagging_rebate_cap_pct`
+    에서 읽어 **시험이 97 을 다시 적지 않는다.**
+    """
+    from kwise.measures import evaluate_power_factor
+    from kwise.report.excel import measure_summary_frame
+    from kwise.tariff.power_factor import lagging_rebate_cap_pct
+
+    result: PowerFactorResult = evaluate_power_factor(
+        sample_usage,
+        tariff,
+        sample_bill.selection,
+        current_pct=current_pct,
+        baseline=sample_bill,
+        quality=sample_report,
+    )
+    assert result.no_headroom is no_headroom, "전제가 안 섰다"
+
+    word = _all_text(
+        build_document(
+            DocumentSections(
+                usage=sample_usage,
+                bill=sample_bill,
+                diagnosis=sample_diagnosis,
+                measures=measure_entries(power_factor=result),
+            )
+        )
+    )
+    cap = f"{lagging_rebate_cap_pct():,.0f}%"
+    verdict = f"지상역률 {current_pct:,.0f}% 는 감액 상한 {cap} 이상이라 개선할 것이 없습니다."
+    rebate = f"지상역률을 {current_pct:,.0f}% → {cap} 로 올리면"
+    assert (verdict in word) is no_headroom, (current_pct, verdict)
+    assert (rebate in word) is not no_headroom, (current_pct, rebate)
+    # **옛 글자는 두 벌 어디에도 안 선다.** 상한 이상에서는 정본이 지웠고, 92 는
+    # 애초에 감액 갈래라 이 말이 설 자리가 아니다.
+    assert _TARGET_SENTENCE not in word, (current_pct, _TARGET_SENTENCE)
+
+    note = str(measure_summary_frame(power_factor=result)["비고"].to_numpy()[0])
+    assert (_CONTROL_ADVICE in note) is not no_headroom, (current_pct, note)
