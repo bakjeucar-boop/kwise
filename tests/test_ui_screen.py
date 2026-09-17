@@ -5067,3 +5067,65 @@ def test_역률_체크를_풀면_차이가_0원이고_요약표에는_남는다(
         f"{case.key} — 역률을 뺐는데 차이가 「{gap}」 입니다. 그 벌의 차이는 전부 "
         "역률 조각 몫이어야 합니다 (S197 1-5)."
     )
+
+
+# ============================================ S204 4절 — 이유 줄이 역률 몫의 방향과 맞는다
+
+
+def _basis_rows(screen: Any) -> dict[str, str]:
+    """3단계 「계산 근거」 표 — 구분 → 값 (화면에 그려진 글자 그대로)."""
+    frame = next(
+        item.value
+        for item in screen.dataframe
+        if list(item.value.columns) == ["구분", "산식", "값"]
+        and "차이" in [str(label) for label in item.value["구분"]]
+    )
+    return {str(row["구분"]).strip(): str(row["값"]) for row in frame.to_dict("records")}
+
+
+def _won_text(value: str) -> float:
+    """「-7,000원」 → -7000.0 (천 원 절사 글자)."""
+    return float(value.replace("원", "").replace(",", ""))
+
+
+def test_역률_이유_줄은_조합_역률_몫의_방향과_반대로_말하지_않는다() -> None:
+    """**3단계 이유 줄이 역률 몫을 「단순 합보다 작아집니다」 라 적었다** (S204 1-4 ㄱ1).
+
+    덱 10벌에서 조합의 역률 몫(켬 − 끔)이 2단계 카드보다 **컸다** — 조합은 태양광이
+    떨어뜨린 역률까지 되돌린다(S203 2-1). S204 가 방향을 뺀 말로 갈았다.
+
+    **역률 상호작용은 화면 「차이」 두 값의 차다.** 단순 합도 고른 것만 더하므로
+    (16세션) 역률 체크를 풀면 단순 합에서 카드가 빠지고 합산효과에서 몫이 빠진다 —
+    ``차이(켬) − 차이(끔) = 몫 − 카드``. 천 원 절사 두 번이라 오차는 2,000원 안이다.
+
+    **소스 글자를 다시 적지 않는다** — 그려진 표에서 역률 줄을 찾아 방향 낱말만 본다.
+    벌은 S202 · S203 이 두 수를 잰 `small-a2` 다(몫 − 카드 +159,881.22원).
+    """
+    import sys
+
+    sys.path.insert(0, str(Path("tools").resolve()))
+    import render_deck
+
+    case = render_deck.BY_KEY["small-a2"]
+    on = render_deck.build_app(case).run()
+    assert not on.exception, on.exception
+    app = render_deck.build_app(case)
+    app.session_state["combination_pick"] = tuple(
+        key for key in render_deck.ALL_MEASURES if key != "power_factor"
+    )
+    off = app.run()
+    assert not off.exception, off.exception
+
+    rows_on = _basis_rows(on)
+    interaction = _won_text(rows_on["차이"]) - _won_text(_basis_rows(off)["차이"])
+    assert interaction > 2_000, (
+        f"{case.key} — 역률 상호작용이 {interaction:,.0f}원입니다. 이 못은 몫이 카드보다 "
+        "큰 벌에서만 문다 — 조건이 떨어졌으면 벌을 다시 고르십시오 (S204 1-4)."
+    )
+
+    lines = [value for label, value in rows_on.items() if label.startswith("이유") and "역률" in value]
+    assert len(lines) == 1, f"{case.key} — 역률 이유 줄이 {len(lines)}개입니다: {lines}"
+    assert not re.search(r"작아|줄어든다|줄어듭니다", lines[0].split(".", 1)[1]), (
+        f"{case.key} — 역률 몫이 카드보다 {interaction:,.0f}원 큰데 이유 줄이 "
+        f"작아진다고 적습니다: 「{lines[0]}」"
+    )
