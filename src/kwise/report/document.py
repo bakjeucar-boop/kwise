@@ -304,10 +304,11 @@ def _contract_adequacy_saving(adequacy: ContractAdequacy) -> str:
 
     **「낮출 자리가 있다」 로 가른다** (100세션). ``floor_binding`` 으로 가르면
     하한이 지면서 종별을 넘는 판에서 절감액이 있는데도 「없음」 이 나간다.
+    판정은 수단 쪽과 같은 ``no_saving`` 이다 (S205 2절).
     """
     if adequacy.saving_won is None:
         return f"{_UNPRICED} — {adequacy.saving_basis}"
-    if not adequacy.reducible:
+    if adequacy.adjustment.no_saving:
         return NO_SAVING
     return _won(adequacy.saving_won)
 
@@ -1443,7 +1444,17 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
                 _won(summary.tariff_switch_saving_won),
             ]
         )
-        rows.append(["계약전력 조정 (기간)", _won(summary.contract_saving_won)])
+        # 「없음」 은 여지 판정 `no_saving` 하나가 가른다 (S205 2절) — 이 칸만
+        # 판정 없이 「0원」 을 적어 같은 문서 2장 표와 갈렸다.
+        contract = diagnosis.contract if diagnosis is not None else None
+        rows.append(
+            [
+                "계약전력 조정 (기간)",
+                NO_SAVING
+                if contract is not None and contract.adjustment.no_saving
+                else _won(summary.contract_saving_won),
+            ]
+        )
         rows.append(["태양광 피크 기여 가능성", str(summary.pv_potential)])
 
     best = sections.comparison.best if sections.comparison is not None else None
