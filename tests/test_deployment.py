@@ -849,3 +849,41 @@ def test_S209_가_고친_도구가_run_tool_로_돈다(name: str, tmp_path: Path
     assert code == 0, f"{name} 이 run_tool 에서 종료 {code} 입니다: {body[-400:]}"
     assert body.strip(), f"{name} 이 run_tool 에서 아무것도 안 냈습니다."
     assert "Traceback" not in body, f"{name} 이 run_tool 에서 터졌습니다: {body[-400:]}"
+
+
+def test_S210_이_고친_도구가_상대_경로를_제_뿌리에_댄다(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**둘 다 「자리」 를 안 대던 결함이다** (S210 3절).
+
+    ``deck_words --diff`` 는 ``--snap``·``--read`` 와 달리 `Path` 를 그대로
+    열어 **담아 둔 스냅 이름을 못 읽었다**(`FileNotFoundError`). ``run_tool`` 은
+    `subprocess` 에 ``cwd=PROJECT_ROOT`` 를 주는데 Windows 가 실행 파일은
+    **부르는 쪽 cwd** 에서 찾아, **저장소 밖에서 부르면** 상대 경로 명령이
+    ``[WinError 2]`` 로 죽었다 — 저장소 뿌리에서는 지나가므로 **자리에 따라
+    있다 없다 했다.** 그래서 이 시험은 **cwd 를 옮겨 놓고** 문다.
+    """
+    run_tool = _run_tool()
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    try:
+        import deck_words
+    finally:
+        sys.path.pop(0)
+
+    monkeypatch.setenv("PROJECT_CACHE", str(tmp_path))
+    한벌 = '{"벌하나": [["어디", "무엇", "자리", "역률 감액은 기본요금에 비례합니다"]]}'
+    snap_dir = deck_words.snap_dir()
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    for 이름 in ("앞.json", "뒤.json"):
+        (snap_dir / 이름).write_text(한벌, encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)  # **저장소 밖에서 부른다**
+    path, code, _elapsed = run_tool.run("deck_words", ["--diff", "앞.json", "뒤.json"])
+    body = path.read_text(encoding="utf-8")
+    assert code == 0, f"deck_words --diff 가 상대 경로를 스냅 자리에 안 댑니다: {body[-400:]}"
+    assert "갈린 줄 0" in body, body[-400:]
+
+    path, code, _elapsed = run_tool.run(r".venv\Scripts\python.exe", ["--version"])
+    body = path.read_text(encoding="utf-8")
+    assert code == 0, f"run_tool 이 상대 경로 명령을 저장소 뿌리에 안 댑니다: {body[-400:]}"
+    assert body.startswith("Python "), body[:80]

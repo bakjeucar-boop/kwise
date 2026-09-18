@@ -360,6 +360,29 @@ def test_sample_contract_has_little_headroom(sample_diagnosis: Diagnosis) -> Non
     assert not adequacy.floor_binding
 
 
+def test_여유_확보_안내를_두_모듈이_같은_사실_ID_로_낸다() -> None:
+    """**거르는 잣대가 한 이름을 보므로 내는 쪽도 갈리면 안 된다** (S210 2절).
+
+    여유 확보 안내를 내는 자리는 둘이다 — 1단계 진단(`diagnose\\contract.py`)과
+    2단계 수단(`measures\\contract.py`). 산출물 세 자리가 그것을
+    :data:`~kwise.measures.MARGIN_FACT` 하나로 거르므로, **두 자리가 다른 ID 를
+    붙이면 한쪽이 조용히 안 걸러진다.**
+
+    이 모듈은 `measures\\` 를 **런타임에 안 들인다**(형에만 쓴다) — 글자 사본을
+    따로 든 것과 같은 까닭이다. 그래서 ID 도 날 문자열이고, **갈렸는지는 여기서
+    본다.** 글자 사본이 갈리는 것도 같은 자리에서 문다.
+    """
+    from kwise.diagnose import contract as diagnose_contract
+    from kwise.measures.contract import MARGIN_FACT, MARGIN_NOTICE
+
+    assert diagnose_contract._MARGIN_NOTICE == MARGIN_NOTICE
+    source = (PROJECT_ROOT / "src" / "kwise" / "diagnose" / "contract.py").read_text(
+        encoding="utf-8"
+    )
+    적은_자리 = f'warn(_MARGIN_NOTICE, fact="{MARGIN_FACT}")'
+    assert 적은_자리 in source, f"1단계가 다른 사실 ID 로 낸다 — {적은_자리!r} 가 없다"
+
+
 def _adequacy(
     usage: UsageData,
     bill: BillingResult,

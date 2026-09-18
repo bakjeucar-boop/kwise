@@ -292,6 +292,41 @@ def test_Excel_요약이_등급을_적는다(
         assert line in graded, line
 
 
+@pytest.mark.parametrize("여유_확보_안내가_있나", [True, False])
+def test_Excel_요약이_여유_확보_안내를_한_번만_싣는다(
+    sample_usage: UsageData,
+    sample_bill: BillingResult,
+    sample_diagnosis: Diagnosis,
+    여유_확보_안내가_있나: bool,
+) -> None:
+    """**요약 시트에 그 안내가 두 번 서지 않는다** (S182 4-3 · S210 2절).
+
+    `measures\\contract.py` 의 :data:`~kwise.measures.MARGIN_NOTICE` 는
+    `report\\notices.py` 의 ``CONTRACT_CHANGE_WARNING`` 과 **글자까지 같은
+    사본**이라, 위의 「필수 안내」 줄과 아래 안내 블록이 **같은 문장을 두 번**
+    싣는 길이 있다. 거르는 잣대는 **사실 ID** 하나다
+    (:data:`~kwise.measures.MARGIN_FACT`).
+
+    **두 갈래를 다 문다** — 안내가 든 벌(걸러야 한다)과 안 든 벌(거를 것이
+    없다). 한쪽만 보면 잣대를 통째로 지워도 안 든 벌은 초록이다.
+    """
+    from kwise.measures import MARGIN_FACT, MARGIN_NOTICE
+    from kwise.report.excel import ReportSections, _summary_rows
+    from kwise.report.notices import CONTRACT_CHANGE_WARNING
+
+    실린것 = (warn(MARGIN_NOTICE, fact=MARGIN_FACT),) if 여유_확보_안내가_있나 else ()
+    diagnosis = dataclasses.replace(
+        sample_diagnosis,
+        notices=tuple(item for item in sample_diagnosis.notices if item.fact != MARGIN_FACT)
+        + 실린것,
+    )
+    rows = _summary_rows(
+        ReportSections(usage=sample_usage, bill=sample_bill, diagnosis=diagnosis)
+    )
+    선줄 = [label for label, _kind, text in rows if text == CONTRACT_CHANGE_WARNING]
+    assert 선줄 == ["계약전력 변경 경고"], 선줄
+
+
 # ==================================================== ⑤ 사실 ID (20세션)
 
 
@@ -555,6 +590,12 @@ def test_안내를_문구_조각으로_거르지_않는다() -> None:
     문구를 다듬으면 조용히 어긋나는 방식이라 20세션에 걷어냈는데, DR 카드에
     ``item.text.startswith("낙찰 후 감축을")`` 이 남아 있었다. 같은 잔재가
     다시 생기지 않게 소스를 훑는다.
+
+    **조각뿐 아니라 통글자도 문다** (S210 4절). 이 그물에 `` == ``·`` != `` 가
+    없어 **통글자로 견주는 세 자리**가 그 아래에서 살아 있었다 —
+    ``report\\excel.py``·``report\\document.py``·``ui\\views\\measures.py`` 가
+    `` item.text != CONTRACT_CHANGE_WARNING `` 으로 같은 안내를 걸렀다.
+    조각이든 통글자든 **문구를 다듬으면 조용히 어긋나는 것은 같다.**
     """
     import re
 
@@ -563,6 +604,7 @@ def test_안내를_문구_조각으로_거르지_않는다() -> None:
             \.text\.(startswith|endswith)\(     # 안내 문구의 앞뒤를 훑는다
             | (in|not\ in)\ item\.text          # 문구에 조각이 있는지 본다
             | (in|not\ in)\ notice\.text
+            | \.text\s*(==|!=)                  # 통글자로 견준다 (S210 4절)
         )""",
         re.VERBOSE,
     )
