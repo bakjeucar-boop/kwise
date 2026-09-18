@@ -869,9 +869,7 @@ def measure_entries(
             # 옮기는 일이라, 뿌리는 미해결에 이름으로 남겼다.
             cautions=(
                 CONTRACT_CHANGE_WARNING,
-                *body_lines(
-                    tuple(item for item in contract.notices if item.fact != MARGIN_FACT)
-                ),
+                *body_lines(tuple(item for item in contract.notices if item.fact != MARGIN_FACT)),
             ),
             notices=contract.notices,
             # **여지가 없으면 왜 없는지 보인다** (39세션 4-2). 화면이 83세션에

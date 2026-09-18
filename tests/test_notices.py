@@ -320,9 +320,7 @@ def test_Excel_요약이_여유_확보_안내를_한_번만_싣는다(
         notices=tuple(item for item in sample_diagnosis.notices if item.fact != MARGIN_FACT)
         + 실린것,
     )
-    rows = _summary_rows(
-        ReportSections(usage=sample_usage, bill=sample_bill, diagnosis=diagnosis)
-    )
+    rows = _summary_rows(ReportSections(usage=sample_usage, bill=sample_bill, diagnosis=diagnosis))
     선줄 = [label for label, _kind, text in rows if text == CONTRACT_CHANGE_WARNING]
     assert 선줄 == ["계약전력 변경 경고"], 선줄
 
