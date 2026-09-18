@@ -100,6 +100,10 @@ def read(path: Path) -> Counts:
     notes: list[str] = []
     if not results:
         notes.append("결과 줄이 없다 — `-q` 가 겹쳐 `-qq` 가 됐는지 본다 (67세션)")
+    if collected is None and results:
+        # ``addopts = "-q"`` + xdist 판에는 ``N workers [M items]`` 줄조차 없다.
+        # 그 판의 「수집 건수」 는 결과 합이다 — 기록이 그렇게 적어 왔다.
+        notes.append("수집 줄이 없다 — `-q` + xdist 판이라 **결과 합이 수집 건수**다")
     if results.get("skipped"):
         notes.append(f"skip {results['skipped']}건 — **안 돈 시험이다.** 회귀 보고에 함께 적는다")
     돈것 = sum(count for name, count in results.items() if name not in {"deselected", "errors"})
@@ -129,10 +133,11 @@ def main() -> int:
     if counts.results:
         print("결과  " + " · ".join(f"{name} {count}" for name, count in counts.results.items()))
         print(f"합    {counts.total}")
-    if args.base is not None and counts.collected is not None:
-        gap = counts.collected - args.base
+    지금 = counts.collected if counts.collected is not None else (counts.total or None)
+    if args.base is not None and 지금 is not None:
+        gap = 지금 - args.base
         말 = "같다" if gap == 0 else f"{gap:+d}"
-        print(f"앞 판  {args.base} → {counts.collected} ({말})")
+        print(f"앞 판  {args.base} → {지금} ({말})")
     if counts.failures:
         print(f"\n실패 {len(counts.failures)}건")
         for line in counts.failures:
