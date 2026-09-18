@@ -95,10 +95,25 @@ def _run_pytest(argv: list[str]) -> tuple[str, int]:
     return buffer.getvalue(), code
 
 
+def _at_root(name: str) -> str:
+    """상대 경로 실행 파일을 **저장소 뿌리에 댄다** (S210 3절).
+
+    아래 ``cwd=PROJECT_ROOT`` 는 **자식이 시작할 자리**만 정하고, Windows 는
+    실행 파일을 **부르는 쪽의 cwd** 에서 찾는다. 그래서 저장소 밖에서 부르면
+    ``.venv\\Scripts\\ruff.exe`` 같은 상대 경로가 ``[WinError 2]`` 로 죽었다 —
+    저장소 뿌리에서 부르면 지나가므로 **자리에 따라 있다 없다 했다.**
+    """
+    path = Path(name)
+    if path.is_absolute():
+        return name
+    at_root = PROJECT_ROOT / path
+    return str(at_root) if at_root.exists() else name
+
+
 def _run_command(argv: list[str]) -> tuple[str, int]:
     """그 밖의 명령. **stderr 를 함께 받는다** — 셸에 ``2>&1`` 을 안 붙이려고."""
     done = subprocess.run(
-        argv,
+        [_at_root(argv[0]), *argv[1:]],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,

@@ -136,8 +136,18 @@ def diff(before: dict[str, list[list[str]]], after: dict[str, list[list[str]]]) 
     return Diff(맞댄줄, 벌별, 갈린, tuple(어긋난벌), 조각(before), 조각(after))
 
 
+def _at(path: Path) -> Path:
+    """스냅 자리에 댄다. **온 경로면 그대로다** (S210 3절).
+
+    ``--snap`` 과 ``--read`` 는 저마다 이 줄을 들고 있었는데 ``--diff`` 만 없어
+    담아 둔 이름(``s210_before.json``)을 주면 ``FileNotFoundError`` 로 죽었다.
+    **대는 자리를 여기 하나로 둔다** — 넷째 길이 붙어도 저절로 따라온다.
+    """
+    return path if path.is_absolute() else snap_dir() / path
+
+
 def _load(path: Path) -> dict[str, list[list[str]]]:
-    data: dict[str, list[list[str]]] = json.loads(path.read_text(encoding="utf-8"))
+    data: dict[str, list[list[str]]] = json.loads(_at(path).read_text(encoding="utf-8"))
     return data
 
 
@@ -186,7 +196,7 @@ def main() -> int:
     # **읽는 길** (S209 2절). ``--count`` 가 늘 19벌을 다시 떠 5분 남짓을
     # 버렸다 — 읽는 자리가 ``--diff`` 하나뿐이었다.
     if args.read is not None:
-        path = args.read if args.read.is_absolute() else snap_dir() / args.read
+        path = _at(args.read)
         data = _load(path)
         줄 = sum(len(rows) for rows in data.values())
         print(f"읽었다 — {path}\n합 {len(data)}벌 · {줄:,}줄")
@@ -198,7 +208,7 @@ def main() -> int:
         print(f"합 {len(data)}벌 · {줄:,}줄 · {time.time() - started:,.1f}초")
 
     if args.snap is not None:
-        path = args.snap if args.snap.is_absolute() else snap_dir() / args.snap
+        path = _at(args.snap)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, ensure_ascii=False, indent=0), encoding="utf-8")
         print(f"담았다 — {path}")
