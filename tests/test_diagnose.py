@@ -880,3 +880,68 @@ def test_basis_says_so_when_no_mask_was_given() -> None:
     basis = pv_basis_label(peak_profile(kw, 15))
     assert "마스크를 받지 않아" in basis
     assert "계약종별 미입력" in basis
+
+
+#: 계약전력 조정 절감액을 **날값 0 으로 재는** 꼴. 이 식이 `src\` 에 다시 서면 안 된다.
+_RAW_ZERO = re.compile(
+    r"(contract_saving_won|contract\.saving_won|adequacy\.saving_won|adjustment\.saving_won)"
+    r"\s*(==|!=)\s*0"
+)
+
+
+def test_계약전력_조정의_없음을_가르는_잣대는_한_곳이다() -> None:
+    """**같은 칸을 적는 자리가 저마다 잣대를 들면 갈린다** (S205 · S208 1절).
+
+    「없음」 은 **여지 판정** :attr:`~kwise.measures.contract.ContractAdjustment.no_saving`
+    하나가 가른다 — `money.NO_SAVING` 독스트링이 그 뜻을 여지에 매어 두었다.
+    **날값 ``saving_won == 0``** 은 「계산해서 0원」(ㄱ)이라 뜻이 다르다. S205 가
+    `report\\excel.py` 둘과 `report\\document.py` 둘을 옮겼고, S208 이 마지막으로
+    남은 `diagnose\\summary.py::build_lines` 를 옮겼다.
+
+    그 식이 `src\\` 어디든 다시 서면 여기서 걸린다 — ``test_tariff_engine.py`` 의
+    「요금적용전력을 만드는 자리는 한 곳이다」 와 같은 모양이다.
+    """
+    떠도는것: list[str] = []
+    for path in sorted((PROJECT_ROOT / "src").rglob("*.py")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            # **글로 적은 것은 안 문다** — 이 못 자체가 왜 생겼는지 적은 주석과
+            # 겹따옴표(``…``) 안의 인용이 그것이다. 코드만 본다.
+            몸 = re.sub(r"``[^`]*``", "", line).split("#", 1)[0]
+            if _RAW_ZERO.search(몸):
+                떠도는것.append(f"{path.relative_to(PROJECT_ROOT)}:{number}: {line.strip()}")
+    assert not 떠도는것, f"계약 절감액을 날값 0 으로 재는 자리가 생겼다 — {떠도는것}"
+
+
+@pytest.mark.parametrize(
+    ("contract_kw", "여지없음", "칸"),
+    [
+        (CONTRACT_KW, True, "없음"),  # 하한 1,650 kW < 요금적용전력 5,293 kW — 낮춰도 안 준다
+        (20_000.0, False, "만원"),  # 하한 6,000 kW > 5,293 kW — 하한이 걸려 낮출 자리가 있다
+    ],
+)
+def test_1단계_요약의_계약_칸이_여지_판정과_한_말을_한다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    contract_kw: float,
+    여지없음: bool,
+    칸: str,
+) -> None:
+    """**걸러짐이 서는 벌과 안 서는 벌 둘 다에서 문다** (S208 3-2).
+
+    한쪽만 보면 다른 쪽이 갈려도 초록이다. 두 벌은 같은 자료에 계약전력만
+    다르다 — 하한(30%)이 요금적용전력을 넘느냐가 갈림이다.
+    """
+    result = diagnose(
+        sample_usage,
+        tariff,
+        ContractInfo(CURRENT, contract_kw=contract_kw),
+        quality=sample_report,
+    )
+    assert result.contract is not None
+    assert result.contract.adjustment.no_saving is 여지없음
+    계약줄 = result.summary.lines[1]
+    assert 계약줄.startswith("계약전력 조정")
+    assert 칸 in 계약줄
+    # **판정과 글자가 같은 말을 한다** — 여지가 없을 때만 「없음」 이다.
+    assert ("없음" in 계약줄) is 여지없음
