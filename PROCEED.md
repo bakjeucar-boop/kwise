@@ -414,6 +414,51 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - **없어서 아쉬웠던 것 하나** — **「앞 판이 「울타리 밖」 으로 적은 자리」** 가 항목에 없다. 이 판은 그 자리(S205 가 계산 폴더 안에서 멈춘 셋)가 바로 일감인데 0-6 의 「멈춘 자리」 는 앞 **한** 판만 본다. 1절에서 S205 절을 따로 떠야 했다.
 - **소요와 글자** — 0절에 **약 10분** · 읽은 글자 약 **5만 자**. **S207 판(18분 · 12만 자)보다 줄었다** — 항목이 둘 늘었는데도 줄었고, 까닭은 **0-13 이 세는 법을 못 박아 되짚기가 없었던 것**과 「현재 상태」 칸을 이름으로만 떠 온 것이다(칸 여섯 대신 스크래치 하나).
 
+### 1절 — 거르는 잣대를 전수로 세고 뿌리를 값으로 냈다 (세기만 했다)
+
+**1-1. 그물 둘 · 걸린 줄 192 · 파일 33.** 스크래치 `s208_net.py` 가 `src\kwise` 전수를 훑었다 — ① 이름 아홉(`has_saving` · `actionable` · `no_saving` · `no_headroom` · `reducible` · `zero_reason` · `applicable` · `combination_specs` · `applied`) · ② 식 아홉(`saving_won == 0` 꼴 · `saving_won is None` · `NO_SAVING` · `NOT_AVAILABLE` · 「여지」 · 「개선할 것이 없」 따위).
+
+- **그물이 못 보는 것 셋.** ⓐ **괄호가 낀 날값 비교** — `report\narrative.py:802` 의 `(getattr(summary, field) or 0.0) > 0`(자리 19)이 안 걸렸다. **S205 표에 있던 자리를 이 판 그물이 놓쳤다** — 그래서 S205 표를 나란히 두고 대조했다. ⓑ 판정 이름이 위 낱말을 안 쓰는 자리(S196 AST 그물이 205건을 봤다). ⓒ 그림 안 글자 · 덱 19벌 밖 입력.
+- **S205 열아홉 자리가 지금도 다 선다 — 없어진 자리 0 · 새로 난 자리 0.** 12·13·14·15 는 S205 가 잣대를 갈아 끼운 그대로다.
+
+**1-2. 자리마다 잣대 — 같은 사실을 적는데 잣대가 갈리는 짝은 지금 하나뿐이다.**
+
+| 사실 | 정본 잣대 | 그 잣대를 부르는 자리 | **다른 잣대를 쓰는 자리** |
+|---|---|---|---|
+| **계약전력 조정 — 낮출 자리가 없어 줄 것이 없다** | `ContractAdjustment.no_saving` (`CONFIRMED and not reducible`) | 9 의 다섯(`excel.measure_summary_frame` · `standalone` 190 · `worksheet` 357 · `document._contract_saving` · `views\measures` 444) + S205 가 옮긴 **12 · 13 · 14 · 15** | **11 `diagnose\summary.py:135`** — `summary.contract_saving_won == 0.0` (날값) |
+| **역률 — 개선 여지가 없다** | `has_no_headroom(current, target)` | `no_headroom` 속성을 부르는 여섯(`excel` 414·438 · `standalone` 212 · `frames` 1002 · `views\measures` 708·720)과 `power_factor.py:180` | **없다** — S155 가 한 자리로 모았다 |
+| **선택요금 — 계산해서 0원(현행이 최적)** | 없다(일부러 안 만든다) | `diagnose\summary.py:132` 한 자리 | — |
+| **낮출 자리가 있다** | `ContractAdjustment.reducible` (`target_contract_kw is not None`) | 여섯(`diagnose\contract` 171·187 · `document` 878·1673 · `views\measures` 423·452) | **열하나가 날값 `target_contract_kw is not None` 을 그대로 쓴다**(`document` 400·429·435·449·1664 · `excel` 362·661 · `standalone` 182 · `worksheet` 323 · `views\measures` 435 · `views\compare` 598) |
+| **근거 장에 실을 값이 있다** | `MeasureEntry.has_saving` | `slides` 2245·2360 | `document` 여덟 곳이 수단마다 다른 날값으로 만든다(`bool(...)`) — **수단마다 이름이 달라 한 식이 못 된다** |
+| **회수기간을 낼 수 있다** | `measures\base.payback_years` (`<= 0` 이면 None) | 부르는 자리 전부 | `frames` 646 · `validity` 229 가 다시 재는데 **둘 다 ESS 점 표식·검증이라 다른 사실**이다 |
+
+**1-3. 계산 폴더 안과 밖.** 자리 열아홉 가운데 **안 여섯**(1 은 `ui\` 라 밖 · 2 · 3 · 4 = `compare\` · 10 의 정의 = `measures\` · 11 = `diagnose\`) · **밖 열셋**. S205 가 고친 넷(12~15)은 다 밖(`report\`)이었다 — **그 판이 안에서 멈춘 자리가 3 · 10 · 11 셋**이다.
+
+**1-4. 벌 × 자리 × 판정 전수 — 스크래치 `s208_verdicts.py`**(앱을 안 띄운다 · 19벌 33초 · 실패 0). 표는 `verdicts_before.json` 에 있고 요약은 아래다.
+
+| 판정 | 참인 벌 |
+|---|---|
+| 계약 여섯 자리(9 · 11 · 12 · 13 · 14 · 15) | **10벌** — `large-b` · `large-b-short` · `large-b-pf85` · `small-a2` · `small-a2-pf100-offset` · `small-edu-a` · `large-edu-b` · `small-ind-a2` · `large-ind-b` · `small-a2-pf100-offset-area` |
+| 역률 두 자리(`no_headroom` · 금액 0원) | **3벌** — 역률 100 셋(`small-a2-pf100-offset` · `small-ind-a1` · `…-area`) |
+| 선택요금 날값 0 | 6벌 |
+| 계약 적정성 상태 | `CONFIRMED` **18** · `UNKNOWN` **1**(`small-a-short`) |
+
+**1-5. 자리끼리 판정이 갈리는 칸 — 0.** 벌 19 × 자리 8 = **칸 152 에서 갈린 칸 0**(`s208_table.py`). 곧 **11 을 `no_saving` 으로 모아도 덱 19벌에서는 한 칸도 안 갈린다** — S205 가 12·13 에서 본 것과 같은 모양이다.
+
+**1-6. 모을 수 있는 자리 = 1. 이것이 2절의 울타리이자 하한이다.**
+
+| 자리 | 모으면 | 1-4 표가 갈리나 | 갈래 |
+|---|---|---|---|
+| **11 `diagnose\summary.py:135`** | `contract_saving_won == 0.0` → `adequacy.adjustment.no_saving` | **안 갈린다**(152칸 0) | **모으기** |
+| 10 역률 **금액 칸** 「0원」 → 「없음」 | 잣대는 이미 하나다 · 금액 칸이 잣대를 안 본다 | **글자가 갈린다** — 역률 100 세 벌에서 수치 조각 「0원」 이 사라지고, 같은 벌 `measures\power_factor.py:188` 의 「절감액은 0원입니다」 와 어긋난다 | **고치기 — 안 건드린다** |
+| 3 `compare\combination.py:256` 조합 이름에서 계약 조각 빼기 | `target is None` = `not reducible` 인데 **`no_saving` 과 다른 것을 거른다**(`UNKNOWN` 에서 갈린다) · 이름 쪽을 거르면 금액이 움직인다(S196 3-2) | 갈린다 | **고치기 — 안 건드린다** |
+| **목표 계약전력 칸 둘**(`document` 1664 · `excel` 661) | `target is None` 일 때 **「없음」** 을 적는데, 같은 벌 절감액 칸은 `no_saving` 이라 **「미산출」** 이다 | **`small-a-short` 한 벌에서 갈린다**(`UNKNOWN`) | **고치기 — 안 건드린다 · 이름으로 올린다** |
+| `reducible` 날값 열하나 | 식이 글자 그대로 같다 | 안 갈린다 | **못 모은다 — 열하나가 다 「값을 쓰려고 좁히는 자리」**(`if target is not None: … f"{target:,.0f} kW"`)라 `reducible` 로 바꾸면 `float \| None` 이 안 좁혀져 mypy 가 문다. 판정이 아니라 좁힘이다 |
+
+**1-7. 모을 자리를 어디에 두나 — 새 자리를 안 만든다.** S205 가 정한 **`kwise.measures.contract.ContractAdjustment.no_saving`** 을 그대로 부른다. 까닭 셋 — ① 그 속성이 이미 아홉 자리의 정본이다 · ② `money.NO_SAVING` 독스트링이 「없음」 의 뜻을 여지에 매어 두었고 이 속성이 그 뜻을 그대로 적는다 · ③ `diagnose\report.py` 274행에 `adequacy` 가 **이미 그 자리에 있다** — 통로를 새로 안 뚫는다. **`measures\base.py` 는 아니다** — 그 파일이 쥔 것은 표식 어휘(`SHORTEST_PAYBACK` · `Mark` · `payback_years` 따위)이고 계약 여지 판정은 거기 없다.
+
+- **곁가지 하나 — 이 자리가 내는 글자를 읽는 곳이 `src\` 에 0 이다.** `ImprovementSummary.lines` 는 `diagnose\report.py` 가 담기만 하고 `src\` 어디서도 안 읽는다(이미 「라」 미해결로 서 있다). 그래도 모은다 — **틀린 잣대를 남겨 두면 그 칸을 뜨는 날 틀린 채로 뜬다.**
+
 ---
 ## 오늘 (2026-09-18) 207세션 — **역률 카드에서 「도입 후」 를 걷었다 · 판마다 짓던 스크래치 셋을 도구로 내렸다**
 
