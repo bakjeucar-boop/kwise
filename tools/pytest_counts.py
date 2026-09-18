@@ -31,7 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 __all__ = ["Counts", "latest_run", "read", "runs_dir"]
 
 #: ``collected 1787 items`` · ``1787 items`` · ``collected 1787 items / 2 deselected``
-_COLLECTED = re.compile(r"(\d+)\s+items?(?:\s|$)")
+_COLLECTED = re.compile(r"(\d+)\s+items?\b")
 #: 요약 줄의 ``N passed`` 꼴. **``-q`` 가 겹쳐 ``-qq`` 가 되면 이 줄이 사라진다** (67세션).
 _RESULT = re.compile(r"(\d+)\s+(passed|failed|xfailed|xpassed|skipped|error|errors|deselected)")
 #: pytest 가 인자 이름의 한글을 역슬래시 u 네 자리 꼴로 박아 넣는다 (테스트 ID 이스케이프).

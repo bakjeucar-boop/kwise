@@ -3088,6 +3088,81 @@ def test_역률_목표를_현재보다_낮춰도_화면이_살아_있다() -> No
     assert "개선이 아니라 악화" in body, "요금이 늘어난다는 사실을 적어야 합니다."
 
 
+#: 역률 카드가 서는 자리 이름. ``screen_audit`` 이 탭·접힘 라벨을 이어 만든 경로다.
+_PF_CARD = "본문 › 2단계 · 개선 수단 › 4. 역률 개선 — 입력과 결과"
+
+#: 덱 19벌이 서는 역률 갈래. **97~99 는 덱에 0벌이라 없다** (S207 1-2).
+_PF_BUCKETS: tuple[tuple[float, str], ...] = (
+    (100.0, "상한 이상 — 개선 여지가 없다"),
+    (92.0, "기준 — 약관 제42조 간주값"),
+    (85.0, "기준 미달 — 추가요금이 붙는다"),
+)
+
+
+@pytest.mark.parametrize(
+    ("current_pct", "갈래"), _PF_BUCKETS, ids=[f"역률_{int(row[0])}" for row in _PF_BUCKETS]
+)
+def test_역률_카드는_도입을_말하지_않고_제도를_설명하지_않는다(
+    current_pct: float, 갈래: str
+) -> None:
+    """**역률 카드 넉 자리를 기준 하나에 맞췄다** (S207 1·2절).
+
+    기준은 「그 벌에서 참인 말만 남기고, 제도 설명은 매뉴얼로 보낸다」 다.
+
+        머리 인용 글   「역률을 높이면 … 감액됩니다」 가 역률 100 벌에서 거짓이고
+                       나머지 두 문장(92% 기준 · 1%당 0.2% · 97%까지 · 미달 추가)은
+                       제도 설명이다 — 매뉴얼 4.4 표가 상한·하한까지 적는다
+        입력 칸 이름   설비를 안 들이는 벌에 「도입 후」
+        지표 이름      같은 자리
+        한 줄 설명     같은 낱말
+
+    **그려진 글자를 읽는다** — 소스 문자열을 찾지 않는다. 도구
+    ``tools\\screen_audit.py`` 의 수집기를 그대로 쓴다.
+
+    **갈래 셋을 다 문다.** 한 갈래만 보면 다른 갈래가 갈려도 초록이다 —
+    이 카드의 글자 넷은 벌의 값을 안 읽으므로 **세 갈래에서 같아야 한다.**
+
+    **제도 수치를 화면에서 잃지 않았다는 것도 함께 문다.** 머리 글에서 뺀
+    「기준 92%」 와 「0.2%」 는 같은 카드의 계산 근거 표와 캡션 툴팁이 쥔다 —
+    그 자리까지 사라지면 이 못이 빨개진다.
+    """
+    screen = _running(
+        measure_on_power_factor=True,
+        contract_form=ContractForm(
+            contract_type="general_b",
+            voltage="high_a",
+            option="II",
+            contract_kw=6_000.0,
+            power_factor_pct=current_pct,
+        ),
+    )
+    assert not screen.exception, screen.exception
+    card = [item for item in _audit().collect(screen) if item.where.startswith(_PF_CARD)]
+    assert card, f"{_PF_CARD} 가 화면에 없습니다 — 자리 이름이 갈렸습니다."
+
+    한몸 = "\n".join(item.text for item in card)
+    assert "도입" not in 한몸, (
+        f"{갈래} 벌 카드에 「도입」 이 서 있습니다 — 설비를 들이는 것은 이 카드의 전제가 "
+        f"아닙니다. 선 자리: {[item.text for item in card if '도입' in item.text]}"
+    )
+
+    머리 = [item.text for item in card if item.kind == "Markdown" and "지상역률" in item.text]
+    assert 머리, "카드 머리 인용 글이 없습니다."
+    assert all("높이면" not in text for text in 머리), f"머리 글이 아직 올리라고 말합니다: {머리}"
+    assert all("0.2%" not in text and "97%까지" not in text for text in 머리), (
+        f"제도 설명이 머리 글에 남아 있습니다 — 매뉴얼 4.4 가 쥡니다: {머리}"
+    )
+
+    라벨 = {item.text for item in card if item.kind == "NumberInput" and item.slot == "라벨"}
+    assert "목표 지상역률 (%)" in 라벨, f"입력 칸 이름이 갈렸습니다: {sorted(라벨)}"
+    지표 = {item.text for item in card if item.kind == "Metric" and item.slot == "라벨"}
+    assert {"현재 역률", "목표 역률"} <= 지표, f"지표 이름이 갈렸습니다: {sorted(지표)}"
+
+    # **화면이 제도 수치를 아주 잃지는 않았다** — 뺀 자리 말고 다른 자리가 쥔다.
+    남은자리 = [item.text for item in card if "0.2%" in item.text]
+    assert 남은자리, "「매 1%당 기본요금의 0.2%」 가 카드에서 통째로 사라졌습니다."
+
+
 def test_관측이_없는_날을_대표일로_골라도_화면이_살아_있다() -> None:
     """**결측이 온종일인 날도 고를 수 있다** (25세션 1절).
 

@@ -121,6 +121,12 @@ def run(name: str, argv: list[str] | None = None) -> tuple[Path, int, float]:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = OUT_DIR / f"{Path(name).stem}_{stamp}.txt"
+    # **같은 초에 두 판이 끝나도 덮지 않는다** (규약 9항 5번). 빠른 명령 둘을
+    # 잇달아 돌리면 초가 같아 뒤 판이 앞 판을 지웠다.
+    바퀴 = 1
+    while path.exists():
+        바퀴 += 1
+        path = OUT_DIR / f"{Path(name).stem}_{stamp}-{바퀴}.txt"
     path.write_text(text, encoding="utf-8")
     return path, code, time.time() - started
 

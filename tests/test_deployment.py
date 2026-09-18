@@ -665,3 +665,93 @@ def test_캡처_도구가_세_단계에_다_닿는다() -> None:
     assert used == cards, (
         f"카드 여섯을 다 켜는 자리가 없습니다 — 안 켜는 것 {sorted(cards - used)}."
     )
+
+
+# ================================== S207 4절 — 판마다 짓던 스크래치를 내린 도구 셋
+
+
+#: S207 이 내린 도구와 **부르는 쪽이 쓰는 이름.**
+_S207_TOOLS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("run_tool", ("OUT_DIR", "run", "tool_names")),
+    ("pytest_counts", ("Counts", "latest_run", "read", "runs_dir")),
+    ("deck_words", ("Diff", "count_words", "diff", "snap")),
+)
+
+
+@pytest.mark.parametrize(("name", "names"), _S207_TOOLS, ids=[row[0] for row in _S207_TOOLS])
+def test_S207_도구_셋이_제자리에서_값을_낸다(name: str, names: tuple[str, ...]) -> None:
+    """**도구가 없어지거나 값이 빈 꼴이 되면 빨개진다** (S207 5-2).
+
+    셋 다 「판마다 새로 짓던 스크래치」 를 내린 것이다 — 없어지면 다음 판이
+    같은 것을 또 짓고, **여덟 판 연속 샌 자리**(파이프·리다이렉트)로 돌아간다.
+
+    **앱을 띄우지 않는다.** 여기서 무는 것은 셋뿐이다 — 도구가 그 자리에 있고 ·
+    부를 이름을 내주고 · **인자 없이 돌면 빈 꼴이 아닌 값**을 낸다.
+    ``deck_words`` 의 인자 없는 판은 벌 목록만 내므로 앱을 안 띄운다.
+    """
+    path = PROJECT_ROOT / "tools" / f"{name}.py"
+    assert path.is_file(), f"{path} 가 없습니다 — S207 4절이 내린 도구입니다."
+
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    sys.path.insert(0, str(PROJECT_ROOT / "src"))
+    try:
+        module = __import__(name)
+    finally:
+        sys.path.pop(0)
+        sys.path.pop(0)
+
+    missing = sorted(item for item in names if not hasattr(module, item))
+    assert not missing, f"{name} 이 내주던 이름이 없습니다: {missing}"
+
+    printed: list[str] = []
+
+    def _catch(*args: object, **_: object) -> None:
+        printed.append(" ".join(str(item) for item in args))
+
+    kept, sys.argv = sys.argv, [name]
+    try:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr("builtins.print", _catch)
+            code = module.main()
+    finally:
+        sys.argv = kept
+
+    # ``pytest_counts`` 는 읽은 판에 실패가 있으면 1 을 낸다 — 그것도 제대로 돈 것이다.
+    assert code in {0, 1}, f"{name} 을 인자 없이 돌렸더니 종료 코드가 {code} 입니다."
+    body = "\n".join(printed)
+    assert len(printed) >= 5, f"{name} 이 인자 없이 낸 것이 {len(printed)}줄뿐입니다: {body[:200]}"
+    assert body.strip(), f"{name} 이 인자 없이 아무것도 안 냈습니다."
+
+
+def test_pytest_수_읽기가_안_돈_시험을_잡는다(tmp_path: Path) -> None:
+    """**빈 꼴로 돌아가면 빨개진다** (S207 5-2).
+
+    규약 9항 8번이 무는 셋을 그대로 문다 — 수집 건수 · skip · 실패 이름.
+    83세션이 물린 모양(**수집이 통째로 빠졌는데 남은 것은 다 통과라 초록**)을
+    심어, 도구가 「수집과 결과 합이 어긋난다」 를 말하는지 본다.
+
+    **pytest 가 이스케이프해 박은 한글 인자 이름을 푸는지도 문다** — 안 풀면
+    보고에 적을 이름이 ``\\uac80`` 꼴이라 사람이 못 읽는다.
+    """
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    try:
+        import pytest_counts
+    finally:
+        sys.path.pop(0)
+
+    출력 = tmp_path / "pytest_심은판.txt"
+    출력.write_text(
+        "8 workers [1787 items]\n"
+        "FAILED tests/test_x.py::test_\\uac80\\uc0ac[1]\n"
+        "= 1 failed, 1780 passed, 4 xfailed, 1 skipped in 300.00s =\n",
+        encoding="utf-8",
+    )
+    counts = pytest_counts.read(출력)
+
+    assert counts.collected == 1787
+    assert counts.results == {"failed": 1, "passed": 1780, "xfailed": 4, "skipped": 1}
+    assert counts.total == 1786, "결과 합을 잘못 셉니다."
+    assert counts.failures == ("FAILED tests/test_x.py::test_검사[1]",), counts.failures
+    말 = " ".join(counts.notes)
+    assert "skip 1건" in 말, f"skip 을 안 돈 시험이라 말하지 않습니다: {counts.notes}"
+    assert "어긋난다" in 말, f"수집 1787 과 결과 합 1786 의 어긋남을 안 잡습니다: {counts.notes}"
