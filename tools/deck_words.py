@@ -15,10 +15,13 @@ S207(네 자리). 하는 일은 늘 셋이었다.
     .venv\\Scripts\\python.exe tools\\deck_words.py --snap 앞.json         19벌을 떠 담는다
     .venv\\Scripts\\python.exe tools\\deck_words.py --snap 뒤.json --case small-ind-a1
     .venv\\Scripts\\python.exe tools\\deck_words.py --count 도입 후 --count 목표 역률
+    .venv\\Scripts\\python.exe tools\\deck_words.py --read 앞.json --count 도입 후
     .venv\\Scripts\\python.exe tools\\deck_words.py --diff 앞.json 뒤.json
 
 19벌을 다 뜨는 데 1번 PC 에서 **5분 남짓** 걸린다 (S207 2절 · 324.8초).
-``--case`` 로 좁히면 벌마다 5~40초다.
+``--case`` 로 좁히면 벌마다 5~40초다. **담아 둔 스냅이 있으면 ``--read`` 로
+읽는다** — 그 판은 앱을 안 띄운다 (S209 2절 · 앞 판이 ``--count`` 로 300.3초를
+버린 자리다).
 """
 
 from __future__ import annotations
@@ -144,6 +147,7 @@ def main() -> int:
     parser.add_argument("--case", action="append", help="벌 이름. 여러 번 줄 수 있다")
     parser.add_argument("--count", action="append", help="셀 낱말. 여러 번 줄 수 있다")
     parser.add_argument("--diff", nargs=2, type=Path, metavar=("앞", "뒤"), help="두 스냅을 맞댄다")
+    parser.add_argument("--read", type=Path, help="뜨지 않고 담아 둔 스냅을 읽는다")
     args = parser.parse_args()
 
     if args.diff:
@@ -165,7 +169,7 @@ def main() -> int:
         print(f"    는 것 {dict(report.조각뒤 - report.조각앞) or '없다'}")
         return 0
 
-    if args.snap is None and not args.count:
+    if args.snap is None and args.read is None and not args.count:
         # **인자 없이 돌면 그 판의 값이 다 나온다** — 벌 목록과 담는 자리.
         print(f"스냅 자리 — {snap_dir()}")
         print(f"\n덱 {len(render_deck.CASES)}벌")
@@ -179,11 +183,19 @@ def main() -> int:
             print(f"    {path.name}")
         return 0
 
-    started = time.time()
-    print(f"뜬다 — {len(_cases(args.case))}벌")
-    data = snap(args.case)
-    줄 = sum(len(rows) for rows in data.values())
-    print(f"합 {len(data)}벌 · {줄:,}줄 · {time.time() - started:,.1f}초")
+    # **읽는 길** (S209 2절). ``--count`` 가 늘 19벌을 다시 떠 5분 남짓을
+    # 버렸다 — 읽는 자리가 ``--diff`` 하나뿐이었다.
+    if args.read is not None:
+        path = args.read if args.read.is_absolute() else snap_dir() / args.read
+        data = _load(path)
+        줄 = sum(len(rows) for rows in data.values())
+        print(f"읽었다 — {path}\n합 {len(data)}벌 · {줄:,}줄")
+    else:
+        started = time.time()
+        print(f"뜬다 — {len(_cases(args.case))}벌")
+        data = snap(args.case)
+        줄 = sum(len(rows) for rows in data.values())
+        print(f"합 {len(data)}벌 · {줄:,}줄 · {time.time() - started:,.1f}초")
 
     if args.snap is not None:
         path = args.snap if args.snap.is_absolute() else snap_dir() / args.snap

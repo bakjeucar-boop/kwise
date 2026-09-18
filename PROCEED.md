@@ -464,6 +464,63 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 **되면 그것이 이 판 이후의 길이다 — 된다.**
 
+### 2절 — 도구를 고쳤다 (1-6 이 센 셋을 다 닫았다 · 기능은 안 더했다)
+
+**2-1. 결함 셋을 고쳤다 — 세 파일 +30 −10.**
+
+| # | 파일 | 줄 | 앞 | 뒤 |
+|---|---|---|---|---|
+| ① | `tools\count_sites.py:115` | **+3 −2**(주석 셋 포함) | `def main(argv: list[str]) -> int:` · `wanted = set(argv[1:])` | `def main(argv: list[str] \| None = None) -> int:` · `wanted = set((sys.argv if argv is None else argv)[1:])` |
+| ② | `tools\daily_brief.py:630` | **+6 −1**(주석 넷 포함) | `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` | `if (reconfigure := getattr(sys.stdout, "reconfigure", None)) is not None:` 아래에서 부른다 |
+| ③ | `tools\deck_words.py` | **+17 −7**(독스트링 셋 · 주석 둘 포함) | 읽는 길이 `--diff` 하나 · `--count` 는 늘 `snap()` | `--read` 를 더해 읽는 길을 `--count` 에도 냈다 · 바닥 판 조건에 `args.read is None` 을 더했다 |
+
+- **기능을 안 더했다.** ①②는 부르는 자리 한 줄씩이고 ③은 **이미 있던 `_load()` 를 `--count` 쪽에서도 부르게 한 것**이다. `--snap`(쓰기) · `--diff`(읽기) · `snap()` · `count_words()` · `diff()` 를 한 줄도 안 고쳤다.
+- **울타리를 넘는 자리가 보여 멈췄다 — 아래 2-6.**
+
+**2-2. 고친 뒤 도구 22개를 전수로 다시 돌렸다 — 1-1 과 같은 잣대로. 받는다 22 · 못 받는다 0.**
+
+- **1-1 에서 돌던 것이 하나도 안 죽었다.** 스물한 도구의 `--help` 종료 코드·첫 줄이 1-1 과 같다.
+- `count_sites --help` 는 **종료 2 · 「그런 사실이 없다: ['--help']」** 다. **이 도구는 argparse 를 안 쓰고 인자를 사실 이름으로 읽는다** — `--help` 가 원래 없던 길이라 뒷걸음이 아니다. 받는지를 보는 잣대는 **부름이 서느냐**이고 그것이 `TypeError` 에서 종료 2 로 갈렸다.
+- **실인자로도 셋을 다시 밟았다** — `run_tool daily_brief --no-clip` 종료 **0** · 0.2초 · 21,925자(앞: `AttributeError`) · `run_tool count_sites` 종료 **0** · 0.4초 · 13,887자(앞: `TypeError`) · `run_tool deck_words --read … --count …` 종료 **0**(앞: `unrecognized arguments`).
+
+**2-3. `--count` 가 스냅을 읽는다 — 316.7초 → 1.8초 (176배).** 같은 낱말 · 같은 PC · 같은 판에서 쟀다.
+
+| 판 | 어떻게 | 소요 | 낸 값 |
+|---|---|---|---|
+| 앞 (뜬다) | `deck_words --snap s209_after.json --count "역률 감액은 기본요금에 비례합니다"` | **316.7초** | 「…」 — **12벌 · 자리 12** |
+| 뒤 (읽는다) | `deck_words --read s209_after.json --count "…"` | **1.8초** | 「…」 — **12벌 · 자리 12** |
+
+- **두 판이 한 자도 안 다르다.** 12벌은 S208 이 뿌리표에 적어 둔 수와도 같다.
+- **앞 판이 버린 300.3초와 같은 자리다** — 이 판에서 다시 재니 316.7초다(한 판씩이라 차를 까닭으로 단정하지 않는다).
+
+**2-4. `src\` 가 0줄이다.** `git diff --stat` 이 낸 파일은 셋뿐이고 다 `tools\` 다 — `tools/count_sites.py` +7 −2 · `tools/daily_brief.py` +7 −1 · `tools/deck_words.py` +26 −7(빈 줄 포함 git 셈). **폴더마다 명시한다** — `src\kwise\tariff` **0** · `diagnose` **0** · `measures` **0** · `pv` **0** · `compare` **0** · `io` **0** · `report` **0** · `ui` **0** · **`src\` 통째 0줄**(`git diff --stat -- src/` 가 빈 꼴).
+
+**2-5. 금액과 산출물이 안 갈렸다.** 19벌을 새로 떠(`s209_after.json` · 316.7초) 저장소 판 스냅(`s208_after.json`)과 맞댔다.
+
+    맞댄 줄 17,307 · 갈린 줄 0
+    수치 조각 — 앞 4,007개 · 뒤 4,007개 · 준 것 없다 · 는 것 없다
+
+- **줄 수가 어긋난 벌 0.** 19벌이 다 맞댔다.
+- 17,307 · 4,007 은 S207·S208 이 적어 둔 수와 같다.
+
+**2-6. 덜 닫은 자리 0 — 셋을 다 닫았다. 대신 울타리 밖 결함 하나가 판 도중에 드러나 멈췄다.**
+
+**`deck_words --diff` 가 상대 경로를 `snap_dir()` 에 대지 않는다.** `--snap` 은 대고(`args.snap.is_absolute()` 갈림) 이 판이 낸 `--read` 도 대는데, `--diff` 만 `Path` 를 그대로 `_load()` 에 넘겨 **`FileNotFoundError: 's208_after.json'`** 이 난다. 담아 둔 스냅 이름을 그대로 못 쓴다 — 온 경로를 손으로 적어야 한다.
+
+- **안 고쳤다.** 1-6 이 센 셋 밖이다 — 울타리가 자리 수이고 「보이면 멈추고 값을 낸다」 가 이 판의 못이다.
+- **이 판은 온 경로로 돌려 지나갔다**(2-5 가 그 판이다).
+- **이름으로 올린다**(「라」) — 계산·화면·산출물에 안 닿지만 **도구가 제 스냅 이름을 못 읽는 것**이라 다음 판이 같은 자리에 선다.
+
+**2-7. 되돌려 확인 — 셋 다 빨감.** 고친 셋을 스크래치에 두고 `git checkout HEAD -- tools\count_sites.py tools\daily_brief.py tools\deck_words.py` 로 되돌린 뒤 같은 판을 다시 돌렸다. **되돌림이 실제로 섰다** — `git status --porcelain` 0줄.
+
+| 결함 | 되돌린 판이 낸 것 |
+|---|---|
+| ① `count_sites` | `TypeError: main() missing 1 required positional argument: 'argv'` — 전수 판이 **받는다 21 · 못 받는다 1** 로 돌아갔다 |
+| ② `daily_brief` | `AttributeError: '_io.StringIO' object has no attribute 'reconfigure'` (`--no-clip` · 630행) |
+| ③ `deck_words` | `deck_words: error: unrecognized arguments: --read s209_after.json` · **종료 2** |
+
+되돌림을 걷고 다시 돌려 셋 다 초록으로 돌아온 것을 봤다(`--read` 판 종료 0 · 1.7초 · 12벌).
+
 ---
 
 ## 오늘 (2026-09-18) 208세션 — **0원 · 여지 없는 수단을 거르는 잣대를 한 자리로 모은다 (계산 판)**

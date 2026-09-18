@@ -112,9 +112,12 @@ def strays(fact: Fact, roots: tuple[Path, ...]) -> list[Site]:
     return [site for site in sites(fact, roots) if not site.home]
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str] | None = None) -> int:
+    # **인자를 안 주면 ``sys.argv`` 를 본다** (S209 2절). ``tools\run_tool.py`` 는
+    # ``main()`` 을 인자 없이 부르고 ``sys.argv`` 쪽을 갈아 끼운다 — 필수 인자로
+    # 두면 그 도구가 이 도구를 **못 받는다.** 첫 자리는 두 길 다 도구 이름이다.
     roots, facts = load()
-    wanted = set(argv[1:])
+    wanted = set((sys.argv if argv is None else argv)[1:])
     if wanted:
         facts = [fact for fact in facts if fact.name in wanted]
         if not facts:

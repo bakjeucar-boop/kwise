@@ -627,7 +627,12 @@ def main() -> int:
     args = ap.parse_args()
 
     text = build()
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+    # **있을 때만 부른다** (S209 2절). ``tools\run_tool.py`` 가 출력을
+    # ``io.StringIO`` 로 갈아 끼우는데 그것에는 ``reconfigure`` 가 없어
+    # ``AttributeError`` 로 죽었다 — 그 도구가 이 도구를 **못 받던 자리**다.
+    # 진짜 콘솔에서는 그대로 부른다(cp949 로 한글이 깨지는 것을 막는다).
+    if (reconfigure := getattr(sys.stdout, "reconfigure", None)) is not None:
+        reconfigure(encoding="utf-8", errors="replace")
     print(text, end="")
 
     if args.out:
