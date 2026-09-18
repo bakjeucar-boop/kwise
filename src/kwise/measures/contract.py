@@ -66,6 +66,7 @@ from kwise.tariff import (
 from kwise.tariff.schema import TariffDataError, threshold_text, within_type_threshold
 
 __all__ = [
+    "MARGIN_FACT",
     "MARGIN_NOTICE",
     "NO_SAVING",
     "ContractAdjustment",
@@ -154,6 +155,25 @@ def covering_contract_kw(observed_max_kw: float, step_kw: float = 1.0) -> float:
 MARGIN_NOTICE = (
     "계약전력을 하향할 경우, 예측 오차와 기상 변동을 고려하여 충분한 여유를 확보하십시오."
 )
+MARGIN_FACT = "contract.margin"
+"""**여유 확보 안내를 거르는 잣대** (S210 2절).
+
+:data:`MARGIN_NOTICE` 는 `report\\notices.py` 의 `CONTRACT_CHANGE_WARNING` 과
+**글자까지 같은 사본**이라, 앞에 한 번 세운 줄과 안내에서 온 줄이 잇달아 두 번
+서는 자리가 셋 있다 — Excel 요약 · Word 7.2 주의사항 · 화면 2단계 카드.
+**그 셋이 글자를 맞대고 있었다.** 중복 판정의 정본 잣대는 사실 ID 이고
+(:func:`kwise.notices.dedupe_key`), 화면 카드는 **한 식 안에서** 글자와 사실 ID
+를 섞어 쓰고 있었다. 셋 다 이 이름으로 견준다.
+
+**판별자를 뗀 앞부분(``fact_base``)으로 재지 않는다.** 조합이 붙이는
+``contract.margin:c1`` 꼴은 앞말이 붙어 글자도 다르고 사실도 달라, 글자 잣대도
+이 잣대도 똑같이 거르지 않는다 — 앞부분으로 재면 Excel 요금 조합 줄이 새로
+걸러져 **걸러지는 집합이 갈린다.**
+
+`diagnose\\contract.py` 도 같은 ID 로 낸다. 그쪽은 `measures\\` 를 런타임에
+들이지 않아(형에만 쓴다) 글자 사본과 같은 까닭으로 날 문자열을 그대로 두었고,
+둘이 갈리지 않는 것은 ``tests\\test_diagnose.py`` 가 문다.
+"""
 _PENALTY_NOTICE = (
     "계약전력 하향은 되돌리기 어렵고 초과 시 위약금이 발생합니다. "
     "하향 폭은 운영 계획(증설·용도 변경)을 확인한 뒤 정하십시오."
@@ -786,7 +806,7 @@ def evaluate_contract_adjustment(
         # **낮출 자리가 있을 때만 낸다.** 낮출 이유가 없는 갈래에서 「하향은
         # 되돌리기 어렵다」 를 읽히면 하지도 못할 일을 조심하라는 말이 된다.
         notices += [
-            warn(MARGIN_NOTICE, fact="contract.margin"),
+            warn(MARGIN_NOTICE, fact=MARGIN_FACT),
             warn(_PENALTY_NOTICE, fact="contract.penalty"),
             basis(basis_text, fact="contract.saving_basis"),
         ]

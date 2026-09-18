@@ -62,6 +62,7 @@ from kwise.measures.catalog import (
     measure_numbers,
 )
 from kwise.measures.contract import (
+    MARGIN_FACT,
     MARGIN_NOTICE,
     NO_SAVING,
     ContractAdjustment,
@@ -210,6 +211,7 @@ __all__ = [
     "EXTERNAL_SCENARIO",
     "IMMEDIATE",
     "LARGEST_SAVING",
+    "MARGIN_FACT",
     "MARGIN_NOTICE",
     "MARGIN_SHORT",
     "MEASURE_CATALOG",

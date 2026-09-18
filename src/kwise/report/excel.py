@@ -30,6 +30,7 @@ from kwise.diagnose.dr import JUDGE_WINDOW
 from kwise.io import UsageData
 from kwise.measures import (
     DR_ADVISORY,
+    MARGIN_FACT,
     NO_HEADROOM_LABEL,
     NO_SAVING,
     OFFSET_SCENARIO,
@@ -302,7 +303,9 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
         groups.append(("조합", sections.comparison.notices))
     for label, notices in groups:
         for item in dedupe(notices):
-            if item.text != CONTRACT_CHANGE_WARNING:  # 위 「필수 안내」 줄과 같은 글자 (S182 4-3)
+            # 위 「필수 안내」 줄과 같은 안내다 (S182 4-3). **글자가 아니라 사실
+            # ID 로 견준다** (S210 2절) — 바로 윗줄이 이미 그 잣대다.
+            if item.fact != MARGIN_FACT:
                 rows.append((f"안내 · {item.severity}", label, item.text))
     return rows
 

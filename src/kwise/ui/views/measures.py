@@ -31,6 +31,7 @@ from kwise.io import UsageData
 from kwise.measures import (
     CURTAIL_SCENARIO,
     EXTERNAL_SCENARIO,
+    MARGIN_FACT,
     NO_HEADROOM_LABEL,
     NO_SAVING,
     OFFSET_SCENARIO,
@@ -457,11 +458,13 @@ def _contract(
         # 계약전력을 바꿀 생각을 하기 전에 읽혀 지나쳤다 — 바꾸자고 제안하는 자리가
         # 이 경고의 제자리다. **문구는 산출물과 같은 원문 그대로다.**
         _caution(CONTRACT_CHANGE_WARNING)
+    # **거르는 잣대는 사실 ID 하나다** (S210 2절). 앞서는 위 경고를 **글자**로,
+    # 판정 줄을 **사실 ID** 로 걸러 한 식에 두 잣대가 섞여 있었다.
     _notices(
         tuple(
             item
             for item in result.notices
-            if item.text != CONTRACT_CHANGE_WARNING and item.fact != _FLOOR_VERDICT
+            if item.fact != MARGIN_FACT and item.fact != _FLOOR_VERDICT
         )
     )
 

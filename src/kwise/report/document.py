@@ -37,6 +37,7 @@ from kwise.diagnose import ContractAdequacy, Diagnosis
 from kwise.diagnose.dr import DR_OFF_DAYS_FACT, JUDGE_WINDOW, DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
+    MARGIN_FACT,
     MEASURE_CATALOG,
     NO_SAVING,
     NOT_VIABLE_CONCLUSION,
@@ -861,15 +862,15 @@ def measure_entries(
             # 가 `CONTRACT_CHANGE_WARNING` 과 **글자까지 같은 사본**이라, 앞에
             # 세운 한 줄과 `contract.notices` 에서 온 한 줄이 7.2 주의사항에
             # **잇달아 두 번** 섰다 (84·100세션). **화면과 같은 방식이다** —
-            # `ui\views\measures.py` 가 같은 문자열을 걸러 내고 있다.
+            # `ui\views\measures.py` 가 같은 안내를 걸러 내고 있다.
+            # **글자가 아니라 사실 ID 로 견준다** (S210 2절) — 글자를 만드는 쪽으로
+            # 줄을 거르면 잣대가 여기만 다르다. 걸러 낸 뒤에 글자로 편다.
             # **사본 둘을 합치는 것은 여기서 안 한다** — 쓰는 자리 여섯을 함께
             # 옮기는 일이라, 뿌리는 미해결에 이름으로 남겼다.
             cautions=(
                 CONTRACT_CHANGE_WARNING,
-                *(
-                    line
-                    for line in body_lines(contract.notices)
-                    if line != CONTRACT_CHANGE_WARNING
+                *body_lines(
+                    tuple(item for item in contract.notices if item.fact != MARGIN_FACT)
                 ),
             ),
             notices=contract.notices,
