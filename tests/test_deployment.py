@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import ast
+import inspect
 import re
 import runpy
 import sys
@@ -757,3 +758,94 @@ def test_pytest_수_읽기가_안_돈_시험을_잡는다(tmp_path: Path) -> Non
     말 = " ".join(counts.notes)
     assert "skip 1건" in 말, f"skip 을 안 돈 시험이라 말하지 않습니다: {counts.notes}"
     assert "어긋난다" in 말, f"수집 1787 과 결과 합 1786 의 어긋남을 안 잡습니다: {counts.notes}"
+
+
+# ============================ S209 2절 — run_tool 이 tools\ 를 다 받는지 문다
+
+
+def _run_tool() -> ModuleType:
+    """``tools\\run_tool.py`` 를 불러온다 (`count_sites` 를 쓰는 방식과 같다)."""
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    sys.path.insert(0, str(PROJECT_ROOT / "src"))
+    try:
+        import run_tool
+    finally:
+        sys.path.pop(0)
+        sys.path.pop(0)
+    return run_tool
+
+
+def test_run_tool_이_tools_의_모든_도구를_부를_수_있다() -> None:
+    """**부르는 자리가 막히면 빨개진다** (S209 1-2 · 2-1).
+
+    ``run_tool._run_module`` 은 도구의 ``main()`` 을 **인자 없이** 부르고
+    ``sys.argv`` 쪽을 갈아 끼운다. 그래서 ``main`` 에 **기본값 없는 인자**가
+    하나라도 있으면 그 도구는 못 받는다 — ``count_sites`` 가 여덟 판 동안
+    그 자리에 있었고 S208 이 값으로 잡았다.
+
+    **소스 글자를 찾지 않는다** — 모듈을 실제로 불러 서명을 본다. 새 도구가
+    붙어도 저절로 물므로 ``tools\\`` 가 자랄 때 같은 병이 다시 안 들어온다.
+    """
+    run_tool = _run_tool()
+    names = run_tool.tool_names()
+    assert names, "tools\\ 에서 부를 도구를 하나도 못 찾았습니다."
+
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    sys.path.insert(0, str(PROJECT_ROOT / "src"))
+    try:
+        막힌: list[str] = []
+        for name in names:
+            main = getattr(__import__(name), "main", None)
+            assert main is not None, f"{name} 에 main() 이 없습니다 — run_tool 이 못 받습니다."
+            빈자리 = [
+                이름
+                for 이름, 인자 in inspect.signature(main).parameters.items()
+                if 인자.default is inspect.Parameter.empty
+                and 인자.kind
+                in {inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}
+            ]
+            if 빈자리:
+                막힌.append(f"{name}.main({', '.join(빈자리)})")
+    finally:
+        sys.path.pop(0)
+        sys.path.pop(0)
+
+    assert not 막힌, (
+        f"run_tool 이 못 받는 도구가 있습니다 — {막힌}. main 의 인자에 기본값을 주고 "
+        "없으면 sys.argv 를 보게 하십시오 (S209 2-1)."
+    )
+
+
+#: S209 가 고친 도구와 **실제로 돌려 볼 인자.** 앱을 띄우지도 망을 타지도 않는다.
+_S209_FIXED = ("daily_brief", "count_sites", "deck_words")
+
+
+@pytest.mark.parametrize("name", _S209_FIXED)
+def test_S209_가_고친_도구가_run_tool_로_돈다(name: str, tmp_path: Path) -> None:
+    """**출력을 갈아 끼운 채로도 도는지 문다** (S209 2-2).
+
+    위 시험은 **서명**을 보고 이것은 **부름**을 본다 — ``daily_brief`` 는
+    서명이 멀쩡한데 ``main()`` 안에서 ``sys.stdout.reconfigure`` 를 불러
+    ``io.StringIO`` 에서 터졌다. 서명만 봐서는 안 잡힌다.
+
+    ``deck_words`` 는 **담아 둔 스냅을 읽는 길**(``--read``)로 돈다 — 그 길이
+    없으면 19벌을 다시 떠 5분을 쓴다(S209 2-3 · 316.7초 → 1.8초).
+    """
+    run_tool = _run_tool()
+    snap = tmp_path / "스냅.json"
+    snap.write_text(
+        '{"벌하나": [["어디", "무엇", "자리", "역률 감액은 기본요금에 비례합니다"]]}',
+        encoding="utf-8",
+    )
+    argv = {
+        "daily_brief": ["--no-clip", "--out", str(tmp_path / "브리핑.md")],
+        "count_sites": [],
+        "deck_words": ["--read", str(snap), "--count", "역률 감액"],
+    }[name]
+
+    path, code, _elapsed = run_tool.run(name, argv)
+    body = path.read_text(encoding="utf-8")
+
+    assert code == 0, f"{name} 이 run_tool 에서 종료 {code} 입니다: {body[-400:]}"
+    assert body.strip(), f"{name} 이 run_tool 에서 아무것도 안 냈습니다."
+    assert "Traceback" not in body, f"{name} 이 run_tool 에서 터졌습니다: {body[-400:]}"
