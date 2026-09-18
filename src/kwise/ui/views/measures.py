@@ -669,7 +669,10 @@ def _power_factor(
     left, right = st.columns(2)
     with left:
         target = st.number_input(
-            "도입 후 지상역률 (%)",
+            # **「도입 후」 가 아니라 「목표」 다** (S207 2절). 역률 100 세 벌은
+            # 설비를 들이지 않는데 칸 이름이 도입을 말했다 — 같은 카드의 계산 근거
+            # 표와 매뉴얼 4.4 가 19벌 모두에서 이 값을 「목표 역률」 이라 부른다.
+            "목표 지상역률 (%)",
             min_value=float(floor),
             max_value=100.0,
             value=default_target_pct(),
@@ -698,10 +701,11 @@ def _power_factor(
     _overview(spec)
     columns = st.columns(4)
     columns[0].metric("현재 역률", fmt.pct(result.current_pct))
-    # 상한 이상이면 「도입 후 97.0%」 가 거짓이다 — 두 역률이 다 상한으로 접혀
+    # 상한 이상이면 「목표 97.0%」 가 거짓이다 — 두 역률이 다 상한으로 접혀
     # 요금이 안 갈린다 (S155 1-3). 판정은 `has_no_headroom` 한 자리가 쥔다.
+    # 이름은 입력 칸·계산 근거 표와 같은 「목표 역률」 이다 (S207 2절).
     columns[1].metric(
-        "도입 후", NO_HEADROOM_LABEL if result.no_headroom else fmt.pct(result.target_pct)
+        "목표 역률", NO_HEADROOM_LABEL if result.no_headroom else fmt.pct(result.target_pct)
     )
     columns[2].metric("절감액", fmt.won_year(result.annual_saving_won))
     columns[3].metric(
