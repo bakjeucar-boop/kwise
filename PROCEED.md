@@ -401,6 +401,129 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 | 없어서 아쉬웠던 것 | **「앞 판이 남긴 자리 수」** — ① 의 울타리(겹침 16)가 0-5·0-6 둘에 걸쳐 있어 한 항으로 안 선다 |
 | 줄일 수 있었던 것 | **두 자리 합 4만 1천자** — `HANDOVER.md` 머리 120줄에서 0-5·0-6 에 쓰인 것은 **3절 표 세 행과 4절 S209 항**뿐이고, `tools\daily_brief.py` 는 **파싱 함수 이름만** 필요했다(값은 스크래치가 부른다) |
 
+### 1절 — 겹침을 거르는 잣대를 전수로 세고 뿌리를 값으로 냈다 (세기만 했다)
+
+**1-1. 그물 셋으로 `src\kwise` 를 전수로 훑었다** (스크래치 `s210_net.py` · `tokenize` 로
+**주석과 글자열을 떼어 낸 뒤** 이름을 본다 · `import` 줄은 안 센다).
+
+| 그물 | 무엇 | 걸린 줄 |
+|---|---|---:|
+| ㄱ 사실 ID | `dedupe` · `dedupe_key` · `dedupe_keys` · `partition_facts` · `fact_base` · `shown_facts` | 26 |
+| ㄴ 글자 | `seen` 에 글자를 담아 `in` 으로 거르기 · 안내 글자 상수(`CONTRACT_CHANGE_WARNING` · `MARGIN_NOTICE` · `KNOWN_LIMITS`)와 맞대기 | 9 |
+| ㄷ 사실 비교 | `.fact` · `.fact_base` 를 `==`·`!=`·`in` 으로 맞대는 줄 | 2 |
+
+**판정 자리 37 · 파일 9.** 그물 ㄱ·ㄴ 이 통틀어 걸린 줄은 **73(파일 19)** 이고 그 가운데
+**36 은 판정이 아니다** — 이름을 들이는 자리 8 · 글자 상수를 정의하는 자리 4 · 그 상수를
+그냥 쓰는 자리 9 · **안내가 아닌 `seen`** 15(`io\columns.py` 열 이름 3 · `measures\base.py`
+표식 4 · `pv\archive.py` 3 · `pv\region.py` 4 · `tariff\excess.py` 초과 슬롯 세기 3 — 이 마지막
+하나는 거르기가 아니라 셈이다).
+
+| 자리 | 파일 · 몸 | 무엇을 보고 거르나 | 어느 산출물 |
+|---|---|---|---|
+| 1~17 | `notices.py` — `dedupe_key` · `dedupe_keys` · `dedupe` · `screen_body` · `tooltip` · `report_body` · `report_appendix` · `partition_facts` · `fact_base` | **사실 ID**(`base=False` 는 판별자 포함 · `base=True` 는 앞부분) | 넷 다 |
+| 18~21 | `ui\views\compare.py` 315 · 319 · 784 · 800 | **사실 ID 앞부분**(`base=True`) — 2단계 카드가 낸 사실을 3단계 조합이 되풀이하지 않는다 | 화면 |
+| 22~24 | `ui\views\diagnose.py` 229 · 230 · 231 | **사실 ID 앞부분**(`partition_facts`) — 전용 블록으로 내린다 | 화면 |
+| 25 | `ui\views\measures.py` 377 | 같은 것 | 화면 |
+| 26 | `report\excel.py` 304 | **사실 ID**(`dedupe`) | Excel 요약 |
+| 27 | `compare\combination.py` 753 | **사실 ID 상수**(`item.fact != SURPLUS_REVENUE_FACT`) | 넷 다 |
+| 28 | `ui\views\measures.py` 1339 | **사실 ID 날 문자열**(`"surplus.applied_price"`) | 화면 |
+| **29** | **`report\excel.py` 305** | **글자 전체**(`item.text != CONTRACT_CHANGE_WARNING`) | **Excel 요약** |
+| **30** | **`report\document.py` 872** | **글자 전체**(`line != CONTRACT_CHANGE_WARNING`) | **Word 7.2 주의사항** |
+| **31** | **`ui\views\measures.py` 464** | **글자 전체 + 사실 ID** — 한 식에 둘이 섞였다 | **화면 2단계 카드** |
+| 32~34 | `report\appendix.py` 133 · 135 · 137 | **글자 앞 30자** | Word 부록 C · Excel 부록 C 시트 |
+| 35~37 | `report\slides.py` 1560 · 1562 · 1563 | **글자 strip 전체** | PPT 수단 장 (그림 굽기 실패 폴백) |
+
+**그물이 못 보는 것** — ① 이름 없이 인라인으로 거르는 자리(`dict.fromkeys` · 즉석 `set`)는
+ㄴ 이 `seen` 이라는 **이름**에 매여 있어 못 본다. ② `.fact` 비교는 ㄱ·ㄴ 이 다 놓쳤다 —
+**그물 ㄷ 을 그래서 더했고 자리 둘(27 · 28)이 그때 들어왔다.** ③ 안내가 아닌 글자 겹침
+(`ANNUAL_BASIS_NOTE` 를 한 번만 적기 · `slides._trim_repeat`)은 일부러 밖에 두었다.
+④ `tools\notice_audit.py` 는 `src\` 밖이라 안 셌다.
+
+**1-2. 잣대가 갈리는 짝 — 여섯.** `base=True` 대 `base=False` 는 **갈린 짝이 아니다**
+(`dedupe_key` 독스트링이 「화면 **사이**의 중복」 이라 까닭을 적는다).
+
+| 짝 | 한쪽 | 다른쪽 | 같은 식·같은 함수인가 |
+|---|---|---|---|
+| ① | `excel.py` 304 사실 ID | `excel.py` 305 **글자** | **잇달은 두 줄** |
+| ② | `notices.report_body` 사실 ID | `document.py` 872 **글자** | 같은 식 |
+| ③ | `measures.py` 464 `item.fact != _FLOOR_VERDICT` | 같은 줄 `item.text != CONTRACT_CHANGE_WARNING` | **한 식 안** |
+| ④ | `notices.report_appendix` 사실 ID | `appendix.py` 135 **글자 앞 30자** | 같은 식 |
+| ⑤ | (없다) | `slides.py` 1562 **글자 strip** | `entry.cautions` 가 글자열이라 사실 ID 가 없다 |
+| ⑥ | `combination.py` 753 **상수** | `measures.py` 1339 **날 문자열** | 잣대는 같고 이름만 갈린다 |
+
+**1-3. 판정 자리 37 가운데 계산 폴더 안은 1 · 밖은 36.** 안은 `compare\combination.py` 753
+하나다(자리 27). `notices.py` 는 `src\kwise\` 뿌리 파일이라 여섯 폴더(`tariff`·`diagnose`·
+`measures`·`pv`·`compare`·`io`)에 안 든다. **모으기가 닿는 계산 폴더는 판정이 아니라
+사실 ID 를 적는 자리 둘**이다 — `measures\contract.py` 789 · `diagnose\contract.py` 188.
+
+**1-4. 덱 19벌 네 산출물 실물 기준선을 떴다** (스크래치 `s210_deck.py` · 벌마다 앱을 한 번
+띄워 **그려진 화면** · **Excel 실물** · **PPT 실물** · **PPT 가 지은 `DocumentSections` 의
+`MeasureEntry.cautions`**(Word 7.2 가 그대로 싣는 값) 넷을 받는다 · 462.1초 · 원본은
+`PROJECT_CACHE\deck_words\s210_before.json`).
+
+- 줄 **24,211** — 화면 **17,307**(S207·S208 이 잰 수와 같다) · Excel 2,567(요약·부록 C·수단별
+  세 시트) · PPT 3,551 · cautions 786.
+- **실물 `.docx` 는 19벌로 안 구웠다** — 벌마다 23초가 더 붙어(한 벌 9.1 → 32.4초) 두 판이
+  20분이 된다. **2-8 에서 두 벌로 본다.**
+- 표는 **벌 19 × 산출물 4 × 안내 5 = 칸 456** 이다(스크래치 `s210_table.py`). 안내 다섯은
+  이 판이 손대는 자리에 서는 것과 그 이웃이다 — 여유확보(`CONTRACT_CHANGE_WARNING`) ·
+  위약금 · 하한안걸림 · 역률추정 · 미포함.
+
+| 안내 | 화면 | Excel | PPT | cautions | 합 |
+|---|---:|---:|---:|---:|---:|
+| 여유확보 | 10 | **37** | 0 | 19 | 66 |
+| 위약금 | 7 | 18 | 0 | 5 | 30 |
+| 하한안걸림 | 10 | 33 | 10 | 10 | 63 |
+| 역률추정 | 0 | 38 | 0 | 0 | 38 |
+| 미포함 | 0 | 38 | 0 | 0 | 38 |
+
+**1-5. 한 벌 안에 같은 안내가 두 번 이상 서는 칸 — 60 이고 전부 Excel 이다.**
+여유확보 7벌(`large-b-over` **5** · `small-b`·`small-b-sell`·`small-a2-was`·`small-edu-a-over`
+각 **4** · `small-a2`·`small-ind-a2` 2) · 위약금 5벌 · 하한안걸림 10벌 · **역률추정과 미포함은
+19벌 모두 2**(부록 D 목록 한 번 · 안내 블록 한 번). 화면 · PPT · cautions 는 **한 칸도 2 가
+없다** — 자리 29~31 의 글자 잣대가 실제로 일하고 있다는 뜻이다.
+**S192 가 「Excel 요약과 부록 C」 라 적은 것이 지금도 값으로 그렇다** — 증상 9(요약 조합
+묶음 셋)와 증상 16(부록 C 짝)이 이 60 칸이다.
+
+**1-6. 한 자리로 모을 수 있는 자리 — 3.** 자리 **29 · 30 · 31**(짝 ①②③)이고 잣대는
+**사실 ID `contract.margin`** 으로 선다. 세 자리 다 `Notice` 를 손에 들고 있거나 들 수 있어
+글자를 사실 ID 로 갈 수 있고, **걸러지는 집합이 안 갈린다** — 그 글자를 쓰는 안내는
+`fact == "contract.margin"` 하나뿐이고(`measures\contract.py` 789 · `diagnose\contract.py` 188
+둘이 같은 ID 를 붙인다), 조합이 붙인 판별자 꼴(`contract.margin:c1`)은 **글자도 다르고
+(앞말이 붙는다) 사실도 다르므로** 두 잣대가 똑같이 안 거른다. **그래서 `fact !=` 로 적고
+`fact_base !=` 로는 안 적는다** — 앞부분으로 재면 조합 줄이 새로 걸러져 Excel 요약이 갈린다.
+
+**「고치기」 로 갈라 이 판에서 안 건드리는 자리 — 4.**
+
+| 자리 | 왜 모으기가 아닌가 |
+|---|---|
+| 32~34 `appendix.py` 30자 | `KNOWN_LIMITS` 가 **사실 ID 없는 글자열 상수**다. 사실 ID 로 갈려면 목록 스물에 ID 를 붙여야 하고 그것은 글자를 정하는 일이다 |
+| 35~37 `slides.py` strip | `entry.cautions` 도 글자열이다. 게다가 **그림 굽기 실패 폴백**이라 19벌 어디에도 안 선다(PPT 여유확보 0) |
+| 26 `excel.py` 304 를 `base=True` 로 | 증상 9 가 닫히지만 **Excel 요약 조합 줄이 5 → 1 로 줄어 걸러지는 집합이 갈린다.** 멈추는 잣대에 걸린다 |
+| 28 `measures.py` 1339 날 문자열 | 잣대는 이미 사실 ID 다 — 갈린 것은 **이름**이고 다른 병이다 |
+
+**1-7. 모을 자리는 `measures\contract.py` — 새 파일 0 · 새 개념 0.** 그 모듈이 이미
+`MARGIN_NOTICE`(글자)와 `TYPE_THRESHOLD_FACT = "contract.crosses_type_threshold"`(사실 ID)를
+나란히 들고 내주고 있다 — **사실 ID 를 이름으로 내주는 꼴이 그 자리에 이미 있다.**
+`MARGIN_FACT` 를 그 옆에 세우고 **ID 를 적는 두 자리**(`measures\contract.py` 789 ·
+`diagnose\contract.py` 188)가 그 이름을 쓰게 한다 — 그러지 않으면 거르는 쪽과 적는 쪽이
+따로 흘러 **조용히 안 걸러진다.** S208 이 `ContractAdjustment.no_saving` 으로 새 자리를 0 으로
+한 것과 같은 모양이고, 다른 점은 그쪽이 **판정 성질**이고 이쪽은 **표식**이라는 것이다.
+
+**1-8. S208 5-4 의 판정은 반만 맞았다.**
+
+- **맞다** — 「정본이 한 곳이고 부르는 쪽이 갈린다」 는 모양은 그대로다. 그래서 **모으기로
+  닫히는 자리가 실제로 있다**(1-6 의 3).
+- **틀렸다 ①** — 정본은 `report\notices.py` 가 아니라 **`notices.py`(`src\kwise\` 뿌리)** 다.
+  208세션 절 5-4 표는 `notices.py` 로 맞게 적었고 **`docs\HANDOVER.md` 4절이 `report\` 를
+  붙였다** — 이 판은 그 줄을 안 고친다(7-5 에서 고친다).
+- **틀렸다 ②** — 갈린 짝은 **`base=True` 대 `base=False` 가 아니다.** 그 둘은 독스트링이
+  까닭을 적은 **일부러 가른 잣대**이고, 실제로 갈린 것은 **「글자 대 사실 ID」** 세 자리다.
+- **못 셌다** — 자리 16 은 이 판 그물로는 **37**(판정)이다. 그물이 달라 나란히 두지 않는다 —
+  S208 은 부르는 자리를 세고 이 판은 정본의 몸줄까지 센다.
+
+커밋: S210 1절.
+
 ---
 
 ## 오늘 (2026-09-18) 209세션 — **도구를 제대로 세우고 기록 절을 깎는다 (계산 0줄)**
