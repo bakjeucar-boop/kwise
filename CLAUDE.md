@@ -70,6 +70,17 @@
    같은 병이다. `--tail` 은 도구 이름 **앞**에 둔다.
 
        .venv\Scripts\python.exe tools\run_tool.py --tail 20 screen_audit --list
+
+   **도구가 있어도 안 부르면 샌다** (S209 1-5). S208 은 이 도구 셋을 손에 쥐고도
+   아홉 자리를 셸에 태웠고 **그 가운데 하나가 실제로 뭉개졌다**(`\\` → `\`).
+   그 판 앞 일곱(S200~S206)은 도구가 **없어서** 샌 것이라 갈래가 다르다 —
+   **지금 남은 병은 「없다」 가 아니라 「안 부른다」 다.**
+
+   **스물둘을 다 받는다** (S209 2절). `count_sites`(`main(argv)`)와
+   `daily_brief`(`sys.stdout.reconfigure`)가 못 받던 자리를 닫았고
+   `tests\test_deployment.py` 의 못 둘이 **새 도구가 붙어도 저절로 문다.**
+   **다만 상대 경로 명령은 못 받는다** — Windows 가 `cwd` 에서 실행 파일을
+   안 찾으므로 `.venv\Scripts\ruff.exe` 같은 것은 **온 경로로 적는다.**
 5. **같은 파일명에 두 실행을 쓰지 않는다. 실행마다 타임스탬프를 붙인다.**
    낡은 결과가 새 결과처럼 보인다. 감시 대상 파일을 지울 거면 루프를 먼저 멈춘다.
 6. **예상 소요를 넘기면 스스로 멈추고 보고한다.** "아직 도는 중" 이 아니라
@@ -378,7 +389,12 @@
 19벌을 다 뜨는 데 1번 PC 에서 5분 남짓 걸리므로 `--case` 로 좁힐 수 있다.
 
     .venv\Scripts\python.exe tools\deck_words.py --snap 앞.json
-    .venv\Scripts\python.exe tools\deck_words.py --diff 앞.json 뒤.json
+    .venv\Scripts\python.exe tools\deck_words.py --read 앞.json --count 도입 후
+    .venv\Scripts\python.exe tools\deck_words.py --diff <온 경로 앞.json> <온 경로 뒤.json>
+
+**세는 판에는 `--read` 를 쓴다** (S209 2절). `--count` 만 주면 **19벌을 다시 떠
+5분을 버린다** — 담아 둔 스냅을 읽으면 **316.7초가 1.8초**다(같은 값 12벌 · 자리 12).
+**`--diff` 는 아직 상대 경로를 스냅 자리에 안 댄다 — 온 경로를 적는다.**
 
 ## 코드 규약
 
