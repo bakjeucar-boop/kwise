@@ -271,7 +271,7 @@ def diagnose(
         pv_basis=pv_basis,
         period_label=current_bill.period_label,
     )
-    summary = ImprovementSummary(**{**summary.__dict__, "lines": build_lines(summary)})
+    summary = ImprovementSummary(**{**summary.__dict__, "lines": build_lines(summary, adequacy)})
 
     return Diagnosis(
         quality=report,
