@@ -387,7 +387,10 @@ def demand_response_worksheet(result: DemandResponseResult) -> Worksheet:
             f"Σ(저부하일 여력 × 참여 시간 {result.participation_hours:,.0f}시간)",
             _kwh(result.period_reducible_kwh),
         ),
-        WorkRow("연간 환산", "관측 기간 → 365일", _kwh(result.annual_reducible_kwh)),
+        # **「연간 환산」 이 아니라 「12개월 환산」 이다** (S214 · 요구사항서 5.5).
+        # 바로 윗줄이 기간 값(「감축 가능량」)이라 **한 표에 두 수가 나란히 선다** —
+        # 이름이 갈려야 어느 쪽인지 읽힌다.
+        WorkRow("12개월 환산", "관측 기간 → 365일", _kwh(result.annual_reducible_kwh)),
     ]
     if result.unit_price_won_per_kwh is not None:
         rows.append(

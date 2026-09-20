@@ -250,13 +250,17 @@ def _with_warnings(report: QualityReport) -> QualityReport:
     messages: list[Notice] = []
 
     if not report.has_full_year:
-        # **주의** — 연간 환산 결과의 신뢰도가 달라진다.
+        # **주의** — 12개월 환산 결과의 신뢰도가 달라진다.
         messages.append(
             warn(
                 # **일수를 여기 다시 적지 않는다** (S156 4-5) — `:.0f` 가 반올림이라
                 # 364.99 가 「365일」 로 찍혀 문장이 제 말을 부정했다. 일수는 기간을
                 # 적는 자리가 이미 말한다.
-                "분석 기간이 12개월 미만입니다. 연간 환산 결과에 경고를 붙여야 합니다.",
+                # **둘째 문장을 걷었다** (S214). 「경고를 붙여야 합니다」 는 **코드에게
+                # 하는 말**이라 고객이 읽는 자리에서 참이 아니다 — 남는 말은 그 벌에서
+                # 참인 한 문장이고, 그것이 `tariff\engine.py` 의 같은 사실
+                # (``quality.short_period``)과 **한 꼴**이 된다.
+                "분석 기간이 12개월 미만입니다.",
                 fact="quality.short_period",
             )
         )

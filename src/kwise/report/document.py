@@ -557,7 +557,8 @@ def _dr_conclusion(result: DemandResponseResult, profile: DrProfile | None) -> s
     if not result.low_load_days:
         return head
     tail = (
-        f" 등록 권장 {result.registered_capacity_kw:,.0f} kW, 연간 감축 가능량 "
+        # **「연간」 이 아니라 「12개월 환산」 이다** (S214).
+        f" 등록 권장 {result.registered_capacity_kw:,.0f} kW, 12개월 환산 감축 가능량 "
         f"{result.annual_reducible_kwh:,.0f} kWh 입니다."
     )
     return head + tail
@@ -689,7 +690,8 @@ def surplus_page(
     off_day_kwh = surplus.weekend_kwh + surplus.holiday_kwh
     facts: list[tuple[str, str]] = [
         # **「기간 잉여」 다** (S213). ``total_kwh`` 가 관측 기간 값이라 화면
-        # 지표의 「연간 잉여」(12개월 환산)와 **한 이름이 두 값**이었다.
+        # 지표의 「12개월 환산 잉여」 와 **한 이름이 두 값**이었다 (S214 에 그 지표가
+        # 「연간 잉여」 에서 지금 이름으로 갔다).
         ("기간 잉여", f"{surplus.total_kwh:,.0f} kWh"),
         (
             "평일 잉여",

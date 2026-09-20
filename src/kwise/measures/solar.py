@@ -165,7 +165,7 @@ def _surplus_share(load: pd.Series, generation: pd.Series, capacity_kwp: float) 
     """용량 ``capacity_kwp`` 에서 잉여 ÷ 발전량.
 
     :func:`kwise.measures.apply_generation` 과 **같은 모집단**(부하가 관측된
-    슬롯)을 본다 — 다른 슬롯을 세면 화면의 「연간 잉여」 비중과 어긋난다.
+    슬롯)을 본다 — 다른 슬롯을 세면 화면의 「12개월 환산 잉여」 비중과 어긋난다.
     """
     if capacity_kwp <= 0:
         return 0.0

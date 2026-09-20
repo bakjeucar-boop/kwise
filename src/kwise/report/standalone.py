@@ -294,7 +294,9 @@ def standalone_frame(rows: tuple[StandaloneRow, ...]) -> pd.DataFrame:
         {
             "수단": row.title,
             "개선 방안": row.reduction,
-            "연간 절감액": (
+            # **「연간」 이 아니라 「12개월 환산」 이다** (S214) — 값이
+            # ``annualize()`` 를 지난 금액이다.
+            "12개월 환산 절감액": (
                 row.zero_reason
                 if row.zero_reason and not row.annual_saving_won
                 else money.won_short(
@@ -314,7 +316,7 @@ def standalone_frame(rows: tuple[StandaloneRow, ...]) -> pd.DataFrame:
             {
                 "수단": SIMPLE_SUM_LABEL,
                 "개선 방안": "—",
-                "연간 절감액": money.won_short(simple_sum_won(rows), reason="—"),
+                "12개월 환산 절감액": money.won_short(simple_sum_won(rows), reason="—"),
                 "투자비": money.won_short(
                     sum(row.investment_won or 0.0 for row in rows), reason="—"
                 ),

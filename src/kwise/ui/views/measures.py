@@ -540,10 +540,12 @@ def _demand_response(
         ),
     )
     columns[3].metric(
-        "연간 감축 가능량",
+        # **「연간」 이 아니라 「12개월 환산」 이다** (S214). 값에 「/년」 꼬리표가
+        # 없어 **이름이 유일한 표식**이다.
+        "12개월 환산 감축 가능량",
         fmt.kwh(result.annual_reducible_kwh),
         help=fmt.markdown_safe(
-            "실제 참여 가능 시간과 일별 감축 여력을 반영한 연간 감축 잠재량입니다.\n\n"
+            "실제 참여 가능 시간과 일별 감축 여력을 반영한 12개월 환산 감축 잠재량입니다.\n\n"
             "저부하일마다 (그날 여력 × 그날 참여 가능 시간)을 더해 365일로 "
             "환산했습니다 — 등록 용량 × 시간이 아닙니다."
         ),
@@ -1201,7 +1203,7 @@ def _surplus_verdict(
 
     셋을 나란히 낸다.
 
-        지금 용량의 연간 잉여      MWh/년 · 발전량 대비 비중
+        지금 용량의 12개월 환산 잉여  MWh/년 · 발전량 대비 비중
         언제 남는가               평일 / 토·일·공휴일
         잉여 없이 지을 수 있는 최대  용량과 그때의 면적
 
@@ -1220,7 +1222,9 @@ def _surplus_verdict(
 
     columns = st.columns(4)
     columns[0].metric(
-        "연간 잉여",
+        # **「연간」 이 아니라 「12개월 환산」 이다** (S214). 같은 벌의 Excel·PPT 는
+        # **기간 값**을 「기간 잉여」 라 적으므로(S213) 이름이 갈려야 두 수가 안 섞인다.
+        "12개월 환산 잉여",
         fmt.per_year(fmt.mwh(annualize(surplus.total_kwh, months))),
         f"발전량의 {fmt.ratio_pct(surplus.share_of_generation)}",
         delta_color="off",
@@ -1315,7 +1319,8 @@ def _surplus_handling(
         revenue = scenario.revenue_won
         columns = st.columns(4)
         columns[0].metric(
-            "연간 수익",
+            # **「연간」 이 아니라 「12개월 환산」 이다** (S214).
+            "12개월 환산 수익",
             fmt.per_year(fmt.won_short(annualize(revenue, months)))
             if revenue is not None
             else fmt.DASH,
@@ -1394,7 +1399,9 @@ def _ess_spec_view(frame: pd.DataFrame) -> pd.DataFrame:
             "용량": [fmt.kwh(value) for value in frame["용량(kWh)"]],
             "방전시간": [fmt.hours(value) for value in frame["방전시간(h)"]],
             "투자비": [fmt.won_short(value, reason="—") for value in frame["투자비(원)"]],
-            "연간 절감액": [fmt.won_year(value) for value in frame["연간 절감액(원)"]],
+            # **「연간」 이 아니라 「12개월 환산」 이다** (S214) — 앞 칸은 표시 열
+            # 이름이고 뒤 칸은 프레임 열쇠라 그대로 둔다.
+            "12개월 환산 절감액": [fmt.won_year(value) for value in frame["연간 절감액(원)"]],
             "회수기간": [
                 fmt.payback(years, investment_won=investment)
                 for years, investment in zip(

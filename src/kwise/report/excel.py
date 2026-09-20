@@ -396,7 +396,8 @@ def measure_summary_frame(
                 ),
                 "비고": (
                     f"거래 가능일 {demand_response.eligible_days}일 중 저부하 평일 "
-                    f"{demand_response.low_load_days}일. 연간 감축 가능량 "
+                    # **「연간」 이 아니라 「12개월 환산」 이다** (S214).
+                    f"{demand_response.low_load_days}일. 12개월 환산 감축 가능량 "
                     f"{demand_response.annual_reducible_kwh:,.0f} kWh "
                     f"= Σ(저부하일별 감축 여력 × 참여 가능 시간, 합 "
                     f"{demand_response.participation_hours:,.0f}시간, 하루 상한 "
@@ -700,7 +701,8 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
                 ),
                 ("DR 저부하 평일", f"{dr.low_load_days_count}일"),
                 (
-                    f"DR 연간 감축 가능량 (참여 {dr.total_participation_hours:,.0f}시간, "
+                    # **「연간」 이 아니라 「12개월 환산」 이다** (S214).
+                    f"DR 12개월 환산 감축 가능량 (참여 {dr.total_participation_hours:,.0f}시간, "
                     f"하루 상한 {dr.daily_hours_cap:,.0f}시간)",
                     f"{dr.annual_reducible_kwh:,.0f} kWh",
                 ),

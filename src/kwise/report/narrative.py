@@ -271,7 +271,9 @@ def terms(pattern: LoadPattern | None = None) -> dict[str, Term]:
         ),
         "payback": Term(
             "회수기간",
-            "투자비 ÷ 연간 절감액.",
+            # **「연간」 이 아니라 「12개월 환산」 이다** (S214) — 표의 열 이름과
+            # 같은 낱말이어야 각주가 그 열을 가리킨다.
+            "투자비 ÷ 12개월 환산 절감액.",
             "운영비와 교체비는 넣지 않은 단순 회수기간입니다.",
         ),
         "self_consumption": Term(

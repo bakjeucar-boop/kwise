@@ -541,7 +541,7 @@ def test_화면_요약표와_보고서_요약표가_같은_수단을_센다(belo
 
     shown = standalone_frame(screen).iloc[0]
     entry = deck[0]
-    assert shown["연간 절감액"] == entry.saving_annual
+    assert shown["12개월 환산 절감액"] == entry.saving_annual
     # PPT 8장 칸은 사유를 떼고 머리말만 둔다 — 화면은 투자비·회수기간을 그 머리말로 적는다.
     assert shown["투자비"] == split_reason(entry.investment)[0]
     assert shown["회수기간"] == entry.payback

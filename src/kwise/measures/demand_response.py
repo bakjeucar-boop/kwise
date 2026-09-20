@@ -215,7 +215,10 @@ def evaluate_demand_response(
             fact="dr.registered_capacity",
         ),
         basis(
-            f"**연간 감축 가능량 {annual_kwh:,.0f} kWh** = Σ(저부하일별 감축 여력 × 그날 "
+            # **「연간」 이 아니라 「12개월 환산」 이다** (S214). ``annual_kwh`` 는
+            # 관측 기간 값을 365일로 늘려 잡은 값이라 곁의 ``period_reducible_kwh``
+            # 와 이름이 갈려야 한다.
+            f"**12개월 환산 감축 가능량 {annual_kwh:,.0f} kWh** = Σ(저부하일별 감축 여력 × 그날 "
             f"참여 가능 시간). 참여 가능 시간의 합은 "
             f"{profile.total_participation_hours:,.0f}시간이고 하루 상한은 "
             f"{profile.daily_hours_cap:,.0f}시간입니다.",

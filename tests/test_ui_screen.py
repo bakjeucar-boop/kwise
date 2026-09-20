@@ -3310,7 +3310,7 @@ def test_카드_절감액이_3단계_표와_같은_기준이다() -> None:
         assert value.endswith("/년") or value == NO_SAVING, value
 
     frame = next(item.value for item in screen.dataframe if "수단" in list(item.value.columns))
-    rows = {str(row["수단"]): str(row["연간 절감액"]) for _, row in frame.iterrows()}
+    rows = {str(row["수단"]): str(row["12개월 환산 절감액"]) for _, row in frame.iterrows()}
     # 역률 카드는 언제나 값이 있다 — 두 화면의 금액이 같은 크기여야 한다.
     card = next(value for label, value in _stage2_metrics(screen) if label == "절감액")
     assert card.rstrip("/년"), card
@@ -3325,11 +3325,11 @@ def test_잉여_판정이_태양광_카드에_있다() -> None:
     """
     source = (VIEWS / "measures.py").read_text(encoding="utf-8")
     body = source[source.index("def _surplus_verdict(") : source.index("def _surplus_handling(")]
-    for label in ("연간 잉여", "평일 잉여", "토·일·공휴일 잉여", "잉여 없는 최대 용량"):
+    for label in ("12개월 환산 잉여", "평일 잉여", "토·일·공휴일 잉여", "잉여 없는 최대 용량"):
         assert f'"{label}"' in body, label
     # **처리 선택은 그 아래 접힘이다** (41세션 2-2·2-5). 지표를 되풀이하지 않는다.
     handling = source[source.index("def _surplus_handling(") : source.index("def _surplus_carry(")]
-    for banned in ('"잉여 전력량"', '"발전량 대비"', '"주말 비중"', '"연간 잉여"'):
+    for banned in ('"잉여 전력량"', '"발전량 대비"', '"주말 비중"', '"12개월 환산 잉여"'):
         assert banned not in handling, banned
 
 
@@ -3661,7 +3661,7 @@ def test_경제성DR_지표_넷이_한_줄이다() -> None:
     screen = _running(nav_page="2단계 · 개선 수단", measure_on_demand_response=True)
     assert not screen.exception, screen.exception
     labels = [label for label, _ in _stage2_metrics(screen)]
-    assert labels[:4] == ["거래 가능일", "저부하 평일", "등록 권장 용량", "연간 감축 가능량"]
+    assert labels[:4] == ["거래 가능일", "저부하 평일", "등록 권장 용량", "12개월 환산 감축 가능량"]
 
 
 def test_경제성DR_지표에_툴팁이_있다() -> None:
@@ -3669,7 +3669,7 @@ def test_경제성DR_지표에_툴팁이_있다() -> None:
     screen = _running(nav_page="2단계 · 개선 수단", measure_on_demand_response=True)
     tips = {item.label: item.help for item in screen.metric}
     assert "보수적인 감축 가능 용량" in str(tips["등록 권장 용량"])
-    assert "연간 감축 잠재량" in str(tips["연간 감축 가능량"])
+    assert "12개월 환산 감축 잠재량" in str(tips["12개월 환산 감축 가능량"])
     for label in ("거래 가능일", "저부하 평일"):
         assert tips[label], f"{label} 에 툴팁이 없습니다."
 
@@ -4052,7 +4052,7 @@ def test_개선안별_요약_열이_개선_방안이다(stage3: AppTest) -> None
     """**「절감량」 이라 적어 두고 절감량이 아닌 것을 담고 있었다** (28세션 1-1)."""
     frame = next(item.value for item in stage3.dataframe if "수단" in list(item.value.columns))
     columns = list(frame.columns)
-    assert columns == ["수단", "개선 방안", "연간 절감액", "투자비", "회수기간"], columns
+    assert columns == ["수단", "개선 방안", "12개월 환산 절감액", "투자비", "회수기간"], columns
     assert "절감량" not in columns
     # **확실성 열은 뺐다** (28세션 4절).
     assert "확실성" not in columns
@@ -4098,7 +4098,9 @@ def test_요약표_금액이_만원_단위다(stage3: AppTest) -> None:
     """**원 단위 아홉 자리가 여섯 줄 늘어서면 자릿수를 세어 읽는다** (28세션 1-3)."""
     frame = next(item.value for item in stage3.dataframe if "수단" in list(item.value.columns))
     values = [
-        str(row[column]) for _, row in frame.iterrows() for column in ("연간 절감액", "투자비")
+        str(row[column])
+        for _, row in frame.iterrows()
+        for column in ("12개월 환산 절감액", "투자비")
     ]
     # **0 이 결론인 줄은 금액 자리에 결론이 온다** (48세션 — 계약전력 조정).
     shown = [item for item in values if not item.startswith("미산출") and item != NO_SAVING]
@@ -4164,7 +4166,7 @@ def test_단순_합이라는_이름이_한_값만_가리킨다(sample_diagnosis:
     rows = standalone_rows(switch=sample_switch, demand_response=demand_response)
 
     # 요약표 합계 행 — 화면에 그려지는 글자 그대로 본다.
-    table_row = str(standalone_frame(rows).iloc[-1]["연간 절감액"])
+    table_row = str(standalone_frame(rows).iloc[-1]["12개월 환산 절감액"])
     with_dr = (sample_switch.annual_saving_won or 0.0) + demand_response.settlement_won
     assert table_row == money.won_short(with_dr, reason="—"), (table_row, with_dr)
     # 합산효과 지표와 계산 근거 표가 쓰는 식 (`ui\views\compare.py::_combined_block`).
@@ -4328,7 +4330,7 @@ def test_쉬는_날을_고르면_감축량이_다시_계산된다() -> None:
 
     metrics = {str(item.label): str(item.value) for item in after.metric}
     assert metrics["저부하 평일"] == "0일"
-    assert metrics["연간 감축 가능량"] == "0 kWh"
+    assert metrics["12개월 환산 감축 가능량"] == "0 kWh"
     assert metrics["거래 가능일"] != before["거래 가능일"]
     # **되돌릴 수 있어야 한다** — 목록이 비어도 고르는 칸은 남는다.
     assert after.multiselect(key="measure_demand_response_off_days").value == [
@@ -5019,7 +5021,7 @@ def test_여지_없는_수단을_2단계는_빼고_3단계_조합은_담는다()
 
     **어긋남은 한 벌 안에 있다** (S196 2-2). 역률 100 인 벌에서
 
-        2단계 개선안별 요약   「100.0% · 개선 여지 없음」 · 연간 절감액 「0원」
+        2단계 개선안별 요약   「100.0% · 개선 여지 없음」 · 12개월 환산 절감액 「0원」
         3단계 조합 비교      같은 수단이 조합 이름과 「수단」 열에 그대로 선다
 
     **그것이 글자만의 일이 아니다** — 그 조각이 조합에 들어가 있으면 태양광 뒤
@@ -5049,15 +5051,15 @@ def test_여지_없는_수단을_2단계는_빼고_3단계_조합은_담는다()
     summary = next(
         frame
         for frame in frames
-        if "개선 방안" in list(frame.columns) and "연간 절감액" in list(frame.columns)
+        if "개선 방안" in list(frame.columns) and "12개월 환산 절감액" in list(frame.columns)
     )
     rows = [row for row in summary.to_dict("records") if "역률" in str(row["수단"])]
     assert len(rows) == 1, f"{case.key} — 요약표에 역률 행이 {len(rows)}개입니다."
     assert "개선 여지 없음" in str(rows[0]["개선 방안"]), (
         f"{case.key} — 2단계가 역률을 「개선 여지 없음」 이라 적지 않습니다: {rows[0]}"
     )
-    assert str(rows[0]["연간 절감액"]) == "0원", (
-        f"{case.key} — 2단계 역률 절감액이 「0원」 이 아닙니다: {rows[0]['연간 절감액']}"
+    assert str(rows[0]["12개월 환산 절감액"]) == "0원", (
+        f"{case.key} — 2단계 역률 절감액이 「0원」 이 아닙니다: {rows[0]['12개월 환산 절감액']}"
     )
 
     # ── 자리 B — 3단계 계산 근거. **그 0원 조각이 조합에 들어 있다는 실물 증거다.**
@@ -5118,12 +5120,12 @@ def test_역률_체크를_풀면_차이가_0원이고_요약표에는_남는다(
     summary = next(
         frame
         for frame in frames
-        if "개선 방안" in list(frame.columns) and "연간 절감액" in list(frame.columns)
+        if "개선 방안" in list(frame.columns) and "12개월 환산 절감액" in list(frame.columns)
     )
     rows = [row for row in summary.to_dict("records") if "역률" in str(row["수단"])]
     assert len(rows) == 1, f"{case.key} — 조합에서 뺀 역률 행이 요약표에 {len(rows)}개입니다."
-    assert str(rows[0]["연간 절감액"]) == "0원", (
-        f"{case.key} — 조합에서 뺀 역률의 절감액이 「{rows[0]['연간 절감액']}」 입니다."
+    assert str(rows[0]["12개월 환산 절감액"]) == "0원", (
+        f"{case.key} — 조합에서 뺀 역률의 절감액이 「{rows[0]['12개월 환산 절감액']}」 입니다."
     )
 
     # ── 그 조각을 빼면 차이가 통째로 사라진다
