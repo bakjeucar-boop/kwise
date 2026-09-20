@@ -501,7 +501,8 @@ def measure_summary_frame(
                     # Word 부록과 **같은 문장**이다 —
                     # :meth:`SurplusResult.applied_price_note` 하나에서 온다.
                     "비고": (
-                        f"연간 잉여 {format_mwh(surplus.total_kwh)} · "
+                        # **「기간 잉여」 다** (S213) — PPT 잉여 장 지표와 같은 값이다.
+                        f"기간 잉여 {format_mwh(surplus.total_kwh)} · "
                         + (
                             f"차감 {offset.deducted_kwh:,.0f} kWh · "
                             f"잔여 {offset.remaining_kwh:,.0f} kWh · "

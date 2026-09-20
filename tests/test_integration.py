@@ -282,13 +282,13 @@ def test_대표일을_바꾸면_곡선_차트가_따라_바뀐다() -> None:
     """**세 곡선이 같은 날을 본다** (15세션 2절)."""
     app = _app(**_on("power_factor", "ess"))
     assert not app.exception, app.exception
-    assert "연간 최대수요일" in _text(app)
+    assert "기간 최대수요일" in _text(app)
 
     app.selectbox(key="measure_common_ref_day").set_value("winter").run()
     assert not app.exception, app.exception
     body = _text(app)
     assert "겨울 대표일" in body
-    assert "연간 최대수요일" not in body
+    assert "기간 최대수요일" not in body
 
 
 # ===================================================================== 5-1 태양광 경로

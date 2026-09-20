@@ -583,9 +583,12 @@ def _solar_conclusion(
     재료다.** 자리는 그대로 쓰고 말만 바꾼다 — 문구를 늘리지 않는다.
     """
     parts = [
-        f"태양광 {solar.capacity_kwp:,.0f} kWp 를 설치하면 연 "
+        # **한 문장에 「연」 과 「기간에」 가 함께 섰다** (S213). 발전량도 금액도
+        # 같은 관측 기간 값인데 앞은 「연」 뒤는 「기간에」 였다 — 「기간에」 하나를
+        # 앞으로 내 둘을 덮는다. 「기간에」 를 두 번 적는 쪽보다 짧다.
+        f"태양광 {solar.capacity_kwp:,.0f} kWp 를 설치하면 기간에 "
         f"{solar.generation_kwh:,.0f} kWh 를 발전해 "
-        f"기간에 {_won(solar.total_saving_won)} 줄어듭니다."
+        f"{_won(solar.total_saving_won)} 줄어듭니다."
     ]
     # **면적 상한과 자가소비 한계를 같은 층위로 나열하지 않는다** (53세션 4-12).
     # 51세션까지는 「(설치 면적 2,000 m² · 2,038 kWp 까지는 전량 자가소비)」 였는데,
@@ -646,7 +649,7 @@ class SurplusPage:
 
     lead: str
     facts: tuple[tuple[str, str], ...]
-    """지표 넷 — 연간 잉여 · 평일 · 토·일·공휴일 · 잉여 없는 최대 용량."""
+    """지표 넷 — 기간 잉여 · 평일 · 토·일·공휴일 · 잉여 없는 최대 용량."""
     scenario_rows: tuple[tuple[str, ...], ...]
     """시나리오 표. 머리글이 첫 줄이다. **기준선(출력제어)은 싣지 않는다** (27세션).
 
@@ -685,7 +688,9 @@ def surplus_page(
         return None
     off_day_kwh = surplus.weekend_kwh + surplus.holiday_kwh
     facts: list[tuple[str, str]] = [
-        ("연간 잉여", f"{surplus.total_kwh:,.0f} kWh"),
+        # **「기간 잉여」 다** (S213). ``total_kwh`` 가 관측 기간 값이라 화면
+        # 지표의 「연간 잉여」(12개월 환산)와 **한 이름이 두 값**이었다.
+        ("기간 잉여", f"{surplus.total_kwh:,.0f} kWh"),
         (
             "평일 잉여",
             f"{surplus.weekday_kwh:,.0f} kWh ({_share(surplus.weekday_kwh, surplus.total_kwh)})",

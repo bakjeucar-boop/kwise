@@ -191,7 +191,8 @@ def _reference_day(usage: UsageData) -> RepresentativeDay | None:
             key=input_key("common", "ref_day"),
             help=(
                 "역률·태양광·ESS 의 하루 곡선이 모두 이 날을 씁니다. "
-                "기본은 연간 최대수요가 난 날입니다 — 피크가 어떻게 생겼는지가 "
+                # **대표일 이름을 따라간다** (S213) — `days.py` 가 「기간 최대수요일」 이다.
+                "기본은 기간 최대수요가 난 날입니다 — 피크가 어떻게 생겼는지가 "
                 "세 수단의 공통 관심사이기 때문입니다."
             ),
         )
@@ -1081,9 +1082,13 @@ def _solar(
     # 사용량에 3 MWh 대 발전량이 눌려 보이지 않았다.
     st.altair_chart(charts.solar_annual_chart(usage, generation), width="stretch")
     ratio = charts.solar_saving_ratio(usage, generation)
+    # **진단 지표와 같은 이름을 쓴다** (S213). 그 자리(`diagnose.py`)는 이미
+    # 조건부인데 이 캡션만 무조건 「연간」 이라 **한 벌 안에서 같은 값을 두 이름**
+    # 으로 불렀다 — 122일 벌이 지표는 「기간 사용량」 캡션은 「연간 사용량」 이었다.
+    span_label = "연간" if (usage.meta.period_days or 0) >= 350 else "기간"
     st.caption(
         "날짜별 발전량"
-        + (f" · 연간 사용량의 **{fmt.ratio_pct(ratio)}** 를 줄입니다" if ratio else ""),
+        + (f" · {span_label} 사용량의 **{fmt.ratio_pct(ratio)}** 를 줄입니다" if ratio else ""),
         help=fmt.chart_tip("chart.solar_annual"),
     )
     if day is not None:

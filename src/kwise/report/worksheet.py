@@ -443,7 +443,11 @@ def solar_worksheet(curve: SolarCurve, point: SolarPoint | None = None) -> Works
         return Worksheet("solar", "태양광 계산 근거")
     rows = [
         WorkRow("설치 용량", "", f"{best.capacity_kwp:,.0f} kWp"),
-        WorkRow("연간 발전량", "기상 자료 × 용량", _kwh(best.generation_kwh)),
+        # **「연간」 이 아니라 「기간」 이다** (S213 · 요구사항서 5.5 · S188 정본).
+        # ``generation_kwh`` 는 관측 기간 값이라 12개월 미만 벌에서 이름과 값이
+        # 어긋났다 — 122일 벌이 「연간 발전량 39,565 kWh」 였다. 바로 아래 두 줄이
+        # 이미 「기간 기본요금 절감」 이라 **한 표 안에서 이름이 갈려 있었다.**
+        WorkRow("기간 발전량", "기상 자료 × 용량", _kwh(best.generation_kwh)),
         WorkRow(
             "자가소비",
             f"자가소비율 {best.self_consumption_ratio or 0:.0%}",

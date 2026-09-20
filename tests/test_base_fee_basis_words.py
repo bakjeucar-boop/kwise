@@ -453,3 +453,91 @@ def test_덱_그물이_안_담는_것을_스스로_적는다(
         monkeypatch.setattr(sys, "argv", argv)
         assert deck_words.main() == 0
         assert deck_words.BLIND in capsys.readouterr().out, argv
+
+
+# ───────────────────────────────────────────────── 기간 값을 「연」 이라 부르지 않는다
+#
+# **요구사항서 5.5** — 「결과를 "연간"으로 표시하지 않는다. 실제 기간을 명시하거나
+# 12개월로 환산한다.」 S188 이 금액 자리 스물셋에 「기간」 을 달았고 **S213 이
+# 에너지·대표일 자리 열을 마저 달았다.** 122일 벌에서 「연간 발전량 39,565 kWh」
+# 처럼 이름과 값이 세 배 어긋나 있었다.
+#
+# **실물을 문다 — 소스 리터럴을 안 찾는다.** 그리고 **넷을 한 못으로 문다** —
+# 한쪽만 보면 다른 쪽이 갈려도 초록이다(S212 가 값으로 겪은 자리다).
+#
+# **새 렌더를 안 붙인다** — 위 모듈 픽스처가 이미 구운 것을 읽는다.
+
+#: 기간 값 자리에 서면 안 되는 옛 이름. **값과 이름이 세 배 어긋나던 글자다.**
+YEAR_NAMES = (
+    "연간 발전량",
+    "연간 잉여",
+    "연간 최대수요일",
+    "연중 최대수요일",
+    "연간 최대수요 상위",
+)
+
+#: 그 자리의 지금 이름. 하나라도 빠지면 이름이 도로 갈린 것이다.
+PERIOD_NAMES = ("기간 발전량", "기간 최대수요일")
+
+
+def test_기간_값을_적는_자리가_네_산출물에서_연이라_말하지_않는다(rendered: Rendered) -> None:
+    """**네 산출물을 한 못으로 문다** (S213 1-6 · 울타리 ㄱ1~ㄱ10).
+
+    화면은 12개월 환산을 「연간 잉여」 로 적는 자리가 **맞게** 있으므로(`fmt.per_year`)
+    화면과 나머지 셋을 갈라 본다 — 옛 이름을 화면 밖에서 0 으로 본다.
+
+    **12개월 미만 벌이 없어도 문다.** 이름은 기간 길이로 갈리지 않으므로(S188 정본)
+    열두 달 벌에서도 그대로 선다 — 조건부로 되돌리면 여기서 빨개진다.
+    """
+    deck_words = _deck_words()
+    쪽 = {
+        "Excel": deck_words._excel_rows(rendered.payloads["excel"]),
+        "PPT": deck_words._deck_rows(rendered.payloads["ppt"]),
+        "Word": deck_words._word_rows(rendered.payloads["word"]),
+    }
+    글자 = {name: [deck_words.text_of(row) for row in rows] for name, rows in 쪽.items()}
+    글자["화면"] = [text for _slot, text in rendered.screen]
+
+    셈 = {
+        (산출물, 옛): sum(옛 in line for line in lines)
+        for 산출물, lines in 글자.items()
+        for 옛 in YEAR_NAMES
+    }
+    # **화면 「연간 잉여」 는 12개월 환산이라 맞다** — 그 하나만 빼고 다 0 이다.
+    샌자리 = [
+        f"{산출물} 「{옛}」 {수}"
+        for (산출물, 옛), 수 in 셈.items()
+        if 수 and not (산출물 == "화면" and 옛 == "연간 잉여")
+    ]
+    assert 샌자리 == [], (rendered.key, 샌자리)
+
+    # **한 문장에 「연」 과 「기간에」 가 함께 서던 자리** (ㄱ2 · ㄱ3).
+    for 산출물 in ("PPT", "Word"):
+        섞인 = [line for line in 글자[산출물] if "연 " in line and "kWh 를 발전해" in line]
+        assert 섞인 == [], (rendered.key, 산출물, 섞인)
+
+    선이름 = {
+        이름: sum(이름 in line for lines in 글자.values() for line in lines)
+        for 이름 in PERIOD_NAMES
+    }
+    빠진 = [이름 for 이름, 수 in 선이름.items() if not 수]
+    assert 빠진 == [], (rendered.key, 선이름)
+
+
+def test_사용량_이름이_진단_지표와_태양광_캡션에서_같다(rendered: Rendered) -> None:
+    """**한 벌 안에서 같은 값을 두 이름으로 부르지 않는다** (S213 1-5 · 울타리 ㄱ6).
+
+    진단 지표(`ui\\views\\diagnose.py`)는 자료가 350일에 못 미치면 「기간 사용량」 으로
+    갈아 다는데 **태양광 캡션만 무조건 「연간 사용량」 이었다** — 122일 벌에서 같은
+    값이 한 화면에 두 이름으로 섰다. 이 못은 **두 자리의 낱말이 같은지**를 보므로
+    열두 달 벌에서도 한쪽만 고치면 빨개진다.
+    """
+    화면 = [text for _slot, text in rendered.screen]
+    지표 = [text for text in 화면 if text in ("연간 사용량", "기간 사용량")]
+    캡션 = [text for text in 화면 if "사용량의" in text and "줄입니다" in text]
+    assert 지표, (rendered.key, "진단 사용량 지표가 화면에 없다")
+    assert 캡션, (rendered.key, "태양광 캡션이 화면에 없다")
+
+    낱말 = 지표[0].removesuffix(" 사용량")
+    어긋남 = [text for text in 캡션 if f"{낱말} 사용량의" not in text]
+    assert 어긋남 == [], (rendered.key, 낱말, 어긋남)

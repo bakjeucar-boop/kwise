@@ -890,7 +890,8 @@ def surplus_page_lead(*, capacity_kwp: float, total_kwh: float, off_day_share: f
 
     갈림값은 :func:`surplus_off_day_high` · :func:`surplus_off_day_low` 다.
     """
-    head = f"태양광 {capacity_kwp:,.0f} kWp 에서 연 {total_kwh:,.0f} kWh 가 남습니다."
+    # **「연」 이 아니라 「기간에」 다** (S213). ``total_kwh`` 가 관측 기간 값이다.
+    head = f"태양광 {capacity_kwp:,.0f} kWp 에서 기간에 {total_kwh:,.0f} kWh 가 남습니다."
     if off_day_share is None:
         return head
     if off_day_share >= surplus_off_day_high():

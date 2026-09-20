@@ -482,7 +482,7 @@ def test_위약금_리스크를_적는다(sample_diagnosis: Diagnosis) -> None:
 
 
 def test_기본요금_절감을_주장하지_않는다(sample_diagnosis: Diagnosis) -> None:
-    """SMP 기준 산발 입찰이라 연중 최대수요일과 겹칠 확률이 낮다. 편익은 정산금뿐이다."""
+    """SMP 기준 산발 입찰이라 기간 최대수요일과 겹칠 확률이 낮다. 편익은 정산금뿐이다."""
     profile = sample_diagnosis.dr
     assert profile is not None
     result = evaluate_demand_response(profile, unit_price_won_per_kwh=150.0)

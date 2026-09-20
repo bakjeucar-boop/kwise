@@ -211,8 +211,10 @@ PERIOD_NAME_PIECES: tuple[tuple[str, str, int], ...] = (
     ("report/document.py", " 로 올리면 추가요금이 없어지고 감액을 받아 ", 0),
     ("report/document.py", " 로 올리면 기간에 ", 1),
     ("report/document.py", " 로 올리면 ", 0),
-    ("report/document.py", " kWh 를 발전해 기간에 ", 1),
-    ("report/document.py", " kWh 를 발전해 ", 0),
+    # **S213 에 「기간에」 가 문장 앞으로 갔다** — 발전량(kWh)도 같은 기간 값인데
+    # 앞은 「연」 뒤는 「기간에」 였다. 한 「기간에」 가 둘을 덮는다.
+    ("report/document.py", " kWp 를 설치하면 기간에 ", 1),
+    ("report/document.py", " kWp 를 설치하면 연 ", 0),
     ("report/document.py", "」 입니다. 기간에 ", 1),
     ("report/document.py", "」 입니다. ", 0),
     # PPT 태양광 각주 (P6) · 잉여 장 머리 (P8)
