@@ -609,6 +609,33 @@ def test_다음_작업_칸은_상한을_넘지_않는다() -> None:
     )
 
 
+def test_세션_목록표가_서술_절보다_밀리지_않는다() -> None:
+    """**표가 조용히 밀린다** (S213 7-1 · S214 3-2).
+
+    S211·S212 두 판이 제 행을 안 남겨 세션 목록표가 **두 판 밀렸고**, S213 이
+    브리핑을 뜨다가 **우연히** 그것을 봤다. 잡은 것은 `daily_brief.stale_session`
+    하나뿐이고 **pytest 는 그 사실을 안 물었다** — 브리핑을 안 뜨는 판에서는
+    아무도 모른다.
+
+    **한 판은 봐준다** — 도는 세션이 제 절을 먼저 쓰고 표 행은 종료 절차에
+    붙이므로 세션 중에는 하나 앞서 있는 것이 정상이다(그 잣대는
+    :func:`daily_brief.stale_session` 이 쥔다 · 이 못은 그 값을 그대로 읽는다).
+    """
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    try:
+        import daily_brief
+    finally:
+        sys.path.pop(0)
+
+    body = _read("PROCEED.md")
+    title, _detail = daily_brief.latest_session(body)
+    stale = daily_brief.stale_session(body, title)
+    assert stale == 0, (
+        f"세션 목록표가 밀렸습니다 — 서술 절은 {stale}세션까지 있는데 표의 마지막 행은 "
+        f"「{title}」 입니다. 빠진 행을 목록표에 붙이십시오."
+    )
+
+
 # ------------------------------------------- 한 문서 안에서 갈리는 것 (S120 ⑮)
 
 #: ``CALC_LOGIC.md`` 부록의 갈래 표 — 「수」 칸과 「번호」 칸.
