@@ -24,10 +24,11 @@ S207(네 자리). 하는 일은 늘 셋이었다.
     .venv\\Scripts\\python.exe tools\\deck_words.py --read 앞.json --count 도입 후
     .venv\\Scripts\\python.exe tools\\deck_words.py --diff 앞.json 뒤.json
 
-19벌을 다 뜨는 데 1번 PC 에서 **5분 남짓** 걸린다 (S207 2절 · 324.8초).
-``--case`` 로 좁히면 벌마다 5~40초다. **담아 둔 스냅이 있으면 ``--read`` 로
-읽는다** — 그 판은 앱을 안 띄운다 (S209 2절 · 앞 판이 ``--count`` 로 300.3초를
-버린 자리다).
+19벌을 다 뜨는 데 **2번 PC 에서 16분 남짓** 걸린다 (S212 982.0초 · S213 983.0초 ·
+**네 산출물을 다 굽는 값이다**). 1번 PC 값은 아직 없다 — **「5분 남짓 (S207 324.8초)」
+은 화면 하나만 뜨던 때 값이라 걷었다** (S213 3-1). ``--case`` 로 좁히면 벌마다
+30~55초다. **담아 둔 스냅이 있으면 ``--read`` 로 읽는다** — 그 판은 앱을 안 띄운다
+(S209 2절 · 앞 판이 ``--count`` 로 300.3초를 버린 자리다).
 """
 
 from __future__ import annotations
@@ -346,8 +347,8 @@ def main() -> int:
         print(BLIND)
         return 0
 
-    # **읽는 길** (S209 2절). ``--count`` 가 늘 19벌을 다시 떠 5분 남짓을
-    # 버렸다 — 읽는 자리가 ``--diff`` 하나뿐이었다.
+    # **읽는 길** (S209 2절). ``--count`` 가 늘 19벌을 다시 떠 그 판 소요를
+    # 통째로 버렸다 — 읽는 자리가 ``--diff`` 하나뿐이었다.
     if args.read is not None:
         path = _at(args.read)
         data = _load(path)
