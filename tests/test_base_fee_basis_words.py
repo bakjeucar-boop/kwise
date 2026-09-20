@@ -401,6 +401,36 @@ def test_덱_그물이_네_산출물을_실물에서_담는다(rendered: Rendere
     assert 전체 > 한칸 > 0, (전체, 한칸)
 
 
+def test_덱_그물이_뜰_때_산출물을_함께_부른다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`snap()` 이 **화면만 부르면** 빨개진다 (S212 2-2 ㄱ).
+
+    위 시험은 줄을 만드는 세 함수를 문다 — 그 셋이 살아 있어도 `snap()` 이 안
+    부르면 그물은 다시 화면 하나다. **앱을 안 띄운다** — 화면 쪽을 빈 줄로 세워
+    부르는 자리만 본다.
+    """
+    deck_words = _deck_words()
+    key = deck_words.render_deck.CASES[0].key
+    불린: list[str] = []
+
+    class 앱:
+        exception = None
+
+        def run(self) -> 앱:
+            return self
+
+    monkeypatch.setattr(deck_words.render_deck, "build_app", lambda case: 앱())
+    monkeypatch.setattr(deck_words.screen_audit, "collect", lambda app: ())
+    monkeypatch.setattr(
+        deck_words,
+        "_artifacts",
+        lambda app, name: 불린.append(name) or [["Excel", "진단", "1,000원"]],
+    )
+    rows = deck_words.snap([key])[key]
+    assert 불린 == [key], "snap() 이 산출물을 안 불렀다 — 그물이 화면 하나로 좁아졌다"
+    assert [row[0] for row in rows] == ["Excel"]
+    assert deck_words.text_of(rows[0]) == "진단\t1,000원"
+
+
 def test_덱_그물이_안_담는_것을_스스로_적는다(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
