@@ -418,13 +418,13 @@ def test_덱_그물이_뜰_때_산출물을_함께_부른다(monkeypatch: pytest
         def run(self) -> 앱:
             return self
 
+    def 가짜(app: Any, name: str) -> list[list[str]]:
+        불린.append(name)
+        return [["Excel", "진단", "1,000원"]]
+
     monkeypatch.setattr(deck_words.render_deck, "build_app", lambda case: 앱())
     monkeypatch.setattr(deck_words.screen_audit, "collect", lambda app: ())
-    monkeypatch.setattr(
-        deck_words,
-        "_artifacts",
-        lambda app, name: 불린.append(name) or [["Excel", "진단", "1,000원"]],
-    )
+    monkeypatch.setattr(deck_words, "_artifacts", 가짜)
     rows = deck_words.snap([key])[key]
     assert 불린 == [key], "snap() 이 산출물을 안 불렀다 — 그물이 화면 하나로 좁아졌다"
     assert [row[0] for row in rows] == ["Excel"]

@@ -155,6 +155,18 @@ def _word_rows(payload: bytes) -> list[list[str]]:
     return rows
 
 
+def _swap(module: object, name: str, value: object) -> object:
+    """모듈 속성을 갈아 끼우고 **옛 것을 돌려준다.**
+
+    이름을 글자로 받으므로 mypy 가 모듈 속성 배정을 좁히지 않는다 — 직접
+    `compare_view.slides_bytes = grab` 이라 적으면 `[assignment]` 와
+    `[attr-defined]` 가 넷 난다(S212 5-6).
+    """
+    original = getattr(module, name)
+    setattr(module, name, value)
+    return original
+
+
 def _artifacts(app: AppTest, key: str) -> list[list[str]]:
     """단추를 눌러 **실물 바이트**를 받아 Excel · PPT · Word 줄을 낸다.
 
@@ -168,17 +180,16 @@ def _artifacts(app: AppTest, key: str) -> list[list[str]]:
 
     captured: dict[str, DocumentSections] = {}
 
-    def grab(document: DocumentSections, **options: object) -> bytes:
-        captured["sections"] = document
-        return slides_bytes(document, **options)
+    def grab(sections: DocumentSections) -> tuple[bytes, str]:
+        captured["sections"] = sections
+        return slides_bytes(sections)
 
-    original = compare_view.slides_bytes
-    compare_view.slides_bytes = grab
+    original = _swap(compare_view, "slides_bytes", grab)
     try:
         app.button(key="build_ppt").click().run()
         app.button(key="build_excel").click().run()
     finally:
-        compare_view.slides_bytes = original
+        _swap(compare_view, "slides_bytes", original)
     if app.exception:
         print(f"!! {key} 산출물이 죽었다: {app.exception}")
         return []
