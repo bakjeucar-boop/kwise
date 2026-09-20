@@ -79,6 +79,10 @@ def peak_claims(texts: list[str]) -> list[str]:
 class Rendered:
     key: str
     texts: tuple[str, ...]
+    #: 화면에 그려진 줄 — `(slot, text)`. **라벨과 값이 다른 줄로 온다** (S211 4-1).
+    screen: tuple[tuple[str, str], ...] = ()
+    #: Excel 한 행 — 이름과 값이 **한 행 안에** 있다 (S211 4-1).
+    excel_rows: tuple[tuple[str, ...], ...] = ()
 
 
 def _deck(payload: bytes) -> list[str]:
@@ -100,18 +104,21 @@ def _deck(payload: bytes) -> list[str]:
     return out
 
 
-def _workbook(payload: bytes) -> list[str]:
+def _workbook_rows(payload: bytes) -> list[tuple[Any, ...]]:
+    """Excel 을 **행째로** 낸다 — 이름과 값을 짝지어 봐야 하는 자리가 있다 (S211 4-1)."""
     from openpyxl import load_workbook
 
     book = load_workbook(io.BytesIO(payload), read_only=True)
     return [
-        value
+        row
         for sheet in book.worksheets
         if "시계열" not in sheet.title
         for row in sheet.iter_rows(values_only=True)
-        for value in row
-        if isinstance(value, str) and value.strip()
     ]
+
+
+def _workbook(rows: list[tuple[Any, ...]]) -> list[str]:
+    return [value for row in rows for value in row if isinstance(value, str) and value.strip()]
 
 
 def _document(payload: bytes) -> list[str]:
@@ -172,18 +179,25 @@ def rendered(request: pytest.FixtureRequest) -> Iterator[Rendered]:
         state["combination_pick"] = render_deck.ALL_MEASURES
         app.run()
         assert not app.exception, app.exception
-        texts = [line.text for line in screen_audit.collect(app)]
+        screen = [(line.slot, line.text) for line in screen_audit.collect(app)]
+        texts = [text for _slot, text in screen]
         app.button(key="build_ppt").click().run(timeout=900)
         app.button(key="build_excel").click().run(timeout=900)
         assert not app.exception, app.exception
         store = dict(app.session_state[ARTIFACT_KEY])
+        excel_rows = _workbook_rows(store["excel"].payload)
         texts += _deck(store["ppt"].payload)
-        texts += _workbook(store["excel"].payload)
+        texts += _workbook(excel_rows)
         word, _name = document_bytes(captured["sections"])
         texts += _document(word)
     finally:
         patch.undo()
-    yield Rendered(request.param, tuple(texts))
+    yield Rendered(
+        request.param,
+        tuple(texts),
+        tuple(screen),
+        tuple(tuple(str(v) for v in row if v is not None) for row in excel_rows),
+    )
 
 
 def test_기본요금이_피크에_안_매이는_벌에서_피크를_기준으로_말하지_않는다(
@@ -207,6 +221,51 @@ def test_기본요금이_피크에_안_매이는_벌에서_피크를_기준으�
         assert hits, "계약형 벌에 기준 문장이 안 섰다 — 그물이 죽었다"
     else:
         assert hits == [], hits
+
+
+#: 두 수가 함께 쓰는 앞머리. **여기까지가 같아서 한 글자 차로 갈렸다.**
+OFF_HOURS = "운영시간 외 부하"
+
+
+def test_운영시간_외_부하_두_수가_이름에_제_식을_달고_갈린다(rendered: Rendered) -> None:
+    """**한 글자 차 이름이 두 정의를 가렸다** (S211 1·2절).
+
+    「비중」(`off_hours_energy_share`)은 **밖 사용량 ÷ 전체**이고 「비율」
+    (`off_hours_ratio`)은 **밖 평균 ÷ 운영시간 평균**이다 — 정의가 둘이고 둘 다
+    제자리에서 참이다(S211 1-6 ㄴ). 덱 19벌에서 **차가 0 인 벌이 없고 부호까지
+    갈린다**(−10.7 ~ +18.2%p). 앞 여섯 글자가 같아 덱의 70.8% 와 Excel 의 89.0%
+    를 **같은 것의 두 값**으로 읽게 된다.
+
+    **한 못이 두 자리를 함께 문다.** 화면만 보면 Excel 이 갈려도 초록이고 그
+    반대도 같다 — S192 3-1 이 「「비율」 과 「비중」 을 맞대는 못 0」 이라 적은
+    자리다.
+
+    **실물만 본다** — 소스 리터럴이 아니라 그려진 화면 줄과 구운 Excel 행이다.
+    """
+    화면 = [text for slot, text in rendered.screen if text.startswith(OFF_HOURS)]
+    assert 화면 == [f"{OFF_HOURS} 비중"], f"화면 이름이 달라졌다 — {화면}"
+
+    라벨 = [i for i, (_slot, text) in enumerate(rendered.screen) if text == f"{OFF_HOURS} 비중"]
+    assert len(라벨) == 1, f"화면 라벨이 하나여야 합니다 — {라벨}"
+    slot, 화면값 = rendered.screen[라벨[0] + 1]
+    assert slot == "지표", f"라벨 다음이 지표 값이어야 합니다 — {slot} · {화면값}"
+
+    엑셀 = [row for row in rendered.excel_rows if row and row[0].startswith(OFF_HOURS)]
+    assert len(엑셀) == 1, f"Excel 이름이 하나여야 합니다 — {엑셀}"
+    엑셀이름, 엑셀값 = 엑셀[0][0], 엑셀[0][1]
+
+    # ① 앞머리가 같으므로 **뒤에 식이 붙어 갈려야 한다.**
+    assert 엑셀이름 != f"{OFF_HOURS} 비중", "Excel 이 「비중」 이름을 쓰는데 값은 비율이다"
+    assert "÷" in 엑셀이름, (
+        f"Excel 이름이 제 식을 안 달았다 — {엑셀이름!r}. 「비중」 과 한 글자 차라 "
+        "그대로 두면 덱의 수와 같은 것으로 읽힌다 (S211 2-2)."
+    )
+    # ② 「비중」 쪽은 실물에 식이 이미 떠 있다 — 툴팁이 그 자리다.
+    assert any("밖 사용량 ÷ 전체 사용량" in text for text in rendered.texts), (
+        "「비중」 의 식이 실물에서 사라졌다"
+    )
+    # ③ **두 수는 실제로 다르다** — 같아지면 정의 하나가 조용히 사라진 것이다.
+    assert 화면값 != 엑셀값, f"{rendered.key} — 두 수가 같아졌다 ({화면값})"
 
 
 # ===================================================================== 갈래를 모르는 상수
