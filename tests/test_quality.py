@@ -325,7 +325,8 @@ def test_12개월_미만_경고가_네_자리에서_한_꼴이다(tmp_path: Path
     assert not report.has_full_year  # 전제 — 12개월 미만 자료다
 
     선말 = {
-        where: sorted({m for m in messages if "12개월 미만" in m}) for where, messages in said.items()
+        where: sorted({m for m in messages if "12개월 미만" in m})
+        for where, messages in said.items()
     }
     빈자리 = [where for where, ms in 선말.items() if not ms]
     assert 빈자리 == [], f"12개월 미만인데 경고가 없는 자리: {빈자리}"

@@ -889,9 +889,14 @@ def test_12개월_환산을_값마다_되풀이하지_않는다(full_sections: D
 
     「9,050,000원 (12개월 환산 9,050,000원)」 이 두 줄로 흐르고, 읽는 사람은 어느
     쪽이 답인지 되묻는다. 기준은 각주가 **한 번** 적는다.
+
+    **S214 에 잣대를 「값 곁의 괄호」 로 좁혔다.** 그 판이 12개월 환산값 자리에
+    이름을 달면서 **이름 자리**(사양 표 머리글 「12개월 환산 절감액」 · 회수기간
+    각주 · DR 결론 문장)에 그 낱말이 섰다 — **그것은 값을 되풀이하는 것이 아니다.**
+    무는 것은 여전히 「N원 **(12개월 환산** N원)」 꼴 하나다.
     """
     text = _deck_text(build_slides(full_sections))
-    assert "12개월 환산" not in text.replace(ANNUAL_BASIS_NOTE, "")
+    assert "(12개월 환산" not in text
     assert text.count(ANNUAL_BASIS_NOTE) == 1
     for entry in full_sections.measures:
         assert "12개월 환산" not in entry.slide_saving
