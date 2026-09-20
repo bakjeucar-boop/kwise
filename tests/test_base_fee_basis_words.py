@@ -24,10 +24,11 @@ ESS·계약전력 조정 결론)만 낸다.
 from __future__ import annotations
 
 import io
+import json
 import re
 import sys
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -83,6 +84,8 @@ class Rendered:
     screen: tuple[tuple[str, str], ...] = ()
     #: Excel 한 행 — 이름과 값이 **한 행 안에** 있다 (S211 4-1).
     excel_rows: tuple[tuple[str, ...], ...] = ()
+    #: 산출물 실물 바이트 — 「이름 → 바이트」 (S212 4절). **덱 그물이 읽는 것이 이것이다.**
+    payloads: dict[str, bytes] = field(default_factory=dict)
 
 
 def _deck(payload: bytes) -> list[str]:
@@ -197,6 +200,7 @@ def rendered(request: pytest.FixtureRequest) -> Iterator[Rendered]:
         tuple(texts),
         tuple(screen),
         tuple(tuple(str(v) for v in row if v is not None) for row in excel_rows),
+        {"excel": store["excel"].payload, "ppt": store["ppt"].payload, "word": word},
     )
 
 
@@ -344,3 +348,78 @@ def test_조합_이유는_기본요금이_곱한_전력이_움직였을_때만_�
     moved = reasons(5_293.0, 5_101.0)
     assert "기본요금 기반이 달라집니다" in moved
     assert "역률 감액은 기본요금에 비례합니다" in moved
+
+
+# ============================================================ 덱 그물 (S212 4절)
+#
+# **그물이 좁으면 「닫혔다」 로 잘못 읽는다 — 값으로 겪었다.** S210 이 Excel 을 세
+# 시트만 떠 「비율 0」 을 냈고 S211 이 열두 시트로 다시 세어 19벌 19줄을 찾았다.
+# S212 가 `tools\deck_words.py` 를 화면 하나에서 넷으로 넓혔고, **아래 둘이 그
+# 넓힌 범위를 문다** — 다시 좁아지면 빨개진다.
+#
+# **새 렌더를 안 붙인다** — 위 모듈 픽스처가 이미 구운 실물 바이트를 읽는다.
+
+
+def _deck_words() -> Any:
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    try:
+        import deck_words
+    finally:
+        sys.path.pop(0)
+    return deck_words
+
+
+#: S210 의 덤프가 못 보던 시트. **여기 이름이 빠지면 그때 값으로 겪은 자리가 다시 선다.**
+WIDE_SHEETS = ("진단", "월별 집계", "부록 C 한계와 전제")
+
+
+def test_덱_그물이_네_산출물을_실물에서_담는다(rendered: Rendered) -> None:
+    """`tools\\deck_words.py` 가 **화면 하나가 아니라 넷**을 담는다 (S212 1·2절).
+
+    실물 바이트를 읽어 센다 — 소스 리터럴로 판정하지 않는다. 무는 것 넷.
+
+        ㄱ  Excel·PPT·Word 가 **한 줄이라도** 서는가 (화면만 보던 자리)
+        ㄴ  줄 첫 칸이 산출물인가 (넷을 갈라 셀 수 있는가)
+        ㄷ  수치 조각이 **줄 전체**에서 세지는가 (`row[3]` 한 칸이면 값 칸이 밖이다)
+        ㄹ  S210 이 놓쳤던 시트 셋이 덤프 안에 있는가
+    """
+    deck_words = _deck_words()
+    excel = deck_words._excel_rows(rendered.payloads["excel"])
+    deck = deck_words._deck_rows(rendered.payloads["ppt"])
+    word = deck_words._word_rows(rendered.payloads["word"])
+
+    assert deck_words.OUTPUTS == ("화면", "Excel", "PPT", "Word")
+    assert {row[0] for row in excel + deck + word} == {"Excel", "PPT", "Word"}
+    sheets = {row[1] for row in excel}
+    assert set(WIDE_SHEETS) <= sheets, sorted(sheets)
+    assert not [name for name in sheets if "시계열" in name], "시계열 시트는 안 담는다"
+    assert {row[1] for row in word if row[1].startswith("Heading")}, "Word 절 제목이 없다"
+
+    # **ㄷ — 한 칸만 보면 값이 샌다.** 줄 전체로 세면 더 나와야 한다.
+    전체 = sum(len(deck_words.MONEY.findall(deck_words.text_of(row))) for row in excel)
+    한칸 = sum(len(deck_words.MONEY.findall(row[3])) for row in excel if len(row) > 3)
+    assert 전체 > 한칸 > 0, (전체, 한칸)
+
+
+def test_덱_그물이_안_담는_것을_스스로_적는다(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**넓힌 뒤에도 남는 구멍**을 사람이 기억하지 않아도 되게 도구가 적는다 (S212 2-4).
+
+    길 셋에서 다 뜬다 — 뜨거나 읽은 뒤 · 맞댄 뒤 · 인자 없이 부를 때.
+    **앱을 안 띄운다** — 담아 둔 스냅을 읽는 길만 쓴다.
+    """
+    deck_words = _deck_words()
+    snap = tmp_path / "한벌.json"
+    snap.write_text(
+        json.dumps({"벌": [["Excel", "진단", "기본요금", "1,000원"]]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    for argv in (
+        ["deck_words.py", "--read", str(snap)],
+        ["deck_words.py", "--diff", str(snap), str(snap)],
+        ["deck_words.py"],
+    ):
+        monkeypatch.setattr(sys, "argv", argv)
+        assert deck_words.main() == 0
+        assert deck_words.BLIND in capsys.readouterr().out, argv
