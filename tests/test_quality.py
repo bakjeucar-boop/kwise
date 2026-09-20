@@ -292,6 +292,57 @@ def test_short_period_warning(tmp_path: Path) -> None:
     assert any("12개월 미만" in message for message in texts(report.notices))
 
 
+def test_12개월_미만_경고가_네_자리에서_한_꼴이다(tmp_path: Path, tariff: TariffTable) -> None:
+    """**같은 사실은 한 꼴로 선다** (S214 1-4 · 울타리 ㄴ1~ㄴ3).
+
+    `quality\\checks.py` 와 `tariff\\engine.py` 가 **같은 사실 ID**
+    (``quality.short_period``)를 쓰는데 글자가 갈려 있었다 — 122일 벌의 Excel
+    「요약」 시트에서 「… 연간 환산 결과에 경고를 붙여야 합니다」 와 「… 12개월 환산
+    시 경고를 붙이십시오」 가 **나란히** 섰다. `notices.dedupe` 는 사실 ID 로 거르므로
+    두 묶음이 따로 그려지는 이 자리는 **글자가 같아야만** 한 꼴이 된다.
+
+    **둘째 문장은 코드에게 하는 말이었다** — 「경고를 붙여야 합니다」·「붙이십시오」 는
+    만드는 쪽에 하는 지시라 고객이 읽는 자리에서 참이 아니다 (S207 기준).
+
+    **「환산」 자리는 한 꼴에서 뺀다** (S214 4-1 이 값으로 갈랐다).
+    `tariff\\engine.py` 의 `AnnualEstimate.annualize()` 는 「… ×N 환산값은 계절
+    편중이 있어 신뢰도가 낮습니다」 라 **그 벌의 배수를 적는 말**이고, 고객에게
+    하는 참인 말이라 S207 기준이 남기라고 한다. 덱 19벌 산출물에는 **0곳**이다.
+
+    `test_꼭_365일치_자료는_12개월_미만으로_판정되지_않는다` 와 **같은 네 자리**를
+    본다 — 그쪽은 「안 뜬다」 를, 이쪽은 「뜨면 한 꼴이다」 를 문다.
+    """
+    rows = [(label, 100.0) for date in march_2024_dates() for label in make_labels(date)]
+    usage = load_usage(write_csv(tmp_path / "short.csv", rows))
+    report = check_quality(usage)
+    bill = calculate_bill(usage, tariff, TariffSelection("general_b", "high_a", "I"))
+    said = {
+        "품질": texts(report.notices),
+        "업로드": list(usage.meta.warnings),
+        "요금": texts(bill.notices),
+        "환산": texts(bill.annualize().notices),
+    }
+    assert not report.has_full_year  # 전제 — 12개월 미만 자료다
+
+    선말 = {
+        where: sorted({m for m in messages if "12개월 미만" in m}) for where, messages in said.items()
+    }
+    빈자리 = [where for where, ms in 선말.items() if not ms]
+    assert 빈자리 == [], f"12개월 미만인데 경고가 없는 자리: {빈자리}"
+
+    꼴 = sorted({m for where in ("품질", "업로드", "요금") for m in 선말[where]})
+    assert len(꼴) == 1, f"경고가 {len(꼴)} 꼴입니다 — 한 꼴이어야 합니다: {꼴}"
+
+    # **넷 다 코드에게 말하지 않고 「연간」 이라 부르지 않는다.**
+    샌말 = [
+        f"{where} 「{m}」"
+        for where, ms in 선말.items()
+        for m in ms
+        if "경고를 붙" in m or "연간" in m
+    ]
+    assert 샌말 == [], 샌말
+
+
 def test_꼭_365일치_자료는_12개월_미만으로_판정되지_않는다(
     tmp_path: Path, tariff: TariffTable
 ) -> None:

@@ -483,8 +483,9 @@ PERIOD_NAMES = ("기간 발전량", "기간 최대수요일")
 def test_기간_값을_적는_자리가_네_산출물에서_연이라_말하지_않는다(rendered: Rendered) -> None:
     """**네 산출물을 한 못으로 문다** (S213 1-6 · 울타리 ㄱ1~ㄱ10).
 
-    화면은 12개월 환산을 「연간 잉여」 로 적는 자리가 **맞게** 있으므로(`fmt.per_year`)
-    화면과 나머지 셋을 갈라 본다 — 옛 이름을 화면 밖에서 0 으로 본다.
+    **S214 에 예외가 사라졌다.** 앞서는 화면이 12개월 환산을 「연간 잉여」 로 적어
+    화면 하나를 빼고 세었는데, 그 자리가 「12개월 환산 잉여」 로 가면서 **네 산출물
+    모두에서 0** 이 됐다.
 
     **12개월 미만 벌이 없어도 문다.** 이름은 기간 길이로 갈리지 않으므로(S188 정본)
     열두 달 벌에서도 그대로 선다 — 조건부로 되돌리면 여기서 빨개진다.
@@ -503,12 +504,8 @@ def test_기간_값을_적는_자리가_네_산출물에서_연이라_말하지_
         for 산출물, lines in 글자.items()
         for 옛 in YEAR_NAMES
     }
-    # **화면 「연간 잉여」 는 12개월 환산이라 맞다** — 그 하나만 빼고 다 0 이다.
-    샌자리 = [
-        f"{산출물} 「{옛}」 {수}"
-        for (산출물, 옛), 수 in 셈.items()
-        if 수 and not (산출물 == "화면" and 옛 == "연간 잉여")
-    ]
+    # **네 산출물 다 0 이다** (S214 에 화면 예외가 사라졌다).
+    샌자리 = [f"{산출물} 「{옛}」 {수}" for (산출물, 옛), 수 in 셈.items() if 수]
     assert 샌자리 == [], (rendered.key, 샌자리)
 
     # **한 문장에 「연」 과 「기간에」 가 함께 서던 자리** (ㄱ2 · ㄱ3).
@@ -519,6 +516,62 @@ def test_기간_값을_적는_자리가_네_산출물에서_연이라_말하지_
     선이름 = {
         이름: sum(이름 in line for lines in 글자.values() for line in lines)
         for 이름 in PERIOD_NAMES
+    }
+    빠진 = [이름 for 이름, 수 in 선이름.items() if not 수]
+    assert 빠진 == [], (rendered.key, 선이름)
+
+
+#: **12개월 환산값 자리에 서면 안 되는 옛 이름** (S214 1-6 · 울타리 ㄱ1~ㄱ13).
+ANNUAL_NAMES = (
+    "연간 환산",
+    "연간 감축 가능량",
+    "연간 감축 잠재량",
+    "연간 절감액",
+    "연간 수익",
+)
+
+#: 그 자리의 지금 이름. **하나도 안 서면 이름이 통째로 빠진 것이다.**
+CONVERTED_NAMES = (
+    "12개월 환산",
+    "12개월 환산 감축 가능량",
+    "12개월 환산 절감액",
+)
+
+
+def test_12개월_환산값_자리가_네_산출물에서_연이라_말하지_않는다(rendered: Rendered) -> None:
+    """**12개월 환산값을 「연간」 이라 부르지 않는다** (S214 1-6 · 울타리 ㄱ1~ㄱ13).
+
+    S213 이 **기간 값** 쪽을 「기간」 으로 모았고 이 못은 그 반대쪽을 문다 —
+    ``annualize()`` 와 365일 환산을 지난 값을 적는 자리다. S188 정본이 12개월 쪽
+    낱말을 안 정해 「연간 환산」 과 「12개월 환산」 이 **한 뜻 두 낱말**로 같은 벌에
+    나란히 서 있었다.
+
+    **실물을 문다 — 소스 리터럴을 안 찾는다.** 그리고 **넷을 한 못으로 문다** —
+    DR 감축 가능량은 화면·Excel·PPT·Word 넷에 다 실리고 ESS 절감액은 화면·PPT·Word
+    셋에 실린다. 한쪽만 보면 다른 쪽이 갈려도 초록이다.
+
+    **새 렌더를 안 붙인다** — 위 모듈 픽스처가 이미 구운 것을 읽는다.
+    """
+    deck_words = _deck_words()
+    쪽 = {
+        "Excel": deck_words._excel_rows(rendered.payloads["excel"]),
+        "PPT": deck_words._deck_rows(rendered.payloads["ppt"]),
+        "Word": deck_words._word_rows(rendered.payloads["word"]),
+    }
+    글자 = {name: [deck_words.text_of(row) for row in rows] for name, rows in 쪽.items()}
+    글자["화면"] = [text for _slot, text in rendered.screen]
+
+    샌자리 = [
+        f"{산출물} 「{옛}」 {수}"
+        for 산출물, lines in 글자.items()
+        for 옛 in ANNUAL_NAMES
+        if (수 := sum(옛 in line for line in lines))
+    ]
+    assert 샌자리 == [], (rendered.key, 샌자리)
+
+    선이름 = {
+        이름: sum(이름 in line for lines in 글자.values() for line in lines)
+        for 이름 in CONVERTED_NAMES
     }
     빠진 = [이름 for 이름, 수 in 선이름.items() if not 수]
     assert 빠진 == [], (rendered.key, 선이름)
