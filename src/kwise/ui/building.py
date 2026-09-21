@@ -9,7 +9,7 @@
     용도        계약종별 후보를 좁힌다 — **판정이 아니라 좁히기다**
     지역        태양광 기상 격자. 태양광 카드에서 여기로 올렸다
     운영 시간대  운영시간 외 부하 진단과 DR 저부하일 판정에 쓴다. 기본 09~18시
-    연면적      선택. 있으면 연간 원단위(kWh/m²·년)를 진단에 한 줄 얹는다
+    연면적      선택. 있으면 기간 원단위(kWh/m²)를 진단에 한 줄 얹는다
     준공연도    선택. 지금은 기록만 한다
 
 **운영 시간대는 경제성DR 의 시장 운영 시간대와 다른 값이다** (21세션 4절).
@@ -122,7 +122,8 @@ def narrow_contract_types(
 
 
 def intensity_kwh_per_m2(total_kwh: float, building: BuildingInfo | None) -> float | None:
-    """연간 원단위 ``kWh/m²·년``. **연면적이 없으면 ``None``** 이고 화면에 줄이 없다.
+    """기간 원단위 ``kWh/m²`` (기간 사용량 ÷ 연면적). **연면적이 없으면 ``None``**
+    이고 화면에 줄이 없다.
 
     국내 평균과 견주지 않는다 — 용도·기후·가동시간이 다른 건물의 평균은 이 건물의
     판단 기준이 되지 못한다 (16세션 2절).
@@ -235,7 +236,7 @@ def render_sidebar() -> BuildingInfo:
         value=float(saved.floor_area_m2) if saved and saved.floor_area_m2 else 0.0,
         step=100.0,
         key="building_area",
-        help="넣으면 연간 원단위(kWh/m²·년)를 요금 구조에 한 줄 더합니다.",
+        help="넣으면 기간 원단위(kWh/m²)를 요금 구조에 한 줄 더합니다.",
     )
     year = st.sidebar.number_input(
         "준공연도 (선택)",

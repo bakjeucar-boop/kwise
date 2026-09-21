@@ -604,13 +604,13 @@ def app() -> AppTest:
 def test_진단_화면이_지표부터_낸다(app: AppTest) -> None:
     assert not app.exception, app.exception
     labels = [item.label for item in app.metric]
-    assert labels[:4] == ["분석 기간", "최대수요", "부하율", "연간 사용량"]
+    assert labels[:4] == ["분석 기간", "최대수요", "부하율", "기간 사용량"]
     assert "1단계" in app.header[0].value
 
 
 def test_진단_지표에_세_자리_콤마가_있다(app: AppTest) -> None:
     values = {item.label: item.value for item in app.metric}
-    assert "," in values["연간 사용량"]
+    assert "," in values["기간 사용량"]
 
 
 def test_분석_기간이_잘리지_않는다(app: AppTest) -> None:

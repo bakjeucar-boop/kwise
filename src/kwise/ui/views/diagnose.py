@@ -167,9 +167,8 @@ def _headline_block(usage: UsageData, diagnosis: Diagnosis) -> None:
         fmt.ratio_pct(diagnosis.pattern.load_factor),
         help=_pattern_formulas(diagnosis.pattern)["load_factor"],
     )
-    # 1년치가 아닌 자료를 "연간" 이라 적으면 그 자체가 오독이다. 라벨을 기간에 맞춘다.
-    span = meta.period_days or 0
-    columns[3].metric("연간 사용량" if span >= 350 else "기간 사용량", fmt.mwh(meta.total_kwh))
+    # 기간 합이라 **기간 길이와 상관없이 「기간」 이다** (S216 · 사람이 정했다).
+    columns[3].metric("기간 사용량", fmt.mwh(meta.total_kwh))
 
 
 #: 결측 관련 문구는 「데이터 품질」 블록이 한 묶음으로 낸다. 위쪽 경고에서 뺀다.
@@ -1010,9 +1009,8 @@ def _intensity_line(usage: UsageData, building: BuildingInfo | None) -> None:
     intensity = intensity_kwh_per_m2(usage.meta.total_kwh, building)
     if intensity is None or building is None or building.floor_area_m2 is None:
         return
-    span = usage.meta.period_days or 0
-    label = "연간" if span >= 350 else "기간"
+    # 기간 사용량 ÷ 연면적이라 언제나 「기간」 이다 (S216 · 사람이 정했다).
     st.write(
-        f"{label} 원단위 **{fmt.count(intensity, 'kWh/m²', decimals=1)}** "
+        f"기간 원단위 **{fmt.count(intensity, 'kWh/m²', decimals=1)}** "
         f"(연면적 {fmt.count(building.floor_area_m2, 'm²', decimals=0)} 기준)"
     )

@@ -243,7 +243,8 @@ def won_short(value: float | None, *, reason: str | None = None) -> str:
     return money.won_short(value, reason=format_won(None) if reason is None else reason)
 
 
-#: 기간 단위 꼬리표. **12개월 환산값에만 붙인다** (26세션 2-3).
+#: 기간 단위 꼬리표. **12개월 환산값에만 붙인다** (26세션 2-3). **「12개월 환산」
+#: 이름이 곁(같은 지표의 라벨 · 같은 칸의 표 머리)에 있으면 안 붙인다** (S216 · 사람이 정했다).
 PER_YEAR = "/년"
 
 

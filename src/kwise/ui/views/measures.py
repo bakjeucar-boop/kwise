@@ -1087,10 +1087,10 @@ def _solar(
     # **진단 지표와 같은 이름을 쓴다** (S213). 그 자리(`diagnose.py`)는 이미
     # 조건부인데 이 캡션만 무조건 「연간」 이라 **한 벌 안에서 같은 값을 두 이름**
     # 으로 불렀다 — 122일 벌이 지표는 「기간 사용량」 캡션은 「연간 사용량」 이었다.
-    span_label = "연간" if (usage.meta.period_days or 0) >= 350 else "기간"
+    # **기간 길이로 이름을 안 가른다** (S216 · 사람이 정했다) — 값은 늘 기간 값이다.
     st.caption(
         "날짜별 발전량"
-        + (f" · {span_label} 사용량의 **{fmt.ratio_pct(ratio)}** 를 줄입니다" if ratio else ""),
+        + (f" · 기간 사용량의 **{fmt.ratio_pct(ratio)}** 를 줄입니다" if ratio else ""),
         help=fmt.chart_tip("chart.solar_annual"),
     )
     if day is not None:
@@ -1203,7 +1203,7 @@ def _surplus_verdict(
 
     셋을 나란히 낸다.
 
-        지금 용량의 12개월 환산 잉여  MWh/년 · 발전량 대비 비중
+        지금 용량의 12개월 환산 잉여  MWh · 발전량 대비 비중
         언제 남는가               평일 / 토·일·공휴일
         잉여 없이 지을 수 있는 최대  용량과 그때의 면적
 
@@ -1224,8 +1224,9 @@ def _surplus_verdict(
     columns[0].metric(
         # **「연간」 이 아니라 「12개월 환산」 이다** (S214). 같은 벌의 Excel·PPT 는
         # **기간 값**을 「기간 잉여」 라 적으므로(S213) 이름이 갈려야 두 수가 안 섞인다.
+        # **이름이 곁에 있으면 「/년」 을 안 붙인다** (S216 · 사람이 정했다).
         "12개월 환산 잉여",
-        fmt.per_year(fmt.mwh(annualize(surplus.total_kwh, months))),
+        fmt.mwh(annualize(surplus.total_kwh, months)),
         f"발전량의 {fmt.ratio_pct(surplus.share_of_generation)}",
         delta_color="off",
     )
@@ -1321,9 +1322,7 @@ def _surplus_handling(
         columns[0].metric(
             # **「연간」 이 아니라 「12개월 환산」 이다** (S214).
             "12개월 환산 수익",
-            fmt.per_year(fmt.won_short(annualize(revenue, months)))
-            if revenue is not None
-            else fmt.DASH,
+            fmt.won_short(annualize(revenue, months)) if revenue is not None else fmt.DASH,
             # **위 절감액에 이미 들어 있다** (48세션). 고른 뒤에 보는 자리라
             # 여기서는 그 몫이 얼마인지만 낸다.
             delta_color="off",
@@ -1400,8 +1399,9 @@ def _ess_spec_view(frame: pd.DataFrame) -> pd.DataFrame:
             "방전시간": [fmt.hours(value) for value in frame["방전시간(h)"]],
             "투자비": [fmt.won_short(value, reason="—") for value in frame["투자비(원)"]],
             # **「연간」 이 아니라 「12개월 환산」 이다** (S214) — 앞 칸은 표시 열
-            # 이름이고 뒤 칸은 프레임 열쇠라 그대로 둔다.
-            "12개월 환산 절감액": [fmt.won_year(value) for value in frame["연간 절감액(원)"]],
+            # 이름이고 뒤 칸은 프레임 열쇠라 그대로 둔다. 머리에 이름이 있어 「/년」 을
+            # 안 붙인다 (S216).
+            "12개월 환산 절감액": [fmt.won_short(value) for value in frame["연간 절감액(원)"]],
             "회수기간": [
                 fmt.payback(years, investment_won=investment)
                 for years, investment in zip(

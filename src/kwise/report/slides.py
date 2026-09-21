@@ -1182,13 +1182,12 @@ def _build_usage_pattern(
     diagnosis = sections.diagnosis
     pattern = diagnosis.pattern
     top = _lead(slide, guide, narrative.pattern_lead(pattern), top=top)
-    # 1년치가 아닌 자료를 「연간」 이라 적으면 그 자체가 오독이다 (화면과 같다).
-    span_label = "연간 사용량" if (meta.period_days or 0) >= 350 else "기간 사용량"
+    # 기간 합이라 **기간 길이와 상관없이 「기간」 이다** (S216 · 화면과 같다).
     bottom = _stats(
         slide,
         guide,
         [
-            (span_label, format_mwh(meta.total_kwh, decimals=0)),
+            ("기간 사용량", format_mwh(meta.total_kwh, decimals=0)),
             ("부하율", _pct(pattern.load_factor)),
             ("기저부하 비율", _pct(pattern.base_load_ratio)),
             ("운영시간 외 부하 비중", _pct(pattern.off_hours_energy_share)),
