@@ -47,6 +47,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # 형에만 쓴다 — 도구 시작에 streamlit 을 들이지 않는다
+    import pandas as pd
+    from matplotlib.figure import Figure
+    from matplotlib.text import Text
     from streamlit.testing.v1 import AppTest
 
     from kwise.report.document import DocumentSections
@@ -71,11 +74,238 @@ OUTPUTS = ("화면", "Excel", "PPT", "Word")
 #: 사람이 다음 판에 기억해서 찾지 않게 **도구가 스스로 적는다** — S210 이
 #: 「비율 0」 을 낸 까닭이 덤프가 세 시트뿐인 것이었는데 그 사실이 어디에도
 #: 안 적혀 있어 다음 판이 그 0 을 값으로 믿었다.
+#:
+#: **S217 에 그림 안 글자를 담았다** — 그 앞까지는 「화면은 축 이름만 · PPT·Word
+#: 그림은 통째」 였고 기온 기준선 「연평균」 이 스냅 0곳이었다.
 BLIND = (
     "안 담는 것 — Excel 「15분 시계열」 시트(그 벌 칸의 98.5%지만 글자가 아니다) · "
-    "그림 안 글자(화면은 축 이름만 · PPT·Word 그림은 통째) · "
+    "화면 그림의 수·날짜 눈금(vega 가 그릴 때 짓는다)과 툴팁(마우스를 올려야 뜬다) · "
     "png 에만 보이는 잘림·겹침(tools\\capture_screen.py 가 본다)"
 )
+
+#: 그림 안 줄의 자리 머리. **줄의 둘째 칸이 이것으로 시작하면 그림 안이다** (S217 2절).
+#:
+#: 그림 밖 줄은 S216 까지의 스냅과 한 줄도 안 달라야 한다 — 맞댈 때 둘을 갈라
+#: 따로 대는 까닭이다(:func:`split`).
+FIGURE = "그림:"
+
+
+def inside(row: list[str]) -> bool:
+    return len(row) > 1 and row[1].startswith(FIGURE)
+
+
+def split(data: dict[str, list[list[str]]], want: bool) -> dict[str, list[list[str]]]:
+    """그림 안(``want=True``) 또는 밖 줄만 남긴다."""
+    return {key: [row for row in rows if inside(row) == want] for key, rows in data.items()}
+
+
+# ===================================================================== S217 2절 · 그림 안 글자
+#
+# **화면** — vega-lite 스펙은 글자 이름(``title``)만 싣고 **자료는 따로 온다**
+# (``proto.datasets`` 의 Arrow 바이트). 범례 · 이름 눈금 · 조각·값·기준선 라벨은 그
+# 자료의 칸 값이라 스펙만 훑으면 0곳이다. 채널마다 그 칸 값을 푼다.
+#
+# **PPT · Word** — 그림이 다 :func:`kwise.report.figures.render_png` 한 자리를 지난다.
+# 거기를 가로채 **구운 뒤의** matplotlib 글자 객체를 뜬다 — 눈금은 그릴 때 지어지므로
+# 굽기 전에는 비어 있다.
+
+#: 채널 → 갈래. 여기 없는 채널(theta · tooltip · detail …)은 그림에 글자를 안 낸다.
+_CHANNELS = {
+    "color": "범례",
+    "fill": "범례",
+    "stroke": "범례",
+    "x": "눈금",
+    "y": "눈금",
+    "text": "라벨",
+}
+
+
+def _arrow(payload: bytes) -> pd.DataFrame:
+    import pyarrow as pa
+
+    frame: pd.DataFrame = pa.ipc.open_stream(payload).read_all().to_pandas()
+    return frame
+
+
+def _views(
+    node: object, data: str | None, encoding: dict[str, Any]
+) -> Iterable[tuple[str | None, dict[str, Any]]]:
+    """층마다 «자료 이름, 물려받은 채널까지 합친 채널»."""
+    if not isinstance(node, dict):
+        return
+    source = node.get("data")
+    name = source.get("name", data) if isinstance(source, dict) else data
+    merged = {**encoding, **(node.get("encoding") or {})}
+    if "layer" in node:
+        for child in node["layer"]:
+            yield from _views(child, name, merged)
+    elif "mark" in node:
+        yield name, merged
+
+
+def _chart_rows(number: int, spec: str, datasets: Iterable[Any]) -> list[list[str]]:
+    parsed = json.loads(spec)
+    frames = {item.name: _arrow(item.data.data) for item in datasets}
+    names = [text for text in screen_audit._chart_labels(spec) if screen_audit.HANGUL.search(text)]
+    where = f"{FIGURE}화면{number:02d} {names[0] if names else ''}".rstrip()
+    seen: dict[tuple[str, str], None] = {}
+    for data, encoding in _views(parsed, None, {}):
+        frame = frames.get(data) if data is not None else None
+        for channel, kind in _CHANNELS.items():
+            spec_ = encoding.get(channel)
+            if not isinstance(spec_, dict) or "field" not in spec_:
+                continue
+            if kind == "범례" and "legend" in spec_ and spec_["legend"] is None:
+                continue
+            if kind == "눈금" and ("axis" in spec_ and spec_["axis"] is None):
+                continue
+            if kind == "눈금" and spec_.get("type") not in {"nominal", "ordinal"}:
+                continue  # 수 · 날짜 눈금은 vega 가 짓는다 (:data:`BLIND`)
+            domain = (spec_.get("scale") or {}).get("domain")
+            if kind == "범례" and isinstance(domain, list):
+                values = domain
+            elif frame is not None:
+                column = str(spec_["field"]).replace("\\", "")
+                values = list(frame[column].drop_duplicates()) if column in frame else []
+            else:
+                values = []
+            for value in values:
+                if isinstance(value, str) and value.strip():
+                    seen[(kind, value)] = None
+    return [["화면", where, kind, text] for kind, text in seen]
+
+
+def _screen_figures(app: AppTest) -> list[list[str]]:
+    """화면 차트마다 그림 안 글자. **축 이름·제목은 여기 없다** — 그림 밖 줄(``Chart``)이 쥔다."""
+    from streamlit.testing.v1.element_tree import Element
+
+    found: list[Any] = []
+
+    def walk(node: object) -> None:
+        proto = getattr(node, "proto", None) if isinstance(node, Element) else None
+        if proto is not None and isinstance(getattr(proto, "spec", None), str) and proto.spec:
+            found.append(proto)
+        children = getattr(node, "children", None)
+        for child in children.values() if isinstance(children, dict) else children or []:
+            walk(child)
+
+    walk(getattr(app, "main", None))
+    walk(getattr(app, "sidebar", None))
+    return [
+        row
+        for n, proto in enumerate(found, 1)
+        for row in _chart_rows(n, proto.spec, proto.datasets)
+    ]
+
+
+def _figure_texts(figure: Figure) -> Iterable[tuple[str, str]]:
+    """구운 matplotlib 그림 하나의 «갈래, 글자». **보이는 것만.**"""
+    from matplotlib.text import Annotation
+
+    def shown(text: Text) -> str:
+        return str(text.get_text()).strip() if text.get_visible() else ""
+
+    for text in figure.texts:
+        yield "제목", shown(text)
+    for axes in figure.axes:
+        for loc in ("left", "center", "right"):
+            yield "제목", axes.get_title(loc).strip()
+        if axes.axison:
+            for axis in (axes.xaxis, axes.yaxis):
+                if not axis.get_visible():
+                    continue
+                yield "축 이름", shown(axis.label)
+                locs = axis.get_majorticklocs()
+                lo, hi = sorted(axis.get_view_interval())
+                for tick, loc in zip(axis.get_major_ticks(len(locs)), locs, strict=True):
+                    if lo - 1e-9 <= loc <= hi + 1e-9:
+                        for label in (tick.label1, tick.label2):
+                            yield "눈금", shown(label)
+        legend = axes.get_legend()
+        if legend is not None:
+            for text in legend.get_texts():
+                yield "범례", shown(text)
+        for text in axes.texts:
+            yield ("주석" if isinstance(text, Annotation) else "라벨"), shown(text)
+    for legend in figure.legends:
+        for text in legend.get_texts():
+            yield "범례", shown(text)
+
+
+class FigureTap:
+    """:func:`kwise.report.figures.render_png` 를 가로채 그림 안 글자를 모은다 (S217 2절).
+
+    ``with`` 로 쓴다. 나가면 원래 함수로 돌려 놓는다. **어느 산출물의 그림인지는
+    굽는 순간이 아니라 실물이 정한다** (:meth:`rows`) — 수단 그림은 화면이 다시
+    그려질 때 구워지고 Word 는 PPT 가 구운 바이트를 다시 쓴다.
+    """
+
+    def __init__(self) -> None:
+        #: png 바이트 → «그리는 함수 이름, 갈래와 글자»
+        self.pngs: dict[bytes, tuple[str, list[tuple[str, str]]]] = {}
+        self._original: Any = None
+
+    def __enter__(self) -> FigureTap:
+        from kwise.report import figures
+
+        self._original = figures.render_png
+
+        def tapped(figure: Figure) -> bytes:
+            payload: bytes = self._original(figure)
+            name = sys._getframe(1).f_code.co_name  # 그리는 함수 이름 (``monthly_peak_png``)
+            # **접지 않는다** — 도넛 넷에 「경부하 40%」 가 둘 서면 png 에도 둘이다 (S217 1-4).
+            texts = [(k, t) for k, t in _figure_texts(figure) if t]
+            self.pngs[payload] = (name, texts)
+            return payload
+
+        _swap(figures, "render_png", tapped)
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        from kwise.report import figures
+
+        _swap(figures, "render_png", self._original)
+
+    def rows(self, output: str, pictures: list[tuple[str, bytes]]) -> list[list[str]]:
+        """실물에 박힌 그림마다 줄. **가로채지 못한 그림도 한 줄로 적는다** — 구멍이다."""
+        rows: list[list[str]] = []
+        for where, blob in pictures:
+            if blob not in self.pngs:
+                rows.append([output, f"{FIGURE}{where}", "못 뜬 그림", f"{len(blob):,}바이트"])
+                continue
+            name, texts = self.pngs[blob]
+            rows += [[output, f"{FIGURE}{where} {name}", kind, text] for kind, text in texts]
+        return rows
+
+
+def _deck_pictures(payload: bytes) -> list[tuple[str, bytes]]:
+    """PPT 에 박힌 그림 — 자리는 장 번호."""
+    from pptx import Presentation
+
+    found: list[tuple[str, bytes]] = []
+
+    def walk(shapes: Iterable[Any], where: str) -> None:
+        for shape in shapes:
+            if shape.shape_type == 6:  # 묶음
+                walk(shape.shapes, where)
+            elif shape.shape_type == 13:  # 그림
+                found.append((where, shape.image.blob))
+
+    for number, slide in enumerate(Presentation(io.BytesIO(payload)).slides, 1):
+        walk(slide.shapes, f"{number:02d}장")
+    return found
+
+
+def _word_pictures(payload: bytes) -> list[tuple[str, bytes]]:
+    """Word 에 박힌 그림 — 문서 차례. 자리는 몇째 그림인지."""
+    from docx import Document
+
+    document = Document(io.BytesIO(payload))
+    parts = document.part.related_parts
+    return [
+        (f"{number:02d}번째", parts[shape._inline.graphic.graphicData.pic.blipFill.blip.embed].blob)
+        for number, shape in enumerate(document.inline_shapes, 1)
+    ]
 
 
 def text_of(row: list[str]) -> str:
@@ -186,17 +416,20 @@ def _artifacts(app: AppTest, key: str) -> list[list[str]]:
         return slides_bytes(sections)
 
     original = _swap(compare_view, "slides_bytes", grab)
-    try:
-        app.button(key="build_ppt").click().run()
-        app.button(key="build_excel").click().run()
-    finally:
-        _swap(compare_view, "slides_bytes", original)
-    if app.exception:
-        print(f"!! {key} 산출물이 죽었다: {app.exception}")
-        return []
+    with FigureTap() as tap:
+        try:
+            app.button(key="build_ppt").click().run()
+            app.button(key="build_excel").click().run()
+        finally:
+            _swap(compare_view, "slides_bytes", original)
+        if app.exception:
+            print(f"!! {key} 산출물이 죽었다: {app.exception}")
+            return []
+        word = document_bytes(captured["sections"])[0]
     store = dict(app.session_state[ARTIFACT_KEY])
-    rows = _excel_rows(store["excel"].payload) + _deck_rows(store["ppt"].payload)
-    return rows + _word_rows(document_bytes(captured["sections"])[0])
+    ppt = store["ppt"].payload
+    rows = _excel_rows(store["excel"].payload) + _deck_rows(ppt) + _word_rows(word)
+    return rows + tap.rows("PPT", _deck_pictures(ppt)) + tap.rows("Word", _word_pictures(word))
 
 
 def snap(picked: list[str] | None = None) -> dict[str, list[list[str]]]:
@@ -210,11 +443,10 @@ def snap(picked: list[str] | None = None) -> dict[str, list[list[str]]]:
             print(f"!! {case.key} 화면이 죽었다: {app.exception}")
             continue
         rows = [["화면", ln.where, ln.kind, ln.slot, ln.text] for ln in screen_audit.collect(app)]
+        rows += _screen_figures(app)
         rows += _artifacts(app, case.key)
         out[case.key] = rows
-        counts = Counter(row[0] for row in rows)
-        몫 = " · ".join(f"{name} {counts[name]:,}" for name in OUTPUTS)
-        print(f"    {case.key}\t{len(rows):,}줄\t({몫})\t{time.time() - started:,.1f}초")
+        print(f"    {case.key}\t{_몫({case.key: rows})}\t{time.time() - started:,.1f}초")
     return out
 
 
@@ -284,7 +516,8 @@ def _몫(data: dict[str, list[list[str]]]) -> str:
     for rows in data.values():
         counts.update(row[0] for row in rows)
     몫 = " · ".join(f"{name} {counts[name]:,}" for name in OUTPUTS)
-    return f"{sum(counts.values()):,}줄 ({몫})"
+    그림 = sum(inside(row) for rows in data.values() for row in rows)
+    return f"{sum(counts.values()):,}줄 ({몫} · 그 가운데 그림 안 {그림:,})"
 
 
 def _at(path: Path) -> Path:
@@ -313,8 +546,16 @@ def main() -> int:
 
     if args.diff:
         before, after = (_load(path) for path in args.diff)
-        report = diff(before, after)
-        print(f"맞댄 줄 {report.맞댄줄:,} · 갈린 줄 {report.갈린줄}")
+        # **그림 안과 밖을 따로 댄다** (S217 2절). 그림 안 줄이 없는 옛 스냅과 대도
+        # 밖 줄은 한 줄씩 맞대진다 — 섞으면 줄 수가 달라 벌이 통째로 「어긋난 벌」 이다.
+        figure = diff(split(before, True), split(after, True))
+        앞그림, 뒤그림 = (sum(map(len, split(d, True).values())) for d in (before, after))
+        print(f"그림 안 — 앞 {앞그림:,}줄 · 뒤 {뒤그림:,}줄", end="")
+        print(f" · 맞댄 줄 {figure.맞댄줄:,} · 갈린 줄 {figure.갈린줄}")
+        if figure.어긋난벌:
+            print(f"    줄 수가 어긋난 벌 {len(figure.어긋난벌)} — 그림 안은 맞대지 않았다")
+        report = diff(split(before, False), split(after, False))
+        print(f"그림 밖 — 맞댄 줄 {report.맞댄줄:,} · 갈린 줄 {report.갈린줄}")
         if report.어긋난벌:
             print(f"!! 줄 수가 어긋난 벌 — {', '.join(report.어긋난벌)}")
         print("\n갈린 줄이 있는 벌")
