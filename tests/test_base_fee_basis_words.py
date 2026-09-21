@@ -27,6 +27,7 @@ import io
 import json
 import re
 import sys
+from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -82,6 +83,9 @@ class Rendered:
     texts: tuple[str, ...]
     #: 화면에 그려진 줄 — `(slot, text)`. **라벨과 값이 다른 줄로 온다** (S211 4-1).
     screen: tuple[tuple[str, str], ...] = ()
+    #: 화면 줄마다의 자리(``Line.where``) — ``screen`` 과 같은 차례다 (S216 3-1).
+    #: **표 칸이 어느 표의 것인지** 가르려면 자리가 있어야 한다.
+    screen_at: tuple[str, ...] = ()
     #: Excel 한 행 — 이름과 값이 **한 행 안에** 있다 (S211 4-1).
     excel_rows: tuple[tuple[str, ...], ...] = ()
     #: 산출물 실물 바이트 — 「이름 → 바이트」 (S212 4절). **덱 그물이 읽는 것이 이것이다.**
@@ -182,7 +186,8 @@ def rendered(request: pytest.FixtureRequest) -> Iterator[Rendered]:
         state["combination_pick"] = render_deck.ALL_MEASURES
         app.run()
         assert not app.exception, app.exception
-        screen = [(line.slot, line.text) for line in screen_audit.collect(app)]
+        collected = screen_audit.collect(app)
+        screen = [(line.slot, line.text) for line in collected]
         texts = [text for _slot, text in screen]
         app.button(key="build_ppt").click().run(timeout=900)
         app.button(key="build_excel").click().run(timeout=900)
@@ -199,6 +204,7 @@ def rendered(request: pytest.FixtureRequest) -> Iterator[Rendered]:
         request.param,
         tuple(texts),
         tuple(screen),
+        tuple(line.where for line in collected),
         tuple(tuple(str(v) for v in row if v is not None) for row in excel_rows),
         {"excel": store["excel"].payload, "ppt": store["ppt"].payload, "word": word},
     )
@@ -474,6 +480,10 @@ YEAR_NAMES = (
     "연간 최대수요일",
     "연중 최대수요일",
     "연간 최대수요 상위",
+    # **기간 길이로 이름을 가르지 않는다** (S216 · 사람이 정했다). 열두 달 벌에서
+    # 「연간」 으로 갈리던 자리라 조건부로 되돌리면 이 두 벌에서 빨개진다.
+    "연간 사용량",
+    "연간 원단위",
 )
 
 #: 그 자리의 지금 이름. 하나라도 빠지면 이름이 도로 갈린 것이다.
@@ -551,6 +561,9 @@ def test_12개월_환산값_자리가_네_산출물에서_연이라_말하지_�
     셋에 실린다. 한쪽만 보면 다른 쪽이 갈려도 초록이다.
 
     **새 렌더를 안 붙인다** — 위 모듈 픽스처가 이미 구운 것을 읽는다.
+
+    **S216 에 꼬리표 「/년」 을 더 문다** — 이름이 곁에 있는 지표·표 칸에 다시 서면
+    빨갛고, 이름 없는 지표에서 다 사라져도 빨갛다.
     """
     deck_words = _deck_words()
     쪽 = {
@@ -575,6 +588,30 @@ def test_12개월_환산값_자리가_네_산출물에서_연이라_말하지_�
     }
     빠진 = [이름 for 이름, 수 in 선이름.items() if not 수]
     assert 빠진 == [], (rendered.key, 선이름)
+
+    # **이름이 곁에 있으면 「/년」 을 안 붙이고 없으면 남긴다** (S216 · 사람이 정했다).
+    # 곁은 같은 지표의 라벨과 같은 칸의 표 머리다 — 「/년」 은 화면에만 선다.
+    겹: list[str] = []
+    남김 = 0
+    라벨 = ""
+    for slot, text in rendered.screen:
+        if slot == "라벨":
+            라벨 = text
+        elif slot == "지표" and text.endswith("/년"):
+            if "12개월 환산" in 라벨:
+                겹.append(f"지표 「{라벨}」 {text}")
+            else:
+                남김 += 1
+    # 표는 자리로 가른다 — ESS 사양 표는 머리 「12개월 환산 절감액」 이 금액 칸의 이름이다.
+    표: defaultdict[str, list[str]] = defaultdict(list)
+    for (slot, text), at in zip(rendered.screen, rendered.screen_at, strict=True):
+        if slot == "표":
+            표[at].append(text)
+    for cells in 표.values():
+        if "방전시간" in cells and "12개월 환산 절감액" in cells:
+            겹 += [f"ESS 사양 표 {cell}" for cell in cells if cell.endswith("/년")]
+    assert 겹 == [], (rendered.key, 겹)
+    assert 남김, (rendered.key, "이름 없는 12개월 환산 지표에서 「/년」 이 사라졌다")
 
 
 def test_사용량_이름이_진단_지표와_태양광_캡션에서_같다(rendered: Rendered) -> None:
