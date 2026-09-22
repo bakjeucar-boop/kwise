@@ -2350,8 +2350,9 @@ def test_역률_영향을_큰_글자에_녹이지_않는다(
     assert entry.saving_annual.startswith("29,564,000원"), entry.saving_annual
     assert "역률" not in entry.saving_annual
     # 곁에 적는다 — PPT 는 각주, Word 는 주의사항 목록. **같은 문장이다.**
-    assert flagged in entry.slide_note
-    assert flagged in entry.cautions
+    # 12개월 환산값이 라벨 없이 서므로 「/년」 을 단다 (S219 규칙 나).
+    assert f"{flagged}/년" in entry.slide_note
+    assert f"{flagged}/년" in entry.cautions
 
     # **기준을 넘으면 앞의 사실이 붙지 않는다** (79세션 1절). 없는 경고를
     # 적지 않는다 — 금액 줄만 남는다.
@@ -2366,11 +2367,29 @@ def test_역률_영향을_큰_글자에_녹이지_않는다(
 
     # Excel 도 같은 문장을 쓴다. **값을 주지 않아 예전 그대로다** — 「도입 후
     # 역률 91.8%」 를 이미 제 조각으로 적고 있어 같은 말이 두 번 서지 않는다.
+    # 금액은 기간 값이고 같은 줄에 12개월 환산 열이 서서 「기간」 을 단다 (S219 규칙 다).
     frame = measure_summary_frame(solar=dropped, base_fee_months=12.0)
     key = next(name for name in frame.index if str(name).startswith("태양광"))
     row = frame.loc[key]
-    assert line in str(row["비고"]), row["비고"]
-    assert str(row["절감액(원)"]).startswith("29,564,000")
+    assert "역률 영향 반영 시 기간 29,408,000원" in str(row["비고"]), row["비고"]
+    assert str(row["기간 절감액(원)"]).startswith("29,564,000")
+
+    # **12개월 미만 벌은 값 쪽에서 문다** (S219 규칙 나·다). 4.00개월분이면 두 값이
+    # 갈린다 — PPT·Word 줄은 12개월 값에 「/년」 · Excel 비고는 기간 값에 「기간」 ·
+    # Word 3장 칸 이름은 괄호에 12개월 값이 함께 서서 「기간 절감액」 이다.
+    short = dataclasses.replace(dropped, total_saving_won=9_855_000.0)
+    brief = next(
+        item
+        for item in measure_entries(solar=short, base_fee_months=4.0)
+        if item.kind.key == "solar"
+    )
+    annual_line = power_factor_adjusted_saving(
+        saving_won=29_564_000.0, extra_won=156_000.0 * 3, after_pct=91.8
+    )
+    assert f"{annual_line}/년" in brief.cautions, brief.cautions
+    assert brief.saving_label == "기간 절감액", brief.saving
+    period_row = measure_summary_frame(solar=short, base_fee_months=4.0).loc[key]
+    assert "역률 영향 반영 시 기간 9,699,000원" in str(period_row["비고"]), period_row["비고"]
 
     # **영향이 0 이면 어디에도 줄이 없다.**
     flat = dataclasses.replace(dropped, power_factor_extra_won=0.0)

@@ -4221,7 +4221,9 @@ def test_합산효과가_DR_정산금을_담아_차이는_단가에_안_움직�
     box = next(item for item in screen.checkbox if str(item.label).startswith("정산 단가를 안다"))
     box.check().run()
     screen.number_input(key=input_key("demand_response", "unit_price")).set_value(120.0).run()
-    settlement = [str(item.value) for item in screen.metric if str(item.label) == "정산금"]
+    settlement = [
+        str(item.value) for item in screen.metric if str(item.label) == "12개월 환산 정산금"
+    ]
     if screen.exception or not settlement or settlement[0] in ("0원", "—"):
         pytest.fail(f"정산 단가가 화면에 안 먹었습니다: {settlement} · {screen.exception}")
 

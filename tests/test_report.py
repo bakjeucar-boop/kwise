@@ -439,7 +439,7 @@ def test_contract_row_states_the_basis_of_its_number(
     adjustment = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=7_000.0)
     assert adjustment.saving_won == pytest.approx(0.0)
     row = measure_summary_frame(contract=adjustment).iloc[0]
-    assert row["절감액(원)"] == NO_SAVING
+    assert row["기간 절감액(원)"] == NO_SAVING
     assert row["12개월 환산(원)"] == NO_SAVING
     assert "하한 30% 미적용" in row["비고"]
     assert "유지" in str(row.name)  # 「7,000 → 5,823 kW」 라는 근거 없는 목표가 사라졌다
@@ -457,7 +457,7 @@ def test_contract_row_shows_the_reason_when_the_floor_is_unknown(
     known = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=7_000.0)
     unknown = replace(known, status=ContractStatus.UNKNOWN, saving_won=None, annual_saving_won=None)
     row = measure_summary_frame(contract=unknown).iloc[0]
-    assert row["절감액(원)"] == UNPRICED_REASONS["contract"]
+    assert row["기간 절감액(원)"] == UNPRICED_REASONS["contract"]
     assert row["12개월 환산(원)"] == UNPRICED_REASONS["contract"]
     assert row["회수기간"] == "—"
 

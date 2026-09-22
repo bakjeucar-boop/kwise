@@ -662,6 +662,57 @@ def test_12개월_환산값_자리가_네_산출물에서_연이라_말하지_�
     ]
     assert 맨 == [], (rendered.key, 맨)
 
+    # **표시 규칙 하나** (S219 · 사람이 정했다) — (나) 12개월 환산값은 이름이나 「/년」
+    # 가운데 하나(라벨이 있으면 이름) · (다) 12개월 값과 함께 서는 기간 값은 「기간」 ·
+    # 「기간」 열에 12개월 값이 안 선다. 두 벌 다 12개월이라 값은 못 가르고 표시를 문다.
+    어긋: list[str] = []
+    용량 = [cells for cells in 표.values() if "자가소비율" in cells]
+    assert 용량, (rendered.key, "화면 태양광 용량 표가 없다")
+    for cells in 용량:
+        if "12개월 환산 자가소비 절감액" not in cells:
+            어긋.append(f"화면 용량 표 머리에 이름이 없다 {cells[:8]}")
+        어긋 += [f"화면 용량 표 {cell}" for cell in cells if cell.endswith("원/년")]
+    역률 = {
+        name: [line for line in 글자[name] if "역률 영향 반영 시" in line]
+        for name in ("PPT", "Word", "Excel")
+    }
+    assert all(역률.values()), (rendered.key, 역률)
+    어긋 += [
+        f"{name} {line}"
+        for name in ("PPT", "Word")
+        for line in 역률[name]
+        if not re.search(r"역률 영향 반영 시 [\d,]+원/년", line)
+    ]
+    어긋 += [f"Excel {line}" for line in 역률["Excel"] if "역률 영향 반영 시 기간 " not in line]
+    경고 = {
+        name: [line for line in 글자[name] if "역률요금이" in line and " 늘어 " in line]
+        for name in ("화면", "Word")
+    }
+    assert all(경고.values()), (rendered.key, 경고)
+    어긋 += [
+        f"{name} {line}"
+        for name, lines in 경고.items()
+        for line in lines
+        if "늘어 절감액이" in line
+    ]
+    word_saving = [row for row in 쪽["Word"] if row[1].startswith("표") and len(row) > 3]
+    어긋 += [
+        f"Word {row[1]} {deck_words.text_of(row)}"
+        for row in word_saving
+        if row[2] == "절감액" and "(12개월 환산 " in row[3]
+    ]
+    if not [row for row in word_saving if row[2] == "기간 절감액" and "(12개월 환산 " in row[3]]:
+        어긋.append("Word 3장 표에 「기간 절감액」 칸이 없다")
+    수단표 = [row[2:] for row in 쪽["Excel"] if row[1] == "수단별 결과"]
+    머리 = next(cells for cells in 수단표 if cells[:1] == ["수단"])
+    if "절감액(원)" in 머리:
+        어긋.append(f"Excel 수단별 결과 머리 {머리}")
+    기간열, 환산열 = 머리.index("기간 절감액(원)"), 머리.index("12개월 환산(원)")
+    for cells in 수단표:
+        if cells[0].startswith("경제성DR") and cells[기간열] != "—":
+            어긋.append(f"Excel 경제성DR 기간 열 {cells[기간열]} (12개월 열 {cells[환산열]})")
+    assert 어긋 == [], (rendered.key, 어긋)
+
     # **기온 기준선은 관측 길이와 상관없이 「기간 평균」 이다** (S218 · 사람이 정했다).
     # 두 벌 다 1년이 넘는다 — 「연평균」 이 서던 바로 그 갈래다. 그림 안 글자를 본다.
     기온 = [row[-1] for row in rendered.figures if row[-1].endswith("℃") and "평균" in row[-1]]

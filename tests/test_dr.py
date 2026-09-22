@@ -546,7 +546,9 @@ def test_수단_시트가_사유로_채워진다(sample_diagnosis: Diagnosis) ->
     row = measure_summary_frame(demand_response=evaluate_demand_response(profile)).iloc[0]
     # 금액 칸은 전부 문자열이다 — 천 단위 절사 표기를 한 곳에서 찍는다 (14세션).
     assert row["투자비(원)"] == "0"
-    assert row["절감액(원)"] == UNPRICED_REASON
+    # **정산금은 12개월 환산값이라 12개월 칸에만 선다** (S219) — 기간 칸은 이 표의 빈 칸 꼴이다.
+    assert row["12개월 환산(원)"] == UNPRICED_REASON
+    assert row["기간 절감액(원)"] == "—"
     # **확실성 열은 53세션에 뺐다** (1-4). 계산은 그대로다.
     assert "확실성" not in row.index
     assert evaluate_demand_response(profile).certainty is Certainty.MEDIUM
