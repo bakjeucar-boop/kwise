@@ -112,6 +112,11 @@ __all__ = [
 ]
 
 
+#: 2단계 카드 지표의 절감액 이름 — **값이 12개월 환산이다** (S218 · 사람이 정했다).
+#: 이름이 곁에 서므로 값에 「/년」 을 안 붙인다 (S216).
+SAVING_LABEL = "12개월 환산 절감액"
+
+
 #: 기상 출처의 **표시 이름** (31세션 4-2).
 #:
 #: :class:`~kwise.pv.WeatherData` 의 ``source`` 는 셋(``network``·``cache``·
@@ -355,7 +360,8 @@ def _tariff_switch(
     columns[0].metric("현행", option_label(result.current.selection.option))
     columns[1].metric("가장 유리한 요금제", option_label(result.best.selection.option))
     # **확실성 등급은 어디에도 없다** (28세션 4절 · 53세션 1-4). 계산만 남는다.
-    columns[2].metric("절감액", fmt.won_year(result.annual_saving_won))
+    # **이름이 곁에 있으면 「/년」 을 안 붙인다** (S216 · S218 · 사람이 정했다).
+    columns[2].metric(SAVING_LABEL, fmt.won_short(result.annual_saving_won))
     if result.switch_needed:
         st.write(
             f"가장 유리한 요금제는 **{selection_label(table, result.best.selection)}** 입니다."
@@ -439,12 +445,10 @@ def _contract(
     # **「0원」 이 아니라 「없음」 이다** (48세션 · 83세션에 말을 줄였다). 까닭은
     # 위 세 수와 아래 판정 줄이 말한다 — 표기를 늘려 메우지 않는다.
     columns[-1].metric(
-        "절감액",
-        fmt.won_year(
-            result.annual_saving_won,
-            reason=result.saving_basis,
-            zero_reason=NO_SAVING if result.no_saving else None,
-        ),
+        SAVING_LABEL,
+        NO_SAVING
+        if result.no_saving and result.annual_saving_won == 0
+        else fmt.won_short(result.annual_saving_won, reason=result.saving_basis),
     )
     # **판정 줄은 본문이다.** 산출물(3단계·PPT)이 쓰는 것과 같은 문장이라
     # 툴팁으로 접으면 화면만 결론을 잃는다.
@@ -713,7 +717,7 @@ def _power_factor(
     columns[1].metric(
         "목표 역률", NO_HEADROOM_LABEL if result.no_headroom else fmt.pct(result.target_pct)
     )
-    columns[2].metric("절감액", fmt.won_year(result.annual_saving_won))
+    columns[2].metric(SAVING_LABEL, fmt.won_short(result.annual_saving_won))
     columns[3].metric(
         "회수기간", fmt.payback(result.payback_years, investment_won=result.investment_won)
     )
@@ -991,8 +995,8 @@ def _solar(
     # 않았다. 카드의 절감액은 「그 수단만 적용했을 때」 여야 하므로 큰 글자는
     # 그대로 두고 조정값을 아래 줄에 놓는다. **영향이 0 이면 줄이 없다.**
     columns[2].metric(
-        "절감액",
-        fmt.won_year(point.annual_saving_won),
+        SAVING_LABEL,
+        fmt.won_short(point.annual_saving_won),
         narrative.power_factor_adjusted_saving(
             saving_won=point.annual_saving_won,
             extra_won=annualize(point.power_factor_extra_won, months),
@@ -1710,8 +1714,8 @@ def _ess(
         result.annual_saving_won / result.total_saving_won if result.total_saving_won else 1.0
     )
     columns[1].metric(
-        "절감액",
-        fmt.won_year(result.annual_saving_won),
+        SAVING_LABEL,
+        fmt.won_short(result.annual_saving_won),
         help=fmt.markdown_safe(
             fmt.ess_saving_line(
                 result.base_saving_won,

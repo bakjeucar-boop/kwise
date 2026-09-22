@@ -1496,7 +1496,7 @@ def _build_measure_summary(
     # **확실성 열을 뺐다** (53세션 1-4). 무엇에 대한 등급인지 이름에 없어
     # 화면에서 28세션에 걷어냈는데 산출물에만 남아 있었다. 계산은 그대로다 —
     # :class:`~kwise.measures.Certainty` 도 :attr:`MeasureEntry.certainty` 도 산다.
-    rows = [["개선 수단", "절감액", "투자비", "회수기간"]]
+    rows = [["개선 수단", SLIDE_SAVING_LABEL, "투자비", "회수기간"]]
     # **절 번호를 뗀다** (38세션 1-3). 장 제목과 같은 이름이어야 표에서 고른
     # 줄을 뒤에서 찾을 수 있다.
     rows.extend(
@@ -1536,6 +1536,10 @@ def _build_measure_summary(
 #: 금액 기준을 **한 번만** 적는다 (39세션 2-2). 값마다 「(12개월 환산 ○○원)」 을
 #: 붙이면 같은 값이 두 번 나오고 지표 칸이 두 줄로 흐른다.
 ANNUAL_BASIS_NOTE = "금액은 12개월 환산 기준입니다."
+
+#: :attr:`MeasureEntry.slide_saving` 의 이름 — **12개월 환산값이다** (S218 · 사람이 정했다).
+#: 12개월 미만 벌에서 같은 장 각주의 「기간 절감액」 과 이름 없이 나란히 섰다.
+SLIDE_SAVING_LABEL = "12개월 환산 절감액"
 
 #: 수단 한 장에 실을 주의사항 개수. **슬라이드는 읽는 자리가 아니라 보는 자리다** —
 #: 전문은 Word 3장에 그대로 있다.
@@ -1583,7 +1587,7 @@ def _measure_note(entry: MeasureEntry) -> str:
     """
     parts: list[str] = []
     for label, value in (
-        ("절감액", entry.slide_saving),
+        (SLIDE_SAVING_LABEL, entry.slide_saving),
         ("투자비", entry.investment),
         ("회수기간", entry.payback),
     ):
@@ -1911,7 +1915,7 @@ def _build_measure(
         slide,
         guide,
         [
-            ("절감액", split_reason(entry.slide_saving)[0]),
+            (SLIDE_SAVING_LABEL, split_reason(entry.slide_saving)[0]),
             ("투자비", slide_investment(entry.investment)),
             ("회수기간", slide_payback(entry.payback)),
         ],
@@ -2147,7 +2151,7 @@ def _build_combination(
     # 섰다. `small-ind-a1`(122일)에서 갈림이 세 배쯤 된다. Excel 은 열 이름
     # 둘(「절감액(원)」·「12개월 환산 절감액(원)」)로 가르고 Word 는 한 칸에 함께
     # 적는데 **PPT 만 안 갈랐다.** 각주를 하나 더 두지 않고 **이름을 고친다** —
-    # 「기간 평균 / 연평균」 을 가르는 `frames.py` 의 규약과 같은 꼴이다.
+    # 기온 기준선을 「기간 평균」 이라 부르는 `frames.py` 의 규약과 같은 꼴이다.
     rows = [["조합", "기간 절감액", "회수기간"]]
     rows.extend(
         [item.name, _won(item.saving_won), _payback(item.payback_years, item.investment_won)]

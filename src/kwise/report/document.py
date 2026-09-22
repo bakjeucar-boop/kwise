@@ -280,6 +280,9 @@ _SOLAR_ANNUAL_CAPTION = "일별 발전량 — 여름에 높고 겨울에 낮습�
 _SOLAR_DAY_CAPTION = "대표일의 부하 — 두 선 사이가 태양광으로 줄어든 몫입니다."
 _ESS_DAY_CAPTION = "대표일의 부하 — 두 선 사이가 ESS 로 깎은 몫입니다."
 
+#: Word 3장 수단 표 절감액 칸 이름 — 칸의 값이 한 가지일 때만 이름을 단다 (S188 · S218).
+_WORD_SAVING_LABELS = {"contract": "기간 절감액", "demand_response": "12개월 환산 절감액"}
+
 
 def _contract_saving(contract: ContractAdjustment, value: float | None) -> str:
     """계약전력 조정의 절감액 칸 — **셋으로 갈린다** (48세션 · 83세션).
@@ -1696,9 +1699,10 @@ def _chapter_measures(document: DocumentType, sections: DocumentSections, number
             [
                 ["항목", "값"],
                 # **계약전력 칸만 「기간」 을 단다** (S188). 그 칸은 관측 기간 값
-                # 하나이고, 다른 수단 칸은 「(12개월 환산 M)」 이 곁에서 가르며
-                # 경제성DR 정산금은 일수로 환산한 값이다.
-                ["기간 절감액" if entry.kind.key == "contract" else "절감액", entry.saving],
+                # 하나이고, 다른 수단 칸은 「(12개월 환산 M)」 이 곁에서 가른다.
+                # **경제성DR 정산금은 12개월 환산 감축 가능량으로 낸 값이라 그 이름을
+                # 단다** (S218 · 사람이 정했다 — 12개월 환산값에 이름 없이 서지 않는다).
+                [_WORD_SAVING_LABELS.get(entry.kind.key, "절감액"), entry.saving],
                 ["투자비", entry.investment],
                 ["회수기간", entry.payback],
             ],

@@ -710,9 +710,10 @@ def compare_app() -> AppTest:
 
 def test_비교_화면이_합산효과_지표를_낸다(compare_app: AppTest) -> None:
     assert not compare_app.exception, compare_app.exception
-    labels = [str(item.label) for item in compare_app.metric]
-    assert _stage3_metrics(compare_app)[:3] == ["단순 합", "합산효과", "차이"]
+    labels = _stage3_metrics(compare_app)
+    assert labels[:3] == ["단순 합", "합산효과", "차이"]
     # **권장안 지표는 없앴다** (16세션 5절) — 미리 정의된 조합 세트가 사라졌다.
+    # 3단계 지표만 본다 — 2단계 카드 지표가 S218 에 이 이름을 달았다.
     assert "12개월 환산 절감액" not in labels
 
 
@@ -1182,20 +1183,24 @@ def test_기온_그래프에_평균_기준선과_값이_있다() -> None:
     assert "resolve" not in spec["layer"][1]
     for layer in right[1:]:
         assert layer["encoding"]["y"]["field"] == "평균 기온(℃)"
-    # 값이 라벨로 적힌다 — 샘플은 1년을 넘으므로 「연평균」 이다.
+    # 값이 라벨로 적힌다 — 샘플은 1년을 넘어도 「기간 평균」 이다 (S218).
     label = right[2]["encoding"]["text"]["field"]
     assert label == "기준선"
     data = right[2]["data"]
     values = data.get("values") or spec["datasets"][data["name"]]
-    assert values[0]["기준선"].startswith("연평균 ")
+    assert values[0]["기준선"].startswith("기간 평균 ")
     assert values[0]["기준선"].endswith("℃")
     # 범례는 늘지 않는다 — 기준선·라벨에 color 인코딩이 없다.
     assert "color" not in right[1]["encoding"]
     assert "color" not in right[2]["encoding"]
 
 
-def test_관측이_1년에_못_미치면_기간_평균으로_적는다() -> None:
-    """**반년치 평균을 「연평균」 이라 적으면 평년값처럼 읽힌다** (32세션 1절)."""
+def test_기온_기준선은_관측_길이와_상관없이_기간_평균이다() -> None:
+    """**관측 기간 평균이므로 1년을 넘어도 「기간 평균」 이다** (S218 · 사람이 정했다).
+
+    32세션 1절은 1년에 못 미치면 「기간 평균」 · 넘으면 「연평균」 으로 갈랐다 —
+    값은 두 갈래 다 관측 기간(사용량이 있는 날)의 일평균 기온 평균이었다.
+    """
     import pandas as pd
 
     from kwise.report.frames import temperature_mean_frame
@@ -1210,8 +1215,8 @@ def test_관측이_1년에_못_미치면_기간_평균으로_적는다() -> None
             }
         )
 
-    assert temperature_mean_frame(frame(365)).loc[0, "기준선"] == "연평균 13.2℃"
-    assert temperature_mean_frame(frame(364)).loc[0, "기준선"] == "기간 평균 13.2℃"
+    for days in (364, 365, 400):
+        assert temperature_mean_frame(frame(days)).loc[0, "기준선"] == "기간 평균 13.2℃"
     # 값은 일별 기온의 평균이다.
     assert float(temperature_mean_frame(frame(30)).loc[0, "평균 기온(℃)"]) == pytest.approx(13.2)
 
@@ -1553,7 +1558,7 @@ def test_대표일은_ESS_절감액을_바꾸지_않는다() -> None:
     def saving(**day: object) -> str:
         screen = _running(option="I", measure_on_ess=True, **day)  # type: ignore[arg-type]
         assert not screen.exception, screen.exception
-        return next(str(item.value) for item in screen.metric if item.label == "절감액")
+        return next(str(item.value) for item in screen.metric if item.label == "12개월 환산 절감액")
 
     # 최대수요일과 **결측 구간 한가운데의 날** — 절감액은 같아야 한다.
     peak_day = saving(measure_common_ref_day=MAX_DEMAND_KEY)
@@ -3301,19 +3306,21 @@ def test_카드_절감액이_3단계_표와_같은_기준이다() -> None:
     """
     screen = _running(option="I", **STAGE3_MEASURES)  # type: ignore[arg-type]
     assert not screen.exception, screen.exception
-    savings = [value for label, value in _stage2_metrics(screen) if label == "절감액"]
+    # **이름이 기준을 말한다** (S218) — 「12개월 환산 절감액」 이 곁에 서므로 값에
+    # 「/년」 을 안 붙인다 (S216).
+    savings = [value for label, value in _stage2_metrics(screen) if label == "12개월 환산 절감액"]
     assert savings, "카드 절감액을 못 찾았습니다."
     for value in savings:
         # **0 이 결론인 자리는 금액이 아니라 결론이다** (48세션). 이 자료는
         # 최대수요가 하한(계약전력의 30%)보다 훨씬 커서 계약전력을 낮춰도
-        # 기본요금이 안 바뀐다 — 「0원/년」 은 계산이 덜 된 것처럼 읽힌다.
-        assert value.endswith("/년") or value == NO_SAVING, value
+        # 기본요금이 안 바뀐다 — 「0원」 은 계산이 덜 된 것처럼 읽힌다.
+        assert value.endswith("원") or value == NO_SAVING, value
 
     frame = next(item.value for item in screen.dataframe if "수단" in list(item.value.columns))
     rows = {str(row["수단"]): str(row["12개월 환산 절감액"]) for _, row in frame.iterrows()}
     # 역률 카드는 언제나 값이 있다 — 두 화면의 금액이 같은 크기여야 한다.
-    card = next(value for label, value in _stage2_metrics(screen) if label == "절감액")
-    assert card.rstrip("/년"), card
+    card = next(value for label, value in _stage2_metrics(screen) if label == "12개월 환산 절감액")
+    assert card, card
     assert rows["1. 선택요금 전환"], rows
 
 
@@ -3568,17 +3575,23 @@ def test_낮출_자리가_없어도_지표는_낸다() -> None:
     assert "현재 부하 기준입니다" not in body
 
     labels = [label for label, _ in _stage2_metrics(screen)]
-    assert labels == ["계약전력", "계약전력의 30%", "최대수요", "절감액"], labels
+    assert labels == ["계약전력", "계약전력의 30%", "최대수요", "12개월 환산 절감액"], labels
     values = dict(_stage2_metrics(screen))
     assert values["계약전력의 30%"] == "1,650.0 kW"
-    assert values["절감액"] == "없음"
+    assert values["12개월 환산 절감액"] == "없음"
     # **여유율에 기대던 이름들은 사라졌다** (83세션 5).
     for banned in ("권장", "이용률", "하향 여지", "여유"):
         assert banned not in labels, labels
 
     # 하한이 이기면 목표 계약전력이 한 칸 더 선다 — 화면은 한 벌이다.
     wide = [label for label, _ in _stage2_metrics(_running(contract_kw=20_000.0, on=("contract",)))]
-    assert wide == ["계약전력", "계약전력의 30%", "최대수요", "목표 계약전력", "절감액"], wide
+    assert wide == [
+        "계약전력",
+        "계약전력의 30%",
+        "최대수요",
+        "목표 계약전력",
+        "12개월 환산 절감액",
+    ], wide
 
 
 def test_버린_행_안내가_결측_옆에_나온다(tmp_path: Path) -> None:
@@ -3739,7 +3752,7 @@ def test_ESS_절감액_툴팁이_구성을_밝힌다() -> None:
     """
     screen = _running(nav_page="2단계 · 개선 수단", measure_on_ess=True)
     assert not screen.exception, screen.exception
-    tips = [item.help for item in screen.metric if item.label == "절감액"]
+    tips = [item.help for item in screen.metric if item.label == "12개월 환산 절감액"]
     ess_tip = next(str(item) for item in tips if item and "기본요금 절감" in str(item))
     # 샘플은 99.8% 가 기본요금이다 — 비중이 그 사실을 낸다 (33세션 4절에 굵게).
     assert "거의 전부 기본요금 절감입니다** (99.9%)" in ess_tip, ess_tip
@@ -4993,7 +5006,7 @@ def test_조건_넷이_함께_서는_벌이_저장소에_있다() -> None:
         f"{case.key} — 접힘 「잉여 처리」 가 없습니다. 이 벌에서 잉여가 0 입니다."
     )
 
-    영원 = [label for label, value in _stage2_metrics(screen) if value == "0원/년"]
+    영원 = [label for label, value in _stage2_metrics(screen) if value == "0원"]
     assert 영원, f"{case.key} — 2단계에 절감액 0원인 수단이 없습니다."
 
     assert screen.session_state["building_info"].floor_area_m2 == case.floor_area_m2, (

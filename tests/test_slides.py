@@ -2744,7 +2744,7 @@ def test_계약전력_장이_근거를_먼저_세운다(
         for shape in slide.shapes
         if shape.has_text_frame
     }
-    assert tops["현재 계약전력"] < tops["절감액"], tops
+    assert tops["현재 계약전력"] < tops["12개월 환산 절감액"], tops
     assert tops["최대수요"] < tops["회수기간"], tops
 
 
@@ -3233,7 +3233,7 @@ def test_그림_없는_장은_지표_두_줄을_붙인다(
     slide = _slide_by_key(build_slides(sections), sections, "measure_ess")
     # **라벨로 두 덩어리를 가른다.** 좌표만 훑으면 제목·결론 사이의 숨까지
     # 섞여 무엇을 재는지 흐려진다.
-    upper = {"절감액", "투자비", "회수기간"}
+    upper = {"12개월 환산 절감액", "투자비", "회수기간"}
     lower = {label for label, _value in entry.facts}
     assert lower, "아래 덩어리가 있어야 이 시험이 뜻을 가집니다."
 
@@ -3425,9 +3425,9 @@ def test_지표_셋은_수단_장마다_같은_높이에_선다(full_sections: D
             for shape in slide.shapes
             if shape.has_text_frame
             and shape.top is not None
-            and shape.text_frame.text.strip() == "절감액"
+            and shape.text_frame.text.strip() == "12개월 환산 절감액"
         ]
-        assert len(tops) == 1, f"{key} 에 「절감액」 라벨이 하나여야 합니다: {tops}"
+        assert len(tops) == 1, f"{key} 에 「12개월 환산 절감액」 라벨이 하나여야 합니다: {tops}"
         seen.setdefault(round(tops[0], 2), []).append(key)
     # 결론 줄 수가 갈래를 만든다 — 자리는 둘까지다 (한 줄 · 두 줄).
     assert len(seen) <= 2, f"지표 셋이 세 자리 넘게 흩어졌습니다: {seen}"
