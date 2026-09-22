@@ -90,6 +90,8 @@ class Rendered:
     excel_rows: tuple[tuple[str, ...], ...] = ()
     #: 산출물 실물 바이트 — 「이름 → 바이트」 (S212 4절). **덱 그물이 읽는 것이 이것이다.**
     payloads: dict[str, bytes] = field(default_factory=dict)
+    #: 덱 그물이 뜬 **그림 안** 줄 (S217 5절) — 화면 차트 자료 · PPT·Word png 의 글자.
+    figures: tuple[tuple[str, ...], ...] = ()
 
 
 def _deck(payload: bytes) -> list[str]:
@@ -189,15 +191,21 @@ def rendered(request: pytest.FixtureRequest) -> Iterator[Rendered]:
         collected = screen_audit.collect(app)
         screen = [(line.slot, line.text) for line in collected]
         texts = [text for _slot, text in screen]
-        app.button(key="build_ppt").click().run(timeout=900)
-        app.button(key="build_excel").click().run(timeout=900)
-        assert not app.exception, app.exception
+        # **그림 안 글자도 같은 판에서 뜬다** (S217 5절) — 새 렌더를 안 붙인다.
+        deck_words = _deck_words()
+        figures = deck_words._screen_figures(app)
+        with deck_words.FigureTap() as tap:
+            app.button(key="build_ppt").click().run(timeout=900)
+            app.button(key="build_excel").click().run(timeout=900)
+            assert not app.exception, app.exception
+            word, _name = document_bytes(captured["sections"])
         store = dict(app.session_state[ARTIFACT_KEY])
         excel_rows = _workbook_rows(store["excel"].payload)
         texts += _deck(store["ppt"].payload)
         texts += _workbook(excel_rows)
-        word, _name = document_bytes(captured["sections"])
         texts += _document(word)
+        figures += tap.rows("PPT", deck_words._deck_pictures(store["ppt"].payload))
+        figures += tap.rows("Word", deck_words._word_pictures(word))
     finally:
         patch.undo()
     yield Rendered(
@@ -207,6 +215,7 @@ def rendered(request: pytest.FixtureRequest) -> Iterator[Rendered]:
         tuple(line.where for line in collected),
         tuple(tuple(str(v) for v in row if v is not None) for row in excel_rows),
         {"excel": store["excel"].payload, "ppt": store["ppt"].payload, "word": word},
+        tuple(tuple(row) for row in figures),
     )
 
 
@@ -405,6 +414,23 @@ def test_덱_그물이_네_산출물을_실물에서_담는다(rendered: Rendere
     전체 = sum(len(deck_words.MONEY.findall(deck_words.text_of(row))) for row in excel)
     한칸 = sum(len(deck_words.MONEY.findall(row[3])) for row in excel if len(row) > 3)
     assert 전체 > 한칸 > 0, (전체, 한칸)
+
+    # **ㅁ — 그림 안 글자** (S217 2절). 앞까지 화면은 축 이름만 · PPT·Word 그림은 통째
+    # 밖이라 기온 기준선 「연평균」 이 스냅 0곳이었다. 그 자리가 다시 좁아지면 빨개진다.
+    갈래: dict[str, set[str]] = defaultdict(set)
+    for row in rendered.figures:
+        assert deck_words.inside(list(row)), row
+        갈래[row[0]].add(row[2])
+    for name, want in (
+        ("화면", {"범례", "눈금", "라벨"}),
+        ("PPT", {"범례", "눈금", "축 이름"}),
+        ("Word", {"범례", "눈금", "축 이름"}),
+    ):
+        assert want <= 갈래[name], (name, sorted(갈래[name]))
+        assert "못 뜬 그림" not in 갈래[name], f"{name} 에 가로채지 못한 그림이 있다"
+    # 실물 글자 — 월별 최대수요 그림의 범례(`figures.monthly_peak_png`)는 PPT·Word 가 다 싣는다.
+    for name in ("PPT", "Word"):
+        assert [r for r in rendered.figures if r[0] == name and r[3] == "요금적용 대상 최대"], name
 
 
 def test_덱_그물이_뜰_때_산출물을_함께_부른다(monkeypatch: pytest.MonkeyPatch) -> None:
