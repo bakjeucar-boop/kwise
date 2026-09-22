@@ -667,6 +667,33 @@ tools/deck_words.py` · `git status` 는 시험 파일 하나만.
 **5-6. 원복** — `git status --short` 가 ` M tests/test_base_fee_basis_words.py` 하나(이 판이 넓힌 것) ·
 `git diff --stat HEAD -- tools` 0줄.
 
+### 6절 — 회귀 (09:06 ~ 09:16 · 약 10분 · pytest 5분 14초)
+
+**6-1. `src\` 0줄** — `git diff 94cbe85 HEAD -- src` 빈 출력(폴더마다 0 — `compare\` · `diagnose\` · `io\` ·
+`measures\` · `pv\` · `tariff\` · `report\` · `ui\` · 나머지 파일 다 0).
+
+**6-2. pytest 통째 한 판** — `run_tool pytest tests -n auto --dist load -rf --tb=no --durations=0` ·
+`pytest_counts --base 1819`: **1,815 passed · 0 failed · 4 xfailed · skip 0 · 합 1,819 = 앞 판 1,819(같다)**
+(`-q` + xdist 라 수집 줄이 없어 결과 합이 수집이다 · `FAILED`·`ERROR` 0). 새 못 0 이라 건수가 같다.
+
+**6-3. 소요 — 5분 14초**(pytest 313.12초 · 도구 314.2초 · 09:06:22 ~ 09:11:36) · 1번 PC · 일꾼 8 ·
+남의 python **판 앞 0 · 회귀 앞 0 · 뒤 0** → **깨끗한 판** · 상한 8분까지 **2분 46초 남는다**. 도구 합
+1,818.44초 · 가장 긴 단계 202.03초(`test_casestudy.py::test_every_validity_check_passes` setup) · 파일별
+`test_ui_screen` 659.0 · `test_ess_cost` 230.4 · `test_integration` 204.9 · `test_casestudy` 203.3초 · 숨은
+단계 3,845개. 이 PC 앞 깨끗한 판 S210(1,805건 5분 39초)보다 25초 짧다 — 건수가 달라 방향만 적는다.
+
+**6-4. 화면 감사 — 을 955 · 갑Ⅰ 806 · 교육갑 962 · 교육갑저압 807 · 규칙 위반 없음 · 중복 후보
+5·4·5·4 — 0-9 와 같다**(34.8초). 이 판은 화면에 안 닿았다.
+
+**6-5. 케이스 스터디 — 174/174 · 기상 취득 0회** · 도구 137.2초 / 도구가 적은 전체 127.6초 · 같은 날 앞 판
+파일을 안 덮게 스크래치 `cs\` 에 냈다. 저장소 `output\casestudy_20260922.xlsx` 와 칸 단위로 맞대니(fillna 뒤)
+시트 여덟 이름이 같고 **맞댄 칸 4,371 · 갈린 칸 25 가 다 소요**(케이스 「소요(초)」 12 · 성능 「값」 13 = 벌
+12 + 전체 소요 1) — **회귀값 여덟 포함 소요 밖 0.**
+
+**6-6. 정적 다섯 — 0-13 기준과 같다**(S217.md 앉히기 전 · 통째로) — `ruff check .` 통과 · `format` 어긋남
+**9** · 통과 **273** · 맨 `mypy` **10건**(174파일) · `mypy tests tools` **36건**(63파일) · `scan_ctrl` **0곳**.
+이 판이 고친 두 파일에서 난 것 0. 지시서를 앉히면 `format` 통과 274 가 될 것이다.
+
 ## 오늘 (2026-09-22) 216세션 — **ㅅ 뿌리의 남은 자리를 닫는다 — 꼬리표 「/년」 과 조건부 「연간」**
 
 **이 판은 글자 판이다. 금액 0 이다. 1번 PC 판이다** — S211~S215 다섯 판이
