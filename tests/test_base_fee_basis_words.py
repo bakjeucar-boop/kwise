@@ -643,6 +643,30 @@ def test_12개월_환산값_자리가_네_산출물에서_연이라_말하지_�
     assert 겹 == [], (rendered.key, 겹)
     assert 남김, (rendered.key, "이름 없는 12개월 환산 지표에서 「/년」 이 사라졌다")
 
+    # **12개월 환산값이 이름 없이 「절감액」 으로 서지 않는다** (S218 · 사람이 정했다).
+    # 화면 2단계 카드 지표 · PPT 수단 장 지표 · 8장 표 머리 · 수단 장 각주 · Word DR 행.
+    # Word 의 다른 수단 행은 기간 값이 먼저라(괄호 안이 12개월) 그대로 「절감액」 이다.
+    맨 = [f"화면 지표 라벨 {text}" for slot, text in rendered.screen if slot == "라벨" and text == "절감액"]
+    for row in 쪽["PPT"]:
+        cells = row[2:]
+        if "절감액" in cells or cells[0].startswith("※ 절감액 미산출"):
+            맨.append(f"PPT {row[1]} {deck_words.text_of(row)}")
+    맨 += [
+        f"Word {row[1]} {deck_words.text_of(row)}"
+        for row in 쪽["Word"]
+        if row[2:3] == ["절감액"] and "정산" in deck_words.text_of(row)
+    ]
+    assert 맨 == [], (rendered.key, 맨)
+
+    # **기온 기준선은 관측 길이와 상관없이 「기간 평균」 이다** (S218 · 사람이 정했다).
+    # 두 벌 다 1년이 넘는다 — 「연평균」 이 서던 바로 그 갈래다. 그림 안 글자를 본다.
+    기온 = [row[-1] for row in rendered.figures if row[-1].endswith("℃") and "평균" in row[-1]]
+    assert 기온 and not [text for text in 기온 if "연평균" in text], (rendered.key, 기온)
+    assert {row[0] for row in rendered.figures if row[-1] in 기온} == {"화면", "PPT"}, (
+        rendered.key,
+        기온,
+    )
+
 
 def test_사용량_이름이_진단_지표와_태양광_캡션에서_같다(rendered: Rendered) -> None:
     """**한 벌 안에서 같은 값을 두 이름으로 부르지 않는다** (S213 1-5 · 울타리 ㄱ6).

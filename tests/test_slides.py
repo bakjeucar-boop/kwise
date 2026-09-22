@@ -3395,6 +3395,51 @@ def test_사양_표가_있는_수단은_그림이_다_실패해도_덱이_선다
     assert tables[0].table.rows[0].cells[0].text.strip() == entry.spec_table[0][0]
 
 
+def test_12개월_미만_벌에서_수단_장_절감액은_12개월_환산값에_그_이름으로_선다(
+    full_sections: DocumentSections,
+) -> None:
+    """**이름은 12개월 환산값에만 붙는다 — 값 쪽에서 문다** (S218 · 사람이 정했다).
+
+    12개월 벌은 두 값이 같아 이름이 틀려도 금액이 안 갈린다. small-ind-a1(4.00개월)
+    13장 꼴 — 기간 2,620,000원 · 12개월 환산 7,861,000원 — 을 지어 넣고, 지표와 8장
+    표가 **12개월 값**을 「12개월 환산 절감액」 아래에 두는지 본다. 값을 기간 값으로
+    되돌리거나 이름을 떼면 빨개진다.
+    """
+    import dataclasses
+
+    from pptx.util import Emu
+
+    period, annual = "2,620,000원", "7,861,000원"
+    measures = tuple(
+        dataclasses.replace(entry, saving=f"{period} (12개월 환산 {annual})", saving_annual=annual)
+        if entry.kind.key == "solar"
+        else entry
+        for entry in _all_measures(full_sections)
+    )
+    sections = dataclasses.replace(full_sections, measures=measures)
+    deck = build_slides(sections)
+
+    slide = _slide_by_key(deck, sections, "measure_solar")
+    boxes = sorted(
+        (Emu(shape.left).inches, Emu(shape.top).inches, shape.text_frame.text.strip())
+        for shape in slide.shapes
+        if shape.has_text_frame and shape.text_frame.text.strip()
+    )
+    label = next(box for box in boxes if box[2] == "12개월 환산 절감액")
+    # 값은 라벨과 같은 왼쪽 끝 · 바로 아래 상자다.
+    value = min(
+        (box for box in boxes if box[0] == label[0] and box[1] > label[1]), key=lambda b: b[1]
+    )
+    assert value[2] == annual, (label, value)
+
+    summary = _slide_by_key(deck, sections, "measure_summary")
+    table = next(shape.table for shape in summary.shapes if shape.has_table)
+    head = [cell.text for cell in table.rows[0].cells]
+    column = head.index("12개월 환산 절감액")
+    solar = next(row for row in table.rows if "태양광" in row.cells[0].text)
+    assert solar.cells[column].text == annual, head
+
+
 def test_지표_셋은_수단_장마다_같은_높이에_선다(full_sections: DocumentSections) -> None:
     """**여백보다 위계가 먼저다** (60세션 9-5 판정 · 10절에 규약으로).
 
