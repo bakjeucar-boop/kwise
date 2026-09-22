@@ -572,6 +572,35 @@ large-b 4장 「기간 평균 13.1℃」 · 11장 DR 지표와 각주 · 13장 �
 
 **3-6. 원복** — plugin 은 파일을 안 건드렸다 · `git status` 는 이 절이 고친 시험 둘(`test_base_fee_basis_words.py` · `test_slides.py`)과 기록뿐.
 
+### 4절 — 회귀 (11:20 ~ 11:33 · pytest 5분 40초)
+
+**4-1. 계산 폴더 여섯 — 0줄**(`git diff --stat 1783b27 HEAD -- src/kwise/{compare,diagnose,io,measures,pv,tariff}` 빈 출력).
+`src\` 에서 갈린 것은 `report\` 넷 · `ui\` 둘(37+ · 31−) — **값을 만드는 줄 0**: `frames.py` 는 `mean` 줄(1209)을 안 건드리고
+이름 갈래(`span` · `name`)만 걷었다 · `measures.py` 는 이미 낸 값의 서식(`won_year` → `won_short`)과 라벨 · `slides.py` ·
+`document.py` 는 라벨 · `charts.py` · `figures.py` 는 주석.
+
+**4-2. pytest 통째 한 판** — `run_tool pytest tests -n auto --dist load -rf --tb=no --durations=0` · `pytest_counts --base 1819`:
+**1,816 passed · 0 failed · 4 xfailed · skip 0 · 합 1,820 = 앞 판 1,819 + 1**(새 못) · `FAILED`·`ERROR` 0.
+
+**4-3. 소요 — 5분 40초**(pytest 340.38초 · 도구 341.9초 · 11:20:28 ~ 11:26:10) · 1번 PC · 일꾼 8 · 남의 python **판 앞 2 → 10:33 재개 때 0 ·
+회귀 앞 0 · 뒤 0** — 판 앞 둘(`site-energy` pytest)은 09:42 에 떠 10:33 전에 끝났고 회귀 창에는 0 이라 **깨끗한 판**이다. 상한 8분까지
+**2분 20초 남는다**. 도구 합 1,986.45초 · 가장 긴 단계 221.25초(`test_casestudy.py::test_every_validity_check_passes` setup) · 파일별
+`test_ui_screen` 712.4 · `test_ess_cost` 253.2 · `test_casestudy` 222.6 · `test_integration` 221.2초(스크래치 `s218_dur.py`). 이 PC 앞 깨끗한
+판 S217(1,819건 5분 14초)보다 26초 길다 — 건수가 하나 달라 방향만 적는다.
+
+**4-4. 화면 감사 — 955 · 806 · 962 · 807 · 위반 없음 · 중복 5·4·5·4 — 0-9 와 같다**(2-6 판 11:04 · 그 뒤 `src\` 0줄 · 32.6초).
+**이 판 자리는 감사에 0곳이다**(2-6).
+
+**4-5. 케이스 스터디 — 174/174 · 기상 취득 0회** · 도구 140.1초 / 도구가 적은 전체 130.4초 · 스크래치 `cs\` 에 냈다. 저장소
+`output\casestudy_20260922.xlsx` 와 칸 단위로(fillna 뒤 · `s218_cs.py`) — 시트 여덟 같다 · **맞댄 칸 4,317 · 갈린 칸 25 가 다 소요**(케이스
+「소요(초)」 12 · 성능 「값」 13) — **회귀값 여덟 포함 소요 밖 0.** (S217 은 같은 비교를 4,371 칸으로 적었다 — 읽는 스크래치가 달라
+칸 수가 갈렸을 수 있다 · 갈린 칸의 꼴은 같다.)
+
+**4-6. 정적 다섯 — 0-13 기준과 같다**(S218.md 앉히기 전 · 통째로) — `ruff check .` 통과 · `format` 어긋남 **9** · 통과 **274** · 맨 `mypy`
+**10건**(174파일) · `mypy tests tools` **36건**(63파일) · `scan_ctrl` **0곳**. **첫 판은 ruff 1 · format 10 · 맨 mypy 11 이었다** — ruff·format 은
+이 판이 넓힌 못의 한 줄(E501)이라 고쳤고 그 못을 다시 돌려 2 passed · 맨 mypy 11 의 하나는 `test_ess_cost.py:1920`(`kwise.report` 에 `validity`
+없음 · 09-11 뒤 무접촉 파일)이고 다시 돌리니 **10**(`--no-incremental` 도 10) — 증분 캐시가 흔들린 것이다.
+
 ## 오늘 (2026-09-22) 217세션 — **그림 안 글자를 재는 그물을 넓힌다 · 넓힌 그물로 그림 안에 선 이름을 다시 잰다**
 
 **이 판은 재는 쪽을 고치는 판이다. 산출물을 안 고친다. 1번 PC 판이다.** `src\` 0줄 ·

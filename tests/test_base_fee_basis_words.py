@@ -646,7 +646,11 @@ def test_12개월_환산값_자리가_네_산출물에서_연이라_말하지_�
     # **12개월 환산값이 이름 없이 「절감액」 으로 서지 않는다** (S218 · 사람이 정했다).
     # 화면 2단계 카드 지표 · PPT 수단 장 지표 · 8장 표 머리 · 수단 장 각주 · Word DR 행.
     # Word 의 다른 수단 행은 기간 값이 먼저라(괄호 안이 12개월) 그대로 「절감액」 이다.
-    맨 = [f"화면 지표 라벨 {text}" for slot, text in rendered.screen if slot == "라벨" and text == "절감액"]
+    맨 = [
+        f"화면 지표 라벨 {text}"
+        for slot, text in rendered.screen
+        if (slot, text) == ("라벨", "절감액")
+    ]
     for row in 쪽["PPT"]:
         cells = row[2:]
         if "절감액" in cells or cells[0].startswith("※ 절감액 미산출"):
