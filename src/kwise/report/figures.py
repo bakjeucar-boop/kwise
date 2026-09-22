@@ -744,6 +744,9 @@ def power_triangle_png(result: PowerFactorResult) -> bytes:
         )
     axes.set_xlabel("유효전력 (기준 1)")
     axes.set_ylabel("무효전력")
+    # **가로·세로를 같은 눈금으로** (S222). 비율이 자료에 딸려 움직이면 그려진 각이
+    # 역률각과 달라진다 — 92% 벌에서 23° 가 37° 로 그려졌다. 범위는 자동 그대로다.
+    axes.set_aspect("equal")
     add_legend(axes)
     return render_png(figure)
 
