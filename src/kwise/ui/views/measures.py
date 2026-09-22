@@ -590,7 +590,8 @@ def _demand_response(
     if not result.low_load_days:
         st.write("저부하 평일이 없어 감축 가능량을 0 으로 두었습니다.")
     if result.is_priced:
-        st.metric("정산금", fmt.won_short(result.settlement_won))
+        # 정산금은 12개월 환산 감축 가능량 × 단가다 — 이름을 단다 (S219 규칙 나).
+        st.metric("12개월 환산 정산금", fmt.won_short(result.settlement_won))
     st.caption(
         "자원 유형 — " + (", ".join(str(item) for item in result.resource_types) or "판정 불가")
     )
@@ -1456,7 +1457,10 @@ def _capacity_view(frame: pd.DataFrame) -> pd.DataFrame:
             # **「자가소비」 를 이름에 단다** (S159 3-4). 카드는 잉여 수익을 담고
             # 이 표는 안 담는다 — 둘 다 옳은데 이름이 같아 한 화면에서 517만원과
             # 509만원이 나란히 섰다. 값을 맞추지 않고 이름으로 가른다.
-            "자가소비 절감액": [fmt.won_year(value) for value in frame["자가소비 절감액(원)"]],
+            # **12개월 환산값이라 머리에 그 이름을 달고 「/년」 은 뗀다** (S219 규칙 나).
+            "12개월 환산 자가소비 절감액": [
+                fmt.won_short(value) for value in frame["자가소비 절감액(원)"]
+            ],
             "투자비": [
                 fmt.won_short(value, reason="미산출 — 단가 미입력") for value in frame["투자비(원)"]
             ],

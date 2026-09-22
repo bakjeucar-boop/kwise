@@ -447,7 +447,7 @@ def building_lead(quality: QualityReport | None) -> str:
 
 
 def power_factor_adjusted_saving(
-    *, saving_won: float, extra_won: float, after_pct: float | None = None
+    *, saving_won: float, extra_won: float, after_pct: float | None = None, basis: str = ""
 ) -> str:
     """역률 영향을 반영한 절감액 한 줄 (59세션 12절 · 목록 P6).
 
@@ -472,10 +472,19 @@ def power_factor_adjusted_saving(
     :func:`kwise.measures.solar.power_factor_drop_warning` 이 화면 2단계와 Excel
     부록에 이미 내고 있다 — 덱은 보는 자리라 같은 말을 세 문장으로 늘리지 않는다.
     부르는 쪽이 값을 안 주면 **문장은 예전 그대로다** (화면·Excel 이 그 자리다).
+
+    ``basis`` 는 금액의 표시다 (S219 규칙) — ``"/년"`` 이면 금액 뒤에(라벨 없이
+    서는 12개월 환산값), ``"기간"`` 이면 금액 앞에(12개월 값과 함께 서는 기간
+    값) 단다. 비우면 안 단다 — 화면은 같은 지표의 라벨이 이름을 쥔다.
     """
     if round(extra_won) == 0:
         return ""
-    adjusted = f"역률 영향 반영 시 {money.won(saving_won - extra_won, reason='—')}"
+    amount = money.won(saving_won - extra_won, reason="—")
+    if basis == "/년":
+        amount = f"{amount}/년"
+    elif basis:
+        amount = f"{basis} {amount}"
+    adjusted = f"역률 영향 반영 시 {amount}"
     standard = lagging_standard_pct()
     if after_pct is None or after_pct >= standard:
         return adjusted

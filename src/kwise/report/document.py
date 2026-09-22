@@ -204,6 +204,9 @@ class MeasureEntry:
 
     Word 는 :attr:`saving` 을 그대로 쓴다. 문서는 관측 기간 값과 환산값을 나란히
     두고 대조하는 자리라 두 값이 함께 있어야 한다."""
+    saving_label: str = "절감액"
+    """Word 3장 수단 표의 :attr:`saving` 칸 이름 (S219 규칙 다). 칸에 12개월 환산값이
+    함께 서면 「기간 절감액」 이다 — :func:`_measure_saving_label` 이 정한다."""
     spec_table: tuple[tuple[str, ...], ...] = field(default=())
     """산출물에 **폭 전체로** 놓을 표. 머리글이 첫 줄이다 (46세션).
 
@@ -524,6 +527,11 @@ def _measure_saving(annual_won: float | None, period_won: float | None) -> str:
     return f"{_won(period_won)} (12개월 환산 {_won(annual_won)})"
 
 
+def _measure_saving_label(annual_won: float | None, period_won: float | None) -> str:
+    """:func:`_measure_saving` 칸의 이름 — **두 값이 함께 서면 앞 값에 「기간」** (S219 규칙 다)."""
+    return "기간 절감액" if annual_won is not None and period_won is not None else "절감액"
+
+
 def _annual_saving(annual_won: float | None, period_won: float | None) -> str:
     """**12개월 환산 한 값만** (39세션 2-2).
 
@@ -834,6 +842,7 @@ def measure_entries(
                 else f"현행 {now_option} 이 이미 최선입니다. 바꿀 이유가 없습니다."
             ),
             saving=_measure_saving(switch.annual_saving_won, switch.saving_won),
+            saving_label=_measure_saving_label(switch.annual_saving_won, switch.saving_won),
             saving_annual=_annual_saving(switch.annual_saving_won, switch.saving_won),
             has_saving=bool(switch.saving_won),
             investment=_won(0.0),
@@ -966,6 +975,9 @@ def measure_entries(
             kind=measure_kind("power_factor"),
             conclusion=_power_factor_conclusion(power_factor),
             saving=_measure_saving(power_factor.annual_saving_won, power_factor.saving_won),
+            saving_label=_measure_saving_label(
+                power_factor.annual_saving_won, power_factor.saving_won
+            ),
             saving_annual=_annual_saving(power_factor.annual_saving_won, power_factor.saving_won),
             has_saving=bool(power_factor.saving_won),
             investment=_won(power_factor.investment_won),
@@ -1071,6 +1083,8 @@ def measure_entries(
                 else solar.power_factor_extra_won
             ),
             after_pct=solar.power_factor_after_pct,
+            # 12개월 환산값이 라벨 없이 서므로 꼬리표를 단다 (S219 규칙 나).
+            basis="/년" if base_fee_months else "",
         )
         if power_factor_line:
             cautions.append(power_factor_line)
@@ -1085,6 +1099,7 @@ def measure_entries(
                 surplus_page_follows=surplus is not None and surplus.total_kwh > 0,
             ),
             saving=_measure_saving(solar.annual_saving_won, solar.total_saving_won),
+            saving_label=_measure_saving_label(solar.annual_saving_won, solar.total_saving_won),
             saving_annual=_annual_saving(solar.annual_saving_won, solar.total_saving_won),
             has_saving=bool(solar.total_saving_won),
             investment=(
@@ -1146,6 +1161,7 @@ def measure_entries(
             kind=measure_kind("ess"),
             conclusion=_ess_conclusion(ess),
             saving=_measure_saving(ess.annual_saving_won, ess.total_saving_won),
+            saving_label=_measure_saving_label(ess.annual_saving_won, ess.total_saving_won),
             saving_annual=_annual_saving(ess.annual_saving_won, ess.total_saving_won),
             has_saving=bool(ess.total_saving_won),
             investment=_won(ess.investment_won),
@@ -1698,11 +1714,11 @@ def _chapter_measures(document: DocumentType, sections: DocumentSections, number
             document,
             [
                 ["항목", "값"],
-                # **계약전력 칸만 「기간」 을 단다** (S188). 그 칸은 관측 기간 값
-                # 하나이고, 다른 수단 칸은 「(12개월 환산 M)」 이 곁에서 가른다.
-                # **경제성DR 정산금은 12개월 환산 감축 가능량으로 낸 값이라 그 이름을
-                # 단다** (S218 · 사람이 정했다 — 12개월 환산값에 이름 없이 서지 않는다).
-                [_WORD_SAVING_LABELS.get(entry.kind.key, "절감액"), entry.saving],
+                # **계약전력 칸은 「기간」 을 단다** (S188). 그 칸은 관측 기간 값
+                # 하나다. **경제성DR 정산금은 12개월 환산 감축 가능량으로 낸 값이라
+                # 그 이름을 단다** (S218 · 사람이 정했다). **다른 수단 칸은 「(12개월
+                # 환산 M)」 이 함께 서면 앞 값에 「기간」 을 단다** (S219 규칙 다).
+                [_WORD_SAVING_LABELS.get(entry.kind.key, entry.saving_label), entry.saving],
                 ["투자비", entry.investment],
                 ["회수기간", entry.payback],
             ],

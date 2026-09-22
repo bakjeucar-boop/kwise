@@ -88,11 +88,12 @@ NO_PV_SENSITIVITY_NOTE = (
     "요금제 전환·계약전력 조정·역률 개선은 확정 계산이라 감도를 쓰지 않습니다."
 )
 
-# 「수단별 결과」 시트의 열. 켠 수단이 없어도 이 구조는 유지한다.
+# 「수단별 결과」 시트의 열. 켠 수단이 없어도 이 구조는 유지한다. 절감 열은 곁에
+# 12개월 환산 열이 서므로 「기간」 을 단다 (S219 규칙 다).
 MEASURE_SHEET_COLUMNS: tuple[str, ...] = (
     "수단",
     "투자비(원)",
-    "절감액(원)",
+    "기간 절감액(원)",
     "12개월 환산(원)",
     "회수기간",
     "비고",
@@ -348,7 +349,7 @@ def measure_summary_frame(
                     f"{option_label(switch.best.selection.option)})"
                 ),
                 "투자비(원)": format_won(0.0),
-                "절감액(원)": format_won(switch.saving_won),
+                "기간 절감액(원)": format_won(switch.saving_won),
                 "12개월 환산(원)": format_won(switch.annual_saving_won),
                 # **늘 「즉시」 였다** (S134 3절). 현행이 이미 최선이라 절감이
                 # 0 인 벌에서도 그렇게 적혔다 — 판정을 ``payback_years`` 로 옮겼다.
@@ -368,7 +369,7 @@ def measure_summary_frame(
                 "투자비(원)": format_won(0.0),
                 # **0 이 아니라 「없음」 이다** (48세션 · 83세션). 하한이 안 걸리면
                 # 줄어들 몫 자체가 없다 — 계산해서 0원이 나온 것과 다르다.
-                "절감액(원)": (
+                "기간 절감액(원)": (
                     NO_SAVING
                     if contract.no_saving
                     else format_won(contract.saving_won, reason=UNPRICED_REASONS["contract"])
@@ -389,7 +390,9 @@ def measure_summary_frame(
             {
                 "수단": f"경제성DR (등록 {demand_response.registered_capacity_kw:,.0f} kW)",
                 "투자비(원)": format_won(0.0),
-                "절감액(원)": demand_response.settlement_label,
+                # **정산금은 12개월 환산값이라 기간 칸에 싣지 않는다** (S219) —
+                # 12개월 칸에만 선다. 빈 칸은 이 표의 꼴(「—」)을 따른다.
+                "기간 절감액(원)": format_won(None, reason="—"),
                 "12개월 환산(원)": demand_response.settlement_label,
                 "회수기간": payback_label(
                     payback_years(0.0, demand_response.settlement_won or 0.0), 0.0
@@ -422,7 +425,7 @@ def measure_summary_frame(
                     )
                 ),
                 "투자비(원)": format_won(power_factor.investment_won),
-                "절감액(원)": format_won(power_factor.saving_won),
+                "기간 절감액(원)": format_won(power_factor.saving_won),
                 "12개월 환산(원)": format_won(power_factor.annual_saving_won),
                 "회수기간": payback_label(
                     power_factor.payback_years, power_factor.investment_won
@@ -450,7 +453,7 @@ def measure_summary_frame(
             {
                 "수단": f"태양광 {solar.capacity_kwp:,.0f} kWp",
                 "투자비(원)": format_won(solar.investment_won, reason=UNPRICED_REASONS["pv_price"]),
-                "절감액(원)": format_won(solar.total_saving_won),
+                "기간 절감액(원)": format_won(solar.total_saving_won),
                 "12개월 환산(원)": format_won(solar.annual_saving_won),
                 # **표시 상한을 여기서도 태운다** (S134 3절). 앞서는 손으로
                 # 적어 500년·3,000년이 그대로 나갔다 — 태양광만 예외였다.
@@ -467,6 +470,8 @@ def measure_summary_frame(
                             narrative.power_factor_adjusted_saving(
                                 saving_won=solar.total_saving_won,
                                 extra_won=solar.power_factor_extra_won,
+                                # 같은 줄에 12개월 환산값이 서면 기간을 단다 (S219 규칙 다).
+                                basis="기간" if solar.annual_saving_won is not None else "",
                             ),
                         )
                         if part
@@ -487,7 +492,7 @@ def measure_summary_frame(
                 {
                     "수단": f"└ 잉여 {scenario.name}",
                     "투자비(원)": format_won(None, reason="—"),
-                    "절감액(원)": format_won(scenario.revenue_won, reason=scenario.basis),
+                    "기간 절감액(원)": format_won(scenario.revenue_won, reason=scenario.basis),
                     # **12개월 환산을 낸다** (48세션). 다른 줄은 모두 환산값인데
                     # 이 칸만 「—」 였다 — 28세션이 `standalone_rows` 에서 고친
                     # 것과 같은 병이고, 41세션에 자리가 옮겨 오며 되살아났다.
@@ -524,7 +529,7 @@ def measure_summary_frame(
                     f"({ess.power_kw:,.0f} kW / {ess.capacity_kwh:,.0f} kWh)"
                 ),
                 "투자비(원)": format_won(ess.investment_won),
-                "절감액(원)": format_won(ess.total_saving_won),
+                "기간 절감액(원)": format_won(ess.total_saving_won),
                 "12개월 환산(원)": format_won(ess.annual_saving_won),
                 "회수기간": payback_label(ess.payback_years, ess.investment_won),
                 "비고": (
@@ -550,7 +555,7 @@ def measure_summary_frame(
                 {
                     "수단": "└ 차익거래 잠재 (경부하 충전 → 최대부하 방전)",
                     "투자비(원)": format_won(None, reason="—"),
-                    "절감액(원)": UNPRICED_REASONS["arbitrage_not_summed"],
+                    "기간 절감액(원)": UNPRICED_REASONS["arbitrage_not_summed"],
                     "12개월 환산(원)": format_won(arbitrage.annual_won),
                     "회수기간": (
                         f"단독 {arbitrage.standalone_payback_years:,.1f}년"
