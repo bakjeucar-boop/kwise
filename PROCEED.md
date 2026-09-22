@@ -521,6 +521,28 @@ ESS 대표일 · 역률 대표일 「부하 (kW)」 → 상수(글자 불변 · 
 
 **3-7. 원복** — plugin 은 파일을 안 건드렸다 · `git status` 는 이 절이 고친 시험 둘(`test_base_fee_basis_words.py` +29 · `test_slides.py` +16 −2)과 기록뿐.
 
+### 4절 — 회귀 (16:00 ~ 16:10 · pytest 6분 05초 · 오염된 판)
+
+**4-1. 계산 폴더 여섯 — 0줄**(`git diff --numstat 1517701 HEAD -- src/kwise/{compare,diagnose,io,measures,pv,tariff}` 빈 출력) · **값을 만드는 줄 0**. 갈린 `src\` 는
+`report\frames.py` +8(상수 하나 · 주석) · `report\figures.py` +4 −3(축 이름 셋을 상수로) · `report\slides.py` +9 −11(각주 · 상수 걷기 · 주석) · `ui\charts.py` +6 −5(축 이름
+다섯을 상수로) — 다 그림 글자와 각주다.
+
+**4-2. pytest 통째 한 판** — `run_tool pytest tests -n auto --dist load -rf --tb=no --durations=0`(지시서 명령 그대로) · `pytest_counts --base 1821`: **1,819 passed · 4 xfailed ·
+failed 0 · error 0 · skip 0 · 합 1,823**(앞 1,821 → **+2 = 새 못 두 인자**) · 경고 1(`io\usage.py:350` dateutil · 앞 판과 같다) · **첫 판 초록 — 둘째 판 안 돌렸다.**
+
+**4-3. 소요 — 6분 05초**(pytest 365.59초 · 도구 366.9초 · 16:01:03 ~ 16:07:11) · 1번 PC · 일꾼 8 · 남의 python **판 앞 0(15:35) · 회귀 앞 2(16:00 · PID 17652 · 19420 —
+`site-energy` 의 `pytest -o python_files=test_app_*.py`) · 뒤 0(16:07)** — **오염된 판 · 견주지 않는다.** 상한 8분까지 **1분 55초 남는다**. 도구 합 2,041.83초 · 가장 긴 단계
+232.74초(`test_casestudy.py` setup) · 파일별 `test_ui_screen` 722.2 · `test_ess_cost` 255.2 · `test_casestudy` 234.6 · `test_integration` 222.9 · `test_base_fee_basis_words`
+117.6초. 방향만 — 깨끗하고 플래그 없는 마지막 판 S218(1,820건 5분 40초)보다 25초 길다(오염 몫을 안 갈랐다).
+
+**4-4. 화면 감사 — 955 · 806 · 962 · 807 · 위반 없음 · 18,320자 — 0-9 와 같다**(2-6 판 15:55 · 그 뒤 `src\` 는 주석 줄 둘뿐). 이 판 화면 자리는 감사에 0곳.
+
+**4-5. 케이스 스터디 — 174/174 · 기상 취득 0회**(`cs_221\` · 도구 153.7초 / 전체 141.1초 · 저장소 `output\` 를 안 덮었다). S220 판(`cs_after2\`)과 칸 단위(fillna 뒤) —
+시트 여덟 같다 · **맞댄 칸 4,317 · 갈린 22 가 다 소요**(케이스 「소요(초)」 12 · 성능 「값」 10) — **판정 · 회귀값 여덟 포함 소요 밖 0.**
+
+**4-6. 정적 다섯 — 0-13 기준과 같다**(S221.md 앉히기 전 · 통째로) — `ruff check .` 통과 · `format` 어긋남 **9** · 통과 **277** · 맨 `mypy` **10건**(174파일) · `mypy tests
+tools` **36건**(63파일) · `scan_ctrl` **0곳**. 판 안에서 `E501` 두 줄(내 주석)을 고쳤다 · 순증 0.
+
 ---
 ## 오늘 (2026-09-22) 220세션 — **ㅅ 뿌리의 마지막 판 — 조회 열쇠와 표 머리를 떼고 남은 자리를 닫는다**
 
