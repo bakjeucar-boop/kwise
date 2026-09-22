@@ -883,9 +883,10 @@ def solar_curve(
                     # 조정 전후를 나란히 놓을 수 있다 (31세션). 조합은 이미
                     # 떨어진 역률로 요금을 냈으므로 견줄 앞값이 없다.
                     # **「기간」 을 단다** (S219 규칙 다) — 이 글이 서는 화면 카드와
-                    # Word 3장에 12개월 환산 절감액이 함께 선다.
+                    # Word 3장에 12개월 환산 절감액이 함께 선다. 앞 금액(역률요금 증가액)도
+                    # 기간 값이다 (S220 2절).
                     detail=(
-                        "역률요금이 "
+                        "역률요금이 기간 "
                         f"{money.won(largest.power_factor_extra_won, reason='—')} 늘어 "
                         "기간 절감액이 "
                         f"{money.won(largest.total_saving_won, reason='—')} → "

@@ -308,7 +308,9 @@ def arbitrage_value(
         )
         notices.append(
             basis(
-                f"차익거래 단독 회수기간 {payback:,.1f}년 — 연 {per_kwh_year:,.0f}원/kWh 로 "
+                # 「연」 을 안 쓴다 (S214) — 12개월 환산값이다 (S220 2절).
+                f"차익거래 단독 회수기간 {payback:,.1f}년 — "
+                f"12개월 환산 {per_kwh_year:,.0f}원/kWh 로 "
                 f"CAPEX 에너지 성분 {capex_energy_won_per_kwh:,.0f}원/kWh 를 회수합니다. "
                 f"{verdict}",
                 fact="arbitrage.standalone_payback",

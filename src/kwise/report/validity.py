@@ -20,6 +20,9 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+# 열쇠는 감도 모듈 한 자리에 있다 (S220 2절) — 표를 만드는 쪽도 이 상수를 본다.
+from kwise.compare.sensitivity import BASE_SAVING, ENERGY_SAVING, GENERATION, SAVING
+
 if TYPE_CHECKING:
     from kwise.report.casestudy import CaseResult, CaseStudy
 
@@ -82,7 +85,7 @@ def _basic_checks(result: CaseResult) -> list[Check]:
             )
         )
 
-    energy = frame["전력량요금 절감액(원)"]
+    energy = frame[ENERGY_SAVING]
     checks.append(
         Check(
             label,
@@ -92,7 +95,7 @@ def _basic_checks(result: CaseResult) -> list[Check]:
         )
     )
 
-    base = frame["기본요금 절감액(원)"]
+    base = frame[BASE_SAVING]
     increments = base.diff().dropna()
     monotonic = bool(base.is_monotonic_increasing)
     # 포화 — 마지막 증분이 첫 증분보다 작아야 한다. 피크를 다 깎으면 더 줄지 않는다.
@@ -124,7 +127,7 @@ def _sensitivity_checks(result: CaseResult) -> list[Check]:
     if frame.empty:
         return []
 
-    generation = frame[frame["지표"] == "발전량(kWh)"]
+    generation = frame[frame["지표"] == GENERATION]
     worst = 0.0
     for _, row in generation.iterrows():
         high, low = float(row["범위 상한"]), float(row["범위 하한"])
@@ -153,7 +156,7 @@ def _sensitivity_checks(result: CaseResult) -> list[Check]:
         )
     )
 
-    base_fee = frame[frame["지표"] == "기본요금 절감액(원)"]
+    base_fee = frame[frame["지표"] == BASE_SAVING]
     tops = sorted({str(value) for value in base_fee["상한 시나리오"]})
     checks.append(
         Check(
@@ -253,7 +256,7 @@ def _measure_checks(result: CaseResult) -> list[Check]:
 
     switch = rows.get("7.1 선택요금 전환")
     if switch is not None:
-        value = float(switch["절감액(원)"] or 0.0)  # type: ignore[arg-type]
+        value = float(switch[SAVING] or 0.0)  # type: ignore[arg-type]
         checks.append(
             Check(
                 label,
@@ -265,7 +268,7 @@ def _measure_checks(result: CaseResult) -> list[Check]:
 
     power_factor = rows.get("7.4 역률 개선 (92→97%)")
     if power_factor is not None:
-        value = float(power_factor["절감액(원)"] or 0.0)  # type: ignore[arg-type]
+        value = float(power_factor[SAVING] or 0.0)  # type: ignore[arg-type]
         expected = result.baseline.total_base_won * 0.01
         checks.append(
             Check(
@@ -313,7 +316,7 @@ def _cross_case_checks(study: CaseStudy, capacity: float = 1_000.0) -> list[Chec
     def base_share(key: str) -> float:
         """절감액 가운데 기본요금이 차지하는 비중. 피크 저감의 몫이다."""
         frame = _pv(study.find(key))
-        base = float(frame.loc[capacity, "기본요금 절감액(원)"])
+        base = float(frame.loc[capacity, BASE_SAVING])
         total = float(frame.loc[capacity, "총 절감액(원)"])
         return base / total if total else 0.0
 
@@ -387,9 +390,7 @@ def _cross_case_checks(study: CaseStudy, capacity: float = 1_000.0) -> list[Chec
     def energy_share(key: str) -> float:
         result = study.find(key)
         frame = _pv(result)
-        return (
-            float(frame.loc[capacity, "전력량요금 절감액(원)"]) / result.baseline.total_energy_won
-        )
+        return float(frame.loc[capacity, ENERGY_SAVING]) / result.baseline.total_energy_won
 
     c4_energy, c1_energy = energy_share("C4"), energy_share("C1")
     checks.append(

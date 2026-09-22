@@ -34,9 +34,16 @@ from kwise.quality import QualityReport
 from kwise.tariff import BillingOptions, BillingResult, TariffSelection, TariffTable
 
 __all__ = [
+    "ANNUAL_SAVING",
+    "BASE_SAVING",
+    "ENERGY_SAVING",
+    "GENERATION",
+    "METRIC_LABELS",
     "RANGE_METRICS",
+    "SAVING",
     "SCENARIO_NAME_CAVEAT",
     "SENSITIVITY_NOTE",
+    "SURPLUS",
     "SensitivityRange",
     "sensitivity_comparison",
     "sensitivity_range_frame",
@@ -70,14 +77,31 @@ SCENARIO_NAME_CAVEAT = (
     "정합니다.** 그래서 결과를 세 값의 나열이 아니라 범위로 표시합니다."
 )
 
+# **열쇠와 보이는 이름을 뗀다** (S220 2절). 아래 글자는 **열쇠**다 — 원자료 표의 열
+# 이름이자 범위의 지표 이름이고, 판정(`report.validity`)과 케이스 스터디가 이 글자로
+# 찾는다. **열쇠 글자는 여기에만 적는다** — 만드는 쪽과 읽는 쪽이 이 상수를 본다.
+# 산출물에 서는 이름은 :data:`METRIC_LABELS` 다.
+BASE_SAVING = "기본요금 절감액(원)"
+ENERGY_SAVING = "전력량요금 절감액(원)"
+SAVING = "절감액(원)"
+ANNUAL_SAVING = "12개월 환산 절감액(원)"
+GENERATION = "발전량(kWh)"
+SURPLUS = "잉여(kWh)"
+
+#: 보이는 이름. **기간 값에 「기간」 을 단다** (S219 규칙 다) — 같은 표에 12개월 환산
+#: 절감액이 함께 선다. 여기 없는 열쇠는 그대로 낸다.
+METRIC_LABELS: dict[str, str] = {
+    key: f"기간 {key}" for key in (BASE_SAVING, ENERGY_SAVING, SAVING, GENERATION, SURPLUS)
+}
+
 # 범위로 낼 지표. (열 이름, 단위 표기, 소수 자리)
 RANGE_METRICS: tuple[tuple[str, str, int], ...] = (
-    ("기본요금 절감액(원)", "원", 0),
-    ("전력량요금 절감액(원)", "원", 0),
-    ("절감액(원)", "원", 0),
-    ("12개월 환산 절감액(원)", "원", 0),
+    (BASE_SAVING, "원", 0),
+    (ENERGY_SAVING, "원", 0),
+    (SAVING, "원", 0),
+    (ANNUAL_SAVING, "원", 0),
     ("요금적용전력(kW)", "kW", 1),
-    ("발전량(kWh)", "kWh", 0),
+    (GENERATION, "kWh", 0),
     ("회수기간(년)", "년", 1),
 )
 
@@ -108,6 +132,11 @@ class SensitivityRange:
         scale = max(abs(self.low), abs(self.high))
         return (self.high - self.low) / scale if scale > 0 else 0.0
 
+    @property
+    def label(self) -> str:
+        """산출물에 서는 이름. :attr:`metric` 은 열쇠다 (S220 2절)."""
+        return METRIC_LABELS.get(self.metric, self.metric)
+
     def range_text(self) -> str:
         """지표 이름을 뺀 값과 범위. **이름은 부르는 쪽이 붙인다** (25세션 3절).
 
@@ -128,8 +157,8 @@ class SensitivityRange:
     def text(self) -> str:
         """``기본요금 절감액 31,518,402원 (프로파일 감도 범위 28,968,918 ~ 32,657,891원)``."""
         if self.base is None:
-            return f"{self.metric}: 미산출"
-        return f"{self.metric} {self.range_text()}"
+            return f"{self.label}: 미산출"
+        return f"{self.label} {self.range_text()}"
 
 
 def _held_selection(
@@ -213,15 +242,13 @@ def sensitivity_comparison(
             {
                 "시나리오": label,
                 "첨예도 s": sharpness,
-                "발전량(kWh)": result.generation_kwh,
-                "잉여(kWh)": result.surplus_kwh,
+                GENERATION: result.generation_kwh,
+                SURPLUS: result.surplus_kwh,
                 "요금적용전력(kW)": result.billing_demand_kw,
-                "기본요금 절감액(원)": baseline_bill.total_base_won - result.bill.total_base_won,
-                "전력량요금 절감액(원)": (
-                    baseline_bill.total_energy_won - result.bill.total_energy_won
-                ),
-                "절감액(원)": result.saving_won,
-                "12개월 환산 절감액(원)": result.annual_saving_won,
+                BASE_SAVING: baseline_bill.total_base_won - result.bill.total_base_won,
+                ENERGY_SAVING: baseline_bill.total_energy_won - result.bill.total_energy_won,
+                SAVING: result.saving_won,
+                ANNUAL_SAVING: result.annual_saving_won,
                 "투자비(원)": result.investment_won,
                 "회수기간(년)": result.payback_years,
             }
@@ -280,7 +307,7 @@ def sensitivity_range_frame(
     """산출물에 싣는 감도 표. **3열 나열이 아니라 범위다.**"""
     rows = [
         {
-            "지표": item.metric,
+            "지표": item.label,
             "기준값": item.base,
             "범위 하한": item.low,
             "범위 상한": item.high,

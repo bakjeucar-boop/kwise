@@ -314,8 +314,10 @@ class ComparisonResult:
                 "조합": item.name,
                 "요금제": option_label(item.selection.option),
                 "수단": ", ".join(item.measure_labels) or "—",
-                "요금(원)": item.total_won,
-                "절감액(원)": item.saving_won,
+                # **기간 값에 「기간」 을 단다** (S219 규칙 다 · S220 2절) — 곁에 12개월
+                # 환산 절감액이 선다. 이 열을 읽는 코드는 없다(Excel 「조합 비교」 가 싣기만).
+                "기간 요금(원)": item.total_won,
+                "기간 절감액(원)": item.saving_won,
                 "12개월 환산 절감액(원)": item.annual_saving_won,
                 "투자비(원)": item.investment_won,
                 "회수기간(년)": item.payback_years,

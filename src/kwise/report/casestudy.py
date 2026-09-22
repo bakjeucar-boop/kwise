@@ -51,6 +51,9 @@ from kwise.compare import (
     sensitivity_comparison,
     sensitivity_ranges,
 )
+
+# 판정(`report.validity`)이 읽는 열쇠다 — 글자는 감도 모듈 한 자리에 있다 (S220 2절).
+from kwise.compare.sensitivity import BASE_SAVING, ENERGY_SAVING, GENERATION, SAVING, SURPLUS
 from kwise.diagnose import ContractInfo, Diagnosis, diagnose
 from kwise.io import UsageData, load_usage
 from kwise.measures import (
@@ -664,16 +667,16 @@ def run_one_case(
             {
                 "케이스": definition.label,
                 "용량(kWp)": capacity,
-                "발전량(kWh)": point.generation_kwh,
+                GENERATION: point.generation_kwh,
                 "자가소비율(%)": (
                     point.self_consumption_ratio * 100.0
                     if point.self_consumption_ratio is not None
                     else None
                 ),
-                "잉여(kWh)": point.surplus_kwh,
+                SURPLUS: point.surplus_kwh,
                 "요금적용전력(kW)": point.billing_demand_kw,
-                "기본요금 절감액(원)": point.base_saving_won,
-                "전력량요금 절감액(원)": point.energy_saving_won,
+                BASE_SAVING: point.base_saving_won,
+                ENERGY_SAVING: point.energy_saving_won,
                 "총 절감액(원)": point.total_saving_won,
                 "12개월 환산(원)": point.annual_saving_won,
                 "투자비(원)": point.investment_won,
@@ -750,7 +753,7 @@ def run_one_case(
         {
             "케이스": definition.label,
             "수단": "7.1 선택요금 전환",
-            "절감액(원)": switch.saving_won,
+            SAVING: switch.saving_won,
             "12개월 환산(원)": switch.annual_saving_won,
             "확실성": str(switch.certainty),
             "비고": f"{switch.current.selection.option} → {switch.best.selection.option}",
@@ -758,7 +761,7 @@ def run_one_case(
         {
             "케이스": definition.label,
             "수단": "7.2 계약전력 조정",
-            "절감액(원)": diagnosis.summary.contract_saving_won,
+            SAVING: diagnosis.summary.contract_saving_won,
             "12개월 환산(원)": None,
             "확실성": "높음",
             "비고": (
@@ -772,7 +775,7 @@ def run_one_case(
         {
             "케이스": definition.label,
             "수단": "7.4 역률 개선 (92→97%)",
-            "절감액(원)": power_factor.saving_won,
+            SAVING: power_factor.saving_won,
             "12개월 환산(원)": power_factor.annual_saving_won,
             "확실성": str(power_factor.certainty),
             "비고": "요금표와 약관만으로 확정",
@@ -790,7 +793,7 @@ def run_one_case(
         {
             "케이스": definition.label,
             "수단": "7.6 ESS",
-            "절감액(원)": chosen.annual_saving_won if chosen is not None else None,
+            SAVING: chosen.annual_saving_won if chosen is not None else None,
             "12개월 환산(원)": None,
             "확실성": "중간~낮음",
             "비고": _ess_remark(ess, diagnosis.peak.billing_demand_kw),
@@ -803,7 +806,7 @@ def run_one_case(
             {
                 "케이스": definition.label,
                 "수단": "7.3 경제성DR",
-                "절감액(원)": None,
+                SAVING: None,
                 "12개월 환산(원)": None,
                 "확실성": str(response.certainty),
                 "비고": (

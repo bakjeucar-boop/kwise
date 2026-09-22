@@ -25,6 +25,7 @@ from kwise.compare import (
     ComparisonResult,
     sensitivity_range_frame,
 )
+from kwise.compare.sensitivity import METRIC_LABELS
 from kwise.diagnose import Diagnosis
 from kwise.diagnose.dr import JUDGE_WINDOW
 from kwise.io import UsageData
@@ -302,11 +303,18 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
         groups.append(("품질·진단", diagnosis.notices))
     if sections.comparison is not None:
         groups.append(("조합", sections.comparison.notices))
+    # **묶음을 넘어 같은 글자의 행은 처음 것만 둔다** (S220 2절). 「품질·진단」 묶음이
+    # 「요금」 묶음의 안내를 같은 글자로 되풀이했다 — ``dedupe`` 는 묶음 안에서만
+    # 거른다. **등급과 글자가 한 자도 안 다른 행만 접는다** — 사실 ID 로 넓히지
+    # 않는다(글자가 다른 안내가 걸러질 수 있다).
+    shown: set[tuple[str, str]] = set()
     for label, notices in groups:
         for item in dedupe(notices):
             # 위 「필수 안내」 줄과 같은 안내다 (S182 4-3). **글자가 아니라 사실
             # ID 로 견준다** (S210 2절) — 바로 윗줄이 이미 그 잣대다.
-            if item.fact != MARGIN_FACT:
+            key = (str(item.severity), item.text)
+            if item.fact != MARGIN_FACT and key not in shown:
+                shown.add(key)
                 rows.append((f"안내 · {item.severity}", label, item.text))
     return rows
 
@@ -563,7 +571,8 @@ def measure_summary_frame(
                         else UNPRICED_REASONS["no_saving"]
                     ),
                     "비고": (
-                        f"연 {arbitrage.won_per_kwh_year:,.0f} 원/kWh · "
+                        # 「연」 을 안 쓴다 (S214) — 12개월 환산값이다 (S220 2절).
+                        f"12개월 환산 {arbitrage.won_per_kwh_year:,.0f} 원/kWh · "
                         f"평일 {arbitrage.cycles_per_day:g} 사이클 · 계시별 단가는 요금표에서 "
                         "가져왔습니다. "
                         + (
@@ -592,9 +601,11 @@ def solar_curve_sheet(curve: SolarCurve) -> pd.DataFrame:
     rows = [
         {
             "용량(kWp)": point.capacity_kwp,
-            "발전량(kWh)": point.generation_kwh,
-            "자가소비(kWh)": point.self_consumed_kwh,
-            "잉여(kWh)": point.surplus_kwh,
+            # **기간 값에 「기간」 을 단다** (S219 규칙 다 · S220 2절) — 곁에 「12개월
+            # 환산(원)」 이 선다. 이 머리를 읽는 코드는 없다.
+            "기간 발전량(kWh)": point.generation_kwh,
+            "기간 자가소비(kWh)": point.self_consumed_kwh,
+            "기간 잉여(kWh)": point.surplus_kwh,
             "자가소비율": point.self_consumption_ratio,
             "요금적용전력(kW)": point.billing_demand_kw,
             # **기본요금 절감이 늘다 마는 까닭을 가리킨다** (S126 · ②-26).
@@ -602,9 +613,9 @@ def solar_curve_sheet(curve: SolarCurve) -> pd.DataFrame:
             # 그 수를 안 적으면 읽는 사람이 「태양광이 효과 없다」 로 읽는다.
             # 하한 값(kW)은 「진단 요약」 시트의 「요금적용전력 하한」 이 낸다.
             "하한 걸린 달": point.floor_bound_months,
-            "기본요금 절감(원)": point.base_saving_won,
-            "전력량요금 절감(원)": point.energy_saving_won,
-            "총 절감액(원)": point.total_saving_won,
+            "기간 기본요금 절감(원)": point.base_saving_won,
+            "기간 전력량요금 절감(원)": point.energy_saving_won,
+            "기간 총 절감액(원)": point.total_saving_won,
             "12개월 환산(원)": point.annual_saving_won,
             "투자비(원)": point.investment_won,
             "회수기간(년)": point.payback_years,
@@ -849,7 +860,8 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
         # **범위로 보여 준다.** 3열 나열은 근거표(감도 상세)로 내린다 (9.2).
         if "첨예도 s" in sections.sensitivity.columns:
             sheets["감도"] = sensitivity_range_frame(sections.sensitivity)
-            sheets["감도 상세"] = sections.sensitivity
+            # 원자료 열 이름은 열쇠다 — 보이는 이름으로 바꿔 싣는다 (S220 2절).
+            sheets["감도 상세"] = sections.sensitivity.rename(columns=METRIC_LABELS)
         else:
             sheets["감도"] = sections.sensitivity
     # **표기는 한 문에서 한다** (S161 2절). 절사 뒤에 :func:`display_frame` 이

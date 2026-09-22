@@ -1792,7 +1792,7 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
         # **범위로 적는다. 3열 나열을 하지 않는다** (9.2).
         rows = [["지표", "기준값과 범위"]]
         rows.extend(
-            [item.metric, item.text()] for item in sections.sensitivity if item.base is not None
+            [item.label, item.text()] for item in sections.sensitivity if item.base is not None
         )
         _add_table(document, rows)
         _para(document, SCENARIO_NAME_CAVEAT)
