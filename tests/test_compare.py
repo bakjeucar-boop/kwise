@@ -744,7 +744,11 @@ def test_감도_열쇠_글자는_한_자리에만_선다() -> None:
     seen: Counter[tuple[str, str]] = Counter()
     for path in files:
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.Constant) and node.value in keys:
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and node.value in keys
+            ):
                 seen[(path.name, node.value)] += 1
     assert seen == Counter({("sensitivity.py", key): 1 for key in keys}), seen
     # 보이는 이름은 열쇠와 다르다 — 같으면 뗀 것이 아니다.

@@ -721,13 +721,17 @@ def test_12개월_환산값_자리가_네_산출물에서_연이라_말하지_�
     # 12개월 환산값이 선 표에서 기간 값 머리((원) · (kWh))는 「기간」 으로 시작한다 —
     # Excel 용량 곡선 · 조합 비교 · 감도 상세 머리 · 감도 지표와 표시 칸 · Word 감도 표.
     def 기간값(name: str) -> bool:
-        return name.endswith(("(원)", "(kWh)")) and "12개월 환산" not in name and name != "투자비(원)"
+        money = name.endswith(("(원)", "(kWh)")) and name != "투자비(원)"
+        return money and "12개월 환산" not in name
 
-    for sheet, 첫 in (("태양광 용량 곡선", "용량(kWp)"), ("조합 비교", "조합"), ("감도 상세", "시나리오")):
+    표머리 = (("태양광 용량 곡선", "용량(kWp)"), ("조합 비교", "조합"), ("감도 상세", "시나리오"))
+    for sheet, 첫 in 표머리:
         cells = next((row[2:] for row in 쪽["Excel"] if row[1] == sheet and row[2:3] == [첫]), [])
         if not any("12개월 환산" in cell for cell in cells):
             어긋.append(f"Excel {sheet} 머리에 12개월 환산 열이 없다 {cells}")
-        어긋 += [f"Excel {sheet} 머리 {c}" for c in cells if 기간값(c) and not c.startswith("기간 ")]
+        어긋 += [
+            f"Excel {sheet} 머리 {c}" for c in cells if 기간값(c) and not c.startswith("기간 ")
+        ]
     감도 = [("Excel 감도", row[2], row[-1]) for row in 쪽["Excel"] if row[1] == "감도"]
     감도 += [
         ("Word 감도 표", row[2], row[3])

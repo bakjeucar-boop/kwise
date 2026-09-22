@@ -605,6 +605,39 @@ large-b-over 가 문다) · ④ **Excel 요약에 같은 등급 · 같은 글자
 **3-7. 원복** — plugin 은 파일을 안 건드렸다 · `git status` 는 이 절이 고친 시험 셋(`test_base_fee_basis_words.py` +63 −1 · `test_compare.py` +48 −2 ·
 `test_report.py` +3 −3)과 기록뿐.
 
+### 4절 — 회귀 (13:52 ~ 14:04 · pytest 6분 02초 · 오염된 판)
+
+**4-1. 계산 폴더 여섯 — `compare\` 둘 · `measures\` 둘 · 나머지 넷(diagnose · io · pv · tariff) 0줄**(`git diff --numstat 9f796f6 HEAD`).
+- `compare\sensitivity.py` +43 −16 — 열쇠 상수 여섯 · 이름표 · `label` · `text()` 와 감도 지표가 이름표를 본다 · 원자료 표 여섯 줄은 **열쇠 글자를 상수로만
+  갈았다**(식 `result.generation_kwh` · `baseline_bill.total_base_won − result.bill.total_base_won` · `baseline_bill.total_energy_won − result.bill.total_energy_won`
+  · `result.saving_won` · `result.annual_saving_won` · `result.surplus_kwh` 는 한 글자도 안 바뀌었다 — 전력량요금 줄은 괄호와 줄바꿈을 걷었다).
+- `compare\combination.py` +4 −2 — 조합 비교 머리 둘 · 주석 둘(식 `item.total_won` · `item.saving_won` 그대로).
+- `measures\solar.py` +3 −2 — 경고 글자 「기간 」 · 주석(금액 식 세 줄 그대로).
+- `measures\arbitrage.py` +3 −1 — 알림 글자 「12개월 환산 」 · 주석(`per_kwh_year` 식 그대로).
+- **값을 만드는 줄 0** — 바뀐 줄은 다 열 이름 · 표시 글자 · 주석이다.
+
+**4-2. pytest 통째 한 판** — `run_tool pytest tests -n auto --dist load -rf --tb=no --durations=0`(**지시서 명령 그대로 · 플래그 더하지 않음**) ·
+`pytest_counts --base 1820`: **1,817 passed · 4 xfailed · failed 0 · error 0 · skip 0 · 합 1,821**(수집 줄은 `-q` + xdist 라 안 나온다 · 앞 판 1,820 → **+1 = 새 못**) ·
+경고 1(`io\usage.py:350` dateutil 추론 — 이 판 자리 밖). **첫 판이 초록이라 둘째 판을 안 돌렸다.** 그 뒤 고친 것은 이 판 시험 둘의 **줄 모양뿐**(정적 검사가 짚은
+줄 길이 · `ast.Constant` 값에 `isinstance(…, str)` 하나) — 두 파일을 다시 돌려 **40 passed · 2 xfailed**(`…140332.txt` · 그 뒤 빈칸 하나를 되살린 편집은 모양뿐).
+
+**4-3. 소요 — 6분 02초**(pytest 362.71초 · 도구 363.9초 · 13:52:34 ~ 13:58:38) · 1번 PC · 일꾼 8(`auto` = `cpu_count` · 출력에 일꾼 줄 없음) · 남의 python —
+**판 앞 0(13:08) · 회귀 앞 2(13:52 · PID 8120 · 22680 — `site-energy` 의 `pytest tests/test_dispatch_measured.py -k not_worse_than_rules_measured`) · 뒤 2(13:58 ·
+PID 6928 · 11656 — `site-energy` 의 `pytest tests/test_dispatch.py::… tests/test_report.py::… tests/test_app_startup_fuel.py`)** — **오염된 판 · 견주는 데 쓰지
+않는다.** 상한 8분까지 **1분 58초 남는다**. 도구 합 2,064.17초 · 가장 긴 단계 235.06초(`test_casestudy.py::test_every_validity_check_passes` setup) · 파일별
+`test_ui_screen` 707.2 · `test_ess_cost` 267.7 · `test_casestudy` 236.5 · `test_integration` 234.7초(스크래치 `s220_dur.py`). 방향만 — 이 PC 앞 깨끗하고 플래그 없는
+판 S218(1,820건 5분 40초)보다 22초 길다 · 오염 몫을 가르지 않았다.
+
+**4-4. 화면 감사 — 955 · 806 · 962 · 807 · 위반 없음 · 중복 5·4·5·4 · 18,320자 — 0-10 과 같다**(2-6 판 13:39 · 그 뒤 `src\` 0줄). 이 판 화면 자리는 감사에 0곳(2-6).
+
+**4-5. 케이스 스터디 — 174/174 · 기상 취득 0회**(②·③·④ 까지 든 판 · `cs_after2\` · 도구 151.0초 / 도구가 적은 전체 140.9초 · 저장소 `output\` 를 안 덮었다).
+칸 단위(fillna 뒤 · `s220_cs.py`) — 시트 여덟 같다 · **맞댄 칸 4,317 · 갈린 칸 25 가 다 소요**(케이스 「소요(초)」 12 · 성능 「값」 13) — **판정 174 전수(판정 시트)
+· 회귀값 여덟 포함 소요 밖 0.** 2-2 판(① 만)도 같다.
+
+**4-6. 정적 다섯 — 0-14 기준과 같다**(S220.md 앉히기 전 · 통째로) — `ruff check .` 통과 · `format` 어긋남 **9** · 통과 **276** · 맨 `mypy` **10건**(174파일) ·
+`mypy tests tools` **36건**(63파일) · `scan_ctrl` **0곳**. **첫 판은 흔들렸다** — 이 판 시험이 `ruff` 3 · `format` +1(뒤에 빈칸 하나를 먹은 편집으로 +1 더) · `mypy`
++1 을 냈다 · 고쳐 기준으로 돌렸다.
+
 ---
 ## 오늘 (2026-09-22) 219세션 — **표시 규칙 하나로 ㅅ 뿌리를 끝까지 닫는다**
 
