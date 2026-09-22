@@ -575,6 +575,37 @@ large-b PPT 13장 「… 279,229,000원/년」 · Word 3.5 같은 줄 · Excel �
 
 **3-6. 원복** — plugin 은 파일을 안 건드렸다 · `git status` 는 이 절이 고친 시험 여섯과 기록뿐.
 
+### 4절 — 회귀 (12:34 ~ 12:44 · pytest 5분 12초)
+
+**4-1. 계산 폴더 여섯 — `measures\` 하나 · +4 −1**(`git diff --stat 6612e02 HEAD -- src/kwise/{compare,diagnose,io,measures,pv,tariff}`).
+갈린 줄은 `measures\solar.py` 경고 f-string 한 조각을 둘로 나눠 「기간 」 을 넣은 줄 둘과 주석 둘 — **값을 만드는 줄 0**(금액 식
+`largest.power_factor_extra_won` · `total_saving_won` · `saving_after_power_factor_won` 세 줄은 앞뒤 같다). 나머지 다섯(compare · diagnose · io · pv ·
+tariff) **0줄**. `src\` 의 그 밖은 `report\` 셋(`document.py` · `excel.py` · `narrative.py`) · `ui\views\measures.py` — 이름·서식·표시 인자뿐.
+
+**4-2. pytest 통째 한 판** — `run_tool pytest tests -n auto --dist load -rf --tb=no --durations=0 -p no:logging` · `pytest_counts --base 1820`:
+**1,813 passed · 1 failed · 4 xfailed · 2 errors · skip 0 · 합 1,820**(수집 줄은 `-q` + xdist 라 안 나온다 · 결과 합 = 앞 판 1,820 · 새 못 0).
+- **failed 1** — `test_artifact_words.py::test_기간_값을_적는_자리에_기간_이름이_선다`: `'report/document.py 「기간 절감액」 3 ≠ 2'` — 소스 조각을
+  세는 옛 못이 `_measure_saving_label` 의 「기간 절감액」 하나를 더 셌다. 기대 수를 3 으로 갈고(주석 한 줄) 그 파일을 다시 돌려 통과.
+- **errors 2** — `test_ui_screen.py::test_산출물을_못_만들면_예외가_traceback_까지_남는다` · `test_document.py::test_한글_폰트가_없어도_멈추지_않는다`:
+  `fixture 'caplog' not found` — **이 판이 붙인 `-p no:logging`(경고 줄을 줄이려던 것)이 `caplog` 를 껐다.** 플래그 없이 둘을 다시 돌려 통과(`--lf` 로 찾았다).
+- 고친 뒤 셋 · 그 파일(`test_artifact_words.py` 여섯)을 합쳐 **8 passed** — 전체를 다시 돌리지는 않았다(상한 한 판). 그래서 **이 판 수는 1,816 passed ·
+  4 xfailed · skip 0 · 합 1,820 으로 적되, 통째 한 판이 초록이었던 것이 아니다.**
+
+**4-3. 소요 — 5분 12초**(pytest 312.05초 · 도구 313.2초 · 12:34:25 ~ 12:39:39) · 1번 PC · 일꾼 8 · 남의 python **판 앞 2 → 0(11:55) · 회귀 앞 0(12:34) ·
+뒤 0(12:40)** — **깨끗한 판**(세는 자리 셋이 다 0 · 판 앞 첫 셈 둘은 둘째 셈 전에 끝났다). 상한 8분까지 **2분 48초 남는다**. 도구 합 1,831.10초 · 가장 긴
+단계 208.42초(`test_casestudy.py::test_every_validity_check_passes` setup) · 파일별 `test_ui_screen` 665.6 · `test_ess_cost` 232.6 · `test_casestudy` 209.7 ·
+`test_integration` 196.2초(스크래치 `s219_dur.py`). 이 PC 앞 깨끗한 판 S218(1,820건 5분 40초)보다 28초 짧다 — 같은 건수 · 한 판이라 방향만 적는다.
+**다만 이 판은 `-p no:logging` 이 붙어 앞 판과 명령이 같지 않다**(로그 붙잡기를 뺐다) — 견주는 데 그 차를 적는다.
+
+**4-4. 화면 감사 — 955 · 806 · 962 · 807 · 위반 없음 · 중복 5·4·5·4 — 0-9 와 같다**(2-6 판 12:23 · 그 뒤 `src\` 0줄 · 33.7초). 이 판 자리는 감사에 0곳(2-6).
+
+**4-5. 케이스 스터디 — 174/174 · 기상 취득 0회** · 도구 136.5초 / 도구가 적은 전체 127.2초 · 스크래치 `cs\` 에 냈다(저장소 `output\casestudy_20260922.xlsx`
+를 안 덮었다). 칸 단위로(fillna 뒤 · `s219_cs.py`) — 시트 여덟 같다 · **맞댄 칸 4,317 · 갈린 칸 25 가 다 소요**(케이스 「소요(초)」 12 · 성능 「값」 13) —
+**회귀값 여덟 포함 소요 밖 0.**
+
+**4-6. 정적 다섯 — 0-13 기준과 같다**(S219.md 앉히기 전 · 통째로) — `ruff check .` 통과 · `format` 어긋남 **9** · 통과 **275** · 맨 `mypy` **10건**(174파일) ·
+`mypy tests tools` **36건**(63파일) · `scan_ctrl` **0곳**. 이 판 첫 판에 흔들림 없음(한 판).
+
 ## 오늘 (2026-09-22) 218세션 — **사람이 정한 두 결정으로 ㅅ 뿌리를 마무리한다 — 수단 장 「절감액」 과 기온 「연평균」**
 
 **이 판은 글자 판이다. 금액 0 이다. 1번 PC 판이다.** 사람이 둘을 정했다 — ① PPT 수단 장에 이름 없이

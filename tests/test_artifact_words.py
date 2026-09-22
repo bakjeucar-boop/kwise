@@ -232,7 +232,8 @@ PERIOD_NAME_PIECES: tuple[tuple[str, str, int], ...] = (
     ("report/document.py", "총 절감액", 0),
     ("report/document.py", "예상 기간 절감액", 1),
     ("report/document.py", "예상 절감액", 0),
-    ("report/document.py", "기간 절감액", 2),
+    # S219 에 Word 3장 수단 칸 이름(`_measure_saving_label`)이 하나 더했다 (규칙 다).
+    ("report/document.py", "기간 절감액", 3),
     ("report/document.py", "-1. 조합별 기간 절감액과 투자비", 1),
     ("report/document.py", "-1. 조합별 절감액과 투자비", 0),
     # Excel 요약 · 진단 (X1 · X2)
