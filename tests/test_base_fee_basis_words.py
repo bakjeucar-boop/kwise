@@ -428,6 +428,10 @@ def test_덱_그물이_네_산출물을_실물에서_담는다(rendered: Rendere
     ):
         assert want <= 갈래[name], (name, sorted(갈래[name]))
         assert "못 뜬 그림" not in 갈래[name], f"{name} 에 가로채지 못한 그림이 있다"
+    # 셀 때 자리 칸(차트 제목)을 줄마다 세지 않는다 (S217 7절 — 「왼쪽이 절감」 19 → 178 이었다).
+    제목 = f"{deck_words.FIGURE}화면01 기간 현행 대비 (만원) — 왼쪽이 절감"
+    가짜 = [["화면", 제목, "범례", "절감"]]
+    assert not deck_words.count_words({"벌": 가짜}, ["왼쪽이 절감"])["왼쪽이 절감"]
     # 실물 글자 — 월별 최대수요 그림의 범례(`figures.monthly_peak_png`)는 PPT·Word 가 다 싣는다.
     for name in ("PPT", "Word"):
         assert [r for r in rendered.figures if r[0] == name and r[3] == "요금적용 대상 최대"], name

@@ -451,13 +451,17 @@ def snap(picked: list[str] | None = None) -> dict[str, list[list[str]]]:
 
 
 def count_words(data: dict[str, list[list[str]]], words: list[str]) -> dict[str, Counter[str]]:
-    """낱말마다 «벌 → 그 벌에서 선 자리 수»."""
+    """낱말마다 «벌 → 그 벌에서 선 자리 수».
+
+    **그림 안 줄은 글자 칸만 센다** (S217 7절). 자리 칸에 차트 제목이 들어 있어 통째로
+    세면 그 그림의 줄마다 제목이 한 번씩 세졌다 — 「왼쪽이 절감」 19 → 178.
+    """
     return {
         word: Counter(
             {
                 key: hits
                 for key, rows in data.items()
-                if (hits := sum(word in text_of(row) for row in rows))
+                if (hits := sum(word in (row[-1] if inside(row) else text_of(row)) for row in rows))
             }
         )
         for word in words
