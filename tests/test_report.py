@@ -602,8 +602,8 @@ def test_sheet_saving_is_recalculated_not_summed(
     재계산 결과라는 것을 여기서 못 박는다 (요구사항서 8장).
     """
     frame = sample_sheets["조합 비교"]
-    switch_only = float(frame.loc["선택요금 전환", "절감액(원)"])
-    combined = float(frame.loc["+ 태양광 500 kWp", "절감액(원)"])
+    switch_only = float(frame.loc["선택요금 전환", "기간 절감액(원)"])
+    combined = float(frame.loc["+ 태양광 500 kWp", "기간 절감액(원)"])
 
     pv_only = evaluate_combination(
         sample_usage,
@@ -622,7 +622,7 @@ def test_sheet_saving_is_recalculated_not_summed(
 
 def test_baseline_row_has_no_saving(sample_sheets: dict[str, pd.DataFrame]) -> None:
     baseline = sample_sheets["조합 비교"].loc["기준선 (현행)"]
-    assert float(baseline["절감액(원)"]) == pytest.approx(0.0)
+    assert float(baseline["기간 절감액(원)"]) == pytest.approx(0.0)
     assert float(baseline["투자비(원)"]) == pytest.approx(0.0)
 
 

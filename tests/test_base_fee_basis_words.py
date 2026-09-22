@@ -27,7 +27,7 @@ import io
 import json
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -594,6 +594,11 @@ def test_12개월_환산값_자리가_네_산출물에서_연이라_말하지_�
 
     **S216 에 꼬리표 「/년」 을 더 문다** — 이름이 곁에 있는 지표·표 칸에 다시 서면
     빨갛고, 이름 없는 지표에서 다 사라져도 빨갛다.
+
+    **S220 에 넷을 더 문다** — 12개월 값이 선 표(Excel 용량 곡선 · 조합 비교 · 감도 ·
+    감도 상세 · Word 감도 표)의 기간 값 머리에 「기간」 · 경고의 역률요금 증가액에
+    「기간」 · 차익거래 1 kWh 당 수익에 「연」 이 아니라 「12개월 환산」 · Excel 요약에
+    같은 글자의 안내 행이 둘 이상 서지 않는다.
     """
     deck_words = _deck_words()
     쪽 = {
@@ -711,6 +716,63 @@ def test_12개월_환산값_자리가_네_산출물에서_연이라_말하지_�
     for cells in 수단표:
         if cells[0].startswith("경제성DR") and cells[기간열] != "—":
             어긋.append(f"Excel 경제성DR 기간 열 {cells[기간열]} (12개월 열 {cells[환산열]})")
+
+    # **S220 — 열쇠를 뗀 표 머리와 남은 자리** (규칙 다 · 나 · 사람이 정했다).
+    # 12개월 환산값이 선 표에서 기간 값 머리((원) · (kWh))는 「기간」 으로 시작한다 —
+    # Excel 용량 곡선 · 조합 비교 · 감도 상세 머리 · 감도 지표와 표시 칸 · Word 감도 표.
+    def 기간값(name: str) -> bool:
+        return name.endswith(("(원)", "(kWh)")) and "12개월 환산" not in name and name != "투자비(원)"
+
+    for sheet, 첫 in (("태양광 용량 곡선", "용량(kWp)"), ("조합 비교", "조합"), ("감도 상세", "시나리오")):
+        cells = next((row[2:] for row in 쪽["Excel"] if row[1] == sheet and row[2:3] == [첫]), [])
+        if not any("12개월 환산" in cell for cell in cells):
+            어긋.append(f"Excel {sheet} 머리에 12개월 환산 열이 없다 {cells}")
+        어긋 += [f"Excel {sheet} 머리 {c}" for c in cells if 기간값(c) and not c.startswith("기간 ")]
+    감도 = [("Excel 감도", row[2], row[-1]) for row in 쪽["Excel"] if row[1] == "감도"]
+    감도 += [
+        ("Word 감도 표", row[2], row[3])
+        for row in 쪽["Word"]
+        if row[1].startswith("표") and len(row) > 3 and "프로파일 감도 범위" in row[3]
+    ]
+    assert len({where for where, _, _ in 감도}) == 2, (rendered.key, 감도[:3])
+    어긋 += [
+        f"{where} {name}"
+        for where, name, shown in 감도
+        if 기간값(name) and not (name.startswith("기간 ") and shown.startswith(name + " "))
+    ]
+    # 경고의 역률요금 증가액도 기간 값이다 — 앞 금액에 「기간」.
+    어긋 += [
+        f"{name} 경고 {line}"
+        for name, lines in 경고.items()
+        for line in lines
+        if not re.search(r"역률요금이 기간 [\d,]+원 늘어", line)
+    ]
+    # 차익거래 1 kWh 당 수익은 12개월 환산값이다 — 「연」 이 아니라 이름 (S214 · 규칙 나).
+    차익 = {
+        name: [
+            line
+            for line in 글자[name]
+            if "원/kWh" in line and ("차익거래 단독" in line or "차익거래 잠재" in line)
+        ]
+        for name in ("화면", "Excel", "Word")
+    }
+    if any(차익.values()):
+        assert all(차익.values()), (rendered.key, 차익)
+        어긋 += [
+            f"{name} 차익거래 {line}"
+            for name, lines in 차익.items()
+            for line in lines
+            if re.search(r"(?<![가-힣])연 [\d,]", line)
+            or not re.search(r"12개월 환산 [\d,]+ ?원/kWh", line)
+        ]
+    # Excel 요약 — 같은 등급 · 같은 글자의 안내 행이 둘 이상 서지 않는다 (묶음을 넘어서).
+    안내 = Counter(
+        (row[2], row[-1])
+        for row in 쪽["Excel"]
+        if row[1] == "요약" and row[2:3] and row[2].startswith("안내 · ")
+    )
+    assert 안내, (rendered.key, "Excel 요약에 안내 행이 없다")
+    어긋 += [f"Excel 요약 같은 글자 {n}행 {k[1][:40]}" for k, n in 안내.items() if n > 1]
     assert 어긋 == [], (rendered.key, 어긋)
 
     # **기온 기준선은 관측 길이와 상관없이 「기간 평균」 이다** (S218 · 사람이 정했다).

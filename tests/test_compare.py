@@ -22,6 +22,8 @@ from kwise.compare import (
     sensitivity_range_frame,
     sensitivity_ranges,
 )
+from kwise.compare import sensitivity as sensitivity_module
+from kwise.compare.sensitivity import BASE_SAVING, METRIC_LABELS
 from kwise.io import UsageData
 from kwise.measures import (
     Certainty,
@@ -563,7 +565,7 @@ def test_comparison_frame_has_the_required_columns(
 ) -> None:
     """요구사항서 8장 표 — 조합 | 절감액 | 투자비 | 회수기간 (53세션에 확실성을 뺐다)."""
     frame = sample_comparison.frame()
-    for column in ("절감액(원)", "투자비(원)", "회수기간(년)"):
+    for column in ("기간 절감액(원)", "투자비(원)", "회수기간(년)"):
         assert column in frame.columns
     assert frame.index.name == "조합"
     assert len(frame) == 4
@@ -699,12 +701,54 @@ def test_result_is_shown_as_a_range_not_three_columns(pv_sensitivity: pd.DataFra
     """
     frame = sensitivity_range_frame(pv_sensitivity)
     assert frame.index.name == "지표"
-    row = frame.loc["기본요금 절감액(원)"]
-    detail = pv_sensitivity["기본요금 절감액(원)"]
+    # 지표 칸은 보이는 이름이고 원자료 열은 열쇠다 (S220 2절).
+    row = frame.loc["기간 기본요금 절감액(원)"]
+    detail = pv_sensitivity[BASE_SAVING]
     assert row["범위 하한"] == pytest.approx(detail.min())
     assert row["범위 상한"] == pytest.approx(detail.max())
     assert row["기준값"] == pytest.approx(detail.loc["기준"])
     assert "프로파일 감도 범위" in row["표시"]
+
+
+def test_감도_열쇠_글자는_한_자리에만_선다() -> None:
+    """**판정이 읽는 열쇠는 한 자리에 둔다** (S220 2절).
+
+    감도 원자료의 열 이름이 곧 지표 이름이고, 판정(``report.validity``)과 케이스
+    스터디가 그 글자로 찾는다. 보이는 이름(「기간 …」)을 떼어 낸 뒤로 **열쇠 글자는
+    감도 모듈 상수 하나**다 — 표를 만드는 쪽·읽는 쪽 어디든 글자를 따로 적으면
+    그 자리만 갈려도 판정이 조용히 빈 표를 본다(``지표 == "…"`` 가 0행이면 통과한다).
+
+    **소스의 문자열 상수를 센다** — 만드는 쪽(감도 · 케이스 스터디)과 읽는 쪽(판정 ·
+    Excel · Word). 일별 그림 표처럼 글자만 같은 다른 표는 이 다섯 파일 밖이다.
+    """
+    import ast
+    from collections import Counter
+    from pathlib import Path
+
+    keys = {
+        sensitivity_module.BASE_SAVING,
+        sensitivity_module.ENERGY_SAVING,
+        sensitivity_module.SAVING,
+        sensitivity_module.ANNUAL_SAVING,
+        sensitivity_module.GENERATION,
+        sensitivity_module.SURPLUS,
+    }
+    root = Path(sensitivity_module.__file__).parents[1]
+    files = [
+        root / "compare" / "sensitivity.py",
+        root / "report" / "casestudy.py",
+        root / "report" / "validity.py",
+        root / "report" / "excel.py",
+        root / "report" / "document.py",
+    ]
+    seen: Counter[tuple[str, str]] = Counter()
+    for path in files:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Constant) and node.value in keys:
+                seen[(path.name, node.value)] += 1
+    assert seen == Counter({("sensitivity.py", key): 1 for key in keys}), seen
+    # 보이는 이름은 열쇠와 다르다 — 같으면 뗀 것이 아니다.
+    assert all(METRIC_LABELS[key] != key for key in METRIC_LABELS), METRIC_LABELS
 
 
 def test_range_endpoints_are_not_pinned_to_a_scenario(pv_sensitivity: pd.DataFrame) -> None:
