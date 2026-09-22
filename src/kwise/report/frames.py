@@ -53,6 +53,7 @@ __all__ = [
     "BAND_LABELS",
     "CAPACITY_COLUMNS",
     "CAPACITY_ROWS",
+    "DAY_LOAD_AXIS",
     "DAY_TYPE_LABELS",
     "DR_WINDOW_MEAN",
     "ESS_SPEC_CAPTION",
@@ -1045,6 +1046,13 @@ def power_factor_day_frame(
     frame["역률(%)"] = [current_pct if flag else float("nan") for flag in daytime]
     frame["도입 후 역률(%)"] = [target_pct if flag else float("nan") for flag in daytime]
     return frame
+
+
+#: 대표일 그림(태양광 · ESS · 역률)의 세로축 이름 (S221 2절). 셋 다 **부하**를 그린다 —
+#: 태양광 쪽이 「출력 (kW)」 이라 적었는데 그 그림은 원부하 · 순부하를 그리고 발전 출력
+#: 선은 17세션에 뺐다.
+#: 화면(`ui.charts`)과 PPT·Word(`report.figures`)가 이 이름 하나를 본다.
+DAY_LOAD_AXIS = "부하 (kW)"
 
 
 def solar_day_frame(

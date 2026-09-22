@@ -49,6 +49,7 @@ from kwise.report.days import RepresentativeDay
 from kwise.report.design import ChartPalette, load_design_guide
 from kwise.report.frames import (
     BAND_LABELS,
+    DAY_LOAD_AXIS,
     DAY_TYPE_LABELS,
     DR_WINDOW_MEAN,
     PEAK_ZOOM_HOURS,
@@ -794,7 +795,7 @@ def solar_day_png(
             color=chart_palette().highlight,
             arrowprops={"arrowstyle": "->", "color": chart_palette().highlight},
         )
-    axes.set_ylabel("출력 (kW)")
+    axes.set_ylabel(DAY_LOAD_AXIS)
     axes.set_xlabel(f"{day.title} · 15분")
     time_axis(axes)
     axes.tick_params(axis="x", rotation=45, labelsize=8)
@@ -874,7 +875,7 @@ def ess_day_png(
         high = float(frame["원부하(kW)"].max())
         margin = max((high - low) * 0.15, 1.0)
         axes.set_ylim(low - margin, high + margin)
-    axes.set_ylabel("부하 (kW)")
+    axes.set_ylabel(DAY_LOAD_AXIS)
     axes.set_xlabel(title)
     time_axis(axes)
     axes.tick_params(axis="x", rotation=45, labelsize=8)
@@ -1054,7 +1055,7 @@ def power_factor_day_png(
                 alpha=0.45,
                 label="지상역률 판정 구간",
             )
-    axes.set_ylabel("부하 (kW)")
+    axes.set_ylabel(DAY_LOAD_AXIS)
     axes.set_xlabel(f"{day.title} · 15분")
     time_axis(axes)
     axes.tick_params(axis="x", rotation=45, labelsize=8)

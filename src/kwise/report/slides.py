@@ -66,7 +66,6 @@ from kwise.report.worksheet import COLUMNS
 from kwise.tariff.labels import SEASON_LABELS, option_label
 
 __all__ = [
-    "ANNUAL_BASIS_NOTE",
     "APPENDIX_SLIDE_TITLE",
     "CLOSING_SLIDE_TITLE",
     "DECK_TITLE",
@@ -1471,7 +1470,10 @@ def _build_measure_summary(
     처음 나오는 이 장이 그 자리다.
 
     **금액은 12개월 환산 한 값이다** (2-2). 같은 값을 괄호로 한 번 더 적지 않고,
-    환산 기준이라는 사실은 아래 각주가 한 번 말한다.
+    환산 기준이라는 사실은 표 머리 이름(:data:`SLIDE_SAVING_LABEL`)이 말한다 —
+    **각주 「금액은 12개월 환산 기준입니다」 는 뗐다** (S221 · 사람이 정했다: 이 장의
+    12개월 환산값이 전부 이름이나 「/년」 으로 표시돼 있으면 뗀다 · 큰 글자는 기간 값이고
+    곁 라벨에 「기간」 이 선다).
     """
     geometry = guide.slide
     top = _title(slide, guide, spec.title)
@@ -1515,7 +1517,7 @@ def _build_measure_summary(
     # 「※ 회수기간 = …」 위에 겹쳐 있었다.
     notes = (
         narrative.glossary_note(GLOSSARY_KEYS["measure_summary"]),
-        f"{ANNUAL_BASIS_NOTE} {NOT_INCLUDED_NOTICE} {TRUNCATION_FOOTNOTE}",
+        f"{NOT_INCLUDED_NOTICE} {TRUNCATION_FOOTNOTE}",
     )
     _table(
         slide,
@@ -1532,10 +1534,6 @@ def _build_measure_summary(
     )
     _note(slide, guide, *notes)
 
-
-#: 금액 기준을 **한 번만** 적는다 (39세션 2-2). 값마다 「(12개월 환산 ○○원)」 을
-#: 붙이면 같은 값이 두 번 나오고 지표 칸이 두 줄로 흐른다.
-ANNUAL_BASIS_NOTE = "금액은 12개월 환산 기준입니다."
 
 #: :attr:`MeasureEntry.slide_saving` 의 이름 — **12개월 환산값이다** (S218 · 사람이 정했다).
 #: 12개월 미만 벌에서 같은 장 각주의 「기간 절감액」 과 이름 없이 나란히 섰다.
@@ -2146,10 +2144,10 @@ def _build_combination(
     )
     table_top = top + 0.42 + 0.62 + gap
     # **기준을 이름이 말한다** (S156 4-4). 이 장은 `saving_won`(분석 기간 값)을
-    # 쓰는데 「개선안별 요약」 장은 12개월 환산값을 쓰고 :data:`ANNUAL_BASIS_NOTE`
-    # 로 그 사실을 적는다 — 한 덱 안에서 **기준이 다른 두 수가 라벨 없이 나란히**
-    # 섰다. `small-ind-a1`(122일)에서 갈림이 세 배쯤 된다. Excel 은 열 이름
-    # 둘(「절감액(원)」·「12개월 환산 절감액(원)」)로 가르고 Word 는 한 칸에 함께
+    # 쓰는데 「개선안별 요약」 장은 12개월 환산값을 쓰고 표 머리 이름
+    # (:data:`SLIDE_SAVING_LABEL`)이 그 사실을 적는다 — 한 덱 안에서 **기준이 다른
+    # 두 수가 라벨 없이 나란히** 섰다. `small-ind-a1`(122일)에서 갈림이 세 배쯤 된다.
+    # Excel 은 열 이름 둘(「절감액(원)」·「12개월 환산 절감액(원)」)로 가르고 Word 는 한 칸에 함께
     # 적는데 **PPT 만 안 갈랐다.** 각주를 하나 더 두지 않고 **이름을 고친다** —
     # 기온 기준선을 「기간 평균」 이라 부르는 `frames.py` 의 규약과 같은 꼴이다.
     rows = [["조합", "기간 절감액", "회수기간"]]

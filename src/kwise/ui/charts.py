@@ -33,6 +33,7 @@ from kwise.report.days import RepresentativeDay
 from kwise.report.frames import (
     BAND_LABELS,
     CAPACITY_ROWS,
+    DAY_LOAD_AXIS,
     DR_WINDOW_MEAN,
     MONTHLY_CHARGE_PARTS,
     PEAK_ZOOM_HOURS,
@@ -1032,7 +1033,7 @@ def power_factor_day_chart(
         .mark_line(color="#08519c")
         .encode(
             x=alt.X("시각:T", title=f"{day.title} · 15분 부하", axis=time_axis()),
-            y=alt.Y("부하(kW):Q", title="부하 (kW)", scale=_CUT_SCALE),
+            y=alt.Y("부하(kW):Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE),
             tooltip=[time_tooltip(), alt.Tooltip("부하(kW):Q", format=",.0f"), "구간"],
         )
     )
@@ -1116,7 +1117,7 @@ def solar_day_chart(
         .mark_area(opacity=0.75)
         .encode(
             x=alt.X("시각:T", title=title, axis=time_axis()),
-            y=alt.Y("순부하(kW):Q", title="출력 (kW)", scale=_CUT_SCALE),
+            y=alt.Y("순부하(kW):Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE),
             y2=alt.Y2("원부하(kW)"),
             color=alt.Color(
                 "구분:N",
@@ -1140,7 +1141,7 @@ def solar_day_chart(
         .mark_line(strokeWidth=1.8)
         .encode(
             x=alt.X("시각:T", axis=time_axis()),
-            y=alt.Y("kW:Q", title="출력 (kW)", scale=_CUT_SCALE),
+            y=alt.Y("kW:Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE),
             color=alt.Color(
                 "구분:N",
                 title=None,
@@ -1219,7 +1220,7 @@ def ess_day_chart(
         .mark_area(opacity=0.7, color="#31a354")
         .encode(
             x=alt.X("시각:T", title=title, axis=time_axis()),
-            y=alt.Y("순부하(kW):Q", title="부하 (kW)", scale=_CUT_SCALE),
+            y=alt.Y("순부하(kW):Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE),
             y2=alt.Y2("원부하(kW)"),
         )
     )
@@ -1231,7 +1232,7 @@ def ess_day_chart(
         .mark_line(strokeWidth=1.8)
         .encode(
             x=alt.X("시각:T", title=title, axis=time_axis()),
-            y=alt.Y("kW:Q", title="부하 (kW)", scale=_CUT_SCALE),
+            y=alt.Y("kW:Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE),
             color=alt.Color(
                 "구분:N",
                 title=None,
