@@ -43,7 +43,6 @@ from kwise.report.document import (
     measure_entries,
 )
 from kwise.report.slides import (
-    ANNUAL_BASIS_NOTE,
     APPENDIX_ROW_LIMIT,
     LAYOUTS,
     MEASURE_AGENDA_ITEM,
@@ -897,7 +896,8 @@ def test_12개월_환산을_값마다_되풀이하지_않는다(full_sections: D
     """
     text = _deck_text(build_slides(full_sections))
     assert "(12개월 환산" not in text
-    assert text.count(ANNUAL_BASIS_NOTE) == 1
+    # 기준을 적던 각주는 S221 에 뗐다 — 요약 장 표 머리 이름이 말한다(아래 12개월 미만 못).
+    assert "12개월 환산 기준" not in text
     for entry in full_sections.measures:
         assert "12개월 환산" not in entry.slide_saving
 
@@ -3457,6 +3457,20 @@ def test_12개월_미만_벌에서_수단_장_절감액은_12개월_환산값에
     column = head.index("12개월 환산 절감액")
     solar = next(row for row in table.rows if "태양광" in row.cells[0].text)
     assert solar.cells[column].text == annual, head
+
+    # **요약 장 각주 「금액은 12개월 환산 기준입니다」 는 뗐다** (S221 · 사람이 정했다) —
+    # 그 장의 12개월 환산값이 전부 이름(표 머리) 아래 설 때만 뗀다. 각주가 되살아나거나
+    # 표 밖 글에 12개월 값이 이름 없이 서면 빨개진다.
+    outside = [shape.text_frame.text for shape in summary.shapes if shape.has_text_frame]
+    assert not [text for text in outside if "12개월 환산 기준" in text], outside
+    annuals = {
+        row.cells[column].text
+        for row in list(table.rows)[1:]
+        if row.cells[column].text.endswith("원") and row.cells[column].text != "0원"
+    }
+    assert annual in annuals, annuals
+    stray = [(value, text) for text in outside for value in annuals if value in text]
+    assert stray == [], stray
 
 
 def test_지표_셋은_수단_장마다_같은_높이에_선다(full_sections: DocumentSections) -> None:

@@ -789,6 +789,35 @@ def test_12개월_환산값_자리가_네_산출물에서_연이라_말하지_�
     )
 
 
+def test_대표일_그림_세로축이_그리는_부하를_부른다(rendered: Rendered) -> None:
+    """**그림의 축 이름은 그 그림이 그리는 계열을 말한다** (S221 · ㅇ 뿌리).
+
+    태양광 대표일 그림은 원부하 · 순부하와 그 사이 저감분을 그린다 — 발전 출력 선은
+    17세션에 뺐다. 그런데 세로축이 「출력 (kW)」 이라 적혀 화면 · PPT · Word 세 자리에
+    섰다. 같은 자료를 그리는 ESS 대표일은 「부하 (kW)」 다.
+
+    **그려진 글자를 본다 — 소스 상수를 안 본다.** 원부하 범례가 선 그림마다 세로축
+    이름이 「부하 (kW)」 인지 · 「출력」 이 없는지. 화면은 축 이름이 그림 이름 칸에
+    든다. **세 산출물을 한 못으로 문다** — 한쪽만 되돌려도 빨갛다. 축 이름은 기간
+    길이로 안 갈린다(221세션 절 1-3) — 두 벌이 12개월이라도 뜻은 같다.
+    """
+    groups: defaultdict[tuple[str, str], list[tuple[str, ...]]] = defaultdict(list)
+    for row in rendered.figures:
+        groups[(row[0], row[1])].append(row)
+    seen: set[str] = set()
+    어긋: list[str] = []
+    for (kind, where), rows in groups.items():
+        if not any(row[-1].startswith("원부하") for row in rows):
+            continue
+        seen.add(kind)
+        names = [where] if kind == "화면" else [row[-1] for row in rows if row[2] == "축 이름"]
+        loads = [name for name in names if name.endswith("부하 (kW)")]
+        if not loads or [name for name in names if "출력" in name]:
+            어긋.append(f"{kind} {where} {names}")
+    assert seen == {"화면", "PPT", "Word"}, (rendered.key, seen)
+    assert 어긋 == [], (rendered.key, 어긋)
+
+
 def test_사용량_이름이_진단_지표와_태양광_캡션에서_같다(rendered: Rendered) -> None:
     """**한 벌 안에서 같은 값을 두 이름으로 부르지 않는다** (S213 1-5 · 울타리 ㄱ6).
 
