@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import replace
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -579,6 +580,52 @@ def test_상한_이상이면_화면_삼각형에도_개선_후가_없다(
     spec = str(power_triangle_chart(result).to_dict())
     assert "개선 후" not in spec
     assert "개선 전" not in spec
+
+
+@pytest.mark.parametrize("current", [85.0, 92.0])
+def test_PPT_Word_전력삼각형은_그려진_각이_역률각이다(
+    current: float,
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**가로·세로를 같은 눈금으로** (S222). 비율이 자료에 딸려 움직여 간주 92%
+    벌에서 23° 가 37° 로 그려졌다 — 「각이 좁아지는 모습」 이 그림의 전부인데
+    그 각이 거짓이었다. **그려진 선**을 화면 좌표로 옮겨 각을 잰다.
+
+    PPT 와 Word 는 :func:`~kwise.report.figures.power_triangle_png` 한 장을
+    함께 싣는다 — 이 못 하나가 둘을 문다.
+    """
+    import math
+
+    from kwise.report import figures
+
+    base = evaluate_power_factor(
+        sample_usage, tariff, CURRENT, current_pct=92.0, quality=sample_report
+    )
+    result = replace(base, current_pct=current)
+    angles: list[tuple[float, float]] = []
+    real = figures.render_png
+
+    def spy(figure: Any) -> bytes:
+        figure.canvas.draw()
+        axes = figure.axes[0]
+        for line in axes.get_lines():
+            p, q = line.get_xdata()[1], line.get_ydata()[2]
+            (x0, y0), (x1, y1) = axes.transData.transform([(0.0, 0.0), (p, q)])
+            angles.append(
+                (math.degrees(math.atan2(y1 - y0, x1 - x0)), math.degrees(math.atan2(q, p)))
+            )
+        return real(figure)
+
+    monkeypatch.setattr(figures, "render_png", spy)
+    figures.power_triangle_png(result)
+    assert len(angles) == 2, angles
+    for on_page, true in angles:
+        assert on_page == pytest.approx(true, abs=0.05), (
+            f"역률 {current}% 에서 역률각 {true:.2f}° 가 {on_page:.2f}° 로 그려집니다."
+        )
 
 
 # --------------------------------------------------------------------- PV 도입 전후
