@@ -345,6 +345,24 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 **0-3. 남의 python — 0**(22:40 · 같은 스크래치 · `Get-CimInstance Win32_Process -Filter "Name='python.exe'"` 를 JSON 으로 받아 제 프로세스와 그 python 조상을 뺐다 · 프로젝트는 `ExecutablePath` 의 `.venv` 앞 폴더 · 스텁의 자식은 부모 경로로). 1-3 의 ㄹ 전 출력이다.
 **0-4. 미해결 159** · 칸 51,910자(브리핑 머리) · 갈래 가 8 · 나 35 · 다 9 · 라 66 · 마 41. 세 방법 — `docs\OPEN_ITEMS.md` 절 제목 합 8 + 35 + 9 + 66 + 41 = **159** · 브리핑 머리 **159** · 브리핑 칸 ① 8 + ② 150 + ③ 1 = **159**(`daily_brief_20260923_224222.txt`). **이 판이 닫을 「라」 항목** — ㄱ 「pytest 수 읽기 도구를 인자 없이 부르면 run_tool 이 python 이름으로 받은 판을 못 집는다」 · ㄴ 「run_tool 에 스크래치 py 파일을 주면 WinError 193 으로 죽고 받은 파일이 없다」 · ㅋ1 「브리핑이 프라임 판을 직전 세션으로 못 잡는다」 · ㅌ 「ruff format 통과 수에 마크다운 파일이 섞여 판마다 는다」 · ㄹ 「도구가 없어 셸이 새는 자리가 여덟이다」 의 한 자리(남의 python 을 세는 도구 — 항목은 남고 이름이 「일곱이다」 로 간다).
 **0-5. 회귀 기준선 — 기록에서 · 2번 PC 마지막 깨끗하고 플래그 없는 판 S225**(갈래 넷 · 합 20분 49초 · ① 이 그 판 기록 탓으로 빨개 ① 만 다시 돌았다): 수집 **1,832** · passed 1,828 · xfail 4 · skip 0. 정적 — `ruff check .` 통과 · `ruff format --check` **292파일 = `.py` 175 + `.md` 117 · 통과 283(`.py` 166 + `.md` 117) · 어긋남 9(다 `.py`)**(S226 1-2 · 그 뒤 `S226.md` 가 앉아 `.md` 118 · 통과 284 가 될 자리) · 맨 `mypy` 10(174파일) · `mypy tests tools` 36(63파일) · `scan_ctrl` 0곳.
+**0절 벽시계** 22:39 ~ 22:43.
+
+**1-1. 재현 — 넷 다 선다**(스크래치 `s227_k1.py` · `s227_ruff.py` · `s227_counts.py` · 출력은 `runs\` 에 `run_tool` 로).
+
+| 자리 | 명령 | 지금 출력 | 기대 |
+|---|---|---|---|
+| ㄱ 인자 없이 | `pytest_counts.py`(맨) → `run_tool pytest_counts` → 다시 맨 | 첫 판 `pytest_counts_20260923_215345.txt`(S226 제 출력) · 둘째 · 셋째 판은 **바로 앞 판이 받은 제 출력** `pytest_counts_20260923_224316.txt` 를 집어 「수집 못 읽었다 · 결과 줄이 없다」 | 가장 새 pytest 판 `python_20260923_215337.txt`(S226 기록 묶음 · `run_tool .venv\Scripts\python.exe -m pytest` 로 받은 판) |
+| ㄱ `--base` | `pytest_counts.py python_20260923_215337.txt --base 1832` | 「앞 판 1832 → 137 (-1695)」 | 「1832 → 1832 (같다)」 — 137 passed + 1,695 deselected = 수집 1,832 |
+| ㄴ `.py` | `run_tool --tail 5 …\s227_open.py` | `OSError: [WinError 193]` traceback · 종료 1 · **받은 파일 0** | venv python 으로 돌고 `s227_open_<시각>.txt` 를 받는다 |
+| ㅋ1 브리핑 | `s227_k1.py` — `60fa9e2`(S224' 을 닫은 판) 몸 | 「직전 세션 — 224세션 (09-23)」 | 「224'세션 (09-23)」 |
+| ㅋ1 목록표 못 | 같은 몸에서 224' 행을 빼고 225 절 제목을 얹는다(표 두 판 밀림) | `stale_session` **0** — `test_세션_목록표가_서술_절보다_밀리지_않는다` 가 같은 값을 읽어 초록 | 0 이 아니다 |
+| ㅌ | `ruff format --check -v .`(온 경로 · `ruff_20260923_224423.txt`) · `s227_ruff.py before` | `include` 로 잡힌 295 = `.py` 175 · `.md` 119 · `.toml` 1 · 포맷한 293 = `.py` 175 + `.md` 118(`PROCEED.md` 는 `exclude`) · **통과 284 = `.py` 166 + `.md` 118** · 어긋남 9(다 `.py`) · `ruff check` 「All checks passed!」 | 포맷 175 · 통과 166 · 어긋남 9 |
+
+곁 — S225 3-3 이 적은 「`python_20260923_204657.txt`」 는 **pytest 출력이 아니라 그 판의 `pytest_counts` 출력**을 `run_tool` 이 python 이름으로 받은 것이다(원본은 `pytest_20260923_204651.txt`) · 기록의 수는 원본에서 읽은 값이라 틀리지 않다.
+**1-2. ㄹ 재료 — 새 도구가 낼 줄(전수 · 새로 짓는 값 0).** ① `PC <이름> · <CPU> · cpu <n> · RAM <바이트> B (<GB> GB) · -n auto 일꾼 <w>` — 0-1 이 적은 넷(S225 0-1 과 같은 칸) · 일꾼은 xdist 의 `pytest_xdist_auto_num_workers` 를 그대로 부른다(S225 가 「`auto_detect_cpus` 가 없다」 고 적은 자리의 실제 이름) ② `남의 python <N>` — `CLAUDE.md` 9항 2번 명령 `Get-CimInstance Win32_Process -Filter "Name='python.exe'"` 의 행 수에서 **제 프로세스와 그 python 조상**(venv 스텁 · `run_tool`)을 뺀 것 · 스텁과 자식을 따로 센다(79세션 함정 「스텁과 그 자식을 함께 센다」 · 기록의 「덧수 2」 꼴) ③ 행마다 `<pid> ← <부모 pid> · <프로젝트> · <명령줄>` — 프로젝트는 `ExecutablePath` 의 `.venv` 앞 폴더 · 자식은 부모 스텁의 경로 · 모르면 「모름」. 「깨끗한 판」 정의(세는 자리가 다 0)는 안 건드린다.
+**1-3. 전 출력** — `pytest_counts`: 틀리지 않던 입력 다섯(① 빨간 판 `pytest_20260923_204651.txt --base 1828` · ① 재판 `pytest_20260923_211850.txt` 맨 · `--base 1832` · 기록 묶음 `pytest_20260923_211942.txt` · `python_20260923_215337.txt` 맨)과 틀리던 하나(`s227_counts_before.txt` · `python_20260923_224617.txt`). 브리핑: 커밋 셋(`60c4234` · `28f203e` · `60fa9e2`)의 몸으로 `build()`(git 고정 · `s227_brief_before_*.txt`)와 `latest_session` · `stale_session`(워크트리 · 60c4234 · 28f203e = 226 · 226 · 225 · stale 0). `run_tool`: 인자 없이(도구 22개 목록) · `.venv\Scripts\python.exe <스크래치>` 판(`python_20260923_224414.txt`). ㅌ: `.py` 175 목록 · 어긋남 9 · `ruff check` 출력(`s227_ruff_before.txt`). ㄹ: 0-1 · 0-3 스크래치 출력.
+**1-4. 고칠 자리 — 열(코드 6 · 설정 1 · 규약 3).** 코드 — ① `pytest_counts.latest_run`(ㄱ) ② `pytest_counts.main` 의 `--base` 맞대기(ㄱ) ③ `daily_brief.latest_session`(ㅋ1) ④ `daily_brief.stale_session` 과 `_SECTION_NO`(ㅋ1) ⑤ `run_tool._run_command`(ㄴ) ⑥ 새 도구(ㄹ). 설정 — ⑦ `pyproject.toml` `[tool.ruff.format] exclude`(ㅌ). 규약 — ⑧ `CLAUDE.md` 9항 2번 남의 python 명령(ㄹ) ⑨ 9항 4번 「스물둘을 다 받는다」 문단(ㄴ · 도구 수) ⑩ 9항 8번 `pytest_counts` 문단(ㄱ). **`PROCEED.md` 규약 자리 0** — 세션 절 밖에 선 도구 이름(`s227_rules.py`)은 세션 목록표 · 「현재 상태」 칸 · 「pytest 분할 실행」 절의 판 기록뿐이고 부르는 법을 적은 글자가 없다. 이 열이 2절 울타리이고 하한이다.
+**1절 벽시계** 22:43 ~ 22:48.
 
 ---
 ## 오늘 (2026-09-23) 226세션 — **도구 조사 판 · 고치지 않는다**
