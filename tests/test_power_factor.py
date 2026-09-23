@@ -674,6 +674,68 @@ def test_화면_전력삼각형은_같은_눈금이고_각도_글자가_제_빗�
         )
 
 
+@pytest.mark.parametrize("current", [85.0, 92.0, 97.0, 100.0])
+def test_역률_100_전력삼각형만_선이_된_까닭을_적고_세로_눈금_글자를_감춘다(
+    current: float,
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**그래프는 두고 오해만 글로 푼다** (S225 · 사람이 정했다). 역률 100 은 무효전력이
+    0 이라 삼각형이 가로선 하나인데, 음수까지 뜬 세로 눈금이 오류처럼 읽혔다.
+
+    화면 · PPT · Word 셋 다 — 역률 100 에서만 그림 안에 「무효전력 0 · 역률 100%」 한
+    줄이 서고 세로 눈금 글자가 안 보인다(자리는 두고 투명 — 빼면 크기가 바뀐다).
+    그 밖의 역률에는 그 글이 없고 눈금 글자가 보인다. **그림 객체가 내는 것**을 본다 —
+    화면은 vega spec 의 각도 글자 자료와 세로 축, png 는 구운 그림의 글자와 눈금.
+    """
+    import matplotlib.colors
+
+    from kwise.report import figures
+    from kwise.ui.charts import power_triangle_chart
+
+    flat = current == 100.0
+    base = evaluate_power_factor(
+        sample_usage, tariff, CURRENT, current_pct=92.0, quality=sample_report
+    )
+    result = replace(base, current_pct=current)
+    spec = power_triangle_chart(result).to_dict()
+    shape, _labels, angles = spec["layer"]
+    words = [row["각도라벨"] for row in spec["datasets"][angles["data"]["name"]]]
+    y_axis = shape["encoding"]["y"].get("axis") or {}
+    if flat:
+        assert words == ["무효전력 0 · 역률 100%"]
+        assert y_axis.get("labelOpacity") == 0, "화면 세로 눈금 「0.000000」 이 보입니다."
+    else:
+        assert all(word.endswith("°") for word in words), words
+        assert "labelOpacity" not in y_axis
+
+    seen: dict[str, Any] = {}
+    real = figures.render_png
+
+    def spy(figure: Any) -> bytes:
+        figure.canvas.draw()
+        axes = figure.axes[0]
+        low, high = sorted(axes.get_ylim())
+        seen["texts"] = [text.get_text() for text in axes.texts if text.get_visible()]
+        seen["alphas"] = {
+            matplotlib.colors.to_rgba(label.get_color())[3]
+            for label, at in zip(axes.get_yticklabels(), axes.get_yticks(), strict=True)
+            if label.get_visible() and low <= at <= high
+        }
+        return real(figure)
+
+    monkeypatch.setattr(figures, "render_png", spy)
+    figures.power_triangle_png(result)
+    if flat:
+        assert seen["texts"] == ["무효전력 0 · 역률 100%"]
+        assert seen["alphas"] == {0.0}, "PPT · Word 세로 눈금 글자가 보입니다."
+    else:
+        assert seen["texts"] == []
+        assert seen["alphas"] == {1.0}
+
+
 # --------------------------------------------------------------------- PV 도입 전후
 
 
