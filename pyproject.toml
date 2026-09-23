@@ -86,7 +86,10 @@ extend-exclude = ["reference", ".venv", "cache", "output"]
 # **`PROCEED.md` 는 이력이다** (67세션 4절). `ruff format` 이 md 안의 python
 # 코드 블록까지 고치는 바람에 지난 세션이 적어 둔 조각이 다시 쓰였다.
 # 기록은 그때 적은 대로 둔다 — 커밋 이름을 그대로 두는 것과 같은 이유다.
-exclude = ["PROCEED.md"]
+#
+# **`.md` 는 통과 수에 안 넣는다** (S227). ruff 가 `.md` 를 `include` 로 잡아
+# 지시서가 앉을 때마다 통과 수가 하나씩 늘었다(S205 ~ S226) — 코드 변화처럼 읽힌다.
+exclude = ["PROCEED.md", "*.md"]
 
 [tool.ruff.lint]
 select = [

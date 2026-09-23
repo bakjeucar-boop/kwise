@@ -143,18 +143,26 @@ def unread_rows(body: str) -> list[str]:
 
 
 def latest_session(body: str) -> tuple[str, str]:
-    """맨 위 세션 표에서 가장 큰 번호의 줄을 집는다. (제목, 본문)"""
+    """맨 위 세션 표에서 가장 큰 번호의 줄을 집는다. (제목, 본문)
+
+    **「224'세션」 도 한 판이다** (S227) — 같은 번호의 맨 판 뒤에 선다.
+    """
     pat = re.compile(
-        r"^\|\s*\*{0,2}(\d+)세션\*{0,2}\s*\((\d{2}-\d{2})\)\s*\|\s*(.+?)\s*\|?\s*$", re.M
+        r"^\|\s*\*{0,2}(\d+'?)세션\*{0,2}\s*\((\d{2}-\d{2})\)\s*\|\s*(.+?)\s*\|?\s*$", re.M
     )
-    best: tuple[int, str, str] | None = None
+    best: tuple[tuple[int, bool], str, str, str] | None = None
     for num, day, text in pat.findall(body):
-        n = int(num)
-        if best is None or n > best[0]:
-            best = (n, day, text)
+        key = _session_key(num)
+        if best is None or key > best[0]:
+            best = (key, num, day, text)
     if best is None:
         return ("", "")
-    return (f"{best[0]}세션 ({best[1]})", best[2])
+    return (f"{best[1]}세션 ({best[2]})", best[3])
+
+
+def _session_key(num: str) -> tuple[int, bool]:
+    """「224'」 → (224, True). 프라임 판은 같은 번호의 맨 판 뒤다."""
+    return (int(num.rstrip("'")), num.endswith("'"))
 
 
 # ── 미해결 갈래 ──────────────────────────────────────────────────────────
@@ -409,7 +417,7 @@ def item_parts(text: str) -> tuple[str, str]:
 #: 서술 절만 쓰고 표 행을 안 붙여 브리핑이 사흘 동안 「직전 세션 — 109세션」
 #: 을 냈다. **읽는 쪽이 아니라 쓰는 쪽이 밀린 것**이므로 코드가 고칠 수 있는
 #: 것은 하나뿐이다 — **밀렸다고 말하는 것.**
-_SECTION_NO = re.compile(r"^##[^\n]*?(\d+)세션", re.M)
+_SECTION_NO = re.compile(r"^##[^\n]*?(\d+'?)세션", re.M)
 
 
 def stale_session(body: str, title: str) -> int:
@@ -421,9 +429,15 @@ def stale_session(body: str, title: str) -> int:
     붙이므로, 세션 중에는 서술 절이 표보다 하나 앞선 것이 **정상**이다. 그것까지
     짖으면 날마다 뜨고, **매일 뜨는 경고는 안 읽힌다** (72세션 잣대).
     """
-    heads = [int(n) for n in _SECTION_NO.findall(body)]
-    now = int(m.group(1)) if (m := re.match(r"(\d+)세션", title)) else 0
-    return top if heads and (top := max(heads)) > now + 1 else 0
+    heads = [_session_key(n) for n in _SECTION_NO.findall(body)]
+    now = _session_key(m.group(1)) if (m := re.match(r"(\d+'?)세션", title)) else (0, False)
+    if not heads:
+        return 0
+    top = max(heads)[0]
+    # **프라임 판도 한 판으로 센다** (S227) — 표 뒤에 선 절이 둘이면 두 판 밀렸다.
+    # 번호로만 재면 224 · 224' · 225 가 한 판 차로 보여 못이 못 물었다.
+    behind = len({key for key in heads if key > now})
+    return top if top > now[0] + 1 or behind > 1 else 0
 
 
 #: 미해결 대조의 **수** — 「미해결 58 → 59」. 굵게 감싼 꼴도 함께 잡는다.

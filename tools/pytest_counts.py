@@ -69,9 +69,21 @@ def runs_dir() -> Path:
 
 
 def latest_run() -> Path | None:
-    """``runs\\`` 에서 가장 새 pytest 출력. 없으면 ``None``."""
-    found = sorted(runs_dir().glob("pytest_*.txt"), key=lambda path: path.stat().st_mtime)
-    return found[-1] if found else None
+    """``runs\\`` 에서 가장 새 pytest 출력. 없으면 ``None``.
+
+    **제 출력(``pytest_counts_*``)은 안 집고, ``python_*`` 은 결과 줄이 있을 때만
+    집는다** (S227). ``run_tool .venv\\Scripts\\python.exe -m pytest`` 로 받은 판은
+    이름이 ``python_*`` 이라 앞서는 못 집었고, 같은 glob 이 제 출력을 물었다.
+    """
+    found = [
+        path
+        for path in [*runs_dir().glob("pytest_*.txt"), *runs_dir().glob("python_*.txt")]
+        if not path.name.startswith("pytest_counts_")
+    ]
+    for path in sorted(found, key=lambda path: path.stat().st_mtime, reverse=True):
+        if path.name.startswith("pytest_") or read(path).results:
+            return path
+    return None
 
 
 def read(path: Path) -> Counts:
@@ -134,6 +146,10 @@ def main() -> int:
         print("결과  " + " · ".join(f"{name} {count}" for name, count in counts.results.items()))
         print(f"합    {counts.total}")
     지금 = counts.collected if counts.collected is not None else (counts.total or None)
+    if 지금 is not None and counts.results.get("deselected"):
+        # **걸러진 시험도 수집된 것이다** (S227) — `-m records` 판이 137 을 1,832 와
+        # 맞대 −1,695 를 냈다. 돈 것과 걸러진 것의 합이 그 판의 수집 건수다.
+        지금 = counts.total + counts.results["deselected"]
     if args.base is not None and 지금 is not None:
         gap = 지금 - args.base
         말 = "같다" if gap == 0 else f"{gap:+d}"

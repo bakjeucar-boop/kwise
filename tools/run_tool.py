@@ -19,6 +19,7 @@ r"""도구·명령의 출력을 **파일로 받는다** — 셸 파이프와 리
     ① ``tools\\`` 의 도구      제 프로세스 안에서 ``main()`` 을 부른다
     ② ``pytest``               같은 프로세스에서 부른다 (일꾼 수는 인자가 정한다)
     ③ 그 밖의 명령             ``subprocess`` 로 돌리고 stdout·stderr 를 함께 받는다
+                               ``.py`` 파일은 이 python 으로 돌린다 (S227)
 
 출력은 ``PROJECT_CACHE\\runs\\<이름>_<타임스탬프>.txt`` 다 — **실행마다 이름이
 달라 낡은 결과가 새 결과로 보이지 않는다**(``CLAUDE.md`` 9항 5번). 화면에는
@@ -111,9 +112,14 @@ def _at_root(name: str) -> str:
 
 
 def _run_command(argv: list[str]) -> tuple[str, int]:
-    """그 밖의 명령. **stderr 를 함께 받는다** — 셸에 ``2>&1`` 을 안 붙이려고."""
+    """그 밖의 명령. **stderr 를 함께 받는다** — 셸에 ``2>&1`` 을 안 붙이려고.
+
+    **``.py`` 는 이 python 으로 돌린다** (S227) — Windows 는 ``.py`` 를 실행 파일로
+    안 받아 ``[WinError 193]`` 로 죽었고 받은 파일도 없었다(S212 · S219 · S220 · S224').
+    """
+    head = [sys.executable] if argv[0].lower().endswith(".py") else []
     done = subprocess.run(
-        [_at_root(argv[0]), *argv[1:]],
+        [*head, _at_root(argv[0]), *argv[1:]],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,

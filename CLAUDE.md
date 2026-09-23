@@ -56,6 +56,12 @@
    대기 루프가 금지다. **「깨끗한 판」 은 그 PC 의 세는 자리가 다 0 인 판**이고, 아니면
    소요에 「견주는 데 쓰지 않는다」 를 붙인다. 남의 세션을 죽이지 마라.
 
+       .venv\Scripts\python.exe tools\run_tool.py open_values
+
+   **`tools\open_values.py` 가 센다** (S227) — 아래 명령의 행에서 제 프로세스와
+   그 python 조상을 빼고 행마다 프로젝트와 명령줄을 낸다. 첫 줄은 0-1 의 PC 값
+   (이름 · CPU · cpu 수 · RAM · `-n auto` 일꾼 수)이다. 판 개시 · 회귀 앞뒤에 쓴다.
+
        Get-CimInstance Win32_Process -Filter "Name='python.exe'"
 3. **모든 명령에 타임아웃을 건다.** 네트워크가 끼면 반드시 —
    Open-Meteo 취득이 그렇다. 상한을 넘으면 죽이고 그 사실을 보고한다.
@@ -76,9 +82,11 @@
    그 판 앞 일곱(S200~S206)은 도구가 **없어서** 샌 것이라 갈래가 다르다 —
    **지금 남은 병은 「없다」 가 아니라 「안 부른다」 다.**
 
-   **스물둘을 다 받는다** (S209 2절). `count_sites`(`main(argv)`)와
+   **스물셋을 다 받는다** (S209 2절 · S227 에 `open_values` 가 붙었다). `count_sites`(`main(argv)`)와
    `daily_brief`(`sys.stdout.reconfigure`)가 못 받던 자리를 닫았고
    `tests\test_deployment.py` 의 못 둘이 **새 도구가 붙어도 저절로 문다.**
+   **`.py` 파일도 받는다** (S227) — 스크래치를 `run_tool.py --tail 20 <온 경로>.py`
+   로 주면 이 python 으로 돈다(앞서는 `[WinError 193]` 로 죽고 받은 파일이 없었다).
    **다만 상대 경로 명령은 못 받는다** — Windows 가 `cwd` 에서 실행 파일을
    안 찾으므로 `.venv\Scripts\ruff.exe` 같은 것은 **온 경로로 적는다.**
 5. **같은 파일명에 두 실행을 쓰지 않는다. 실행마다 타임스탬프를 붙인다.**
@@ -110,6 +118,9 @@
    `--base` 에 앞 판 수집 건수를 주면 차를 함께 낸다. **`FAILED` 줄의 한글
    인자 이름을 풀어 준다** — pytest 가 테스트 ID 를 이스케이프해 박으므로
    그대로 두면 사람이 못 읽는다.
+   **인자 없이 불러도 된다** (S227) — `runs\` 에서 가장 새 pytest 판을 집는다
+   (`run_tool` 이 `python_*` 이름으로 받은 판 포함 · 제 출력은 안 집는다).
+   걸러진 시험(`-m records` 의 deselected)은 수집 건수에 넣어 `--base` 와 맞댄다.
 
        .venv\Scripts\python.exe tools\pytest_counts.py --base 1787
 9. **전체 시험은 앞단에서 상한을 걸고 돌린다** (49세션). 앞단이면 결과를 그
