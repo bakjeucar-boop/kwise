@@ -482,3 +482,26 @@ def test_지금_마지막_세션_행에는_경고가_안_뜬다(monkeypatch: pyt
         "마지막 세션 행의 미해결 대조에 이름이 없습니다 — 늘어난 것과 줄어든 것을 "
         "이름으로 적으십시오."
     )
+
+
+def test_프라임_판도_한_판으로_센다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**「224'세션」 을 못 잡아 직전 세션이 224 로 떴다** (S224' · S226 1-2 · S227).
+
+    같은 잣대를 `test_doc_counts.py` 의 세션 목록표 못이 읽어 **표에서 프라임 판
+    행이 빠져도 못이 못 물었다.** 도구를 실제로 불러 값을 본다.
+    """
+    brief = _brief()
+    prime = "| **42'세션** (01-03) | 프라임 판 — 확인 · 기록 |\n"
+    text = SAMPLE.replace("\n\n---\n\n## 현재 상태", f"\n{prime}\n---\n\n## 현재 상태").replace(
+        "## 오늘 (2026-01-03) 42세션 — 표본", "## 오늘 (2026-01-03) 42'세션 — 프라임 판"
+    )
+    assert text.count("42'세션") == 2, "표본에 프라임 판을 못 심었습니다."
+    assert brief.latest_session(text)[0] == "42'세션 (01-03)"
+    assert "## 직전 세션 — 42'세션 (01-03)" in _built(text, monkeypatch)
+    assert brief.stale_session(text, "42'세션 (01-03)") == 0
+
+    # 표에서 42' 행이 빠지고 43 이 절만 쓴 채 돈다 — 두 판 밀렸다.
+    lost = text.replace(prime, "") + "\n## 오늘 (2026-01-04) 43세션 — 도는 판\n"
+    title, _detail = brief.latest_session(lost)
+    assert title == "42세션 (01-03)"
+    assert brief.stale_session(lost, title) == 43, "프라임 판 행이 빠진 것을 못 문다."

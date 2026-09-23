@@ -66,7 +66,7 @@ def pc_line() -> str:
     cpu = str(winreg.QueryValueEx(key, "ProcessorNameString")[0]).strip()
     # ``-n auto`` 가 부르는 xdist 훅을 그대로 부른다 — 수를 따로 짓지 않는다.
     workers = pytest_xdist_auto_num_workers(
-        SimpleNamespace(option=SimpleNamespace(numprocesses="auto"))  # type: ignore[arg-type]
+        SimpleNamespace(option=SimpleNamespace(numprocesses="auto"))
     )
     ram = memory.ullTotalPhys
     return (

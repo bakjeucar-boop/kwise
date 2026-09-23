@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import ast
 import inspect
+import os
 import re
 import runpy
+import subprocess
 import sys
 import tomllib
 from collections.abc import Iterator
@@ -726,7 +728,9 @@ def test_S207_도구_셋이_제자리에서_값을_낸다(name: str, names: tupl
     assert body.strip(), f"{name} 이 인자 없이 아무것도 안 냈습니다."
 
 
-def test_pytest_수_읽기가_안_돈_시험을_잡는다(tmp_path: Path) -> None:
+def test_pytest_수_읽기가_안_돈_시험을_잡는다(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """**빈 꼴로 돌아가면 빨개진다** (S207 5-2).
 
     규약 9항 8번이 무는 셋을 그대로 문다 — 수집 건수 · skip · 실패 이름.
@@ -758,6 +762,31 @@ def test_pytest_수_읽기가_안_돈_시험을_잡는다(tmp_path: Path) -> Non
     말 = " ".join(counts.notes)
     assert "skip 1건" in 말, f"skip 을 안 돈 시험이라 말하지 않습니다: {counts.notes}"
     assert "어긋난다" in 말, f"수집 1787 과 결과 합 1786 의 어긋남을 안 잡습니다: {counts.notes}"
+
+    # **인자 없이 부르면 run_tool 이 받은 가장 새 pytest 판을 집는다** (S227) —
+    # `python_*` 이름으로 받은 판을 못 집고 제 출력(`pytest_counts_*`)을 집었다.
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    monkeypatch.setenv("PROJECT_CACHE", str(tmp_path))
+    판 = runs / "python_20260101_000001.txt"
+    판.write_text("137 passed, 1695 deselected in 23.37s\n", encoding="utf-8")
+    제출력 = runs / "pytest_counts_20260101_000002.txt"
+    제출력.write_text(f"{판}  (1줄)\n수집  못 읽었다\n", encoding="utf-8")
+    딴것 = runs / "python_20260101_000003.txt"
+    딴것.write_text("pytest 가 아닌 python 판\n", encoding="utf-8")
+    for 차례, path in enumerate((판, 제출력, 딴것)):
+        os.utime(path, (1_000_000 + 차례, 1_000_000 + 차례))
+    assert pytest_counts.latest_run() == 판, pytest_counts.latest_run()
+
+    # **걸러진 시험도 수집 건수다** (S227) — `--base 1832` 가 「→ 137 (-1695)」 를 냈다.
+    printed: list[str] = []
+    monkeypatch.setattr(
+        "builtins.print", lambda *args, **_: printed.append(" ".join(map(str, args)))
+    )
+    monkeypatch.setattr(sys, "argv", ["pytest_counts", "--base", "1832"])
+    pytest_counts.main()
+    assert printed[0].startswith(str(판)), printed
+    assert "앞 판  1832 → 1832 (같다)" in printed, printed
 
 
 # ============================ S209 2절 — run_tool 이 tools\ 를 다 받는지 문다
@@ -887,3 +916,55 @@ def test_S210_이_고친_도구가_상대_경로를_제_뿌리에_댄다(
     body = path.read_text(encoding="utf-8")
     assert code == 0, f"run_tool 이 상대 경로 명령을 저장소 뿌리에 안 댑니다: {body[-400:]}"
     assert body.startswith("Python "), body[:80]
+
+    # **`.py` 도 받는다** (S227) — `[WinError 193]` 로 죽고 받은 파일이 없었다.
+    스크래치 = tmp_path / "스크래치.py"
+    스크래치.write_text('print("taken")\n', encoding="utf-8")
+    path, code, _elapsed = run_tool.run(str(스크래치), [])
+    assert code == 0, path.read_text(encoding="utf-8")[-400:]
+    assert path.name.startswith("스크래치_"), path
+    assert path.read_text(encoding="utf-8") == "taken\n"
+
+
+# ============================== S227 — 수를 틀리게 내던 도구 · 판 개시 값 도구
+
+
+def test_ruff_format_이_세는_파일에_md_가_없다() -> None:
+    """**통과 수에 `.md` 가 섞여 지시서가 앉을 때마다 하나씩 늘었다** (S205 ~ S226).
+
+    ruff 가 실제로 포맷한 파일(`format_path` 줄)을 본다 — 설정 글자를 찾지 않는다.
+    고치기 전 판은 그 줄에 `.md` 가 118 이었다(S227 1-1).
+    """
+    done = subprocess.run(
+        [str(PROJECT_ROOT / ".venv" / "Scripts" / "ruff.exe"), "format", "--check", "-v", "."],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+    body = done.stdout + done.stderr
+    paths = re.findall(r"format_path; path=(\S+)", body)
+    assert paths, f"ruff 가 포맷한 파일을 못 읽었습니다: {body[-400:]}"
+    md = [path for path in paths if path.lower().endswith(".md")]
+    assert not md, f"ruff format 이 .md {len(md)}개를 셉니다 — 예: {md[:3]}"
+
+
+def test_판_개시_값_도구가_PC_와_남의_python_을_낸다() -> None:
+    """**남의 python 을 세는 도구가 없어 열여덟 판이 셸로 셌다** (S226 1-2 · S227).
+
+    도구를 ``run_tool`` 로 실제로 불러 줄 꼴을 본다 — PC 한 줄 · 남의 python 수 ·
+    그 수만큼의 행.
+    """
+    path, code, _elapsed = _run_tool().run("open_values", [])
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert code == 0, lines
+    assert re.fullmatch(
+        r"PC \S+ · .+ · cpu \d+ · RAM \d+ B \(\d+\.\d GB\) · -n auto 일꾼 \d+", lines[0]
+    ), lines[0]
+    found = re.fullmatch(r"남의 python (\d+)", lines[1])
+    assert found, lines[1]
+    rows = lines[2:]
+    assert len(rows) == int(found.group(1)), lines
+    assert all(re.match(r"  \d+ ← \d+ · \S+ · ", row) for row in rows), rows
