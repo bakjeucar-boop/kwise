@@ -725,7 +725,9 @@ def _power_factor(
     # **각이 좁아지는 모습**이 개선의 전부다 (15세션 2-3).
     triangle_col, day_col = st.columns(2)
     with triangle_col:
-        st.altair_chart(charts.power_triangle_chart(result), width="stretch")
+        triangle = charts.power_triangle_chart(result)
+        # 같은 눈금 그림은 제 폭을 쓴다 — stretch 면 칸 폭으로 갈려 비율이 깨진다 (S224).
+        st.altair_chart(triangle, width="content" if isinstance(triangle.width, int) else "stretch")
         # 상한 이상이면 삼각형이 하나라 「개선 전후」 가 거짓이다 (S156 1-2).
         st.caption(
             "전력삼각형" if result.no_headroom else "전력삼각형 — 개선 전후",

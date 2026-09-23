@@ -959,6 +959,13 @@ def dr_daily_chart(profile: DrProfile) -> alt.LayerChart | alt.FacetChart:
     return alt.layer(*layers).properties(height=300)
 
 
+TRIANGLE_WIDTH = 260
+"""같은 눈금 전력삼각형의 폭 (px) — 높이는 이 폭에 무효 끝 ÷ 유효 끝을 곱한다 (S224)."""
+
+ANGLE_LABEL_AT = 0.6
+"""각도 글자 오른끝의 유효전력 자리 (기준 1) — 벌 넷에서 글자가 선에 안 닿는 자리 (S223 2-5)."""
+
+
 def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
     """전력삼각형 — 개선 전후 (15세션 2-3).
 
@@ -969,6 +976,13 @@ def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
     뻗어 바깥 오른쪽 범례와 같은 자리를 다툰다 — :data:`LEGEND_BELOW` 참조.
     """
     frame = power_triangle_frame(result)
+    # **가로·세로를 같은 눈금으로** (S224). 비율이 칸에 딸려 움직이면 그려진 각이
+    # 역률각과 달라진다 — 97% 에서 14.1° 가 31.7° 로 그려졌다. 역률 100 은 무효전력
+    # 끝이 0 이라 세로 범위를 그리는 도구가 못 정한다 — 그 벌만 칸 폭에 맞춘다.
+    q_end = float(frame["무효전력"].max())
+    p_end = float(frame["유효전력"].max())
+    square = q_end > 0
+    scale = alt.Scale(nice=False) if square else alt.Undefined
     lines = pd.DataFrame(
         [
             {"구분": row["구분"], "순서": order, "유효전력": x, "무효전력": y}
@@ -982,8 +996,8 @@ def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
         alt.Chart(lines)
         .mark_line(point=False)
         .encode(
-            x=alt.X("유효전력:Q", title="유효전력 (기준 1)"),
-            y=alt.Y("무효전력:Q", title="무효전력"),
+            x=alt.X("유효전력:Q", title="유효전력 (기준 1)", scale=scale),
+            y=alt.Y("무효전력:Q", title="무효전력", scale=scale),
             color=alt.Color("구분:N", title=None, legend=LEGEND_BELOW),
             order="순서:Q",
             tooltip=["구분"],
@@ -997,7 +1011,8 @@ def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
             for _, row in frame.iterrows()
         ],
         각도라벨=[f"{row['각도(도)']:.1f}°" for _, row in frame.iterrows()],
-        각도y=[row["무효전력"] * 0.28 for _, row in frame.iterrows()],
+        각도x=ANGLE_LABEL_AT,
+        각도y=[row["무효전력"] * ANGLE_LABEL_AT / row["유효전력"] for _, row in frame.iterrows()],
     )
     labels = (
         alt.Chart(marked)
@@ -1010,17 +1025,26 @@ def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
         )
     )
     # 원점 쪽 각도 표기 — **각이 좁아지는 모습**이 이 그림의 전부다.
+    # 제 빗변 바로 위에 글자 오른끝을 둔다 (S224). 빗변이 왼쪽으로 낮아지므로
+    # 글자가 선에서 떨어진다 — 원점에서 px 로 떨어뜨리던 자리는 선을 밟았다.
     angles = (
         alt.Chart(marked)
-        .mark_text(dx=4, align="left", fontSize=11)
+        .mark_text(align="right", baseline="bottom", dy=-3, fontSize=11)
         .encode(
-            x=alt.value(46),
+            x=alt.X("각도x:Q"),
             y=alt.Y("각도y:Q"),
             text="각도라벨:N",
             color=alt.Color("구분:N", title=None, legend=LEGEND_BELOW),
         )
     )
-    return (shape + labels + angles).properties(height=280)
+    chart = shape + labels + angles
+    if not square:
+        return chart.properties(height=280)
+    # 폭을 적고 높이를 그 비율로 (S224). 눈금 끝을 안 둥글리고(nice 끔) 테마의 fit
+    # 대신 pad 로 두어야 축 상자가 이 크기다 — fit 은 축·범례 몫을 칸에서 뺀다.
+    return chart.properties(
+        width=TRIANGLE_WIDTH, height=TRIANGLE_WIDTH * q_end / p_end, autosize="pad"
+    )
 
 
 def power_factor_day_chart(
