@@ -965,6 +965,9 @@ TRIANGLE_WIDTH = 260
 ANGLE_LABEL_AT = 0.6
 """각도 글자 오른끝의 유효전력 자리 (기준 1) — 벌 넷에서 글자가 선에 안 닿는 자리 (S223 2-5)."""
 
+FLAT_TRIANGLE_LABEL = "무효전력 0 · 역률 100%"
+"""역률 100 전력삼각형의 각도 글자 자리 글 (S225) — 선 하나인 까닭. PPT·Word 도 같은 글이다."""
+
 
 def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
     """전력삼각형 — 개선 전후 (15세션 2-3).
@@ -983,6 +986,9 @@ def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
     p_end = float(frame["유효전력"].max())
     square = q_end > 0
     scale = alt.Scale(nice=False) if square else alt.Undefined
+    # 역률 100 은 선 하나다 — 눈금 「0.000000」 대신 그 까닭을 각도 글자 자리에 적는다 (S225).
+    # 눈금 글자는 빼지 않고 투명하게 둔다 — 빼면 그 자리를 축 상자가 가져가 크기가 바뀐다.
+    y_axis = alt.Undefined if square else alt.Axis(labelOpacity=0)
     lines = pd.DataFrame(
         [
             {"구분": row["구분"], "순서": order, "유효전력": x, "무효전력": y}
@@ -997,7 +1003,7 @@ def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
         .mark_line(point=False)
         .encode(
             x=alt.X("유효전력:Q", title="유효전력 (기준 1)", scale=scale),
-            y=alt.Y("무효전력:Q", title="무효전력", scale=scale),
+            y=alt.Y("무효전력:Q", title="무효전력", scale=scale, axis=y_axis),
             color=alt.Color("구분:N", title=None, legend=LEGEND_BELOW),
             order="순서:Q",
             tooltip=["구분"],
@@ -1010,7 +1016,10 @@ def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
             f"{row['구분']} — 역률 {row['역률(%)']:.1f}% · {row['각도(도)']:.1f}°"
             for _, row in frame.iterrows()
         ],
-        각도라벨=[f"{row['각도(도)']:.1f}°" for _, row in frame.iterrows()],
+        각도라벨=[
+            f"{row['각도(도)']:.1f}°" if square else FLAT_TRIANGLE_LABEL
+            for _, row in frame.iterrows()
+        ],
         각도x=ANGLE_LABEL_AT,
         각도y=[row["무효전력"] * ANGLE_LABEL_AT / row["유효전력"] for _, row in frame.iterrows()],
     )

@@ -747,6 +747,21 @@ def power_triangle_png(result: PowerFactorResult) -> bytes:
     # **가로·세로를 같은 눈금으로** (S222). 비율이 자료에 딸려 움직이면 그려진 각이
     # 역률각과 달라진다 — 92% 벌에서 23° 가 37° 로 그려졌다. 범위는 자동 그대로다.
     axes.set_aspect("equal")
+    # 역률 100 은 선 하나다 — 음수까지 뜬 세로 눈금 대신 그 까닭을 선 위에 적는다 (S225).
+    # 갈림과 글은 화면 ``ui.charts.power_triangle_chart`` 와 같다 (제 선 위 3pt · 오른끝 0.6).
+    # 눈금 글자는 빼지 않고 투명하게 둔다 — 빼면 tight 여백이 줄어 쪽 위 그림이 커진다.
+    if float(frame["무효전력"].max()) == 0:
+        axes.tick_params(axis="y", labelcolor="none")
+        axes.annotate(
+            "무효전력 0 · 역률 100%",
+            xy=(0.6, 0.0),
+            xytext=(0, 3),
+            textcoords="offset points",
+            ha="right",
+            va="bottom",
+            fontsize=8,
+            color=_series()[0],
+        )
     add_legend(axes)
     return render_png(figure)
 
