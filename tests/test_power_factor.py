@@ -628,6 +628,52 @@ def test_PPT_Word_전력삼각형은_그려진_각이_역률각이다(
         )
 
 
+@pytest.mark.parametrize("current", [85.0, 92.0, 97.0])
+def test_화면_전력삼각형은_같은_눈금이고_각도_글자가_제_빗변_위에_선다(
+    current: float,
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+) -> None:
+    """**화면도 가로·세로를 같은 눈금으로** (S224). 칸 폭에 딸려 97% 에서 14.1° 가
+    31.7° 로 그려졌고, 원점에서 px 로 떨어뜨린 각도 글자가 선을 밟았다.
+
+    그림 객체가 내는 크기 · 눈금 · 글자 자리를 본다 — 폭 · 높이가 자료 끝의
+    비율이고 눈금 끝을 안 둥글려야(nice 끔) 축 상자가 그 크기다(autosize pad).
+    각도 글자는 제 빗변 위의 점에 바닥을 두고 위로 떨어져 선다.
+    """
+    import math
+
+    from kwise.ui.charts import power_triangle_chart
+
+    base = evaluate_power_factor(
+        sample_usage, tariff, CURRENT, current_pct=92.0, quality=sample_report
+    )
+    spec = power_triangle_chart(replace(base, current_pct=current)).to_dict()
+    shape, _labels, angles = spec["layer"]
+    points = pd.DataFrame(spec["datasets"][shape["data"]["name"]])
+    p_end, q_end = points["유효전력"].max(), points["무효전력"].max()
+    assert spec.get("autosize") == "pad", "칸 폭에 맞추면 축 상자가 이 크기가 아닙니다."
+    assert shape["encoding"]["x"].get("scale") == {"nice": False}
+    assert shape["encoding"]["y"].get("scale") == {"nice": False}
+    per_x, per_y = spec["width"] / p_end, spec["height"] / q_end
+    for _, row in points[points["순서"] == 2].iterrows():
+        drawn = math.degrees(math.atan2(row["무효전력"] * per_y, row["유효전력"] * per_x))
+        true = math.degrees(math.atan2(row["무효전력"], row["유효전력"]))
+        assert drawn == pytest.approx(true, abs=0.05), (
+            f"역률 {current}% 에서 역률각 {true:.2f}° 가 {drawn:.2f}° 로 그려집니다."
+        )
+    mark = angles["mark"]
+    assert (mark.get("align"), mark.get("baseline")) == ("right", "bottom")
+    assert mark.get("dy", 0) < 0, "각도 글자가 빗변 위로 안 떨어집니다."
+    ends = points[points["순서"] == 2].set_index("구분")
+    for row in spec["datasets"][angles["data"]["name"]]:
+        end = ends.loc[row["구분"]]
+        assert row["각도y"] / row["각도x"] == pytest.approx(end["무효전력"] / end["유효전력"]), (
+            f"「{row['각도라벨']}」 이 제 빗변 위에 안 섭니다."
+        )
+
+
 # --------------------------------------------------------------------- PV 도입 전후
 
 
