@@ -505,3 +505,32 @@ def test_프라임_판도_한_판으로_센다(monkeypatch: pytest.MonkeyPatch) 
     title, _detail = brief.latest_session(lost)
     assert title == "42세션 (01-03)"
     assert brief.stale_session(lost, title) == 43, "프라임 판 행이 빠진 것을 못 문다."
+
+
+def test_칸_글자_수와_머리를_낸다(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """**칸 글자 수와 머리를 판마다 셸 · 스크래치로 쟀다** (S222 · S224' · S225 · S226 · S228).
+
+    도구를 실제로 불러 줄 꼴을 본다 — 칸마다 글자 수 · 갈래 절 합 · 한 칸의 머리.
+    """
+    brief = _brief()
+    monkeypatch.setattr(brief, "read_proceed", lambda: SAMPLE)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "OPEN_ITEMS.md").write_text(
+        "## 가 — 값 (5)\n\n## 나 — 글 (3)\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(brief, "ROOT", tmp_path)
+
+    assert brief.cells(None, 400) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert f"{len(_NEXT):>8,}자  다음 작업" in lines, lines
+    assert f"{len(_OPEN):>8,}자  미해결" in lines, lines
+    assert lines[-1] == "갈래 절 제목 — 가 5 · 나 3 · 합 8", lines[-1]
+
+    assert brief.cells("다음 작업", 12) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        f"「다음 작업」 {len(_NEXT):,}자 · 머리 12자",
+        _NEXT[:12],
+    ]
+    assert brief.cells("없는 칸", 12) == 1

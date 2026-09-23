@@ -968,3 +968,96 @@ def test_판_개시_값_도구가_PC_와_남의_python_을_낸다() -> None:
     rows = lines[2:]
     assert len(rows) == int(found.group(1)), lines
     assert all(re.match(r"  \d+ ← \d+ · \S+ · ", row) for row in rows), rows
+
+
+# =================================== S228 — 투명 글자 · 도는 동안의 파일 · 캐시 파일 목록
+
+
+def test_덱_글자_도구가_투명한_글자는_안_세고_보이는_글자는_센다() -> None:
+    """**투명하게 감춘 눈금을 보이는 글자로 담았다** (S225 · S226 1-4 · S228).
+
+    역률 100 벌 세로 눈금이 ``labelcolor="none"`` 인데 ``get_visible()`` 만 봐 18줄을
+    담았다. 구운 그림 하나를 도구에 그대로 넘겨 본다.
+    """
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    sys.path.insert(0, str(PROJECT_ROOT / "src"))
+    try:
+        import deck_words
+    finally:
+        sys.path.pop(0)
+        sys.path.pop(0)
+
+    figure = Figure()
+    axes = figure.add_subplot()
+    axes.set_xticks([1, 2], ["x-one", "x-two"])
+    axes.set_yticks([1, 2], ["y-one", "y-two"])
+    axes.tick_params(axis="y", labelcolor="none")
+    axes.text(1, 1, "hidden-alpha", alpha=0)
+    axes.text(1, 2, "shown-text")
+    FigureCanvasAgg(figure).draw()
+
+    texts = [text for _kind, text in deck_words._figure_texts(figure) if text]
+    assert {"x-one", "x-two", "shown-text"} <= set(texts), texts
+    assert not {"y-one", "y-two", "hidden-alpha"} & set(texts), texts
+
+
+def test_run_tool_이_도는_동안_받는_파일에_줄이_선다(tmp_path: Path) -> None:
+    """**끝나야 출력을 썼다** — 뒤로 돌린 판의 진행을 못 봤다 (S227 · S228).
+
+    스크래치가 한 줄을 내고 **제가 도는 동안** ``runs\\도는중\\`` 에 그 줄이 섰는지
+    읽어 답한다. 끝난 뒤 받은 파일은 전처럼 stdout 다음 stderr 이고 도는 파일은 지워진다.
+    """
+    run_tool = _run_tool()
+    표 = "S228-도는중-표"
+    스크래치 = tmp_path / "도는중_스크래치.py"
+    스크래치.write_text(
+        "import sys, time\n"
+        "from pathlib import Path\n"
+        f"MARK = {표!r}\n"
+        "print(MARK, flush=True)\n"
+        "seen = False\n"
+        "for _ in range(200):\n"
+        "    live = Path(sys.argv[1]).glob('*.txt')\n"
+        "    seen = any(MARK in p.read_text(encoding='utf-8') for p in live)\n"
+        "    if seen:\n"
+        "        break\n"
+        "    time.sleep(0.05)\n"
+        "print('err-line', file=sys.stderr)\n"
+        "print('seen' if seen else 'unseen')\n",
+        encoding="utf-8",
+    )
+    path, code, _elapsed = run_tool.run(str(스크래치), [str(run_tool.LIVE_DIR)])
+    body = path.read_text(encoding="utf-8")
+    assert code == 0, body[-400:]
+    assert body == f"{표}\nseen\nerr-line\n", body
+    남은 = [p for p in run_tool.LIVE_DIR.glob("*.txt") if 표 in p.read_text(encoding="utf-8")]
+    assert not 남은, f"끝난 판의 도는 파일이 남았습니다: {남은}"
+
+
+def test_캐시_파일_도구가_이름_크기_시각을_낸다(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**캐시 · 스냅 · runs 파일을 셸로 떴다** (S224 · S225 · S226 · S228 1-1)."""
+    run_tool = _run_tool()  # 받는 자리를 임시 캐시보다 먼저 정한다
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    for 차례, 이름 in enumerate(("python_1.txt", "pytest_2.txt", "python_3.txt")):
+        (runs / 이름).write_text("x" * (차례 + 1), encoding="utf-8")
+        os.utime(runs / 이름, (1_000_000 + 차례, 1_000_000 + 차례))
+    monkeypatch.setenv("PROJECT_CACHE", str(tmp_path))
+
+    path, code, _elapsed = run_tool.run("cache_files", ["runs", "--glob", "python_*"])
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert code == 0, lines
+    assert lines[0].endswith("runs — 2파일 가운데 새것부터 2"), lines
+    assert re.fullmatch(r"  \d{4}-\d\d-\d\d \d\d:\d\d:\d\d +3 B  python_3\.txt", lines[1]), lines
+    assert lines[2].endswith("1 B  python_1.txt"), lines
+
+    path, code, _elapsed = run_tool.run("cache_files", [])
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert code == 0, lines
+    row = r"  runs +\d+파일 +[\d,]+ B  \d{4}-\d\d-\d\d \d\d:\d\d:\d\d"
+    assert re.fullmatch(row, lines[1]), lines
