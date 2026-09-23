@@ -199,11 +199,18 @@ def _screen_figures(app: AppTest) -> list[list[str]]:
 
 
 def _figure_texts(figure: Figure) -> Iterable[tuple[str, str]]:
-    """구운 matplotlib 그림 하나의 «갈래, 글자». **보이는 것만.**"""
+    """구운 matplotlib 그림 하나의 «갈래, 글자». **보이는 것만.**
+
+    **투명한 글자도 안 보이는 글자다** (S228) — S225 가 역률 100 벌 세로 눈금을
+    ``labelcolor="none"`` 으로 감췄는데 ``get_visible()`` 만 봐 벌마다 여섯 줄을 담았다.
+    """
+    from matplotlib.colors import to_rgba
     from matplotlib.text import Annotation
 
     def shown(text: Text) -> str:
-        return str(text.get_text()).strip() if text.get_visible() else ""
+        if not text.get_visible() or to_rgba(text.get_color(), text.get_alpha())[3] == 0:
+            return ""
+        return str(text.get_text()).strip()
 
     for text in figure.texts:
         yield "제목", shown(text)

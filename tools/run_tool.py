@@ -24,6 +24,10 @@ r"""도구·명령의 출력을 **파일로 받는다** — 셸 파이프와 리
 출력은 ``PROJECT_CACHE\\runs\\<이름>_<타임스탬프>.txt`` 다 — **실행마다 이름이
 달라 낡은 결과가 새 결과로 보이지 않는다**(``CLAUDE.md`` 9항 5번). 화면에는
 파일 자리와 꼬리 몇 줄만 낸다. 꼬리를 늘리려면 ``--tail`` 이다.
+
+**도는 동안은 ``runs\\도는중\\<이름>_<시작 타임스탬프>_<pid>.txt`` 가 자란다** (S228) —
+뒤로 돌린 판의 진행을 그 파일로 본다. 끝나면 지우고 위 자리에 전과 같은 파일을
+쓴다. 죽이거나 터진 판은 그 파일이 남는다. ``runs\\`` 를 훑는 도구는 아래 폴더를 안 본다.
 """
 
 from __future__ import annotations
@@ -35,6 +39,7 @@ import io
 import os
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -55,6 +60,22 @@ def _cache_root() -> Path:
 #: 받은 출력을 두는 자리. 최종 산출물이 아니라 중간 산출물이다.
 OUT_DIR = _cache_root() / "runs"
 
+#: 도는 동안 자라는 파일의 자리 (S228).
+LIVE_DIR = OUT_DIR / "도는중"
+
+
+class _Live(io.StringIO):
+    """받는 글을 모으면서 **도는 동안 파일에도 바로 쓴다** (S228)."""
+
+    def __init__(self, live: io.TextIOBase) -> None:
+        super().__init__()
+        self._live = live
+
+    def write(self, text: str) -> int:
+        self._live.write(text)
+        self._live.flush()
+        return super().write(text)
+
 
 def tool_names() -> tuple[str, ...]:
     """``tools\\`` 에서 부를 수 있는 도구 이름. **자기 자신은 뺀다.**"""
@@ -68,13 +89,13 @@ def tool_names() -> tuple[str, ...]:
     )
 
 
-def _run_module(name: str, argv: list[str]) -> tuple[str, int]:
+def _run_module(name: str, argv: list[str], live: io.TextIOBase) -> tuple[str, int]:
     """``tools\\`` 의 도구를 제 프로세스에서 돌리고 (출력, 종료 코드) 를 낸다."""
     module = importlib.import_module(name)
     main = getattr(module, "main", None)
     if main is None:
         raise SystemExit(f"{name} 에 main() 이 없습니다")
-    buffer = io.StringIO()
+    buffer = _Live(live)
     kept, sys.argv = sys.argv, [name, *argv]
     code = 0
     try:
@@ -87,8 +108,8 @@ def _run_module(name: str, argv: list[str]) -> tuple[str, int]:
     return buffer.getvalue(), code
 
 
-def _run_pytest(argv: list[str]) -> tuple[str, int]:
-    buffer = io.StringIO()
+def _run_pytest(argv: list[str], live: io.TextIOBase) -> tuple[str, int]:
+    buffer = _Live(live)
     import pytest
 
     with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
@@ -111,34 +132,51 @@ def _at_root(name: str) -> str:
     return str(at_root) if at_root.exists() else name
 
 
-def _run_command(argv: list[str]) -> tuple[str, int]:
+def _run_command(argv: list[str], live: io.TextIOBase) -> tuple[str, int]:
     """그 밖의 명령. **stderr 를 함께 받는다** — 셸에 ``2>&1`` 을 안 붙이려고.
 
     **``.py`` 는 이 python 으로 돌린다** (S227) — Windows 는 ``.py`` 를 실행 파일로
     안 받아 ``[WinError 193]`` 로 죽었고 받은 파일도 없었다(S212 · S219 · S220 · S224').
+
+    받은 파일은 전처럼 **stdout 다음에 stderr** 다 (S228) — 도는 동안의 파일에만 둘이
+    오는 차례대로 섞인다.
     """
     head = [sys.executable] if argv[0].lower().endswith(".py") else []
-    done = subprocess.run(
+    with subprocess.Popen(
         [*head, _at_root(argv[0]), *argv[1:]],
         cwd=PROJECT_ROOT,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
         errors="replace",
-    )
-    return (done.stdout or "") + (done.stderr or ""), done.returncode
+    ) as proc:
+        out, err = _Live(live), _Live(live)
+        stderr = proc.stderr
+        assert proc.stdout is not None and stderr is not None
+        reader = threading.Thread(target=lambda: [err.write(line) for line in stderr])
+        reader.start()
+        for line in proc.stdout:
+            out.write(line)
+        reader.join()
+        code = proc.wait()
+    return out.getvalue() + err.getvalue(), code
 
 
 def run(name: str, argv: list[str] | None = None) -> tuple[Path, int, float]:
     """``name`` 을 돌려 출력을 파일에 담고 (파일, 종료 코드, 소요초) 를 낸다."""
     argv = list(argv or ())
     started = time.time()
-    if name in tool_names():
-        text, code = _run_module(name, argv)
-    elif name == "pytest":
-        text, code = _run_pytest(argv)
-    else:
-        text, code = _run_command([name, *argv])
+    LIVE_DIR.mkdir(parents=True, exist_ok=True)
+    live_path = LIVE_DIR / f"{Path(name).stem}_{datetime.now():%Y%m%d_%H%M%S}_{os.getpid()}.txt"
+    with live_path.open("w", encoding="utf-8") as live:
+        if name in tool_names():
+            text, code = _run_module(name, argv, live)
+        elif name == "pytest":
+            text, code = _run_pytest(argv, live)
+        else:
+            text, code = _run_command([name, *argv], live)
+    live_path.unlink()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = OUT_DIR / f"{Path(name).stem}_{stamp}.txt"

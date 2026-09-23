@@ -82,7 +82,13 @@
    그 판 앞 일곱(S200~S206)은 도구가 **없어서** 샌 것이라 갈래가 다르다 —
    **지금 남은 병은 「없다」 가 아니라 「안 부른다」 다.**
 
-   **스물셋을 다 받는다** (S209 2절 · S227 에 `open_values` 가 붙었다). `count_sites`(`main(argv)`)와
+   **도는 동안 `runs\도는중\<이름>_<시작 시각>_<pid>.txt` 가 자란다** (S228) —
+   뒤로 돌린 판의 진행은 그 파일을 읽어 본다(셸로 들여다보지 않는다). 끝나면
+   지워지고 받은 파일은 전과 같다 · 죽이거나 터진 판은 남는다. **파일 목록 · 크기 · 시각은
+   `cache_files`**(`runs` · `deck_words` · `runs\도는중` · 인자 없이 폴더마다) ·
+   **기록 칸 글자 수 · 머리는 `daily_brief --cells` · `--cell <칸> --head N`**.
+
+   **스물넷을 다 받는다** (S209 2절 · S227 에 `open_values` · S228 에 `cache_files` 가 붙었다). `count_sites`(`main(argv)`)와
    `daily_brief`(`sys.stdout.reconfigure`)가 못 받던 자리를 닫았고
    `tests\test_deployment.py` 의 못 둘이 **새 도구가 붙어도 저절로 문다.**
    **`.py` 파일도 받는다** (S227) — 스크래치를 `run_tool.py --tail 20 <온 경로>.py`

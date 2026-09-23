@@ -22,6 +22,8 @@ r"""아침 브리핑을 만든다.
     .venv\Scripts\python.exe tools\daily_brief.py
     .venv\Scripts\python.exe tools\daily_brief.py --no-clip   클립보드 복사 생략
     .venv\Scripts\python.exe tools\daily_brief.py --out brief.md
+    .venv\Scripts\python.exe tools\daily_brief.py --cells              칸 글자 수 · 갈래 절 수
+    .venv\Scripts\python.exe tools\daily_brief.py --cell 미해결 --head 600
 
 프로젝트 지식에 올리는 세 문서(`docs\project\`)가 「무엇을 만드는가」 와
 「어떻게 일하는가」 를 맡고, 이 도구는 「오늘 어디서부터인가」 만 맡는다.
@@ -634,19 +636,51 @@ def to_clipboard(text: str) -> bool:
         return False
 
 
+#: ``docs\OPEN_ITEMS.md`` 의 갈래 절 제목 — ``tests\test_doc_counts.py`` 의 ``BRANCH_HEAD`` 와 같다.
+BRANCH_HEAD = re.compile(r"^## ([가-마]) —[^\n(]*\((\d+)\)\s*$", re.M)
+
+
+def cells(name: str | None, head: int) -> int:
+    """「현재 상태」 칸의 글자 수와 머리 (S228).
+
+    판마다 셸 ``Substring`` 이나 스크래치로 칸을 쟀다(S222 · S224' · S225 · S226).
+    칸의 경계는 :func:`current_state` 다 — 「다음 작업」 상한 못이 재는 값과 같다.
+    """
+    state = current_state(read_proceed())
+    if name is not None:
+        if name not in state:
+            print(f"「{name}」 칸이 없습니다 — {' · '.join(state)}")
+            return 1
+        print(f"「{name}」 {len(state[name]):,}자 · 머리 {head:,}자")
+        print(state[name][:head])
+        return 0
+    for key, value in state.items():
+        print(f"{len(value):>8,}자  {key}")
+    rows = BRANCH_HEAD.findall((ROOT / "docs" / "OPEN_ITEMS.md").read_text(encoding="utf-8"))
+    parts = " · ".join(f"{branch} {count}" for branch, count in rows)
+    print(f"\n갈래 절 제목 — {parts} · 합 {sum(int(count) for _, count in rows)}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="아침 브리핑을 만든다")
     ap.add_argument("--no-clip", action="store_true", help="클립보드 복사를 생략한다")
     ap.add_argument("--out", type=Path, default=None, help="파일로도 저장한다")
+    ap.add_argument("--cells", action="store_true", help="칸마다 글자 수와 갈래 절 수만 낸다")
+    ap.add_argument("--cell", default=None, help="이 이름의 칸 글자 수와 머리만 낸다")
+    ap.add_argument("--head", type=int, default=400, help="--cell 이 낼 머리 글자 수")
     args = ap.parse_args()
 
-    text = build()
     # **있을 때만 부른다** (S209 2절). ``tools\run_tool.py`` 가 출력을
     # ``io.StringIO`` 로 갈아 끼우는데 그것에는 ``reconfigure`` 가 없어
     # ``AttributeError`` 로 죽었다 — 그 도구가 이 도구를 **못 받던 자리**다.
     # 진짜 콘솔에서는 그대로 부른다(cp949 로 한글이 깨지는 것을 막는다).
     if (reconfigure := getattr(sys.stdout, "reconfigure", None)) is not None:
         reconfigure(encoding="utf-8", errors="replace")
+    if args.cells or args.cell:
+        return cells(args.cell, args.head)
+
+    text = build()
     print(text, end="")
 
     if args.out:
