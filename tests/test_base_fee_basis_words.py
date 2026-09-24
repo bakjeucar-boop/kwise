@@ -1271,6 +1271,9 @@ def test_자릿수_증상_사실이_네_산출물에서_같은_글자다(rendere
 
     **안 무는 것** — 잉여와 ESS 필요 용량은 이 두 벌(대형)에 안 선다(잉여 0 · ESS 는
     최소 규격 안). 두 사실은 덱 스냅 대조(232세션 절 3-2)가 본다.
+
+    **S235 에 넓혔다** — 자릿수 결함 넷(① Excel 수 칸 서식 · ② 그림 눈금 쉼표 · ③ 부록 B
+    값 쉼표 · ④ 만원 카드 안의 증감과 ESS 사양 표 한 열의 단위)이 두 벌에 다 선다.
     """
     values = _metric_values(rendered.rows)
     kw = re.compile(r"^-?[\d,]+(?:\.\d+)? kW$")
@@ -1294,3 +1297,71 @@ def test_자릿수_증상_사실이_네_산출물에서_같은_글자다(rendere
     assert {"화면", "PPT", "Word"} <= outputs, (rendered.key, dict(found))
     places = {len(value.split(" ")[0].partition(".")[2]) for value in found}
     assert places == {1}, (rendered.key, dict(found))
+
+    # **S235 — 자릿수 결함 넷(①~④)이 두 벌에 다 선다** (웹 대화창 판단 ㄱ).
+    # ① Excel 수 칸은 셀 서식으로 쉼표 · 한 열 한 자리 · 사실 열의 자리는 위 글자와 같다 ·
+    #   서식이 값을 안 자른다(서식 자리보다 긴 값이 남는다).
+    from openpyxl import load_workbook
+
+    sheet_places: dict[str, int] = {}
+    어긋: list[str] = []
+    longer = 0
+    for sheet in load_workbook(io.BytesIO(rendered.payloads["excel"])).worksheets:
+        heads = [str(cell.value) for cell in sheet[1]]
+        for column in sheet.iter_cols(min_row=2):
+            cells = [
+                c
+                for c in column
+                if isinstance(c.value, int | float) and not isinstance(c.value, bool)
+            ]
+            if not cells:
+                continue
+            name = f"{sheet.title}:{heads[cells[0].column - 1]}"
+            patterns = {cell.number_format for cell in cells}
+            if len(patterns) != 1 or not str(next(iter(patterns))).startswith("#,##0"):
+                어긋.append(f"{name} {sorted(map(str, patterns))}")
+                continue
+            sheet_places[name] = len(str(next(iter(patterns))).partition(".")[2])
+            longer += sum(round(cell.value, sheet_places[name]) != cell.value for cell in cells)
+    assert 어긋 == [], (rendered.key, 어긋[:8])
+    assert longer, (rendered.key, "서식 자리보다 긴 값이 한 칸도 없다 — 서식이 값을 잘랐나")
+    for fact, head in (
+        ("관측 최대수요", "월별 집계:관측 최대수요(kW)"),
+        ("요금적용전력", "월별 집계:요금적용전력(kW)"),
+    ):
+        spelled = {len(v.split(" ")[0].partition(".")[2]) for v in spellings(DIGIT_FACTS[fact])}
+        assert spelled == {sheet_places[head]}, (rendered.key, fact, spelled, sheet_places[head])
+
+    # ② 그림 눈금 · ③ 부록 B 값 — 정수부 네 자리 이상에 쉼표가 없는 글자가 없다.
+    bare = re.compile(r"^[−-]?\d{4,}(?:\.\d+)?$")
+    ticks = [row[-1] for row in rendered.figures if row[-2] == "눈금"]
+    assert [t for t in ticks if re.fullmatch(r"[−-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?", t)], rendered.key
+    assert [t for t in ticks if bare.match(t)] == [], rendered.key
+    부록 = [
+        row
+        for row in rendered.rows
+        if row[0] in ("Word", "Excel") and ("법령 유래" in row or "판단값" in row)
+    ]
+    값 = [cell for row in 부록 for cell in row[2:] if "임계 계약전력" in "".join(row)]
+    assert 값 and not [cell for cell in 값 if bare.match(cell)], (rendered.key, 값)
+
+    # ④ 만원으로 적는 화면 카드 안의 증감 · ESS 사양 표의 한 열은 만원으로 적는다.
+    won = re.compile(r"(?<![만억\d,])-?[\d,]*\d원")
+    screen = [row for row in rendered.rows if row[0] == "화면" and len(row) >= 5]
+    shown, 카드 = "", []
+    for row in screen:
+        if row[2] == "Metric" and row[3] == "지표":
+            shown = row[4]
+        elif row[2] == "Metric" and row[3] == "증감" and re.search("만원|억원", shown):
+            카드.append((shown, row[4]))
+    assert [c for c in 카드 if "역률 영향 반영 시" in c[1]], (rendered.key, 카드)
+    assert [c for c in 카드 if won.search(c[1])] == [], (rendered.key, 카드)
+    ess = [
+        row[4]
+        for row in screen
+        if row[2] == "Dataframe"
+        and row[1].endswith("6. ESS — 입력과 결과")
+        and row[4].endswith("원")
+    ]
+    if [cell for cell in ess if "만원" in cell]:
+        assert [c for c in ess if won.fullmatch(c) and c != "0원"] == [], (rendered.key, ess)

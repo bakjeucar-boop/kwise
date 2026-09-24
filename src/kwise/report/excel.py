@@ -230,7 +230,9 @@ def _number_formats(sheet: Sheet) -> None:
             decimals = common[0][0] if common else None
         if decimals is None:
             fractions = Counter(p for p in map(_places, (c.value for c in cells)) if p)
-            decimals = fractions.most_common(1)[0][0] if fractions else 0
+            # 원값(접지 않은 실수)은 자리가 16 이 넘는다 — 화면 문이 접는 가장 긴 자리
+            # (:data:`~kwise.report.columns.DISPLAY_DECIMALS` 의 「률」 4)에서 멈춘다.
+            decimals = min(fractions.most_common(1)[0][0], 4) if fractions else 0
         pattern = "#,##0" + ("." + "0" * decimals if decimals else "")
         for cell in cells:
             cell.number_format = pattern
