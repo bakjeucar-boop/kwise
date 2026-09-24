@@ -513,12 +513,19 @@ def test_칸_글자_수와_머리를_낸다(
     """**칸 글자 수와 머리를 판마다 셸 · 스크래치로 쟀다** (S222 · S224' · S225 · S226 · S228).
 
     도구를 실제로 불러 줄 꼴을 본다 — 칸마다 글자 수 · 갈래 절 합 · 한 칸의 머리.
+    **S229 에 갈래별 이름(``--branch``)을 넓혔다** — 표 행 · 글머리 · 두 줄 글머리를
+    이름으로 뜨고 ``###`` 이력 표와 문단은 안 뜬다. 실물 문서는 갈래마다 이름 수가
+    절 제목 수와 같아야 한다(S221 0-4 · S228' 이 셸과 스크래치로 떴다).
     """
     brief = _brief()
     monkeypatch.setattr(brief, "read_proceed", lambda: SAMPLE)
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "OPEN_ITEMS.md").write_text(
-        "## 가 — 값 (5)\n\n## 나 — 글 (3)\n", encoding="utf-8"
+        "## 가 — 값 (2)\n\n| 항목 | 몫 |\n|---|---|\n| 첫째 값 (S1) | 1원 |\n| 둘째 값 | 2원 |\n"
+        "\n### 이력\n\n| 옛 | 지금 |\n|---|---|\n| 옛 값 | 닫혔다 |\n\n"
+        "## 나 — 글 (2)\n\n- 한 줄 이름\n- 긴 이름이\n  두 줄에 걸친다 (S2 · 몸)\n\n"
+        "**문단은 이름이 아니다**\n",
+        encoding="utf-8",
     )
     monkeypatch.setattr(brief, "ROOT", tmp_path)
 
@@ -526,7 +533,20 @@ def test_칸_글자_수와_머리를_낸다(
     lines = capsys.readouterr().out.splitlines()
     assert f"{len(_NEXT):>8,}자  다음 작업" in lines, lines
     assert f"{len(_OPEN):>8,}자  미해결" in lines, lines
-    assert lines[-1] == "갈래 절 제목 — 가 5 · 나 3 · 합 8", lines[-1]
+    assert lines[-1] == "갈래 절 제목 — 가 2 · 나 2 · 합 4", lines[-1]
+
+    assert brief.branches("가나") == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "가 — 값 (2) · 이름 2",
+        "  가-1. 첫째 값",
+        "  가-2. 둘째 값",
+        "나 — 글 (2) · 이름 2",
+        "  나-1. 한 줄 이름",
+        "  나-2. 긴 이름이 두 줄에 걸친다",
+    ]
+    real = brief.branch_names((PROJECT_ROOT / "docs" / "OPEN_ITEMS.md").read_text(encoding="utf-8"))
+    off = [f"{b} 제목 {n} · 이름 {len(names)}" for b, _t, n, names in real if n != len(names)]
+    assert len(real) == 5 and not off, off
 
     assert brief.cells("다음 작업", 12) == 0
     assert capsys.readouterr().out.splitlines() == [

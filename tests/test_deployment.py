@@ -955,7 +955,8 @@ def test_판_개시_값_도구가_PC_와_남의_python_을_낸다() -> None:
     """**남의 python 을 세는 도구가 없어 열여덟 판이 셸로 셌다** (S226 1-2 · S227).
 
     도구를 ``run_tool`` 로 실제로 불러 줄 꼴을 본다 — PC 한 줄 · 남의 python 수 ·
-    그 수만큼의 행.
+    그 수만큼의 행 · **끝에 전원 한 줄**(S229 — S227 은 배터리 판인데 남의 python
+    0 만 보고 깨끗한 판이라 적었다).
     """
     path, code, _elapsed = _run_tool().run("open_values", [])
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -965,9 +966,11 @@ def test_판_개시_값_도구가_PC_와_남의_python_을_낸다() -> None:
     ), lines[0]
     found = re.fullmatch(r"남의 python (\d+)", lines[1])
     assert found, lines[1]
-    rows = lines[2:]
+    rows = lines[2:-1]
     assert len(rows) == int(found.group(1)), lines
     assert all(re.match(r"  \d+ ← \d+ · \S+ · ", row) for row in rows), rows
+    power = r"전원 (AC|배터리|모름) · 잔량 (\d{1,3}%|모름) · 절전 (켜짐|꺼짐)"
+    assert re.fullmatch(power, lines[-1]), lines[-1]
 
 
 # =================================== S228 — 투명 글자 · 도는 동안의 파일 · 캐시 파일 목록
@@ -1061,3 +1064,12 @@ def test_캐시_파일_도구가_이름_크기_시각을_낸다(
     assert code == 0, lines
     row = r"  runs +\d+파일 +[\d,]+ B  \d{4}-\d\d-\d\d \d\d:\d\d:\d\d"
     assert re.fullmatch(row, lines[1]), lines
+
+    # **캐시 밖 저장소 폴더도 뜬다** (S229 — S228' 이 `docs\directives\` 를 셸로 떴다).
+    path, code, _elapsed = run_tool.run(
+        "cache_files", ["--repo", "docs", "--glob", "OPEN_ITEMS.md"]
+    )
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert code == 0, lines
+    assert lines[0] == f"{PROJECT_ROOT / 'docs'} — 1파일 가운데 새것부터 1", lines
+    assert lines[1].endswith(" B  OPEN_ITEMS.md"), lines
