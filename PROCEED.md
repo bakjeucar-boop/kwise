@@ -350,7 +350,38 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 **0-1. PC — 2번 PC** — `run_tool open_values`(`open_values_20260925_055410.txt`) 첫 줄 `DESKTOP-L8O0EG1 · AMD Ryzen 5 4500U with Radeon Graphics · cpu 6 · RAM 7907753984 B (7.4 GB) · -n auto 일꾼 6`. **저장소** — `git pull` Already up to date · HEAD **1169614** = `origin/master`(S235' 보고 값과 같다) · 워크트리 깨끗.
 **0-2. 미해결 146** — 갈래 가 8 · 나 34 · 다 9 · 라 58 · 마 37(`daily_brief --cells` · `daily_brief_20260925_055532.txt`) — 지시서 값과 같다. **회귀값 여덟 · 타당성 기준선** — 저장소 판 `output\casestudy_20260922.xlsx`(S235 3-5 가 맞댄 판 · 174/174 · 금액 칸 갈림 0). **덱 스냅 기준선** — `cache\deck_words\s235_after.json`(09-24 21:38 · S235 3-4 · 그 뒤 코드 고침은 `excel._number_formats` 서식 한 줄뿐이고 스냅은 Excel 칸을 값으로만 담아 안 닿는다 — 235세션 절 3-4).
-**0절 벽시계** 05:54 ~ 05:58.
+**0절 벽시계** 05:54 ~ 05:56(커밋 `f8c83df` 05:56:11 · 처음에 시계를 안 보고 「05:58」 로 적어 1절 커밋에서 고쳤다).
+
+**1-1. 같은 화면의 다른 수단은 비움을 어떻게 가르나 — 가르지 않는다. 0 이 곧 비움이다.**
+
+| 수단 · 칸 | 입력 칸 기본값 | 비움이 무엇으로 가나 | 코드 자리 |
+|---|---|---|---|
+| 태양광 설치 단가 · 총 투자비 | `value=0.0` · `min_value=0.0` | `unit_cost or None` · `total_cost or None` — **0 을 넣어도 `None`** | `ui\views\measures.py:845-848` · `:886-890` · `:922-923` |
+| ESS 견적 총액 · 고정비 · kWh당 | `value=0.0` | `measure_float` — 「넣지 않았거나 0 이면 ``None``」 · `total_cost or None` | `ui\state.py:150-159` · `ui\views\measures.py:1700` · `:1817-1822` |
+| DR 정산 단가 | `value=0.0` | `measure_float` → `None` | `ui\views\measures.py:497-503` · `ui\views\compare.py:970` |
+| **역률 개선 투자비** | `value=0.0` · `min_value=0.0` | 2단계 카드는 **float 0.0 그대로** · 3단계는 `measure_float(...)` 가 `None` 으로 바꾼 것을 `or 0.0` 이 0 으로 되돌린다 | `ui\views\measures.py:694-700` · `ui\views\compare.py:983` · `ui\cache.py:546` · `measures\power_factor.py:110` · `:142` |
+
+- 「미산출 — 투자비 미입력」 글자를 만드는 자리는 하나 — `measures\ess.py:154` `NO_INVESTMENT_INPUT` · `:157-183` `payback_label` 「회수기간이 없다 + 투자비 모름(`None`)」. 투자비 칸은 `money.won(None, reason=…)` 사유 글.
+- 회수기간이 비움을 받는 자리 — `measures\base.py:244` `payback_years(investment_won: float, …)` 는 `None` 을 안 받는다(형이 float) · 태양광 · ESS 는 부르는 쪽이 `None` 이면 부르지 않고 `payback_years=None` 으로 둔다.
+- **넣은 0 의 뜻이 수단마다 둘이다** — 선택요금 · 계약전력 · DR 은 코드가 `investment_won=0.0` 을 박아 「투자 없음 → 절감이 있으면 즉시」 로 쓰고(`report\standalone.py:167` · `:186` · `:199` · `report\excel.py:471` · `report\document.py:864` · `:893` · `:948`), 태양광 · ESS · DR 단가는 0 을 「미입력」 으로 쓴다(요구사항서 7.5 「단가 미입력 시 투자비 대신 사유를 반환한다 (0원이 아니다)」 · `ui\state.py:153` 「0 을 그대로 넘기면 "단가 0원" 이 되어 회수기간이 0년으로 나온다 (7.5·7.6)」).
+- **판정 — 코드가 역률 투자비의 비움과 「0원을 넣음」 을 가르지 못한다.** 입력 칸 기본값이 0.0 이고 `min_value=0.0` 이라 칸을 비울 수 없다(비우면 0.0) — 지시서가 예로 든 「입력 기본값이 0」 그대로다. 다른 수단의 방식(0 → `None`)을 따르면 **넣은 0 도 「미산출 — 투자비 미입력」 이 된다** — 지금 「즉시」 인 「0원을 넣음」 경로의 글자가 바뀐다.
+
+**1-2. 역률 카드 경로 아홉 — 지금 글자는 S231 1-2 표(벌 `small-a2` · 받은 파일 `s231_pf_payback_20260924_130215.txt`) · 이 판은 다시 뜨지 않았다.** 「고친 뒤(예정)」 는 다른 수단 방식을 따랐을 때의 글자다 — 비움과 넣은 0 이 같은 글자가 된다.
+
+| 경로 | 비움(0) 지금 | 고친 뒤(예정) | 글자를 만드는 코드 | 캐시 · 일괄 · 조합에 닿는 자리 |
+|---|---|---|---|---|
+| 화면 역률 카드 지표 | 즉시 | 미산출 — 투자비 미입력 | `ui\views\measures.py:723` `fmt.payback` → `ess.payback_label` | `ui\cache.py:546` `investment_won: float`(캐시 서명) |
+| 화면 3단계 개선안별 표 | 0원 · 즉시 | 사유 · 미산출 — 투자비 미입력 | `report\standalone.py:205-219` · `:331` | `ui\views\compare.py:983` `or 0.0` |
+| 화면 조합 「+ 역률 97%」 | 즉시 | 미산출 — 투자비 미입력 | `ui\views\compare.py:516` | `compare\combination.py:604` `investment = 0.0` · `:612` 역률 투자비가 없으면 건너뛴다(계산 폴더) · `ui\views\compare.py:268` |
+| PPT 8장 표 | — · 즉시 | 사유 · 미산출 | `report\document.py:998-999`(`measure_entries`) · `report\slides.py:943-948` | 위 3단계 값 |
+| PPT 12장 · 16장 표 | 즉시 | 미산출 | `report\slides.py:943-948` `_payback` | 조합 값 |
+| Excel 수단별 결과 | 0 · 즉시 | 사유 · 미산출 — 투자비 미입력 | `report\excel.py:544-549` | 위 3단계 값 |
+| Excel 조합 비교 | 0 · 0 | 모름 — 이 판이 안 떴다 | 조합 줄 투자비 · 회수기간 열 | `compare\combination.py:604-613` |
+| Word 표10 · 표13 | 즉시 · 0원 · 즉시 | 미산출 · 사유 · 미산출 | `report\document.py:998-999` · `:1805` | 위 3단계 · 조합 값 |
+| 일괄(`report\batch.py`) | YAML 기본 0.0 → 즉시 | 미산출(기본을 `None` 으로) | `report\batch.py:91` `power_factor_investment_won: float = 0.0` · `:339` | Excel 수단별 결과만 |
+
+**1-3. 고칠 자리 수 — 셌다 · 이 판은 고치지 않는다(2절).** 다른 수단 방식으로 고친다면 닿는 코드 자리 — 화면 · 산출물 쪽 4(`ui\views\measures.py:694-709` 카드 부르는 자리 · `ui\cache.py:546` · `ui\views\compare.py:983` · `report\batch.py:91`) · **계산 폴더 몫 2**(`measures\power_factor.py:110 · 142 · 275` 한 함수 · `compare\combination.py:604-613`) — `payback_label` · `excel` · `document` · `slides` · `standalone` 은 `None` 을 이미 받으므로 안 고친다. 시험 자리 — 이 판은 세지 않았다(고치지 않으므로).
+**1절 벽시계** 05:56 ~ 05:57(시계를 보고 적었다).
 
 ## 오늘 (2026-09-24) 235세션 — **고침 판 · 자릿수 뿌리를 닫는다 · 다음 뿌리 「정의가 다른 두 수」 를 잰다**
 
