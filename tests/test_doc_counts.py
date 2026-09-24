@@ -701,10 +701,10 @@ def test_갈래_넷이_시험_파일을_빠짐없이_한_번씩_문다() -> None
     commands = _branch_commands()
     assert len(commands) == 4, f"갈래 명령 넷을 못 읽었습니다 — {len(commands)}개만 잡혔습니다."
 
-    # **네 명령 다 `--durations=0` 을 단다** (S229) — 1번 PC 통째 명령과 같게. S225 · S227
-    # 두 판이 이것 없이 돌아 느려진 시험을 판끼리 못 맞댔다(228세션 절 1-2).
-    bare = [args for args, _names in commands if "--durations=0" not in args.split()]
-    assert not bare, f"갈래 명령에 --durations=0 이 없습니다 — {bare}"
+    # **네 명령 다 `--durations=0` 을 안 단다** (S234 · 사람이 정했다 — 소요를 재지 않는다 ·
+    # 회귀는 초록과 건수만 본다). S229 가 붙였던 것을 뗐다.
+    timed = [args for args, _names in commands if "--durations=0" in args.split()]
+    assert not timed, f"갈래 명령에 --durations=0 이 남았습니다 — {timed}"
 
     real = {path.name for path in (PROJECT_ROOT / "tests").glob("test_*.py")}
     for args, names in commands:

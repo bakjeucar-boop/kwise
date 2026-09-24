@@ -143,9 +143,35 @@ def _document(payload: bytes) -> list[str]:
     return out
 
 
+#: 벌마다 한 번만 띄운다 — 두 픽스처(`rendered` · `rendered_sums`)가 같은 벌을 나눠 쓴다.
+_RENDERED: dict[str, Rendered] = {}
+
+
 @pytest.fixture(scope="module", params=["large-a", "large-b-over"])
 def rendered(request: pytest.FixtureRequest) -> Iterator[Rendered]:
     """덱 벌 하나를 `render_deck.build_deck` 과 같은 세션 상태로 띄워 네 산출물을 뜬다."""
+    yield _render(request.param)
+
+
+#: 절사 두 못만 더 도는 벌 (S234) — 1-1 자리가 선 벌이다. `small-a2` 화면 3단계 지표
+#: 「차이」 · `small-b-sell` 태양광 용량 곡선 고른 용량 줄 · 감도 상세 기준 기본요금 절감 ·
+#: `small-ind-a2` 조합 「+ 역률 97%」 대 역률 단독 · 감도 상세 기준 기본요금 절감.
+SUM_CASES = ["large-a", "large-b-over", "small-a2", "small-b-sell", "small-ind-a2"]
+
+
+@pytest.fixture(scope="module", params=SUM_CASES)
+def rendered_sums(request: pytest.FixtureRequest) -> Iterator[Rendered]:
+    """절사 못 둘이 도는 벌 — 앞 두 벌은 `rendered` 와 같은 렌더를 쓴다."""
+    yield _render(request.param)
+
+
+def _render(key: str) -> Rendered:
+    if key not in _RENDERED:
+        _RENDERED[key] = _build(key)
+    return _RENDERED[key]
+
+
+def _build(case_key: str) -> Rendered:
     from streamlit.testing.v1 import AppTest
 
     sys.path.insert(0, str(PROJECT_ROOT / "tools"))
@@ -158,7 +184,7 @@ def rendered(request: pytest.FixtureRequest) -> Iterator[Rendered]:
     from kwise.ui.pipeline import ContractForm
     from kwise.ui.views import compare as compare_view
 
-    case = render_deck.BY_KEY[request.param]
+    case = render_deck.BY_KEY[case_key]
     if not case.csv.is_file():
         pytest.skip(f"자료가 없습니다: {case.csv}")
     patch = pytest.MonkeyPatch()
@@ -187,6 +213,9 @@ def rendered(request: pytest.FixtureRequest) -> Iterator[Rendered]:
         state["building_province"] = case.province
         state["building_sigungu"] = case.sigungu
         state["solar_inputs"] = render_deck.solar_inputs_for(case)
+        # 잉여 처리도 `render_deck` 과 같게 (S234 — `small-b-sell` 은 외부 판매)
+        if case.surplus_use:
+            state["measure_solar_surplus_use"] = case.surplus_use
         for key in render_deck.ALL_MEASURES:
             state[f"measure_on_{key}"] = True
         state["combination_pick"] = render_deck.ALL_MEASURES
@@ -216,8 +245,8 @@ def rendered(request: pytest.FixtureRequest) -> Iterator[Rendered]:
         rows += [tuple(row) for row in deck_words._word_rows(word)]
     finally:
         patch.undo()
-    yield Rendered(
-        request.param,
+    return Rendered(
+        case_key,
         tuple(texts),
         tuple(screen),
         tuple(line.where for line in collected),
@@ -952,7 +981,7 @@ def _lead_won(text: str) -> int | None:
     return int(found.group(1).replace(",", "")) if found else None
 
 
-def test_절사한_줄끼리의_셈이_적힌_합계와_선다(rendered: Rendered) -> None:
+def test_절사한_줄끼리의_셈이_적힌_합계와_선다(rendered_sums: Rendered) -> None:
     """**적힌 줄을 더하거나 빼면 적힌 합계다** (S232 ㄱ · S233 에 1-1 자리 전부로 넓혔다).
 
     줄마다 천 원 절사해 적힌 줄의 셈이 적힌 합계와 1,000 ~ 2,000원 어긋났다(S231 3-3).
@@ -961,8 +990,10 @@ def test_절사한_줄끼리의_셈이_적힌_합계와_선다(rendered: Rendere
     :func:`kwise.money.gap_won`). **식을 다시 적지 않는다** — 산출물에 실제로 적힌 글자끼리
     셈한다. 무는 자리 — 계산 근거 표(Excel 부록 A · PPT · Word)의 청구 합계 · 참고 산식 ·
     태양광 · 계약(종별 안 · 종별 넘김) · 선택요금 · 역률 · 화면 3단계 「차이」 · Excel 요금
-    계산 명세 관측 · 보정 합계 · Excel 요약 합계 · Excel 조합 비교 · Word 요약 표 「투자 없이」.
+    계산 명세 관측 · 보정 합계 · Excel 요약 합계 · Excel 조합 비교 · Word 요약 표 「투자 없이」 ·
+    화면 3단계 지표 「차이」(S234 — 계산 근거 차이의 만원 꼴).
     """
+    rendered = rendered_sums
     gaps: list[str] = []
     for (output, key), lines in _worksheet_tables(rendered.rows).items():
         gaps += [f"{output} {key} — {gap}" for gap in _sum_gaps(lines)]
@@ -978,6 +1009,18 @@ def test_절사한_줄끼리의_셈이_적힌_합계와_선다(rendered: Rendere
     won = [value for value in map(_won, cells) if value is not None]
     if len(won) >= 3 and won[1] - won[0] != won[2]:
         gaps.append(f"화면 3단계 {won[:3]}")
+    # 지표 「차이」 도 계산 근거의 차이다 (S234 ㄱ · `small-a2` −7,000원/년 대 −8,000원)
+    from kwise import money
+
+    metric = [
+        row[-1]
+        for row in rendered.rows
+        if row[0] == "화면" and row[1].endswith("3단계 · 개선안 조합") and row[2] == "Metric"
+    ]
+    if len(won) >= 3 and "차이" in metric:
+        shown = metric[metric.index("차이") + 1]
+        if shown != money.won_short(won[2], reason="") + "/년":
+            gaps.append(f"화면 3단계 지표 차이 {shown} · 계산 근거 {won[2]:,}")
 
     parts = ("역률 조정 전 기본요금(원)", "역률 요금(원)", "초과사용부가금(원)")
     for column in _sheet(rendered.rows, "요금 계산 명세"):
@@ -1033,7 +1076,7 @@ def test_절사한_줄끼리의_셈이_적힌_합계와_선다(rendered: Rendere
 NO_SAVING_WORD = "없음"
 
 
-def test_조정한_표기_값이_사실마다_네_산출물에서_같은_글자다(rendered: Rendered) -> None:
+def test_조정한_표기_값이_사실마다_네_산출물에서_같은_글자다(rendered_sums: Rendered) -> None:
     """**사실 하나는 어느 산출물에서나 한 글자다** (S233 ㄱ · 웹 대화창 판단).
 
     한 표 안의 셈을 맞추려 올린 값이 다른 산출물에서 옛 글자로 남으면 같은 사실이 두
@@ -1044,8 +1087,11 @@ def test_조정한_표기_값이_사실마다_네_산출물에서_같은_글자�
         청구서 줄    계산 근거 현행 청구 표 · Excel 요약 요금 · Word 요금 구조 표 · 역률 표 현재
         선택요금 절감 계산 근거 · Excel 요약 · 수단별 결과 · 조합 비교 첫 줄 · Word 요약 표
         조합 절감    Excel 조합 비교 · Word 조합 표 · Word 요약 표 기간 총 절감액 · 감도 상세 기준
-        태양광 줄    계산 근거 태양광 표 · Excel 태양광 용량 곡선 같은 용량 줄(잉여 수익이 없는 벌)
+        태양광 줄    계산 근거 태양광 표 · Excel 태양광 용량 곡선 같은 용량 줄(잉여 수익을 실은
+                     벌도 · S234) · Excel 감도 상세 기준 줄(1,000원 안 · S234 ㄴ)
+        조합 대 단독 Excel 조합 비교 줄 · 그 줄에 든 단독 수단의 수단별 결과(1,000원 안 · S234 ㄴ)
     """
+    rendered = rendered_sums
     rows = rendered.rows
     seen: dict[str, dict[str, int]] = defaultdict(dict)
     tables = _worksheet_tables(rows)
@@ -1115,13 +1161,48 @@ def test_조정한_표기_값이_사실마다_네_산출물에서_같은_글자�
             value = int(float(column["기간 절감액(원)"]))
             near = [v for v in combos.values() if abs(v - value) <= 1_000]
             assert near == [] or value in near, (rendered.key, "감도 상세", value, combos)
+    # 조합 절감 대 단독 수단 — 조합에 든 단독 수단 하나와 1,000원 안이면 원값이 같은 다른
+    # 사실이라 한 글자다(S234 ㄴ · `small-ind-a2` 「+ 역률 97%」 113,000 대 역률 단독 112,000).
+    alone = {
+        re.match(r"[^\d(]+", row[2]).group(0).strip(): int(row[4].replace(",", ""))  # type: ignore[union-attr]
+        for row in rows
+        if row[:2] == ("Excel", "수단별 결과")
+        and len(row) > 4
+        and re.fullmatch(r"-?[\d,]+", row[4])
+    }
+    for row in rows:
+        if row[:2] != ("Excel", "조합 비교") or row[2] not in combos or len(row) < 5:
+            continue
+        close = [
+            (name, value)
+            for name, value in alone.items()
+            if name in row[4] and value and abs(value - combos[row[2]]) <= 1_000
+        ]
+        if len(close) == 1:
+            seen[f"조합 절감 {row[2]}"]["Excel 조합 비교"] = combos[row[2]]
+            seen[f"조합 절감 {row[2]}"][f"단독 {close[0][0]}"] = close[0][1]
 
-    # 태양광 줄 — 계산 근거 표의 용량과 같은 곡선 줄(절감액이 같을 때 · 잉여 수익이 없는 벌)
+    # 태양광 줄 — 계산 근거 표의 용량과 같은 곡선 줄. 잉여 수익을 실은 벌도 같은 글자다
+    # (S234 ㄱ · `small-b-sell` 곡선 1,003,000 대 계산 근거 1,004,000 — 곡선 줄 절감액은 달라도).
     for (output, key), lines in tables.items():
         texts = {label: text for label, _, text in lines}
         if "설치 용량" not in texts:
             continue
         capacity = texts["설치 용량"].replace(" kWp", "").replace(",", "")
+        for sensitivity in _sheet(rows, "감도 상세"):
+            # 감도 상세 기준 줄의 기본 · 전력량 절감 — 태양광 줄과 1,000원 안이면 한 글자(S234 ㄴ)
+            if sensitivity.get("시나리오") != "기준":
+                continue
+            for heading, label in (
+                ("기간 기본요금 절감액(원)", "기간 기본요금 절감"),
+                ("기간 전력량요금 절감액(원)", "기간 전력량요금 절감"),
+            ):
+                line = _won(texts.get(label, ""))
+                if heading in sensitivity and line is not None:
+                    value = int(float(sensitivity[heading]))
+                    if abs(value - line) <= 1_000:
+                        seen[f"태양광 {label} {capacity}"]["Excel 감도 상세"] = value
+                        seen[f"태양광 {label} {capacity}"][f"{output} {key}"] = line
         for row in rows:
             cells = row[2:]
             if (
@@ -1129,7 +1210,6 @@ def test_조정한_표기_값이_사실마다_네_산출물에서_같은_글자�
                 and len(cells) > 9
                 and re.fullmatch(r"[\d.]+", cells[0])
                 and float(cells[0]) == float(capacity)
-                and int(float(cells[9])) == _won(texts["기간 절감액"])
             ):
                 seen[f"태양광 기본 {capacity}"]["Excel 곡선"] = int(float(cells[7]))
                 seen[f"태양광 전력량 {capacity}"]["Excel 곡선"] = int(float(cells[8]))

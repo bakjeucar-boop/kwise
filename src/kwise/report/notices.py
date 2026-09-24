@@ -365,8 +365,10 @@ def standalone_savings(
     if switch is not None:
         pairs.append((switch.saving_won, switch_saving(switch)))
     if contract is not None and contract.saving_won is not None:
+        # 종별 안 갈래의 `contract_saving` 은 원값이다 — 적히는 글자(절사)로 넘긴다
         shown = contract_saving(contract)
-        pairs.append((contract.saving_won, contract.saving_won if shown is None else shown))
+        written = money.truncate_won(contract.saving_won if shown is None else shown)
+        pairs.append((contract.saving_won, written))
     raw = [
         power_factor.saving_won if power_factor is not None else None,
         solar.total_saving_won if solar is not None else None,

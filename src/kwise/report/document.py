@@ -1462,9 +1462,9 @@ def _cover(document: DocumentType, sections: DocumentSections) -> None:
             ["작성일", f"{sections.prepared:%Y-%m-%d}"],
             ["적용 요금표 시행일", f"{bill.effective_date}"],
             [
-                "계약종별",
-                f"{bill.contract_label} {bill.voltage_label} {option_label(bill.selection.option)}",
-            ],
+        "계약종별",
+        f"{bill.contract_label} {bill.voltage_label} {option_label(bill.selection.option)}",
+    ],
         ],
     )
     document.add_page_break()
