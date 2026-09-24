@@ -890,7 +890,10 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
         frame["기간 절감액(원)"] = [
             combination_saving(comparison, item) for item in comparison.combinations
         ]
-        frame["12개월 환산 절감액(원)"] = [
+        # 열 이름은 계산 쪽 표가 쥔다 — 감도 열쇠와 같은 글자라 여기 다시 적지 않는다
+        # (`test_compare.py::test_감도_열쇠_글자는_한_자리에만_선다`).
+        annual = next(column for column in frame.columns if column.startswith("12개월 환산"))
+        frame[annual] = [
             combination_annual_saving(comparison, item) for item in comparison.combinations
         ]
         sheets["조합 비교"] = frame
@@ -946,11 +949,7 @@ def _same_combination_saving(
             if pd.isna(value):
                 continue
             same = next(
-                (
-                    item
-                    for item in comparison.combinations
-                    if abs(float(value) - raw_of(item)) < 1
-                ),
+                (item for item in comparison.combinations if abs(float(value) - raw_of(item)) < 1),
                 None,
             )
             if same is not None:

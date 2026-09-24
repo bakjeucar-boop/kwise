@@ -338,7 +338,7 @@ def switch_saving(result: TariffSwitchResult) -> float:
 
 def switch_annual_saving(result: TariffSwitchResult) -> float | None:
     """선택요금 12개월 환산의 표기 값 — 기간 값과 같은 값이면 같은 글자 (S233 ㄱ)."""
-    return money.annual_won(result.annual_saving_won, result.saving_won, switch_saving(result))
+    return money.same_won(result.annual_saving_won, result.saving_won, switch_saving(result))
 
 
 def combination_saving(comparison: ComparisonResult, item: CombinationResult) -> float:
@@ -352,7 +352,7 @@ def combination_saving(comparison: ComparisonResult, item: CombinationResult) ->
 
 def combination_annual_saving(comparison: ComparisonResult, item: CombinationResult) -> float:
     """조합 12개월 환산의 표기 값 — 기간 값과 같은 값이면 같은 글자 (S233 ㄱ)."""
-    shown = money.annual_won(
+    shown = money.same_won(
         item.annual_saving_won, item.saving_won, combination_saving(comparison, item)
     )
     return item.annual_saving_won if shown is None else shown
@@ -374,7 +374,7 @@ def contract_saving(result: ContractAdjustment) -> float | None:
 
 def contract_annual_saving(result: ContractAdjustment) -> float | None:
     """계약 12개월 환산의 표기 값 — 기간 값과 같은 값이면 같은 글자 (S233 ㄱ)."""
-    return money.annual_won(result.annual_saving_won, result.saving_won, contract_saving(result))
+    return money.same_won(result.annual_saving_won, result.saving_won, contract_saving(result))
 
 
 def solar_lines(point: SolarPoint) -> tuple[float, float, float, float]:
@@ -383,6 +383,9 @@ def solar_lines(point: SolarPoint) -> tuple[float, float, float, float]:
     역률 몫은 계산 근거 표와 같이 **값으로 되짚는다**(절감액 − 기본 − 전력량 − 잉여).
     계산 근거 표와 용량 곡선이 같은 지점의 줄을 이것 하나로 적는다. 표가 안 세우는
     줄(0원으로 반올림되는 몫 · 고르지 않은 잉여)은 0 으로 두어 올리지 않는다.
+
+    **잉여 수익 줄은 올리지 않는다** (S233 3-2) — 그 값은 카드 툴팁 · 잉여 장 · 수단별
+    결과 잉여 줄 · 조합 안내에도 서서, 올리면 거기 옛 글자가 남는다(덱 `small-b-sell`).
     """
     factor = (
         point.total_saving_won
@@ -391,14 +394,16 @@ def solar_lines(point: SolarPoint) -> tuple[float, float, float, float]:
         - point.surplus_revenue_won
     )
     surplus = point.surplus_revenue_won if point.surplus_scenario else 0.0
+    surplus = surplus if round(surplus) else 0.0
     shown = money.balance_won(
         [
             point.base_saving_won,
             point.energy_saving_won,
             factor if round(factor) else 0.0,
-            surplus if round(surplus) else 0.0,
+            surplus,
         ],
         point.total_saving_won,
+        fixed=[None, None, None, money.truncate_won(surplus)],
     )
     return shown[0], shown[1], shown[2], shown[3]
 

@@ -517,10 +517,13 @@ def _combined_block(
     reasons = _interaction_reasons(comparison, combined, picked)
     extra_won = _contract_headroom(usage, table, form, combined, contract)
     # 계산 근거의 합산효과 — 조합 비교가 적는 기간 절감액과 같은 값이면 그 글자다 (S233 ㄱ).
-    shown = money.annual_won(actual, combined.saving_won, combination_saving(comparison, combined))
+    # 단순 합도 합산효과와 같은 값이면 같은 글자다 — 갈라 적으면 없는 「차이」 가 선다.
+    shown = money.same_won(actual, combined.saving_won, combination_saving(comparison, combined))
+    combined_shown = actual if shown is None else shown
+    simple_shown = money.same_won(simple, actual, combined_shown)
     sheet = combination_worksheet(
-        simple_won=simple,
-        combined_won=actual if shown is None else shown,
+        simple_won=simple if simple_shown is None else simple_shown,
+        combined_won=combined_shown,
         reasons=tuple(reasons),
         contract_extra_won=extra_won,
     )

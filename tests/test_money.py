@@ -81,11 +81,11 @@ def test_두_합계의_차는_적힌_두_합계의_차다(current: float, best: 
     assert money.gap_won(current, best) == money.truncate_won(current) - money.truncate_won(best)
 
 
-def test_12개월_환산은_기간_값과_같은_값이면_기간_값의_글자다() -> None:
+def test_같은_값이면_같은_글자다() -> None:
     """(S233 ㄱ) — 12개월 자료는 환산이 기간 값 그대로라 한 줄에 두 글자가 서면 안 된다."""
-    assert money.annual_won(53_579_900.0, 53_579_900.0, 53_580_000.0) == 53_580_000.0
-    assert money.annual_won(160_739_700.0, 53_579_900.0, 53_580_000.0) == 160_739_700.0
-    assert money.annual_won(None, 53_579_900.0, 53_580_000.0) is None
+    assert money.same_won(53_579_900.0, 53_579_900.0, 53_580_000.0) == 53_580_000.0
+    assert money.same_won(160_739_700.0, 53_579_900.0, 53_580_000.0) == 160_739_700.0
+    assert money.same_won(None, 53_579_900.0, 53_580_000.0) is None
 
 
 def test_절사한_표기는_언제나_천의_배수다() -> None:

@@ -663,7 +663,8 @@ def combination_worksheet(
     「왜 단순 합과 다른가」 의 산출 근거라 여기가 제자리다.
 
     ``combined_won`` 은 부르는 쪽이 **표기 값**으로 준다 — 조합 비교가 적는 기간
-    절감액과 같은 값이면 그 글자다 (S233 ㄱ · :func:`kwise.money.annual_won`).
+    절감액과 같은 값이면 그 글자다 (S233 ㄱ · :func:`kwise.money.same_won`). 단순 합도
+    합산효과와 같은 값이면 같은 글자로 준다 — 없는 차이가 서지 않는다.
     """
     rows = [
         WorkRow("단순 합", "개선안별 절감액의 합", _won(simple_won)),

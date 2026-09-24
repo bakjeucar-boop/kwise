@@ -29,12 +29,12 @@ __all__ = [
     "ROUNDING_FOOTNOTE",
     "TRUNCATION_FOOTNOTE",
     "TRUNCATION_UNIT_WON",
-    "annual_won",
     "axis_unit",
     "balance_won",
     "delta_amount",
     "gap_won",
     "on_axis",
+    "same_won",
     "truncate_won",
     "won",
     "won_plain",
@@ -135,19 +135,18 @@ def gap_won(minuend: float, subtrahend: float) -> float:
     return truncate_won(minuend) - truncate_won(subtrahend)
 
 
-def annual_won(
-    annual: float | None, period: float | None, period_shown: float | None
-) -> float | None:
-    """12개월 환산의 표기 값 — **기간 값과 같은 값이면 기간 값의 글자를 쓴다** (S233 ㄱ).
+def same_won(value: float | None, other: float | None, other_shown: float | None) -> float | None:
+    """**같은 값이면 같은 글자** (S233 ㄱ) — ``other`` 와 1원 안이면 ``other_shown`` 을 쓴다.
 
     12개월 자료는 환산이 기간 값 그대로다. 기간 값을 :func:`gap_won` 으로 적고
     환산을 제 원값으로 적으면 같은 수가 한 줄에 「53,580,000원 (12개월 환산
-    53,579,000원)」 으로 선다. 다른 값(12개월 미만 자료)은 제 값 그대로다. 「같은
-    값」 은 1원 안이다 — ``x × 12 ÷ 12`` 가 부동소수로 마지막 자리에서 갈릴 수 있다.
+    53,579,000원)」 으로 선다. 3단계 단순 합과 합산효과가 같은 값인 벌도 그렇다 —
+    갈라 적으면 없는 「차이 1,000원」 이 선다. 다른 값은 제 값 그대로다. 「같은 값」 은
+    1원 안이다 — ``x × 12 ÷ 12`` 가 부동소수로 마지막 자리에서 갈릴 수 있다.
     """
-    if annual is not None and period is not None and abs(annual - period) < 1:
-        return period_shown
-    return annual
+    if value is not None and other is not None and abs(value - other) < 1:
+        return other_shown
+    return value
 
 
 #: 금액 **축**이 쓰는 단위와 그 나눔수 (S162 2절).

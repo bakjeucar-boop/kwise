@@ -875,10 +875,43 @@ def _worksheet_tables(
     return out
 
 
+#: 청구 표의 줄 — 더하면 「합계」 다.
+BILL_LINES = ("역률 조정 전 기본요금", "소계", "역률 요금", "초과사용부가금")
+
+
+def _saving_sum(values: dict[str, int], labels: set[str], totals: list[int]) -> int | None:
+    """「기간 절감액」 이 서야 할 셈 — 태양광 · 계약 · 선택요금 · 역률. 없으면 ``None``."""
+    if "설치 용량" in labels:
+        return (
+            values.get("기간 기본요금 절감", 0)
+            + values.get("기간 전력량요금 절감", 0)
+            + values.get("역률 감액 변화", 0)
+            + values.get("_잉여", 0)
+        )
+    if "현재 기본요금" in values and "조정 후 기본요금" in values:
+        return (
+            values["현재 기본요금"]
+            - values["조정 후 기본요금"]
+            + values.get("기간 역률요금 절감", 0)
+        )
+    crossed = [
+        v for name, v in values.items() if name.endswith(" 총 요금") and name != "현행 종별 총 요금"
+    ]
+    if "현행 종별 총 요금" in values and crossed:
+        return values["현행 종별 총 요금"] - crossed[0]
+    if len(totals) == 2:
+        return totals[0] - totals[1]
+    if "현재 역률 요금" in values and "목표 역률 요금" in values:
+        return values["현재 역률 요금"] - values["목표 역률 요금"]
+    return None
+
+
 def _sum_gaps(lines: list[tuple[str, str, str]]) -> list[str]:
-    """표 하나에서 **고친 두 자리**(참고 요금제 산식 · 계약 절감)의 셈이 안 서는 자리."""
+    """표 하나에서 셈이 안 서는 자리 — 청구 합계 · 참고 산식 · 기간 절감액(S232 · S233)."""
     gaps: list[str] = []
     values: dict[str, int] = {}
+    block: dict[str, int] = {}
+    totals: list[int] = []
     for label, formula, text in lines:
         value = _won(text)
         if value is None:
@@ -887,49 +920,233 @@ def _sum_gaps(lines: list[tuple[str, str, str]]) -> list[str]:
             terms = sum(int(n.replace(",", "")) for n in NUMBER.findall(formula))
             if terms != value:
                 gaps.append(f"{label} 산식 {formula} · 값 {text}")
+        if label in BILL_LINES:
+            block[label] = value
+        if label == "합계":
+            if {"역률 조정 전 기본요금", "소계"} <= set(block) and sum(block.values()) != value:
+                gaps.append(f"청구 줄 합 {sum(block.values()):,} · 합계 {value:,}")
+            totals.append(value)
+            block = {}
         values.setdefault(label, value)
+        if label.startswith("잉여 "):
+            values["_잉여"] = value
     saving = values.get("기간 절감액")
-    if saving is not None and "현재 기본요금" in values and "조정 후 기본요금" in values:
-        total = (
-            values["현재 기본요금"]
-            - values["조정 후 기본요금"]
-            + values.get("기간 역률요금 절감", 0)
-        )
-        if total != saving:
-            gaps.append(f"계약 현재 − 조정 후 {total:,} · 절감액 {saving:,}")
+    expected = _saving_sum(values, {label for label, _, _ in lines}, totals)
+    if saving is not None and expected is not None and expected != saving:
+        gaps.append(f"기간 절감액 셈 {expected:,} · 적힌 {saving:,}")
     return gaps
 
 
+def _sheet(rows: tuple[tuple[str, ...], ...], name: str) -> list[dict[str, str]]:
+    """Excel 시트 한 장 — 머리 줄 이름으로 칸을 단다(빈 칸이 빠지는 줄은 앞 칸만 맞는다)."""
+    sheet = [row[2:] for row in rows if row[:2] == ("Excel", name)]
+    if not sheet:
+        return []
+    head = sheet[0]
+    return [dict(zip(head, cells, strict=False)) for cells in sheet[1:]]
+
+
+def _lead_won(text: str) -> int | None:
+    """「53,580,000 원 (투자 불필요)」 · 「53,580,000원 (12개월 환산 …)」 의 앞 금액."""
+    found = re.match(r"^(-?\d[\d,]*)\s*원", text.strip())
+    return int(found.group(1).replace(",", "")) if found else None
+
+
 def test_절사한_줄끼리의_셈이_적힌_합계와_선다(rendered: Rendered) -> None:
-    """**적힌 줄을 더하거나 빼면 적힌 합계다** (S232 ㄱ · 사람이 정한 A 단수 차이 조정).
+    """**적힌 줄을 더하거나 빼면 적힌 합계다** (S232 ㄱ · S233 에 1-1 자리 전부로 넓혔다).
 
     줄마다 천 원 절사해 적힌 줄의 셈이 적힌 합계와 1,000 ~ 2,000원 어긋났다(S231 3-3).
-    합계는 원값 절사 그대로 두고 잘린 나머지가 큰 줄을 올린다 —
-    :func:`kwise.money.balance_won`. **식을 다시 적지 않는다** — 산출물에 실제로 적힌
-    글자끼리 셈한다. 고친 세 자리 — 참고 요금제 산식 · 계약 「현재 − 조정 후」(계산
-    근거 표 · Excel 부록 A · PPT · Word) · Excel 요금 계산 명세의 관측 합계.
-
-    **안 무는 것** — 올린 줄 값이 울타리 밖에도 서서 멈춘 자리(청구 합계 · 3단계 차이 ·
-    태양광 · Excel 요약 · 종별을 넘는 계약) · 선택요금 「현행 합계 − 최적 합계」(두 합계가
-    다 셈의 결과) · 명세 보정 합계(관측과 올릴 칸이 갈리는 달) — 232세션 절 1-2 · 2-3.
+    합계는 원값 절사 그대로 두고 잘린 나머지가 큰 줄을 올린다(사람이 정한 A ·
+    :func:`kwise.money.balance_won`) · 두 합계의 차는 적힌 두 합계의 차다(웹 대화창 판단 ㄴ ·
+    :func:`kwise.money.gap_won`). **식을 다시 적지 않는다** — 산출물에 실제로 적힌 글자끼리
+    셈한다. 무는 자리 — 계산 근거 표(Excel 부록 A · PPT · Word)의 청구 합계 · 참고 산식 ·
+    태양광 · 계약(종별 안 · 종별 넘김) · 선택요금 · 역률 · 화면 3단계 「차이」 · Excel 요금
+    계산 명세 관측 · 보정 합계 · Excel 요약 합계 · Excel 조합 비교 · Word 요약 표 「투자 없이」.
     """
     gaps: list[str] = []
     for (output, key), lines in _worksheet_tables(rendered.rows).items():
         gaps += [f"{output} {key} — {gap}" for gap in _sum_gaps(lines)]
 
-    sheet = [row[2:] for row in rendered.rows if row[:2] == ("Excel", "요금 계산 명세")]
-    head, body = sheet[0], sheet[1:]
-    for cells in body:
-        column = dict(zip(head, cells, strict=False))
-        parts = (
-            "역률 조정 전 기본요금(원)",
-            "역률 요금(원)",
-            "초과사용부가금(원)",
-            "전력량요금(원)",
-        )
-        if abs(sum(float(column[name]) for name in parts) - float(column["합계(원)"])) > 0.5:
-            gaps.append(f"요금 계산 명세 {cells[0]} 줄 합 · 합계 {column['합계(원)']}")
+    # 화면 3단계 — 단순 합 · 합산효과 · 차이
+    cells = [
+        row[-1]
+        for row in rendered.rows
+        if row[0] == "화면"
+        and row[1].endswith("3단계 · 개선안 조합 › 계산 근거")
+        and row[2] == "Dataframe"
+    ]
+    won = [value for value in map(_won, cells) if value is not None]
+    if len(won) >= 3 and won[1] - won[0] != won[2]:
+        gaps.append(f"화면 3단계 {won[:3]}")
+
+    parts = ("역률 조정 전 기본요금(원)", "역률 요금(원)", "초과사용부가금(원)")
+    for column in _sheet(rendered.rows, "요금 계산 명세"):
+        shared = sum(float(column[name]) for name in parts)
+        for energy, total in (
+            ("전력량요금(원)", "합계(원)"),
+            ("전력량요금 보정(원)", "합계 보정(원)"),
+        ):
+            if abs(shared + float(column[energy]) - float(column[total])) > 0.5:
+                gaps.append(
+                    f"요금 계산 명세 {column['월']} {energy} 줄 합 · {total} {column[total]}"
+                )
+
+    summary = {
+        row[3]: _lead_won(row[4])
+        for row in rendered.rows
+        if row[:3] == ("Excel", "요약", "요금") and len(row) >= 5
+    }
+    if summary.get("합계 (관측 기준)") is not None:
+        parts_won = [
+            summary.get(name) or 0 for name in ("기본요금", "전력량요금", "초과사용부가금")
+        ]
+        if sum(parts_won) != summary["합계 (관측 기준)"]:
+            gaps.append(
+                f"Excel 요약 줄 합 {sum(parts_won):,} · 합계 {summary['합계 (관측 기준)']:,}"
+            )
+
+    combos = [row[2:] for row in rendered.rows if row[:2] == ("Excel", "조합 비교")][1:]
+    if combos:
+        base = float(combos[0][3])
+        for combo in combos[1:]:
+            if base - float(combo[3]) != float(combo[4]):
+                gaps.append(
+                    f"조합 비교 {combo[0]} 차 {base - float(combo[3]):,.0f} · 절감액 {combo[4]}"
+                )
+
+    free = {
+        row[2]: 0 if row[3] == NO_SAVING_WORD else _won(row[3])
+        for row in rendered.rows
+        if row[0] == "Word"
+        and len(row) >= 4
+        and row[2]
+        in ("투자 없이 가능한 기간 절감액", "선택요금 전환 (기간)", "계약전력 조정 (기간)")
+    }
+    if len(free) == 3 and None not in free.values():
+        together = (free["선택요금 전환 (기간)"] or 0) + (free["계약전력 조정 (기간)"] or 0)
+        if together != free["투자 없이 가능한 기간 절감액"]:
+            gaps.append(f"Word 투자 없이 {free}")
     assert gaps == [], (rendered.key, gaps)
+
+
+#: 「없음」 칸 — 절감이 없다는 결론이라 셈에서 0 이다.
+NO_SAVING_WORD = "없음"
+
+
+def test_조정한_표기_값이_사실마다_네_산출물에서_같은_글자다(rendered: Rendered) -> None:
+    """**사실 하나는 어느 산출물에서나 한 글자다** (S233 ㄱ · 웹 대화창 판단).
+
+    한 표 안의 셈을 맞추려 올린 값이 다른 산출물에서 옛 글자로 남으면 같은 사실이 두
+    글자로 선다(S232 가 그래서 다섯 자리를 멈췄다). 표기 값을 사실마다 한 자리
+    (`kwise.report.notices`)에서 만들고 모든 자리가 그것을 쓴다 — 여기서 **실물 글자**로
+    본다. 사실 넷:
+
+        청구서 줄    계산 근거 현행 청구 표 · Excel 요약 요금 · Word 요금 구조 표 · 역률 표 현재
+        선택요금 절감 계산 근거 · Excel 요약 · 수단별 결과 · 조합 비교 첫 줄 · Word 요약 표
+        조합 절감    Excel 조합 비교 · Word 조합 표 · Word 요약 표 기간 총 절감액 · 감도 상세 기준
+        태양광 줄    계산 근거 태양광 표 · Excel 태양광 용량 곡선 같은 용량 줄(잉여 수익이 없는 벌)
+    """
+    rows = rendered.rows
+    seen: dict[str, dict[str, int]] = defaultdict(dict)
+    tables = _worksheet_tables(rows)
+
+    # 청구서 줄 — 현행 청구 표(선택요금 표의 첫 청구서) · 역률 표의 현재 역률 요금
+    for (output, key), lines in tables.items():
+        values = [(label, _won(text)) for label, _, text in lines]
+        labels = [label for label, _ in values]
+        if "현재 역률 요금" in labels:
+            seen["청구 역률 요금"][f"{output} {key}"] = dict(values)["현재 역률 요금"] or 0
+        # 현행 청구서 — 「현행 …」 줄 아래 첫 「합계」 까지(PPT 는 현행 · 최적을 두 장에 둔다)
+        heads = [i for i, label in enumerate(labels) if label.startswith("현행 ")]
+        if not heads or "합계" not in labels[heads[0] :]:
+            continue
+        start = heads[0]
+        end = start + labels[start:].index("합계")
+        got = {label: value for label, value in values[start:end] if value is not None}
+        if "역률 조정 전 기본요금" in got and "소계" in got:
+            place = f"{output} {key}"
+            seen["청구 기본요금(역률 반영)"][place] = got["역률 조정 전 기본요금"] + got.get(
+                "역률 요금", 0
+            )
+            seen["청구 전력량요금"][place] = got["소계"]
+            seen["청구 역률 요금"][place] = got.get("역률 요금", 0)
+    for row in rows:
+        if row[:3] == ("Excel", "요약", "요금") and len(row) >= 5:
+            if row[3] == "기본요금":
+                seen["청구 기본요금(역률 반영)"]["Excel 요약"] = _lead_won(row[4]) or 0
+            if row[3] == "전력량요금":
+                seen["청구 전력량요금"]["Excel 요약"] = _lead_won(row[4]) or 0
+        if row[0] == "Word" and len(row) >= 4 and row[2] in ("기본요금", "전력량요금"):
+            value = _lead_won(row[3])
+            if value is not None and "%" in row[3]:
+                name = "청구 기본요금(역률 반영)" if row[2] == "기본요금" else "청구 전력량요금"
+                seen[name][f"Word {row[1]}"] = value
+
+    # 선택요금 절감
+    for (output, key), lines in tables.items():
+        for label, formula, text in lines:
+            if label == "기간 절감액" and formula == "현행 합계 − 최적 합계":
+                seen["선택요금 절감"][f"{output} {key}"] = _won(text) or 0
+    for row in rows:
+        if row[:4] == ("Excel", "요약", "개선 여지", "선택요금 전환 (기간)"):
+            seen["선택요금 절감"]["Excel 요약"] = _lead_won(row[4]) or 0
+        if row[:2] == ("Excel", "수단별 결과") and row[2].startswith("선택요금 전환"):
+            seen["선택요금 절감"]["Excel 수단별 결과"] = int(row[4].replace(",", ""))
+        if row[:2] == ("Excel", "조합 비교") and row[2].startswith("선택요금 전환"):
+            seen["선택요금 절감"]["Excel 조합 비교"] = int(float(row[6]))
+        if row[0] == "Word" and len(row) >= 4 and row[2] == "선택요금 전환 (기간)":
+            seen["선택요금 절감"][f"Word {row[1]}"] = _won(row[3]) or 0
+
+    # 조합 절감 — 조합마다
+    combos = {
+        row[2]: int(float(row[6]))
+        for row in rows
+        if row[:2] == ("Excel", "조합 비교") and re.fullmatch(r"-?[\d.]+", row[6])
+    }
+    for row in rows:
+        if row[0] == "Word" and len(row) >= 5 and row[2] in combos and _won(row[4]) is not None:
+            seen[f"조합 절감 {row[2]}"]["Excel 조합 비교"] = combos[row[2]]
+            seen[f"조합 절감 {row[2]}"][f"Word {row[1]}"] = _won(row[4]) or 0
+        if row[0] == "Word" and len(row) >= 4 and row[2] == "기간 총 절감액":
+            best = _won(row[3])
+            assert best in combos.values(), (rendered.key, best, combos)
+    for column in _sheet(rows, "감도 상세"):
+        if column.get("시나리오") == "기준" and "기간 절감액(원)" in column:
+            value = int(float(column["기간 절감액(원)"]))
+            near = [v for v in combos.values() if abs(v - value) <= 1_000]
+            assert near == [] or value in near, (rendered.key, "감도 상세", value, combos)
+
+    # 태양광 줄 — 계산 근거 표의 용량과 같은 곡선 줄(절감액이 같을 때 · 잉여 수익이 없는 벌)
+    for (output, key), lines in tables.items():
+        texts = {label: text for label, _, text in lines}
+        if "설치 용량" not in texts:
+            continue
+        capacity = texts["설치 용량"].replace(" kWp", "").replace(",", "")
+        for row in rows:
+            cells = row[2:]
+            if (
+                row[:2] == ("Excel", "태양광 용량 곡선")
+                and len(cells) > 9
+                and re.fullmatch(r"[\d.]+", cells[0])
+                and float(cells[0]) == float(capacity)
+                and int(float(cells[9])) == _won(texts["기간 절감액"])
+            ):
+                seen[f"태양광 기본 {capacity}"]["Excel 곡선"] = int(float(cells[7]))
+                seen[f"태양광 전력량 {capacity}"]["Excel 곡선"] = int(float(cells[8]))
+                seen[f"태양광 기본 {capacity}"][f"{output} {key}"] = (
+                    _won(texts["기간 기본요금 절감"]) or 0
+                )
+                seen[f"태양광 전력량 {capacity}"][f"{output} {key}"] = (
+                    _won(texts["기간 전력량요금 절감"]) or 0
+                )
+
+    split = {fact: places for fact, places in seen.items() if len(set(places.values())) > 1}
+    assert split == {}, (rendered.key, split)
+    assert {"청구 기본요금(역률 반영)", "청구 전력량요금"} <= set(seen), (
+        rendered.key,
+        sorted(seen),
+    )
+    assert len(seen["청구 전력량요금"]) >= 4, (rendered.key, seen["청구 전력량요금"])
 
 
 def _metric_values(rows: tuple[tuple[str, ...], ...]) -> list[tuple[str, str, str]]:
