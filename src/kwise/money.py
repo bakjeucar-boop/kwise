@@ -29,9 +29,11 @@ __all__ = [
     "ROUNDING_FOOTNOTE",
     "TRUNCATION_FOOTNOTE",
     "TRUNCATION_UNIT_WON",
+    "annual_won",
     "axis_unit",
     "balance_won",
     "delta_amount",
+    "gap_won",
     "on_axis",
     "truncate_won",
     "won",
@@ -74,7 +76,10 @@ def truncate_won(value: float) -> float:
 
 
 def balance_won(
-    parts: Sequence[float], total: float, signs: Sequence[int] | None = None
+    parts: Sequence[float],
+    total: float,
+    signs: Sequence[int] | None = None,
+    fixed: Sequence[float | None] | None = None,
 ) -> list[float]:
     """**단수 차이 조정** — 적힌 줄의 셈이 적힌 합계와 맞게 줄을 천 원씩 올린다 (S232).
 
@@ -91,9 +96,15 @@ def balance_won(
         parts: 줄의 원값.
         total: 셈의 결과(원값). ``Σ signs × parts`` 여야 조정한다.
         signs: 줄마다 +1 · −1. 차를 적는 표(``현재 − 조정 후``)가 −1 을 쓴다.
+        fixed: 줄마다 **이미 다른 표에서 선 표기 값** — 있으면 그 값을 쓰고 안 올린다
+            (S233 ㄱ · 사실마다 한 자리). 계약 표의 현재 기본요금은 청구 표의 기본요금이다.
     """
     signs = signs if signs is not None else [1] * len(parts)
-    shown = [truncate_won(value) for value in parts]
+    fixed = fixed if fixed is not None else [None] * len(parts)
+    shown = [
+        truncate_won(value) if preset is None else preset
+        for value, preset in zip(parts, fixed, strict=True)
+    ]
     if abs(sum(sign * value for sign, value in zip(signs, parts, strict=True)) - total) >= 1:
         return shown
     gap = round(
@@ -105,12 +116,38 @@ def balance_won(
     movable = [
         index
         for index, (sign, value, cut) in enumerate(zip(signs, parts, shown, strict=True))
-        if value != cut and sign * math.copysign(1, value) == step
+        if fixed[index] is None and value != cut and sign * math.copysign(1, value) == step
     ]
     movable.sort(key=lambda index: abs(parts[index] - shown[index]), reverse=True)
     for index in movable[: abs(gap)]:
         shown[index] += math.copysign(TRUNCATION_UNIT_WON, parts[index])
     return shown
+
+
+def gap_won(minuend: float, subtrahend: float) -> float:
+    """**두 합계의 차는 적힌 두 합계의 차다** (S233 ㄴ · 웹 대화창 판단).
+
+    선택요금 「현행 합계 − 최적 합계」 처럼 두 값이 다 셈의 결과이면 올릴 줄이
+    없다(S232 가 A 밖으로 뺐다). 차를 원값에서 따로 절사하면 적힌 두 합계의 차와
+    1,000원 어긋난다(덱 8벌) — 차를 **적힌 두 값에서** 낸다. 같은 차가 서는 자리는
+    다 이것을 지난다.
+    """
+    return truncate_won(minuend) - truncate_won(subtrahend)
+
+
+def annual_won(
+    annual: float | None, period: float | None, period_shown: float | None
+) -> float | None:
+    """12개월 환산의 표기 값 — **기간 값과 같은 값이면 기간 값의 글자를 쓴다** (S233 ㄱ).
+
+    12개월 자료는 환산이 기간 값 그대로다. 기간 값을 :func:`gap_won` 으로 적고
+    환산을 제 원값으로 적으면 같은 수가 한 줄에 「53,580,000원 (12개월 환산
+    53,579,000원)」 으로 선다. 다른 값(12개월 미만 자료)은 제 값 그대로다. 「같은
+    값」 은 1원 안이다 — ``x × 12 ÷ 12`` 가 부동소수로 마지막 자리에서 갈릴 수 있다.
+    """
+    if annual is not None and period is not None and abs(annual - period) < 1:
+        return period_shown
+    return annual
 
 
 #: 금액 **축**이 쓰는 단위와 그 나눔수 (S162 2절).

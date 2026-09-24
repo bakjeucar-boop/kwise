@@ -13,6 +13,8 @@ openpyxl 은 tz 가 붙은 시각을 쓰지 못해 ValueError 를 낸다.
 from __future__ import annotations
 
 import datetime as dt
+import itertools
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,7 +27,7 @@ from kwise.compare import (
     ComparisonResult,
     sensitivity_range_frame,
 )
-from kwise.compare.sensitivity import METRIC_LABELS
+from kwise.compare.sensitivity import ANNUAL_SAVING, METRIC_LABELS, SAVING
 from kwise.diagnose import Diagnosis
 from kwise.diagnose.dr import JUDGE_WINDOW
 from kwise.io import UsageData
@@ -58,13 +60,22 @@ from kwise.report.notices import (
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
     UNPRICED_REASONS,
+    bill_lines,
     billing_demand_text,
+    combination_annual_saving,
+    combination_saving,
+    contract_annual_saving,
+    contract_saving,
     ess_capacity_text,
     format_mwh,
     format_won,
     max_demand_text,
+    power_factor_charges,
     rules_basis_line,
+    solar_lines,
     surplus_kwh_text,
+    switch_annual_saving,
+    switch_saving,
 )
 from kwise.report.worksheet import Worksheet, low_load_threshold_line
 from kwise.tariff import BillingResult, TariffTable
@@ -238,8 +249,12 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
     # 시트의 역률요금(원) 열, 「부록 A 산출 근거」 의 역률 요금 줄 셋이 든다.
     # 그 셋은 역률을 제 항목으로 세우는 표라 거기서는 기본요금이 **역률의 밑**
     # 이다 (약관 제43조 · 「기본요금 × 역률 조정률」).
-    rows.append(("요금", "기본요금", f"{format_won(bill.base_with_power_factor_won)} 원"))
-    rows.append(("요금", "전력량요금", f"{format_won(bill.total_energy_won)} 원"))
+    #
+    # **줄은 청구 표와 같은 표기 값이다** (S233 ㄱ · :func:`bill_lines`) — 줄마다 절사해
+    # 합계와 1,000원 어긋났다(덱 10벌).
+    lines = bill_lines(bill)
+    rows.append(("요금", "기본요금", f"{format_won(lines.base_with_power_factor)} 원"))
+    rows.append(("요금", "전력량요금", f"{format_won(lines.energy)} 원"))
     # **부가금이 붙은 벌에서만 선다** (109세션). 0원인 벌에 한 줄을 더 두면
     # 「없는 것을 있다고」 적는 꼴이고, 붙은 벌에 안 두면 합계가 안 맞는다.
     if bill.total_excess_won:
@@ -247,7 +262,7 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
             (
                 "요금",
                 "초과사용부가금",
-                f"{format_won(bill.total_excess_won)} 원 "
+                f"{format_won(lines.excess)} 원 "
                 f"(청구 {len(bill.excess.charged_months)}개 월, "
                 f"첫 초과 달은 예고)",
             )
@@ -260,7 +275,13 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
     diagnosis = sections.diagnosis
     if diagnosis is not None:
         summary = diagnosis.summary
-        switch_won = format_won(summary.tariff_switch_saving_won, reason="미산출 — 계약 정보 없음")
+        # 선택요금 절감은 적힌 두 합계의 차다 (S233 ㄴ · 수단별 결과 · 계산 근거와 한 글자).
+        switch_won = format_won(
+            money.gap_won(summary.current_total_won, summary.best_total_won)
+            if summary.current_total_won is not None and summary.best_total_won is not None
+            else summary.tariff_switch_saving_won,
+            reason="미산출 — 계약 정보 없음",
+        )
         # 관측 기간 값이다 — 「수단별 결과」 시트는 12개월 환산 열을 곁에 둔다 (S188).
         rows.append(("개선 여지", "선택요금 전환 (기간)", f"{switch_won} 원 (투자 불필요)"))
         rows.append(
@@ -272,7 +293,12 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
                 # (S205 2절) — 날값 0 으로 가르면 다른 사실을 같은 글자로 적는다.
                 NO_SAVING
                 if diagnosis.contract is not None and diagnosis.contract.adjustment.no_saving
-                else format_won(summary.contract_saving_won, reason=UNPRICED_REASONS["contract"]),
+                else format_won(
+                    contract_saving(diagnosis.contract.adjustment)
+                    if diagnosis.contract is not None
+                    else summary.contract_saving_won,
+                    reason=UNPRICED_REASONS["contract"],
+                ),
             )
         )
         rows.append(
@@ -361,8 +387,9 @@ def measure_summary_frame(
                     f"{option_label(switch.best.selection.option)})"
                 ),
                 "투자비(원)": format_won(0.0),
-                "기간 절감액(원)": format_won(switch.saving_won),
-                "12개월 환산(원)": format_won(switch.annual_saving_won),
+                # 적힌 두 합계의 차 (S233 ㄴ) · 환산은 같은 값이면 같은 글자.
+                "기간 절감액(원)": format_won(switch_saving(switch)),
+                "12개월 환산(원)": format_won(switch_annual_saving(switch)),
                 # **늘 「즉시」 였다** (S134 3절). 현행이 이미 최선이라 절감이
                 # 0 인 벌에서도 그렇게 적혔다 — 판정을 ``payback_years`` 로 옮겼다.
                 "회수기간": payback_label(payback_years(0.0, switch.annual_saving_won or 0.0), 0.0),
@@ -384,12 +411,14 @@ def measure_summary_frame(
                 "기간 절감액(원)": (
                     NO_SAVING
                     if contract.no_saving
-                    else format_won(contract.saving_won, reason=UNPRICED_REASONS["contract"])
+                    else format_won(contract_saving(contract), reason=UNPRICED_REASONS["contract"])
                 ),
                 "12개월 환산(원)": (
                     NO_SAVING
                     if contract.no_saving
-                    else format_won(contract.annual_saving_won, reason=UNPRICED_REASONS["contract"])
+                    else format_won(
+                        contract_annual_saving(contract), reason=UNPRICED_REASONS["contract"]
+                    )
                 ),
                 "회수기간": payback_label(
                     payback_years(0.0, contract.annual_saving_won or 0.0), 0.0
@@ -450,8 +479,8 @@ def measure_summary_frame(
                 "비고": (
                     f"주간(08~22시) 지상역률 기준 92%, 매 1%당 기본요금의 0.2% "
                     f"(한전 기본공급약관 제43조). 현재 역률요금 "
-                    f"{format_won(power_factor.current_charge_won)} 원 → "
-                    f"{format_won(power_factor.target_charge_won)} 원."
+                    f"{format_won(power_factor_charges(power_factor)[0])} 원 → "
+                    f"{format_won(power_factor_charges(power_factor)[1])} 원."
                     + (
                         ""
                         if power_factor.no_headroom
@@ -619,8 +648,9 @@ def solar_curve_sheet(curve: SolarCurve) -> pd.DataFrame:
             # 그 수를 안 적으면 읽는 사람이 「태양광이 효과 없다」 로 읽는다.
             # 하한 값(kW)은 「진단 요약」 시트의 「요금적용전력 하한」 이 낸다.
             "하한 걸린 달": point.floor_bound_months,
-            "기간 기본요금 절감(원)": point.base_saving_won,
-            "기간 전력량요금 절감(원)": point.energy_saving_won,
+            # 계산 근거 표와 같은 표기 값이다 (S233 ㄱ · :func:`solar_lines`).
+            "기간 기본요금 절감(원)": solar_lines(point)[0],
+            "기간 전력량요금 절감(원)": solar_lines(point)[1],
             "기간 총 절감액(원)": point.total_saving_won,
             "12개월 환산(원)": point.annual_saving_won,
             "투자비(원)": point.investment_won,
@@ -697,7 +727,9 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
                     "계약전력 조정 기간 절감액",
                     NO_SAVING
                     if contract.adjustment.no_saving
-                    else format_won(contract.saving_won, reason=UNPRICED_REASONS["contract"]),
+                    else format_won(
+                        contract_saving(contract.adjustment), reason=UNPRICED_REASONS["contract"]
+                    ),
                 ),
             ]
         )
@@ -851,7 +883,17 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
         # 곡선이 단조롭게 좋아지기만 하면 표가 아무것도 알려주지 않기 때문이다.
         sheets["태양광 용량 곡선"] = solar_curve_sheet(sections.solar_curve)
     if sections.comparison is not None:
-        sheets["조합 비교"] = sections.comparison.frame()
+        # **절감액은 적힌 두 요금의 차다** (S233 ㄴ) — 같은 줄의 기준선 요금 − 조합 요금이
+        # 1,000원 어긋났다(덱 16벌 48줄). 계산 쪽 표를 받아 금액 두 칸만 표기 값으로 간다.
+        comparison = sections.comparison
+        frame = comparison.frame()
+        frame["기간 절감액(원)"] = [
+            combination_saving(comparison, item) for item in comparison.combinations
+        ]
+        frame["12개월 환산 절감액(원)"] = [
+            combination_annual_saving(comparison, item) for item in comparison.combinations
+        ]
+        sheets["조합 비교"] = frame
     # **부록 셋** — Word 와 같은 재료를 쓴다 (22세션 3절).
     if sections.worksheets:
         sheets["부록 A 산출 근거"] = worksheet_frame(sections.worksheets)
@@ -867,7 +909,9 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
         if "첨예도 s" in sections.sensitivity.columns:
             sheets["감도"] = sensitivity_range_frame(sections.sensitivity)
             # 원자료 열 이름은 열쇠다 — 보이는 이름으로 바꿔 싣는다 (S220 2절).
-            sheets["감도 상세"] = sections.sensitivity.rename(columns=METRIC_LABELS)
+            sheets["감도 상세"] = _same_combination_saving(
+                sections.sensitivity, sections.comparison
+            ).rename(columns=METRIC_LABELS)
         else:
             sheets["감도"] = sections.sensitivity
     # **표기는 한 문에서 한다** (S161 2절). 절사 뒤에 :func:`display_frame` 이
@@ -880,10 +924,45 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
     }
 
 
+def _same_combination_saving(
+    frame: pd.DataFrame, comparison: ComparisonResult | None
+) -> pd.DataFrame:
+    """감도 상세의 절감액 — **조합 비교의 조합과 같은 값이면 그 글자다** (S233 ㄱ).
+
+    기준 시나리오는 권장 조합을 다시 계산한 것이라 「조합 비교」 가 적힌 두 요금의
+    차로 적은 값(:func:`combination_saving`)과 같은 사실이다. 같은 값(1원 안)이 아니면
+    제 값 그대로다 — 다른 시나리오는 다른 사실이다.
+    """
+    if comparison is None:
+        return frame
+    out = frame.copy()
+    for column, raw_of, shown_of in (
+        (SAVING, lambda item: item.saving_won, combination_saving),
+        (ANNUAL_SAVING, lambda item: item.annual_saving_won, combination_annual_saving),
+    ):
+        if column not in out.columns:
+            continue
+        for index, value in out[column].items():
+            if pd.isna(value):
+                continue
+            same = next(
+                (
+                    item
+                    for item in comparison.combinations
+                    if abs(float(value) - raw_of(item)) < 1
+                ),
+                None,
+            )
+            if same is not None:
+                out.at[index, column] = shown_of(comparison, same)
+    return out
+
+
 #: 「요금 계산 명세」 한 달의 셈 — 합계 열과 그것을 이루는 금액 열 (S232).
+_SHARED = ("base_won", "power_factor_won", "excess_won")
 _MONTHLY_SUMS = (
-    ("total_won", ("base_won", "power_factor_won", "excess_won", "energy_won")),
-    ("total_won_adjusted", ("base_won", "power_factor_won", "excess_won", "energy_won_adjusted")),
+    ("total_won", (*_SHARED, "energy_won")),
+    ("total_won_adjusted", (*_SHARED, "energy_won_adjusted")),
 )
 
 
@@ -891,29 +970,60 @@ def _balance_monthly(monthly: pd.DataFrame) -> pd.DataFrame:
     """달마다 **단수 차이 조정** — 적힌 기본 · 역률 · 부가금 · 전력량의 합이 적힌 합계다.
 
     줄마다 절사해 덱 18벌 176달 셈이 1,000원 어긋났다(S231 3-3). 두 합계(관측 ·
-    보정)가 기본 · 역률 · 부가금을 함께 쓰므로 **관측 셈을 먼저 맞추고**, 보정 셈은
-    그 셋을 같게 올릴 때만 맞춘다 — 갈리면 보정 전력량은 절사만 한다(한 칸이 두
-    값일 수 없다 · 232세션 절 2절).
+    보정)가 기본 · 역률 · 부가금을 함께 쓰므로 **두 셈을 함께 세운다** (S233 ㄷ) —
+    올릴 줄을 가장 적게 · 그 가운데 잘린 나머지가 큰 줄로 고른다. 관측 · 보정
+    전력량이 같은 값인 달은 두 칸을 같게 올린다. S232 는 관측 셈을 먼저 맞추고
+    보정 셈은 절사만 해 7달이 어긋났고 한 달은 같은 전력량이 두 칸에서 갈렸다.
+    둘을 함께 못 세우는 달은 관측 셈만 맞춘다.
     """
     out = monthly.copy()
     for month, row in monthly.iterrows():
-        balanced: dict[str, float] = {}
-        for total, parts in _MONTHLY_SUMS:
-            if pd.isna(row[total]):
+        raw = {
+            name: float(row[name])
+            for _, parts in _MONTHLY_SUMS
+            for name in parts
+            if not pd.isna(row[name])
+        }
+        sums = [
+            (money.truncate_won(float(row[total])), parts)
+            for total, parts in _MONTHLY_SUMS
+            if not pd.isna(row[total])
+            and all(part in raw for part in parts)
+            and abs(sum(raw[part] for part in parts) - float(row[total])) < 1
+        ]
+        cut = {name: money.truncate_won(value) for name, value in raw.items()}
+        movable = [name for name in raw if raw[name] != cut[name]]
+        same_energy = raw.get("energy_won") == raw.get("energy_won_adjusted")
+        best: tuple[tuple[int, float], dict[str, float]] | None = None
+        for picks in itertools.product((0, 1), repeat=len(movable)):
+            bump = dict(zip(movable, picks, strict=True))
+            if same_energy and bump.get("energy_won", 0) != bump.get("energy_won_adjusted", 0):
                 continue
-            shown = dict(
-                zip(
-                    parts,
-                    money.balance_won([float(row[part]) for part in parts], float(row[total])),
-                    strict=True,
-                )
-            )
-            if any(balanced.get(part, value) != value for part, value in shown.items()):
-                break
-            balanced.update(shown)
-        for part, value in balanced.items():
-            out.at[month, part] = value
+            shown = {
+                name: cut[name]
+                + bump.get(name, 0) * math.copysign(money.TRUNCATION_UNIT_WON, raw[name])
+                for name in raw
+            }
+            if all(sum(shown[part] for part in parts) == total for total, parts in sums):
+                rank = (sum(picks), -sum(abs(raw[n] - cut[n]) for n in movable if bump[n]))
+                if best is None or rank < best[0]:
+                    best = (rank, shown)
+        if best is None:
+            best = ((0, 0.0), _observed_first(raw, row))
+        for name, value in best[1].items():
+            out.at[month, name] = value
     return out
+
+
+def _observed_first(raw: dict[str, float], row: pd.Series) -> dict[str, float]:
+    """두 셈을 함께 못 세우는 달 — 관측 셈만 맞춘다 (S232 의 규칙)."""
+    total, parts = _MONTHLY_SUMS[0]
+    if any(part not in raw for part in parts) or pd.isna(row[total]):
+        return {name: money.truncate_won(value) for name, value in raw.items()}
+    shown = dict(
+        zip(parts, money.balance_won([raw[part] for part in parts], float(row[total])), strict=True)
+    )
+    return {name: shown.get(name, money.truncate_won(value)) for name, value in raw.items()}
 
 
 def truncate_money_columns(frame: pd.DataFrame) -> pd.DataFrame:

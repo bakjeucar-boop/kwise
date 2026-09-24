@@ -27,6 +27,7 @@ from dataclasses import dataclass
 import pandas as pd
 import streamlit as st
 
+from kwise import money
 from kwise.compare import (
     CombinationResult,
     CombinationSpec,
@@ -75,6 +76,7 @@ from kwise.report import (
     surplus_page,
 )
 from kwise.report.days import RepresentativeDay
+from kwise.report.notices import combination_saving
 from kwise.report.worksheet import (
     Worksheet,
     combination_worksheet,
@@ -514,9 +516,11 @@ def _combined_block(
     # 묻힌다 — 예산(본문 3줄)을 넘긴 자리이기도 했다.
     reasons = _interaction_reasons(comparison, combined, picked)
     extra_won = _contract_headroom(usage, table, form, combined, contract)
+    # 계산 근거의 합산효과 — 조합 비교가 적는 기간 절감액과 같은 값이면 그 글자다 (S233 ㄱ).
+    shown = money.annual_won(actual, combined.saving_won, combination_saving(comparison, combined))
     sheet = combination_worksheet(
         simple_won=simple,
-        combined_won=actual,
+        combined_won=actual if shown is None else shown,
         reasons=tuple(reasons),
         contract_extra_won=extra_won,
     )
@@ -768,6 +772,8 @@ class _MeasureResults:
     surplus: SurplusResult | None = None
     base_fee_months: float = 0.0
     """기간을 12개월로 환산하는 데 쓴다 (28세션 3절). 잉여 상계 수익이 기간 값이다."""
+    bill: BillingResult | None = None
+    """수단을 낸 현행 청구서 — 계약 표의 현재 기본요금이 청구 표와 한 글자다 (S233 ㄱ)."""
 
     def excel_frame(self) -> pd.DataFrame:
         return measure_summary_frame(
@@ -836,7 +842,8 @@ class _MeasureResults:
         if self.switch is not None:
             sheets.append(tariff_switch_worksheet(self.switch))
         if self.contract is not None:
-            sheets.append(contract_worksheet(self.contract))
+            # 현재 기본요금을 청구 표와 한 글자로 (S233 ㄱ).
+            sheets.append(contract_worksheet(self.contract, self.bill))
         if self.demand_response is not None:
             sheets.append(demand_response_worksheet(self.demand_response))
         if self.power_factor is not None:
@@ -1058,6 +1065,7 @@ def _measure_results(
         surplus_free_kwp=surplus_free_kwp,
         solar_area_m2=area_m2,
         base_fee_months=baseline.base_fee_months,
+        bill=baseline,
         usage=usage,
         day=day,
         dr_profile=diagnosis.dr,

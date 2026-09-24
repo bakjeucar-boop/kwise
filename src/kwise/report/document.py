@@ -71,7 +71,11 @@ from kwise.report.notices import (
     TRUNCATION_FOOTNOTE,
     UNPRICED,
     UNPRICED_REASONS,
+    bill_lines,
     billing_demand_text,
+    combination_saving,
+    contract_annual_saving,
+    contract_saving,
     ess_capacity_text,
     ess_unpriced_reason,
     excess_not_measured_line,
@@ -79,6 +83,8 @@ from kwise.report.notices import (
     max_demand_text,
     plain_text,
     surplus_kwh_text,
+    switch_annual_saving,
+    switch_saving,
 )
 from kwise.report.worksheet import COLUMNS, Worksheet
 from kwise.tariff import BillingResult, TariffTable
@@ -321,7 +327,7 @@ def _contract_adequacy_saving(adequacy: ContractAdequacy) -> str:
         return f"{_UNPRICED} — {adequacy.saving_basis}"
     if adequacy.adjustment.no_saving:
         return NO_SAVING
-    return _won(adequacy.saving_won)
+    return _won(contract_saving(adequacy.adjustment))
 
 
 #: ESS 결론의 앞부분. **「회수기간이 가장 짧은 지점」 은 그대로 둔다** —
@@ -843,13 +849,14 @@ def measure_entries(
             kind=measure_kind("tariff_switch"),
             conclusion=(
                 f"{now_option} → {best_option} 로 바꾸면 "
-                f"기간에 {_won(switch.saving_won)} 줄어듭니다."
+                f"기간에 {_won(switch_saving(switch))} 줄어듭니다."
                 if switch.switch_needed
                 else f"현행 {now_option} 이 이미 최선입니다. 바꿀 이유가 없습니다."
             ),
-            saving=_measure_saving(switch.annual_saving_won, switch.saving_won),
+            # 금액은 적힌 두 합계의 차다 (S233 ㄴ · 계산 근거 표와 한 글자).
+            saving=_measure_saving(switch_annual_saving(switch), switch_saving(switch)),
             saving_label=_measure_saving_label(switch.annual_saving_won, switch.saving_won),
-            saving_annual=_annual_saving(switch.annual_saving_won, switch.saving_won),
+            saving_annual=_annual_saving(switch_annual_saving(switch), switch_saving(switch)),
             has_saving=bool(switch.saving_won),
             investment=_won(0.0),
             # **0.0 을 박지 않는다** (S134 3절). 절감이 없으면 「즉시」 가 아니다.
@@ -874,8 +881,9 @@ def measure_entries(
             # **0원이 아니라 결론이다** (48세션). 하한이 안 걸려 줄어들 몫 자체가
             # 없는 자리는 「0원」 이 계산이 덜 된 것처럼 읽힌다 — 화면과 같은
             # 말을 쓴다.
-            saving=_contract_saving(contract, contract.saving_won),
-            saving_annual=_contract_saving(contract, contract.annual_saving_won),
+            # 종별을 넘으면 적힌 두 총 요금의 차다 (S233 ㄴ).
+            saving=_contract_saving(contract, contract_saving(contract)),
+            saving_annual=_contract_saving(contract, contract_annual_saving(contract)),
             has_saving=bool(contract.saving_won),
             investment=_won(0.0),
             # **회수기간은 Excel 과 같은 말이다** (83세션 13). 절감이 없는데
@@ -1465,7 +1473,26 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
     diagnosis = sections.diagnosis
     summary = diagnosis.summary if diagnosis is not None else None
 
-    free = summary.no_investment_saving_won if summary is not None else None
+    # **두 줄을 먼저 세우고 그 합을 적는다** (S233 ㄱ) — 선택요금 · 계약 절감이 적힌
+    # 두 합계의 차로 서므로(ㄴ) 원값의 합을 따로 절사하면 아래 표에서 1,000원 어긋난다.
+    contract = diagnosis.contract if diagnosis is not None else None
+    switch_won = (
+        money.gap_won(summary.current_total_won, summary.best_total_won)
+        if summary is not None
+        and summary.current_total_won is not None
+        and summary.best_total_won is not None
+        else (summary.tariff_switch_saving_won if summary is not None else None)
+    )
+    contract_won = (
+        contract_saving(contract.adjustment)
+        if contract is not None
+        else (summary.contract_saving_won if summary is not None else None)
+    )
+    free = (
+        money.truncate_won(switch_won or 0.0) + money.truncate_won(contract_won or 0.0)
+        if summary is not None
+        else None
+    )
     _conclusion(
         document,
         (
@@ -1480,29 +1507,24 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
     rows = [["항목", "값"]]
     rows.append(["투자 없이 가능한 기간 절감액", _won(free)])
     if summary is not None:
-        rows.append(
-            [
-                "선택요금 전환 (기간)",
-                _won(summary.tariff_switch_saving_won),
-            ]
-        )
+        rows.append(["선택요금 전환 (기간)", _won(switch_won)])
         # 「없음」 은 여지 판정 `no_saving` 하나가 가른다 (S205 2절) — 이 칸만
         # 판정 없이 「0원」 을 적어 같은 문서 2장 표와 갈렸다.
-        contract = diagnosis.contract if diagnosis is not None else None
         rows.append(
             [
                 "계약전력 조정 (기간)",
                 NO_SAVING
                 if contract is not None and contract.adjustment.no_saving
-                else _won(summary.contract_saving_won),
+                else _won(contract_won),
             ]
         )
         rows.append(["태양광 피크 기여 가능성", str(summary.pv_potential)])
 
-    best = sections.comparison.best if sections.comparison is not None else None
-    if best is not None:
+    comparison = sections.comparison
+    best = comparison.best if comparison is not None else None
+    if comparison is not None and best is not None:
         rows.append(["권장 조합", best.name])
-        rows.append(["기간 총 절감액", _won(best.saving_won)])
+        rows.append(["기간 총 절감액", _won(combination_saving(comparison, best))])
         rows.append(["투자비", _won(best.investment_won)])
         rows.append(["회수기간", _payback_text(best.payback_years, best.investment_won)])
     _add_table(document, rows)
@@ -1620,7 +1642,11 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
         # 을 뺀 값)을 ``total_won``(담은 값)으로 나누고 있어 **짝이 안 맞았다** —
         # 역률 85% 를 걸면 이 표의 기본 + 전력량이 합계보다 317,220원 모자라고
         # 비중 합이 99.8% 가 된다. 역률요금이 0원인 자료(간주 92%)에서는 값이 그대로다.
-        base_won = structure.base_with_power_factor_won
+        #
+        # **금액은 청구 표와 같은 표기 값이다** (S233 ㄱ · :func:`bill_lines`). 비중은
+        # 원값으로 나눈 그대로다(S133 · 한 자리).
+        lines = bill_lines(structure.bill)
+        base_won = lines.base_with_power_factor
         base_share = structure.base_with_power_factor_share
         _conclusion(
             document,
@@ -1643,13 +1669,13 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
                 ["기본요금", f"{_won(base_won)} ({base_share:.1%})"],
                 [
                     "전력량요금",
-                    f"{_won(structure.energy_won)} ({structure.energy_share:.1%})",
+                    f"{_won(lines.energy)} ({structure.energy_share:.1%})",
                 ],
                 *(
                     [
                         [
                             "초과사용부가금",
-                            f"{_won(excess_won)} ({excess_won / structure.total_won:.1%})",
+                            f"{_won(lines.excess)} ({excess_won / structure.total_won:.1%})",
                         ]
                     ]
                     if excess_won
@@ -1757,7 +1783,7 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
     _conclusion(
         document,
         f"권장안은 「{best.composition(baseline)}」 입니다. "
-        f"기간에 {_won(best.saving_won)} 를 줄이고 "
+        f"기간에 {_won(combination_saving(comparison, best))} 를 줄이고 "
         f"투자비는 {_won(best.investment_won)}, 회수기간은 "
         f"{_payback_text(best.payback_years, best.investment_won)} 입니다.",
     )
@@ -1768,7 +1794,8 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
             [
                 item.name,
                 option_label(item.selection.option),
-                _won(item.saving_won),
+                # 적힌 기준선 요금 − 적힌 조합 요금 (S233 ㄴ · Excel 조합 비교와 한 글자).
+                _won(combination_saving(comparison, item)),
                 _won(item.investment_won),
                 _payback_text(item.payback_years, item.investment_won),
             ]

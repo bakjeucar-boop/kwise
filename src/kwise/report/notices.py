@@ -7,10 +7,15 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
+    from kwise.compare import CombinationResult, ComparisonResult
     from kwise.measures import EssOptimum, EssTargetCurve
+    from kwise.measures.contract import ContractAdjustment
+    from kwise.measures.power_factor import PowerFactorResult
+    from kwise.measures.solar import SolarPoint
+    from kwise.measures.tariff_switch import TariffSwitchResult
 
 __all__ = [
     "AMI_BASIS_NOTICE",
@@ -23,7 +28,14 @@ __all__ = [
     "TRUNCATION_FOOTNOTE",
     "UNPRICED",
     "UNPRICED_REASONS",
+    "BillLines",
+    "bill_lines",
     "billing_demand_text",
+    "charge_lines",
+    "combination_annual_saving",
+    "combination_saving",
+    "contract_annual_saving",
+    "contract_saving",
     "ess_capacity_text",
     "ess_unpriced_reason",
     "excess_not_measured_line",
@@ -31,8 +43,12 @@ __all__ = [
     "format_won",
     "max_demand_text",
     "plain_text",
+    "power_factor_charges",
     "rules_basis_line",
+    "solar_lines",
     "surplus_kwh_text",
+    "switch_annual_saving",
+    "switch_saving",
 ]
 
 # **보고서 쪽이 「반드시 싣는 문구」 를 얻는 문은 여기 하나다** (65세션 3절).
@@ -271,3 +287,133 @@ def billing_demand_text(kw: float) -> str:
     """요금적용전력 — ``132 kW``. 약관 제7조 ① 로 1 kW 단위에 접힌 값이라
     「132.0」 으로 적으면 잰 값처럼 읽힌다 (S192 증상 6)."""
     return f"{kw:,.0f} kW"
+
+
+# **금액의 표기 값도 사실마다 한 자리가 만든다** (S233 ㄱ · 웹 대화창 판단). 사람이
+# 정한 A 단수 차이 조정(:func:`kwise.money.balance_won`)으로 한 표의 셈을 맞추면
+# 올린 줄이 **다른 산출물에도 서서** 거기서는 옛 글자로 남았다(S232 가 다섯을 멈췄다).
+# 그래서 조정한 값을 사실마다 여기서 한 번 만들고, 그 사실을 적는 자리가 다 이것을
+# 부른다. 두 합계의 차는 :func:`kwise.money.gap_won` 이 쥔다.
+
+
+class BillLines(NamedTuple):
+    """청구서 한 장의 표기 값 — 줄의 합이 합계의 절사다."""
+
+    base: float
+    """역률 조정 전 기본요금."""
+    energy: float
+    power_factor: float
+    excess: float
+    total: float
+
+    @property
+    def base_with_power_factor(self) -> float:
+        """역률 반영 기본요금 — Excel 요약 · Word 요금 구조의 「기본요금」 이다."""
+        return self.base + self.power_factor
+
+
+def charge_lines(
+    base: float, energy: float, power_factor: float, excess: float, total: float
+) -> BillLines:
+    """청구서 줄의 표기 값. 참고 요금제 산식처럼 요금 결과가 조각으로 온 자리가 부른다."""
+    shown = money.balance_won([base, energy, power_factor, excess], total)
+    return BillLines(shown[0], shown[1], shown[2], shown[3], money.truncate_won(total))
+
+
+def bill_lines(bill: BillingResult) -> BillLines:
+    """청구서 줄의 표기 값 — **청구 표 · 요약 · 요금 구조 · 역률 표 · 계약 표가 이것을 쓴다.**"""
+    return charge_lines(
+        bill.total_base_won,
+        bill.total_energy_won,
+        bill.total_power_factor_won,
+        bill.total_excess_won,
+        bill.total_won,
+    )
+
+
+def switch_saving(result: TariffSwitchResult) -> float:
+    """선택요금 기간 절감의 표기 값 — **적힌 현행 합계 − 적힌 최적 합계** (S233 ㄴ)."""
+    return money.gap_won(result.current_bill.total_won, result.best_bill.total_won)
+
+
+def switch_annual_saving(result: TariffSwitchResult) -> float | None:
+    """선택요금 12개월 환산의 표기 값 — 기간 값과 같은 값이면 같은 글자 (S233 ㄱ)."""
+    return money.annual_won(result.annual_saving_won, result.saving_won, switch_saving(result))
+
+
+def combination_saving(comparison: ComparisonResult, item: CombinationResult) -> float:
+    """조합 기간 절감의 표기 값 — **적힌 기준선 요금 − 적힌 조합 요금** (S233 ㄴ).
+
+    「조합 비교」 표가 두 요금과 절감액을 한 줄에 적는다 (덱 16벌 48줄이 1,000원
+    어긋났다). 첫 조합(선택요금 전환)은 :func:`switch_saving` 과 같은 값이다.
+    """
+    return money.gap_won(comparison.baseline.total_won, item.total_won)
+
+
+def combination_annual_saving(comparison: ComparisonResult, item: CombinationResult) -> float:
+    """조합 12개월 환산의 표기 값 — 기간 값과 같은 값이면 같은 글자 (S233 ㄱ)."""
+    shown = money.annual_won(
+        item.annual_saving_won, item.saving_won, combination_saving(comparison, item)
+    )
+    return item.annual_saving_won if shown is None else shown
+
+
+def contract_saving(result: ContractAdjustment) -> float | None:
+    """계약 기간 절감의 표기 값 — **종별을 넘으면 적힌 두 총 요금의 차다** (S233 ㄴ).
+
+    종별 안에서 낮추는 갈래는 절감액이 셈의 결과(합계)라 원값 절사 그대로다.
+    """
+    if (
+        result.crosses_type
+        and result.current_total_won is not None
+        and result.crossed_total_won is not None
+    ):
+        return money.gap_won(result.current_total_won, result.crossed_total_won)
+    return result.saving_won
+
+
+def contract_annual_saving(result: ContractAdjustment) -> float | None:
+    """계약 12개월 환산의 표기 값 — 기간 값과 같은 값이면 같은 글자 (S233 ㄱ)."""
+    return money.annual_won(result.annual_saving_won, result.saving_won, contract_saving(result))
+
+
+def solar_lines(point: SolarPoint) -> tuple[float, float, float, float]:
+    """태양광 지점 줄의 표기 값 — (기본 · 전력량 · 역률 감액 변화 · 잉여).
+
+    역률 몫은 계산 근거 표와 같이 **값으로 되짚는다**(절감액 − 기본 − 전력량 − 잉여).
+    계산 근거 표와 용량 곡선이 같은 지점의 줄을 이것 하나로 적는다. 표가 안 세우는
+    줄(0원으로 반올림되는 몫 · 고르지 않은 잉여)은 0 으로 두어 올리지 않는다.
+    """
+    factor = (
+        point.total_saving_won
+        - point.base_saving_won
+        - point.energy_saving_won
+        - point.surplus_revenue_won
+    )
+    surplus = point.surplus_revenue_won if point.surplus_scenario else 0.0
+    shown = money.balance_won(
+        [
+            point.base_saving_won,
+            point.energy_saving_won,
+            factor if round(factor) else 0.0,
+            surplus if round(surplus) else 0.0,
+        ],
+        point.total_saving_won,
+    )
+    return shown[0], shown[1], shown[2], shown[3]
+
+
+def power_factor_charges(result: PowerFactorResult) -> tuple[float, float]:
+    """역률 표의 현재 · 목표 역률 요금 표기 값.
+
+    현재 역률 요금은 **청구 표의 역률 요금과 같은 사실**이라 :func:`bill_lines`
+    값을 그대로 쓴다. 목표 쪽을 올려 「현재 − 목표 = 기간 절감액」 을 맞춘다.
+    """
+    current = bill_lines(result.current_bill).power_factor
+    shown = money.balance_won(
+        [result.current_charge_won, result.target_charge_won],
+        result.saving_won,
+        [1, -1],
+        [current, None],
+    )
+    return shown[0], shown[1]
