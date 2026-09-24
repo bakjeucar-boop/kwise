@@ -366,6 +366,13 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 **1-6. 고칠 자리 — 열하나 · 이것이 울타리이고 하한이다.** 코드 셋 — ① `open_values.main` 끝에 전원 줄(ㄱ) ② `cache_files` 에 `--repo`(ㄷ) ③ `daily_brief` 에 `--branch`(ㄹ). 규약 셋(`CLAUDE.md` 9항) — ④ 2번 `open_values` 문단(전원 줄) ⑤ 4번 `cache_files` 자리(`--repo`) ⑥ 4번 `daily_brief` 자리(`--branch`). 명령 글 넷(`PROCEED.md` 「pytest 분할 실행」) — ⑦ ~ ⑩ 네 명령 끝에 `--durations=0`. 기록 하나 — ⑪ `docs\OPEN_ITEMS.md` 「마」 첫 글머리를 브리핑 이름 일곱(①-1 ~ ①-7)으로 편다 — **펴지 않으면 ㄹ 이 「마」 를 35 로 낸다**(글머리 35 · 제목 41 · 새 이름을 짓지 않는다).
 **1절 벽시계** 10:57 ~ 11:04 — **재기는 0절 커밋 앞에 했다**(0절과 겹친다 · 0절 벽시계 10:55 ~ 11:03 은 커밋 시각까지다).
 
+**2-1. 고친 자리 — 열하나 · 울타리 안 · 넘는 자리 0.** ① `tools\open_values.py` **+29 −1** — `power_line()`(`GetSystemPowerStatus` · 255 는 「모름」) · `main` 끝에 한 줄 · 독스트링 꼴 ② `tools\cache_files.py` **+8 −2** — `--repo`(뿌리를 저장소로) · 폴더 없이 주면 `parser.error`(저장소를 통째로 훑으면 `.venv` · `.git` 까지 돈다) ③ `tools\daily_brief.py` **+53 −0** — `branch_names()`(절마다 글머리 · 표 행 첫 칸 · `###` 소절 안 읽음 · 끝 괄호는 `item_parts` 로 뗌) · `branches()` · `--branch [글자]`(안 주면 다섯) · 첫 판 ruff SIM102 하나와 format 한 줄을 고쳤다 ④ ~ ⑥ `CLAUDE.md` 9항 **+5 −2** — 2번 끝 줄 전원 · 4번 `--repo docs\directives` · `--branch 마` ⑦ ~ ⑩ `PROCEED.md` 「pytest 분할 실행」 네 명령 끝에 `--durations=0` + 그 밑 두 줄(까닭) ⑪ `docs\OPEN_ITEMS.md` 「마」 첫 글머리 → 이름 일곱(①-1 ~ ①-7 글자 그대로) · 소제목 괄호에 한 줄(**+9 −3** · 소제목 수 「아홉」 은 안 갈았다 — 「라」 항목이 쥔다).
+**2-2. 재현 다시 · 전 출력과 맞댐**(`s229_cmp.py repro` · `after` · `s229_cmp_20260924_110618.txt` · `110621.txt`). ㄱ 셋째 줄 「전원 AC · 잔량 100% · 절전 꺼짐」 · ㄴ 네 줄 다 `--durations=0` · ㄷ `--repo docs\directives --last 3` 종료 0 · 「…\docs\directives — 99파일 가운데 새것부터 3」 + `S228'.md` · `S228.md` · `S227.md` · 캐시 쪽 `docs\directives` 는 그대로 종료 1 · ㄹ `--branch 마` 종료 0 · 「마 — 사람이 정해야 열린다 (41) · 이름 41」 + 41줄. **맞댐 — 열하나 가운데 여덟이 같다.** 갈린 셋 — `open_values` 두 입력은 **셋째 줄이 선 것뿐**(있던 두 줄 그대로 · 의도한 몫) · `daily_brief --no-clip` 은 머리 두 줄 「HEAD b557e7b · S228' 3절」 → 「HEAD 273891b · S229 1절」 뿐(커밋 몫 · 도구 몫 0). `cache_files` 넷 · `--cells` · `--cell` 둘은 한 글자도 안 갈렸다.
+**2-3. 「마」 다시 뜨기 — 1-4 와 같다.** `daily_brief --branch`(`daily_brief_20260924_110849.txt` · 161줄 = 제목 5 + 이름 156) — 가 8 · 나 35 · 다 9 · 라 63 · 마 41 이 다 절 제목 수와 같다 · 「마」 41 이름이 1-4 의 자료·실물 열 + 문구 서른하나와 이름 · 차례까지 같다. **첫 글머리를 펴기 전 판은 「마」 35**(`daily_brief_20260924_110525.txt`) — ⑪ 이 없으면 서지 않는 수다.
+**2-4. 적게 닫지 않았다** — 열하나 다.
+**2-5. 되돌려 확인**(스크래치 `s229_revert_repro.py` · 고치기 전 판 `273891b` 소스를 스크래치 `old\tools\` 에 떠 돌린다 · `s229_revert_repro_20260924_110817.txt`). **표지 먼저** — 옛 소스에 `power_line` · `--repo` · `--branch` 가 다 False · 지금 소스엔 다 True. 증상 — ㄱ 두 줄뿐(전원 줄 0) · ㄷ 종료 2 「unrecognized arguments: --repo」 · ㄹ 종료 2 「unrecognized arguments: --branch 마」 · ㄴ `273891b:PROCEED.md` 네 줄 가운데 `--durations=0` 0. **넷 다 1-5 증상이 다시 선다.**
+**2절 벽시계** 11:04 ~ 11:10.
+
 ---
 ## 오늘 (2026-09-24) 228'세션 — **오늘 판 넷(S225 · S226 · S227 · S228)을 닫고 기록이 제 값으로 서는지만 본다**
 
@@ -44429,7 +44436,7 @@ RAM 16 GB 이상인 PC 라면 `-n auto` 가 낫다. **판단 기준은 코어가
 | **④ 화면** | `test_ui_screen` `test_ui` | **341** | 284 | 242초 | **144초** |
 
     # ① 엔진 — 평소엔 이것만 돌린다. 코드 고치면 여기서 먼저 깨진다
-    .venv\Scripts\python.exe -m pytest tests -n auto --dist load --ignore=tests\test_ui_screen.py --ignore=tests\test_ui.py --ignore=tests\test_integration.py --ignore=tests\test_casestudy.py --ignore=tests\test_slides.py --ignore=tests\test_document.py --ignore=tests\test_report.py --ignore=tests\test_base_fee_basis_words.py
+    .venv\Scripts\python.exe -m pytest tests -n auto --dist load --ignore=tests\test_ui_screen.py --ignore=tests\test_ui.py --ignore=tests\test_integration.py --ignore=tests\test_casestudy.py --ignore=tests\test_slides.py --ignore=tests\test_document.py --ignore=tests\test_report.py --ignore=tests\test_base_fee_basis_words.py --durations=0
 
 **S170 에 무시 목록이 여덟이 됐다** — `test_base_fee_basis_words.py` 는 앱을 띄워 네
 산출물을 뜨는 시험(1번 PC 에서 두 벌 한 판 약 66초 도구 합)이라 「평소엔 이것만」 인 ① 이
@@ -44455,13 +44462,16 @@ RAM 16 GB 이상인 PC 라면 `-n auto` 가 낫다. **판단 기준은 코어가
 **세 갈래로 일부러 틀려 무는 것을 보고 되돌렸다.**
 
     # ② 산출물 (보고서·문서·슬라이드·케이스)
-    .venv\Scripts\python.exe -m pytest -n auto --dist load tests\test_casestudy.py tests\test_slides.py tests\test_document.py tests\test_report.py tests\test_base_fee_basis_words.py
+    .venv\Scripts\python.exe -m pytest -n auto --dist load tests\test_casestudy.py tests\test_slides.py tests\test_document.py tests\test_report.py tests\test_base_fee_basis_words.py --durations=0
 
     # ③ 통합
-    .venv\Scripts\python.exe -m pytest -n auto --dist load tests\test_integration.py
+    .venv\Scripts\python.exe -m pytest -n auto --dist load tests\test_integration.py --durations=0
 
     # ④ 화면
-    .venv\Scripts\python.exe -m pytest -n auto --dist load tests\test_ui_screen.py tests\test_ui.py
+    .venv\Scripts\python.exe -m pytest -n auto --dist load tests\test_ui_screen.py tests\test_ui.py --durations=0
+
+**네 명령에 `--durations=0` 을 붙였다** (S229) — 1번 PC 통째 명령(`CLAUDE.md` 9항 9번)과 같게.
+S225 · S227 두 판이 이것 없이 돌아 느려진 시험을 판끼리 못 맞댔다(228세션 절 1-2).
 
 **커밋 전에는 전체를 한 번 돌린다 — 다만 PC 로 갈린다.** 43세션에는 5.3분이라
 나눌 까닭이 없었고, 65세션에 `-n 4` 로 9분 22초까지 늘어 다시 생겼다가,

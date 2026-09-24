@@ -9,8 +9,11 @@ S228 1-1), 덱 기준선 스냅을 고르고(S224 · S225 0-7). ``deck_words`` �
     .venv\Scripts\python.exe tools\cache_files.py runs --glob "python_*" --last 5
     .venv\Scripts\python.exe tools\cache_files.py deck_words
     .venv\Scripts\python.exe tools\cache_files.py runs\도는중  도는 판의 자라는 파일
+    .venv\Scripts\python.exe tools\cache_files.py --repo docs\directives
 
-폴더는 ``PROJECT_CACHE``(기본 ``.\cache``) 아래 상대 경로다.
+폴더는 ``PROJECT_CACHE``(기본 ``.\cache``) 아래 상대 경로다. **``--repo`` 를 주면
+저장소 뿌리 아래 상대 경로다** (S229) — S228' 이 ``docs\directives\`` 목록을
+``Get-ChildItem`` 으로 떴다.
 """
 
 from __future__ import annotations
@@ -38,9 +41,12 @@ def main() -> int:
     parser.add_argument("folder", nargs="?", help="캐시 아래 폴더 (없으면 폴더마다 요약)")
     parser.add_argument("--glob", default="*", help="이름 거르기 (기본 *)")
     parser.add_argument("--last", type=int, default=20, help="새것부터 몇 개 (0 이면 전부)")
+    parser.add_argument("--repo", action="store_true", help="폴더를 저장소 뿌리 아래에서 찾는다")
     args = parser.parse_args()
+    if args.repo and args.folder is None:  # 저장소 뿌리를 통째로 훑으면 .venv · .git 까지 돈다
+        parser.error("--repo 는 폴더와 함께 준다")
 
-    root = cache_root()
+    root = PROJECT_ROOT if args.repo else cache_root()
     if args.folder is None:
         print(f"캐시 — {root}")
         for folder in sorted(p for p in root.iterdir() if p.is_dir()):

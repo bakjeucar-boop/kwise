@@ -61,6 +61,7 @@
    **`tools\open_values.py` 가 센다** (S227) — 아래 명령의 행에서 제 프로세스와
    그 python 조상을 빼고 행마다 프로젝트와 명령줄을 낸다. 첫 줄은 0-1 의 PC 값
    (이름 · CPU · cpu 수 · RAM · `-n auto` 일꾼 수)이다. 판 개시 · 회귀 앞뒤에 쓴다.
+   **끝 줄은 전원이다** (S229) — 전원 연결 · 배터리 잔량 · 절전 켜짐, OS 가 주는 값만.
 
        Get-CimInstance Win32_Process -Filter "Name='python.exe'"
 3. **모든 명령에 타임아웃을 건다.** 네트워크가 끼면 반드시 —
@@ -85,8 +86,10 @@
    **도는 동안 `runs\도는중\<이름>_<시작 시각>_<pid>.txt` 가 자란다** (S228) —
    뒤로 돌린 판의 진행은 그 파일을 읽어 본다(셸로 들여다보지 않는다). 끝나면
    지워지고 받은 파일은 전과 같다 · 죽이거나 터진 판은 남는다. **파일 목록 · 크기 · 시각은
-   `cache_files`**(`runs` · `deck_words` · `runs\도는중` · 인자 없이 폴더마다) ·
-   **기록 칸 글자 수 · 머리는 `daily_brief --cells` · `--cell <칸> --head N`**.
+   `cache_files`**(`runs` · `deck_words` · `runs\도는중` · 인자 없이 폴더마다 ·
+   **저장소 폴더는 `--repo docs\directives`**) ·
+   **기록 칸 글자 수 · 머리는 `daily_brief --cells` · `--cell <칸> --head N`** ·
+   **미해결 갈래별 이름은 `daily_brief --branch 마`**(글자를 안 주면 다섯 다).
 
    **스물넷을 다 받는다** (S209 2절 · S227 에 `open_values` · S228 에 `cache_files` 가 붙었다). `count_sites`(`main(argv)`)와
    `daily_brief`(`sys.stdout.reconfigure`)가 못 받던 자리를 닫았고

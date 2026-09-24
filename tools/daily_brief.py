@@ -24,6 +24,7 @@ r"""아침 브리핑을 만든다.
     .venv\Scripts\python.exe tools\daily_brief.py --out brief.md
     .venv\Scripts\python.exe tools\daily_brief.py --cells              칸 글자 수 · 갈래 절 수
     .venv\Scripts\python.exe tools\daily_brief.py --cell 미해결 --head 600
+    .venv\Scripts\python.exe tools\daily_brief.py --branch 마         미해결 갈래별 이름
 
 프로젝트 지식에 올리는 세 문서(`docs\project\`)가 「무엇을 만드는가」 와
 「어떻게 일하는가」 를 맡고, 이 도구는 「오늘 어디서부터인가」 만 맡는다.
@@ -662,6 +663,49 @@ def cells(name: str | None, head: int) -> int:
     return 0
 
 
+def branch_names(text: str) -> list[tuple[str, str, int, list[str]]]:
+    """``docs\\OPEN_ITEMS.md`` 갈래 절마다 (갈래, 제목, 제목 수, 이름) (S229).
+
+    이름은 절의 글머리(``- ``)와 표 행의 첫 칸이다 — 「가」 는 표로, 나머지는
+    글머리로 선다. 절 안 ``###`` 소절(「S140 이 센 여덟 …」 같은 이력 표)은 안 읽는다.
+    몸(끝 괄호)은 :func:`item_parts` 로 떼고 이름만 낸다. 판마다 스크래치나 셸로
+    떴다(S220 · S221 0-4 · S228' 셸 자리).
+    """
+
+    def rule(row: str) -> bool:  # 표 구분 행 `|---|---|`
+        return row.startswith("|") and set(row) <= set("|-: ")
+
+    heads = list(BRANCH_HEAD.finditer(text))
+    out: list[tuple[str, str, int, list[str]]] = []
+    for i, head in enumerate(heads):
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
+        lines = text[head.end() : end].split("\n### ")[0].splitlines()
+        entries: list[str] = []
+        for j, line in enumerate(lines):
+            nxt = lines[j + 1] if j + 1 < len(lines) else ""
+            if line.startswith("- "):
+                entries.append(line[2:])
+            elif line.startswith("  ") and line.strip() and entries and lines[j - 1].strip():
+                entries[-1] += " " + line.strip()
+            elif line.startswith("| ") and not rule(nxt):  # 구분 행 바로 위는 머리 행이다
+                entries.append(_cells(line)[0])
+        names = [strip_md(item_parts(entry)[0]) for entry in entries]
+        out.append((head.group(1), head.group(0).strip().lstrip("# "), int(head.group(2)), names))
+    return out
+
+
+def branches(which: str) -> int:
+    """갈래별 미해결 이름을 낸다 (S229). ``which`` 는 낼 갈래 글자들이다."""
+    rows = branch_names((ROOT / "docs" / "OPEN_ITEMS.md").read_text(encoding="utf-8"))
+    for branch, title, _count, names in rows:
+        if branch not in which:
+            continue
+        print(f"{title} · 이름 {len(names)}")
+        for n, name in enumerate(names, 1):
+            print(f"  {branch}-{n}. {name}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="아침 브리핑을 만든다")
     ap.add_argument("--no-clip", action="store_true", help="클립보드 복사를 생략한다")
@@ -669,6 +713,13 @@ def main() -> int:
     ap.add_argument("--cells", action="store_true", help="칸마다 글자 수와 갈래 절 수만 낸다")
     ap.add_argument("--cell", default=None, help="이 이름의 칸 글자 수와 머리만 낸다")
     ap.add_argument("--head", type=int, default=400, help="--cell 이 낼 머리 글자 수")
+    ap.add_argument(
+        "--branch",
+        nargs="?",
+        const="가나다라마",
+        default=None,
+        help="미해결 갈래별 이름 (글자를 안 주면 다섯 다 · 예: --branch 마)",
+    )
     args = ap.parse_args()
 
     # **있을 때만 부른다** (S209 2절). ``tools\run_tool.py`` 가 출력을
@@ -679,6 +730,8 @@ def main() -> int:
         reconfigure(encoding="utf-8", errors="replace")
     if args.cells or args.cell:
         return cells(args.cell, args.head)
+    if args.branch is not None:
+        return branches(args.branch)
 
     text = build()
     print(text, end="")

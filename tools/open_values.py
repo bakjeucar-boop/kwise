@@ -11,6 +11,11 @@ python 을 세게 하는데 **세는 도구가 없어** 판마다 PowerShell 한
     PC <이름> · <CPU> · cpu <n> · RAM <바이트> B (<GB> GB) · -n auto 일꾼 <w>
     남의 python <N>
       <pid> ← <부모 pid> · <프로젝트> · <명령줄>        (N 만큼)
+    전원 <AC|배터리|모름> · 잔량 <n>% · 절전 <켜짐|꺼짐>
+
+**전원 줄은 OS 가 주는 값만 낸다** (S229) — ``GetSystemPowerStatus`` 의 전원 연결 ·
+배터리 잔량 · 절전 모드. OS 가 모른다고 하면(255) 「모름」 이다. S227 은 남의
+python 0 인데 배터리 33% → 15% 판이라 1.6 ~ 1.8배 느렸다(228세션 절 1-6).
 
 **「남의 python」 은 9항 2번 명령의 행 수에서 제 프로세스와 그 python 조상**
 (venv 스텁 · ``run_tool``)**을 뺀 것이다.** 스텁과 자식은 따로 센다(79세션 ·
@@ -33,7 +38,7 @@ from typing import Any
 
 from xdist.plugin import pytest_xdist_auto_num_workers
 
-__all__ = ["main", "others", "pc_line"]
+__all__ = ["main", "others", "pc_line", "power_line"]
 
 #: ``CLAUDE.md`` 9항 2번 명령 그대로에 받을 칸만 고른다.
 _PS = (
@@ -75,6 +80,28 @@ def pc_line() -> str:
     )
 
 
+class _Power(ctypes.Structure):
+    _fields_ = [
+        ("ACLineStatus", ctypes.c_ubyte),
+        ("BatteryFlag", ctypes.c_ubyte),
+        ("BatteryLifePercent", ctypes.c_ubyte),
+        ("SystemStatusFlag", ctypes.c_ubyte),
+        ("BatteryLifeTime", ctypes.c_ulong),
+        ("BatteryFullLifeTime", ctypes.c_ulong),
+    ]
+
+
+def power_line() -> str:
+    power = _Power()
+    ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(power))
+    line = {0: "배터리", 1: "AC"}.get(power.ACLineStatus, "모름")
+    left = power.BatteryLifePercent
+    return (
+        f"전원 {line} · 잔량 {'모름' if left == 255 else f'{left}%'} · "
+        f"절전 {'켜짐' if power.SystemStatusFlag else '꺼짐'}"
+    )
+
+
 def others() -> list[dict[str, Any]]:
     """남의 python 행. 칸마다 ``project`` 를 붙여 낸다."""
     out = subprocess.run(
@@ -113,6 +140,7 @@ def main() -> int:
             f"  {row['ProcessId']} ← {row['ParentProcessId']} · {row['project']} · "
             f"{row['CommandLine']}"
         )
+    print(power_line())
     return 0
 
 
