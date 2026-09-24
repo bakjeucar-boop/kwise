@@ -327,7 +327,9 @@ def test_improvement_to_97_saves_exactly_one_percent(
     assert result.saving_won == pytest.approx(sample_bill.total_base_won * 0.010)
     assert result.saving_won == pytest.approx(4_528_326, rel=1e-4)
     assert result.certainty is Certainty.HIGH
-    assert result.payback_years == 0.0  # 투자비 0 이면 즉시
+    # 투자비를 안 받았으면 회수기간도 없다 — 「미산출 — 투자비 미입력」 (S237 ㄱ).
+    assert result.investment_won is None
+    assert result.payback_years is None
 
 
 def test_improvement_from_a_penalty_removes_it_and_adds_the_rebate(

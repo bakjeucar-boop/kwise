@@ -543,7 +543,7 @@ def cached_power_factor(
     token: str,
     form: ContractForm,
     target_pct: float,
-    investment_won: float,
+    investment_won: float | None,
     stamp: str,
 ) -> PowerFactorResult:
     return evaluate_power_factor(

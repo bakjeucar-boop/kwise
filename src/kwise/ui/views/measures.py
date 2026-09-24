@@ -706,7 +706,8 @@ def _power_factor(
         usage_token(usage),
         form,
         target,
-        investment,
+        # 0 은 미입력이다 — 태양광·ESS 칸과 같다 (S237 ㄱ).
+        investment or None,
         rules_stamp(),
     )
     _overview(spec)
@@ -718,7 +719,11 @@ def _power_factor(
     columns[1].metric(
         "목표 역률", NO_HEADROOM_LABEL if result.no_headroom else fmt.pct(result.target_pct)
     )
-    columns[2].metric(SAVING_LABEL, fmt.won_short(result.annual_saving_won))
+    # 여지가 없으면 계약 카드처럼 「없음」 이다 (S237 ㄴ · S205).
+    columns[2].metric(
+        SAVING_LABEL,
+        NO_SAVING if result.no_headroom else fmt.won_short(result.annual_saving_won),
+    )
     columns[3].metric(
         "회수기간", fmt.payback(result.payback_years, investment_won=result.investment_won)
     )

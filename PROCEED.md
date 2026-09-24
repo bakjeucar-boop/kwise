@@ -391,6 +391,24 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - 시험 — `tests\test_power_factor.py:330`(「투자비 0 이면 즉시」 · 옛 표기). 그 밖은 3-1 좁은 판이 가른다.
 **1절 벽시계** 06:15 ~ 06:22.
 
+**2-1. 1-4 자리 12 를 다 고쳤다 — 코드 9파일 +61 −19(계산 폴더 `compare` +28 −4 · `measures` +8 −6) · 시험 1파일 +3 −1**(`git diff --numstat` 2절 커밋 앞).
+
+| 자리 | 줄 | 전 → 후 |
+|---|---:|---|
+| `measures\power_factor.py` 투자비 | 결과 형 · 인자 기본 · 독스트링 · 회수기간 | `investment_won: float = 0.0` · 0 이면 즉시 → `float \| None = None` · `None` 이면 회수기간 `None` |
+| `measures\power_factor.py` 안내 | 글 한 줄 · 주석 한 줄 | 「… 개선할 것이 없습니다. 절감액은 0원입니다.」 → 「… 개선할 것이 없습니다.」 |
+| `compare\combination.py` | 필드 하나 · 출발 역률 두 줄 · `applied` 거르기 · 투자비 합 | 역률을 켜고 투자비가 0 · `None` 이면 건너뛰기 → 조합 투자비 `None` · 조합 부하 여지 판정 `power_factor_no_headroom`(태양광이 끌어내린 뒤 출발 역률) · 태양광 · ESS 가 든 조합에서만 이름에서 역률을 뺀다 |
+| `ui\views\measures.py` 카드 투자비 | 한 줄 | `investment` → `investment or None` |
+| `ui\views\measures.py` 금액 칸 | 한 줄 | 늘 `won_short` → 여지 없으면 `NO_SAVING`(계약 카드 꼴) |
+| `ui\cache.py` | 형 한 줄 | `float` → `float \| None` |
+| `ui\views\compare.py:983` | 한 줄 | `or 0.0` 걷음 |
+| `ui\views\compare.py` 이유 줄 | 조건 한 줄 | `+ not combined.power_factor_no_headroom` |
+| `report\batch.py` | 기본 · 인자 | `0.0` → `None` · `or None` |
+| `report\excel.py` · `document.py` · `standalone.py` | 사유 한 자리씩 · 가져오기 한 줄씩 | 사유 없음(계약 「하한 규정 미확인」 · 「단가 미입력」 이 기본) → `NO_INVESTMENT_INPUT` |
+
+**2-2. 적게 닫은 것 · 번진 것.** 적게 닫은 것 0. **번짐 하나** — 산출물 셋(`excel` · `document` · `standalone`)은 1-2 에서 「`None` 을 이미 받는다」 고 S236 이 안 셌으나 **받는 기본 사유가 다른 수단 글자**라(Excel · Word 는 계약 「미산출 — 하한 규정 미확인」 · 3단계 표는 「미산출 — 단가 미입력」) 결정 ㄱ 글자로 가려면 사유를 넘겨야 했다 — 1-4 에 이미 셌다. **가져오기** — `NO_INVESTMENT_INPUT` 을 `kwise.measures` 가 안 내보내 산출물 셋이 `kwise.measures.ess` 에서 직접 가져온다(`measures\__init__.py` 0줄). `ruff format` — 이 판 줄은 맞췄다 · `excel.py:548` · `document.py:1468` 어긋남은 이 판 줄이 아니다(앞 판부터 · 3-9).
+**2절 벽시계** 06:22 ~ 06:25.
+
 ## 오늘 (2026-09-25) 236세션 — **고침 판 · 역률 투자비 비움 표기 · 다음 뿌리 「0원 거르기」 를 잰다**
 
 **고침 판이었으나 2절에서 멈췄다 — 코드 0줄.** 2번 PC. **사람이 정했다** — 가리키기만 한다: 절사 A · 단위 기준 · 측정 중단 · `CLAUDE.md` 는 규칙이 바뀔 때만 · 뿌리 작업은 다른 갈래로 안 빠진다(`docs\HANDOVER.md` 5절). **웹 대화창이 정했다(S235' 뒤) — 사람 결정이 아니다** — 역률 투자비를 비웠을 때는 「미산출 — 투자비 미입력」 · 같은 화면 다른 수단의 방식 그대로 · 넣은 경로는 한 글자도 안 바뀐다(`docs\HANDOVER.md` 5절 S235' 행). **멈춘 까닭** — 칸 기본값이 0.0 이라 비움과 「0원을 넣음」 이 같은 값이고, 다른 수단 방식(0 → 미입력)을 따르면 넣은 0 의 글자가 바뀐다(1-1 · 2-2).

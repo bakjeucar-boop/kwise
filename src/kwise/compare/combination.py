@@ -31,6 +31,7 @@ from kwise.measures import (
     annualize,
     apply_generation,
     dispatch_peak_shaving,
+    has_no_headroom,
     light_band_mask,
     load_ess_cost_model,
     lowest_certainty,
@@ -228,6 +229,12 @@ class CombinationResult:
     contract_saving_won: float | None = None
     contract_adjustment: ContractAdjustment | None = None
     """조합 부하 기준의 계약전력 조정. **추가 하향 판정이 여기서 나온다** (14세션 5-2)."""
+    power_factor_no_headroom: bool = False
+    """켠 역률 수단에 **조합 부하에서 여지가 없는가** (S154 판정 · S237 ㄴ).
+
+    출발 역률(태양광이 끌어내린 뒤)과 목표가 다 감액 상한 이상이면 요금이 한 원도
+    안 갈린다 — :func:`~kwise.measures.has_no_headroom` 한 자리가 가른다. 계산에는
+    안 쓴다 — 이름(:attr:`applied`)과 이유 줄이 읽는다."""
     notices: tuple[Notice, ...] = field(default=())
 
     @property
@@ -246,19 +253,26 @@ class CombinationResult:
         **목표는 결과 쪽에만 있다** — 조합 부하로 다시 계산해야 나온다.
         **낮출 자리가 없으면 조각을 뺀다** — 절감액이 0원이라 조합에 들어간
         것이 없다.
+
+        **역률도 여지가 없으면 뺀다** (S237 ㄴ) — 다만 태양광·ESS 가 든 조합만이다.
+        역률만 더한 줄에서 빼면 구성이 앞 줄과 같은 이름이 된다(7.2 → 7.4 차례).
         """
         target = (
             self.contract_adjustment.target_contract_kw
             if self.contract_adjustment is not None
             else None
         )
+        drop_pf = self.power_factor_no_headroom and (self.spec.has_pv or self.spec.has_ess)
+        items = tuple(
+            item for item in self.spec.applied if not (drop_pf and item.key == "power_factor")
+        )
         if target is None:
-            return tuple(item for item in self.spec.applied if item.key != "contract")
+            return tuple(item for item in items if item.key != "contract")
         return tuple(
             AppliedMeasure("contract", (("contract_kw", target),))
             if item.key == "contract"
             else item
-            for item in self.spec.applied
+            for item in items
         )
 
     @property
@@ -460,6 +474,8 @@ def evaluate_combination(
     # **원 부하의 역률이다** — 아래 태양광 조각이 출발점으로 쓴다 (S198 정본).
     # 목표로 갈아 끼우기 **전**에 잡는다.
     original_pct = opts.power_factor_pct
+    # 역률 수단의 출발점 — 태양광을 켜면 아래에서 끌어내린 값으로 갈린다 (이름만 읽는다).
+    start_pct = original_pct if original_pct is not None else deemed_lagging_pct()
     if spec.power_factor_pct is not None:
         # 역률은 **요금 옵션**이다. 부하를 바꾸지 않고 기본요금 조정액만 바꾼다.
         opts = replace(opts, power_factor_pct=spec.power_factor_pct)
@@ -521,6 +537,7 @@ def evaluate_combination(
         after_pct = power_factor_after_pct(
             usage.kw, generation, power_factor_pct=before_pct, interval_minutes=interval
         )
+        start_pct = after_pct
         opts = opts if spec.has_power_factor else replace(opts, power_factor_pct=after_pct)
         if after_pct < power_factor_floor_pct():
             notices.append(
@@ -609,8 +626,12 @@ def evaluate_combination(
             notices.append(block(PV_UNPRICED_REASON, fact="solar.unpriced"))
         elif investment is not None:
             investment += pv_investment
-    if spec.power_factor_investment_won and investment is not None:
-        investment += spec.power_factor_investment_won
+    # 역률 투자비도 같다 — 0 은 미입력으로 읽는다 (S237 ㄱ · 태양광·ESS 칸과 같다).
+    if spec.has_power_factor:
+        if not spec.power_factor_investment_won:
+            investment = None
+        elif investment is not None:
+            investment += spec.power_factor_investment_won
     if dispatch is not None:
         # ESS 투자비는 **출력 × kW당 단가**다 (7.6). 방전시간은 단가에 이미
         # 반영되어 있으므로 용량을 다시 곱하지 않는다.
@@ -669,6 +690,9 @@ def evaluate_combination(
         dispatch=dispatch,
         contract_saving_won=contract_saving,
         contract_adjustment=adjustment,
+        power_factor_no_headroom=(
+            spec.power_factor_pct is not None and has_no_headroom(start_pct, spec.power_factor_pct)
+        ),
         notices=tuple(notices),
     )
 

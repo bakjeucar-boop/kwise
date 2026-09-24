@@ -581,7 +581,13 @@ def _interaction_reasons(
     # 역률 감액도 같다 — 기본요금이 안 움직이면 감액도 안 움직인다 (S170 2절).
     # **방향은 적지 않는다** (S204) — 조합의 역률 몫은 태양광이 떨어뜨린 역률까지
     # 되돌려 덱 10벌에서 2단계 카드보다 컸는데 「단순 합보다 작아집니다」 라 적었다.
-    if "power_factor" in keys and ("solar" in keys or "ess" in keys) and moved:
+    # 조합 부하에서 여지가 없으면 역률 몫이 0 이라 세우지 않는다 (S237 ㄴ).
+    if (
+        "power_factor" in keys
+        and not combined.power_factor_no_headroom
+        and ("solar" in keys or "ess" in keys)
+        and moved
+    ):
         reasons.append(
             "**역률 감액은 기본요금에 비례합니다.** 조합은 바뀐 기본요금 위에서 "
             "역률요금을 다시 매깁니다."
@@ -980,7 +986,7 @@ def _measure_results(
             token,
             form,
             measure_float("power_factor", "target") or default_target_pct(),
-            measure_float("power_factor", "investment") or 0.0,
+            measure_float("power_factor", "investment"),
             stamp,
         )
 

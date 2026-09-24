@@ -88,7 +88,7 @@ class CaseSpec:
     # 역률 (기본공급약관 제41·42·43조). 기본 92% 는 무효전력계 미설치 간주값이다.
     power_factor_pct: float | None = None
     power_factor_target_pct: float = 97.0
-    power_factor_investment_won: float = 0.0
+    power_factor_investment_won: float | None = None
     # 경제성DR (전력시장운영규칙 제12장). 단가는 기본값이 없다 — 없으면 감축량만 낸다.
     dr_unit_price_won_per_kwh: float | None = None
     dr_day_ahead_price_won_per_kwh: float | None = None
@@ -336,7 +336,8 @@ def run_case(
         case.selection,
         current_pct=case.power_factor_pct,
         target_pct=case.power_factor_target_pct,
-        investment_won=case.power_factor_investment_won,
+        # 0 은 미입력이다 — 화면 칸과 같다 (S237 ㄱ).
+        investment_won=case.power_factor_investment_won or None,
         quality=quality,
         options=options,
     )

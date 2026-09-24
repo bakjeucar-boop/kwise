@@ -60,6 +60,7 @@ from kwise.measures import (
     spec_mark_note,
 )
 from kwise.measures import surplus as surplus_module
+from kwise.measures.ess import NO_INVESTMENT_INPUT
 from kwise.notices import Notice, Severity, report_appendix, report_body, texts
 from kwise.report import figures, frames, narrative
 from kwise.report.appendix import APPENDIX_TITLES, AppendixData, known_limits, reference_rows
@@ -995,7 +996,7 @@ def measure_entries(
             ),
             saving_annual=_annual_saving(power_factor.annual_saving_won, power_factor.saving_won),
             has_saving=bool(power_factor.saving_won),
-            investment=_won(power_factor.investment_won),
+            investment=_won(power_factor.investment_won, reason=NO_INVESTMENT_INPUT),
             payback=_payback_text(power_factor.payback_years, power_factor.investment_won),
             certainty=str(power_factor.certainty),
             cautions=body_lines(power_factor.notices),

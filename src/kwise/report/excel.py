@@ -57,6 +57,7 @@ from kwise.measures import (
     payback_label,
     payback_years,
 )
+from kwise.measures.ess import NO_INVESTMENT_INPUT
 from kwise.notices import Notice, dedupe
 from kwise.report import narrative
 from kwise.report.appendix import basis_data_frame, known_limits, worksheet_frame
@@ -541,7 +542,7 @@ def measure_summary_frame(
                         f"({power_factor.current_pct:.1f} → {power_factor.target_pct:.1f}%)"
                     )
                 ),
-                "투자비(원)": format_won(power_factor.investment_won),
+                "투자비(원)": format_won(power_factor.investment_won, reason=NO_INVESTMENT_INPUT),
                 "기간 절감액(원)": format_won(power_factor.saving_won),
                 "12개월 환산(원)": format_won(power_factor.annual_saving_won),
                 "회수기간": payback_label(

@@ -107,7 +107,7 @@ class PowerFactorResult:
     target_charge_won: float
     saving_won: float
     annual_saving_won: float
-    investment_won: float
+    investment_won: float | None
     payback_years: float | None
     base_fee_months: float
     period_label: str
@@ -139,7 +139,7 @@ def evaluate_power_factor(
     *,
     current_pct: float | None = None,
     target_pct: float | None = None,
-    investment_won: float = 0.0,
+    investment_won: float | None = None,
     baseline: BillingResult | None = None,
     quality: QualityReport | None = None,
     options: BillingOptions | None = None,
@@ -152,8 +152,9 @@ def evaluate_power_factor(
         target_pct: 목표 역률. 기본값 97% 는 감액 상한이다 — 더 올려도 요금은
             내려가지 않으므로 과보상만 남는다. **현재보다 낮은 값도 받는다** —
             거절하지 않고 늘어나는 요금을 낸다 (25세션 1절).
-        investment_won: 역률 개선 설비 증설·조정 투자비. 사용자 입력이며 기본값이 없다시피
-            0 이다 — 0 이면 회수기간을 '즉시' 로 본다.
+        investment_won: 역률 개선 설비 증설·조정 투자비. 사용자 입력이다 — 모르면
+            ``None`` 이고 회수기간도 ``None`` 이다 (「미산출 — 투자비 미입력」 · S237 ㄱ).
+            태양광·ESS 와 같이 부르는 쪽이 0 을 미입력으로 읽어 ``None`` 을 넘긴다.
     """
     # 기본값은 파일에서 온다 (요구사항서 12장). 코드에 두지 않는다.
     standard = lagging_standard_pct()
@@ -182,10 +183,11 @@ def evaluate_power_factor(
         # 기본 목표(=상한)가 현재보다 낮게 잡히는데, 두 역률이 다 상한으로
         # 접히므로 요금은 한 원도 안 갈린다 — 절감액이 음수가 아니라 **0** 이다.
         # 아래 「악화」 경고를 그대로 내보내면 화면이 있지도 않은 손해를 말한다.
+        # 금액은 적지 않는다 — 카드 금액 칸이 계약 카드처럼 「없음」 을 적는다 (S237 ㄴ).
         notices.append(
             basis(
                 f"현재 지상역률 {current_pct:.1f}% 는 감액 상한 {cap:.0f}% 이상이라 "
-                "개선할 것이 없습니다. 절감액은 0원입니다.",
+                "개선할 것이 없습니다.",
                 fact="power_factor.no_headroom",
             )
         )
@@ -272,7 +274,7 @@ def evaluate_power_factor(
         saving_won=saving,
         annual_saving_won=annual,
         investment_won=investment_won,
-        payback_years=payback_years(investment_won, annual),
+        payback_years=payback_years(investment_won, annual) if investment_won is not None else None,
         base_fee_months=current_bill.base_fee_months,
         period_label=current_bill.period_label,
         current_bill=current_bill,

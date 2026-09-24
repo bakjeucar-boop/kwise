@@ -45,6 +45,7 @@ from kwise.measures import (
     payback_label,
     payback_years,
 )
+from kwise.measures.ess import NO_INVESTMENT_INPUT
 from kwise.report.columns import option_label
 from kwise.report.notices import UNPRICED, UNPRICED_REASONS, ess_unpriced_reason
 
@@ -216,6 +217,7 @@ def standalone_rows(
                 investment_won=power_factor.investment_won,
                 payback_years=power_factor.payback_years,
                 certainty=power_factor.certainty,
+                investment_reason=NO_INVESTMENT_INPUT,
             )
         )
     if solar is not None:
