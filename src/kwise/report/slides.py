@@ -57,8 +57,10 @@ from kwise.report.notices import (
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
     UNPRICED,
+    billing_demand_text,
     excess_not_measured_line,
     format_mwh,
+    max_demand_text,
     plain_text,
     rules_basis_line,
 )
@@ -1257,12 +1259,12 @@ def _peak_stats(sections: DocumentSections) -> list[tuple[str, str]]:
     split = peak.billing_demand_kw < peak.peak_kw * 0.99
     items: list[tuple[str, str]] = []
     if split:
-        items.append(("관측 최대수요", f"{peak.peak_kw:,.0f} kW"))
-        items.append(("요금적용전력", f"{peak.billing_demand_kw:,.0f} kW"))
+        items.append(("관측 최대수요", max_demand_text(peak.peak_kw)))
+        items.append(("요금적용전력", billing_demand_text(peak.billing_demand_kw)))
     else:
         # **화면과 같은 값을 적는다** (S159 3-2). 접는 문턱이 1% 라 둘이 꼭
         # 같지는 않으므로 「= 요금적용전력」 이라 적는 칸은 그 값을 낸다.
-        items.append(("최대수요 = 요금적용전력", f"{peak.billing_demand_kw:,.0f} kW"))
+        items.append(("최대수요 = 요금적용전력", billing_demand_text(peak.billing_demand_kw)))
     items.append(("상위 구간 정오 비중", _pct(diagnosis.summary.pv_midday_share)))
     items.append(
         (

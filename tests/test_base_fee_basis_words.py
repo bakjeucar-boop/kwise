@@ -30,6 +30,7 @@ import sys
 from collections import Counter, defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from itertools import pairwise
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -92,6 +93,9 @@ class Rendered:
     payloads: dict[str, bytes] = field(default_factory=dict)
     #: 덱 그물이 뜬 **그림 안** 줄 (S217 5절) — 화면 차트 자료 · PPT·Word png 의 글자.
     figures: tuple[tuple[str, ...], ...] = ()
+    #: 덱 스냅과 같은 꼴의 줄 (S232) — ``[산출물, 자리, …글자]``.
+    #: 화면은 ``[화면, where, kind, slot, text]`` 다.
+    rows: tuple[tuple[str, ...], ...] = ()
 
 
 def _deck(payload: bytes) -> list[str]:
@@ -206,6 +210,10 @@ def rendered(request: pytest.FixtureRequest) -> Iterator[Rendered]:
         texts += _document(word)
         figures += tap.rows("PPT", deck_words._deck_pictures(store["ppt"].payload))
         figures += tap.rows("Word", deck_words._word_pictures(word))
+        rows = [("화면", ln.where, ln.kind, ln.slot, ln.text) for ln in collected]
+        rows += [tuple(row) for row in deck_words._excel_rows(store["excel"].payload)]
+        rows += [tuple(row) for row in deck_words._deck_rows(store["ppt"].payload)]
+        rows += [tuple(row) for row in deck_words._word_rows(word)]
     finally:
         patch.undo()
     yield Rendered(
@@ -216,6 +224,7 @@ def rendered(request: pytest.FixtureRequest) -> Iterator[Rendered]:
         tuple(tuple(str(v) for v in row if v is not None) for row in excel_rows),
         {"excel": store["excel"].payload, "ppt": store["ppt"].payload, "word": word},
         tuple(tuple(row) for row in figures),
+        tuple(rows),
     )
 
 
@@ -835,3 +844,156 @@ def test_사용량_이름이_진단_지표와_태양광_캡션에서_같다(rend
     낱말 = 지표[0].removesuffix(" 사용량")
     어긋남 = [text for text in 캡션 if f"{낱말} 사용량의" not in text]
     assert 어긋남 == [], (rendered.key, 낱말, 어긋남)
+
+
+# ============================================================ S232 · 절사와 자릿수
+
+WON_CELL = re.compile(r"^(-?\d[\d,]*)\s*원$")
+NUMBER = re.compile(r"-?\d[\d,]*")
+
+
+def _won(text: str) -> int | None:
+    found = WON_CELL.match(text.strip())
+    return int(found.group(1).replace(",", "")) if found else None
+
+
+def _worksheet_tables(
+    rows: tuple[tuple[str, ...], ...],
+) -> dict[tuple[str, str], list[tuple[str, str, str]]]:
+    """계산 근거 표 — Excel 부록 A · PPT 표 · Word 표를 ``(라벨, 산식, 값)`` 줄로."""
+    out: dict[tuple[str, str], list[tuple[str, str, str]]] = defaultdict(list)
+    for row in rows:
+        if row[0] == "Excel" and row[1] == "부록 A 산출 근거" and len(row) >= 5:
+            key, label, rest = row[3], row[4], row[5:]
+        elif row[0] in ("PPT", "Word") and "표" in row[1] and len(row) >= 3:
+            key, label, rest = row[1], row[2], row[3:]
+        else:
+            continue
+        out[(row[0], key)].append(
+            (label.strip(), rest[0] if len(rest) >= 2 else "", rest[-1] if rest else "")
+        )
+    return out
+
+
+def _sum_gaps(lines: list[tuple[str, str, str]]) -> list[str]:
+    """표 하나에서 **고친 두 자리**(참고 요금제 산식 · 계약 절감)의 셈이 안 서는 자리."""
+    gaps: list[str] = []
+    values: dict[str, int] = {}
+    for label, formula, text in lines:
+        value = _won(text)
+        if value is None:
+            continue
+        if label.startswith("참고") and "+" in formula:
+            terms = sum(int(n.replace(",", "")) for n in NUMBER.findall(formula))
+            if terms != value:
+                gaps.append(f"{label} 산식 {formula} · 값 {text}")
+        values.setdefault(label, value)
+    saving = values.get("기간 절감액")
+    if saving is not None and "현재 기본요금" in values and "조정 후 기본요금" in values:
+        total = (
+            values["현재 기본요금"]
+            - values["조정 후 기본요금"]
+            + values.get("기간 역률요금 절감", 0)
+        )
+        if total != saving:
+            gaps.append(f"계약 현재 − 조정 후 {total:,} · 절감액 {saving:,}")
+    return gaps
+
+
+def test_절사한_줄끼리의_셈이_적힌_합계와_선다(rendered: Rendered) -> None:
+    """**적힌 줄을 더하거나 빼면 적힌 합계다** (S232 ㄱ · 사람이 정한 A 단수 차이 조정).
+
+    줄마다 천 원 절사해 적힌 줄의 셈이 적힌 합계와 1,000 ~ 2,000원 어긋났다(S231 3-3).
+    합계는 원값 절사 그대로 두고 잘린 나머지가 큰 줄을 올린다 —
+    :func:`kwise.money.balance_won`. **식을 다시 적지 않는다** — 산출물에 실제로 적힌
+    글자끼리 셈한다. 고친 세 자리 — 참고 요금제 산식 · 계약 「현재 − 조정 후」(계산
+    근거 표 · Excel 부록 A · PPT · Word) · Excel 요금 계산 명세의 관측 합계.
+
+    **안 무는 것** — 올린 줄 값이 울타리 밖에도 서서 멈춘 자리(청구 합계 · 3단계 차이 ·
+    태양광 · Excel 요약 · 종별을 넘는 계약) · 선택요금 「현행 합계 − 최적 합계」(두 합계가
+    다 셈의 결과) · 명세 보정 합계(관측과 올릴 칸이 갈리는 달) — 232세션 절 1-2 · 2-3.
+    """
+    gaps: list[str] = []
+    for (output, key), lines in _worksheet_tables(rendered.rows).items():
+        gaps += [f"{output} {key} — {gap}" for gap in _sum_gaps(lines)]
+
+    sheet = [row[2:] for row in rendered.rows if row[:2] == ("Excel", "요금 계산 명세")]
+    head, body = sheet[0], sheet[1:]
+    for cells in body:
+        column = dict(zip(head, cells, strict=False))
+        parts = (
+            "역률 조정 전 기본요금(원)",
+            "역률 요금(원)",
+            "초과사용부가금(원)",
+            "전력량요금(원)",
+        )
+        if abs(sum(float(column[name]) for name in parts) - float(column["합계(원)"])) > 0.5:
+            gaps.append(f"요금 계산 명세 {cells[0]} 줄 합 · 합계 {column['합계(원)']}")
+    assert gaps == [], (rendered.key, gaps)
+
+
+def _metric_values(rows: tuple[tuple[str, ...], ...]) -> list[tuple[str, str, str]]:
+    """``(산출물 자리, 이름, 값)`` — 화면 지표 · PPT 지표는 이름 줄 다음 줄이 값이다."""
+    out: list[tuple[str, str, str]] = []
+    for here, after in pairwise(rows):
+        if here[0] == "화면" and here[2:4] == ("Metric", "라벨") and after[3] == "지표":
+            out.append((f"화면 {here[1]}", here[4], after[4]))
+        if here[0] == "PPT" and len(here) == 3 and len(after) == 3 and here[1] == after[1]:
+            out.append((f"PPT {here[1]}", here[2], after[2]))
+    for row in rows:
+        if row[0] == "Excel" and len(row) >= 4 and row[1] in ("요약", "진단"):
+            out.append((f"Excel {row[1]}", row[-2], row[-1]))
+        if row[0] in ("Word", "PPT", "Excel") and len(row) >= 3:
+            out.append((f"{row[0]} {row[1]} 표", row[-3] if len(row) >= 5 else row[-2], row[-1]))
+        if row[0] == "Word":
+            text = row[-1]
+            for name, found in (
+                ("관측 최대수요", re.search(r"관측 최대수요는 ([\d,.]+ kW)", text)),
+                ("요금적용전력", re.search(r"요금적용전력은 ([\d,.]+ kW) 입니다", text)),
+            ):
+                if found:
+                    out.append(("Word 문장", name, found.group(1)))
+    return out
+
+
+#: 자릿수 증상 사실 (S192 증상 6) — 사실마다 서는 이름.
+DIGIT_FACTS: dict[str, tuple[str, ...]] = {
+    "관측 최대수요": ("관측 최대수요", "최대 수요"),
+    "요금적용전력": ("요금적용전력", "최대수요 = 요금적용전력"),
+}
+
+
+def test_자릿수_증상_사실이_네_산출물에서_같은_글자다(rendered: Rendered) -> None:
+    """**같은 사실은 화면 · PPT · Excel · Word 에서 같은 글자다** (S232 ㄴ · 교차 못).
+
+    S192 증상 6 — 요금적용전력이 화면 「132.0 kW」 · PPT 「132 kW」 · Excel 「132.0 kW」,
+    하한 전 최대수요가 화면 「132.3 kW」 · PPT 장10 「132 kW」 로 갈렸다. 자릿수를
+    ``kwise.report.notices`` 의 사실마다 한 자리로 모았다. 「최대수요」 는 1단계(관측)와
+    계약 카드(하한 전) 두 사실이 이름을 나눠 쓰므로 **값 글자가 한 벌 안에서 둘을 넘지
+    않는지**와 **소수 자리가 사실마다 하나인지**를 본다.
+
+    **안 무는 것** — 잉여와 ESS 필요 용량은 이 두 벌(대형)에 안 선다(잉여 0 · ESS 는
+    최소 규격 안). 두 사실은 덱 스냅 대조(232세션 절 3-2)가 본다.
+    """
+    values = _metric_values(rendered.rows)
+    kw = re.compile(r"^-?[\d,]+(?:\.\d+)? kW$")
+
+    def spellings(names: tuple[str, ...]) -> dict[str, set[str]]:
+        found: dict[str, set[str]] = defaultdict(set)
+        for where, name, value in values:
+            if name.strip() in names and kw.match(value):
+                found[value].add(where.split(" ")[0])
+        return found
+
+    for fact in ("관측 최대수요", "요금적용전력"):
+        found = spellings(DIGIT_FACTS[fact])
+        outputs = set().union(*found.values()) if found else set()
+        assert len(outputs) >= 2, (rendered.key, fact, dict(found))
+        assert len(found) == 1, (rendered.key, fact, dict(found))
+
+    # 「최대수요」 한 이름 — 1단계 관측과 계약 카드 하한 전. 값은 둘까지 · 자리는 한 자리.
+    found = spellings(("최대수요",))
+    outputs = set().union(*found.values()) if found else set()
+    assert {"화면", "PPT", "Word"} <= outputs, (rendered.key, dict(found))
+    places = {len(value.split(" ")[0].partition(".")[2]) for value in found}
+    assert places == {1}, (rendered.key, dict(found))

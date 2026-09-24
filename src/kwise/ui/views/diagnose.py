@@ -40,7 +40,7 @@ from kwise.quality import (
     QualityReport,
     monthly_longest_gaps,
 )
-from kwise.report import localize, narrative
+from kwise.report import localize, narrative, notices
 from kwise.tariff import AMI_BASIS_NOTICE, TENTATIVE_BASE_FEE_BASIS_WARNING, TariffTable
 from kwise.tariff.labels import SEASON_LABELS
 from kwise.ui import callout, charts, tables
@@ -159,7 +159,7 @@ def _headline_block(usage: UsageData, diagnosis: Diagnosis) -> None:
         fmt.period(meta.start, meta.end),
         delta_color="off",
     )
-    columns[1].metric("최대수요", fmt.kw(meta.max_demand_kw))
+    columns[1].metric("최대수요", notices.max_demand_text(meta.max_demand_kw))
     # **부하 패턴 절과 같은 문구를 쓴다** (30세션 1-1). 같은 지표가 두 자리에 있는데
     # 설명이 두 벌이면 어느 쪽이 정의인지 알 수 없다 — 문구를 낳는 자리를 하나로 둔다.
     columns[2].metric(
@@ -804,8 +804,8 @@ def _peak_block(diagnosis: Diagnosis) -> None:
     split = peak.billing_demand_kw < peak.peak_kw * 0.99
     columns = st.columns(3)
     if split:
-        columns[0].metric("관측 최대수요", fmt.kw(peak.peak_kw))
-        columns[1].metric("요금적용전력", fmt.kw(peak.billing_demand_kw))
+        columns[0].metric("관측 최대수요", notices.max_demand_text(peak.peak_kw))
+        columns[1].metric("요금적용전력", notices.billing_demand_text(peak.billing_demand_kw))
     else:
         # **접었을 때 적는 것은 요금적용전력이다** (S159 3-2 · ②-81 갈래).
         # 접는 문턱이 1% 라 **꼭 같지는 않다** — 용인 실측이 관측 최대
@@ -814,8 +814,11 @@ def _peak_block(diagnosis: Diagnosis) -> None:
         # 장05·3단계 계산 근거는 다 132.0 이라 이 자리만 갈렸다.
         # 값을 정하는 자리는 `tariff\demand.py` 의 `apply_contract_floor`
         # 하나이고 화면은 그 값을 읽기만 한다 — **관측 최대는 안 접는다**
-        # (`io\usage.py` 의 부하율이 그 값을 쓴다).
-        columns[0].metric("최대수요 = 요금적용전력", fmt.kw(peak.billing_demand_kw))
+        # (`io\usage.py` 의 부하율이 그 값을 쓴다). **자릿수는 PPT 와 같은 0자리다**
+        # (S232 ㄴ · S192 증상 6) — 「132.0」 이 잰 값처럼 읽혔다.
+        columns[0].metric(
+            "최대수요 = 요금적용전력", notices.billing_demand_text(peak.billing_demand_kw)
+        )
         columns[1].metric("상위 구간 정오 비중", fmt.ratio_pct(diagnosis.summary.pv_midday_share))
     columns[2].metric(
         "상위 구간 주말 비중",

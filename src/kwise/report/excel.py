@@ -58,9 +58,13 @@ from kwise.report.notices import (
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
     UNPRICED_REASONS,
+    billing_demand_text,
+    ess_capacity_text,
     format_mwh,
     format_won,
+    max_demand_text,
     rules_basis_line,
+    surplus_kwh_text,
 )
 from kwise.report.worksheet import Worksheet, low_load_threshold_line
 from kwise.tariff import BillingResult, TariffTable
@@ -212,7 +216,7 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
                 f"{format_mwh(usage.total_kwh)} (그리드 이탈 "
                 f"{usage.meta.off_grid_kwh:,.2f} kWh 포함)",
             ),
-            ("데이터", "최대수요", f"{usage.meta.max_demand_kw:,.1f} kW"),
+            ("데이터", "최대수요", max_demand_text(usage.meta.max_demand_kw)),
             (
                 "데이터",
                 "결측",
@@ -516,7 +520,8 @@ def measure_summary_frame(
                     # :meth:`SurplusResult.applied_price_note` 하나에서 온다.
                     "비고": (
                         # **「기간 잉여」 다** (S213) — PPT 잉여 장 지표와 같은 값이다.
-                        f"기간 잉여 {format_mwh(surplus.total_kwh)} · "
+                        # 자릿수도 같다 (S232 ㄴ) — MWh 한 자리로 접지 않는다.
+                        f"기간 잉여 {surplus_kwh_text(surplus.total_kwh)} · "
                         + (
                             f"차감 {offset.deducted_kwh:,.0f} kWh · "
                             f"잔여 {offset.remaining_kwh:,.0f} kWh · "
@@ -543,7 +548,8 @@ def measure_summary_frame(
                 "비고": (
                     f"방전시간 {ess.discharge_hours:.2f}h ({ess.c_rate:.1f}C, 규격 용량 ÷ 출력) · "
                     f"필요 사양 {ess.required_power_kw:,.1f} kW / "
-                    f"{ess.required_capacity_kwh:,.1f} kWh 를 조달 규격으로 올려 잡았습니다 · "
+                    f"{ess_capacity_text(ess.required_capacity_kwh)} 를 "
+                    "조달 규격으로 올려 잡았습니다 · "
                     f"단가 경로 {ess.pricing_path} · "
                     f"손익분기 단가 "
                     f"{format_won(ess.breakeven_unit_cost_won_per_kw)} 원/kW "
@@ -642,7 +648,7 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
     rows: list[tuple[str, str]] = [
         ("부하율", f"{pattern.load_factor:.1%}" if pattern.load_factor else "—"),
         ("평균 수요", f"{pattern.mean_kw:,.1f} kW"),
-        ("최대 수요", f"{pattern.max_kw:,.1f} kW"),
+        ("최대 수요", max_demand_text(pattern.max_kw)),
         (
             "기저부하 비율 (야간÷주간)",
             f"{pattern.base_load_ratio:.1%}" if pattern.base_load_ratio else "—",
@@ -660,7 +666,7 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
             "운영시간 외 부하 비율 (운영 외÷운영)",
             f"{pattern.off_hours_ratio:.1%}" if pattern.off_hours_ratio else "—",
         ),
-        ("요금적용전력", f"{peak.billing_demand_kw:,.1f} kW"),
+        ("요금적용전력", billing_demand_text(peak.billing_demand_kw)),
         (f"상위 {peak.top_n}구간 주말 건수 (전 슬롯)", f"{peak.weekend_slots}"),
         (
             f"상위 {peak.top_n}구간 주말 건수 (요금적용전력 대상)",
@@ -812,7 +818,7 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
     # **화면에서 뺀 중간값이 여기 있다** (21세션 3-2). 월별 명세 화면은 결론
     # 하나(요금적용전력)만 내고, 그 값이 어떻게 나왔는지는 이 시트가 맡는다.
     sheets["요금 계산 명세"] = localize(
-        monthly[
+        _balance_monthly(monthly)[
             [
                 "days_in_month",
                 "max_demand_at",
@@ -872,6 +878,42 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
         for name in SHEET_ORDER
         if name in sheets
     }
+
+
+#: 「요금 계산 명세」 한 달의 셈 — 합계 열과 그것을 이루는 금액 열 (S232).
+_MONTHLY_SUMS = (
+    ("total_won", ("base_won", "power_factor_won", "excess_won", "energy_won")),
+    ("total_won_adjusted", ("base_won", "power_factor_won", "excess_won", "energy_won_adjusted")),
+)
+
+
+def _balance_monthly(monthly: pd.DataFrame) -> pd.DataFrame:
+    """달마다 **단수 차이 조정** — 적힌 기본 · 역률 · 부가금 · 전력량의 합이 적힌 합계다.
+
+    줄마다 절사해 덱 18벌 176달 셈이 1,000원 어긋났다(S231 3-3). 두 합계(관측 ·
+    보정)가 기본 · 역률 · 부가금을 함께 쓰므로 **관측 셈을 먼저 맞추고**, 보정 셈은
+    그 셋을 같게 올릴 때만 맞춘다 — 갈리면 보정 전력량은 절사만 한다(한 칸이 두
+    값일 수 없다 · 232세션 절 2절).
+    """
+    out = monthly.copy()
+    for month, row in monthly.iterrows():
+        balanced: dict[str, float] = {}
+        for total, parts in _MONTHLY_SUMS:
+            if pd.isna(row[total]):
+                continue
+            shown = dict(
+                zip(
+                    parts,
+                    money.balance_won([float(row[part]) for part in parts], float(row[total])),
+                    strict=True,
+                )
+            )
+            if any(balanced.get(part, value) != value for part, value in shown.items()):
+                break
+            balanced.update(shown)
+        for part, value in balanced.items():
+            out.at[month, part] = value
+    return out
 
 
 def truncate_money_columns(frame: pd.DataFrame) -> pd.DataFrame:

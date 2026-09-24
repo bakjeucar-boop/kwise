@@ -35,6 +35,30 @@ def test_천_단위로_절사한다(value: float, expected: float) -> None:
     assert money.truncate_won(value) == expected
 
 
+@pytest.mark.parametrize(
+    ("parts", "total", "signs"),
+    [
+        ([1_700.0, 1_700.5, 1_700.0], 5_100.5, None),  # 셋 다 잘려 합이 2,000 모자란다
+        ([11_422_300.0, 11_414_900.0], -7_400.0, [-1, 1]),  # 차 — 3단계 꼴
+        ([100_000_800.0, 39_255_900.0], 60_744_900.0, [1, -1]),  # 현재 − 조정 후
+        ([-1_234_700.0, 5_000_600.0], 3_765_900.0, None),  # 음수 줄(역률 감액)
+    ],
+)
+def test_단수_차이_조정은_적힌_줄의_셈을_적힌_합계에_맞춘다(
+    parts: list[float], total: float, signs: list[int] | None
+) -> None:
+    """**합계는 원값 절사 그대로 · 줄은 잘린 쪽으로만 1,000원** (S232 ㄱ · 사람이 정했다)."""
+    shown = money.balance_won(parts, total, signs)
+    sign = signs or [1] * len(parts)
+    assert sum(s * v for s, v in zip(sign, shown, strict=True)) == money.truncate_won(total)
+    for raw, value in zip(parts, shown, strict=True):
+        assert value - money.truncate_won(raw) in (0.0, 1_000.0 if raw > 0 else -1_000.0)
+
+
+def test_단수_차이_조정은_원값_셈이_안_서면_줄을_안_건드린다() -> None:
+    assert money.balance_won([1_700.0, 1_700.0], 9_999.0) == [1_000.0, 1_000.0]
+
+
 def test_절사한_표기는_언제나_천의_배수다() -> None:
     """**정규식 검사** — 원 단위 표기의 끝 세 자리는 항상 000 이다."""
     pattern = re.compile(r"^-?\d{1,3}(,\d{3})*원$")

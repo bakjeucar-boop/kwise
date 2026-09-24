@@ -71,10 +71,14 @@ from kwise.report.notices import (
     TRUNCATION_FOOTNOTE,
     UNPRICED,
     UNPRICED_REASONS,
+    billing_demand_text,
+    ess_capacity_text,
     ess_unpriced_reason,
     excess_not_measured_line,
     format_mwh,
+    max_demand_text,
     plain_text,
+    surplus_kwh_text,
 )
 from kwise.report.worksheet import COLUMNS, Worksheet
 from kwise.tariff import BillingResult, TariffTable
@@ -402,7 +406,8 @@ def _contract_facts(contract: ContractAdjustment) -> tuple[tuple[str, str], ...]
             f"계약전력의 {ratio:.0%}" if ratio is not None else "하한",
             f"{contract.floor_kw:,.0f} kW" if contract.floor_kw is not None else "—",
         ),
-        ("최대수요", f"{contract.demand_before_floor_kw:,.0f} kW"),
+        # 화면 카드 · Excel · Word 와 같은 한 자리다 (S232 ㄴ · S192 증상 6).
+        ("최대수요", max_demand_text(contract.demand_before_floor_kw)),
     ]
     if contract.target_contract_kw is not None:
         facts.append(("목표 계약전력", f"{contract.target_contract_kw:,.0f} kW"))
@@ -703,14 +708,15 @@ def surplus_page(
         # **「기간 잉여」 다** (S213). ``total_kwh`` 가 관측 기간 값이라 화면
         # 지표의 「12개월 환산 잉여」 와 **한 이름이 두 값**이었다 (S214 에 그 지표가
         # 「연간 잉여」 에서 지금 이름으로 갔다).
-        ("기간 잉여", f"{surplus.total_kwh:,.0f} kWh"),
+        ("기간 잉여", surplus_kwh_text(surplus.total_kwh)),
         (
             "평일 잉여",
-            f"{surplus.weekday_kwh:,.0f} kWh ({_share(surplus.weekday_kwh, surplus.total_kwh)})",
+            f"{surplus_kwh_text(surplus.weekday_kwh)} "
+            f"({_share(surplus.weekday_kwh, surplus.total_kwh)})",
         ),
         (
             "토·일·공휴일 잉여",
-            f"{off_day_kwh:,.0f} kWh ({_share(off_day_kwh, surplus.total_kwh)})",
+            f"{surplus_kwh_text(off_day_kwh)} ({_share(off_day_kwh, surplus.total_kwh)})",
         ),
     ]
     if surplus_free_kwp:
@@ -1199,7 +1205,7 @@ def measure_entries(
             facts=(
                 ("요금적용전력", f"{ess_curve.baseline_demand_kw:,.0f} kW"),
                 ("필요 출력", f"{ess_optimum.required_power_kw:,.1f} kW"),
-                ("필요 용량", f"{ess_optimum.required_capacity_kwh:,.1f} kWh"),
+                ("필요 용량", ess_capacity_text(ess_optimum.required_capacity_kwh)),
                 ("방전시간", f"{ess_optimum.required_discharge_hours:,.2f}h"),
                 ("상업용 최소 규격", f"{ess_optimum.minimum_power_kw:,.0f} kW"),
             ),
@@ -1587,8 +1593,8 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
     peak = diagnosis.peak
     _conclusion(
         document,
-        f"관측 최대수요는 {peak.peak_kw:,.1f} kW, 요금적용전력은 "
-        f"{peak.billing_demand_kw:,.1f} kW 입니다."
+        f"관측 최대수요는 {max_demand_text(peak.peak_kw)}, 요금적용전력은 "
+        f"{billing_demand_text(peak.billing_demand_kw)} 입니다."
         + (
             " 경부하 시간대의 피크는 요금적용전력이 되지 않습니다."
             if peak.billing_demand_kw < peak.peak_kw * 0.99
@@ -1681,7 +1687,7 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
                     f"계약전력의 {floor_ratio:.0%}" if floor_ratio is not None else "하한",
                     f"{adequacy.floor_kw:,.1f} kW" if adequacy.floor_kw is not None else "—",
                 ],
-                ["최대수요", f"{adequacy.billing_demand_kw:,.1f} kW"],
+                ["최대수요", max_demand_text(adequacy.billing_demand_kw)],
                 ["이용률", f"{adequacy.utilization:.1%}"],
                 [
                     "목표 계약전력",

@@ -31,7 +31,12 @@ from kwise.measures.ess import EssResult, payback_text
 from kwise.measures.power_factor import PowerFactorResult
 from kwise.measures.solar import SolarCurve, SolarPoint
 from kwise.measures.tariff_switch import TariffSwitchResult
-from kwise.report.notices import plain_text
+from kwise.report.notices import (
+    ess_capacity_text,
+    max_demand_text,
+    plain_text,
+    surplus_kwh_text,
+)
 from kwise.tariff import BillingResult, lagging_adjustment_ratio
 from kwise.tariff.labels import option_label
 
@@ -261,14 +266,20 @@ def tariff_switch_worksheet(result: TariffSwitchResult) -> Worksheet:
         # 6,339,264원이 어긋난다. **항 순서를 위 표와 맞춘다** (기본 · 전력량 ·
         # 역률 · 부가금) — 「기본」 에 역률을 접으면 같은 표 안에서 그 낱말이
         # 두 가지를 가리킨다.
-        formula = (
-            f"기본 {money.won_plain(quote.base_won, reason='—')}"
-            f" + 전력량 {money.won_plain(quote.energy_won, reason='—')}"
-        )
+        #
+        # **산식의 항은 단수 차이 조정 뒤다** (S232 ㄱ) — 항마다 절사해 같은 줄의 값과
+        # 셈이 1,000원 어긋났다(덱 6벌). 값(합계)은 원값 절사 그대로 둔다.
+        terms: dict[str, float | None] = {"기본": quote.base_won, "전력량": quote.energy_won}
         if quote.power_factor_won:
-            formula += f" + 역률 {money.won_plain(quote.power_factor_won, reason='—')}"
+            terms["역률"] = quote.power_factor_won
         if quote.excess_won:
-            formula += f" + 부가금 {money.won_plain(quote.excess_won, reason='—')}"
+            terms["부가금"] = quote.excess_won
+        known = [value for value in terms.values() if value is not None]
+        if len(known) == len(terms):
+            terms = dict(zip(terms, money.balance_won(known, quote.total_won), strict=True))
+        formula = " + ".join(
+            f"{name} {money.won_plain(value, reason='—')}" for name, value in terms.items()
+        )
         rows.append(
             WorkRow(f"참고 {option_label(quote.selection.option)}", formula, _won(quote.total_won))
         )
@@ -297,7 +308,11 @@ def contract_worksheet(result: ContractAdjustment) -> Worksheet:
     ratio = result.contract_floor_ratio
     rows: list[WorkRow] = [
         WorkRow("현재 계약전력", "", _kw(result.contract_kw, decimals=0)),
-        WorkRow("최대수요", "직전 12개월 최대 (하한 적용 전)", _kw(result.demand_before_floor_kw)),
+        WorkRow(
+            "최대수요",
+            "직전 12개월 최대 (하한 적용 전)",
+            max_demand_text(result.demand_before_floor_kw),
+        ),
     ]
     if ratio is not None and result.floor_kw is not None:
         # **걸린 달을 적는다** (105세션 5절 · ②-13). 앞서는 「걸린다/걸리지
@@ -329,8 +344,23 @@ def contract_worksheet(result: ContractAdjustment) -> Worksheet:
         rows.append(WorkRow(f"{result.crossed_label} 총 요금", "", _won(result.crossed_total_won)))
         rows.append(WorkRow("기간 절감액", "현행 − 바뀐 종별", _won(result.saving_won), total=True))
     elif result.current_base_won is not None and result.adjusted_base_won is not None:
-        rows.append(WorkRow("현재 기본요금", "", _won(result.current_base_won)))
-        rows.append(WorkRow("조정 후 기본요금", "", _won(result.adjusted_base_won)))
+        base_cut = result.current_base_won - result.adjusted_base_won
+        power_factor_cut = None if result.saving_won is None else result.saving_won - base_cut
+        # 아래 「두 줄의 차가 절감액이 아니다」 가 역률요금 절감 줄의 까닭이다.
+        #
+        # **단수 차이 조정** (S232 ㄱ) — 「현재 − 조정 후 (+ 역률요금 절감)」 이 적힌
+        # 절감액과 선다(덱 5벌이 1,000 ~ 2,000원 어긋났다). 절감액은 원값 절사 그대로다.
+        # **종별을 넘는 갈래는 안 맞춘다** — 두 총 요금이 Excel 「조합 비교」 에도 서서
+        # 거기까지 번진다(232세션 절 1-2).
+        lines = [result.current_base_won, result.adjusted_base_won]
+        signs = [1, -1]
+        if power_factor_cut:
+            lines.append(power_factor_cut)
+            signs.append(1)
+        if result.saving_won is not None and not result.no_saving:
+            lines = money.balance_won(lines, result.saving_won, signs)
+        rows.append(WorkRow("현재 기본요금", "", _won(lines[0])))
+        rows.append(WorkRow("조정 후 기본요금", "", _won(lines[1])))
         # **두 줄의 차가 절감액이 아니다** (S124 · ②-41). ``saving_won`` 은 역률요금
         # 몫까지 담는다 (S116 · ⑭ — 역률요금은 기본요금에 대한 비율이라 기본요금이
         # 줄면 함께 준다, 약관 제43조 ②). 시트 이름이 「계산 근거」 인데 **그 시트로
@@ -338,13 +368,9 @@ def contract_worksheet(result: ContractAdjustment) -> Worksheet:
         # 452,804,000 = 67,036,000 인데 절감액은 67,973,000원이라 937,000원이 뜬다.
         # 몫을 한 줄로 세우면 세 줄이 산수로 맞는다. **역률요금이 0원인 자료(약관
         # 제42조 간주 92%)에서는 줄이 안 생기므로 지금 벌의 줄 수는 그대로다.**
-        base_cut = result.current_base_won - result.adjusted_base_won
-        power_factor_cut = None if result.saving_won is None else result.saving_won - base_cut
         formula = "현재 − 조정 후"
         if power_factor_cut:
-            rows.append(
-                WorkRow("기간 역률요금 절감", "기본요금이 줄면 함께 준다", _won(power_factor_cut))
-            )
+            rows.append(WorkRow("기간 역률요금 절감", "기본요금이 줄면 함께 준다", _won(lines[2])))
             formula = "현재 − 조정 후 + 역률요금 절감"
         # **0원과 「없음」 을 가른다** (S124 · ②-27). 낮출 자리가 없어 줄 것이
         # 없는 것(:attr:`~kwise.measures.contract.ContractAdjustment.no_saving`)은
@@ -457,7 +483,7 @@ def solar_worksheet(curve: SolarCurve, point: SolarPoint | None = None) -> Works
             _kwh(best.self_consumed_kwh),
             level=1,
         ),
-        WorkRow("잉여", "", _kwh(best.surplus_kwh), level=1),
+        WorkRow("잉여", "", surplus_kwh_text(best.surplus_kwh), level=1),
         WorkRow("기간 기본요금 절감", "요금적용전력 저감 × 단가", _won(best.base_saving_won)),
         WorkRow("기간 전력량요금 절감", "자가소비 × 계시별 단가", _won(best.energy_saving_won)),
     ]
@@ -521,7 +547,7 @@ def ess_worksheet(result: EssResult) -> Worksheet:
         WorkRow(
             "필요 용량",
             "정격 = 내보낼 에너지 ÷ √왕복효율 ÷ DoD",
-            _kwh(result.required_capacity_kwh or result.capacity_kwh, decimals=1),
+            ess_capacity_text(result.required_capacity_kwh or result.capacity_kwh),
         ),
         WorkRow("규격 출력", "살 수 있는 PCS 로 올림", _kw(result.power_kw)),
         WorkRow(

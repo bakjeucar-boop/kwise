@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 __all__ = [
     "AXIS_UNITS",
@@ -30,6 +30,7 @@ __all__ = [
     "TRUNCATION_FOOTNOTE",
     "TRUNCATION_UNIT_WON",
     "axis_unit",
+    "balance_won",
     "delta_amount",
     "on_axis",
     "truncate_won",
@@ -70,6 +71,46 @@ def truncate_won(value: float) -> float:
     처리하면 손실 항목만 한 단위 더 커 보인다.
     """
     return float(math.trunc(value / TRUNCATION_UNIT_WON) * TRUNCATION_UNIT_WON)
+
+
+def balance_won(
+    parts: Sequence[float], total: float, signs: Sequence[int] | None = None
+) -> list[float]:
+    """**단수 차이 조정** — 적힌 줄의 셈이 적힌 합계와 맞게 줄을 천 원씩 올린다 (S232).
+
+    줄마다 절사하면 버린 끝자리가 쌓여 적힌 줄의 합이 합계와 1,000원 넘게
+    어긋난다(S231 · 덱 10 ~ 18벌). **합계는 원값을 절사한 그대로 둔다** — 셈의
+    결과이기 때문이다. 대신 **잘린 나머지가 가장 큰 줄부터** 잘린 쪽으로 1,000원씩
+    올려 ``Σ 부호 × 줄 = 합계`` 가 적힌 수끼리 선다(사람이 정했다 · S232 ㄱ).
+    :func:`kwise.report.frames.whole_percents` 와 같은 최대잔여법이다.
+
+    **계산값은 안 바꾼다.** 원값에서 셈이 안 서는 줄(다른 몫이 합계에 든 표)은
+    손대지 않고 줄마다 절사만 한다 — 거기서 맞추면 없는 몫을 줄에 싣는다.
+
+    Args:
+        parts: 줄의 원값.
+        total: 셈의 결과(원값). ``Σ signs × parts`` 여야 조정한다.
+        signs: 줄마다 +1 · −1. 차를 적는 표(``현재 − 조정 후``)가 −1 을 쓴다.
+    """
+    signs = signs if signs is not None else [1] * len(parts)
+    shown = [truncate_won(value) for value in parts]
+    if abs(sum(sign * value for sign, value in zip(signs, parts, strict=True)) - total) >= 1:
+        return shown
+    gap = round(
+        (truncate_won(total) - sum(sign * value for sign, value in zip(signs, shown, strict=True)))
+        / TRUNCATION_UNIT_WON
+    )
+    step = 1 if gap > 0 else -1
+    # 올릴 수 있는 줄 — 0 에서 먼 쪽(잘린 쪽)으로 움직여 셈이 gap 쪽으로 가는 줄
+    movable = [
+        index
+        for index, (sign, value, cut) in enumerate(zip(signs, parts, shown, strict=True))
+        if value != cut and sign * math.copysign(1, value) == step
+    ]
+    movable.sort(key=lambda index: abs(parts[index] - shown[index]), reverse=True)
+    for index in movable[: abs(gap)]:
+        shown[index] += math.copysign(TRUNCATION_UNIT_WON, parts[index])
+    return shown
 
 
 #: 금액 **축**이 쓰는 단위와 그 나눔수 (S162 2절).

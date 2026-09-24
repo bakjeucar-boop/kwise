@@ -23,12 +23,16 @@ __all__ = [
     "TRUNCATION_FOOTNOTE",
     "UNPRICED",
     "UNPRICED_REASONS",
+    "billing_demand_text",
+    "ess_capacity_text",
     "ess_unpriced_reason",
     "excess_not_measured_line",
     "format_mwh",
     "format_won",
+    "max_demand_text",
     "plain_text",
     "rules_basis_line",
+    "surplus_kwh_text",
 ]
 
 # **보고서 쪽이 「반드시 싣는 문구」 를 얻는 문은 여기 하나다** (65세션 3절).
@@ -240,3 +244,30 @@ def format_mwh(value: float, *, decimals: int = 1) -> str:
     적지 않는다.
     """
     return f"{value / 1000.0:,.{decimals}f} MWh"
+
+
+# **사실마다 자릿수를 한 자리가 쥔다** (S232 ㄴ · S192 증상 1 · 5 · 6 · 18㉯). 부르는
+# 자리가 자릿수를 저마다 정해 같은 사실이 화면 「30 kWh」 · PPT 「29.6 kWh」 ·
+# 화면 「0.1 MWh/년」 · PPT 「76 kWh」 · 화면 「132.0 kW」 · PPT 「132 kW」 로 갈렸다.
+# 증상이 난 넷만 모은다 — 전수 정리가 아니다.
+
+
+def surplus_kwh_text(kwh: float) -> str:
+    """잉여량 — ``840 kWh``. MWh 한 자리로 접으면 40 kWh 가 「0.0 MWh」 다."""
+    return f"{kwh:,.0f} kWh"
+
+
+def ess_capacity_text(kwh: float) -> str:
+    """ESS 필요 용량 — ``29.6 kWh``. 규격 용량(``100.0 kWh``)과 같은 자리다."""
+    return f"{kwh:,.1f} kWh"
+
+
+def max_demand_text(kw: float) -> str:
+    """관측 최대수요 — ``132.3 kW``. 잰 값이라 한 자리까지 적는다."""
+    return f"{kw:,.1f} kW"
+
+
+def billing_demand_text(kw: float) -> str:
+    """요금적용전력 — ``132 kW``. 약관 제7조 ① 로 1 kW 단위에 접힌 값이라
+    「132.0」 으로 적으면 잰 값처럼 읽힌다 (S192 증상 6)."""
+    return f"{kw:,.0f} kW"

@@ -78,7 +78,7 @@ from kwise.report.frames import (
     temperature_mean_frame,
     top_hour_frame,
 )
-from kwise.report.notices import format_mwh
+from kwise.report.notices import billing_demand_text, format_mwh
 
 __all__ = [
     "DONUT_GRID",
@@ -413,7 +413,7 @@ def monthly_peak_png(peak: PeakProfile, *, size: tuple[float, float] | None = No
         color=chart_palette().highlight,
         linestyle="--",
         linewidth=1.2,
-        label=f"요금적용전력 {peak.billing_demand_kw:,.0f} kW",
+        label=f"요금적용전력 {billing_demand_text(peak.billing_demand_kw)}",
     )
     axes.set_xticks(list(positions))
     axes.set_xticklabels(frame["월"], rotation=45, ha="right", fontsize=8)

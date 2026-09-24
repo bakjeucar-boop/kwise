@@ -393,6 +393,26 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 **1-4. 울타리(하한) — 코드 자리 ㄱ 4 · ㄷ 29 · 시험 자리 4.** ㄱ — `money.balance_won` 1 · S3 산식 1 · S5 비종별 1 · S7 명세 1. ㄷ — 사실 넷의 표기 함수를 `report\notices.py` 한 자리(`surplus_kwh_text` · `ess_capacity_text` · `max_demand_text` · `billing_demand_text`)에 두고 부르는 자리 29(`measures.py` 5 · `diagnose.py` 4 · `excel.py` 5 · `document.py` 8 · `slides.py` 3 · `figures.py` 1 · `worksheet.py` 3). 시험 — `test_money.py` 둘 · `test_base_fee_basis_words.py` 못 둘. **뺀 것(번짐)** — S1 · S2 · S4 · S8 · S5 종별 넘김(1-2 표) · **S6 은 A 밖**.
 **1절 벽시계** 13:24 ~ 13:53(시험 스냅 978.4초 포함).
 
+**2-1. ㄱ 고침 — 울타리 넷 다 · 조정은 `money.balance_won` 한 함수이고 세 자리가 부른다.** `money.py` +42 −1(함수 · `Sequence`) · `worksheet.py` S3 산식 항을 조정 뒤 값으로(항 넷을 한 사전으로 모아 `balance_won`) · S5 비종별 「현재 · 조정 후 · 기간 역률요금 절감」 을 조정 뒤 값으로(종별 넘김 갈래는 안 건드렸다 — 주석으로 까닭) · `excel.py` `_balance_monthly` 가 명세 프레임을 절사 전에 달마다 맞춘다(관측 셈 먼저 · 보정 셈은 기본 · 역률 · 부가금을 같게 올릴 때만). **멈춘 다섯(S1 · S2 · S4 · S8 · S5 종별)은 시험 판에서 댔던 코드를 되돌렸다**(`worksheet.py` 는 `git checkout` 뒤 셋만 다시 댔다 · `excel.py` 요약은 손으로 되돌렸다).
+**2-2. ㄷ 고침 — 사실 넷의 글자를 `report\notices.py` 한 자리로 모았다(+31).** 잉여 kWh 0자리 · ESS 필요 용량 kWh 1자리 · 관측(하한 전) 최대수요 kW 1자리 · 요금적용전력 kW 0자리(약관 제7조 ① 로 접힌 값). 부르는 자리 29 — 글자가 바뀌는 것은 화면 잉여 셋(MWh → kWh) · 화면 요금적용전력 둘 · 화면 ESS 필요 용량 · Excel 진단 요금적용전력 · Excel 비고 기간 잉여 · PPT 장10 최대수요 · 장5 「관측 최대수요」(갈릴 때) · Word 문장 요금적용전력 · 나머지는 이미 같은 자리였고 함수만 지난다.
+**2-3. 적게 닫은 것 — 까닭을 값으로.** 울타리 넷을 다 닫았다(하한과 같다). 울타리 안에서 남는 것 — S7 명세 **보정** 합계는 관측과 올릴 칸이 갈리는 달에서 절사만 한다(시험 판 7달 · 3-2 에서 다시 센다).
+
+| 파일 | +/− |
+|---|---|
+| `src\kwise\money.py` | +42 −1 |
+| `src\kwise\report\worksheet.py` | +43 −17 |
+| `src\kwise\report\excel.py` | +48 −6 |
+| `src\kwise\report\notices.py` | +31 −0 |
+| `src\kwise\report\document.py` | +14 −8 |
+| `src\kwise\report\slides.py` | +5 −3 |
+| `src\kwise\report\figures.py` | +2 −2 |
+| `src\kwise\ui\views\diagnose.py` | +9 −6 |
+| `src\kwise\ui\views\measures.py` | +8 −6 |
+| `tests\test_money.py` | +24 |
+| `tests\test_base_fee_basis_words.py` | +162 |
+
+**2절 벽시계** 13:53 ~ 13:56(고친 코드는 1절 시험 판 동안 짰다).
+
 ---
 ## 오늘 (2026-09-24) 231세션 — **조사 판 · 역률 투자비 경로 · 대기 항목 대조 · 절사와 자릿수 뿌리**
 

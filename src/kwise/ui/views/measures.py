@@ -56,7 +56,7 @@ from kwise.measures.demand_response import DemandResponseResult
 from kwise.notices import Notice, tooltip
 from kwise.pv import PvPresets, area_from_capacity_m2, capacity_preview, load_pv_presets
 from kwise.quality import QualityReport
-from kwise.report import CONTRACT_CHANGE_WARNING, frames, narrative
+from kwise.report import CONTRACT_CHANGE_WARNING, frames, narrative, notices
 from kwise.report.days import RepresentativeDay, find_day, representative_days
 from kwise.report.worksheet import (
     Worksheet,
@@ -439,7 +439,7 @@ def _contract(
     # `요금적용전력 = max(최대수요, 계약전력 × 하한비율)` 이므로, 하한과 견주는
     # 상대는 최대수요다 — 하한이 이기면 요금적용전력은 하한과 같은 수가 되어
     # 두 칸이 같은 값을 말하게 된다.
-    columns[2].metric("최대수요", fmt.kw(result.demand_before_floor_kw))
+    columns[2].metric("최대수요", notices.max_demand_text(result.demand_before_floor_kw))
     if result.target_contract_kw is not None:
         columns[3].metric("목표 계약전력", fmt.kw(result.target_contract_kw, decimals=0))
     # **「0원」 이 아니라 「없음」 이다** (48세션 · 83세션에 말을 줄였다). 까닭은
@@ -1233,19 +1233,21 @@ def _surplus_verdict(
         # **기간 값**을 「기간 잉여」 라 적으므로(S213) 이름이 갈려야 두 수가 안 섞인다.
         # **이름이 곁에 있으면 「/년」 을 안 붙인다** (S216 · 사람이 정했다).
         "12개월 환산 잉여",
-        fmt.mwh(annualize(surplus.total_kwh, months)),
+        # **잉여는 kWh 로 적는다** (S232 ㄴ · S192 증상 1 · 18㉯) — PPT · Excel · 부록 A 와
+        # 같은 자리. MWh 한 자리는 40 kWh 를 「0.0」 으로 지웠다.
+        notices.surplus_kwh_text(annualize(surplus.total_kwh, months)),
         f"발전량의 {fmt.ratio_pct(surplus.share_of_generation)}",
         delta_color="off",
     )
     columns[1].metric(
         "평일 잉여",
-        fmt.per_year(fmt.mwh(annualize(surplus.weekday_kwh, months))),
+        fmt.per_year(notices.surplus_kwh_text(annualize(surplus.weekday_kwh, months))),
         _share(surplus.weekday_kwh, surplus.total_kwh),
         delta_color="off",
     )
     columns[2].metric(
         "토·일·공휴일 잉여",
-        fmt.per_year(fmt.mwh(annualize(holiday_kwh, months))),
+        fmt.per_year(notices.surplus_kwh_text(annualize(holiday_kwh, months))),
         _share(holiday_kwh, surplus.total_kwh),
         delta_color="off",
     )
@@ -1639,7 +1641,7 @@ def _ess(
         st.session_state[input_key("ess", "target")] = 0.0
         columns = st.columns(3)
         columns[0].metric("필요 출력", fmt.kw(optimum.required_power_kw))
-        columns[1].metric("필요 용량", fmt.kwh(optimum.required_capacity_kwh))
+        columns[1].metric("필요 용량", notices.ess_capacity_text(optimum.required_capacity_kwh))
         columns[2].metric(
             "방전시간",
             fmt.hours(optimum.required_discharge_hours),
