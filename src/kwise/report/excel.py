@@ -27,7 +27,13 @@ from kwise.compare import (
     ComparisonResult,
     sensitivity_range_frame,
 )
-from kwise.compare.sensitivity import ANNUAL_SAVING, METRIC_LABELS, SAVING
+from kwise.compare.sensitivity import (
+    ANNUAL_SAVING,
+    BASE_SAVING,
+    ENERGY_SAVING,
+    METRIC_LABELS,
+    SAVING,
+)
 from kwise.diagnose import Diagnosis
 from kwise.diagnose.dr import JUDGE_WINDOW
 from kwise.io import UsageData
@@ -60,6 +66,7 @@ from kwise.report.notices import (
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
     UNPRICED_REASONS,
+    Peers,
     bill_lines,
     billing_demand_text,
     combination_annual_saving,
@@ -206,6 +213,10 @@ class ReportSections:
     ess_cases: pd.DataFrame | None = None
     measure_notices: tuple[tuple[Notice, ...], ...] = ()
     """수단이 낸 안내 원본. 부록 C 가 참고 등급을 골라 쓴다."""
+    solar: SolarPoint | None = None
+    """고른 태양광 지점 — 용량 곡선의 같은 용량 줄이 계산 근거와 한 글자다 (S234 ㄱ)."""
+    peer_savings: Peers = ()
+    """단독 수단의 기간 절감 (원값, 표기 값) — 조합이 원값이 같으면 그 글자다 (S234 ㄴ)."""
 
 
 def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
@@ -625,14 +636,23 @@ def measure_summary_frame(
     return pd.DataFrame(rows).set_index("수단")
 
 
-def solar_curve_sheet(curve: SolarCurve) -> pd.DataFrame:
+def solar_curve_sheet(curve: SolarCurve, chosen: SolarPoint | None = None) -> pd.DataFrame:
     """태양광 20단계 상세 (15세션 1-3).
 
     화면은 **한 줄 판정**만 내고 이 표를 여기로 보낸다. 최적 지점에 표식을 남겨
     화면의 판정과 대조할 수 있게 한다.
+
+    ``chosen`` 은 계산 근거가 적는 고른 지점(잉여 수익을 실은 것)이다. 같은 용량
+    줄의 기본 · 전력량 절감은 **그 지점의 글자다** (S234 ㄱ) — 곡선 지점은 잉여 수익이
+    없어 절감액이 달라 올린 줄이 갈렸다(덱 `small-b-sell` 1,004,000 대 1,003,000).
     """
     verdict = curve.verdict()
     best = verdict.best.capacity_kwp if verdict.best is not None else None
+
+    def lines(point: SolarPoint) -> tuple[float, float, float, float]:
+        same = chosen is not None and abs(point.capacity_kwp - chosen.capacity_kwp) < 1e-9
+        return solar_lines(chosen if same and chosen is not None else point)
+
     rows = [
         {
             "용량(kWp)": point.capacity_kwp,
@@ -649,8 +669,8 @@ def solar_curve_sheet(curve: SolarCurve) -> pd.DataFrame:
             # 하한 값(kW)은 「진단 요약」 시트의 「요금적용전력 하한」 이 낸다.
             "하한 걸린 달": point.floor_bound_months,
             # 계산 근거 표와 같은 표기 값이다 (S233 ㄱ · :func:`solar_lines`).
-            "기간 기본요금 절감(원)": solar_lines(point)[0],
-            "기간 전력량요금 절감(원)": solar_lines(point)[1],
+            "기간 기본요금 절감(원)": lines(point)[0],
+            "기간 전력량요금 절감(원)": lines(point)[1],
             "기간 총 절감액(원)": point.total_saving_won,
             "12개월 환산(원)": point.annual_saving_won,
             "투자비(원)": point.investment_won,
@@ -881,20 +901,26 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
     if sections.solar_curve is not None:
         # **20단계 상세를 여기 싣는다** (15세션 1-3). 화면은 한 줄 판정만 낸다 —
         # 곡선이 단조롭게 좋아지기만 하면 표가 아무것도 알려주지 않기 때문이다.
-        sheets["태양광 용량 곡선"] = solar_curve_sheet(sections.solar_curve)
+        sheets["태양광 용량 곡선"] = solar_curve_sheet(sections.solar_curve, sections.solar)
     if sections.comparison is not None:
         # **절감액은 적힌 두 요금의 차다** (S233 ㄴ) — 같은 줄의 기준선 요금 − 조합 요금이
-        # 1,000원 어긋났다(덱 16벌 48줄). 계산 쪽 표를 받아 금액 두 칸만 표기 값으로 간다.
+        # 1,000원 어긋났다(덱 16벌 48줄). 계산 쪽 표를 받아 금액 칸만 표기 값으로 간다.
         comparison = sections.comparison
+        peers = sections.peer_savings
         frame = comparison.frame()
-        frame["기간 절감액(원)"] = [
-            combination_saving(comparison, item) for item in comparison.combinations
+        saving = [combination_saving(comparison, item, peers) for item in comparison.combinations]
+        frame["기간 절감액(원)"] = saving
+        # 조합 요금 = 적힌 기준선 요금 − 적힌 절감액 (사람 결정 A · S234 ㄴ). 절감액이 두
+        # 요금의 차인 줄은 조합 요금의 절사 그대로이고, 단독 수단의 글자를 쓴 줄만 올라간다.
+        bill = next(column for column in frame.columns if column.startswith("기간 요금"))
+        frame[bill] = [
+            money.truncate_won(comparison.baseline.total_won) - value for value in saving
         ]
         # 열 이름은 계산 쪽 표가 쥔다 — 감도 열쇠와 같은 글자라 여기 다시 적지 않는다
         # (`test_compare.py::test_감도_열쇠_글자는_한_자리에만_선다`).
         annual = next(column for column in frame.columns if column.startswith("12개월 환산"))
         frame[annual] = [
-            combination_annual_saving(comparison, item) for item in comparison.combinations
+            combination_annual_saving(comparison, item, peers) for item in comparison.combinations
         ]
         sheets["조합 비교"] = frame
     # **부록 셋** — Word 와 같은 재료를 쓴다 (22세션 3절).
@@ -913,7 +939,7 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
             sheets["감도"] = sensitivity_range_frame(sections.sensitivity)
             # 원자료 열 이름은 열쇠다 — 보이는 이름으로 바꿔 싣는다 (S220 2절).
             sheets["감도 상세"] = _same_combination_saving(
-                sections.sensitivity, sections.comparison
+                sections.sensitivity, sections.comparison, sections.peer_savings, sections.solar
             ).rename(columns=METRIC_LABELS)
         else:
             sheets["감도"] = sections.sensitivity
@@ -928,17 +954,34 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
 
 
 def _same_combination_saving(
-    frame: pd.DataFrame, comparison: ComparisonResult | None
+    frame: pd.DataFrame,
+    comparison: ComparisonResult | None,
+    peers: Peers = (),
+    solar: SolarPoint | None = None,
 ) -> pd.DataFrame:
     """감도 상세의 절감액 — **조합 비교의 조합과 같은 값이면 그 글자다** (S233 ㄱ).
 
     기준 시나리오는 권장 조합을 다시 계산한 것이라 「조합 비교」 가 적힌 두 요금의
     차로 적은 값(:func:`combination_saving`)과 같은 사실이다. 같은 값(1원 안)이 아니면
     제 값 그대로다 — 다른 시나리오는 다른 사실이다.
+
+    기본 · 전력량 절감도 고른 태양광 지점과 원값이 같으면 그 줄의 글자다 (S234 ㄴ ·
+    :func:`solar_lines`) — 덱 `small-ind-a2` 897,000 대 898,000.
     """
     if comparison is None:
         return frame
     out = frame.copy()
+    if solar is not None:
+        base, energy, _, _ = solar_lines(solar)
+        for column, raw, shown in (
+            (BASE_SAVING, solar.base_saving_won, base),
+            (ENERGY_SAVING, solar.energy_saving_won, energy),
+        ):
+            if column in out.columns:
+                out[column] = [
+                    shown if pd.notna(value) and abs(float(value) - raw) < 1 else value
+                    for value in out[column]
+                ]
     for column, raw_of, shown_of in (
         (SAVING, lambda item: item.saving_won, combination_saving),
         (ANNUAL_SAVING, lambda item: item.annual_saving_won, combination_annual_saving),
@@ -953,7 +996,7 @@ def _same_combination_saving(
                 None,
             )
             if same is not None:
-                out.at[index, column] = shown_of(comparison, same)
+                out.at[index, column] = shown_of(comparison, same, peers)
     return out
 
 

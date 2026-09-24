@@ -71,6 +71,7 @@ from kwise.report.notices import (
     TRUNCATION_FOOTNOTE,
     UNPRICED,
     UNPRICED_REASONS,
+    Peers,
     bill_lines,
     billing_demand_text,
     combination_saving,
@@ -1304,6 +1305,8 @@ class DocumentSections:
     """시간별 기온 (℃). PPT 「전력사용현황 및 부하패턴」이 사용량과 겹쳐 그린다
     (38세션 2-1). **없으면 사용량만 그린다** — 지역은 선택 입력이고, 고른 격자·
     기간을 사전 취득분이 덮지 못할 수도 있다 (화면과 같은 규칙)."""
+    peer_savings: Peers = ()
+    """단독 수단의 기간 절감 (원값, 표기 값) — 조합이 원값이 같으면 그 글자다 (S234 ㄴ)."""
 
     @property
     def prepared(self) -> dt.date:
@@ -1459,9 +1462,9 @@ def _cover(document: DocumentType, sections: DocumentSections) -> None:
             ["작성일", f"{sections.prepared:%Y-%m-%d}"],
             ["적용 요금표 시행일", f"{bill.effective_date}"],
             [
-        "계약종별",
-        f"{bill.contract_label} {bill.voltage_label} {option_label(bill.selection.option)}",
-    ],
+                "계약종별",
+                f"{bill.contract_label} {bill.voltage_label} {option_label(bill.selection.option)}",
+            ],
         ],
     )
     document.add_page_break()
@@ -1524,7 +1527,9 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
     best = comparison.best if comparison is not None else None
     if comparison is not None and best is not None:
         rows.append(["권장 조합", best.name])
-        rows.append(["기간 총 절감액", _won(combination_saving(comparison, best))])
+        rows.append(
+            ["기간 총 절감액", _won(combination_saving(comparison, best, sections.peer_savings))]
+        )
         rows.append(["투자비", _won(best.investment_won)])
         rows.append(["회수기간", _payback_text(best.payback_years, best.investment_won)])
     _add_table(document, rows)
@@ -1783,7 +1788,7 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
     _conclusion(
         document,
         f"권장안은 「{best.composition(baseline)}」 입니다. "
-        f"기간에 {_won(combination_saving(comparison, best))} 를 줄이고 "
+        f"기간에 {_won(combination_saving(comparison, best, sections.peer_savings))} 를 줄이고 "
         f"투자비는 {_won(best.investment_won)}, 회수기간은 "
         f"{_payback_text(best.payback_years, best.investment_won)} 입니다.",
     )
@@ -1795,7 +1800,7 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
                 item.name,
                 option_label(item.selection.option),
                 # 적힌 기준선 요금 − 적힌 조합 요금 (S233 ㄴ · Excel 조합 비교와 한 글자).
-                _won(combination_saving(comparison, item)),
+                _won(combination_saving(comparison, item, sections.peer_savings)),
                 _won(item.investment_won),
                 _payback_text(item.payback_years, item.investment_won),
             ]

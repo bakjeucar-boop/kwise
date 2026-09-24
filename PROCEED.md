@@ -371,6 +371,21 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 ㄴ3 은 S233 이 「원값이 겹치는 다른 사실」 로 적은 넷째 짝이다(233세션 절 3-2 표) — ㄴ 의 「3벌」 은 ㄴ1 두 벌 · ㄴ2 한 벌이고 ㄴ3 은 같은 규칙이라 울타리에 넣었다. **ㄴ1 · ㄴ2 는 사람 결정 A 와 걸린다** — 조합 줄의 셈 「기준선 요금 − 조합 요금 = 절감액」 이 적힌 수끼리 서야 하고(A) 태양광 · 역률 표의 절감액은 원값 절사 그대로다(A). 셋을 다 세우는 길은 하나다 — 그 줄에서 절감액을 원값 절사(= 단독 수단과 같은 글자)로 두고 **조합 요금을 줄로 올린다**(A 그대로 · 기준선 요금은 청구 표 합계라 고정 · 조합 요금은 조합 비교 밖에 안 선다 — 56,724,000 · 61,642,000 을 스냅에서 찾아 다른 자리 0).
 
 **1-2. 울타리(하한) — 코드 자리 22 · 시험 자리 2.** ㄱ1 1(`compare._combined_block` 지표) · ㄱ2 4(`excel.solar_curve_sheet` 고른 지점 줄 · `ReportSections.solar` · 부르는 자리 · `compare.py` 넘김) · ㄴ 17(`notices` 셋 — 단독 수단 (원값 · 표기 값) 짝을 내는 함수 · `combination_saving` · `combination_annual_saving` 이 짝을 받는다 · `excel` 다섯 — 조합 비교 기간 · 12개월 · 기간 요금 · `_same_combination_saving` 짝 · 기본 · 전력량 줄 · `ReportSections` 짝 필드 · `DocumentSections` 짝 필드 · `document` 셋 — 요약 표 · 결론 · 조합 표 · `compare.py` 다섯 — 짝을 내는 메서드 · 두 Sections 넘김 둘 · `_combined_block` 짝(부르는 자리 둘 포함)). 시험 — S233 두 못(`test_절사한_줄끼리의_셈이_적힌_합계와_선다` · `test_조정한_표기_값이_사실마다_네_산출물에서_같은_글자다`)을 넓힌다.
+**1절 벽시계** 18:12 ~ 18:18.
+
+**2-1. 고친 자리 — 코드 23(울타리 22 + 형 별칭 `notices.Peers` 1)** · `src\` 네 파일 `report\notices.py` +50 −4 · `report\excel.py` +55 −12 · `report\document.py` +11 −6 · `ui\views\compare.py` +40 −10(고친 줄 · `ruff format` 이 건드린 옛 줄 하나(`excel.py` 역률 회수기간)는 되돌렸다). 한 자리는 S233 것 — `money.gap_won` · `money.same_won` · `notices.solar_lines` · `combination_saving` 에 짝을 더했다.
+
+| 자리 | 전 | 후 (기대 — 실물은 4-2) | 고친 코드 |
+|---|---|---|---|
+| ㄱ1 `small-a2` 화면 지표 「차이」 | 원값 차 절사 −7,000원/년 | 적힌 합산효과 − 적힌 단순 합 −8,000원/년 | `_combined_block` — 표기 값을 지표 앞에서 한 번 만들고 지표 · 계산 근거가 함께 쓴다 |
+| ㄱ2 `small-b-sell` 곡선 80 kWp 기본요금 절감 | 곡선 지점 `solar_lines` 1,003,000 | 고른 지점 `solar_lines` 1,004,000 | `solar_curve_sheet(curve, chosen)` · `ReportSections.solar` |
+| ㄴ1 `small-a2-pf100-offset` · `-area` 조합 「+ 태양광 32 kWp」 | 두 요금의 차 5,171,000 · 조합 요금 56,724,000 | 태양광 단독 글자 5,170,000 · 조합 요금 56,725,000(기준선 − 절감액) | `standalone_savings` → `combination_saving(…, peers)` · 조합 비교 기간 요금 칸 |
+| ㄴ2 `small-ind-a2` 조합 「+ 역률 97%」 | 113,000 · 조합 요금 61,642,000 | 역률 단독 글자 112,000 · 61,643,000 | 같은 자리 |
+| ㄴ3 `small-ind-a2` 감도 상세 기준 기본요금 절감 | 원값 절사 897,000 | 태양광 줄 글자 898,000 | `_same_combination_saving(…, peers, solar)` |
+
+ㄱ2 의 곁 — `small-b-sell` 감도 상세 기준 기본요금 절감 1,003,000 도 ㄴ3 과 같은 자리로 1,004,000 이 된다(1-1 표 「그 값이 서는 다른 자리」). 조합 요금 칸은 **모든 줄**이 「적힌 기준선 − 적힌 절감액」 으로 선다 — 절감액이 두 요금의 차인 줄은 조합 요금 절사와 같은 글자라 안 바뀐다.
+**2-2. 적게 닫은 것 — 없다.** 시험 판 — `test_notices` · `test_report` · `test_document` · `test_money` · `test_compare` 208 passed · 2 xfailed(`pytest_20260924_182145.txt`).
+**2절 벽시계** 18:18 ~ 18:21.
 
 ---
 ## 오늘 (2026-09-24) 233세션 — **고침 판 · 절사 뿌리를 닫고 자릿수 후보를 가른다**

@@ -76,7 +76,7 @@ from kwise.report import (
     surplus_page,
 )
 from kwise.report.days import RepresentativeDay
-from kwise.report.notices import combination_saving
+from kwise.report.notices import Peers, combination_saving, standalone_savings
 from kwise.report.worksheet import (
     Worksheet,
     combination_worksheet,
@@ -307,9 +307,20 @@ def render(
     if stale:
         callout.caution("선택이 변경되었습니다 — 다시 계산하십시오.")
         with callout.stale(_STALE_KEY):
-            _combined_block(usage, table, form, comparison, rows, results.contract, enabled)
+            _combined_block(
+                usage,
+                table,
+                form,
+                comparison,
+                rows,
+                results.contract,
+                enabled,
+                results.peer_savings(),
+            )
     else:
-        _combined_block(usage, table, form, comparison, rows, results.contract, enabled)
+        _combined_block(
+            usage, table, form, comparison, rows, results.contract, enabled, results.peer_savings()
+        )
     # **2단계 카드가 이미 낸 경고는 여기서 되풀이하지 않는다** (16세션 3절).
     # 세 화면이 한 번에 그려지므로 같은 문장이 두 번 뜬다 — 조합 자체의 경고만 남긴다.
     # **문구가 아니라 사실로 견준다** (20세션). 조합 쪽 문구에는 조합명이 앞에
@@ -448,6 +459,7 @@ def _combined_block(
     rows: tuple[StandaloneRow, ...],
     contract: ContractAdjustment | None,
     chosen: tuple[str, ...],
+    peers: Peers = (),
 ) -> None:
     """**② 합산효과** — 단순 합과의 차이를 반드시 보인다 (14세션 5-2).
 
@@ -471,6 +483,14 @@ def _combined_block(
     )
     gap = actual - simple
     ratio = gap / simple if simple else None
+    # 계산 근거의 합산효과 — 조합 비교가 적는 기간 절감액과 같은 값이면 그 글자다 (S233 ㄱ).
+    # 단순 합도 합산효과와 같은 값이면 같은 글자다 — 갈라 적으면 없는 「차이」 가 선다.
+    shown = money.same_won(
+        actual, combined.saving_won, combination_saving(comparison, combined, peers)
+    )
+    combined_shown = actual if shown is None else shown
+    simple_same = money.same_won(simple, actual, combined_shown)
+    simple_shown = simple if simple_same is None else simple_same
 
     st.subheader("합산효과")
     # **금액 셋은 12개월 환산이다** (26세션 2-3). 값에 기간 단위를 붙인다 — 라벨만
@@ -484,9 +504,11 @@ def _combined_block(
     columns = st.columns(4)
     columns[0].metric("단순 합", fmt.won_year(simple))
     columns[1].metric("합산효과", fmt.won_year(actual))
+    # 지표 「차이」 도 계산 근거와 같은 값 — 적힌 두 값의 차다 (S234 ㄱ · 덱 `small-a2`
+    # 지표 −7,000 대 계산 근거 −8,000).
     columns[2].metric(
         "차이",
-        fmt.won_year(gap),
+        fmt.won_year(money.gap_won(combined_shown, simple_shown)),
         fmt.ratio_pct(ratio) if ratio is not None else fmt.DASH,
     )
     columns[3].metric(
@@ -516,13 +538,8 @@ def _combined_block(
     # 묻힌다 — 예산(본문 3줄)을 넘긴 자리이기도 했다.
     reasons = _interaction_reasons(comparison, combined, picked)
     extra_won = _contract_headroom(usage, table, form, combined, contract)
-    # 계산 근거의 합산효과 — 조합 비교가 적는 기간 절감액과 같은 값이면 그 글자다 (S233 ㄱ).
-    # 단순 합도 합산효과와 같은 값이면 같은 글자다 — 갈라 적으면 없는 「차이」 가 선다.
-    shown = money.same_won(actual, combined.saving_won, combination_saving(comparison, combined))
-    combined_shown = actual if shown is None else shown
-    simple_shown = money.same_won(simple, actual, combined_shown)
     sheet = combination_worksheet(
-        simple_won=simple if simple_shown is None else simple_shown,
+        simple_won=simple_shown,
         combined_won=combined_shown,
         reasons=tuple(reasons),
         contract_extra_won=extra_won,
@@ -788,6 +805,16 @@ class _MeasureResults:
             solar=self.solar,
             surplus=self.surplus,
             base_fee_months=self.base_fee_months,
+        )
+
+    def peer_savings(self) -> Peers:
+        """단독 수단의 기간 절감 (원값, 표기 값) — 조합 절감이 원값이 같으면 그 글자다 (S234 ㄴ)."""
+        return standalone_savings(
+            switch=self.switch,
+            contract=self.contract,
+            power_factor=self.power_factor,
+            solar=self.solar,
+            ess=self.ess,
         )
 
     def shown_facts(self) -> frozenset[str]:
@@ -1182,6 +1209,8 @@ def _download_block(
                 tariff_table=table,
                 ess_cases=load_ess_cost_model().case_table(),
                 measure_notices=results.notice_groups(),
+                solar=results.solar,
+                peer_savings=results.peer_savings(),
             )
             _build(
                 lambda: build_report_bytes(sections, session_id=session_id()),
@@ -1248,6 +1277,7 @@ def _download_block(
                 building_name=name,
                 reviewed_labels=scope.reviewed_labels,
                 skipped_labels=scope.skipped_labels,
+                peer_savings=results.peer_savings(),
             )
             _build(
                 lambda: slides_bytes(document),

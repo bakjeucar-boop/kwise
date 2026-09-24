@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
     from kwise.compare import CombinationResult, ComparisonResult
-    from kwise.measures import EssOptimum, EssTargetCurve
+    from kwise.measures import EssOptimum, EssResult, EssTargetCurve
     from kwise.measures.contract import ContractAdjustment
     from kwise.measures.power_factor import PowerFactorResult
     from kwise.measures.solar import SolarPoint
@@ -29,6 +29,7 @@ __all__ = [
     "UNPRICED",
     "UNPRICED_REASONS",
     "BillLines",
+    "Peers",
     "bill_lines",
     "billing_demand_text",
     "charge_lines",
@@ -46,6 +47,7 @@ __all__ = [
     "power_factor_charges",
     "rules_basis_line",
     "solar_lines",
+    "standalone_savings",
     "surplus_kwh_text",
     "switch_annual_saving",
     "switch_saving",
@@ -341,19 +343,63 @@ def switch_annual_saving(result: TariffSwitchResult) -> float | None:
     return money.same_won(result.annual_saving_won, result.saving_won, switch_saving(result))
 
 
-def combination_saving(comparison: ComparisonResult, item: CombinationResult) -> float:
+#: 단독 수단의 기간 절감 (원값, 표기 값) — :func:`standalone_savings` 가 낸다.
+Peers = tuple[tuple[float, float], ...]
+
+
+def standalone_savings(
+    *,
+    switch: TariffSwitchResult | None = None,
+    contract: ContractAdjustment | None = None,
+    power_factor: PowerFactorResult | None = None,
+    solar: SolarPoint | None = None,
+    ess: EssResult | None = None,
+) -> Peers:
+    """조합에 드는 단독 수단의 기간 절감 (원값, 표기 값) (S234 ㄴ · 웹 대화창 판단).
+
+    **원값이 같은 다른 사실은 같은 글자로 적는다** — 다른 수단이 0 인 벌에서 조합
+    절감이 단독 절감과 원값이 같은데 조합은 두 요금의 차로, 단독은 원값 절사로 적어
+    1,000원 갈렸다(덱 3벌). :func:`combination_saving` 이 이것을 받는다.
+    """
+    pairs: list[tuple[float, float]] = []
+    if switch is not None:
+        pairs.append((switch.saving_won, switch_saving(switch)))
+    if contract is not None and contract.saving_won is not None:
+        shown = contract_saving(contract)
+        pairs.append((contract.saving_won, contract.saving_won if shown is None else shown))
+    raw = [
+        power_factor.saving_won if power_factor is not None else None,
+        solar.total_saving_won if solar is not None else None,
+        ess.total_saving_won if ess is not None else None,
+    ]
+    pairs.extend((value, money.truncate_won(value)) for value in raw if value is not None)
+    return tuple(pairs)
+
+
+def combination_saving(
+    comparison: ComparisonResult, item: CombinationResult, peers: Peers = ()
+) -> float:
     """조합 기간 절감의 표기 값 — **적힌 기준선 요금 − 적힌 조합 요금** (S233 ㄴ).
 
     「조합 비교」 표가 두 요금과 절감액을 한 줄에 적는다 (덱 16벌 48줄이 1,000원
     어긋났다). 첫 조합(선택요금 전환)은 :func:`switch_saving` 과 같은 값이다.
+
+    단독 수단과 원값이 같으면(1원 안) **그 수단의 글자다** (S234 ㄴ) — 그 줄의 조합
+    요금은 조합 비교가 「기준선 − 절감액」 으로 올려 적는다(사람 결정 A · 조합 요금은
+    그 표 밖에 안 선다).
     """
+    for raw, shown in peers:
+        if abs(item.saving_won - raw) < 1:
+            return shown
     return money.gap_won(comparison.baseline.total_won, item.total_won)
 
 
-def combination_annual_saving(comparison: ComparisonResult, item: CombinationResult) -> float:
+def combination_annual_saving(
+    comparison: ComparisonResult, item: CombinationResult, peers: Peers = ()
+) -> float:
     """조합 12개월 환산의 표기 값 — 기간 값과 같은 값이면 같은 글자 (S233 ㄱ)."""
     shown = money.same_won(
-        item.annual_saving_won, item.saving_won, combination_saving(comparison, item)
+        item.annual_saving_won, item.saving_won, combination_saving(comparison, item, peers)
     )
     return item.annual_saving_won if shown is None else shown
 
