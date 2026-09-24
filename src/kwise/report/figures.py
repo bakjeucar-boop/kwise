@@ -17,6 +17,7 @@ import datetime as dt
 import io
 import logging
 import math
+import re
 from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
@@ -32,7 +33,7 @@ import pandas as pd
 from matplotlib import font_manager
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from matplotlib.ticker import FuncFormatter
+from matplotlib.ticker import FuncFormatter, ScalarFormatter
 
 from kwise import money
 from kwise.compare import ComparisonResult
@@ -342,13 +343,31 @@ def time_axis(axes: Axes) -> None:
     axes.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
 
 
+class _GroupedScalar(ScalarFormatter):
+    """기본 값 눈금에 세 자리 쉼표 (S235 ②). 자릿수 · 오프셋은 기본 그대로다."""
+
+    def __call__(self, x: float, pos: int | None = None) -> str:
+        return _THOUSANDS.sub(lambda m: f"{int(m[0]):,}", super().__call__(x, pos))
+
+
+#: 정수부 네 자리 이상 — 소수부(``.`` 뒤)는 안 건드린다.
+_THOUSANDS = re.compile(r"(?<![.\d])\d{4,}")
+
+
 def render_png(figure: Figure) -> bytes:
     """그림을 png 바이트로 굽고 닫는다. **닫지 않으면 메모리에 쌓인다.**
 
     **캔버스를 투명으로 굽지 않는다** (36세션 4절). 배경을 비워 두면 넣는 쪽
     바탕이 무엇이냐에 따라 어두운 글자가 사라진다 — png 의 글자색 규약은
     「흰 바탕이 확정」 위에 서 있으므로, 그 확정을 여기서 지킨다.
+
+    **모든 그림이 여기를 지나므로 눈금 쉼표도 여기서 단다** (S235 ②) — 제 서식을
+    가진 축(날짜 · 시각 · 금액 · 이름)은 안 건드리고 기본 값 눈금만 간다.
     """
+    for axes in figure.axes:
+        for axis in (axes.xaxis, axes.yaxis):
+            if type(axis.get_major_formatter()) is ScalarFormatter:
+                axis.set_major_formatter(_GroupedScalar())
     canvas = chart_palette().canvas
     buffer = io.BytesIO()
     figure.savefig(

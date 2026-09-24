@@ -378,7 +378,21 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 | 꼬리 없음 | 열 안 최빈(소수가 있는 칸끼리) | 화면 · Word 가 이 열 꼴로 적는 자리가 없다 · 정수 칸은 어느 자리로 적어도 안 잃어 뺐다(넣으면 일할 계수 0.5161 이 「1」 로 보인다) | 시계열 kw · kwh 2 · 첨예도 s 2 · 일할 계수 4 · 결측률 4 · 자가소비율 4 · 일수 · 달 · 색인 0 |
 
 **1-2. 울타리(하한) — 코드 자리 6 · 시험 자리 1.** ① `excel.write_workbook` 1(서식 도우미 · 꼬리 표 포함) · ② `figures.render_png` 1 · ③ `appendix._short` 1 · ④ 3(`narrative.power_factor_adjusted_saving` · `measures.py` 태양광 카드 부르는 자리 · `_ess_spec_view`) — S234 3-3 은 ④ 를 둘로 셌다(ESS 를 「카드」 로 · 실물은 사양 표 칸). 시험 — S232 교차 못 `test_자릿수_증상_사실이_네_산출물에서_같은_글자다`(벌 `large-a` · `large-b-over` — ①~④ 가 두 벌에 다 선다)를 넓힌다. 옛 표기를 문 시험 — 미리 찾은 것 0(PPT · Word · Excel 의 「역률 영향 반영 시」 글과 `won_short` 는 안 바뀐다).
-**1절 벽시계** 20:34 ~ 20:40.
+**1절 벽시계** 20:34 ~ 20:36(커밋 시각 · 처음에 시계를 안 보고 「20:40」 으로 적어 2절 커밋에서 고쳤다).
+
+**2-1. 고친 자리 — 코드 6(울타리 6 그대로)** · `src\` 다섯 파일 `report\excel.py` +64 −1 · `report\figures.py` +20 −1 · `report\appendix.py` +2 −0 · `report\narrative.py` +11 −2 · `ui\views\measures.py` +12 −1.
+
+| 자리 | 전 | 후 (기대 — 실물은 3-2 · 3-4) | 고친 코드 |
+|---|---|---|---|
+| ① `excel.write_workbook` | 수 칸 서식 없음(`General`) | 시트를 쓴 뒤 수 칸마다 `#,##0` · `#,##0.0` …(열마다 한 자리 · 1-1 표) · 셀 값 그대로 | `EXCEL_DECIMALS`(꼬리 여덟) · `_number_formats` · 부르는 한 줄 |
+| ② `figures.render_png` | 기본 값 눈금 `1000` | `1,000` — 기본 `ScalarFormatter` 축만 쉼표 붙은 같은 서식으로 갈아 끼운다 | `_GroupedScalar` · 굽기 앞 세 줄 |
+| ③ `appendix._short` | 정수 `str(value)` → `1000` | `1,000` | 정수 갈래 한 줄 |
+| ④ `narrative.power_factor_adjusted_saving` | 금액 `money.won` 하나 | `short=True` 면 `money.won_short` — 안 주면 전과 같다(PPT · Word · Excel) | 인자 하나 · 두 줄 |
+| ④ `measures.py` 태양광 카드 | 증감 「역률 영향 반영 시 279,229,000원」 | `short=True` → 「… 2억 7,923만원」 | 인자 한 줄 |
+| ④ `_ess_spec_view` | 「12개월 환산 절감액」 열 `won_short` 칸마다 — 만원 아래는 「2,000원」 | 열에 만원 칸이 서면 만원 아래 칸을 한 자리 만원(「0.2만원」)으로 · 0 은 그대로 | 열 판정 한 줄 · 칸 도우미 |
+
+**2-2. 적게 닫은 것 — 없다.** 정적 — 고친 다섯 파일 `ruff check` 통과 · `mypy` 0건(`ruff_20260924_203748.txt` · `mypy_20260924_203751.txt`). `ruff format --diff` 가 짚은 한 자리(`excel.py` 역률 회수기간 줄)는 S234 4-7 이 되돌린 옛 어긋남이라 안 건드렸다.
+**2절 벽시계** 20:36 ~ 20:38.
 
 ## 오늘 (2026-09-24) 234세션 — **절사 뿌리 마무리 · 자릿수 결함을 사람 기준으로 다시 가른다**
 

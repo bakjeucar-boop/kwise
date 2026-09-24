@@ -15,8 +15,10 @@ from __future__ import annotations
 import datetime as dt
 import itertools
 import math
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
@@ -87,6 +89,9 @@ from kwise.report.notices import (
 from kwise.report.worksheet import Worksheet, low_load_threshold_line
 from kwise.tariff import BillingResult, TariffTable
 from kwise.tariff.labels import option_label
+
+if TYPE_CHECKING:
+    from openpyxl.worksheet.worksheet import Worksheet as Sheet
 
 __all__ = [
     "DEFAULT_OUTPUT_DIR",
@@ -174,13 +179,71 @@ def result_path(
     return output_dir / f"{prefix}_{stamp}.xlsx"
 
 
+#: 수 칸의 소수 자리 — **열 이름 꼬리로 가른다. 위에서부터 처음 맞는 것** (S235 ①).
+#: 사실의 글자를 만드는 함수가 있으면 그 자릿수다 — 요금적용전력은
+#: :func:`~kwise.report.notices.billing_demand_text` · 최대수요는
+#: :func:`~kwise.report.notices.max_demand_text` · kWh 는
+#: :func:`~kwise.report.notices.surplus_kwh_text` · 원은 :func:`kwise.money.won`.
+EXCEL_DECIMALS: tuple[tuple[str, int], ...] = (
+    ("요금적용전력(kW)", 0),
+    ("기준전력(kW)", 0),
+    ("(kW)", 1),
+    ("(kWh)", 0),
+    ("(kWp)", 0),
+    ("(원)", 0),
+    ("(년)", 1),
+    ("(%)", 1),
+)
+
+
+def _tail_decimals(name: object) -> int | None:
+    label = str(name)
+    return next((digits for tail, digits in EXCEL_DECIMALS if label.endswith(tail)), None)
+
+
+def _places(value: float) -> int:
+    text = repr(float(value))
+    return 0 if "e" in text else len(text.partition(".")[2].rstrip("0"))
+
+
+def _number_formats(sheet: Sheet) -> None:
+    """수 칸에 **셀 서식으로** 세 자리 쉼표와 열마다 한 소수 자리를 단다 (S235 ①).
+
+    **셀의 수는 그대로다** — 서식만 달므로 값 · 합 · 정렬이 안 바뀐다. 꼬리가 없는
+    열은 사실마다 행이 갈리는 시트(「지표」 열)면 행 사실의 최빈, 아니면 열 안에서
+    소수가 있는 칸의 최빈이다 — 정수 칸은 어느 자리로 적어도 안 잃으므로 안 센다.
+    """
+    heads = [cell.value for cell in sheet[1]]
+    facts = heads.index("지표") if "지표" in heads else None
+    for column in sheet.iter_cols(min_row=2):
+        cells = [
+            cell
+            for cell in column
+            if isinstance(cell.value, int | float) and not isinstance(cell.value, bool)
+        ]
+        if not cells:
+            continue
+        decimals = _tail_decimals(heads[cells[0].column - 1])
+        if decimals is None and facts is not None:
+            found = [_tail_decimals(sheet.cell(cell.row, facts + 1).value) for cell in cells]
+            common = Counter(d for d in found if d is not None).most_common(1)
+            decimals = common[0][0] if common else None
+        if decimals is None:
+            fractions = Counter(p for p in map(_places, (c.value for c in cells)) if p)
+            decimals = fractions.most_common(1)[0][0] if fractions else 0
+        pattern = "#,##0" + ("." + "0" * decimals if decimals else "")
+        for cell in cells:
+            cell.number_format = pattern
+
+
 def write_workbook(sheets: dict[str, pd.DataFrame], path: Path) -> Path:
-    """시트를 하나의 통합문서로 쓴다. 시트마다 tz 를 해제한다."""
+    """시트를 하나의 통합문서로 쓴다. 시트마다 tz 를 해제하고 수 칸에 서식을 단다."""
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with pd.ExcelWriter(path, engine="openpyxl") as writer:
             for name, frame in sheets.items():
                 strip_timezone(frame).to_excel(writer, sheet_name=name[:31])
+                _number_formats(writer.sheets[name[:31]])
     except PermissionError as exc:
         raise ReportWriteError(
             f"'{path}' 에 쓰지 못했습니다. {_CLOSE_EXCEL} "

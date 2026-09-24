@@ -111,6 +111,8 @@ def _short(value: object) -> str:
         text = ", ".join(f"{key}={_short(item)}" for key, item in value.items())
     elif isinstance(value, float):
         text = f"{value:,.6g}"
+    elif isinstance(value, int) and not isinstance(value, bool):
+        text = f"{value:,}"  # 실수와 같은 쉼표 (S235 ③)
     else:
         text = str(value)
     return text if len(text) <= 60 else text[:57] + "…"

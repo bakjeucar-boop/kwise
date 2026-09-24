@@ -447,7 +447,12 @@ def building_lead(quality: QualityReport | None) -> str:
 
 
 def power_factor_adjusted_saving(
-    *, saving_won: float, extra_won: float, after_pct: float | None = None, basis: str = ""
+    *,
+    saving_won: float,
+    extra_won: float,
+    after_pct: float | None = None,
+    basis: str = "",
+    short: bool = False,
 ) -> str:
     """역률 영향을 반영한 절감액 한 줄 (59세션 12절 · 목록 P6).
 
@@ -476,10 +481,14 @@ def power_factor_adjusted_saving(
     ``basis`` 는 금액의 표시다 (S219 규칙) — ``"/년"`` 이면 금액 뒤에(라벨 없이
     서는 12개월 환산값), ``"기간"`` 이면 금액 앞에(12개월 값과 함께 서는 기간
     값) 단다. 비우면 안 단다 — 화면은 같은 지표의 라벨이 이름을 쥔다.
+
+    ``short`` 는 **만원으로 적는 카드**가 준다 (S235 ④) — 카드 안의 증감도 그
+    카드의 단위로 적는다(:func:`kwise.money.won_short`).
     """
     if round(extra_won) == 0:
         return ""
-    amount = money.won(saving_won - extra_won, reason="—")
+    write = money.won_short if short else money.won
+    amount = write(saving_won - extra_won, reason="—")
     if basis == "/년":
         amount = f"{amount}/년"
     elif basis:

@@ -1003,6 +1003,7 @@ def _solar(
         narrative.power_factor_adjusted_saving(
             saving_won=point.annual_saving_won,
             extra_won=annualize(point.power_factor_extra_won, months),
+            short=True,
         )
         or None,
         delta_color="off",
@@ -1397,6 +1398,16 @@ def _ess_spec_view(frame: pd.DataFrame) -> pd.DataFrame:
     """
     if frame.empty:
         return frame
+    # **한 열은 한 단위다** (S235 ④) — 만원 칸이 서는 열에서 만원 아래 금액만
+    # 「2,000원」 으로 서면 같은 열에 단위가 둘이다. 그 칸도 만원으로 적는다.
+    savings = frame["연간 절감액(원)"]
+    in_man = bool((savings.abs() >= 10_000).any())
+
+    def saving(value: float) -> str:
+        if in_man and 0 < abs(value) < 10_000:
+            return f"{value / 10_000:,.1f}만원"
+        return fmt.won_short(value)
+
     return pd.DataFrame(
         {
             # **목표는 범위다** (50세션 3-6). 격자를 쓰면 목표 여럿이 한 사양으로
@@ -1410,7 +1421,7 @@ def _ess_spec_view(frame: pd.DataFrame) -> pd.DataFrame:
             # **「연간」 이 아니라 「12개월 환산」 이다** (S214) — 앞 칸은 표시 열
             # 이름이고 뒤 칸은 프레임 열쇠라 그대로 둔다. 머리에 이름이 있어 「/년」 을
             # 안 붙인다 (S216).
-            "12개월 환산 절감액": [fmt.won_short(value) for value in frame["연간 절감액(원)"]],
+            "12개월 환산 절감액": [saving(value) for value in savings],
             "회수기간": [
                 fmt.payback(years, investment_won=investment)
                 for years, investment in zip(
