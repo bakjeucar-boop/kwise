@@ -161,7 +161,7 @@ def test_수단을_0개_1개_전부_켜도_3단계가_돈다(count: int) -> None
     if count == 0:
         assert "수단을 하나도 켜지 않았습니다" in body
     else:
-        assert "단순 합" in body
+        assert "합계는 최종 효과가 아닙니다" in body
 
 
 def test_모든_수단을_켜도_2단계가_돈다() -> None:

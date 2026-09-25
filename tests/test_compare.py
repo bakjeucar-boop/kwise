@@ -1163,3 +1163,30 @@ def test_3단계_화면과_산출물이_같은_조합에서_같은_계약전력_
     screen, report = seen[0].target_contract_kw, combined.contract_adjustment.target_contract_kw
     assert screen is not None and report is not None  # 전제 — 두 자리 다 목표가 선다
     assert screen == pytest.approx(report), (screen, report)
+
+
+@pytest.mark.parametrize(
+    ("simple", "combined", "reasons"),
+    [
+        # 덱 `small-a2-pf100-offset` 꼴 — 원값은 갈리나 적힌 차이는 0원이다.
+        (5_170_400.0, 5_170_900.0, 0),
+        (5_170_400.0, 5_190_900.0, 1),
+    ],
+)
+def test_적힌_차이가_0이면_이유_줄이_없다(simple: float, combined: float, reasons: int) -> None:
+    """**적힌 차이(표기 글자)가 0 이면 이유 줄을 세우지 않는다** (S244 결정 1 · S237 ㄴ).
+
+    화면 3단계 「계산 근거」 표가 「차이 0원」 아래에 「이유 1」 을 세웠다(덱 두 벌).
+    표를 만드는 그 함수가 낸 줄 글자를 본다 — 차이가 서는 인자는 이유 줄이 서야
+    재료가 산다.
+    """
+    from kwise import money
+    from kwise.report.worksheet import combination_worksheet
+
+    # 재료 — 첫 인자는 원값이 갈리는데 적힌 차이가 0 이고, 둘째는 차이가 선다.
+    assert combined != simple and (money.gap_won(combined, simple) == 0) == (reasons == 0)
+    frame = combination_worksheet(
+        simple_won=simple, combined_won=combined, reasons=("**요금제가 바뀝니다.**",)
+    ).frame()
+    words = " ".join(str(value) for value in frame.to_numpy().ravel())
+    assert words.count("이유 ") == reasons, words

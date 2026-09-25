@@ -2250,16 +2250,16 @@ def test_개선안별_요약이_2단계_카드와_같은_값이다() -> None:
 
     for title in ("1. 선택요금 전환", "2. 계약전력 조정", "4. 역률 개선", "6. ESS"):
         assert title in rows, rows.keys()
-    assert "단순 합" in rows
+    assert "합계" in rows
     for title, expected in card_payback.items():
         assert str(rows[title]["회수기간"]) == expected, title
 
 
-def test_합계_행에_단순_합이라고_적는다() -> None:
-    """수단별 절감액의 합은 최종 효과가 아니다 (14세션 5-1)."""
+def test_합계_행에_합계라고_적는다() -> None:
+    """수단별 절감액의 합은 최종 효과가 아니다 (14세션 5-1 · S244 결정 2 에 이름을 갈았다)."""
     from kwise.report import SIMPLE_SUM_LABEL, SIMPLE_SUM_NOTE
 
-    assert SIMPLE_SUM_LABEL == "단순 합"
+    assert SIMPLE_SUM_LABEL == "합계"
     assert "최종 효과가 아닙니다" in SIMPLE_SUM_NOTE
 
 
@@ -4206,6 +4206,12 @@ def test_단순_합이라는_이름이_한_값만_가리킨다(sample_diagnosis:
     assert table_row == money.won_short(with_dr, reason="—"), (table_row, with_dr)
     # 합산효과 지표와 계산 근거 표가 쓰는 식 (`ui\views\compare.py::_combined_block`).
     assert list(inspect.signature(simple_sum_won).parameters) == ["rows"]
+    # **「단순 합」 은 합산효과와 맞대는 한 자리에만 선다** (S244 결정 2) — 켠 수단
+    # 전부의 요약표 합계 행과 그 캡션은 그 이름을 안 쓴다.
+    from kwise.report import SIMPLE_SUM_NOTE
+
+    assert str(standalone_frame(rows).iloc[-1]["수단"]) == "합계"
+    assert "단순 합" not in SIMPLE_SUM_NOTE, SIMPLE_SUM_NOTE
 
 
 def test_합산효과가_DR_정산금을_담아_차이는_단가에_안_움직인다() -> None:
@@ -4252,6 +4258,51 @@ def test_합산효과가_DR_정산금을_담아_차이는_단가에_안_움직�
     priced = {label: stage3_value(screen, label) for label in ("합산효과", "차이")}
     assert priced["차이"] == unpriced["차이"], (unpriced, priced, settlement)
     assert priced["합산효과"] != unpriced["합산효과"], (unpriced, priced, settlement)
+
+
+def test_합산효과의_회수기간과_곁_캡션이_DR_정산금을_담는다() -> None:
+    """**합산효과와 그 회수기간은 청구 밖 몫을 담는다** (S244 결정 4 · S182 ㄱ).
+
+    S167 이 합산효과 지표에 DR 정산금을 담았는데 회수기간은 조합 재계산 절감액으로만
+    나누고, 곁 캡션은 「합산효과에 넣지 않은 수단 — 경제성DR」 이라 적었다. 역률
+    투자비를 넣어 회수기간이 서는 판에서 정산 단가를 넣으면 ① 회수기간이 줄고
+    ② 캡션이 정산금을 더한다고 말하는지를 화면 글자로 본다.
+    """
+    from kwise.ui.state import input_key
+
+    def stage3(screen: AppTest) -> tuple[str, str]:
+        labels = [str(item.label) for item in screen.metric]
+        if _STAGE3_FIRST not in labels:
+            pytest.fail(f"3단계 지표가 없습니다: {labels}")
+        start = labels.index(_STAGE3_FIRST)
+        payback = next(
+            str(item.value) for item in list(screen.metric)[start:] if item.label == "회수기간"
+        )
+        caption = " ".join(
+            str(item.value) for item in screen.caption if "넣지 않은 수단" in str(item.value)
+        )
+        return payback, caption
+
+    screen = _running(
+        option="I",
+        on=("tariff_switch", "demand_response", "power_factor"),
+        **{input_key("power_factor", "investment"): 50_000_000.0},
+    )
+    if screen.exception:
+        pytest.fail(str(screen.exception))
+    before, before_caption = stage3(screen)
+    if not before.endswith("년"):
+        pytest.fail(f"재료 — 회수기간이 년으로 서야 한다: {before}")
+    assert "합산효과에 넣지 않은 수단" in before_caption, before_caption
+
+    box = next(item for item in screen.checkbox if str(item.label).startswith("정산 단가를 안다"))
+    box.check().run()
+    screen.number_input(key=input_key("demand_response", "unit_price")).set_value(120.0).run()
+    if screen.exception:
+        pytest.fail(str(screen.exception))
+    after, after_caption = stage3(screen)
+    assert after != before, (before, after)
+    assert "합산효과에 DR 정산금으로 더합니다" in after_caption, after_caption
 
 
 def test_투자가_없는_조합은_즉시다() -> None:
