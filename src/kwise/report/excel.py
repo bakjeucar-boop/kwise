@@ -761,10 +761,17 @@ def solar_curve_sheet(curve: SolarCurve, chosen: SolarPoint | None = None) -> pd
     verdict = curve.verdict()
     best = verdict.best.capacity_kwp if verdict.best is not None else None
 
-    def lines(point: SolarPoint) -> tuple[float, float, float, float]:
+    def lines(point: SolarPoint) -> tuple[float, float, float, float, float]:
         same = chosen is not None and abs(point.capacity_kwp - chosen.capacity_kwp) < 1e-9
         return solar_lines(chosen if same and chosen is not None else point)
 
+    # **총 절감액에 든 몫을 다 열로 세운다** (S243 · 결정 1 · S159 가 남긴 자리) — 기본 ·
+    # 전력량 둘만 적어 역률 · 초과사용부가금 몫만큼 한 줄 안에서 합이 안 맞았다(덱 5벌 73줄).
+    # 이름은 계산 근거 표 · 요금 계산 명세와 같다. 몫이 한 줄에도 안 서는 벌은 열을 안 세운다.
+    shares = {
+        "기간 역률요금 절감(원)": [lines(point)[2] for point in curve.points],
+        "초과사용부가금(원)": [lines(point)[3] for point in curve.points],
+    }
     rows = [
         {
             "용량(kWp)": point.capacity_kwp,
@@ -783,6 +790,7 @@ def solar_curve_sheet(curve: SolarCurve, chosen: SolarPoint | None = None) -> pd
             # 계산 근거 표와 같은 표기 값이다 (S233 ㄱ · :func:`solar_lines`).
             "기간 기본요금 절감(원)": lines(point)[0],
             "기간 전력량요금 절감(원)": lines(point)[1],
+            **{name: values[index] for name, values in shares.items() if any(values)},
             "기간 총 절감액(원)": point.total_saving_won,
             "12개월 환산(원)": point.annual_saving_won,
             "투자비(원)": point.investment_won,
@@ -794,7 +802,7 @@ def solar_curve_sheet(curve: SolarCurve, chosen: SolarPoint | None = None) -> pd
                 else ""
             ),
         }
-        for point in curve.points
+        for index, point in enumerate(curve.points)
     ]
     return pd.DataFrame(rows).set_index("용량(kWp)")
 
@@ -1057,11 +1065,18 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
     # **표기는 한 문에서 한다** (S161 2절). 절사 뒤에 :func:`display_frame` 이
     # 자릿수를 접고 마크다운 표식을 벗기고 불리언을 한글로 적는다 — 시트마다
     # 하면 새 시트가 붙을 때 빠뜨리고, 그 빠뜨림이 조용하다.
-    return {
+    shown = {
         name: display_frame(truncate_money_columns(sheets[name]))
         for name in SHEET_ORDER
         if name in sheets
     }
+    # **부록 셋은 첫 열을 인덱스로 둔다** (S243 · 결정 2) — 범위 인덱스째 쓰면 판다스 줄
+    # 번호(0, 1, 2 …)가 첫 열에 섰다(덱 19벌 3,143줄). 글자를 벗긴 뒤에 옮긴다 — 인덱스는
+    # 위 문을 안 지난다.
+    for name in ("부록 A 산출 근거", "부록 B 기준 데이터", "부록 C 한계와 전제"):
+        if name in shown:
+            shown[name] = shown[name].set_index(shown[name].columns[0])
+    return shown
 
 
 def _same_combination_saving(
@@ -1083,7 +1098,7 @@ def _same_combination_saving(
         return frame
     out = frame.copy()
     if solar is not None:
-        base, energy, _, _ = solar_lines(solar)
+        base, energy, *_ = solar_lines(solar)
         for column, raw, shown in (
             (BASE_SAVING, solar.base_saving_won, base),
             (ENERGY_SAVING, solar.energy_saving_won, energy),

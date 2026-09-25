@@ -36,6 +36,7 @@ from kwise.report.notices import (
     charge_lines,
     contract_saving,
     ess_capacity_text,
+    ess_lines,
     max_demand_text,
     plain_text,
     power_factor_charges,
@@ -536,7 +537,7 @@ def solar_worksheet(curve: SolarCurve, point: SolarPoint | None = None) -> Works
     ]
     # **줄은 단수 차이 조정 뒤다** (S233 ㄱ) — 줄마다 절사해 절감액과 1,000 ~ 2,000원
     # 어긋났다(덱 6벌). 같은 지점을 적는 용량 곡선도 :func:`solar_lines` 를 쓴다.
-    base_shown, energy_shown, factor_shown, surplus_shown = solar_lines(best)
+    base_shown, energy_shown, factor_shown, excess_shown, surplus_shown = solar_lines(best)
     rows.append(WorkRow("기간 기본요금 절감", "요금적용전력 저감 × 단가", _won(base_shown)))
     rows.append(WorkRow("기간 전력량요금 절감", "자가소비 × 계시별 단가", _won(energy_shown)))
     # **부분이 합계와 안 맞는 표는 결과를 오독하게 한다** (S159 3-1 · ②-80 갈래).
@@ -548,20 +549,19 @@ def solar_worksheet(curve: SolarCurve, point: SolarPoint | None = None) -> Works
     # 그래서 여기서 남는 몫을 **값으로 되짚어** 두 줄로 세운다. 짓지 않고 뺀다 —
     # 새 계산을 만들면 표와 계산이 또 갈린다.
     #
-    #     역률 몫   기본요금이 줄면 역률 감액(기본요금 × 조정률)도 함께 준다
+    #     역률 몫   기본요금이 줄면 역률요금(기본요금 × 조정률)도 함께 준다
+    #     부가금    초과사용부가금 차 — 앞서 역률 몫에 섞여 「역률 감액 변화」 로 섰다
+    #               (S243 · 결정 1 · 덱 `large-b-short` 51,345,000원이 다 이것이었다)
     #     잉여      고른 잉여 처리의 수익 (:func:`~kwise.measures.solar.with_surplus_revenue`)
+    #
+    # 줄 이름은 이미 선 이름이다 — 계약 표의 「기간 역률요금 절감」 · 청구 표의 「초과사용부가금」.
     parts = ["기본", "전력량"]
-    factor_won = (
-        best.total_saving_won
-        - best.base_saving_won
-        - best.energy_saving_won
-        - best.surplus_revenue_won
-    )
-    if round(factor_won):
-        rows.append(
-            WorkRow("역률 감액 변화", "기본요금이 줄면 역률 감액도 준다", _won(factor_shown))
-        )
+    if factor_shown:
+        rows.append(WorkRow("기간 역률요금 절감", "기본요금이 줄면 함께 준다", _won(factor_shown)))
         parts.append("역률")
+    if excess_shown:
+        rows.append(WorkRow("초과사용부가금", "", _won(excess_shown)))
+        parts.append("초과사용부가금")
     # **0원 줄은 안 세운다** (`CLAUDE.md` 「화면 문구」). 더해도 합계가 안
     # 움직이므로 표가 어긋나지 않고, 고른 잉여 처리가 무엇인지는 카드 각주가
     # 이미 적는다(「자가소비로 줄인 요금 … + 잉여 출력제어 0원」). 기본값인
@@ -629,12 +629,18 @@ def ess_worksheet(result: EssResult) -> Worksheet:
         )
     elif result.investment_won is not None:
         rows.append(WorkRow("투자비", "출력 × kW당 단가", _won(result.investment_won), total=True))
-    rows.extend(
-        [
-            WorkRow("기간 기본요금 절감", "요금적용전력 저감 × 단가", _won(result.base_saving_won)),
-            WorkRow("기간 전력량요금 절감", "충·방전 단가차", _won(result.energy_saving_won)),
-            WorkRow("기간 절감액", "요금 재계산 차액", _won(result.total_saving_won), total=True),
-        ]
+    # **절감액에 든 몫을 다 줄로 세운다** (S243 · 결정 1) — 기본 · 전력량 둘만 적어 역률 ·
+    # 초과사용부가금 몫이 표 밖에 있었다(덱 `large-b-short` 17,311,000원). 줄 이름은 태양광
+    # 표와 같다 · 0원 몫은 안 세운다 · 줄은 단수 차이 조정 뒤다(:func:`ess_lines`).
+    base_shown, energy_shown, factor_shown, excess_shown = ess_lines(result)
+    rows.append(WorkRow("기간 기본요금 절감", "요금적용전력 저감 × 단가", _won(base_shown)))
+    rows.append(WorkRow("기간 전력량요금 절감", "충·방전 단가차", _won(energy_shown)))
+    if factor_shown:
+        rows.append(WorkRow("기간 역률요금 절감", "기본요금이 줄면 함께 준다", _won(factor_shown)))
+    if excess_shown:
+        rows.append(WorkRow("초과사용부가금", "", _won(excess_shown)))
+    rows.append(
+        WorkRow("기간 절감액", "요금 재계산 차액", _won(result.total_saving_won), total=True)
     )
     if result.payback_years is not None:
         rows.append(

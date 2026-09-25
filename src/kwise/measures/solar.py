@@ -321,6 +321,11 @@ class SolarPoint:
     """
     surplus_scenario: str = ""
     """고른 시나리오 이름. 비어 있으면 **아직 고르지 않았다.**"""
+    excess_saving_won: float = 0.0
+    """두 청구서의 초과사용부가금 차 (관측 기간, 원) — 절감액에 이미 든 몫이다.
+
+    계산 근거 표가 역률 몫과 갈라 적는다 (S243 · 결정 1).
+    """
     floor_bound_months: int = 0
     """**이 용량에서 요금적용전력이 계약전력 하한에 닿은 달 수** (S126 · ②-26).
 
@@ -708,6 +713,7 @@ def _evaluate_point(
         ),
         power_factor_after_pct=after_pct,
         power_factor_extra_won=extra_won,
+        excess_saving_won=base_bill.total_excess_won - bill.total_excess_won,
         floor_bound_months=len(bill.floor_bound_months),
     )
 

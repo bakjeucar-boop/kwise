@@ -40,6 +40,7 @@ __all__ = [
     "contract_annual_saving",
     "contract_saving",
     "ess_capacity_text",
+    "ess_lines",
     "ess_unpriced_reason",
     "excess_not_measured_line",
     "format_mwh",
@@ -443,20 +444,24 @@ def contract_annual_saving(result: ContractAdjustment) -> float | None:
     return money.same_won(result.annual_saving_won, result.saving_won, contract_saving(result))
 
 
-def solar_lines(point: SolarPoint) -> tuple[float, float, float, float]:
-    """태양광 지점 줄의 표기 값 — (기본 · 전력량 · 역률 감액 변화 · 잉여).
+def solar_lines(point: SolarPoint) -> tuple[float, float, float, float, float]:
+    """태양광 지점 줄의 표기 값 — (기본 · 전력량 · 역률요금 · 초과사용부가금 · 잉여).
 
-    역률 몫은 계산 근거 표와 같이 **값으로 되짚는다**(절감액 − 기본 − 전력량 − 잉여).
-    계산 근거 표와 용량 곡선이 같은 지점의 줄을 이것 하나로 적는다. 표가 안 세우는
-    줄(0원으로 반올림되는 몫 · 고르지 않은 잉여)은 0 으로 두어 올리지 않는다.
+    역률 몫은 계산 근거 표와 같이 **값으로 되짚는다**(절감액 − 기본 − 전력량 − 부가금 −
+    잉여). 부가금 몫은 두 청구서의 차를 그대로 쓴다 — 앞서 역률 몫에 섞여 「역률 감액
+    변화」 한 이름으로 섰다(S243 · 결정 1). 계산 근거 표와 용량 곡선이 같은 지점의 줄을
+    이것 하나로 적는다. 표가 안 세우는 줄(0원으로 반올림되는 몫 · 고르지 않은 잉여)은
+    0 으로 두어 올리지 않는다.
 
     **잉여 수익 줄은 올리지 않는다** (S233 3-2) — 그 값은 카드 툴팁 · 잉여 장 · 수단별
     결과 잉여 줄 · 조합 안내에도 서서, 올리면 거기 옛 글자가 남는다(덱 `small-b-sell`).
     """
+    excess = point.excess_saving_won
     factor = (
         point.total_saving_won
         - point.base_saving_won
         - point.energy_saving_won
+        - excess
         - point.surplus_revenue_won
     )
     surplus = point.surplus_revenue_won if point.surplus_scenario else 0.0
@@ -466,10 +471,34 @@ def solar_lines(point: SolarPoint) -> tuple[float, float, float, float]:
             point.base_saving_won,
             point.energy_saving_won,
             factor if round(factor) else 0.0,
+            excess if round(excess) else 0.0,
             surplus,
         ],
         point.total_saving_won,
-        fixed=[None, None, None, money.truncate_won(surplus)],
+        fixed=[None, None, None, None, money.truncate_won(surplus)],
+    )
+    return shown[0], shown[1], shown[2], shown[3], shown[4]
+
+
+def ess_lines(result: EssResult) -> tuple[float, float, float, float]:
+    """ESS 계산 근거 줄의 표기 값 — (기본 · 전력량 · 역률요금 · 초과사용부가금).
+
+    절감액은 두 청구서 총액의 차라 기본 · 전력량 밖 몫(역률 · 부가금)이 든다 — 표가
+    그 둘을 안 적어 합이 안 맞았다(S243 · 결정 1 · 덱 `large-b-short` 17,311,000원).
+    역률 몫은 :func:`solar_lines` 와 같이 값으로 되짚는다.
+    """
+    excess = result.excess_saving_won
+    factor = (
+        result.total_saving_won - result.base_saving_won - result.energy_saving_won - excess
+    )
+    shown = money.balance_won(
+        [
+            result.base_saving_won,
+            result.energy_saving_won,
+            factor if round(factor) else 0.0,
+            excess if round(excess) else 0.0,
+        ],
+        result.total_saving_won,
     )
     return shown[0], shown[1], shown[2], shown[3]
 

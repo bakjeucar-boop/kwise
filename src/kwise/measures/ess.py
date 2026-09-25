@@ -1010,6 +1010,11 @@ class EssResult:
     """규격 격자에 올려 잡기 **전**의 필요 출력 (50세션). 계산 근거가 둘을 나란히 낸다."""
     required_capacity_kwh: float = 0.0
     """올려 잡기 전의 정격 용량."""
+    excess_saving_won: float = 0.0
+    """두 청구서의 초과사용부가금 차 (관측 기간, 원) — 절감액에 이미 든 몫이다.
+
+    계산 근거 표가 역률 몫과 갈라 적는다 (S243 · 결정 1).
+    """
     notices: tuple[Notice, ...] = field(default=())
 
     @property
@@ -1330,6 +1335,7 @@ def evaluate_ess(
         pricing_path=pricing_path,
         required_power_kw=required_power,
         required_capacity_kwh=required_capacity,
+        excess_saving_won=base_bill.total_excess_won - bill.total_excess_won,
         notices=tuple(notices),
     )
 

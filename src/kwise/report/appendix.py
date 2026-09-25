@@ -22,10 +22,13 @@ from dataclasses import dataclass
 import pandas as pd
 
 from kwise.notices import Notice, report_appendix
+from kwise.progress import STAGES
+from kwise.report.columns import VALUE_LABELS
 from kwise.report.notices import KNOWN_LIMITS, LIMIT_FACTS, LIMIT_YIELDS
 from kwise.report.worksheet import COLUMNS, Worksheet
 from kwise.rules import RuleItem, assumptions, rules
 from kwise.tariff import TariffTable
+from kwise.tariff.labels import SEASON_LABELS
 
 __all__ = [
     "APPENDIX_TITLES",
@@ -103,12 +106,37 @@ def reference_rows(table: TariffTable | None = None) -> tuple[tuple[str, ...], .
     return tuple(rows)
 
 
+#: 부록 B 값 칸 사전 열쇠의 이름 — **이미 있는 이름이다** (S243 · 결정 2): 계절 · 시간대 ·
+#: 진행 단계. 달 번호 열쇠(학교 특례 기준월)는 「N월」 이다.
+_KEY_NAMES: dict[str, str] = {
+    **SEASON_LABELS,
+    **VALUE_LABELS["band"],
+    **{stage.key: stage.label for stage in STAGES},
+}
+
+
+def _key(key: object) -> str:
+    """사전 열쇠 앞머리. **이름이 없는 열쇠는 「열쇠=」 그대로다** — 새 이름을 짓지 않는다."""
+    name = _KEY_NAMES.get(str(key))
+    if name is not None:
+        return f"{name} "
+    # ponytail: 숫자 열쇠를 달로 읽는다 — 지금 숫자 열쇠 사전은 학교 특례 기준월 하나다
+    return f"{key}월 " if str(key).isdigit() else f"{key}="
+
+
 def _short(value: object) -> str:
-    """값 한 칸. **길면 자른다** — 표 한 칸에 목록 전체를 넣지 않는다."""
+    """값 한 칸. **길면 자른다** — 표 한 칸에 목록 전체를 넣지 않는다.
+
+    **「열쇠=값」 객체 글자로 적지 않는다** (S243 · 결정 2) — 이름(``label``)을 가진 항목의
+    목록은 이름만(방위 · 설치 밀도 · 건물 용도), 사전은 열쇠를 이미 있는 이름으로 적는다.
+    """
     if isinstance(value, list | tuple):
-        text = ", ".join(_short(item) for item in value)
+        if value and all(isinstance(item, dict) and "label" in item for item in value):
+            text = ", ".join(str(item["label"]) for item in value)
+        else:
+            text = ", ".join(_short(item) for item in value)
     elif isinstance(value, dict):
-        text = ", ".join(f"{key}={_short(item)}" for key, item in value.items())
+        text = " · ".join(f"{_key(key)}{_short(item)}" for key, item in value.items())
     elif isinstance(value, float):
         text = f"{value:,.6g}"
     elif isinstance(value, int) and not isinstance(value, bool):
