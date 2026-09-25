@@ -170,7 +170,7 @@ def diagnose(
         contract_kw=contract.contract_kw if contract else None,
         outage_mask=outage_slot_mask(index, report.outages),
         operating_hours=operating_hours,
-        off_days=tuple(dr_off_days),
+        off_days=dr_off_days,
     )
     dr = dr_measure(usage.kw)
 

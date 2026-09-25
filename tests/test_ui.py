@@ -172,7 +172,12 @@ def test_카드가_7장_번호_순이다() -> None:
 
 
 def test_모든_카드에_개요가_있다() -> None:
-    """무엇을 어떻게 개선하는지 두세 줄 (14세션 2-2)."""
+    """무엇을 어떻게 개선하는지 두세 줄 (14세션 2-2).
+
+    **여지가 없는 카드(「없음」 판정)의 개요 ``NO_HEADROOM_OVERVIEW`` 는 40자 하한의
+    예외다** (S245 · 마-35 — 사람이 정했다). 짧아도 참인 말만 남긴다. 카드 여섯의
+    개요 상수는 하한 그대로다.
+    """
     for item in MEASURES:
         assert len(item.overview) >= 40, item.key
         assert item.overview != item.headline, item.key

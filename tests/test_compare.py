@@ -1190,3 +1190,41 @@ def test_적힌_차이가_0이면_이유_줄이_없다(simple: float, combined: 
     ).frame()
     words = " ".join(str(value) for value in frame.to_numpy().ravel())
     assert words.count("이유 ") == reasons, words
+
+
+def test_조합의_DR_감축_가능량은_조합_부하로_잰다(
+    sample_usage: UsageData,
+    sample_diagnosis: Any,
+    sample_comparison: ComparisonResult,
+) -> None:
+    """**조합의 DR 감축 가능량은 태양광 · ESS 를 반영한 조합 부하로 잰 값이다** (S245 마-16).
+
+    재는 방법은 2단계 DR 카드와 같고(``Diagnosis.dr_measure``) 넣는 부하만 다르다 —
+    ESS 는 피크를 깎은 뒤 남은 부하다. 2단계 카드는 원 부하 그대로다. 화면 합산효과가
+    부르는 ``_combined_dr_won`` 이 낸 값을 본다.
+    """
+    import numpy as np
+
+    from kwise.measures import evaluate_demand_response
+    from kwise.ui.views.compare import _combined_dr_won
+
+    measure = sample_diagnosis.dr_measure
+    card = sample_diagnosis.dr
+    assert measure is not None and card is not None
+    combined = sample_comparison.combinations[-1]
+    # 재료 — 마지막 조합에 태양광 · ESS 가 다 들고, 그 부하가 ESS 가 깎은 뒤의 부하다.
+    assert combined.spec.has_pv and combined.spec.has_ess and combined.dispatch is not None
+    assert combined.load_kw is not None
+    assert np.allclose(
+        combined.load_kw.to_numpy(), combined.dispatch.net_kw.to_numpy(), equal_nan=True
+    )
+    # 2단계 카드는 원 부하 그대로 — 같은 함수로 원 부하를 재면 카드 값이다.
+    assert measure(sample_usage.kw).annual_reducible_kwh == card.annual_reducible_kwh
+    again = measure(combined.load_kw)
+    # 재료 — 조합 부하가 감축 가능량을 움직인다(안 움직이면 이 못이 아무것도 안 문다).
+    assert again.annual_reducible_kwh != card.annual_reducible_kwh
+
+    price = 120.0
+    expected = evaluate_demand_response(again, unit_price_won_per_kwh=price).settlement_won
+    assert _combined_dr_won(sample_diagnosis, combined, price) == expected
+    assert _combined_dr_won(sample_diagnosis, combined, None) is None

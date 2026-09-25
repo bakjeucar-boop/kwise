@@ -3132,9 +3132,9 @@ def test_역률_카드는_도입을_말하지_않고_제도를_설명하지_않�
         지표 이름      「도입 후」 → 「목표 역률」
         한 줄 설명     「현재 역률과 도입 후 역률로 …」 → 「… 목표 역률로 …」
 
-    **넷째 자리(머리 인용 글)는 이 못이 안 문다 — S207 2절이 멈춘 자리다.**
-    기준을 대면 남는 말이 18자인데 ``test_ui.py::test_모든_카드에_개요가_있다``
-    가 개요에 40자 하한을 걸고 그 하한이 카드 여섯 공용이다.
+    **넷째 자리(머리 인용 글)는 S245 가 물었다** (결정 3) — 여지가 없는 갈래(역률 100)만
+    거짓 앞머리를 뺀다. 그 개요는 ``test_ui.py::test_모든_카드에_개요가_있다`` 의 40자
+    하한의 예외다(마-35 · 사람이 정했다). 뒤 두 문장(제도 설명)은 그대로다.
 
     **그려진 글자를 읽는다** — 소스 문자열을 찾지 않는다. 도구
     ``tools\\screen_audit.py`` 의 수집기를 그대로 쓴다.
@@ -3169,6 +3169,15 @@ def test_역률_카드는_도입을_말하지_않고_제도를_설명하지_않�
     assert "목표 지상역률 (%)" in 라벨, f"입력 칸 이름이 갈렸습니다: {sorted(라벨)}"
     지표 = {item.text for item in card if item.kind == "Metric" and item.slot == "라벨"}
     assert {"현재 역률", "목표 역률"} <= 지표, f"지표 이름이 갈렸습니다: {sorted(지표)}"
+
+    # **여지가 없는 벌(「없음」 판정)은 개요 앞머리를 안 세운다** (S245 결정 3 · S154) —
+    # 「역률을 높이면 기본요금이 감액됩니다」 가 거짓이다. 다른 갈래는 110자 개요 그대로다.
+    from kwise.ui.spec import NO_HEADROOM_OVERVIEW, measure
+
+    개요 = [item.text for item in card if item.kind == "Markdown" and item.text.startswith("> ")]
+    기대 = NO_HEADROOM_OVERVIEW if current_pct == 100.0 else measure("power_factor").overview
+    assert 개요 == [f"> {기대}"], f"{갈래} 벌 개요: {개요}"
+    assert ("높이면 기본요금이 감액" in 개요[0]) is (current_pct != 100.0), 개요
 
     # **화면이 제도 수치를 아주 잃지는 않았다** — 뺀 자리 말고 다른 자리가 쥔다.
     남은자리 = [item.text for item in card if "0.2%" in item.text]
@@ -4214,20 +4223,30 @@ def test_단순_합이라는_이름이_한_값만_가리킨다(sample_diagnosis:
     assert "단순 합" not in SIMPLE_SUM_NOTE, SIMPLE_SUM_NOTE
 
 
-def test_합산효과가_DR_정산금을_담아_차이는_단가에_안_움직인다() -> None:
-    """**「차이」 는 조합 재계산의 몫뿐이다** (S166 4절에 박고 S167 2절에 xfail 을 걷었다).
+def test_합산효과가_DR_정산금을_담고_DR_캡션이_단가로_참이다() -> None:
+    """**합산효과가 DR 정산금을 담는다** (S166 4절에 박고 S167 2절에 xfail 을 걷었다).
 
     S166 이 박을 때는 「단순 합」 만 DR 정산금을 담아(S165 1절) 「차이」 에 정산금이
     음수로 섞였다 — 대형 표본에서 단가를 넣으면 185만원/년 → −227만원/년. 사람이
-    「합산효과에도 담는다」 로 정했고 S167 2절이 그렇게 고쳤다. DR 은 조합
-    (``CombinationSpec``)에 칸이 없어(S166 2-2) 상호작용이 0 이므로 그대로 얹는다.
+    「합산효과에도 담는다」 로 정했고 S167 2절이 그렇게 고쳤다. **S245 부터 합산효과의
+    정산금은 조합 부하로 다시 잰 값이다**(마-16) — 「차이」 에 DR 몫 상호작용이 들 수
+    있어 「차이가 그대로」 는 더 묻지 않는다(그 몫은 ``test_compare.py`` 가 값으로 문다).
+    이 조합(ESS 만)에서는 적힌 차이가 그대로다 — 재료로만 적는다.
 
-    **그래서 둘을 문다** — ① 단가만 넣었을 때 「차이」 가 그대로이고 ② 「합산효과」 는
-    움직인다(정산금이 담긴다). ② 가 없으면 두 합이 다 DR 을 빼도 ① 이 통과한다.
+    **DR 카드 캡션은 그 벌 값으로 참이다** (S245 결정 2) — 단가 미입력이면 「감축 가능량
+    까지만 냅니다」 가 서고, 단가를 넣으면 그 문장이 빠지고 뒤 문장만 선다.
     **식을 다시 적지 않고 화면에 뜨는 값을 맞댄다.** 전제가 깨지면(단가가 안 먹었다)
     ``pytest.fail`` 로 멈춘다.
     """
+    from kwise.ui.spec import DR_PRICED_HEADLINE, measure
     from kwise.ui.state import input_key
+
+    def dr_caption(screen: AppTest) -> list[str]:
+        return [
+            str(item.value)
+            for item in screen.caption
+            if str(item.value) in (measure("demand_response").headline, DR_PRICED_HEADLINE)
+        ]
 
     def stage3_value(screen: AppTest, label: str) -> str:
         items = list(screen.metric)
@@ -4245,6 +4264,7 @@ def test_합산효과가_DR_정산금을_담아_차이는_단가에_안_움직�
     if screen.exception:
         pytest.fail(str(screen.exception))
     unpriced = {label: stage3_value(screen, label) for label in ("합산효과", "차이")}
+    assert dr_caption(screen) == [measure("demand_response").headline], dr_caption(screen)
 
     box = next(item for item in screen.checkbox if str(item.label).startswith("정산 단가를 안다"))
     box.check().run()
@@ -4256,8 +4276,10 @@ def test_합산효과가_DR_정산금을_담아_차이는_단가에_안_움직�
         pytest.fail(f"정산 단가가 화면에 안 먹었습니다: {settlement} · {screen.exception}")
 
     priced = {label: stage3_value(screen, label) for label in ("합산효과", "차이")}
-    assert priced["차이"] == unpriced["차이"], (unpriced, priced, settlement)
     assert priced["합산효과"] != unpriced["합산효과"], (unpriced, priced, settlement)
+    # 단가를 넣은 판 — 「감축 가능량까지만」 이 거짓이라 빠진다.
+    assert dr_caption(screen) == [DR_PRICED_HEADLINE], dr_caption(screen)
+    assert not [c for c in screen.caption if "감축 가능량까지만" in str(c.value)]
 
 
 def test_합산효과의_회수기간과_곁_캡션이_DR_정산금을_담는다() -> None:
@@ -4445,9 +4467,10 @@ def test_요금_계산은_쉬는_날에_흔들리지_않는다() -> None:
     # 쓰이는 자리는 DR 프로파일 하나뿐이다.
     assert body.count("off_days=dr_off_days") == 1
     start = body.index("off_days=dr_off_days")
-    assert "dr_profile(" in body[:start], "요금 계산 쪽으로 새고 있습니다."
+    # 조합 부하로 다시 잴 수 있게 인자를 묶어 둔다 — `partial(dr_profile, …)` (S245 마-16).
+    assert "dr_profile" in body[:start], "요금 계산 쪽으로 새고 있습니다."
     # 달력을 만드는 자리에는 들어가지 않는다 — 넣으면 요금 시간대가 바뀐다.
-    calendar_call = body[body.index("build_calendar(") : body.index("dr_profile(")]
+    calendar_call = body[body.index("build_calendar(") : body.index("dr_profile")]
     assert "dr_off_days" not in calendar_call, "달력에 섞였습니다."
 
 
