@@ -304,6 +304,14 @@ def render(
             report,
         )
 
+    # 조합 부하로 다시 잰 DR 정산금 — 조합에서 DR 을 뺐으면 없다 (S245 마-16).
+    dr_won = (
+        _combined_dr_won(
+            diagnosis, comparison.combinations[-1], measure_float("demand_response", "unit_price")
+        )
+        if "demand_response" in enabled
+        else None
+    )
     # **② 합산효과 — 단순 합과의 차이가 3단계의 존재 이유다** (14세션 5-2).
     if stale:
         callout.caution("선택이 변경되었습니다 — 다시 계산하십시오.")
@@ -317,10 +325,19 @@ def render(
                 results.contract,
                 enabled,
                 results.peer_savings(),
+                dr_won,
             )
     else:
         _combined_block(
-            usage, table, form, comparison, rows, results.contract, enabled, results.peer_savings()
+            usage,
+            table,
+            form,
+            comparison,
+            rows,
+            results.contract,
+            enabled,
+            results.peer_savings(),
+            dr_won,
         )
     # **2단계 카드가 이미 낸 경고는 여기서 되풀이하지 않는다** (16세션 3절).
     # 세 화면이 한 번에 그려지므로 같은 문장이 두 번 뜬다 — 조합 자체의 경고만 남긴다.
@@ -461,6 +478,7 @@ def _combined_block(
     contract: ContractAdjustment | None,
     chosen: tuple[str, ...],
     peers: Peers = (),
+    dr_won: float | None = None,
 ) -> None:
     """**② 합산효과** — 단순 합과의 차이를 반드시 보인다 (14세션 5-2).
 
@@ -473,15 +491,14 @@ def _combined_block(
 
     **다만 조합 밖 수단(경제성DR)은 담는다** (S165 1절) — 요약표 합계 행과 같은
     식이다. **합산효과도 그 정산금을 담는다** (S167 2절) — 한쪽만 담으면 「차이」 에
-    정산금이 음수로 섞였다. DR 은 요금에 닿지 않아 조합 재계산에 칸이 없으므로
-    상호작용은 0 으로 두고 그대로 얹는다. 그래서 「차이」 는 조합 재계산의 몫뿐이다.
+    정산금이 음수로 섞였다. **합산효과의 정산금은 조합 부하로 다시 잰 값이다**
+    (``dr_won`` · S245 마-16) — 단순 합은 2단계 카드 값이므로 「차이」 에 DR 몫의
+    상호작용도 든다.
     """
     combined = comparison.combinations[-1]
     picked = tuple(row for row in rows if row.key in set(chosen))
     simple = simple_sum_won(picked)
-    actual = combined.annual_saving_won + simple_sum_won(
-        tuple(row for row in picked if not row.combinable)
-    )
+    actual = combined.annual_saving_won + (dr_won or 0.0)
     gap = actual - simple
     ratio = gap / simple if simple else None
     # 계산 근거의 합산효과 — 조합 비교가 적는 기간 절감액과 같은 값이면 그 글자다 (S233 ㄱ).
@@ -529,7 +546,7 @@ def _combined_block(
     excluded = [row for row in rows if not row.combinable]
     if excluded:
         # 정산금이 합산효과에 들어간 판에서는 그렇게 말한다 (S244 결정 4).
-        settled = any(row in picked and row.annual_saving_won for row in excluded)
+        settled = bool(dr_won)
         st.caption(
             ("조합 부하에 넣지 않은 수단 — " if settled else "합산효과에 넣지 않은 수단 — ")
             + ", ".join(measure_title(row.title) for row in excluded)
@@ -555,6 +572,22 @@ def _combined_block(
     )
     with st.expander("계산 근거", expanded=False):
         tables.show(sheet.frame(), hide_index=True, width="stretch")
+
+
+def _combined_dr_won(
+    diagnosis: Diagnosis, combined: CombinationResult, unit_price_won_per_kwh: float | None
+) -> float | None:
+    """**조합 부하로 다시 잰 경제성DR 정산금** (S245 마-16 · 결정 1).
+
+    재는 방법은 2단계 카드와 같고(:attr:`Diagnosis.dr_measure`) 넣는 부하만 조합
+    부하다 — 태양광을 빼고 ESS 가 피크를 깎은 뒤 남은 부하. 단가가 없으면 ``None``.
+    """
+    if unit_price_won_per_kwh is None or diagnosis.dr_measure is None or combined.load_kw is None:
+        return None
+    profile = diagnosis.dr_measure(combined.load_kw)
+    return evaluate_demand_response(
+        profile, unit_price_won_per_kwh=unit_price_won_per_kwh
+    ).settlement_won
 
 
 def _interaction_reasons(

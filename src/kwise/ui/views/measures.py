@@ -92,11 +92,12 @@ from kwise.ui.labels import measure_title, option_label, selection_label
 from kwise.ui.notices import partition_facts, screen_notices, tooltip_text
 from kwise.ui.pipeline import ContractForm, SolarInputs
 from kwise.ui.progress import progress_panel
-from kwise.ui.spec import MEASURES, MeasureSpec
+from kwise.ui.spec import DR_PRICED_HEADLINE, MEASURES, NO_HEADROOM_OVERVIEW, MeasureSpec
 from kwise.ui.state import (
     ess_pricing,
     get_solar_inputs,
     input_key,
+    measure_float,
     set_solar_inputs,
     surplus_prices,
     toggle_key,
@@ -302,7 +303,9 @@ def _card(
         return
     st.session_state[opened_key] = True
     with st.expander(f"{title} — 입력과 결과", expanded=True):
-        st.caption(spec.headline, help=manual_tip(spec.anchor))
+        # DR 캡션은 그 벌의 단가로 참인 말만 한다 — 3단계가 읽는 칸과 같은 값 (S245 결정 2).
+        priced = spec.key == "demand_response" and measure_float("demand_response", "unit_price")
+        st.caption(DR_PRICED_HEADLINE if priced else spec.headline, help=manual_tip(spec.anchor))
         handler = _HANDLERS[spec.key]
         handler(spec, usage, table, form, diagnosis, quality, baseline, day, building)
 
@@ -710,7 +713,8 @@ def _power_factor(
         investment or None,
         rules_stamp(),
     )
-    _overview(spec)
+    # 여지가 없으면 「높이면 감액됩니다」 앞머리를 안 세운다 (S245 결정 3 · S154).
+    st.markdown(f"> {NO_HEADROOM_OVERVIEW if result.no_headroom else spec.overview}")
     columns = st.columns(4)
     columns[0].metric("현재 역률", fmt.pct(result.current_pct))
     # 상한 이상이면 「목표 97.0%」 가 거짓이다 — 두 역률이 다 상한으로 접혀

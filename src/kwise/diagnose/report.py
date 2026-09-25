@@ -10,8 +10,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from functools import partial
 
 import pandas as pd
 
@@ -69,6 +70,9 @@ class Diagnosis:
     peak: PeakProfile
     summary: ImprovementSummary
     dr: DrProfile | None = None
+    dr_measure: Callable[[pd.Series], DrProfile] | None = None
+    """``dr`` 를 잰 함수 — 인자(달력·계약·정전·운영시간·쉬는 날)를 묶어 두어 **부하만
+    바꿔** 다시 잰다. 3단계가 조합 부하로 감축 가능량을 잴 때 쓴다 (S245 마-16)."""
     structure: ChargeStructure | None = None
     contract: ContractAdequacy | None = None
     option_totals: Mapping[str, float] = field(default_factory=dict)
@@ -157,16 +161,18 @@ def diagnose(
 
     # 6.6 경제성DR 참여 여력. 거래일 판정은 요금 계량의 평일과 **다르다** —
     # DR 은 토·일·공휴일이 모두 제외다 (전력시장운영규칙 제12.4.2.1조 제1항 1호).
-    dr = dr_profile(
-        usage.kw,
-        interval,
-        calendar,
+    # 조합 부하로 다시 잴 때도 같은 인자다 — 넣는 부하만 바뀐다 (S245 마-16).
+    dr_measure = partial(
+        dr_profile,
+        interval_minutes=interval,
+        calendar=calendar,
         contract_type=contract_type,
         contract_kw=contract.contract_kw if contract else None,
         outage_mask=outage_slot_mask(index, report.outages),
         operating_hours=operating_hours,
-        off_days=dr_off_days,
+        off_days=tuple(dr_off_days),
     )
+    dr = dr_measure(usage.kw)
 
     notices: list[Notice] = list(report.notices)
 
@@ -195,6 +201,7 @@ def diagnose(
             pattern=pattern,
             peak=peak,
             dr=dr,
+            dr_measure=dr_measure,
             summary=summary.__class__(**{**summary.__dict__, "lines": build_lines(summary)}),
             notices=tuple(notices),
         )
@@ -278,6 +285,7 @@ def diagnose(
         pattern=pattern,
         peak=peak,
         dr=dr,
+        dr_measure=dr_measure,
         summary=summary,
         structure=structure,
         contract=adequacy,

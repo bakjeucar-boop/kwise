@@ -210,7 +210,7 @@ class CombinationSpec:
 
 @dataclass(frozen=True, eq=False)
 class CombinationResult:
-    """조합 하나의 평가. 시계열은 들고 있지 않는다 (디스패치 요약만 남긴다)."""
+    """조합 하나의 평가. 조합 부하(:attr:`load_kw`)를 함께 든다 (S245)."""
 
     spec: CombinationSpec
     bill: BillingResult
@@ -235,6 +235,9 @@ class CombinationResult:
     출발 역률(태양광이 끌어내린 뒤)과 목표가 다 감액 상한 이상이면 요금이 한 원도
     안 갈린다 — :func:`~kwise.measures.has_no_headroom` 한 자리가 가른다. 계산에는
     안 쓴다 — 이름(:attr:`applied`)과 이유 줄이 읽는다."""
+    load_kw: pd.Series | None = None
+    """조합 부하 — 태양광을 빼고 ESS 가 피크를 깎은 뒤 남은 부하 (S245 마-16).
+    3단계가 경제성DR 감축 가능량을 이 부하로 다시 잰다. 요금에는 안 쓴다."""
     notices: tuple[Notice, ...] = field(default=())
 
     @property
@@ -697,6 +700,7 @@ def evaluate_combination(
         contract_saving_won=contract_saving,
         contract_adjustment=adjustment,
         power_factor_no_headroom=pf_no_headroom,
+        load_kw=working.kw,
         notices=tuple(notices),
     )
 
