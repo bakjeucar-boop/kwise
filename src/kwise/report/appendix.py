@@ -21,8 +21,8 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from kwise.notices import Notice, report_appendix, texts
-from kwise.report.notices import KNOWN_LIMITS
+from kwise.notices import Notice, report_appendix
+from kwise.report.notices import KNOWN_LIMITS, LIMIT_FACTS, LIMIT_YIELDS
 from kwise.report.worksheet import COLUMNS, Worksheet
 from kwise.rules import RuleItem, assumptions, rules
 from kwise.tariff import TariffTable
@@ -128,14 +128,26 @@ def basis_data_frame(table: TariffTable | None = None) -> pd.DataFrame:
 def known_limits(*notices: tuple[Notice, ...]) -> tuple[str, ...]:
     """부록 C — 알려진 한계 + **참고 등급 문구** (5.5절에서 옮겼다).
 
-    같은 말을 두 번 싣지 않는다. 부록 D 목록과 참고 문구가 겹치는 자리가 있어
-    (미포함 요금요소·역률 추정이 그렇다) 앞 30자로 견주어 걷어낸다.
+    **같은 사실을 두 번 싣지 않는다** (S240 결정 3). 한계 글에 단 사실 ID
+    (:data:`~kwise.report.notices.LIMIT_FACTS`)로 참고 안내를 **사실로** 거른다 —
+    앞 30자 견줌을 갈음한다. 조합이 붙인 판별자는 떼고 본다. 짝 가운데 안내 쪽 글자를
+    남기는 사실(:data:`~kwise.report.notices.LIMIT_YIELDS`)은 한계 글 자리에 그 글자를 싣는다.
     """
-    out: list[str] = list(KNOWN_LIMITS)
-    seen = {line[:30] for line in out}
-    for line in texts(report_appendix(*notices)):
-        if line[:30] in seen:
-            continue
-        seen.add(line[:30])
+    appendix = report_appendix(*notices)
+    first: dict[str, str] = {}
+    for item in appendix:
+        first.setdefault(item.fact_base, item.text)
+    out: list[str] = []
+    seen: set[str] = set()
+    for line in KNOWN_LIMITS:
+        fact = LIMIT_FACTS.get(line)
+        if fact is not None:
+            seen.add(fact)
+            if fact in LIMIT_YIELDS and fact in first:
+                line = first[fact]
         out.append(line)
+    for item in appendix:
+        if item.fact_base not in seen:
+            seen.add(item.fact_base)
+            out.append(item.text)
     return tuple(out)

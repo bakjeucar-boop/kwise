@@ -22,6 +22,8 @@ __all__ = [
     "CONTRACT_CHANGE_WARNING",
     "DATA_SOURCES",
     "KNOWN_LIMITS",
+    "LIMIT_FACTS",
+    "LIMIT_YIELDS",
     "NOT_INCLUDED_NOTICE",
     "RULES_UNCHANGED",
     "TENTATIVE_BASE_FEE_BASIS_WARNING",
@@ -148,6 +150,22 @@ KNOWN_LIMITS: tuple[str, ...] = (
     "미반영**이며, 소규모 구간의 투자비가 과소 산출되고 회수기간이 낙관적으로 "
     "나옵니다.",
 )
+
+#: **한계 글에 단 사실 ID** (S240 결정 3). 부록 C 가 참고 안내를 이 ID 로 거른다 —
+#: 뜻이 같은 안내가 오면 한 줄만 싣는다. 짝 가운데 남기는 글은 두 부록 C 밖에서
+#: 이미 쓰는 글자다 — 미포함 요금요소만 안내 쪽(PPT 8장 · Word 본문이 그 글자를 쓴다)이고
+#: 나머지는 한계 쪽(Excel 요약 「알려진 한계」 가 쓴다).
+LIMIT_FACTS: dict[str, str] = {
+    KNOWN_LIMITS[0]: "tariff.not_included",
+    KNOWN_LIMITS[1]: "solar.conservative_model",
+    KNOWN_LIMITS[2]: "solar.power_factor_estimated",
+    KNOWN_LIMITS[7]: "surplus.eligibility",
+    KNOWN_LIMITS[8]: "ess.strategy_limit",
+    KNOWN_LIMITS[16]: "solar.cost_reference_missing",
+    KNOWN_LIMITS[17]: "solar.scale_economy",
+}
+#: 짝 가운데 **안내 쪽 글자를 남기는** 사실.
+LIMIT_YIELDS: frozenset[str] = frozenset({"tariff.not_included"})
 
 # 출처 표기 (요구사항서 7.5). 산출물과 README 에 그대로 싣는다.
 DATA_SOURCES: tuple[str, ...] = (

@@ -58,7 +58,7 @@ from kwise.measures import (
     payback_years,
 )
 from kwise.measures.ess import NO_INVESTMENT_INPUT
-from kwise.notices import Notice, dedupe
+from kwise.notices import Notice, dedupe, prefixed
 from kwise.report import narrative
 from kwise.report.appendix import basis_data_frame, known_limits, worksheet_frame
 from kwise.report.columns import display_frame, localize, season_label, value_label
@@ -285,6 +285,42 @@ class ReportSections:
     """단독 수단의 기간 절감 (원값, 표기 값) — 조합이 원값이 같으면 그 글자다 (S234 ㄴ)."""
 
 
+def _fact_key(item: Notice) -> tuple[str, str, str]:
+    """같은 사실 · 같은 글자인가를 가르는 열쇠 — 등급 · 판별자 뗀 사실 ID · 글자."""
+    return str(item.severity), item.fact_base, item.text
+
+
+def _combination_notices(
+    comparison: ComparisonResult, earlier: set[tuple[str, str, str]]
+) -> tuple[Notice, ...]:
+    """Excel 요약 「조합」 묶음 — **한 층에서 같은 사실은 한 번만 선다** (S240 결정 2).
+
+    조합 이름 앞머리를 뗀 글자와 사실이 같은 안내가 기준선을 뺀 조합 줄 **전부**에
+    서면 앞머리 없이 한 번만 세운다 — S220 의 같은 글자 접기를 앞머리 너머로 적용한다.
+    일부 조합에만 서거나 뗀 글자가 다르면(조합마다 값이 다르면) 다른 사실이라 조합마다
+    둔다. 요약의 다른 자리(``earlier``)에 이미 선 사실은 조합 쪽을 뺀다.
+    """
+    peers = comparison.combinations[1:]
+    common = (
+        set.intersection(*({_fact_key(item) for item in result.notices} for result in peers))
+        if len(peers) >= 2
+        else set()
+    )
+    origin = {
+        shown: item
+        for index, result in enumerate(comparison.combinations)
+        for item, shown in zip(
+            result.notices, prefixed(result.notices, result.name, tag=f"c{index}"), strict=True
+        )
+    }
+    out: list[Notice] = []
+    for shown in comparison.notices:
+        item = origin.get(shown, shown)
+        if _fact_key(item) not in earlier:
+            out.append(item if _fact_key(item) in common else shown)
+    return tuple(out)
+
+
 def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
     bill = sections.bill
     rows: list[tuple[str, str, str]] = []
@@ -409,18 +445,20 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
     if diagnosis is not None:
         groups.append(("품질·진단", diagnosis.notices))
     if sections.comparison is not None:
-        groups.append(("조합", sections.comparison.notices))
+        earlier = {_fact_key(item) for _label, notices in groups for item in notices}
+        groups.append(("조합", _combination_notices(sections.comparison, earlier)))
     # **묶음을 넘어 같은 글자의 행은 처음 것만 둔다** (S220 2절). 「품질·진단」 묶음이
     # 「요금」 묶음의 안내를 같은 글자로 되풀이했다 — ``dedupe`` 는 묶음 안에서만
-    # 거른다. **등급과 글자가 한 자도 안 다른 행만 접는다** — 사실 ID 로 넓히지
-    # 않는다(글자가 다른 안내가 걸러질 수 있다).
+    # 거른다. **등급과 글자가 한 자도 안 다른 행만 접는다** — 조합 이름 앞머리
+    # 너머는 :func:`_combination_notices` 가 사실 ID 와 뗀 글자로 접는다(S240 결정 2).
     shown: set[tuple[str, str]] = set()
     for label, notices in groups:
         for item in dedupe(notices):
             # 위 「필수 안내」 줄과 같은 안내다 (S182 4-3). **글자가 아니라 사실
-            # ID 로 견준다** (S210 2절) — 바로 윗줄이 이미 그 잣대다.
+            # ID 로 견준다** (S210 2절) — 바로 윗줄이 이미 그 잣대다. 조합이 붙인
+            # 판별자는 떼고 본다 — 같은 사실이 요약에 이미 섰다(S240 결정 2).
             key = (str(item.severity), item.text)
-            if item.fact != MARGIN_FACT and key not in shown:
+            if item.fact_base != MARGIN_FACT and key not in shown:
                 shown.add(key)
                 rows.append((f"안내 · {item.severity}", label, item.text))
     return rows

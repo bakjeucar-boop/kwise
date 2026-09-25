@@ -390,6 +390,20 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - 시험 **2** — `tests\test_document.py::test_부록_C_가_한계와_참고를_한_곳에_모은다`(옛 잣대 「한계 목록이 다 실린다 · 앞 30자」 를 문다 — 결정 3 으로 뒤집힌다) · `tests\test_notices.py::test_Excel_요약이_여유_확보_안내를_한_번만_싣는다`(3-3 이 결정 2 로 넓힌다).
 **1절 벽시계** 16:20:10 ~ 16:29:17.
 
+**2-1. 1-4 자리 6 을 다 고쳤다 — 코드 4파일 +87 −20(계산 폴더 `measures` +3 −4 · 독스트링만) · 시험 1파일 +32 −12**(`git diff --numstat` 2절 커밋 앞).
+
+| 자리 | 줄 | 전 → 후 |
+|---|---:|---|
+| `report\excel.py` `_summary_rows` 조합 묶음(결정 2) | +44 −6 | `("조합", comparison.notices)` 그대로 → 새 `_combination_notices` — 앞머리 뗀 (등급 · `fact_base` · 글자)가 기준선 뺀 조합 전부(둘 이상)에 서면 앞머리 없는 원 안내로 한 번 · 요금 · 품질·진단 묶음에 같은 열쇠로 선 것은 뺀다 · 「필수 안내」 거르기 `item.fact != MARGIN_FACT` → `item.fact_base != MARGIN_FACT` · S220 주석 한 줄을 결정 2 를 가리키게 |
+| `report\notices.py` 한계 글 사실 ID(결정 3) | +18 −0 | 없음 → `LIMIT_FACTS`(한계 글 일곱 → 사실 ID · 1-3 표 여덟 짝 가운데 한계 글이 있는 일곱) · `LIMIT_YIELDS`(`tariff.not_included` — 안내 쪽 글자를 남긴다) · `__all__` 둘 |
+| `report\appendix.py` `known_limits`(결정 3) | +22 −10 | 앞 30자 견줌 → 사실 ID(`fact_base`)로 거름 · 한계 글의 사실이 안내에 있으면 안내를 뺀다 · `LIMIT_YIELDS` 는 한계 자리에 안내 글자를 싣는다 · 쓰지 않게 된 `texts` 들임 뺌 |
+| `measures\contract.py` `MARGIN_FACT` 독스트링(1-1 가) | +3 −4 | 「판별자를 뗀 앞부분으로 재지 않는다 …」 → 「Excel 요약은 앞부분으로 잰다 (S240 결정 2) … S210 은 … 안 쟀다」 · 식 0줄 |
+| `tests\test_document.py::test_부록_C_가_한계와_참고를_한_곳에_모은다` | +32 −12 | 옛 잣대(한계 목록이 다 실린다 · 참고 안내 앞 30자가 다 실린다 · 앞 30자가 두 번 안 선다) → 사실 ID 가 한 번 · 입력의 사실이 다 선다 · 사실 없는 한계 글이 다 선다 · 미포함 요금요소는 한계 자리에 안내 글자 · 짝이 선 입력(짝 사실 둘 이상)인지 먼저 본다 · 입력에 `sample_ess` · `sample_comparison` 을 더했다 |
+| `tests\test_notices.py` Excel 요약 못 | 0 | 3-3 이 넓힌다 |
+
+**2-2. 적게 닫은 것 0 · 번진 것 0.** 1-4 의 여섯 자리 그대로다(시험 하나는 3-3 몫).
+**2절 벽시계** 16:29:17 ~ 16:31:33.
+
 ## 오늘 (2026-09-25) 239세션 — **고침 판 · 「ㄹ 0원 거르기」 마무리 둘 · 다음 뿌리 「ㅁ 겹침 거르기」 를 잰다**
 
 **0-1. PC — 2번 PC** — `run_tool open_values`(`open_values_20260925_130831.txt`) 첫 줄 `DESKTOP-L8O0EG1 · AMD Ryzen 5 4500U with Radeon Graphics · cpu 6 · RAM 7907753984 B (7.4 GB) · -n auto 일꾼 6`. **저장소** — `git pull` Already up to date · HEAD **c17fbc8** = `origin/master`(S238 보고 값과 같다) · 워크트리 깨끗.

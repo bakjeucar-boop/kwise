@@ -28,6 +28,7 @@ from kwise.io import UsageData
 from kwise.measures import (
     MEASURE_CATALOG,
     ContractAdjustment,
+    EssResult,
     PowerFactorResult,
     SolarPoint,
     TariffSwitchResult,
@@ -809,20 +810,39 @@ def test_부록_B_는_기준_데이터에서_생성된다() -> None:
 
 
 def test_부록_C_가_한계와_참고를_한_곳에_모은다(
-    sample_bill: BillingResult, sample_diagnosis: Diagnosis
+    sample_bill: BillingResult,
+    sample_diagnosis: Diagnosis,
+    sample_ess: EssResult,
+    sample_comparison: ComparisonResult,
 ) -> None:
-    """**같은 말이 두 곳에 있으면 안 된다** (22세션 3절)."""
-    from kwise.notices import Severity, texts
-    from kwise.report.appendix import known_limits
-    from kwise.report.notices import KNOWN_LIMITS
+    """**같은 사실이 두 곳에 있으면 안 된다** (22세션 3절).
 
-    lines = known_limits(sample_bill.notices, sample_diagnosis.notices)
-    assert set(KNOWN_LIMITS) <= set(lines), "부록 D 목록이 빠졌습니다."
-    for line in texts(sample_bill.notices, Severity.INFO):
-        assert any(line[:30] in item for item in lines), line
-    # 앞 30자가 같은 줄이 두 번 실리지 않는다.
-    heads = [line[:30] for line in lines]
-    assert len(heads) == len(set(heads))
+    **앞 30자가 아니라 사실 ID 로 가른다** (S240 결정 3). 뜻이 같고 글자가 다른 짝
+    (「… 참고값을 제공하지 않습니다」 ↔ 「… 참고값은 제공하지 않습니다」 따위)이 앞 30자
+    견줌을 빠져나가 한 부록에 둘 다 섰다. **빠진 줄의 사실은 남은 줄로 선다** — 미포함
+    요금요소는 안내 쪽 글자가 한계 자리에 선다.
+    """
+    from kwise.notices import report_appendix
+    from kwise.report.appendix import known_limits
+    from kwise.report.notices import KNOWN_LIMITS, LIMIT_FACTS, NOT_INCLUDED_NOTICE
+
+    groups = (
+        sample_bill.notices,
+        sample_diagnosis.notices,
+        sample_ess.notices,
+        sample_comparison.notices,
+    )
+    lines = known_limits(*groups)
+    appendix = report_appendix(*groups)
+    paired = {item.fact_base for item in appendix} & set(LIMIT_FACTS.values())
+    assert len(paired) >= 2, f"짝이 선 입력이 아니다: {paired}"
+    fact_of = {**LIMIT_FACTS, **{item.text: item.fact_base for item in appendix}}
+    facts = [fact_of[line] for line in lines if line in fact_of]
+    assert len(facts) == len(set(facts)), sorted(f for f in facts if facts.count(f) > 1)
+    assert set(LIMIT_FACTS.values()) | {item.fact_base for item in appendix} <= set(facts)
+    assert {line for line in KNOWN_LIMITS if line not in LIMIT_FACTS} <= set(lines)
+    assert KNOWN_LIMITS[0] not in lines
+    assert lines[0] == NOT_INCLUDED_NOTICE
 
 
 def test_Word_의_1단계_결론과_7_2_결론이_같은_문장이다(tmp_path: Path, tariff: TariffTable) -> None:
