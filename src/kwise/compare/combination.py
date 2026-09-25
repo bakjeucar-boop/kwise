@@ -628,15 +628,15 @@ def evaluate_combination(
             investment += pv_investment
     # 역률 투자비도 같다 — 0 은 미입력으로 읽는다 (S237 ㄱ · 태양광·ESS 칸과 같다).
     # **여지가 없는 역률은 투자 대상이 아니다** (S238 결정 2 · S154) — 미입력이어도
-    # 조합 투자비를 「미산출」 로 만들지 않는다. 넣은 투자비는 전처럼 더한다.
+    # 조합 투자비를 「미산출」 로 만들지 않고, 넣은 투자비도 더하지 않는다 (S239 결정 1).
     pf_no_headroom = spec.power_factor_pct is not None and has_no_headroom(
         start_pct, spec.power_factor_pct
     )
-    if spec.has_power_factor:
+    if spec.has_power_factor and not pf_no_headroom:
         if spec.power_factor_investment_won:
             if investment is not None:
                 investment += spec.power_factor_investment_won
-        elif not pf_no_headroom:
+        else:
             investment = None
     if dispatch is not None:
         # ESS 투자비는 **출력 × kW당 단가**다 (7.6). 방전시간은 단가에 이미
@@ -868,6 +868,16 @@ def compare_combinations(
                 options=opts,
             )
         )
+    # **여지가 없는 역률만 더한 줄은 세우지 않는다** (S239 결정 2 · S237 ㄴ · S206) — 금액이
+    # 앞 줄과 같다. 마지막 줄은 둔다 — 합산효과 · 권장 조합이 그 줄을 읽는다.
+    results = [
+        item
+        for index, item in enumerate(results)
+        if index == len(results) - 1
+        or not item.power_factor_no_headroom
+        or item.spec.has_pv
+        or item.spec.has_ess
+    ]
 
     # **조합명은 여기서 붙인다** (20세션 4절). 조합이 여럿이라 어느 조합의 말인지
     # 밝혀야 하는데, 문구에 심어 두면 그 앞말이 지문이 되어 같은 조합의 다른 경고를

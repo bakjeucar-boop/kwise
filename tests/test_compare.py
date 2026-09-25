@@ -293,7 +293,8 @@ def test_역률_100_벌은_태양광이_낀_조합에서도_역률_몫이_0_이�
 
     # **여지가 없는 역률은 투자 대상이 아니다** (S238 결정 2 · S154) — 역률 투자비를
     # 비워도 조합 투자비는 태양광 몫으로 선다. 여지가 있는 벌(원 부하 92)은 S237 ㄱ
-    # 그대로 모른다(태양광 단가 미입력과 같다). 넣은 투자비는 전처럼 더한다.
+    # 그대로 모른다(태양광 단가 미입력과 같다). 넣은 투자비는 여지가 있을 때만
+    # 더한다 (S239 결정 1).
     def priced(
         investment: float | None, *, pct: float = 100.0, pv_won: float | None = 100_000_000.0
     ) -> CombinationResult:
@@ -313,7 +314,8 @@ def test_역률_100_벌은_태양광이_낀_조합에서도_역률_몫이_0_이�
     assert free.payback_years == payback_years(100_000_000.0, free.annual_saving_won)
     headroom = priced(None, pct=92.0)
     assert (headroom.investment_won, headroom.payback_years) == (None, None)
-    assert priced(3_000_000.0).investment_won == 103_000_000.0
+    assert priced(3_000_000.0).investment_won == 100_000_000.0
+    assert priced(3_000_000.0, pct=92.0).investment_won == 103_000_000.0
 
     # **Word 조합 투자비 칸 사유는 실제로 빠진 입력이다** (S238 결정 3) — 기본 사유
     # (계약 「하한 규정 미확인」)가 아니다. 역률 투자비가 필요한데 없으면 「투자비
@@ -323,7 +325,8 @@ def test_역률_100_벌은_태양광이_낀_조합에서도_역률_몫이_0_이�
     from kwise.report.document import _combination_investment
 
     assert _combination_investment(free) == "100,000,000원"
-    assert _combination_investment(priced(3_000_000.0)) == "103,000,000원"
+    assert _combination_investment(priced(3_000_000.0)) == "100,000,000원"
+    assert _combination_investment(priced(3_000_000.0, pct=92.0)) == "103,000,000원"
     assert _combination_investment(headroom) == NO_INVESTMENT_INPUT
     assert _combination_investment(priced(None, pct=92.0, pv_won=None)) == NO_INVESTMENT_INPUT
     assert _combination_investment(priced(None, pv_won=None)) == PV_UNPRICED_REASON
