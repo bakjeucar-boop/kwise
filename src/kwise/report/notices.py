@@ -488,9 +488,7 @@ def ess_lines(result: EssResult) -> tuple[float, float, float, float]:
     역률 몫은 :func:`solar_lines` 와 같이 값으로 되짚는다.
     """
     excess = result.excess_saving_won
-    factor = (
-        result.total_saving_won - result.base_saving_won - result.energy_saving_won - excess
-    )
+    factor = result.total_saving_won - result.base_saving_won - result.energy_saving_won - excess
     shown = money.balance_won(
         [
             result.base_saving_won,

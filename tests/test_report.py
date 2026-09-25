@@ -140,6 +140,61 @@ def test_sheet_order_survives_the_round_trip(
         workbook.close()
 
 
+#: 부록 셋의 첫 열 — 줄 이름 열이다. 판다스 줄 번호가 서면 머리가 비고 칸이 0, 1, 2 … 다.
+APPENDIX_FIRST = {
+    "부록 A 산출 근거": "수단",
+    "부록 B 기준 데이터": "구분",
+    "부록 C 한계와 전제": "항목",
+}
+
+
+def test_Excel_부록에_판다스_줄_번호_열이_없다(
+    sample_sections: ReportSections, sample_switch: TariffSwitchResult, tmp_path: Path
+) -> None:
+    """**고객 산출물에 개발 흔적이 서지 않는다** (S243 · 결정 2).
+
+    부록 셋이 범위 인덱스째 쓰여 첫 열이 판다스 줄 번호(0, 1, 2 …)였다 — 덱 19벌 3,143줄.
+    **실제로 쓴 통합문서를 다시 연다.**
+    """
+    from dataclasses import replace
+
+    from kwise.report.worksheet import tariff_switch_worksheet
+
+    sections = replace(sample_sections, worksheets=(tariff_switch_worksheet(sample_switch),))
+    workbook = load_workbook(export_report(sections, output_dir=tmp_path), read_only=True)
+    try:
+        for name, first in APPENDIX_FIRST.items():
+            rows = list(workbook[name].iter_rows(values_only=True))
+            assert len(rows) > 2, (name, "재료가 안 실렸다")
+            assert rows[0][0] == first, (name, rows[0][:3])
+            assert [row[0] for row in rows[1:4]] != [0, 1, 2], (name, rows[1][:3])
+    finally:
+        workbook.close()
+
+
+#: 객체 글자 — 사전 · 객체를 날로 적은 「열쇠=값」 꼴 (S243 · 결정 2).
+OBJECT_TEXT = re.compile(r"[A-Za-z_0-9]+=")
+
+
+def test_부록_B_값_칸에_열쇠_값_객체_글자가_없다(
+    sample_sheets: dict[str, pd.DataFrame],
+) -> None:
+    """**부록 B 값 칸은 그 값의 사람 글자다** (S243 · 결정 2).
+
+    사전 · 목록 값이 「description=…, gcr=0.55,…」 · 「spring_fall=3, 4, …」 꼴로 섰다 —
+    덱 19벌 × Word · Excel 7항목 266줄. 이름(`label`)이 있는 목록은 이름만 · 사전 열쇠는
+    이미 있는 이름(계절 · 시간대 · 진행 단계 · 달)으로 적는다. Word 부록 B 도 같은
+    `reference_rows` 를 쓴다.
+    """
+    frame = sample_sheets["부록 B 기준 데이터"]
+    values = dict(zip(frame["항목"], frame["값"], strict=True))
+    # 재료 — 사전 · 목록 값 항목이 실렸다(이름으로 본다 · 값 글자로 보지 않는다)
+    for item in ("PV 설치 밀도 프리셋", "전력량요금 계절 구분", "시간대 구분 (육지)"):
+        assert values.get(item), (item, "재료가 안 실렸다")
+    found = {item: value for item, value in values.items() if OBJECT_TEXT.search(str(value))}
+    assert found == {}, found
+
+
 def test_timeseries_sheet_carries_every_slot(
     sample_sheets: dict[str, pd.DataFrame], sample_usage: UsageData
 ) -> None:

@@ -155,8 +155,9 @@ def rendered(request: pytest.FixtureRequest) -> Iterator[Rendered]:
 
 #: 절사 두 못만 더 도는 벌 (S234) — 1-1 자리가 선 벌이다. `small-a2` 화면 3단계 지표
 #: 「차이」 · `small-b-sell` 태양광 용량 곡선 고른 용량 줄 · 감도 상세 기준 기본요금 절감 ·
-#: `small-ind-a2` 조합 「+ 역률 97%」 대 역률 단독 · 감도 상세 기준 기본요금 절감.
-SUM_CASES = ["large-a", "large-b-over", "small-a2", "small-b-sell", "small-ind-a2"]
+#: `small-ind-a2` 조합 「+ 역률 97%」 대 역률 단독 · 감도 상세 기준 기본요금 절감 ·
+#: `large-b-short` 태양광 · ESS 계산 근거 표와 용량 곡선의 초과사용부가금 몫(S243 · 결정 1).
+SUM_CASES = ["large-a", "large-b-over", "small-a2", "small-b-sell", "small-ind-a2", "large-b-short"]
 
 
 @pytest.fixture(scope="module", params=SUM_CASES)
@@ -908,8 +909,9 @@ def _worksheet_tables(
     """계산 근거 표 — Excel 부록 A · PPT 표 · Word 표를 ``(라벨, 산식, 값)`` 줄로."""
     out: dict[tuple[str, str], list[tuple[str, str, str]]] = defaultdict(list)
     for row in rows:
-        if row[0] == "Excel" and row[1] == "부록 A 산출 근거" and len(row) >= 5:
-            key, label, rest = row[3], row[4], row[5:]
+        # 첫 칸이 「수단」 이다 — 판다스 줄 번호 열이 없다 (S243 · 결정 2)
+        if row[0] == "Excel" and row[1] == "부록 A 산출 근거" and len(row) >= 4:
+            key, label, rest = row[2], row[3], row[4:]
         elif row[0] in ("PPT", "Word") and "표" in row[1] and len(row) >= 3:
             key, label, rest = row[1], row[2], row[3:]
         else:
@@ -925,13 +927,19 @@ BILL_LINES = ("역률 조정 전 기본요금", "소계", "역률 요금", "초�
 
 
 def _saving_sum(values: dict[str, int], labels: set[str], totals: list[int]) -> int | None:
-    """「기간 절감액」 이 서야 할 셈 — 태양광 · 계약 · 선택요금 · 역률. 없으면 ``None``."""
-    if "설치 용량" in labels:
-        return (
-            values.get("기간 기본요금 절감", 0)
-            + values.get("기간 전력량요금 절감", 0)
-            + values.get("역률 감액 변화", 0)
-            + values.get("_잉여", 0)
+    """「기간 절감액」 이 서야 할 셈 — 태양광 · ESS · 계약 · 선택요금 · 역률. 없으면 ``None``."""
+    if "설치 용량" in labels or "규격 출력" in labels:
+        # 절감액에 든 몫을 다 줄로 세운다 (S243 · 결정 1) — 태양광 · ESS 가 같은 이름이다.
+        # ESS 는 앞서 기본 · 전력량 둘만 적어 이 셈 밖이었다(`large-b-short` 17,311,000원).
+        return sum(
+            values.get(name, 0)
+            for name in (
+                "기간 기본요금 절감",
+                "기간 전력량요금 절감",
+                "기간 역률요금 절감",
+                "초과사용부가금",
+                "_잉여",
+            )
         )
     if "현재 기본요금" in values and "조정 후 기본요금" in values:
         return (
@@ -1049,6 +1057,31 @@ def test_절사한_줄끼리의_셈이_적힌_합계와_선다(rendered_sums: Re
                 gaps.append(
                     f"요금 계산 명세 {column['월']} {energy} 줄 합 · {total} {column[total]}"
                 )
+
+    # Excel 태양광 용량 곡선 — 줄마다 몫 열(「하한 걸린 달」 과 총 절감액 사이)의 합이 총
+    # 절감액이다 (S243 · 결정 1 · 가-4). **잉여 수익을 실은 고른 줄은 뺀다** — 그 줄의 기본 ·
+    # 전력량은 계산 근거 표 글자(S234 ㄱ)이고 총 절감액은 곡선 지점이라 다른 사실이다
+    # (`small-b-sell` 80 kWp −1,000원 · 고치지 않았다 · 243세션 절 1-2).
+    sold = {
+        float(texts["설치 용량"].replace(" kWp", "").replace(",", ""))
+        for texts in (
+            {label: text for label, _, text in lines}
+            for lines in _worksheet_tables(rendered.rows).values()
+        )
+        if "설치 용량" in texts and any(label.startswith("잉여 ") for label in texts)
+    }
+    heads = [row[2:] for row in rendered.rows if row[:2] == ("Excel", "태양광 용량 곡선")][:1]
+    if heads:
+        head = list(heads[0])
+        shares = head[head.index("하한 걸린 달") + 1 : head.index("기간 총 절감액(원)")]
+        for point in _sheet(rendered.rows, "태양광 용량 곡선"):
+            capacity = point["용량(kWp)"]
+            # 용량 0 줄은 자가소비율 칸이 비어 칸 자리가 밀린다 — 몫도 다 0 이다
+            if float(capacity) == 0 or float(capacity) in sold:
+                continue
+            written = sum(float(point[name]) for name in shares)
+            if written != float(point["기간 총 절감액(원)"]):
+                gaps.append(f"용량 곡선 {capacity} kWp {shares} 합 {written:,.0f}")
 
     summary = {
         row[3]: _lead_won(row[4])

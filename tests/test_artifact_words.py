@@ -188,7 +188,8 @@ PERIOD_NAME_PIECES: tuple[tuple[str, str, int], ...] = (
     ("report/worksheet.py", "기간 절감액", 6),
     ("report/worksheet.py", "기간 기본요금 절감", 2),
     ("report/worksheet.py", "기간 전력량요금 절감", 2),
-    ("report/worksheet.py", "기간 역률요금 절감", 1),
+    # 계약 · 태양광 · ESS 표 (S243 · 결정 1 — 태양광 「역률 감액 변화」 를 이 이름으로 · ESS 새 줄)
+    ("report/worksheet.py", "기간 역률요금 절감", 3),
     ("report/worksheet.py", "절감액", 0),
     ("report/worksheet.py", "기본요금 절감", 0),
     ("report/worksheet.py", "전력량요금 절감", 0),

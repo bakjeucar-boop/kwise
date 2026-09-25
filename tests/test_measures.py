@@ -2437,8 +2437,9 @@ def test_태양광_계산_근거_표는_스스로_산수로_맞는다(
     전력량만 담기 때문이다.
 
     **표에 그려진 글자를 읽어 센다** — 식을 여기서 다시 적으면 실물이
-    갈려도 제 식으로 통과한다(결함 유형 ⑤). 두 칸이 각자 천 원 절사되므로
-    줄 수만큼 어긋날 수 있다.
+    갈려도 제 식으로 통과한다(결함 유형 ⑤). **허용 폭 없이 문다** (S243 · 결정 1) —
+    줄은 단수 차이 조정 뒤라 적힌 수끼리 맞는다. 앞서 폭이 1,000 × (줄 + 1)이고
+    「절감」 이 든 줄만 세어 원 단위 어긋남과 이름 없는 몫을 못 물었다.
     """
     from kwise.report.worksheet import solar_worksheet
 
@@ -2462,9 +2463,10 @@ def test_태양광_계산_근거_표는_스스로_산수로_맞는다(
         if str(row["값"]).endswith("원")
     }
     total = shown.pop("기간 절감액")
-    parts = {name: won for name, won in shown.items() if "절감" in name or name.startswith("잉여")}
+    # 합계 아래 투자비 밖의 원 줄은 다 절감액의 몫이다
+    parts = {name: won for name, won in shown.items() if name != "투자비"}
     assert len(parts) >= 3, f"구성 줄이 셋은 서야 한다 — {sorted(parts)}"
-    assert abs(sum(parts.values()) - total) <= 1_000 * (len(parts) + 1), (
+    assert sum(parts.values()) == total, (
         f"태양광 계산 근거 표의 부분 합이 절감액과 갈립니다 — {parts} 대 {total}"
     )
 

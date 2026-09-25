@@ -149,6 +149,8 @@ SHEET_ORDER: tuple[str, ...] = (
     "부록 C 한계와 전제",
 )
 _CLOSE_EXCEL = "Excel 에서 파일을 닫아 주세요."
+#: 시트 프레임 ``attrs`` 열쇠 — ``False`` 면 인덱스를 안 쓴다(부록 셋 · S243 결정 2).
+WRITE_INDEX = "write_index"
 
 
 class ReportWriteError(RuntimeError):
@@ -245,7 +247,9 @@ def write_workbook(sheets: dict[str, pd.DataFrame], path: Path) -> Path:
     try:
         with pd.ExcelWriter(path, engine="openpyxl") as writer:
             for name, frame in sheets.items():
-                strip_timezone(frame).to_excel(writer, sheet_name=name[:31])
+                strip_timezone(frame).to_excel(
+                    writer, sheet_name=name[:31], index=frame.attrs.get(WRITE_INDEX, True)
+                )
                 _number_formats(writer.sheets[name[:31]])
     except PermissionError as exc:
         raise ReportWriteError(
@@ -1070,12 +1074,12 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
         for name in SHEET_ORDER
         if name in sheets
     }
-    # **부록 셋은 첫 열을 인덱스로 둔다** (S243 · 결정 2) — 범위 인덱스째 쓰면 판다스 줄
-    # 번호(0, 1, 2 …)가 첫 열에 섰다(덱 19벌 3,143줄). 글자를 벗긴 뒤에 옮긴다 — 인덱스는
-    # 위 문을 안 지난다.
+    # **부록 셋은 인덱스를 안 쓴다** (S243 · 결정 2) — 범위 인덱스째 쓰면 판다스 줄
+    # 번호(0, 1, 2 …)가 첫 열에 섰다(덱 19벌 3,143줄). 첫 열을 인덱스로 옮기면 열이
+    # 하나뿐인 부록 C 가 빈 머리 줄을 얻는다 — 쓰는 자리(:func:`write_workbook`)에 알린다.
     for name in ("부록 A 산출 근거", "부록 B 기준 데이터", "부록 C 한계와 전제"):
         if name in shown:
-            shown[name] = shown[name].set_index(shown[name].columns[0])
+            shown[name].attrs[WRITE_INDEX] = False
     return shown
 
 
