@@ -85,7 +85,7 @@ _KMH_TO_MS = 1 / 3.6
 
 # 사전 취득분으로 물러섰을 때 결과에 붙는 문구. 조용히 바꾸지 않는다 (요구사항서 7.5).
 ARCHIVE_FALLBACK_NOTE = (
-    "Open-Meteo 접속에 실패해 사전 취득분(data\\weather\\)으로 계산했습니다. "
+    "Open-Meteo 접속에 실패해 사전 취득분으로 계산했습니다. "
     "격자 ({latitude:.2f}, {longitude:.2f}) · {start} ~ {end}. 사유: {reason}"
 )
 

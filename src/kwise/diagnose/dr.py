@@ -612,7 +612,7 @@ def dr_profile(
             fact="dr.weekday_vs_tariff",
         ),
         info(
-            "**연간 참여 일수 제한은 없습니다** (14세션에 바로잡았습니다). 남는 제약은 "
+            "**연간 참여 일수 제한은 없습니다**. 남는 제약은 "
             f"하루 {dr_max_events_per_day()}회 × 최대 {dr_event_hours()[1]:,.0f}시간"
             f"(하루 {daily_cap:,.0f}시간)과 {JUDGE_WINDOW}"
             f"({_window_label(windows)}) 뿐이므로, 실질 제약은 「감축할 여력이 있는 날이 "

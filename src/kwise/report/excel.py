@@ -297,15 +297,24 @@ def _combination_notices(
 
     조합 이름 앞머리를 뗀 글자와 사실이 같은 안내가 기준선을 뺀 조합 줄 **전부**에
     서면 앞머리 없이 한 번만 세운다 — S220 의 같은 글자 접기를 앞머리 너머로 적용한다.
-    일부 조합에만 서거나 뗀 글자가 다르면(조합마다 값이 다르면) 다른 사실이라 조합마다
-    둔다. 요약의 다른 자리(``earlier``)에 이미 선 사실은 조합 쪽을 뺀다.
+    **수단에 대한 말이면 일부 조합에만 서도 한 번이다** (S241 결정 1) — 사실이 조합
+    몫(``combination.``)이 아니고 조합마다 한 글자일 때다. 뗀 글자가 다르면(조합마다
+    값이 다르면) 조합마다 둔다. 요약의 다른 자리(``earlier``)에 이미 선 사실은 조합 쪽을 뺀다.
     """
     peers = comparison.combinations[1:]
-    common = (
-        set.intersection(*({_fact_key(item) for item in result.notices} for result in peers))
-        if len(peers) >= 2
-        else set()
+    counts = Counter(
+        key for result in peers for key in {_fact_key(item) for item in result.notices}
     )
+    wording = Counter(fact for _severity, fact, _text in counts)
+    common = {
+        key
+        for key, count in counts.items()
+        if count >= 2
+        and (
+            count == len(peers)
+            or (not key[1].startswith("combination.") and wording[key[1]] == 1)
+        )
+    }
     origin = {
         shown: item
         for index, result in enumerate(comparison.combinations)

@@ -1917,7 +1917,7 @@ def _appendix_a(document: DocumentType, sections: DocumentSections) -> None:
             _add_bullets(document, lines)
     if data.cases is not None and not data.cases.empty:
         _heading(document, "ESS 조달 사례", level=2)
-        _para(document, "투자비 회귀의 원자료입니다. 화면에서는 뺐고(17세션) 여기에 싣습니다.")
+        _para(document, "투자비 회귀의 원자료입니다. 화면에서는 뺐고 여기에 싣습니다.")
         _add_table(
             document,
             [
