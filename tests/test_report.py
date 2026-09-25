@@ -953,6 +953,54 @@ def test_기상을_못_얻으면_태양광을_빼고_사유를_적는다(
     assert "프록시 뒤라 못 얻었다" in summary.note, "왜 못 얻었는지 남아야 합니다."
 
 
+def test_기상_폴백_문구가_일괄_요약에_내부_경로_없이_선다(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**사전 취득분으로 물러선 사실이 일괄 요약 CSV 에 경로 없이 선다** (S241 결정 3 · 4).
+
+    위 못은 기상을 **못 얻는** 갈래다. 여기는 망이 죽고 저장소 사전 취득분으로
+    **물러서는** 갈래 — ``ARCHIVE_FALLBACK_NOTE`` 가 요약 CSV 「note」 열에 실린다.
+    실제로 쓴 CSV 를 읽어 그 칸을 본다(「excel」 열은 산출 파일 자리라 안 본다).
+    """
+    from kwise.pv import WeatherUnavailableError
+    from kwise.pv.weather import load_weather
+    from tests.test_artifact_words import INTERNAL_PATH
+
+    monkeypatch.setenv("PROJECT_CACHE", str(tmp_path / "cache"))
+    write_month(tmp_path / "건물A.csv", 2024, 3, kwh=100.0)
+    path = tmp_path / "cases.yaml"
+    path.write_text(
+        "output_dir: out\n"
+        "cases:\n"
+        "  - name: 건물A\n"
+        "    usage: 건물A.csv\n"
+        "    contract_type: general_b\n"
+        "    voltage: high_a\n"
+        "    option: I\n"
+        "    contract_kw: 500\n"
+        "    pv_capacity_kwp: 100\n",
+        encoding="utf-8",
+    )
+
+    def offline(_request: object) -> pd.DataFrame:
+        raise WeatherUnavailableError("시험에서는 망을 타지 않는다")
+
+    monkeypatch.setattr(
+        "kwise.report.batch.load_weather",
+        lambda request: load_weather(
+            request,
+            fetch=offline,
+            cache_dir=tmp_path / "weather-cache",
+            archive_dir=PROJECT_ROOT / "data" / "weather",
+        ),
+    )
+    result = run_batch(load_batch_config(path), include_timeseries=False)
+
+    notes = pd.read_csv(result.summary_csv, encoding="utf-8-sig")["note"].astype(str).tolist()
+    assert any("사전 취득분" in note for note in notes), notes
+    assert [note for note in notes if INTERNAL_PATH.search(note)] == [], notes
+
+
 def test_엑셀_저장이_OS_오류로_실패하면_자리를_짚어_알린다(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
