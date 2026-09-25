@@ -99,9 +99,9 @@ CURTAIL_SCENARIO = "출력제어"
 """
 
 _ADMIN_NOTES = {
-    OFFSET_SCENARIO: "계약 변경, 역송 계량기, 월별 정산 관리가 필요하다.",
-    EXTERNAL_SCENARIO: "구매자 발굴·계약, 정산 대행, 계량·인증 관리가 필요하다.",
-    CURTAIL_SCENARIO: "없다.",
+    OFFSET_SCENARIO: "계약 변경, 역송 계량기, 월별 정산 관리가 필요합니다.",
+    EXTERNAL_SCENARIO: "구매자 발굴·계약, 정산 대행, 계량·인증 관리가 필요합니다.",
+    CURTAIL_SCENARIO: "없습니다.",
 }
 
 

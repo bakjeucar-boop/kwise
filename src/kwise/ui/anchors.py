@@ -288,7 +288,7 @@ ANCHORS: tuple[ManualAnchor, ...] = (
         "rules-admin",
         "기준 데이터 관리",
         "기준 데이터 화면",
-        "법령 유래(rules_kr.json)와 판단값(assumptions.json)을 가르는 이유, "
+        "법령 유래와 판단값을 가르는 이유, "
         "코드에 기본값을 두지 않는 원칙, 엑셀 왕복 보조 경로.",
     ),
     ManualAnchor(

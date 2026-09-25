@@ -1936,7 +1936,7 @@ def _appendix_b(document: DocumentType, sections: DocumentSections) -> None:
     _heading(document, APPENDIX_TITLES["B"], level=1)
     _para(
         document,
-        "이 산출에 쓴 기준 값입니다. 법령 유래와 우리 판단값을 구분해 실었으며, "
+        "이 산출에 쓴 기준 값입니다. 법령 유래와 판단값을 구분해 실었으며, "
         "값은 기준 데이터 파일에서 그대로 가져옵니다.",
     )
     _add_table(

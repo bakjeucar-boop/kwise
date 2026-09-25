@@ -357,7 +357,7 @@ def contract_worksheet(result: ContractAdjustment, bill: BillingResult | None = 
                 f"하한 판정 ({ratio:.0%})",
                 f"계약전력 {result.contract_kw:,.0f} kW × {ratio:.0%}",
                 f"{result.floor_kw:,.1f} kW"
-                + (f" — {bound}개 월에 걸린다" if bound else " — 어느 달에도 안 걸린다"),
+                + (f" — {bound}개 월에 걸립니다" if bound else " — 어느 달에도 안 걸립니다"),
             )
         )
         rows.append(

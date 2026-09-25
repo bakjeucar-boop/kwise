@@ -235,8 +235,9 @@ def run_case(
         )
         try:
             weather = load_weather(request)
-        except WeatherUnavailableError as exc:
-            note = f"기상 자료를 얻지 못해 태양광을 제외했습니다: {exc}"
+        except WeatherUnavailableError:
+            # 예외 글은 화면 운영 안내라 산출물에 싣지 않는다 (S242 결정 4).
+            note = "기상 자료를 얻지 못해 태양광을 제외했습니다."
         else:
             # 사전 취득분으로 물러섰으면 요약에 남긴다. 조용히 바꾸지 않는다 (7.5).
             if weather.fallback:
