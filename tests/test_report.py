@@ -942,15 +942,24 @@ def test_기상을_못_얻으면_태양광을_빼고_사유를_적는다(
         encoding="utf-8",
     )
 
+    from tests.test_artifact_words import INTERNAL_PATH
+
+    # 화면 차단 안내와 같은 글자다 — 경로와 운영자에게 하는 말이 든다.
+    reason = "프록시 뒤라 못 얻었다. tools\\fetch_weather.py 로 해당 기간을 먼저 받으십시오."
+
     def deny(*_args: object, **_kwargs: object) -> None:
-        raise WeatherUnavailableError("프록시 뒤라 못 얻었다")
+        raise WeatherUnavailableError(reason)
 
     monkeypatch.setattr("kwise.report.batch.load_weather", deny)
     result = run_batch(load_batch_config(path), include_timeseries=False)
 
     summary = result.summaries[0]
     assert "기상 자료를 얻지 못해" in summary.note, summary.note
-    assert "프록시 뒤라 못 얻었다" in summary.note, "왜 못 얻었는지 남아야 합니다."
+    # **예외 글은 화면 운영 안내라 일괄 요약에 싣지 않는다** (S242 결정 4) — 앞서는
+    # 「왜 못 얻었는지 남아야 합니다」 로 그 글을 붙여 싣게 물었다. 실제로 쓴 CSV 를 본다.
+    notes = pd.read_csv(result.summary_csv, encoding="utf-8-sig")["note"].astype(str).tolist()
+    assert any("기상 자료를 얻지 못해" in note for note in notes), notes
+    assert [note for note in notes if "프록시 뒤라" in note or INTERNAL_PATH.search(note)] == []
 
 
 def test_기상_폴백_문구가_일괄_요약에_내부_경로_없이_선다(

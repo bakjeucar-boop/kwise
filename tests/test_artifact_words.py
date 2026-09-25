@@ -361,3 +361,142 @@ def test_산출물_실물에_세션_번호와_내부_경로가_없다(
         for name, lines in texts.items()
     }
     assert found == {"PPT": [], "Word": [], "Excel": []}, found
+
+
+# ============================================ 말투 · 「우리」 (S242 결정 1 · 2)
+
+#: 반말 끝맺음 — 「…다.」 · 줄 끝 「…다」 가 「니다」 가 아닌 것(S240 4-1 꼴 그대로).
+#: 서술어로 끝나는 문장만 걸린다 — 이름 · 값 · 명사로 끝나는 표 칸과 제목은 안 걸린다.
+INFORMAL_ENDING = re.compile(r"(?<!니)(?<!습)다\.(?:\s|$)|(?<!니)다\s*$")
+
+#: 「우리」 — 「봉우리」 는 뺀다(S240 그물이 잘못 문 자리).
+US = re.compile(r"(?<!봉)우리")
+
+
+def test_고객_산출물_문장에_반말_끝맺음과_우리가_없다(
+    sample_usage: UsageData,
+    sample_bill: BillingResult,
+    sample_diagnosis: Any,
+    sample_comparison: Any,
+    sample_unit_pv: Any,
+    tariff: TariffTable,
+) -> None:
+    """**PPT · Word · Excel 을 실제로 굽고 문장 끝을 본다** (S242 결정 1 · 2).
+
+    덱 19벌에 반말 121줄 · 「우리」 38줄이 섰다(242세션 절 1-2) — ESS 조달 사례
+    비고(Word 부록 A) · 하한 판정 값 칸(부록 A 계산 근거) · 잉여 비고(Excel 수단별
+    결과) · 부록 B 머리. 그 재료를 넣고 굽는다 — **재료가 실렸는지를 먼저 본다.**
+    """
+    from dataclasses import replace
+
+    from kwise.measures import (
+        apply_generation,
+        evaluate_contract_adjustment,
+        evaluate_surplus,
+        load_ess_cost_model,
+        solar_point,
+    )
+    from kwise.report import ReportSections, build_sheets
+    from kwise.report.worksheet import contract_worksheet
+
+    selection = sample_bill.selection
+    # 하한 30% 가 최대수요 아래라 「어느 달에도 안 걸립니다」 줄이 선다.
+    contract = contract_worksheet(
+        evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=7_000.0)
+    )
+    # 잉여가 나도록 크게 잡는다 — 잉여 줄은 고른 시나리오 하나만 서므로 셋을 다 굽는다.
+    capacity = 8_000.0
+    net = apply_generation(sample_usage, sample_unit_pv * capacity)
+    surplus = evaluate_surplus(
+        sample_usage,
+        tariff,
+        selection,
+        net.surplus_kw,
+        generation_kwh=net.generated_kwh,
+        net_usage=net.usage,
+        capacity_kwp=capacity,
+    )
+    assert surplus.total_kwh > 0
+    point = solar_point(
+        sample_usage, tariff, selection, sample_unit_pv, capacity, baseline=sample_bill
+    )
+    measure_rows = [
+        measure_summary_frame(solar=replace(point, surplus_scenario=scenario.name), surplus=surplus)
+        for scenario in surplus.scenarios
+    ]
+    sections = DocumentSections(
+        usage=sample_usage,
+        bill=sample_bill,
+        diagnosis=sample_diagnosis,
+        comparison=sample_comparison,
+        building_name="합성 자료",
+        worksheets=(contract,),
+        tariff_table=tariff,
+        ess_cases=load_ess_cost_model().case_table(),
+    )
+    # 부록 B 표는 기준 데이터의 값 · 근거 칸을 그대로 옮긴다 — 문장이 아니라 안 본다
+    # (값 칸의 목록 · 근거 칸 「8. 다.」 같은 조항 번호가 꼴에 걸린다 · 242세션 절 3-1).
+    cells = [
+        str(value)
+        for rows in measure_rows
+        for name, frame in build_sheets(
+            ReportSections(
+                usage=sample_usage,
+                bill=sample_bill,
+                diagnosis=sample_diagnosis,
+                comparison=sample_comparison,
+                measure_rows=rows,
+                worksheets=(contract,),
+                tariff_table=tariff,
+            )
+        ).items()
+        if not str(name).startswith("부록 B")
+        for value in (*frame.to_numpy().ravel(), *frame.index, *frame.columns)
+    ]
+    document = build_document(sections)
+    word = [para.text for para in document.paragraphs] + [
+        cell.text
+        for table in document.tables
+        if [cell.text for cell in table.rows[0].cells][:3] != ["구분", "항목", "값"]
+        for row in table.rows
+        for cell in row.cells
+    ]
+    texts = {"PPT": _deck_texts(build_slides(sections)), "Word": word, "Excel": cells}
+
+    # 재료 글자는 끝맺음을 뺀 조각이다 — 끝맺음을 되돌려도 「안 실렸다」 로 헛돌지 않게.
+    실림 = {
+        "Word": ("유일한 근거", "관급 설비비와 같은 층위", "판단값을 구분해", "어느 달에도 안 걸"),
+        "Excel": ("어느 달에도 안 걸", "잉여 출력제어", "계량·인증 관리가 필요"),
+    }
+    # PPT 는 수단 장이 있어야 부록 표를 싣는다 — 이 합성 재료로는 안 선다(덱 19벌이 본다).
+    for name, needles in 실림.items():
+        joined = "\n".join(texts[name])
+        missing = [needle for needle in needles if needle not in joined]
+        assert missing == [], f"{name} 에 재료가 안 실렸다: {missing}"
+    found = {
+        name: sorted({text for text in lines if INFORMAL_ENDING.search(text) or US.search(text)})
+        for name, lines in texts.items()
+    }
+    assert found == {"PPT": [], "Word": [], "Excel": []}, found
+
+
+# ============================================ 화면 경로 (S242 결정 4)
+
+#: 경로를 두는 앵커 — 운영자가 기상 파일을 넣는 도구 이름(242세션 절 1-4).
+PATH_ANCHORS = ("weather-archive",)
+
+
+def test_화면_경로는_운영_안내_자리에만_선다() -> None:
+    """**화면 툴팁 · 기준 데이터 비고에 선 경로는 운영 안내 자리뿐이다** (S242 결정 4).
+
+    파일을 넣거나 찾는 안내가 아닌 경로(앵커 「rules-admin」 의 파일 이름 · 비고의
+    「rules_kr.json 에서 옮겼다」 · 「tools\\run_benchmark.py 의 실측값」)를 지웠다.
+    비고는 기준 데이터 화면 캡션과 근거 툴팁에 그대로 뜬다.
+    """
+    from kwise.rules import describe_items
+    from kwise.ui.anchors import ANCHORS
+
+    anchors = [item.key for item in ANCHORS if INTERNAL_PATH.search(item.tip)]
+    assert anchors == list(PATH_ANCHORS), anchors
+    notes = [(view.key, view.note) for view in describe_items() if INTERNAL_PATH.search(view.note)]
+    assert notes == [], notes

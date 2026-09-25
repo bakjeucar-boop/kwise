@@ -14,6 +14,7 @@ import json
 import shutil
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -551,3 +552,34 @@ def test_여유율은_기준_데이터에서_사라졌다() -> None:
         if word in path.read_text(encoding="utf-8")
     ]
     assert offenders == [], offenders
+
+
+@pytest.mark.parametrize("name", ["rules_kr.json", "assumptions.json"])
+def test_기준_데이터_비고에_세션_번호가_없고_출고본과_같다(name: str) -> None:
+    """**비고는 기준 데이터 화면 캡션과 근거 툴팁에 그대로 뜬다** (S242 결정 3).
+
+    S241 결정 2(화면에서도 세션 번호를 지운다)를 데이터 파일까지 적용했다 — 항목
+    20개의 비고에 「(53세션)」 따위가 있었다(242세션 절 1-3). 이력은 저장소 기록이
+    쥔다. 출고본(``data\\defaults\\``)이 어긋나면 「출고 상태로」 가 옛 비고를 되살린다.
+    """
+    from tests.test_artifact_words import SESSION_NUMBER
+
+    def walk(node: Any, where: str) -> Iterator[tuple[str, str]]:
+        # 비고는 항목 안쪽(특례 값 따위)에도 있다 — 「note」 칸을 다 모은다.
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "note" and isinstance(value, str):
+                    yield where, value
+                else:
+                    yield from walk(value, f"{where}.{key}")
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                yield from walk(value, f"{where}[{index}]")
+
+    def notes(path: Path) -> dict[str, str]:
+        return dict(walk(json.loads(path.read_text(encoding="utf-8"))["items"], "items"))
+
+    data = notes(PROJECT_ROOT / "data" / name)
+    defaults = notes(PROJECT_ROOT / "data" / "defaults" / name)
+    assert data == defaults
+    assert {key: note for key, note in data.items() if SESSION_NUMBER.search(note)} == {}
