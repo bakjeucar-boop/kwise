@@ -54,6 +54,7 @@ from kwise.measures import (
     evaluate_contract_adjustment,
     evaluate_demand_response,
     load_ess_cost_model,
+    payback_years,
     surplus_free_capacity_kwp,
     with_surplus_revenue,
 )
@@ -498,8 +499,7 @@ def _combined_block(
     #
     # **회수기간을 함께 낸다** (28세션 2절). 조합은 투자비도 함께 물리므로 조합의
     # 회수기간이 곧 이 화면의 결론인데, 그것만 없어 수단별 회수기간을 눈으로
-    # 더해야 했다. 값은 조합 계산이 이미 낸 것을 옮기기만 한다
-    # (``CombinationResult.payback_years`` = 투자비 합 ÷ 12개월 환산 절감액).
+    # 더해야 했다. 투자비 합 ÷ 합산효과(12개월 환산)다.
     # 투자비가 0 인 수단만 고르면 「즉시」 다.
     columns = st.columns(4)
     columns[0].metric("단순 합", fmt.won_year(simple))
@@ -511,9 +511,15 @@ def _combined_block(
         fmt.won_year(money.gap_won(combined_shown, simple_shown)),
         fmt.ratio_pct(ratio) if ratio is not None else fmt.DASH,
     )
+    # 회수기간도 합산효과로 나눈다 — 청구 밖 몫(DR 정산금)을 담는다 (S244 결정 4 · S182 ㄱ).
+    payback = (
+        payback_years(combined.investment_won, actual)
+        if combined.investment_won is not None
+        else None
+    )
     columns[3].metric(
         "회수기간",
-        fmt.payback(combined.payback_years, investment_won=combined.investment_won),
+        fmt.payback(payback, investment_won=combined.investment_won),
         f"투자비 {fmt.won_short(combined.investment_won, reason='미산출')}",
         delta_color="off",
     )
@@ -522,10 +528,13 @@ def _combined_block(
     st.caption(f"**{combined.name}** 를 함께 도입했을 때의 12개월 환산 절감액입니다.")
     excluded = [row for row in rows if not row.combinable]
     if excluded:
+        # 정산금이 합산효과에 들어간 판에서는 그렇게 말한다 (S244 결정 4).
+        settled = any(row in picked and row.annual_saving_won for row in excluded)
         st.caption(
-            "합산효과에 넣지 않은 수단 — "
+            ("조합 부하에 넣지 않은 수단 — " if settled else "합산효과에 넣지 않은 수단 — ")
             + ", ".join(measure_title(row.title) for row in excluded)
-            + ". 요금이 아니라 별도 정산·수익이라 조합 부하에 얹을 수 없습니다."
+            + ". 요금이 아니라 별도 정산·수익이라 "
+            + ("합산효과에 DR 정산금으로 더합니다." if settled else "조합 부하에 얹을 수 없습니다.")
         )
     dropped = [row for row in rows if row.combinable and row.key not in set(chosen)]
     if dropped:

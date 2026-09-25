@@ -672,16 +672,16 @@ def combination_worksheet(
     절감액과 같은 값이면 그 글자다 (S233 ㄱ · :func:`kwise.money.same_won`). 단순 합도
     합산효과와 같은 값이면 같은 글자로 준다 — 없는 차이가 서지 않는다.
     """
+    gap = money.gap_won(combined_won, simple_won)
     rows = [
         WorkRow("단순 합", "개선안별 절감액의 합", _won(simple_won)),
         WorkRow("합산효과", "조합 부하로 요금을 다시 계산", _won(combined_won)),
         # **적힌 두 값의 차다** (S233 ㄴ) — 둘 다 셈의 결과라 올릴 줄이 없다. 원값의
         # 차를 절사하면 위 두 줄의 차와 1,000원 어긋났다(덱 10벌).
-        WorkRow(
-            "차이", "합산효과 − 단순 합", _won(money.gap_won(combined_won, simple_won)), total=True
-        ),
+        WorkRow("차이", "합산효과 − 단순 합", _won(gap), total=True),
     ]
-    for index, reason in enumerate(reasons, start=1):
+    # 적힌 차이가 0 이면 이유 줄을 세우지 않는다 (S244 결정 1 · S237 ㄴ).
+    for index, reason in enumerate(reasons if gap else (), start=1):
         rows.append(WorkRow(f"이유 {index}", "", reason, level=1))
     if contract_extra_won:
         rows.append(WorkRow("조합 시 추가 절감", "조합 부하 기준 재산정", _won(contract_extra_won)))
