@@ -862,4 +862,4 @@ def test_improvement_warns_about_apfr_and_fixed_banks(
     assert "고정형 역률 개선 설비" in joined
     assert "자동제어형 역률 개선 설비" in joined
     assert "역률 개선 설비 과투자의 신호" in joined
-    assert result.investment_won == 0.0  # 금액을 지어내지 않는다
+    assert result.investment_won is None  # 금액을 지어내지 않는다 — 모르면 None (S237 ㄱ)

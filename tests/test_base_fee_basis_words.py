@@ -388,6 +388,8 @@ def test_조합_이유는_기본요금이_곱한_전력이_움직였을_때만_�
         combined = SimpleNamespace(
             selection=selection,
             spec=SimpleNamespace(measure_keys=("solar", "power_factor")),
+            # 역률 여지가 있는 조합이다 — 없으면 이유 줄이 안 선다 (S237 ㄴ).
+            power_factor_no_headroom=False,
             billing_demand_kw=after_kw,
             bill=SimpleNamespace(mean_base_demand_kw=after_kw),
         )

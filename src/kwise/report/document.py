@@ -32,7 +32,12 @@ from docx.shared import Inches, Pt
 from docx.text.paragraph import Paragraph
 
 from kwise import money
-from kwise.compare import SCENARIO_NAME_CAVEAT, ComparisonResult, SensitivityRange
+from kwise.compare import (
+    SCENARIO_NAME_CAVEAT,
+    CombinationResult,
+    ComparisonResult,
+    SensitivityRange,
+)
 from kwise.diagnose import ContractAdequacy, Diagnosis
 from kwise.diagnose.dr import DR_OFF_DAYS_FACT, JUDGE_WINDOW, DrProfile
 from kwise.io import UsageData
@@ -525,6 +530,16 @@ def _won(value: float | None, *, reason: str | None = None) -> str:
     값 열에서 한 글자도 안 다르고 ``None`` 사유까지 같은 것을 값으로 봤다.
     """
     return money.won(value, reason=reason if reason is not None else UNPRICED_REASONS["contract"])
+
+
+def _combination_investment(item: CombinationResult) -> str:
+    """조합 투자비 한 칸. **역률 투자비를 모르면 그 사유다** (S237 ㄱ).
+
+    기본 사유(계약 「하한 규정 미확인」)가 역률 줄에 서면 거짓이다. 그 밖의 미산출은
+    전과 같은 글자다 — 넣은 투자비 경로는 한 글자도 안 바뀐다.
+    """
+    unpriced_pf = item.spec.has_power_factor and not item.spec.power_factor_investment_won
+    return _won(item.investment_won, reason=NO_INVESTMENT_INPUT if unpriced_pf else None)
 
 
 def _payback_text(years: float | None, investment_won: float | None) -> str:
@@ -1790,7 +1805,7 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
         document,
         f"권장안은 「{best.composition(baseline)}」 입니다. "
         f"기간에 {_won(combination_saving(comparison, best, sections.peer_savings))} 를 줄이고 "
-        f"투자비는 {_won(best.investment_won)}, 회수기간은 "
+        f"투자비는 {_combination_investment(best)}, 회수기간은 "
         f"{_payback_text(best.payback_years, best.investment_won)} 입니다.",
     )
     # PPT 조합 장과 같은 이름이다 (S156 4-4 · S188).
@@ -1802,7 +1817,7 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
                 option_label(item.selection.option),
                 # 적힌 기준선 요금 − 적힌 조합 요금 (S233 ㄴ · Excel 조합 비교와 한 글자).
                 _won(combination_saving(comparison, item, sections.peer_savings)),
-                _won(item.investment_won),
+                _combination_investment(item),
                 _payback_text(item.payback_years, item.investment_won),
             ]
         )

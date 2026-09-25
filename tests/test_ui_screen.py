@@ -3163,6 +3163,17 @@ def test_역률_카드는_도입을_말하지_않고_제도를_설명하지_않�
     남은자리 = [item.text for item in card if "0.2%" in item.text]
     assert 남은자리, "「매 1%당 기본요금의 0.2%」 가 카드에서 통째로 사라졌습니다."
 
+    # **투자비 칸 기본값 0 은 미입력이다 · 여지가 없으면 금액 칸이 「없음」 이다**
+    # (S237 ㄱ · ㄴ). 계약 카드와 같은 꼴 — 판정 줄은 까닭만 적고 금액을 안 적는다.
+    from kwise.measures import NO_SAVING
+    from kwise.measures.ess import NO_INVESTMENT_INPUT
+
+    값 = [item.text for item in card if item.kind == "Metric" and item.slot == "지표"]
+    assert 값[3] == NO_INVESTMENT_INPUT, f"{갈래} 벌 회수기간이 {값[3]} 입니다."
+    assert (값[2] == NO_SAVING) is (current_pct == 100.0), f"{갈래} 벌 금액 칸 {값[2]}"
+    적힌금액 = [item.text for item in card if "절감액은 0원" in item.text]
+    assert not 적힌금액, f"{갈래} 벌 안내가 금액을 적습니다: {적힌금액}"
+
 
 def test_관측이_없는_날을_대표일로_골라도_화면이_살아_있다() -> None:
     """**결측이 온종일인 날도 고를 수 있다** (25세션 1절).

@@ -1077,3 +1077,43 @@ def test_감액_상한_이상이면_산출물이_목표도_투입_제어도_말�
 
     note = str(measure_summary_frame(power_factor=result)["비고"].to_numpy()[0])
     assert (_CONTROL_ADVICE in note) is not no_headroom, (current_pct, note)
+
+    # **투자비를 안 받았으면 「미산출 — 투자비 미입력」 이다** (S237 ㄱ). 칸 기본값 0 을
+    # 태양광·ESS 처럼 미입력으로 읽는다 — 3단계 표 · Excel 수단별 결과 · Word 표 ·
+    # PPT 8장 칸이 같은 글자다. 넣은 투자비는 전과 같은 글자(회수기간 = 투자비 ÷ 절감).
+    from kwise.measures import NO_SAVING, payback_label, payback_years
+    from kwise.measures.ess import NO_INVESTMENT_INPUT
+    from kwise.report.slides import slide_investment, slide_payback
+    from kwise.report.standalone import standalone_frame, standalone_rows
+
+    def cells(item: PowerFactorResult) -> list[str]:
+        frame = measure_summary_frame(power_factor=item)
+        table = standalone_frame(standalone_rows(power_factor=item)).iloc[0]
+        entry = next(e for e in measure_entries(power_factor=item) if e.kind.key == "power_factor")
+        return [
+            str(frame["투자비(원)"].to_numpy()[0]),
+            str(frame["회수기간"].to_numpy()[0]),
+            str(table["투자비"]),
+            str(table["회수기간"]),
+            entry.investment,
+            entry.payback,
+            slide_investment(entry.investment),
+            slide_payback(entry.payback),
+        ]
+
+    blank = cells(result)
+    assert blank[:6] == [NO_INVESTMENT_INPUT] * 6, (current_pct, blank)
+    assert blank[6:] == ["미산출", "미산출"], (current_pct, blank)
+    paid = evaluate_power_factor(
+        sample_usage,
+        tariff,
+        sample_bill.selection,
+        current_pct=current_pct,
+        investment_won=3_000_000.0,
+        baseline=sample_bill,
+        quality=sample_report,
+    )
+    old = payback_label(payback_years(3_000_000.0, paid.annual_saving_won), 3_000_000.0)
+    shown = cells(paid)
+    assert shown[0] == "3,000,000" and shown[1] == old == shown[5], (current_pct, shown)
+    assert NO_INVESTMENT_INPUT not in shown and NO_SAVING not in shown, (current_pct, shown)

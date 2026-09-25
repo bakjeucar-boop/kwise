@@ -276,6 +276,41 @@ def test_역률_100_벌은_태양광이_낀_조합에서도_역률_몫이_0_이�
     assert (on.bill.power_factor.lagging_pct, off.bill.power_factor.lagging_pct) == (97.0, 100.0)
     assert on.saving_won - off.saving_won == 0.0
 
+    # **여지가 없는 역률은 이름과 이유 줄에 안 선다** (S237 ㄴ · S154). 계산 구성은
+    # 그대로다 — 켠 조합이 목표로 요금을 냈다(위 두 줄). 이름 · 수단 칸만 뺀다.
+    from types import SimpleNamespace
+
+    from kwise.ui.views.compare import _interaction_reasons
+
+    assert on.power_factor_no_headroom and not off.power_factor_no_headroom
+    assert "역률" not in on.composition() and "역률" not in " ".join(on.measure_labels)
+    assert on.spec.has_power_factor, "조합 구성을 바꿨다"
+    base = evaluate_combination(sample_usage, tariff, CombinationSpec("기준선", CURRENT), **kwargs)
+    comparison: Any = SimpleNamespace(baseline=base)
+    reasons = _interaction_reasons(comparison, on, ())
+    assert not any("역률 감액은 기본요금에 비례" in line for line in reasons), reasons
+
+    # **역률 투자비를 모르면 조합 투자비도 모른다** (S237 ㄱ · 태양광 단가 미입력과 같다).
+    def priced(investment: float | None) -> CombinationResult:
+        spec = CombinationSpec(
+            "태양광",
+            CURRENT,
+            pv_capacity_kwp=PV_KWP,
+            pv_total_investment_won=100_000_000.0,
+            power_factor_pct=97.0,
+            power_factor_investment_won=investment,
+        )
+        return evaluate_combination(sample_usage, tariff, spec, **kwargs)
+
+    assert (priced(None).investment_won, priced(None).payback_years) == (None, None)
+    assert priced(3_000_000.0).investment_won == 103_000_000.0
+    # Word 조합 표 · 권장안 문장의 투자비 칸 — 기본 사유(계약 「하한 규정 미확인」)가 아니다.
+    from kwise.measures.ess import NO_INVESTMENT_INPUT
+    from kwise.report.document import _combination_investment
+
+    assert _combination_investment(priced(None)) == NO_INVESTMENT_INPUT
+    assert _combination_investment(priced(3_000_000.0)) == "103,000,000원"
+
 
 @pytest.mark.xfail(
     strict=True,
