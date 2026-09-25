@@ -820,17 +820,21 @@ def test_부록_C_가_한계와_참고를_한_곳에_모은다(
     **앞 30자가 아니라 사실 ID 로 가른다** (S240 결정 3). 뜻이 같고 글자가 다른 짝
     (「… 참고값을 제공하지 않습니다」 ↔ 「… 참고값은 제공하지 않습니다」 따위)이 앞 30자
     견줌을 빠져나가 한 부록에 둘 다 섰다. **빠진 줄의 사실은 남은 줄로 선다** — 미포함
-    요금요소는 안내 쪽 글자가 한계 자리에 선다.
+    요금요소는 안내 쪽 글자가 한계 자리에 선다. 조합 판별자가 붙은 같은 사실은 앞머리
+    없는 글자로 한 번 선다 — Word 처럼 조합 안내를 먼저 넘겨도.
     """
-    from kwise.notices import report_appendix
+    from kwise.notices import info, prefixed, report_appendix
     from kwise.report.appendix import known_limits
     from kwise.report.notices import KNOWN_LIMITS, LIMIT_FACTS, NOT_INCLUDED_NOTICE
 
+    계수 = info("ESS 투자비 계수 — 시험 사례 기준.", fact="ess.cost_model_source")
     groups = (
         sample_bill.notices,
         sample_diagnosis.notices,
-        sample_ess.notices,
         sample_comparison.notices,
+        prefixed((계수,), "+ ESS 목표 5,000 kW", tag="c3"),
+        sample_ess.notices,
+        (계수,),
     )
     lines = known_limits(*groups)
     appendix = report_appendix(*groups)
@@ -843,6 +847,12 @@ def test_부록_C_가_한계와_참고를_한_곳에_모은다(
     assert {line for line in KNOWN_LIMITS if line not in LIMIT_FACTS} <= set(lines)
     assert KNOWN_LIMITS[0] not in lines
     assert lines[0] == NOT_INCLUDED_NOTICE
+    untagged = {item.fact_base for item in appendix if item.fact == item.fact_base}
+    tagged = [item for item in appendix if item.fact != item.fact_base]
+    assert any(item.fact_base in untagged for item in tagged), "앞머리 붙은 같은 사실이 없다"
+    for item in tagged:
+        if item.fact_base in untagged:
+            assert item.text not in lines, item.text
 
 
 def test_Word_의_1단계_결론과_7_2_결론이_같은_문장이다(tmp_path: Path, tariff: TariffTable) -> None:

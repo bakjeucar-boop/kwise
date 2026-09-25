@@ -297,9 +297,10 @@ def test_Excel_요약이_여유_확보_안내를_한_번만_싣는다(
     sample_usage: UsageData,
     sample_bill: BillingResult,
     sample_diagnosis: Diagnosis,
+    sample_comparison: ComparisonResult,
     여유_확보_안내가_있나: bool,
 ) -> None:
-    """**요약 시트에 그 안내가 두 번 서지 않는다** (S182 4-3 · S210 2절).
+    """**요약 시트에 그 안내가 두 번 서지 않는다** (S182 4-3 · S210 2절 · S240 결정 2).
 
     `measures\\contract.py` 의 :data:`~kwise.measures.MARGIN_NOTICE` 는
     `report\\notices.py` 의 ``CONTRACT_CHANGE_WARNING`` 과 **글자까지 같은
@@ -309,7 +310,13 @@ def test_Excel_요약이_여유_확보_안내를_한_번만_싣는다(
 
     **두 갈래를 다 문다** — 안내가 든 벌(걸러야 한다)과 안 든 벌(거를 것이
     없다). 한쪽만 보면 잣대를 통째로 지워도 안 든 벌은 초록이다.
+
+    **「조합」 묶음도 한 층이다** (S240 결정 2). 조합 이름 앞머리를 뗀 글자와 사실이
+    같은 안내가 기준선을 뺀 조합 전부에 서면 앞머리 없이 한 번 · 일부에만 서거나 값이
+    다르면 조합마다 · 요약에 이미 선 사실(여유 확보 안내)은 조합 쪽을 뺀다. **빠진 줄의
+    사실은 같은 층에 남는다** — 앞머리 없는 한 줄과 「필수 안내」 줄로.
     """
+    from kwise.compare.combination import aggregate_notices
     from kwise.measures import MARGIN_FACT, MARGIN_NOTICE
     from kwise.report.excel import ReportSections, _summary_rows
     from kwise.report.notices import CONTRACT_CHANGE_WARNING
@@ -320,9 +327,41 @@ def test_Excel_요약이_여유_확보_안내를_한_번만_싣는다(
         notices=tuple(item for item in sample_diagnosis.notices if item.fact != MARGIN_FACT)
         + 실린것,
     )
-    rows = _summary_rows(ReportSections(usage=sample_usage, bill=sample_bill, diagnosis=diagnosis))
-    선줄 = [label for label, _kind, text in rows if text == CONTRACT_CHANGE_WARNING]
+    공통 = basis("조합 전부에 서는 근거 문장입니다.", fact="combination.nail_common")
+    홀로 = basis("한 조합에만 서는 근거 문장입니다.", fact="combination.nail_single")
+    원 = sample_comparison.combinations
+    assert len(원) >= 3, "기준선 뺀 조합이 둘 이상인 비교가 아니다"
+    바꾼 = (
+        원[0],
+        *(
+            dataclasses.replace(
+                item,
+                notices=(
+                    *item.notices,
+                    공통,
+                    warn(MARGIN_NOTICE, fact=MARGIN_FACT),
+                    basis(f"조합마다 값이 다른 문장 {index}.", fact="combination.nail_value"),
+                    *((홀로,) if index == 1 else ()),
+                ),
+            )
+            for index, item in enumerate(원[1:], start=1)
+        ),
+    )
+    comparison = dataclasses.replace(
+        sample_comparison, baseline=바꾼[0], combinations=바꾼, notices=aggregate_notices(바꾼)
+    )
+    rows = _summary_rows(
+        ReportSections(
+            usage=sample_usage, bill=sample_bill, diagnosis=diagnosis, comparison=comparison
+        )
+    )
+    선줄 = [label for label, _kind, text in rows if text.endswith(CONTRACT_CHANGE_WARNING)]
     assert 선줄 == ["계약전력 변경 경고"], 선줄
+    조합 = [text for _label, kind, text in rows if kind == "조합"]
+    assert [text for text in 조합 if text.endswith(공통.text)] == [공통.text], 조합
+    assert [text for text in 조합 if text.endswith(홀로.text)] == [f"{바꾼[1].name} — {홀로.text}"]
+    값다른 = [f"{item.name} — 조합마다 값이 다른 문장 {i}." for i, item in enumerate(바꾼) if i]
+    assert [text for text in 조합 if "조합마다 값이 다른 문장" in text] == 값다른
 
 
 # ==================================================== ⑤ 사실 ID (20세션)

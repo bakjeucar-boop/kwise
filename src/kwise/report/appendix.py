@@ -130,13 +130,17 @@ def known_limits(*notices: tuple[Notice, ...]) -> tuple[str, ...]:
 
     **같은 사실을 두 번 싣지 않는다** (S240 결정 3). 한계 글에 단 사실 ID
     (:data:`~kwise.report.notices.LIMIT_FACTS`)로 참고 안내를 **사실로** 거른다 —
-    앞 30자 견줌을 갈음한다. 조합이 붙인 판별자는 떼고 본다. 짝 가운데 안내 쪽 글자를
-    남기는 사실(:data:`~kwise.report.notices.LIMIT_YIELDS`)은 한계 글 자리에 그 글자를 싣는다.
+    앞 30자 견줌을 갈음한다. 조합이 붙인 판별자는 떼고 보고, 같은 사실이면 판별자 없는
+    안내의 글자(앞머리 없는 글)를 싣는다 — Word 는 조합 안내를 먼저 넘겨 앞머리 붙은
+    글이 먼저 선다. 짝 가운데 안내 쪽 글자를 남기는 사실
+    (:data:`~kwise.report.notices.LIMIT_YIELDS`)은 한계 글 자리에 그 글자를 싣는다.
     """
     appendix = report_appendix(*notices)
-    first: dict[str, str] = {}
+    first: dict[str, Notice] = {}
     for item in appendix:
-        first.setdefault(item.fact_base, item.text)
+        held = first.get(item.fact_base)
+        if held is None or (held.fact != held.fact_base and item.fact == item.fact_base):
+            first[item.fact_base] = item
     out: list[str] = []
     seen: set[str] = set()
     for line in KNOWN_LIMITS:
@@ -144,10 +148,10 @@ def known_limits(*notices: tuple[Notice, ...]) -> tuple[str, ...]:
         if fact is not None:
             seen.add(fact)
             if fact in LIMIT_YIELDS and fact in first:
-                line = first[fact]
+                line = first[fact].text
         out.append(line)
     for item in appendix:
         if item.fact_base not in seen:
             seen.add(item.fact_base)
-            out.append(item.text)
+            out.append(first[item.fact_base].text)
     return tuple(out)
