@@ -30,6 +30,7 @@ from kwise.measures import (
     ContractAdjustment,
     dispatch_peak_shaving,
     lowest_certainty,
+    payback_years,
 )
 from kwise.measures.solar import power_factor_after_pct, power_factor_floor_pct
 from kwise.notices import texts
@@ -290,26 +291,45 @@ def test_역률_100_벌은_태양광이_낀_조합에서도_역률_몫이_0_이�
     reasons = _interaction_reasons(comparison, on, ())
     assert not any("역률 감액은 기본요금에 비례" in line for line in reasons), reasons
 
-    # **역률 투자비를 모르면 조합 투자비도 모른다** (S237 ㄱ · 태양광 단가 미입력과 같다).
-    def priced(investment: float | None) -> CombinationResult:
+    # **여지가 없는 역률은 투자 대상이 아니다** (S238 결정 2 · S154) — 역률 투자비를
+    # 비워도 조합 투자비는 태양광 몫으로 선다. 여지가 있는 벌(원 부하 92)은 S237 ㄱ
+    # 그대로 모른다(태양광 단가 미입력과 같다). 넣은 투자비는 전처럼 더한다.
+    def priced(
+        investment: float | None, *, pct: float = 100.0, pv_won: float | None = 100_000_000.0
+    ) -> CombinationResult:
         spec = CombinationSpec(
             "태양광",
             CURRENT,
             pv_capacity_kwp=PV_KWP,
-            pv_total_investment_won=100_000_000.0,
+            pv_total_investment_won=pv_won,
             power_factor_pct=97.0,
             power_factor_investment_won=investment,
         )
-        return evaluate_combination(sample_usage, tariff, spec, **kwargs)
+        options = BillingOptions(power_factor_pct=pct)
+        return evaluate_combination(sample_usage, tariff, spec, **{**kwargs, "options": options})
 
-    assert (priced(None).investment_won, priced(None).payback_years) == (None, None)
+    free = priced(None)
+    assert free.investment_won == 100_000_000.0
+    assert free.payback_years == payback_years(100_000_000.0, free.annual_saving_won)
+    headroom = priced(None, pct=92.0)
+    assert (headroom.investment_won, headroom.payback_years) == (None, None)
     assert priced(3_000_000.0).investment_won == 103_000_000.0
-    # Word 조합 표 · 권장안 문장의 투자비 칸 — 기본 사유(계약 「하한 규정 미확인」)가 아니다.
+
+    # **Word 조합 투자비 칸 사유는 실제로 빠진 입력이다** (S238 결정 3) — 기본 사유
+    # (계약 「하한 규정 미확인」)가 아니다. 역률 투자비가 필요한데 없으면 「투자비
+    # 미입력」, 아니면 태양광 단가 — 조합 안내(``solar.unpriced``)와 같은 글자다.
+    from kwise.measures import PV_UNPRICED_REASON
     from kwise.measures.ess import NO_INVESTMENT_INPUT
     from kwise.report.document import _combination_investment
 
-    assert _combination_investment(priced(None)) == NO_INVESTMENT_INPUT
+    assert _combination_investment(free) == "100,000,000원"
     assert _combination_investment(priced(3_000_000.0)) == "103,000,000원"
+    assert _combination_investment(headroom) == NO_INVESTMENT_INPUT
+    assert _combination_investment(priced(None, pct=92.0, pv_won=None)) == NO_INVESTMENT_INPUT
+    assert _combination_investment(priced(None, pv_won=None)) == PV_UNPRICED_REASON
+    assert _combination_investment(priced(3_000_000.0, pct=92.0, pv_won=None)) == (
+        PV_UNPRICED_REASON
+    )
 
 
 @pytest.mark.xfail(

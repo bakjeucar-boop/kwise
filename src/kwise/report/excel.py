@@ -773,14 +773,13 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
             "주말 부하 비율",
             f"{pattern.weekend_ratio:.1%}" if pattern.weekend_ratio else "—",
         ),
-        # **이름이 제 식을 달고 간다** (S211 2-2). 이 값은 「밖 평균 ÷ 운영시간
-        # 평균」 인데, 화면·PPT·Word 의 「운영시간 외 부하 **비중**」 은 「밖 사용량
-        # ÷ 전체」 라 **한 글자 차 이름으로 두 정의가 섰다.** 덱 19벌에서 차가 0 인
-        # 벌이 없고 부호까지 갈린다(−10.7 ~ +18.2%p). 두 줄 위 「기저부하 비율
-        # (야간÷주간)」 과 같은 꼴로 식을 달아 가른다 — **값은 안 건드린다.**
+        # **「운영시간 외 부하」 는 어디서나 비중이다** (S238 사람 결정) — 밖 사용량 ÷
+        # 전체 사용량. 화면·PPT·Word 와 같은 이름 · 같은 값이다(요구사항서 6.1).
         (
-            "운영시간 외 부하 비율 (운영 외÷운영)",
-            f"{pattern.off_hours_ratio:.1%}" if pattern.off_hours_ratio else "—",
+            "운영시간 외 부하 비중",
+            f"{pattern.off_hours_energy_share:.1%}"
+            if pattern.off_hours_energy_share is not None
+            else "—",
         ),
         ("요금적용전력", billing_demand_text(peak.billing_demand_kw)),
         (f"상위 {peak.top_n}구간 주말 건수 (전 슬롯)", f"{peak.weekend_slots}"),

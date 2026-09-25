@@ -280,49 +280,63 @@ def test_기본요금이_피크에_안_매이는_벌에서_피크를_기준으�
         assert hits == [], hits
 
 
-#: 두 수가 함께 쓰는 앞머리. **여기까지가 같아서 한 글자 차로 갈렸다.**
+#: 이름 앞머리. S211 ~ S237 은 여기까지가 같고 한 글자 차로 두 수가 섰다.
 OFF_HOURS = "운영시간 외 부하"
 
 
-def test_운영시간_외_부하_두_수가_이름에_제_식을_달고_갈린다(rendered: Rendered) -> None:
-    """**한 글자 차 이름이 두 정의를 가렸다** (S211 1·2절).
+def test_운영시간_외_부하는_네_산출물이_같은_이름_같은_값이다(rendered: Rendered) -> None:
+    """**「운영시간 외 부하」 는 어디서나 비중이다** (S238 사람 결정 1).
 
-    「비중」(`off_hours_energy_share`)은 **밖 사용량 ÷ 전체**이고 「비율」
-    (`off_hours_ratio`)은 **밖 평균 ÷ 운영시간 평균**이다 — 정의가 둘이고 둘 다
-    제자리에서 참이다(S211 1-6 ㄴ). 덱 19벌에서 **차가 0 인 벌이 없고 부호까지
-    갈린다**(−10.7 ~ +18.2%p). 앞 여섯 글자가 같아 덱의 70.8% 와 Excel 의 89.0%
-    를 **같은 것의 두 값**으로 읽게 된다.
+    밖 사용량 ÷ 전체 사용량(`off_hours_energy_share` · 요구사항서 6.1). S211 이
+    Excel 에만 「비율」(밖 평균 ÷ 운영시간 평균)을 두고 이름에 식을 달아 갈랐는데
+    덱 19벌에서 차가 −18.2 ~ +10.7%p 라 같은 이름 앞머리로 두 수가 섰다 — S238 이
+    Excel 한 칸을 비중으로 모았다.
 
-    **한 못이 두 자리를 함께 문다.** 화면만 보면 Excel 이 갈려도 초록이고 그
-    반대도 같다 — S192 3-1 이 「「비율」 과 「비중」 을 맞대는 못 0」 이라 적은
-    자리다.
-
-    **실물만 본다** — 소스 리터럴이 아니라 그려진 화면 줄과 구운 Excel 행이다.
+    **한 못이 네 자리를 함께 문다** — 화면만 보면 Excel 이 갈려도 초록이다.
+    **실물만 본다** — 그려진 화면 줄 · 구운 PPT · Excel · Word 줄이다.
     """
+    이름 = f"{OFF_HOURS} 비중"
     화면 = [text for slot, text in rendered.screen if text.startswith(OFF_HOURS)]
-    assert 화면 == [f"{OFF_HOURS} 비중"], f"화면 이름이 달라졌다 — {화면}"
-
-    라벨 = [i for i, (_slot, text) in enumerate(rendered.screen) if text == f"{OFF_HOURS} 비중"]
-    assert len(라벨) == 1, f"화면 라벨이 하나여야 합니다 — {라벨}"
+    assert 화면 == [이름], f"화면 이름이 달라졌다 — {화면}"
+    라벨 = [i for i, (_slot, text) in enumerate(rendered.screen) if text == 이름]
     slot, 화면값 = rendered.screen[라벨[0] + 1]
     assert slot == "지표", f"라벨 다음이 지표 값이어야 합니다 — {slot} · {화면값}"
 
-    엑셀 = [row for row in rendered.excel_rows if row and row[0].startswith(OFF_HOURS)]
-    assert len(엑셀) == 1, f"Excel 이름이 하나여야 합니다 — {엑셀}"
-    엑셀이름, 엑셀값 = 엑셀[0][0], 엑셀[0][1]
+    # Excel · Word 는 한 행에 이름과 값이 있다 · PPT 는 이름 문단 다음 문단이 값이다.
+    본: dict[str, list[tuple[str, str]]] = {"Excel": [], "PPT": [], "Word": []}
+    rows = list(rendered.rows)
+    for i, row in enumerate(rows):
+        if row[0] in 본 and len(row) > 2 and row[2].startswith(OFF_HOURS):
+            value = row[3] if len(row) > 3 else rows[i + 1][-1]
+            본[row[0]].append((row[2], value))
+    assert 본 == {name: [(이름, 화면값)] for name in 본}, (
+        f"{rendered.key} — 화면 {화면값} 과 산출물이 갈렸다 — {본}"
+    )
 
-    # ① 앞머리가 같으므로 **뒤에 식이 붙어 갈려야 한다.**
-    assert 엑셀이름 != f"{OFF_HOURS} 비중", "Excel 이 「비중」 이름을 쓰는데 값은 비율이다"
-    assert "÷" in 엑셀이름, (
-        f"Excel 이름이 제 식을 안 달았다 — {엑셀이름!r}. 「비중」 과 한 글자 차라 "
-        "그대로 두면 덱의 수와 같은 것으로 읽힌다 (S211 2-2)."
-    )
-    # ② 「비중」 쪽은 실물에 식이 이미 떠 있다 — 툴팁이 그 자리다.
-    assert any("밖 사용량 ÷ 전체 사용량" in text for text in rendered.texts), (
-        "「비중」 의 식이 실물에서 사라졌다"
-    )
-    # ③ **두 수는 실제로 다르다** — 같아지면 정의 하나가 조용히 사라진 것이다.
-    assert 화면값 != 엑셀값, f"{rendered.key} — 두 수가 같아졌다 ({화면값})"
+
+def test_Word_조합_투자비_칸은_빠진_입력을_말하고_세_자리가_같은_글자다(
+    rendered: Rendered,
+) -> None:
+    """**미산출 사유는 실제로 빠진 입력이다** (S238 결정 3 · S207 · S233 ㄱ).
+
+    Word 요약 표 「투자비」 · 조합 표 권장 줄 · 권장안 문장이 같은 사실(권장 조합
+    투자비)이다. S237 까지 요약 표만 기본 사유(계약 「미산출 — 하한 규정 미확인」)를
+    적어 19벌 다 거짓이었다 — 조합에는 계약 투자비가 없다. 갈래마다의 글자는
+    `tests\\test_compare.py` 가 문다(태양광 단가 · 역률 투자비).
+    """
+    word = [row[1:] for row in rendered.rows if row[0] == "Word"]
+    표 = next(cells[0] for cells in word if len(cells) == 3 and cells[1] == "권장 조합")
+    요약 = {cells[1]: cells[2] for cells in word if cells[0] == 표 and len(cells) == 3}
+    권장 = 요약["권장 조합"]
+    조합 = [cells for cells in word if len(cells) == 6 and cells[1] == 권장]
+    문장 = [cells[-1] for cells in word if "권장안은" in cells[-1]]
+    assert len(조합) == 1 and len(문장) == 1, (조합, 문장)
+    칸 = [요약["투자비"], 조합[0][4]]
+    assert 칸[0] == 칸[1] and f"투자비는 {칸[0]}," in 문장[0], (rendered.key, 칸, 문장)
+    조합칸 = [
+        cells[4] for cells in word if len(cells) == 6 and cells[1].startswith(("+ ", "기준선"))
+    ]
+    assert not any("하한 규정" in text for text in [*칸, *조합칸]), (rendered.key, 칸, 조합칸)
 
 
 # ===================================================================== 갈래를 모르는 상수

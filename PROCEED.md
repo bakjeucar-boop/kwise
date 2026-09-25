@@ -377,6 +377,22 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - 시험 **3** — `tests\test_base_fee_basis_words.py::test_운영시간_외_부하_두_수가_이름에_제_식을_달고_갈린다`(옛 판정을 문다 · 네 산출물 같은 값으로 갈아 끼운다) · `tests\test_quality.py:493`(비율만 무는 한 줄 · 지운다) · `tests\test_compare.py::test_역률_100_벌은_태양광이_낀_조합에서도_역률_몫이_0_이다`(「역률 투자비를 모르면 조합 투자비도 모른다」 를 역률 100 벌에서 문다 — 결정 2 로 뒤집힌다).
 **1절 벽시계** 09:49 ~ 09:52.
 
+**2-1. 1-5 자리 8 을 다 고쳤다 — 코드 4파일 +30 −21(계산 폴더 `compare` +10 −6 · `quality` +0 −2) · 시험 3파일**(`git diff --numstat` 2절 커밋 앞 · 시험 +74 −41 은 3-3 못 몫(Word 조합 칸 새 못 하나)이 섞였다).
+
+| 자리 | 줄 | 전 → 후 |
+|---|---:|---|
+| `report\excel.py` 진단 한 칸 | +6 −7 | 「운영시간 외 부하 비율 (운영 외÷운영)」 · `off_hours_ratio` → 「운영시간 외 부하 비중」 · `off_hours_energy_share`(`is not None` 이면 `.1%`) · S211 주석 다섯 줄 → 결정 1 두 줄 |
+| `quality\pattern.py` | +0 −2 | `off_hours_ratio` 필드 · 셈 한 줄을 지웠다(부르는 곳 0) · `operating_mean_kw` · `off_hours_mean_kw` 는 이 판 앞부터 부르는 곳 0 이라 그대로 |
+| `compare\combination.py` | +10 −6 | 역률을 켜고 투자비 0 · `None` 이면 조합 투자비 `None` → 여지 판정(`pf_no_headroom`)을 앞으로 당겨 **여지가 없으면 미입력을 안 따진다** · 넣은 투자비는 전처럼 더한다 · 결과 필드 `power_factor_no_headroom` 은 같은 변수 |
+| `report\document.py` `_combination_investment` | 표2 한 줄과 합쳐 +14 −6(가져오기 한 줄 포함) | 역률 미입력이면 `NO_INVESTMENT_INPUT` · 그 밖 기본 사유(계약) → 역률 투자비가 **필요한데** 없으면 `NO_INVESTMENT_INPUT` · 그 밖 `PV_UNPRICED_REASON` |
+| `report\document.py:1557` 표2 | +1 −1(위 줄 수에 든다) | `_won(best.investment_won)` → `_combination_investment(best)` |
+| `tests\test_base_fee_basis_words.py` 두 수 못 | 이름 · 몸 갈아 끼움 | 「두 수가 이름에 제 식을 달고 갈린다 · 화면값 ≠ Excel값」 → `test_운영시간_외_부하는_네_산출물이_같은_이름_같은_값이다`(화면 · PPT · Excel · Word 이름 「운영시간 외 부하 비중」 하나 · 값 = 화면값) |
+| `tests\test_quality.py:493` | −1 | `off_hours_ratio is not None` 지움 |
+| `tests\test_compare.py` 역률 100 못 | +28 −8 | 「역률 투자비 없음 → 조합 `None` · Word 칸 `NO_INVESTMENT_INPUT`」 → 역률 100 은 태양광 몫 1억 · 회수기간 선다 · 92 는 `None` · 넣음 1.03억 · Word 칸 갈래 여섯(금액 둘 · 투자비 미입력 둘 · 태양광 단가 둘) |
+
+**2-2. 적게 닫은 것 0 · 번진 것 0.** 1-4 가 표2 를 이미 셌다. 곁 — `ruff format` 어긋남 `document.py:1489` · `excel.py:548` 은 앞 판부터다(이 판 줄 아님 · 237세션 절 2-2).
+**2절 벽시계** 09:52 ~ 09:55.
+
 ## 오늘 (2026-09-25) 237세션 — **고침 판 · 역률 투자비 0 과 비움 · 뿌리 「ㄹ 0원 거르기」 세 자리를 고친다**
 
 **고침 판 · 2번 PC.** **웹 대화창이 정했다(S236 뒤) — 사람 결정이 아니다** — ㄱ 역률 투자비는 비움과 0 을 가르지 않고 0 을 「미입력」 으로 읽는다 · ㄴ 「여지가 없어 0」 과 「계산해 보니 0」 을 가른다(`docs\HANDOVER.md` 5절 두 행 — 이 판이 앉혔다). **사람이 정했다 — 가리키기만 한다**: 절사 A · 단위 기준 · 측정 중단 · `CLAUDE.md` 는 규칙이 바뀔 때만 · 뿌리 작업은 다른 갈래로 안 빠진다 · S154 · S207(`docs\HANDOVER.md` 5절). 닫은 것 하나 · 이름을 고친 것 하나 · 미해결 146 → 145.

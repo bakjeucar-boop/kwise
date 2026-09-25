@@ -46,6 +46,7 @@ from kwise.measures import (
     MEASURE_CATALOG,
     NO_SAVING,
     NOT_VIABLE_CONCLUSION,
+    PV_UNPRICED_REASON,
     Certainty,
     ContractAdjustment,
     DemandResponseResult,
@@ -533,13 +534,20 @@ def _won(value: float | None, *, reason: str | None = None) -> str:
 
 
 def _combination_investment(item: CombinationResult) -> str:
-    """조합 투자비 한 칸. **역률 투자비를 모르면 그 사유다** (S237 ㄱ).
+    """조합 투자비 한 칸. **사유는 실제로 빠진 입력이다** (S237 ㄱ · S238 결정 3 · S207).
 
-    기본 사유(계약 「하한 규정 미확인」)가 역률 줄에 서면 거짓이다. 그 밖의 미산출은
-    전과 같은 글자다 — 넣은 투자비 경로는 한 글자도 안 바뀐다.
+    역률 투자비가 필요한데 없으면 「투자비 미입력」, 아니면 조합이 모르는 것은 태양광
+    단가뿐이라 조합 안내(``solar.unpriced``)와 같은 글자다. 기본 사유(계약 「하한 규정
+    미확인」)는 조합에 서면 거짓이다. 요약 표 · 조합 표 · 권장안 문장이 이 한 자리를 쓴다.
     """
-    unpriced_pf = item.spec.has_power_factor and not item.spec.power_factor_investment_won
-    return _won(item.investment_won, reason=NO_INVESTMENT_INPUT if unpriced_pf else None)
+    unpriced_pf = (
+        item.spec.has_power_factor
+        and not item.spec.power_factor_investment_won
+        and not item.power_factor_no_headroom
+    )
+    return _won(
+        item.investment_won, reason=NO_INVESTMENT_INPUT if unpriced_pf else PV_UNPRICED_REASON
+    )
 
 
 def _payback_text(years: float | None, investment_won: float | None) -> str:
@@ -1546,7 +1554,7 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
         rows.append(
             ["기간 총 절감액", _won(combination_saving(comparison, best, sections.peer_savings))]
         )
-        rows.append(["투자비", _won(best.investment_won)])
+        rows.append(["투자비", _combination_investment(best)])
         rows.append(["회수기간", _payback_text(best.payback_years, best.investment_won)])
     _add_table(document, rows)
 

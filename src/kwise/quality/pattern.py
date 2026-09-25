@@ -58,7 +58,6 @@ class LoadPattern:
     operating_hours: tuple[int, int]
     operating_mean_kw: float | None
     off_hours_mean_kw: float | None
-    off_hours_ratio: float | None
     off_hours_energy_share: float | None
 
 
@@ -137,6 +136,5 @@ def load_pattern(
         operating_hours=operating_hours,
         operating_mean_kw=operating_mean,
         off_hours_mean_kw=off_hours_mean,
-        off_hours_ratio=_ratio(off_hours_mean, operating_mean),
         off_hours_energy_share=_ratio(off_hours_energy, total_energy),
     )

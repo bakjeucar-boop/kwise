@@ -627,11 +627,17 @@ def evaluate_combination(
         elif investment is not None:
             investment += pv_investment
     # 역률 투자비도 같다 — 0 은 미입력으로 읽는다 (S237 ㄱ · 태양광·ESS 칸과 같다).
+    # **여지가 없는 역률은 투자 대상이 아니다** (S238 결정 2 · S154) — 미입력이어도
+    # 조합 투자비를 「미산출」 로 만들지 않는다. 넣은 투자비는 전처럼 더한다.
+    pf_no_headroom = spec.power_factor_pct is not None and has_no_headroom(
+        start_pct, spec.power_factor_pct
+    )
     if spec.has_power_factor:
-        if not spec.power_factor_investment_won:
+        if spec.power_factor_investment_won:
+            if investment is not None:
+                investment += spec.power_factor_investment_won
+        elif not pf_no_headroom:
             investment = None
-        elif investment is not None:
-            investment += spec.power_factor_investment_won
     if dispatch is not None:
         # ESS 투자비는 **출력 × kW당 단가**다 (7.6). 방전시간은 단가에 이미
         # 반영되어 있으므로 용량을 다시 곱하지 않는다.
@@ -690,9 +696,7 @@ def evaluate_combination(
         dispatch=dispatch,
         contract_saving_won=contract_saving,
         contract_adjustment=adjustment,
-        power_factor_no_headroom=(
-            spec.power_factor_pct is not None and has_no_headroom(start_pct, spec.power_factor_pct)
-        ),
+        power_factor_no_headroom=pf_no_headroom,
         notices=tuple(notices),
     )
 
