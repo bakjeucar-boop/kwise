@@ -312,8 +312,9 @@ def test_Excel_요약이_여유_확보_안내를_한_번만_싣는다(
     없다). 한쪽만 보면 잣대를 통째로 지워도 안 든 벌은 초록이다.
 
     **「조합」 묶음도 한 층이다** (S240 결정 2). 조합 이름 앞머리를 뗀 글자와 사실이
-    같은 안내가 기준선을 뺀 조합 전부에 서면 앞머리 없이 한 번 · 일부에만 서거나 값이
-    다르면 조합마다 · 요약에 이미 선 사실(여유 확보 안내)은 조합 쪽을 뺀다. **빠진 줄의
+    같은 안내가 기준선을 뺀 조합 전부에 서면 앞머리 없이 한 번 · 일부에만 서면 수단에
+    대한 말만 한 번(S241 결정 1) · 조합에 대한 말이거나 값이 다르면 조합마다 · 요약에
+    이미 선 사실(여유 확보 안내)은 조합 쪽을 뺀다. **빠진 줄의
     사실은 같은 층에 남는다** — 앞머리 없는 한 줄과 「필수 안내」 줄로.
     """
     from kwise.compare.combination import aggregate_notices
@@ -329,8 +330,13 @@ def test_Excel_요약이_여유_확보_안내를_한_번만_싣는다(
     )
     공통 = basis("조합 전부에 서는 근거 문장입니다.", fact="combination.nail_common")
     홀로 = basis("한 조합에만 서는 근거 문장입니다.", fact="combination.nail_single")
+    # 일부 조합(뒤 둘)에만 서는 세 갈래 (S241 결정 1) — 수단에 대한 말 · 조합에 대한 말 ·
+    # 수단에 대한 말인데 조합마다 값이 다른 말.
+    수단 = basis("일부 조합에 서는 수단 문장입니다.", fact="contract.nail_partial")
+    조합몫 = basis("일부 조합에 서는 조합 문장입니다.", fact="combination.nail_partial")
     원 = sample_comparison.combinations
-    assert len(원) >= 3, "기준선 뺀 조합이 둘 이상인 비교가 아니다"
+    assert len(원) >= 4, "기준선 뺀 조합이 셋 이상인 비교가 아니다 — 「일부」 가 안 선다"
+    일부 = (len(원) - 2, len(원) - 1)
     바꾼 = (
         원[0],
         *(
@@ -342,6 +348,15 @@ def test_Excel_요약이_여유_확보_안내를_한_번만_싣는다(
                     warn(MARGIN_NOTICE, fact=MARGIN_FACT),
                     basis(f"조합마다 값이 다른 문장 {index}.", fact="combination.nail_value"),
                     *((홀로,) if index == 1 else ()),
+                    *(
+                        (
+                            수단,
+                            조합몫,
+                            basis(f"수단 값이 다른 문장 {index}.", fact="contract.nail_value"),
+                        )
+                        if index in 일부
+                        else ()
+                    ),
                 ),
             )
             for index, item in enumerate(원[1:], start=1)
@@ -362,6 +377,13 @@ def test_Excel_요약이_여유_확보_안내를_한_번만_싣는다(
     assert [text for text in 조합 if text.endswith(홀로.text)] == [f"{바꾼[1].name} — {홀로.text}"]
     값다른 = [f"{item.name} — 조합마다 값이 다른 문장 {i}." for i, item in enumerate(바꾼) if i]
     assert [text for text in 조합 if "조합마다 값이 다른 문장" in text] == 값다른
+    assert [text for text in 조합 if text.endswith(수단.text)] == [수단.text], 조합
+    assert [text for text in 조합 if text.endswith(조합몫.text)] == [
+        f"{바꾼[i].name} — {조합몫.text}" for i in 일부
+    ], 조합
+    assert [text for text in 조합 if "수단 값이 다른 문장" in text] == [
+        f"{바꾼[i].name} — 수단 값이 다른 문장 {i}." for i in 일부
+    ], 조합
 
 
 # ==================================================== ⑤ 사실 ID (20세션)

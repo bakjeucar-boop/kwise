@@ -311,8 +311,7 @@ def _combination_notices(
         for key, count in counts.items()
         if count >= 2
         and (
-            count == len(peers)
-            or (not key[1].startswith("combination.") and wording[key[1]] == 1)
+            count == len(peers) or (not key[1].startswith("combination.") and wording[key[1]] == 1)
         )
     }
     origin = {

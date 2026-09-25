@@ -2873,10 +2873,21 @@ def test_툴팁까지_escape_한다(screen_lines: tuple[Any, ...]) -> None:
 
 
 @pytest.mark.parametrize(
-    "rule", ["코드 식별자", "요구사항서 참조", "규정 이름 없는 조문", "규정 이름 없는 별표"]
+    "rule",
+    ["코드 식별자", "요구사항서 참조", "규정 이름 없는 조문", "규정 이름 없는 별표", "세션 번호"],
 )
 def test_화면에_개발자_언어가_없다(rule: str, screen_lines: tuple[Any, ...]) -> None:
-    """코드 식별자·내부 문서 번호·규정 이름 없는 조문 (25세션 4절)."""
+    """코드 식별자·내부 문서 번호·규정 이름 없는 조문 (25세션 4절).
+
+    **세션 번호는 감사 도구에 규칙이 없어 여기서 문다** (S241 결정 2 · 4 — 그물 도구는
+    안 고친다). 꼴은 `tests\\test_artifact_words.py` 의 ``SESSION_NUMBER`` 하나다.
+    """
+    if rule == "세션 번호":
+        from tests.test_artifact_words import SESSION_NUMBER
+
+        found = [item for item in screen_lines if SESSION_NUMBER.search(item.text)]
+        assert not found, [f"[{item.slot}] {item.where} :: {item.text[:80]}" for item in found]
+        return
     offenders = _audit().offenders(screen_lines)
     assert not offenders.get(rule), [
         f"[{item.slot}] {item.where} :: {item.text[:80]}" for item in offenders[rule]

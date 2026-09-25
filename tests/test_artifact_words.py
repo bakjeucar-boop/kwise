@@ -276,3 +276,88 @@ def test_기간_값을_적는_자리에_기간_이름이_선다() -> None:
         if got != expected:
             wrong.append(f"{relative} 「{piece}」 {got} ≠ {expected}")
     assert wrong == [], wrong
+
+
+# ============================================ 세션 번호 · 내부 경로 (S241 결정 2 · 3)
+
+#: 세션 번호 꼴 — 「(14세션에 바로잡았습니다)」 · 「S207」. 감사 규칙 「내부 문서 번호」 다.
+SESSION_NUMBER = re.compile(r"\d+\s*세션|(?<![A-Za-z])S\d{2,3}(?!\d)")
+
+#: 내부 경로 꼴 — 저장소 폴더와 소스 · 설정 파일 이름. 사용자가 올린 파일 이름
+#: (``.csv`` · ``.xlsx``)은 사용자의 것이라 안 문다.
+INTERNAL_PATH = re.compile(
+    r"(?:data|src|tools|docs|cache|output|reference|tests)[\\/]|\w\.(?:py|json|toml)\b"
+)
+
+
+def test_산출물_실물에_세션_번호와_내부_경로가_없다(
+    sample_usage: UsageData,
+    sample_bill: BillingResult,
+    sample_diagnosis: Any,
+    sample_comparison: Any,
+    single_switch: TariffSwitchResult,
+) -> None:
+    """**PPT · Word · Excel 을 실제로 굽고 그 글자를 본다** (S241 결정 2 · 3 · 4).
+
+    덱 19벌에 「(14세션에 바로잡았습니다)」(Excel · Word 부록 C) · 「화면에서는
+    뺐고(17세션)」(Word 부록 A) · 「사전 취득분(data\\weather\\, …)」(Excel 요약 ·
+    부록 C · Word 부록 C)이 섰다(241세션 절 1-3 · 1-4). 그 셋이 실리는 재료
+    (경제성DR 진단 · ESS 조달 사례 · 알려진 한계)를 넣고 굽는다 — **재료가 실렸는지를
+    먼저 본다**(안 실리면 못이 헛돈다).
+    """
+    from dataclasses import replace
+
+    from kwise.measures import load_ess_cost_model
+    from kwise.report import ReportSections, build_sheets
+    from kwise.report.worksheet import tariff_switch_worksheet
+
+    # 경제성DR 안내는 화면에서 수단 안내로 부록 C 에 간다 — 여기서는 진단 안내 묶음에
+    # 얹어 같은 부록 C 자리(`report\\appendix.py` `known_limits`)로 보낸다.
+    dr_notices = sample_diagnosis.dr.notices
+    diagnosis = replace(sample_diagnosis, notices=(*sample_diagnosis.notices, *dr_notices))
+    sections = DocumentSections(
+        usage=sample_usage,
+        bill=sample_bill,
+        diagnosis=diagnosis,
+        comparison=sample_comparison,
+        building_name="합성 자료",
+    )
+    # Word 부록 A 는 계산 근거 표가 있어야 선다 — ESS 조달 사례가 그 뒤에 붙는다.
+    sections = replace(
+        sections,
+        worksheets=(tariff_switch_worksheet(single_switch),),
+        ess_cases=load_ess_cost_model().case_table(),
+    )
+    sheets = build_sheets(
+        ReportSections(
+            usage=sample_usage,
+            bill=sample_bill,
+            diagnosis=sample_diagnosis,
+            comparison=sample_comparison,
+            measure_notices=(dr_notices,),
+        )
+    )
+    cells = [
+        str(value)
+        for frame in sheets.values()
+        for value in (*frame.to_numpy().ravel(), *frame.index, *frame.columns)
+    ]
+    document = build_document(sections)
+    word = [para.text for para in document.paragraphs] + [
+        cell.text for table in document.tables for row in table.rows for cell in row.cells
+    ]
+    texts = {"PPT": _deck_texts(build_slides(sections)), "Word": word, "Excel": cells}
+
+    실림 = {
+        "Word": ("연간 참여 일수 제한은 없습니다", "투자비 회귀의 원자료입니다", "사전 취득분"),
+        "Excel": ("연간 참여 일수 제한은 없습니다", "사전 취득분"),
+    }
+    for name, needles in 실림.items():
+        joined = "\n".join(texts[name])
+        missing = [needle for needle in needles if needle not in joined]
+        assert missing == [], f"{name} 에 재료가 안 실렸다: {missing}"
+    found = {
+        name: [text for text in lines if SESSION_NUMBER.search(text) or INTERNAL_PATH.search(text)]
+        for name, lines in texts.items()
+    }
+    assert found == {"PPT": [], "Word": [], "Excel": []}, found
