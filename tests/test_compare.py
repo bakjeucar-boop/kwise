@@ -334,6 +334,30 @@ def test_역률_100_벌은_태양광이_낀_조합에서도_역률_몫이_0_이�
         PV_UNPRICED_REASON
     )
 
+    # **여지가 없는 역률만 더한 줄은 세우지 않는다** (S239 결정 2) — 앞 줄과 금액이 같다.
+    # 여지가 있는 92 는 선다. 마지막 줄이면 둔다 — 합산효과 · 권장 조합이 그 줄을 읽는다.
+    # 글자는 Excel 「조합 비교」 가 싣는 표(``frame``)의 조합 열이다.
+    from dataclasses import replace
+
+    base_spec = CombinationSpec("기준선 (현행)", CURRENT)
+    pf_spec = replace(base_spec, name="+ 역률 97%", power_factor_pct=97.0)
+    pv_spec = replace(pf_spec, name="+ 태양광", pv_capacity_kwp=PV_KWP)
+
+    def rows(specs: tuple[CombinationSpec, ...], pct: float) -> list[str]:
+        comparison = compare_combinations(
+            sample_usage,
+            tariff,
+            specs,
+            unit_pv_kw_per_kwp=sample_unit_pv,
+            quality=sample_report,
+            options=BillingOptions(power_factor_pct=pct),
+        )
+        return list(comparison.frame().index)
+
+    assert rows((base_spec, pf_spec, pv_spec), 100.0) == ["기준선 (현행)", "+ 태양광"]
+    assert rows((base_spec, pf_spec, pv_spec), 92.0) == ["기준선 (현행)", "+ 역률 97%", "+ 태양광"]
+    assert rows((base_spec, pf_spec), 100.0) == ["기준선 (현행)", "+ 역률 97%"]
+
 
 @pytest.mark.xfail(
     strict=True,
