@@ -96,6 +96,27 @@ class Rendered:
     #: 덱 스냅과 같은 꼴의 줄 (S232) — ``[산출물, 자리, …글자]``.
     #: 화면은 ``[화면, where, kind, slot, text]`` 다.
     rows: tuple[tuple[str, ...], ...] = ()
+    #: 화면 차트의 vega-lite 명세 JSON (S251 · 나-14) — 축 이름이 어떻게 서는지 본다.
+    charts: tuple[str, ...] = ()
+
+
+def _chart_specs(app: Any) -> list[str]:
+    """화면에 그려진 차트마다 vega-lite 명세 (``tools\\deck_words.py`` 의 걷기와 같다)."""
+    from streamlit.testing.v1.element_tree import Element
+
+    found: list[str] = []
+
+    def walk(node: object) -> None:
+        proto = getattr(node, "proto", None) if isinstance(node, Element) else None
+        if proto is not None and isinstance(getattr(proto, "spec", None), str) and proto.spec:
+            found.append(proto.spec)
+        children = getattr(node, "children", None)
+        for child in children.values() if isinstance(children, dict) else children or []:
+            walk(child)
+
+    walk(getattr(app, "main", None))
+    walk(getattr(app, "sidebar", None))
+    return found
 
 
 def _deck(payload: bytes) -> list[str]:
@@ -228,6 +249,7 @@ def _build(case_key: str) -> Rendered:
         # **그림 안 글자도 같은 판에서 뜬다** (S217 5절) — 새 렌더를 안 붙인다.
         deck_words = _deck_words()
         figures = deck_words._screen_figures(app)
+        charts = _chart_specs(app)
         with deck_words.FigureTap() as tap:
             app.button(key="build_ppt").click().run(timeout=900)
             app.button(key="build_excel").click().run(timeout=900)
@@ -255,6 +277,7 @@ def _build(case_key: str) -> Rendered:
         {"excel": store["excel"].payload, "ppt": store["ppt"].payload, "word": word},
         tuple(tuple(row) for row in figures),
         tuple(rows),
+        tuple(charts),
     )
 
 
@@ -1101,7 +1124,9 @@ def test_절사한_줄끼리의_셈이_적힌_합계와_선다(rendered_sums: Re
     if combos:
         base = float(combos[0][3])
         for combo in combos[1:]:
-            if base - float(combo[3]) != float(combo[4]):
+            # 여지 없는 칸은 「없음」 이다 (S251 사람 결정) — 줄일 몫이 0 이라는 뜻이다.
+            saving = 0.0 if combo[4] == NO_SAVING_WORD else float(combo[4])
+            if base - float(combo[3]) != saving:
                 gaps.append(
                     f"조합 비교 {combo[0]} 차 {base - float(combo[3]):,.0f} · 절감액 {combo[4]}"
                 )
@@ -1414,3 +1439,124 @@ def test_자릿수_증상_사실이_네_산출물에서_같은_글자다(rendere
     ]
     if [cell for cell in ess if "만원" in cell]:
         assert [c for c in ess if won.fullmatch(c) and c != "0원"] == [], (rendered.key, ess)
+
+
+# ===================================================================== S251 사람 결정 · 결정 1 · 2
+
+
+def _plain(text: str) -> str:
+    return text.replace("**", "").removeprefix("⚠").strip()
+
+
+def test_상향_권고는_화면_Word_PPT_가_같은_글자다() -> None:
+    """**계약전력을 넘겨 쓰는 벌의 상향 권고가 PPT 에도 한 줄 선다** (S251 사람 결정 · 마-17).
+
+    글자는 화면 · Word 가 쓰는 안내 그 자리다 — 새 글자를 짓지 않는다. PPT 는 계약전력
+    조정 장 각주에 선다. 재료 — 화면에 선 줄(목표 · 몫이 든)을 먼저 찾는다.
+    """
+    rendered = _render("large-b-short")
+    head = "초과가 0 이 되는 계약전력은"
+    screen = {_plain(row[-1]) for row in rendered.rows if row[0] == "화면" and head in row[-1]}
+    assert len(screen) == 1 and "총액이" in next(iter(screen)), screen
+    line = next(iter(screen))
+    word = [row for row in rendered.rows if row[0] == "Word" and _plain(row[-1]) == line]
+    ppt = [row for row in rendered.rows if row[0] == "PPT" and line in _plain(row[-1])]
+    assert word, line
+    assert ppt, (line, [row for row in rendered.rows if row[0] == "PPT" and head in row[-1]])
+
+
+def test_PPT_마지막_장_주의사항은_Word_3장이_적는_글자다(rendered: Rendered) -> None:
+    """**마지막 한 장 「주의사항」 은 있는 글자만 쓴다** (S251 사람 결정 · 마-19).
+
+    줄마다 Word 3장 수단 주의사항 목록에 같은 글자(역률 추정은 그 첫 문장)가 선다 — 새
+    사실을 더하지 않는다. 그 장은 덱에 하나고 「다음 단계」 뒤 마지막이다.
+    """
+    ppt = [row for row in rendered.rows if row[0] == "PPT"]
+    last = max(int(row[1].removesuffix("표")) for row in ppt if row[1].removesuffix("표").isdigit())
+    titles = [row[2] for row in ppt if row[1] == str(last)]
+    assert titles[:1] == ["주의사항"], (rendered.key, titles)
+    assert [row[2] for row in ppt if row[1] == str(last - 1)][:1] == ["다음 단계"], rendered.key
+    assert sum(row[2] == "주의사항" for row in ppt if row[1].isdigit()) == 1, rendered.key
+    table = [row[2:] for row in ppt if row[1] == f"{last}표"]
+    assert table[0] == ("수단", "주의사항") and len(table) > 1, (rendered.key, table)
+    words = [row[-1] for row in rendered.rows if row[:2] == ("Word", "List Bullet")]
+    for _measure, line in table[1:]:
+        assert line in words or [w for w in words if w.startswith(line[:-1])], (rendered.key, line)
+
+
+def test_Excel_조합_비교의_여지_없는_칸은_없음이다() -> None:
+    """**낮출 몫이 없는 수단만 더한 줄의 절감액은 「없음」 이다** (S251 사람 결정 · 마-21).
+
+    `small-a2` 의 「계약전력 조정」 줄 — 하한이 안 걸려 계약전력을 낮춰도 한 푼 안 준다.
+    다른 산출물(수단별 결과 · 요약)이 같은 사실을 「없음」 으로 적는다. 기준선 줄의 0 은
+    계산해서 0 이라 수 그대로다.
+    """
+    rendered = _render("small-a2")
+    combo = {row[2]: row for row in rendered.rows if row[:2] == ("Excel", "조합 비교")}
+    head = list(combo["조합"])
+    saving, annual = head.index("기간 절감액(원)"), head.index("12개월 환산 절감액(원)")
+    # 재료 — 같은 벌 수단별 결과가 계약전력 조정을 「없음」 으로 적는다.
+    measure = [row for row in rendered.rows if row[:2] == ("Excel", "수단별 결과")]
+    assert [row for row in measure if row[2].startswith("계약전력 조정") and "없음" in row], measure
+    row = combo["계약전력 조정"]
+    assert (row[saving], row[annual]) == ("없음", "없음"), row
+    base = combo["기준선 (현행)"]
+    assert (base[saving], base[annual]) == ("0", "0"), base
+    others = [r for name, r in combo.items() if name not in ("조합", "계약전력 조정")]
+    assert all(r[saving] != "없음" for r in others), others
+
+
+def test_Word_감도_표는_Excel_감도_시트와_같은_표기다(rendered: Rendered) -> None:
+    """**Word 감도 표 칸은 Excel 「감도」 시트 「표시」 와 같은 글자다** (S251 결정 2 · S233).
+
+    앞서 Word 는 날 글자(`large-b-over` 「6,000.0kW (… 6,000.0 ~ 6,000.0kW)」)를, Excel 은 감도
+    상세의 표기 값(천 원 절사 · 0자리)을 적었다.
+    """
+    excel = {
+        row[2]: row[-1]
+        for row in rendered.rows
+        if row[:2] == ("Excel", "감도") and row[2] != "지표" and len(row) > 3
+    }
+    assert excel, rendered.key
+    word = {row[2]: row[3] for row in rendered.rows if row[0] == "Word" and len(row) == 4}
+    # Word 는 기준값이 없는 줄(「미산출」)을 안 싣는다 — 싣는 줄만 맞댄다.
+    shared = [label for label in excel if label in word]
+    assert shared, (rendered.key, sorted(excel))
+    for label in shared:
+        assert word[label] == excel[label], (rendered.key, label, word[label], excel[label])
+
+
+def test_화면_차트의_세로축_이름은_가로로_선다(rendered: Rendered) -> None:
+    """**이름이 있는 세로축은 다 축 위에 가로로 얹는다** (나-14 · S163 `charts.FLAT_TITLE`).
+
+    vega 는 세로축 이름을 90° 돌려 적어 한글이 한 글자씩 쌓였다(「무효전력」 이 「마 전 력 역」).
+    S163 은 선택요금 그림 하나만 고쳤다. 재료 — 이름이 있는 세로축이 있다.
+    """
+
+    def encodings(node: Any) -> Iterator[dict[str, Any]]:
+        if isinstance(node, dict):
+            if isinstance(node.get("encoding"), dict):
+                yield node["encoding"]
+            for child in node.get("layer", []) or []:
+                yield from encodings(child)
+
+    titled, upright = 0, []
+    for spec in rendered.charts:
+        for encoding in encodings(json.loads(spec)):
+            y = encoding.get("y")
+            if isinstance(y, dict) and isinstance(y.get("title"), str) and y["title"]:
+                titled += 1
+                if (y.get("axis") or {}).get("titleAngle") != 0:
+                    upright.append(y["title"])
+    assert titled, rendered.key
+    assert upright == [], (rendered.key, upright)
+
+
+def test_Excel_요약에_AMI_기준_안내가_한_줄_선다(rendered: Rendered) -> None:
+    """**요약 시트 안내 블록에 AMI 기준 한 줄** (나-4 · 73세션 2-2 가 자리와 글을 정했다)."""
+    from kwise.tariff import AMI_BASIS_NOTICE
+
+    rows = [
+        row for row in rendered.rows if row[:2] == ("Excel", "요약") and AMI_BASIS_NOTICE in row
+    ]
+    assert len(rows) == 1, (rendered.key, rows)

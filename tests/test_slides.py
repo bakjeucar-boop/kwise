@@ -3707,3 +3707,118 @@ def test_자리표가_모르는_열쇠는_이름과_함께_걸린다(
 
     with pytest.raises(KeyError, match="모르는_열쇠"):
         build_slides(full_sections)
+
+
+# ================================================= S251 사람 결정 — 주의사항 장
+
+
+def test_주의사항_장은_중대로_가른_것만_마지막_한_장에_있는_글자로_선다(
+    full_sections: DocumentSections,
+) -> None:
+    """**빼면 덱을 오독할 주의사항만 마지막 장 하나에 모은다** (S251 사람 결정).
+
+    가른 잣대는 사실 여섯과 박힌 줄 둘이다(251세션 절 1-3). 글자는 수단 항목이 이미
+    든 글자 그대로이고(역률 추정만 첫 문장) · 실행할 것이 없는 수단은 싣지 않는다 ·
+    줄이 없으면 장도 없다.
+    """
+    from dataclasses import replace
+
+    from kwise.measures import measure_kind
+    from kwise.notices import basis, warn
+
+    # 표본 수단(선택요금 · 하향 여지 없는 계약전력)에는 고를 줄이 없다 — 안내 둘을 든 항목을 더한다.
+    risk = warn("투자비는 0원이지만 리스크는 0이 아닙니다.", fact="dr.penalty_risk")
+    guess = warn(
+        "역률은 추정값입니다 (근거). 화면에 넣으십시오.", fact="power_factor.estimated_only"
+    )
+    idle = basis("근거 한 줄입니다.", fact="dr.baseline")
+    extra = MeasureEntry(
+        kind=measure_kind("demand_response"),
+        conclusion="결론",
+        saving="미산출",
+        investment="0원",
+        payback="—",
+        certainty="높음",
+        cautions=(risk.text, guess.text, idle.text),
+        notices=(risk, guess, idle),
+    )
+    full_sections = replace(full_sections, measures=(*full_sections.measures, extra))
+    rows = slides_module.caution_rows(full_sections)
+    assert rows, "재료 — 표본 덱에 중대 주의사항이 선다"
+    assert [line for _, line in rows][-2:] == [risk.text, "역률은 추정값입니다 (근거)."], rows
+    by_title = {measure_slide_title(entry): entry for entry in full_sections.measures}
+    for measure, line in rows:
+        entry = by_title[measure]
+        assert entry.actionable, (measure, line)
+        picked = [plain_text(text).strip() for text in entry.cautions]
+        notices = [
+            (item.fact_base, plain_text(item.text).strip())
+            for item in entry.notices
+            if item.fact_base in slides_module.CAUTION_SLIDE_FACTS
+        ]
+        fixed = [plain_text(text) for text in slides_module.CAUTION_SLIDE_LINES]
+        first = slides_module.CAUTION_SLIDE_FACTS
+        assert (line in picked and line in fixed) or any(
+            line == text or (first[fact] and text.startswith(line[:-1])) for fact, text in notices
+        ), (measure, line)
+    specs = slide_specs(full_sections)
+    assert [spec.key for spec in specs].count("cautions") == 1
+    assert specs[-1].key == "cautions" and specs[-2].key == "closing"
+    deck = build_slides(full_sections)
+    last = deck.slides[len(deck.slides) - 1]
+    cells = [
+        [cell.text for cell in line.cells]
+        for shape in last.shapes
+        if shape.has_table
+        for line in shape.table.rows
+    ]
+    assert cells == [["수단", "주의사항"], *[list(row) for row in rows]]
+    empty = DocumentSections(
+        usage=full_sections.usage, bill=full_sections.bill, diagnosis=full_sections.diagnosis
+    )
+    assert "cautions" not in [spec.key for spec in slide_specs(empty)]
+
+
+# ================================================= S251 결정 1 — 기록으로 서는 넷
+
+
+def test_관측_최대와_요금적용전력은_1_kW_계산단위로_가른다() -> None:
+    """**같은지 보는 문턱이 약관 제7조 ① 의 1 kW 다** (나-3 · S160 3절).
+
+    1% 문턱은 대형 벌에서 52.93 kW 차이도 「같다」 로 접었다. 세 자리(화면 · PPT ·
+    Word)가 한 판정을 부른다.
+    """
+    from kwise.report.notices import demand_split
+
+    assert not demand_split(132.28, 132.0), "용인 실측 — 1 kW 안이라 한 칸이다"
+    assert demand_split(5_293.4, 5_250.0), "1% 안(52.93 kW)이지만 1 kW 밖이라 두 칸이다"
+    assert not demand_split(5_293.4, 5_293.0)
+    root = Path(__file__).resolve().parent.parent / "src" / "kwise"
+    for name in ("ui/views/diagnose.py", "report/slides.py", "report/document.py"):
+        source = (root / name).read_text(encoding="utf-8")
+        assert "demand_split(" in source and "* 0.99" not in source, name
+
+
+def test_금액_축_눈금은_눈금끼리_갈리는_자리까지_적고_0_에_부호가_없다() -> None:
+    """**0자리로 못박아 같은 수가 되풀이되던 눈금** (나-18 · S234 ㄷ (나) 읽기 어려운 표기).
+
+    억원 축이 「0 · 0 · 1 · 1 · 1 · 1 · 1 · 2」, 작은 차액 축이 「-0 · 0 · 0」 이었다.
+    """
+    import matplotlib.pyplot as plt
+
+    def labels(low: float, high: float) -> list[str]:
+        figure, axes = plt.subplots()
+        axes.set_ylim(low, high)
+        figures.money_axis_title(axes, "억원")
+        figure.canvas.draw()
+        texts = [tick.get_text() for tick in axes.get_yticklabels()]
+        plt.close(figure)
+        return texts
+
+    small = labels(0.0, 2.1)
+    assert len(set(small)) == len(small), small
+    delta = labels(-0.4, 0.4)
+    assert len(set(delta)) == len(delta), delta
+    assert not [t for t in delta if re.fullmatch(r"-0(\.0+)?", t)], delta
+    large = labels(0.0, 40_000.0)
+    assert all("." not in t for t in large) and "10,000" in large, large

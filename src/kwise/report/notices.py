@@ -73,7 +73,6 @@ from kwise.tariff import (
     OVER_CONTRACT_FACT,
     TENTATIVE_BASE_FEE_BASIS_WARNING,
     BillingResult,
-    round_kw,
 )
 
 #: 기준 데이터가 출고값 그대로일 때의 문구.
@@ -332,11 +331,13 @@ def billing_demand_text(kw: float) -> str:
 def demand_split(peak_kw: float, billing_kw: float) -> bool:
     """관측 최대와 요금적용전력을 **따로 적는가** — 약관 제7조 ① 의 계산단위 1 kW 로 가른다.
 
-    요금적용전력은 1 kW 단위로 접힌 값이라 관측 최대를 같은 단위로 접어 견준다. 앞서는
-    화면 · PPT · Word 세 자리가 저마다 1% 문턱을 적어 대형 벌에서 52.93 kW 차이도
-    「같다」 로 접었다 (S160 3절).
+    요금적용전력은 1 kW 단위로 접힌 값이라 관측 최대를 같은 단위로 접으면 갈리는가를 본다
+    — 접힌 값이 정수이므로 「차가 0.5 kW 이상」 과 같은 말이다(접는 식 `round_kw` 는 요금
+    쪽 세 자리에만 둔다 · `test_요금적용전력을_만드는_자리는_한_곳이다`). 앞서는 화면 · PPT ·
+    Word 세 자리가 저마다 1% 문턱을 적어 대형 벌에서 52.93 kW 차이도 「같다」 로 접었다
+    (S160 3절).
     """
-    return billing_kw < round_kw(peak_kw)
+    return round(peak_kw - billing_kw, 9) >= 0.5
 
 
 # **금액의 표기 값도 사실마다 한 자리가 만든다** (S233 ㄱ · 웹 대화창 판단). 사람이
