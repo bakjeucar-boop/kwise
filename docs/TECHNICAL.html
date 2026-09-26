@@ -517,7 +517,7 @@ quality.month_missing_rate:2023-11   달이 판별자다</code></pre></div>
 <h2 id="tech-rules">5. 기준 데이터와 갱신</h2>
 <h3 id="tech-rules-list">5.1 데이터 목록과 출처</h3>
 <p>법령 유래 수치가 코드 상수로 흩어져 있으면 사람이 볼 수도 고칠 수도 없다. 근거와 확인일을 붙여 파일로 옮겼다.</p>
-<div class="table-wrap"><table><thead><tr><th>파일</th><th>항목</th><th>근거</th></tr></thead><tbody><tr><td><code>rules_kr.json</code></td><td><strong>38개</strong></td><td>조문 (약관 제41·42·43·56·57·58·67조의3·68조, 운영규칙 제12장)</td></tr><tr><td><code>assumptions.json</code></td><td><strong>49개</strong></td><td><code>&quot;판단값&quot;</code></td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>파일</th><th>항목</th><th>근거</th></tr></thead><tbody><tr><td><code>rules_kr.json</code></td><td><strong>39개</strong></td><td>조문 (약관 제41·42·43·56·57·58·67조의3·68조, 운영규칙 제12장·별표26)</td></tr><tr><td><code>assumptions.json</code></td><td><strong>49개</strong></td><td><code>&quot;판단값&quot;</code></td></tr></tbody></table></div>
 <p><strong>섞지 않는다.</strong> 섞으면 &quot;이 숫자를 우리가 정한 것인가 법이 정한 것인가&quot;를 되물을 수 없는데, 그 물음이 갱신 판단의 전부다. <strong>스키마가 이를 강제한다</strong> — 법령 유래 항목에 근거 조문이 비면 파일 읽기가 거부된다.</p>
 <p>담긴 것: 역률 9개 · 요금적용전력 4개 · 계약종별 임계 3개 · DR 3개 · 계절·시간대·요일 5개 · 판단값 25개(감도 s · PV 밀도 · DR 분위수 · ESS 효율 · 만료 임계 · 진행률 가중치 등).</p>
 <h4 id="tech-rules-lookup">모듈 상수로 붙잡지 않는다</h4>

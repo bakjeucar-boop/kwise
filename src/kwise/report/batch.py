@@ -91,7 +91,9 @@ class CaseSpec:
     power_factor_investment_won: float | None = None
     # 경제성DR (전력시장운영규칙 제12장). 단가는 기본값이 없다 — 없으면 감축량만 낸다.
     dr_unit_price_won_per_kwh: float | None = None
-    dr_day_ahead_price_won_per_kwh: float | None = None
+    # 위약금 가격. 케이스에 지역이 없어 제주인지 모르므로 육지 식 — 계통한계가격이다
+    # (별표26 5.가 · S249 · 나-18).
+    dr_smp_won_per_kwh: float | None = None
     latitude: float = 37.5
     longitude: float = 127.0
     altitude_m: float = 0.0
@@ -325,7 +327,7 @@ def run_case(
         evaluate_demand_response(
             diagnosis.dr,
             unit_price_won_per_kwh=case.dr_unit_price_won_per_kwh,
-            day_ahead_price_won_per_kwh=case.dr_day_ahead_price_won_per_kwh,
+            penalty_price_won_per_kwh=case.dr_smp_won_per_kwh,
         )
         if diagnosis.dr is not None
         else None

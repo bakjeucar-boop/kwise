@@ -281,6 +281,9 @@ class ContractAdjustment:
     certainty: Certainty = Certainty.HIGH
     investment_won: float = 0.0
     notices: tuple[Notice, ...] = field(default=())
+    on_contract: bool = False
+    """**기본요금이 계약전력에 붙는 종별인가** (제68조 ② · S249 · 나-17). 참이면
+    하한이 애초에 없어 「미산출」 에 하한 사유를 달지 않는다."""
 
     @property
     def crosses_type(self) -> bool:
@@ -656,6 +659,7 @@ def evaluate_contract_adjustment(
                     f"계약전력을 관측 최대 위 {covering:,.0f} kW 로 내린 값과의 차"
                 ),
                 notices=tuple(notices),
+                on_contract=True,
             )
         # **차단이다.** 목표를 낼 수 없는 나머지 — 요금표에 하한 비율만 빠진
         # 종별이거나, 관측 최대가 이미 계약전력 위라 **내릴 자리가 없는** 판이다
@@ -664,7 +668,8 @@ def evaluate_contract_adjustment(
         #
         # **까닭 줄은 앞쪽에만 싣는다** (S248 · 사람 결정 나-17). 계약형에는
         # 하한이 애초에 없어 「하한 비율이 요금 데이터에 없어」 가 거짓이다 —
-        # 「미산출」 표시는 남기고 대신 쓸 글은 짓지 않는다.
+        # 「미산출」 표시는 남기고 대신 쓸 글은 짓지 않는다. **금액 칸 사유도
+        # 같다** (S249 · 결정 2) — 「하한 비율 없음 — 」 을 떼고 「미산출」 만 둔다.
         if not on_contract:
             notices.append(block(_UNKNOWN_NOTICE, fact="contract.floor_unknown"))
         return ContractAdjustment(
@@ -681,8 +686,9 @@ def evaluate_contract_adjustment(
             adjusted_base_won=None,
             saving_won=None,
             annual_saving_won=None,
-            saving_basis="하한 비율 없음 — 금액 미산출",
+            saving_basis="미산출" if on_contract else "하한 비율 없음 — 금액 미산출",
             notices=tuple(notices),
+            on_contract=on_contract,
         )
 
     if not 0.0 < ratio <= 1.0:

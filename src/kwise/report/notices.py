@@ -39,6 +39,7 @@ __all__ = [
     "combination_saving",
     "contract_annual_saving",
     "contract_saving",
+    "contract_unpriced_reason",
     "ess_capacity_text",
     "ess_lines",
     "ess_unpriced_reason",
@@ -197,6 +198,17 @@ UNPRICED_REASONS: dict[str, str] = {
 #: 금액을 못 낸 칸의 머리말. **글자는 여기 하나다** (S165 2절) — 앞서는
 #: ``document.py`` 와 ``slides.py`` 에 같은 글자가 따로 있었다.
 UNPRICED = "미산출"
+
+
+def contract_unpriced_reason(adjustment: ContractAdjustment | None) -> str:
+    """계약전력 조정 금액을 못 낸 칸의 글자 (S249 · 결정 2 · 나-17).
+
+    계약전력 기준 종별에는 하한이 애초에 없어 「하한 규정 미확인」 이 거짓이다 —
+    「미산출」 만 둔다. 요금적용전력 기준 종별은 그 사유가 참이라 그대로다.
+    """
+    if adjustment is not None and adjustment.on_contract:
+        return UNPRICED
+    return UNPRICED_REASONS["contract"]
 
 
 #: 초과 구간이 없어 ESS 곡선이 안 선 갈래의 문장. 화면 2단계 카드와 PPT · Word 수단 장이

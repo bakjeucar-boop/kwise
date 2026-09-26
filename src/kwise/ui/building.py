@@ -86,6 +86,11 @@ class BuildingInfo:
     def named(self) -> bool:
         return bool(self.name.strip())
 
+    @property
+    def jeju(self) -> bool:
+        """제주 건물인가 — DR 위약금 가격이 갈린다 (별표26 5.가 · S249 · 나-18)."""
+        return self.region_key.startswith("제주")
+
 
 def building_uses() -> tuple[BuildingUse, ...]:
     """용도 목록. **코드에 표를 두지 않는다** (요구사항서 12장)."""

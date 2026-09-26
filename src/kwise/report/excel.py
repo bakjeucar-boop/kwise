@@ -80,6 +80,7 @@ from kwise.report.notices import (
     combination_saving,
     contract_annual_saving,
     contract_saving,
+    contract_unpriced_reason,
     ess_capacity_text,
     ess_unpriced_reason,
     format_mwh,
@@ -427,7 +428,9 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
                     contract_saving(diagnosis.contract.adjustment)
                     if diagnosis.contract is not None
                     else summary.contract_saving_won,
-                    reason=UNPRICED_REASONS["contract"],
+                    reason=contract_unpriced_reason(
+                        diagnosis.contract.adjustment if diagnosis.contract is not None else None
+                    ),
                 ),
             )
         )
@@ -548,13 +551,15 @@ def measure_summary_frame(
                 "기간 절감액(원)": (
                     NO_SAVING
                     if contract.no_saving
-                    else format_won(contract_saving(contract), reason=UNPRICED_REASONS["contract"])
+                    else format_won(
+                        contract_saving(contract), reason=contract_unpriced_reason(contract)
+                    )
                 ),
                 "12개월 환산(원)": (
                     NO_SAVING
                     if contract.no_saving
                     else format_won(
-                        contract_annual_saving(contract), reason=UNPRICED_REASONS["contract"]
+                        contract_annual_saving(contract), reason=contract_unpriced_reason(contract)
                     )
                 ),
                 "회수기간": payback_label(
@@ -907,7 +912,8 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
                     NO_SAVING
                     if contract.adjustment.no_saving
                     else format_won(
-                        contract_saving(contract.adjustment), reason=UNPRICED_REASONS["contract"]
+                        contract_saving(contract.adjustment),
+                        reason=contract_unpriced_reason(contract.adjustment),
                     ),
                 ),
             ]

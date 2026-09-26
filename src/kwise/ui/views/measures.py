@@ -507,7 +507,11 @@ def _demand_response(
         if priced
         else None
     )
-    result = evaluate_demand_response(diagnosis.dr, unit_price_won_per_kwh=unit_price or None)
+    result = evaluate_demand_response(
+        diagnosis.dr,
+        unit_price_won_per_kwh=unit_price or None,
+        jeju=building is not None and building.jeju,
+    )
 
     _overview(spec)
     # **넷을 한 줄에 둔다** (31세션 3-1). 27세션까지 3+1 로 갈려 있어 연간 감축

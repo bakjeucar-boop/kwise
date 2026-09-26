@@ -210,7 +210,15 @@ def render(
     # **조합에서 뺀 수단도 여기 남는다** — 뺀 것이 얼마짜리였는지 보여야 뺄지 말지
     # 정할 수 있다 (16세션 5절).
     results = _measure_results(
-        usage, table, form, diagnosis, quality, baseline, reviewed, unit_profile
+        usage,
+        table,
+        form,
+        diagnosis,
+        quality,
+        baseline,
+        reviewed,
+        unit_profile,
+        jeju=building is not None and building.jeju,
     )
     rows = results.standalone()
     _standalone_block(rows)
@@ -989,6 +997,8 @@ def _measure_results(
     baseline: BillingResult,
     enabled: tuple[str, ...],
     unit_profile: pd.Series | None,
+    *,
+    jeju: bool = False,
 ) -> _MeasureResults:
     """**켠 수단만 계산한다.** 2단계에서 이미 돌린 것들이라 캐시에 걸린다.
 
@@ -1023,6 +1033,7 @@ def _measure_results(
         demand_response = evaluate_demand_response(
             diagnosis.dr,
             unit_price_won_per_kwh=measure_float("demand_response", "unit_price"),
+            jeju=jeju,
         )
 
     power_factor = None

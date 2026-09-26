@@ -276,6 +276,8 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "narrative.surplus_off_day_high": _ratio,
     "narrative.surplus_off_day_low": _ratio,
     "dr.bid_restriction_months": _positive,
+    # 실적위약금 계수 (별표26 5.가 · S249).
+    "dr.penalty_factor": _positive,
     "dr.max_events_per_day": _positive,
     "dr.market_hours": _hour_windows,
     "dr.event_hours": _hour_window,

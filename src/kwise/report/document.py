@@ -85,6 +85,7 @@ from kwise.report.notices import (
     combination_saving,
     contract_annual_saving,
     contract_saving,
+    contract_unpriced_reason,
     ess_capacity_text,
     ess_unpriced_reason,
     excess_not_measured_line,
@@ -319,8 +320,8 @@ def _contract_saving(contract: ContractAdjustment, value: float | None) -> str:
     적용했다고 읽힌다.**
     """
     if value is None:
-        # 사유는 1장 · Excel 과 한 자리에서 (S247 결정 3 · S233 ㄱ).
-        return UNPRICED_REASONS["contract"]
+        # 사유는 1장 · Excel 과 한 자리에서 (S247 결정 3 · S233 ㄱ · S249 결정 2).
+        return contract_unpriced_reason(contract)
     if contract.no_saving:
         return NO_SAVING
     return _won(value)
@@ -334,7 +335,7 @@ def _contract_adequacy_saving(adequacy: ContractAdequacy) -> str:
     판정은 수단 쪽과 같은 ``no_saving`` 이다 (S205 2절).
     """
     if adequacy.saving_won is None:
-        return UNPRICED_REASONS["contract"]
+        return contract_unpriced_reason(adequacy.adjustment)
     if adequacy.adjustment.no_saving:
         return NO_SAVING
     return _won(contract_saving(adequacy.adjustment))
@@ -1565,7 +1566,12 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
                 "계약전력 조정 (기간)",
                 NO_SAVING
                 if contract is not None and contract.adjustment.no_saving
-                else _won(contract_won),
+                else _won(
+                    contract_won,
+                    reason=contract_unpriced_reason(
+                        contract.adjustment if contract is not None else None
+                    ),
+                ),
             ]
         )
         rows.append(["태양광 피크 기여 가능성", str(summary.pv_potential)])

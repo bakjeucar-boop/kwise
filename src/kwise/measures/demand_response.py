@@ -20,9 +20,12 @@
 않는다 — 두 곳에서 만들면 어긋난다.
 
 **투자비는 0원이지만 리스크는 0이 아니다.** 감축계획량을 채우지 못하면
-실적위약금이 붙는다 (별표26).
+실적위약금이 붙는다 (별표26 5.가). 육지와 제주의 가격이 갈린다 (S249 · 나-18).
 
-    실적위약금 = (감축계획량 − 실제감축량) × Max(하루전에너지가격, 0)
+    육지  실적위약금 = (감축계획량 − 실제감축량) × 계통한계가격 × 위약금계수
+    제주  실적위약금 = (감축계획량 − 실제감축량) × Max(하루전에너지가격, 0) × 위약금계수
+
+건물이 제주인지 모르면(일괄 생성 등) 육지 식이다.
 
 확실성 등급은 **'중간'** 이다. 입찰 낙찰 여부와 참여일 수가 운영에 달렸다.
 """
@@ -42,6 +45,7 @@ from kwise.diagnose.dr import (
 )
 from kwise.measures.base import Certainty
 from kwise.notices import Notice, basis, block, info, warn
+from kwise.rules import rule_value
 
 __all__ = [
     "DR_ADVISORY",
@@ -63,20 +67,35 @@ DR_ADVISORY = (
 )
 
 
+def penalty_factor() -> float:
+    """실적위약금 계수 (별표26 5.가 · PPCF)."""
+    return float(rule_value("dr.penalty_factor"))
+
+
+def _penalty_price_name(jeju: bool) -> str:
+    """위약금 식의 가격 이름. 규칙 원문 글자다 (별표26 5.가)."""
+    return "하루전에너지가격" if jeju else "계통한계가격"
+
+
 def shortfall_penalty_won(
     planned_kw: float,
     actual_kw: float,
     hours: float,
-    day_ahead_price_won_per_kwh: float,
+    price_won_per_kwh: float,
+    *,
+    jeju: bool = False,
 ) -> float:
-    """실적위약금 (전력시장운영규칙 별표26).
+    """실적위약금 (전력시장운영규칙 별표26 5.가).
 
-        (감축계획량 − 실제감축량) × Max(하루전에너지가격, 0)
+        육지  (감축계획량 − 실제감축량) × 계통한계가격 × 위약금계수
+        제주  (감축계획량 − 실제감축량) × Max(하루전에너지가격, 0) × 위약금계수
 
-    계획을 채웠거나 넘겼으면 0 이다. 가격이 음수면 0 으로 본다.
+    계획을 채웠거나 넘겼으면 0 이다. **음수 가격을 0 으로 보는 것은 제주 식뿐이다** —
+    육지 식에는 원문에 ``Max`` 가 없다.
     """
     shortfall_kwh = max(0.0, planned_kw - actual_kw) * hours
-    return shortfall_kwh * max(0.0, day_ahead_price_won_per_kwh)
+    price = max(0.0, price_won_per_kwh) if jeju else price_won_per_kwh
+    return shortfall_kwh * price * penalty_factor()
 
 
 @dataclass(frozen=True, eq=False)
@@ -92,6 +111,8 @@ class DemandResponseResult:
         annual_reducible_kwh: Σ(저부하일별 감축 여력 × 그날 참여 가능 시간)을
             365일로 환산한 값.
         settlement_won: 정산금. 단가가 없으면 None — 금액을 지어내지 않는다.
+        penalty_price_won_per_kwh: 위약금 가격 — 육지는 계통한계가격 · 제주는
+            하루전에너지가격 (별표26 5.가).
         penalty_per_shortfall_kw_won: 감축 미달 1 kW 당 위약금 (별표26). 리스크 크기다.
         bid_restriction_months: 미이행 제재 기간. 보수적 산정의 이유다.
     """
@@ -112,7 +133,7 @@ class DemandResponseResult:
     unit_price_won_per_kwh: float | None
     settlement_won: float | None
 
-    day_ahead_price_won_per_kwh: float | None
+    penalty_price_won_per_kwh: float | None
     penalty_per_shortfall_kw_won: float | None
 
     resource_types: tuple[DrResourceType, ...]
@@ -155,16 +176,18 @@ def evaluate_demand_response(
     profile: DrProfile,
     *,
     unit_price_won_per_kwh: float | None = None,
-    day_ahead_price_won_per_kwh: float | None = None,
+    penalty_price_won_per_kwh: float | None = None,
     reduction_kw: float | None = None,
+    jeju: bool = False,
 ) -> DemandResponseResult:
     """경제성DR 참여 편익과 위약금 리스크를 낸다.
 
     Args:
         profile: 6.6 진단 결과. **저부하 평일과 보수적 등록 용량을 여기서 받는다.**
         unit_price_won_per_kwh: 정산 단가. **기본값이 없다** — 없으면 금액을 내지 않는다.
-        day_ahead_price_won_per_kwh: 하루전에너지가격. 위약금 리스크 산정용이며
-            없으면 리스크 금액을 내지 않는다.
+        penalty_price_won_per_kwh: 위약금 가격 — 육지는 계통한계가격, 제주는
+            하루전에너지가격. 위약금 리스크 산정용이며 없으면 리스크 금액을 내지 않는다.
+        jeju: 건물이 제주인가 (화면 옆단 지역). **모르면 거짓 — 육지 식이다** (S249 · 나-18).
         reduction_kw: 감축계획량. 기본은 진단의 보수적 등록 가능 용량이다.
             **넣으면 감축 가능량이 그 비율로 다시 잡힌다** — 등록값을 바꾸면
             날마다 낼 수 있는 양도 바뀐다.
@@ -186,17 +209,21 @@ def evaluate_demand_response(
     settlement = None if unit_price_won_per_kwh is None else annual_kwh * unit_price_won_per_kwh
     penalty_per_kw = (
         None
-        if day_ahead_price_won_per_kwh is None
-        else shortfall_penalty_won(1.0, 0.0, dr_event_hours()[1], day_ahead_price_won_per_kwh)
+        if penalty_price_won_per_kwh is None
+        else shortfall_penalty_won(
+            1.0, 0.0, dr_event_hours()[1], penalty_price_won_per_kwh, jeju=jeju
+        )
     )
     months = dr_bid_restriction_months()
+    price_name = _penalty_price_name(jeju)
+    price_term = f"Max({price_name}, 0)" if jeju else price_name
 
     notices: list[Notice] = [
         # **주의** — 위약·리스크. 결과를 그대로 받아들이면 안 되는 것들이다.
         warn(
             "**투자비는 0원이지만 리스크는 0이 아닙니다.** 감축계획량을 채우지 못하면 "
-            "실적위약금 = (감축계획량 − 실제감축량) × Max(하루전에너지가격, 0) 이 "
-            "부과됩니다 (전력시장운영규칙 별표26).",
+            f"실적위약금 = (감축계획량 − 실제감축량) × {price_term} × "
+            f"위약금계수({penalty_factor():g}) 이 부과됩니다 (전력시장운영규칙 별표26).",
             fact="dr.penalty_risk",
         ),
         # **근거** — 숫자가 어디서 나왔는가. 산식·모수·판정 창이다.
@@ -247,7 +274,7 @@ def evaluate_demand_response(
         (name, outcome)
         for name, outcome, value in (
             ("정산 단가", "금액", unit_price_won_per_kwh),
-            ("하루전에너지가격", "위약금 리스크", day_ahead_price_won_per_kwh),
+            (price_name, "위약금 리스크", penalty_price_won_per_kwh),
         )
         if value is None
     )
@@ -264,7 +291,7 @@ def evaluate_demand_response(
                 f"{inputs}{_object_particle(inputs)} 입력하지 않아 "
                 f"{outcomes}{_object_particle(outcomes)} 산출하지 않았습니다. "
                 f"{only_kwh}정산 단가는 전력거래소가 지역별 "
-                "SMP로 정산하는 몫과 사업자 수수료에, 위약금은 하루전에너지가격에 달려 "
+                f"SMP로 정산하는 몫과 사업자 수수료에, 위약금은 {price_name}에 달려 "
                 "있습니다 (전력시장운영규칙 별표26).",
                 fact="dr.no_price",
             )
@@ -305,7 +332,7 @@ def evaluate_demand_response(
         low_load_day_table=profile.low_load_day_table(),
         unit_price_won_per_kwh=unit_price_won_per_kwh,
         settlement_won=settlement,
-        day_ahead_price_won_per_kwh=day_ahead_price_won_per_kwh,
+        penalty_price_won_per_kwh=penalty_price_won_per_kwh,
         penalty_per_shortfall_kw_won=penalty_per_kw,
         resource_types=profile.resource_types,
         bid_restriction_months=months,
