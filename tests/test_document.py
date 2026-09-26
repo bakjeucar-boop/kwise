@@ -1044,6 +1044,152 @@ def test_계약전력_절감_칸_네_자리가_없음을_한_판정으로_적는
         assert set(said.values()) == {expected}, (expected, cells)
 
 
+def test_목표_계약전력은_여지가_없으면_없음_못_내면_미산출이고_미산출_사유는_한_글자다(
+    sample_usage: UsageData,
+    sample_bill: BillingResult,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+) -> None:
+    """**하한을 모르는 벌에서 목표 칸만 「없음」 이고 사유가 장마다 갈렸다** (S247 결정 3).
+
+    「없음」 은 여지 판정(``no_saving``)에 매인 낱말이라 하한을 몰라 못 낸 벌에는
+    「미산출」 이다(S205 · S237 ㄴ). 같은 사실(계약 절감을 못 냈다)의 사유는 Word
+    1장 · 2장 · 3장이 한 글자다(S233 ㄱ · S238 결정 3 의 기본 사유). 지은 Word 와
+    Excel 진단의 칸을 읽는다 — 여지 없음 판(계약 7,000 kW)과 하한 모름 판.
+    """
+    from dataclasses import replace
+
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.measures import ContractStatus
+    from kwise.report import ReportSections, build_sheets
+    from kwise.report.notices import UNPRICED, UNPRICED_REASONS
+
+    engine = diagnose(
+        sample_usage,
+        tariff,
+        ContractInfo(sample_bill.selection, contract_kw=7_000.0),
+        quality=sample_report,
+    )
+    assert engine.contract is not None and engine.contract.adjustment.no_saving, "전제가 안 섰다"
+    adjustment = engine.contract.adjustment
+    unknown = replace(
+        adjustment,
+        status=ContractStatus.UNKNOWN,
+        saving_won=None,
+        annual_saving_won=None,
+        target_contract_kw=None,
+        saving_basis="하한 비율 없음 — 금액 미산출",
+    )
+    blind = replace(engine, contract=replace(engine.contract, adjustment=unknown))
+    # 재료 — 두 판 다 목표가 비고 판정만 갈린다.
+    assert adjustment.target_contract_kw is None and unknown.target_contract_kw is None
+    assert not unknown.no_saving
+
+    for diagnosis, target, reason in (
+        (engine, money.NO_SAVING, None),
+        (blind, UNPRICED, UNPRICED_REASONS["contract"]),
+    ):
+        assert diagnosis.contract is not None
+        word = build_document(
+            DocumentSections(
+                usage=sample_usage,
+                bill=sample_bill,
+                diagnosis=diagnosis,
+                measures=measure_entries(contract=diagnosis.contract.adjustment),
+            )
+        )
+        sheets = build_sheets(
+            ReportSections(
+                usage=sample_usage, bill=sample_bill, diagnosis=diagnosis, include_timeseries=False
+            )
+        )
+        assert _row_value(word, CHAPTER_DIAGNOSIS, "목표 계약전력") == target
+        assert str(sheets["진단"]["값"]["목표 계약전력"]) == target
+        if reason is None:
+            continue
+        said = {
+            "Word 1장": _row_value(word, CHAPTER_SUMMARY, "계약전력 조정 (기간)"),
+            "Word 2장": _row_value(word, CHAPTER_DIAGNOSIS, "예상 기간 절감액"),
+            "Word 3장": _row_value(word, CHAPTER_MEASURES, "기간 절감액"),
+        }
+        assert set(said.values()) == {reason}, said
+
+
+def test_켠_ESS_의_없음은_PPT_와_Word_에서_다른_없음_수단과_같은_꼴로_선다(
+    sample_usage: UsageData,
+    sample_bill: BillingResult,
+    sample_diagnosis: Diagnosis,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+) -> None:
+    """**초과 구간이 없어 곡선이 안 선 ESS 가 PPT · Word 에서 사라졌다** (S247 결정 2).
+
+    같은 산출물이 여지가 없는 계약전력 · 역률 100 의 역률 개선을 요약표 줄 · 수단 장 ·
+    Word 절로 세우므로 ESS 「없음」 도 그 꼴이다. 글자는 화면 카드 문장과 요약표의
+    「없음」 이다(새 글자 0). 지은 Word 와 PPT 에서 셋이 같은 자리에 서는지 본다.
+    """
+    import io
+
+    from pptx import Presentation
+
+    from kwise.measures import EssTargetCurve, evaluate_contract_adjustment, evaluate_power_factor
+    from kwise.report import slides_bytes
+    from kwise.report.notices import ESS_NO_EXCESS
+    from kwise.report.slides import measure_slide_title
+
+    contract = evaluate_contract_adjustment(sample_usage, sample_bill, contract_kw=7_000.0)
+    power_factor = evaluate_power_factor(
+        sample_usage, tariff, sample_bill.selection, current_pct=100.0, quality=sample_report
+    )
+    curve = EssTargetCurve(
+        points=(),
+        best=None,
+        baseline_demand_kw=sample_bill.billing_demand_kw,
+        observed_peak_kw=sample_bill.billing_demand_kw,
+        base_fee_won_per_kw=8_230.0,
+        min_power_kw=50.0,
+        step_kw=1.0,
+        round_trip=0.9,
+        dod=0.9,
+    )
+    # 재료 — 셋 다 「없음」 갈래다.
+    assert contract.no_saving and power_factor.no_headroom
+    entries = measure_entries(contract=contract, power_factor=power_factor, ess_curve=curve)
+    assert [entry.kind.key for entry in entries] == ["contract", "power_factor", "ess"]
+    ess = entries[-1]
+    assert (ess.conclusion, ess.saving, ess.investment, ess.payback) == (
+        ESS_NO_EXCESS,
+        money.NO_SAVING,
+        "—",
+        "—",
+    )
+
+    sections = DocumentSections(
+        usage=sample_usage, bill=sample_bill, diagnosis=sample_diagnosis, measures=entries
+    )
+    word = build_document(sections)
+    headings = [para.text for para in word.paragraphs if _style_name(para) == "Heading 2"]
+    words = [para.text for para in word.paragraphs]
+    deck = Presentation(io.BytesIO(slides_bytes(sections)[0]))
+    slides = [
+        [shape.text_frame.text for shape in slide.shapes if shape.has_text_frame]
+        for slide in deck.slides
+    ]
+    rows = {
+        tuple(cell.text for cell in row.cells)
+        for slide in deck.slides
+        for shape in slide.shapes
+        if shape.has_table
+        for row in shape.table.rows
+    }
+    for entry in entries:
+        title = measure_slide_title(entry)
+        assert any(entry.kind.title in text for text in headings), (entry.kind.key, headings)
+        assert entry.conclusion in words, entry.kind.key
+        assert sum(entry.conclusion in texts for texts in slides) == 1, entry.kind.key
+        assert any(row[:2] == (title, entry.slide_saving) for row in rows), (entry.kind.key, rows)
+
+
 #: 상한 이상에서 **안 서야 하는** 말 — 목표를 세우는 결론과 설비 투입 권고.
 _TARGET_SENTENCE = "올릴 여지가 없습니다"
 _CONTROL_ADVICE = "시간대별 투입을 제어"

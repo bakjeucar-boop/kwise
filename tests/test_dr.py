@@ -414,11 +414,47 @@ def test_단가가_없으면_사유를_낸다(sample_diagnosis: Diagnosis) -> No
     # **차단은 한 줄이다** (22세션 1절). 단가 둘이 다 없으면 한 문장으로 묶는다.
     blocked = [item for item in result.notices if item.fact == "dr.no_price"]
     assert len(blocked) == 1, [item.text for item in blocked]
-    assert "순편익가격" in blocked[0].text
+    assert "지역별 SMP로 정산" in blocked[0].text
     assert "정산 단가 · 하루전에너지가격을 입력하지 않아" in blocked[0].text
     assert "금액과 위약금 리스크를 산출하지 않았습니다" in blocked[0].text
     # 조사가 어긋나지 않는다 — 「리스크을」 이 아니라 「리스크를」 이다.
     assert "리스크을" not in blocked[0].text
+
+
+def test_DR_정산_단가_설명은_규칙_원문_글자를_쓴다(
+    sample_usage: UsageData, sample_bill: object, sample_diagnosis: Diagnosis
+) -> None:
+    """**설명이 「순편익가격」 에 달렸다고 적었는데 규칙은 SMP 로 정산한다** (S247 결정 3 · 나-22).
+
+    전력시장운영규칙 [별표 26] Ⅰ.1 「자발적 수요감축에 따른 감축계획량에 포함된
+    계획감축량은 지역별 SMP로 정산한다.」 — 순편익가격은 제2조 20호 「입찰할 수 있는
+    최소가격」 이다. 설명 셋(차단 안내 · 알려진 한계 · Word 3장 주의)이 원문 글자를 쓰고
+    지은 Word 어디에도 「순편익가격」 이 안 서는지 본다.
+    """
+    from kwise.report import DocumentSections, build_document, measure_entries
+    from kwise.report.notices import KNOWN_LIMITS
+
+    rule = "지역별 SMP로 정산"
+    profile = sample_diagnosis.dr
+    assert profile is not None
+    result = evaluate_demand_response(profile)
+    blocked = next(item.text for item in result.notices if item.fact == "dr.no_price")
+    limit = next(item for item in KNOWN_LIMITS if "경제성DR 정산 단가" in item)
+    entries = measure_entries(demand_response=result)
+    caution = entries[0].cautions[0]
+    for text in (blocked, limit, caution):
+        assert rule in text and "순편익가격" not in text, text
+    word = build_document(
+        DocumentSections(
+            usage=sample_usage,
+            bill=sample_bill,
+            diagnosis=sample_diagnosis,
+            measures=entries,
+        )
+    )
+    paragraphs = [para.text for para in word.paragraphs]
+    assert not [text for text in paragraphs if "순편익가격" in text]
+    assert sum(rule in text for text in paragraphs) >= 2, [t for t in paragraphs if rule in t]
 
 
 def test_감축_가능량만_참고하라는_말은_정산_단가가_없을_때만_선다(

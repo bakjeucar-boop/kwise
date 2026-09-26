@@ -354,6 +354,47 @@ def test_케이스_스터디가_역률요금_갈래를_C8_과_R4_에서_돈다(s
     assert r4.contract_kw == pytest.approx(r1.contract_kw)
 
 
+def test_케이스_스터디의_역률_개선은_넣은_역률에서_출발한다(study: CaseStudy) -> None:
+    """**수단 표가 넣은 역률을 안 읽고 늘 92→97 로 적고 계산했다** (S247 결정 1 · 가-5).
+
+    C8(85) 은 추가요금을 없애는 몫까지 · R4(100) 는 여지가 없어 0 이다 — 식(제43조 ②
+    조정 비율의 차)은 그대로이고 출발점만 넣은 역률이다. 판정 한 줄도 같은 입력을
+    읽는다(`report\\validity.py`). 이름 괄호도 그 역률을 적는다(여지 없음은 목표를 안 세운다).
+    """
+    from kwise.compare.sensitivity import SAVING
+    from kwise.measures import default_target_pct
+    from kwise.tariff import lagging_adjustment_ratio
+
+    expected_names = {"C8": "7.4 역률 개선 (85→97%)", "R4": "7.4 역률 개선 (100%)"}
+    for result in study.results:
+        pct = result.definition.power_factor_pct
+        rows = [row for row in result.measure_rows if str(row["수단"]).startswith("7.4 역률 개선")]
+        assert len(rows) == 1, result.definition.key
+        row = rows[0]
+        name = expected_names.get(result.definition.key, "7.4 역률 개선 (92→97%)")
+        assert row["수단"] == name, (result.definition.key, row["수단"])
+        ratio = lagging_adjustment_ratio(pct or 92.0) - lagging_adjustment_ratio(
+            default_target_pct()
+        )
+        assert float(row[SAVING]) == pytest.approx(
+            result.baseline.total_base_won * ratio, abs=1.0
+        ), result.definition.key
+    # 재료 — 두 벌이 92 벌과 갈린다(갈리지 않으면 입력을 안 읽어도 초록이다).
+    c1, c8, r4 = (
+        next(row for row in study.find(key).measure_rows if str(row["수단"]).startswith("7.4"))
+        for key in ("C1", "C8", "R4")
+    )
+    assert float(c8[SAVING]) > float(c1[SAVING]) > float(r4[SAVING]) == 0.0
+    checks = {
+        item.scope: item.name
+        for item in check_case_study(study)
+        if item.name.startswith("역률 개선 절감액")
+    }
+    for key, share in (("C8", "2.4"), ("R4", "0.0"), ("C1", "1.0")):
+        label = study.find(key).label
+        assert checks[label] == f"역률 개선 절감액 = 기본요금의 {share}% (감액 상한)", checks
+
+
 def test_pv_zero_saves_exactly_nothing(study: CaseStudy) -> None:
     for result in study.results:
         frame = pd.DataFrame(list(result.pv_rows)).set_index("용량(kWp)")

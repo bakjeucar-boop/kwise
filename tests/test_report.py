@@ -418,7 +418,7 @@ def test_summary_carries_every_known_limit(summary_text: str) -> None:
         assert plain_text(limit) in summary_text, limit
     assert any("제42조" in limit for limit in KNOWN_LIMITS)  # 30분 누적 계량
     assert any("제43조 ③" in limit for limit in KNOWN_LIMITS)  # 첫 달 예고
-    assert any("순편익가격" in limit for limit in KNOWN_LIMITS)  # DR 단가 미산출
+    assert any("지역별 SMP로 정산" in limit for limit in KNOWN_LIMITS)  # DR 단가 미산출
     assert any("별표28" in limit for limit in KNOWN_LIMITS)  # CBL
 
 
@@ -957,6 +957,42 @@ def test_배치가_계약전력_기준_종별을_돌린다(
         load_usage(usage_path), tariff, selection, options=BillingOptions(contract_kw=200.0)
     )
     assert summary.baseline_won == pytest.approx(expected.total_won)
+
+
+def test_배치는_넣은_역률을_기준선과_조합에도_싣는다(
+    tmp_path: Path, tariff: TariffTable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**역률 카드만 넣은 역률을 읽고 기준선 · 조합은 간주 92 로 돌았다** (S247 결정 1 · 가-6).
+
+    케이스 스터디 · 일괄 생성은 건물마다 넣은 역률을 모든 자리에서 읽는다(S198).
+    기준선 총액이 그 역률로 셈한 청구서와 같은지 · 간주 92 청구서와 갈리는지 본다.
+    """
+    from kwise.io import load_usage
+    from kwise.report.batch import CaseSpec, run_case
+    from kwise.tariff import BillingOptions, calculate_bill
+
+    monkeypatch.setenv("PROJECT_CACHE", str(tmp_path / "cache"))
+    usage_path = write_month(tmp_path / "역률벌.csv", 2024, 3, kwh=100.0)
+    selection = TariffSelection("general_b", "high_a", "I")
+    spec = CaseSpec(
+        name="역률벌",
+        usage=usage_path,
+        contract_type=selection.contract_type,
+        voltage=selection.voltage,
+        option=selection.option,
+        contract_kw=200.0,
+        power_factor_pct=85.0,
+    )
+    summary = run_case(spec, tariff, output_dir=tmp_path / "out", include_timeseries=False)
+
+    usage = load_usage(usage_path)
+    entered = calculate_bill(
+        usage, tariff, selection, options=BillingOptions(contract_kw=200.0, power_factor_pct=85.0)
+    )
+    deemed = calculate_bill(usage, tariff, selection, options=BillingOptions(contract_kw=200.0))
+    # 재료 — 두 역률이 다른 총액을 낸다(같으면 입력을 안 읽어도 초록이다).
+    assert entered.total_won != pytest.approx(deemed.total_won)
+    assert summary.baseline_won == pytest.approx(entered.total_won)
 
 
 def test_덱_벌_갑Ⅰ_둘이_배치에서_돈다(
