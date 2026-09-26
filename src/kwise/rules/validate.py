@@ -176,6 +176,36 @@ def _excess_tiers(key: str, value: Any) -> list[ValidationIssue]:
     return issues
 
 
+def _excess_count_tiers(key: str, value: Any) -> list[ValidationIssue]:
+    """[[초과횟수 하한, 기본요금 단가 배수], …] — 제67조의3 ① 1호의 구간표.
+
+    **하한과 배수가 함께 커져야 한다** — 초과비율 표(:func:`_excess_tiers`)와 같은 까닭이다.
+    첫 초과는 예고라 표에 없으므로 하한은 2 이상이다.
+    """
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or not value:
+        return [ValidationIssue(key, f"구간 목록이어야 합니다: {value!r}")]
+    issues: list[ValidationIssue] = []
+    previous: tuple[float, float] | None = None
+    for tier in value:
+        if not isinstance(tier, Sequence) or isinstance(tier, (str, bytes)) or len(tier) != 2:
+            issues.append(ValidationIssue(key, f"[하한, 배수] 두 값이어야 합니다: {tier!r}"))
+            continue
+        floor, multiplier = tier
+        if not isinstance(floor, int) or floor < 2:
+            issues.append(ValidationIssue(key, f"초과횟수 하한은 2 이상 정수입니다: {floor!r}"))
+            continue
+        number = _number(multiplier)
+        if number is None or number <= 0:
+            issues.append(ValidationIssue(key, f"배수는 양수여야 합니다: {multiplier!r}"))
+            continue
+        if previous is not None and (floor <= previous[0] or number <= previous[1]):
+            issues.append(
+                ValidationIssue(key, f"하한과 배수가 함께 커져야 합니다: {previous!r} → {tier!r}")
+            )
+        previous = (floor, number)
+    return issues
+
+
 def _ratio_range(key: str, value: Any) -> list[ValidationIssue]:
     """[하한, 상한] 비율. 하한이 상한보다 크면 화면 권장 구간이 뒤집힌다."""
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or len(value) != 2:
@@ -209,6 +239,10 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     # 초과사용부가금 (제67조의3 ③·④ · 109세션).
     "excess_charge.ratio_tiers": _excess_tiers,
     "excess_charge.grace_months": _positive,
+    # 제67조의3 ① 1호 · 2호 문턱 (S248).
+    "excess_charge.count_tiers": _excess_count_tiers,
+    "excess_charge.first_clause_min_contract_kw": _positive,
+    "excess_charge.kwh_per_kw_limit": _positive,
     "contract_type.threshold_kw.general": _positive,
     "contract_type.threshold_kw.industrial": _positive,
     "contract_type.threshold_kw.education": _positive,

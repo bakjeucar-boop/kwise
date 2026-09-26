@@ -34,7 +34,12 @@ from kwise.tariff.demand import (
     monthly_demand_basis,
     round_kw,
 )
-from kwise.tariff.excess import ExcessCharge, excess_charges
+from kwise.tariff.excess import (
+    ExcessCharge,
+    excess_charges,
+    excess_first_clause_min_kw,
+    excess_kwh_per_kw_limit,
+)
 from kwise.tariff.holiday import DateLike, build_calendar
 from kwise.tariff.labels import billing_month_label, option_label
 from kwise.tariff.power_factor import (
@@ -78,8 +83,8 @@ __all__ = [
 
 MISSING_LIMIT_RATIO = 0.05
 #: 계약전력을 넘었다는 안내의 사실 ID. **두 갈래가 같은 ID 로 다른 말을 한다** —
-#: 계약전력 기준 종별은 「산출하지 않았습니다」, 요금적용전력 기준 종별은
-#: 「청구 총액에 넣었습니다」 다. 이름을 세운 까닭은 **산출물이 그 문장을 뽑아
+#: 제67조의3 ① 2호 갈래(고압 계약형 · 저압 20 kW 미만)는 「산출하지 않았습니다」,
+#: 그 밖(③ · ① 1호)은 「청구 총액에 넣었습니다」 다. 이름을 세운 까닭은 **산출물이 그 문장을 뽑아
 #: 쓰기 때문**이다 (:func:`~kwise.report.notices.excess_not_measured_line`).
 OVER_CONTRACT_FACT = "quality.over_contract"
 PartialMonthPolicy = Literal["merge", "prorate"]
@@ -214,7 +219,7 @@ class BillingResult:
     total_energy_won: float
     total_power_factor_won: float
     total_excess_won: float
-    """초과사용부가금 총액 (제67조의3 ③ · 109세션). ``total_won`` 에 들어 있다."""
+    """초과사용부가금 총액 (제67조의3 ③ · ① 1호). ``total_won`` 에 들어 있다."""
     total_won: float
     total_energy_won_adjusted: float
     total_won_adjusted: float
@@ -232,10 +237,10 @@ class BillingResult:
     하한이 없는 갈래(계약전력 기준 종별 · 비율 없음 · 계약전력 없음)에서는
     빈 튜플이다."""
     excess: ExcessCharge = field(default_factory=ExcessCharge)
-    """초과사용부가금의 달별 내역 (제67조의3 ③ · 109세션).
+    """초과사용부가금의 달별 내역 (제67조의3 ③ · ① 1호).
 
     ``excess.applicable`` 이 ``False`` 면 **0원이 아니라 「산출하지 않았다」** 이다
-    — 계약전력 기준 종별(제67조의3 ①)이거나 계약전력을 안 준 경우다."""
+    — 제67조의3 ① 2호 갈래의 계약전력 기준 종별이거나 계약전력을 안 준 경우다."""
     notices: tuple[Notice, ...] = field(default=())
 
     @property
@@ -630,18 +635,32 @@ def calculate_bill(
     power_factor_ratio = power_factor.total_ratio
 
     # 초과사용부가금 (제67조의3 ③ · 109세션). **제68조 ① 고객의 것이다** —
-    # 계약전력 기준 종별은 같은 조 제1항이라 구간이 다르고, 세칙에 우리가
-    # 판정할 수 없는 예외 목록이 붙는다. 그 갈래는 산출하지 않는다.
+    # 계약전력 기준 종별은 같은 조 제1항이다. 그 가운데 **저압 계약전력 20 kW
+    # 이상은 1호**(세칙 제48조의2 ① 5호)라 같은 식에 초과횟수 배수로 센다 (S248 ·
+    # 사람 결정 마-24). 나머지는 2호(월 450 kWh/kW)라 기후환경요금 · 연료비조정
+    # 단가가 없어 산출하지 않는다 (S143).
     # **판정에 쓰는 것은 관측 최대수요다** — 경부하를 뺀 요금적용전력 대상값이
     # 아니다 (별표3 단서 2호는 요금적용전력의 것이다).
+    first_clause = (
+        base_on_contract
+        and selection.voltage == "low"
+        and float(opts.contract_kw or 0.0) >= excess_first_clause_min_kw()
+    )
     excess = (
         ExcessCharge()
-        if base_on_contract
+        if base_on_contract and not first_clause
         else excess_charges(
             monthly_peaks,
             contract_kw=opts.contract_kw,
             base_rate_won_per_kw=rates.base_won_per_kw,
+            by_count=first_clause,
         )
+    )
+    # 부가금 안내의 꼬리 — ③ 과 ① 1호가 같은 말을 한다 (결정 1 · 다른 종별의 꼴).
+    excess_tail = (
+        f"초과사용부가금 {money.won(excess.total_won, reason='—')}을 청구 총액에 넣었습니다."
+        if excess.total_won
+        else "초과한 달이 하나뿐이라 초과사용부가금은 예고이고 청구되지 않습니다."
     )
 
     rows: list[dict[str, Any]] = []
@@ -751,8 +770,26 @@ def calculate_bill(
             warn(TENTATIVE_BASE_FEE_BASIS_WARNING, fact="tariff.tentative_base_fee_basis")
         )
         observed_peak = usage.observed_max_kw
-        if observed_peak > (opts.contract_kw or 0.0):
-            # 품질 점검이 내는 「계약전력 초과」 와 **같은 사실**이다.
+        contract_kw = float(opts.contract_kw or 0.0)
+        if first_clause and observed_peak > contract_kw:
+            # **① 1호는 금액을 냈다** (S248 · 사람 결정 마-24). 말은 ③ 의 꼴
+            # 그대로다 — 문턱(최대수요 초과)도 1호 조문 글자 그대로다.
+            notices.append(
+                warn(
+                    f"{contract.label} 의 관측 최대수요 {observed_peak:,.1f} kW 가 "
+                    f"계약전력 {contract_kw:,.0f} kW 를 넘습니다. "
+                    f"초과사용부가금 대상입니다 — {excess_tail[:-1]} "
+                    "(한전 기본공급약관 제67조의3 제1항).",
+                    fact=OVER_CONTRACT_FACT,
+                )
+            )
+        elif not first_clause and bool(
+            (monthly["total_kwh"] > excess_kwh_per_kw_limit() * contract_kw).any()
+        ):
+            # **2호 문턱은 사용전력량이다** (S248 · 결정 2). 앞서 이 갈래도 1호
+            # 문턱(최대수요 초과)을 댔다 — 조문 글자대로 문턱 조각만 갈았다.
+            #
+            # 품질 점검이 내는 「계약전력 초과」 와 **같은 사실 ID** 다.
             #
             # **「안 쟀다」 를 말한다** (S142 3절). 앞서 이 문구는 「대상이며,
             # 계약전력 재산정이 필요할 수 있습니다」 로 끝나 **무엇을 했는지를
@@ -767,8 +804,8 @@ def calculate_bill(
             # 적으므로(「하향이 아니라 상향·초과 위약 검토 대상입니다」) 걷었다.
             notices.append(
                 warn(
-                    f"{contract.label} 의 관측 최대수요 {observed_peak:,.1f} kW 가 "
-                    f"계약전력 {opts.contract_kw:,.0f} kW 를 넘습니다. "
+                    f"{contract.label} 의 사용전력량이 계약전력 1 kW마다 "
+                    f"월간 {excess_kwh_per_kw_limit():,.0f} kWh 를 넘습니다. "
                     "초과사용부가금 대상인데 이 종별은 산출하지 않았습니다 — "
                     "청구 총액에 안 들어 있습니다 "
                     "(한전 기본공급약관 제67조의3 제1항).",
@@ -813,17 +850,11 @@ def calculate_bill(
             # **금액이 생겼으므로 「별도로 확인하십시오」 를 걷었다** (109세션).
             # 108세션까지는 부가금을 계산하지 않아 사용자에게 미룰 수밖에
             # 없었는데, 이제 총액에 들어 있다. **문구를 늘리지 않고 갈아 끼웠다.**
-            tail = (
-                f"초과사용부가금 {money.won(excess.total_won, reason='—')}을 "
-                "청구 총액에 넣었습니다."
-                if excess.total_won
-                else "초과한 달이 하나뿐이라 초과사용부가금은 예고이고 청구되지 않습니다."
-            )
             notices.append(
                 warn(
                     f"계약전력 {opts.contract_kw:,.0f} kW 를 넘은 구간이 {over_slots:,}건 "
                     "있습니다. 경부하 초과는 요금적용전력에 영향을 주지 않지만 "
-                    f"초과사용부가금 대상입니다 — {tail}",
+                    f"초과사용부가금 대상입니다 — {excess_tail}",
                     fact=OVER_CONTRACT_FACT,
                 )
             )

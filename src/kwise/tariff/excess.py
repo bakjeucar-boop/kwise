@@ -18,11 +18,12 @@
 다시 적는데, 분석 기간이 한 해라 그 창은 언제나 열려 있다 — 곧 같은 결과다.
 그래서 **「초과한 달」 과 「청구되는 달」 이 하나 어긋난다.** 이름을 갈라 둔다.
 
-**이 표는 제68조 제1항 고객의 것이다.** 계약전력 기준 고객(제68조 ②)은
-제67조의3 **제1항**이라 구간이 다르다 — 초과횟수 기준이거나 450 kWh/kW
-기준이고, 세칙에 예외 목록(가압상수도·무선기지국·현장조사 등)이 붙어 **우리가
-판정할 수 없는 갈래**가 있다. 그래서 그 갈래는 **산출하지 않는다.**
-:func:`~kwise.tariff.engine.calculate_bill` 이 `base_fee_basis` 로 가른다.
+**초과비율 표는 제68조 제1항 고객의 것이다.** 계약전력 기준 고객(제68조 ②)은
+제67조의3 **제1항**이다. 그 가운데 **1호**(저압 계약전력 20 kW 이상 · 세칙
+제48조의2 ① 5호)는 같은 식에 **초과횟수** 배수를 곱해 센다 (S248 · 사람 결정
+마-24) — ``by_count``. **2호**(그 밖 · 월 450 kWh/kW)는 기후환경요금 ·
+연료비조정 단가가 도구에 없어 **산출하지 않는다** (S143).
+:func:`~kwise.tariff.engine.calculate_bill` 이 전압과 계약전력으로 가른다.
 
 **값은 ``data\\rules_kr.json`` 에 있다. 모듈 상수로 붙잡지 않는다.**
 """
@@ -41,7 +42,10 @@ __all__ = [
     "ExcessCharge",
     "ExcessMonth",
     "excess_charges",
+    "excess_count_multiplier",
+    "excess_first_clause_min_kw",
     "excess_grace_months",
+    "excess_kwh_per_kw_limit",
     "excess_multiplier",
     "excess_tiers",
 ]
@@ -78,6 +82,27 @@ def excess_multiplier(ratio: float) -> float:
     return multiplier
 
 
+def excess_count_multiplier(count: int) -> float:
+    """제67조의3 ① 1호 — 몇 번째 초과인지에 걸리는 배수. 첫 번째(예고)는 표에 없어 0 이다."""
+    multiplier = 0.0
+    for floor, value in rule_value("excess_charge.count_tiers"):
+        if count >= int(floor):
+            multiplier = float(value)
+        else:
+            break
+    return multiplier
+
+
+def excess_first_clause_min_kw() -> float:
+    """1호가 걸리는 저압 계약전력의 하한 (세칙 제48조의2 ① 5호 · 20 kW)."""
+    return float(rule_value("excess_charge.first_clause_min_contract_kw"))
+
+
+def excess_kwh_per_kw_limit() -> float:
+    """2호의 문턱 — 계약전력 1 kW 마다 월간 사용전력량 (450 kWh)."""
+    return float(rule_value("excess_charge.kwh_per_kw_limit"))
+
+
 @dataclass(frozen=True)
 class ExcessMonth:
     """초과한 달 하나. **예고 달도 여기 있다** (금액이 0 일 뿐이다)."""
@@ -99,10 +124,10 @@ class ExcessCharge:
     months: tuple[ExcessMonth, ...] = field(default=())
     """**초과한 달** 전부. 예고 달을 포함한다."""
     applicable: bool = False
-    """이 계산에 제67조의3 ③ 이 걸리는가.
+    """이 계산에 제67조의3 ③ (또는 ① 1호)이 걸리는가.
 
-    ``False`` 는 **「0원」 이 아니라 「산출하지 않았다」** 이다 — 계약전력 기준
-    고객(제68조 ②)이거나 계약전력을 모르는 경우다. 둘을 섞으면 산출물이
+    ``False`` 는 **「0원」 이 아니라 「산출하지 않았다」** 이다 — ① 2호 갈래의
+    계약전력 기준 고객(제68조 ②)이거나 계약전력을 모르는 경우다. 둘을 섞으면 산출물이
     「부가금 없음」 을 두 뜻으로 말한다 (미해결 「산출물 열에서 0 이 세 뜻을
     갖는다」 와 같은 병이다).
     """
@@ -134,8 +159,9 @@ def excess_charges(
     *,
     contract_kw: float | None,
     base_rate_won_per_kw: float,
+    by_count: bool = False,
 ) -> ExcessCharge:
-    """제67조의3 ③ 의 초과사용부가금.
+    """제67조의3 ③ 의 초과사용부가금. ``by_count`` 면 ① 1호다.
 
     Args:
         monthly_max_kw: 달 → **그 달 관측 최대수요전력** (경부하 포함).
@@ -144,6 +170,8 @@ def excess_charges(
             메우지 않는다는 규약이 여기에도 그대로 걸린다.
         contract_kw: 계약전력. ``None`` 이면 산출하지 않는다.
         base_rate_won_per_kw: 해당 계약종별 기본요금 단가 (원/kW).
+        by_count: 배수를 초과비율(③)이 아니라 **초과횟수**(① 1호)로 잡는다.
+            몇 번째인지는 예고 달과 같이 분석 기간 안에서 센다.
 
     부분 월에는 안분 계수를 곱하지 않는다 — 조문에 일할 규정이 없고, 초과는
     안분되는 요금이 아니라 **그 달에 일어났거나 아닌** 사실이다. 다만 부분 월은
@@ -162,7 +190,7 @@ def excess_charges(
         seen += 1
         excess_kw = peak - contract_kw
         ratio = excess_kw / contract_kw
-        multiplier = excess_multiplier(ratio)
+        multiplier = excess_count_multiplier(seen) if by_count else excess_multiplier(ratio)
         charged = seen > grace
         months.append(
             ExcessMonth(

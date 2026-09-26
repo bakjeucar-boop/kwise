@@ -404,6 +404,23 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - 시험 **4파일** — `test_excess.py`(못 (1) (3)) · `test_diagnose.py`(xfail 못을 보통 시험으로 — 못 (2)) · `test_ui.py:576`(옛 수 84 · 35) · `test_rules.py`(새 검사).
 **1절 벽시계** 18:37:29 ~ 18:48:47(시각 명령 출력 · 커밋 앞).
 
+**2-1. 1-5 코드 10자리 · 문서 11자리를 고쳤다 — 코드 7파일 +209 −35 · 계산 폴더 4파일 +101 −35**(`git diff --numstat` 2절 커밋 앞 · 1-5 자리 일곱 안). 시험은 3절 몫. `ruff check` 다섯 파일 통과(`ruff_20260926_185212.txt` · 앞 판 `…185203.txt` 한 줄 길이 1건을 글자로 줄였다) · `build_docs`(`build_docs_20260926_185257.txt` · 앵커 31 다 있다). 새 엔진 손 확인(`s248_check_20260926_185202.txt`) — 27 kW 다섯 달 예고 · 1.5 · 1.5 · 2.0 · 2.0 · 합 388,588.8원(1-2 예정과 같다) · 75 kW `applicable` 참 · 0원 · 19 kW `applicable` 거짓 · 2호 경고 · `small-a-short` 총액 136,697,532원 그대로 · 2호 경고 · 기준 데이터 검사 0건.
+
+| 자리 | 줄 | 전 → 후 |
+|---|---:|---|
+| ① `tariff\excess.py` | +38 −10 | `excess_count_multiplier`(기준 데이터 `excess_charge.count_tiers` 에서 읽는다 · 첫 초과는 0) · `excess_first_clause_min_kw` · `excess_kwh_per_kw_limit` · `excess_charges(…, by_count=False)` — 참이면 배수를 초과횟수로 · 머리 · `applicable` 독스트링 「계약전력 기준 고객이면 산출하지 않는다」 → 「1호는 센다 · 2호는 산출하지 않는다」 |
+| ②③④ `tariff\engine.py` | +51 −20 | ② `base_on_contract` 면 `ExcessCharge()` → 저압 · 계약전력 20 kW 이상이면 `excess_charges(…, by_count=True)`(`first_clause`) ③ 경고 — 1호 「… 넘습니다. 초과사용부가금 대상인데 이 종별은 산출하지 않았습니다 — 청구 총액에 안 들어 있습니다 (…)」 → 「… 넘습니다. 초과사용부가금 대상입니다 — 초과사용부가금 N원을 청구 총액에 넣었습니다 (한전 기본공급약관 제67조의3 제1항).」(③ 꼬리를 `excess_tail` 하나로 같이 쓴다) · 2호 문턱 「관측 최대 > 계약전력」 → 「달 사용전력량 > 450 × 계약전력」 · 앞 조각 「{종별} 의 관측 최대수요 X kW 가 계약전력 Y kW 를 넘습니다.」 → 「{종별} 의 사용전력량이 계약전력 1 kW마다 월간 450 kWh 를 넘습니다.」 · 뒷말 그대로 ④ `OVER_CONTRACT_FACT` 주석 · `total_excess_won` · `excess` 독스트링 |
+| ⑤⑥ `measures\contract.py` | +8 −3 | ⑤ 조정 차단 `_UNKNOWN_NOTICE` 를 `on_contract` 가 아닐 때만 싣는다(나-17) ⑥ `_over_limit_saving_won` 독스트링 「계약전력 기준 종별은 산출하지 않으므로」 → 「그 가운데 ① 2호 갈래는」 |
+| ⑦ `diagnose\contract.py` | +4 −2 | 진단 차단 `_FLOOR_UNKNOWN` 조건 `contract_floor_ratio is None` → 조정 판정이 `contract.floor_unknown` 을 실었을 때(나-17 · 가르는 자리 하나) |
+| ⑧ `rules\validate.py` | +34 | `_excess_count_tiers`(하한 2 이상 정수 · 하한과 배수가 함께 커진다) · 새 셋을 검사표에 |
+| ⑨⑩ `data\rules_kr.json` · `data\defaults\rules_kr.json` | +37 · +37 | `excess_charge.count_tiers` [[2, 1.5], [4, 2.0], [6, 2.5]](약관 제67조의3 ① 1호) · `excess_charge.first_clause_min_contract_kw` 20(세칙 제48조의2 ① 5.) · `excess_charge.kwh_per_kw_limit` 450(약관 제67조의3 ① 2호) · 확인일 2026-09-26 |
+| 문서 `MANUAL.md`(+ html) | +8 −5 | 계약형 문단 「그 종별의 부가금을 산출하지 않는다」 → 「저압 20 kW 이상은 제1호로 산출 · 그 밖은 제2호라 산출하지 않는다」 · 「전체 84개」 → 「87개」 |
+| 문서 `CALC_LOGIC.md` | +13 −8 | 55 · 575 · 1052 · 1106-1114(「좁게 읽으면 전부 ① 2호」 → 원문 다시 읽기 · 저압 20 kW 이상은 1호) · 1155 |
+| 문서 `TECHNICAL.md`(+ html) · `project-overview.md` · `collaboration.md` | +2 −2 · +1 −1 · +1 −1 | 「rules_kr.json 35」 → 「38」(TECHNICAL 표 근거 칸에 「67조의3」 한 조각) |
+
+**2-2. 적게 닫은 것 · 번진 것.** 1-5 자리 그대로 · 적게 닫은 것 0. **번짐 — 1-5 자리 밖 코드 0 · 문서 0.** 1-2 가 미리 적은 번짐(부록 B 114줄 · 기준 데이터 화면 87개)은 3절이 실물로 본다.
+**2절 벽시계** 18:48:47 ~ 18:53:02(시각 명령 출력 · 커밋 앞).
+
 ---
 ## 오늘 (2026-09-26) 247세션 — **고침 판 · 후보 E 입력 역률(계산 변경) · 나-18 · 나-1 · 나-24 · 나-22 를 고치고 · 나-19 · 나-21 · 마-24 의 사람 결정 재료를 잰다**
 

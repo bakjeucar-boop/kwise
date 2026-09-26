@@ -197,8 +197,10 @@ def assess_contract(
                 fact="contract.over_limit",
             )
         )
-    if adjustment.contract_floor_ratio is None:
-        # **차단** — 금액을 만들지 않는다.
+    if any(item.fact == "contract.floor_unknown" for item in adjustment.notices):
+        # **차단** — 금액을 만들지 않는다. **조정 판정이 그 까닭을 실었을 때만
+        # 싣는다** (S248 · 사람 결정 나-17) — 계약형에는 하한이 애초에 없어
+        # 조정 쪽이 안 싣는다. 가르는 자리는 그쪽 하나다.
         notices.append(block(_FLOOR_UNKNOWN, fact="contract.floor_unknown"))
 
     return ContractAdequacy(

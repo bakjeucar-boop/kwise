@@ -470,8 +470,8 @@ def _over_limit_saving_won(
     **재지 못하는 자리 셋에서 ``None`` 이다.**
 
     * 요금 데이터를 안 받았다 — 다시 계산할 수가 없다.
-    * ``ExcessCharge.applicable`` 이 거짓이다 — 계약전력 기준 종별(제68조 ②)은
-      부가금을 **산출하지 않으므로**(제67조의3 ①) 사라질 몫이 도구에 없다.
+    * ``ExcessCharge.applicable`` 이 거짓이다 — 계약전력 기준 종별(제68조 ②) 가운데
+      ① 2호 갈래는 부가금을 **산출하지 않으므로** 사라질 몫이 도구에 없다.
       그 종별에서 계약전력을 올리면 기본요금만 늘어 **총액이 오른다** —
       「올리면 준다」 는 그 자리에서 거짓이다.
     * 차가 0 이하다 — 하한이 올라 기본요금 증가가 부가금을 먹는 판이다.
@@ -661,7 +661,12 @@ def evaluate_contract_adjustment(
         # 종별이거나, 관측 최대가 이미 계약전력 위라 **내릴 자리가 없는** 판이다
         # (그 판은 하향이 아니라 상향 검토 대상이고 `contract.over_limit` 이
         # 그렇게 적는다).
-        notices.append(block(_UNKNOWN_NOTICE, fact="contract.floor_unknown"))
+        #
+        # **까닭 줄은 앞쪽에만 싣는다** (S248 · 사람 결정 나-17). 계약형에는
+        # 하한이 애초에 없어 「하한 비율이 요금 데이터에 없어」 가 거짓이다 —
+        # 「미산출」 표시는 남기고 대신 쓸 글은 짓지 않는다.
+        if not on_contract:
+            notices.append(block(_UNKNOWN_NOTICE, fact="contract.floor_unknown"))
         return ContractAdjustment(
             status=ContractStatus.UNKNOWN,
             contract_kw=contract_kw,
