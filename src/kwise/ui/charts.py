@@ -249,7 +249,7 @@ def monthly_peak_chart(peak: PeakProfile, *, split: bool = True) -> alt.LayerCha
         .mark_bar()
         .encode(
             x=alt.X("월:N", title=None, sort=None),
-            y=alt.Y("kW:Q", title="최대수요 (kW)"),
+            y=alt.Y("kW:Q", title="최대수요 (kW)", axis=FLAT_TITLE),
             xOffset=alt.XOffset("구분:N"),
             color=alt.Color("구분:N", title=None, legend=LEGEND),
             tooltip=["월", "구분", alt.Tooltip("kW:Q", format=",.1f"), "발생 시각"],
@@ -274,7 +274,7 @@ def top_hour_chart(peak: PeakProfile, *, split: bool = True) -> alt.Chart:
         .mark_bar()
         .encode(
             x=alt.X("시각:N", title=f"상위 {peak.top_n}구간 발생 시각 (검침 라벨)", sort=None),
-            y=alt.Y("구간 수:Q", title="구간 수"),
+            y=alt.Y("구간 수:Q", title="구간 수", axis=FLAT_TITLE),
             xOffset=alt.XOffset("기준:N"),
             color=alt.Color("기준:N", title=None, legend=LEGEND),
             tooltip=["시각", "기준", "구간 수"],
@@ -290,7 +290,7 @@ def hourly_profile_chart(peak: PeakProfile, *, season: str | None = None) -> alt
         .mark_line(point=True)
         .encode(
             x=alt.X("시각:N", title="시각", sort=None),
-            y=alt.Y("평균 부하(kW):Q", title="평균 부하 (kW)", scale=_CUT_SCALE),
+            y=alt.Y("평균 부하(kW):Q", title="평균 부하 (kW)", scale=_CUT_SCALE, axis=FLAT_TITLE),
             tooltip=["시각", alt.Tooltip("평균 부하(kW):Q", format=",.0f")],
         )
         .properties(height=_HEIGHT)
@@ -382,7 +382,16 @@ _TEMP_SERIES = "일평균 기온 (오른쪽 축)"
 #
 # 필드 이름은 층마다 다르다 (곡선은 일별 값, 기준선은 평균). 축 제목은 하나이므로
 # 합쳐도 어긋나지 않는다.
-_TEMP_AXIS = alt.Axis(orient="right", titleColor=_TEMP_COLOR)
+#: 이름은 :data:`FLAT_TITLE` 처럼 축 위에 가로로 얹는다 — 오른쪽 축이라 축 선에서 안쪽으로 붙인다.
+_TEMP_AXIS = alt.Axis(
+    orient="right",
+    titleColor=_TEMP_COLOR,
+    titleAngle=0,
+    titleAlign="right",
+    titleBaseline="bottom",
+    titleX=0,
+    titleY=-8,
+)
 
 
 def _temp_y(field: str) -> alt.Y:
@@ -412,7 +421,14 @@ def daily_temperature_chart(usage: UsageData, temperature: pd.Series) -> alt.Lay
             "사용량(kWh):Q",
             title="일 사용량 (kWh)",
             scale=_CUT_SCALE,
-            axis=alt.Axis(titleColor=_LOAD_COLOR),
+            axis=alt.Axis(
+                titleColor=_LOAD_COLOR,
+                titleAngle=0,
+                titleAlign="left",
+                titleBaseline="bottom",
+                titleX=0,
+                titleY=-8,
+            ),
         ),
         color=alt.Color("계열:N", title=None, scale=scale, legend=LEGEND),
         tooltip=[
@@ -534,7 +550,7 @@ def monthly_charge_chart(structure: ChargeStructure) -> alt.Chart:
         .mark_bar()
         .encode(
             x=alt.X("월:N", title=None, sort=None),
-            y=alt.Y("원:Q", title="요금 (원)", stack="zero"),
+            y=alt.Y("원:Q", title="요금 (원)", stack="zero", axis=FLAT_TITLE),
             color=alt.Color(
                 "구분:N",
                 title=None,
@@ -688,7 +704,7 @@ def solar_curve_chart(
         .mark_line(point=True)
         .encode(
             x=alt.X("용량(kWp):Q", title="설치 용량 (kWp)"),
-            y=alt.Y("원:Q", title="절감액 (원)"),
+            y=alt.Y("원:Q", title="절감액 (원)", axis=FLAT_TITLE),
             color=alt.Color("구분:N", title=None, legend=LEGEND),
             tooltip=[
                 alt.Tooltip("용량(kWp):Q", format=",.0f"),
@@ -914,7 +930,10 @@ def dr_daily_chart(profile: DrProfile) -> alt.LayerChart | alt.FacetChart:
         .encode(
             x=alt.X("날짜:T", title="날짜", axis=date_axis()),
             y=alt.Y(
-                f"{DR_WINDOW_MEAN}:Q", title=f"{JUDGE_WINDOW} 평균 부하 (kW)", scale=_CUT_SCALE
+                f"{DR_WINDOW_MEAN}:Q",
+                title=f"{JUDGE_WINDOW} 평균 부하 (kW)",
+                scale=_CUT_SCALE,
+                axis=FLAT_TITLE,
             ),
             color=alt.Color("구분:N", title=None, scale=_DAY_TYPE_COLORS, legend=LEGEND),
             tooltip=[
@@ -988,7 +1007,18 @@ def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
     scale = alt.Scale(nice=False) if square else alt.Undefined
     # 역률 100 은 선 하나다 — 눈금 「0.000000」 대신 그 까닭을 각도 글자 자리에 적는다 (S225).
     # 눈금 글자는 빼지 않고 투명하게 둔다 — 빼면 그 자리를 축 상자가 가져가 크기가 바뀐다.
-    y_axis = alt.Undefined if square else alt.Axis(labelOpacity=0)
+    y_axis = (
+        FLAT_TITLE
+        if square
+        else alt.Axis(
+            labelOpacity=0,
+            titleAngle=0,
+            titleAlign="left",
+            titleBaseline="bottom",
+            titleX=0,
+            titleY=-8,
+        )
+    )
     lines = pd.DataFrame(
         [
             {"구분": row["구분"], "순서": order, "유효전력": x, "무효전력": y}
@@ -1066,7 +1096,7 @@ def power_factor_day_chart(
         .mark_line(color="#08519c")
         .encode(
             x=alt.X("시각:T", title=f"{day.title} · 15분 부하", axis=time_axis()),
-            y=alt.Y("부하(kW):Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE),
+            y=alt.Y("부하(kW):Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE, axis=FLAT_TITLE),
             tooltip=[time_tooltip(), alt.Tooltip("부하(kW):Q", format=",.0f"), "구간"],
         )
     )
@@ -1106,7 +1136,7 @@ def solar_annual_chart(usage: UsageData, generation_kw: pd.Series) -> alt.Chart:
         .mark_area(opacity=0.85, color="#31a354", line={"color": "#238b45"})
         .encode(
             x=alt.X("날짜:T", title="날짜", axis=date_axis()),
-            y=alt.Y("발전량(kWh):Q", title="일별 발전량 (kWh)"),
+            y=alt.Y("발전량(kWh):Q", title="일별 발전량 (kWh)", axis=FLAT_TITLE),
             tooltip=[
                 date_tooltip(),
                 alt.Tooltip("발전량(kWh):Q", format=",.0f", title="발전량(kWh)"),
@@ -1150,7 +1180,7 @@ def solar_day_chart(
         .mark_area(opacity=0.75)
         .encode(
             x=alt.X("시각:T", title=title, axis=time_axis()),
-            y=alt.Y("순부하(kW):Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE),
+            y=alt.Y("순부하(kW):Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE, axis=FLAT_TITLE),
             y2=alt.Y2("원부하(kW)"),
             color=alt.Color(
                 "구분:N",
@@ -1174,7 +1204,7 @@ def solar_day_chart(
         .mark_line(strokeWidth=1.8)
         .encode(
             x=alt.X("시각:T", axis=time_axis()),
-            y=alt.Y("kW:Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE),
+            y=alt.Y("kW:Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE, axis=FLAT_TITLE),
             color=alt.Color(
                 "구분:N",
                 title=None,
@@ -1253,7 +1283,7 @@ def ess_day_chart(
         .mark_area(opacity=0.7, color="#31a354")
         .encode(
             x=alt.X("시각:T", title=title, axis=time_axis()),
-            y=alt.Y("순부하(kW):Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE),
+            y=alt.Y("순부하(kW):Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE, axis=FLAT_TITLE),
             y2=alt.Y2("원부하(kW)"),
         )
     )
@@ -1265,7 +1295,7 @@ def ess_day_chart(
         .mark_line(strokeWidth=1.8)
         .encode(
             x=alt.X("시각:T", title=title, axis=time_axis()),
-            y=alt.Y("kW:Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE),
+            y=alt.Y("kW:Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE, axis=FLAT_TITLE),
             color=alt.Color(
                 "구분:N",
                 title=None,
@@ -1291,7 +1321,7 @@ def surplus_daily_chart(usage: UsageData, surplus_kw: pd.Series) -> alt.Chart:
         .mark_bar()
         .encode(
             x=alt.X("날짜:T", title="날짜", axis=date_axis()),
-            y=alt.Y("잉여(kWh):Q", title="일별 잉여 (kWh)"),
+            y=alt.Y("잉여(kWh):Q", title="일별 잉여 (kWh)", axis=FLAT_TITLE),
             color=alt.Color("구분:N", title=None, scale=_DAY_TYPE_COLORS, legend=LEGEND),
             tooltip=[date_tooltip(), "구분", alt.Tooltip("잉여(kWh):Q", format=",.0f")],
         )

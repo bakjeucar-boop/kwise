@@ -78,6 +78,7 @@ from kwise.report import (
     surplus_page,
 )
 from kwise.report.days import RepresentativeDay
+from kwise.report.excel import sensitivity_items
 from kwise.report.notices import Peers, combination_saving, standalone_savings
 from kwise.report.worksheet import (
     Worksheet,
@@ -240,7 +241,6 @@ def render(
             diagnosis,
             None,
             no_pv_sensitivity_frame(),
-            (),
             results,
             scope,
             building,
@@ -288,7 +288,6 @@ def render(
             diagnosis,
             None,
             no_pv_sensitivity_frame(),
-            (),
             results,
             scope,
             building,
@@ -374,7 +373,7 @@ def render(
             help=tooltip_text(fresh),
         )
 
-    sensitivity_frame, sensitivity_ranges = _sensitivity_data(
+    sensitivity_frame, _ = _sensitivity_data(
         usage, table, baseline, unit_profile, quality, form, specs
     )
     _download_block(
@@ -383,7 +382,6 @@ def render(
         diagnosis,
         comparison,
         sensitivity_frame,
-        sensitivity_ranges,
         results,
         scope,
         building,
@@ -1234,7 +1232,6 @@ def _download_block(
     diagnosis: Diagnosis,
     comparison: ComparisonResult | None,
     sensitivity: pd.DataFrame,
-    sensitivity_ranges: tuple[SensitivityRange, ...],
     results: _MeasureResults,
     scope: ReviewScope,
     building: BuildingInfo | None,
@@ -1338,7 +1335,10 @@ def _download_block(
                 bill=baseline,
                 diagnosis=diagnosis,
                 comparison=comparison,
-                sensitivity=sensitivity_ranges,
+                # **Excel 「감도」 시트와 같은 표기 값이다** (S251 결정 2).
+                sensitivity=sensitivity_items(
+                    sensitivity, comparison, results.peer_savings(), results.solar
+                ),
                 measures=results.entries(),
                 # **잉여가 나면 한 장이 붙는다** (53세션 3절). 0 이면 ``None`` 이라
                 # 장이 생기지 않는다 — 대형 샘플이 그렇다.

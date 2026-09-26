@@ -26,6 +26,7 @@ from kwise import money
 from kwise.compare import (
     SCENARIO_NAME_CAVEAT,
     SENSITIVITY_NOTE,
+    CombinationResult,
     ComparisonResult,
     sensitivity_range_frame,
     sensitivity_ranges,
@@ -36,6 +37,7 @@ from kwise.compare.sensitivity import (
     ENERGY_SAVING,
     METRIC_LABELS,
     SAVING,
+    SensitivityRange,
 )
 from kwise.diagnose import Diagnosis
 from kwise.diagnose.dr import JUDGE_WINDOW
@@ -68,6 +70,7 @@ from kwise.report import narrative
 from kwise.report.appendix import basis_data_frame, known_limits, worksheet_frame
 from kwise.report.columns import display_frame, localize, season_label, value_label
 from kwise.report.notices import (
+    AMI_BASIS_NOTICE,
     CONTRACT_CHANGE_WARNING,
     DATA_SOURCES,
     KNOWN_LIMITS,
@@ -114,6 +117,7 @@ __all__ = [
     "measure_summary_frame",
     "no_pv_sensitivity_frame",
     "result_path",
+    "sensitivity_items",
     "solar_curve_sheet",
     "strip_timezone",
     "truncate_money_columns",
@@ -452,6 +456,9 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
     # 「기준 데이터를 만졌는가」 하나였다. 전문은 부록 B 가 항목마다 싣는다.
     rows.append(("계산 조건", "기준 데이터", rules_basis_line()))
     rows.append(("미포함 요금요소", "안내", NOT_INCLUDED_NOTICE))  # 5.1
+    # **Excel 은 달마다 두 값을 청구서와 나란히 놓는 산출물이다** (73세션 2-2 가 자리와 글을
+    # 정했다) — 안내 블록에 한 줄, 글은 화면 · PPT 와 한 상수.
+    rows.append(("산정 자료", "안내", AMI_BASIS_NOTICE))
     rows.append(("계약전력 변경 경고", "필수 안내", CONTRACT_CHANGE_WARNING))  # 9.4
     for number, limit in enumerate(KNOWN_LIMITS, start=1):  # 부록 D
         rows.append(("알려진 한계", f"{number}", limit))
@@ -1091,6 +1098,17 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
         frame[annual] = [
             combination_annual_saving(comparison, item, peers) for item in comparison.combinations
         ]
+        # **여지가 없는 칸만 「없음」 이다** (S251 사람 결정 · S237 ㄴ) — 낮출 몫이 애초에 없는
+        # 수단만 더한 줄의 0 은 계산해서 0 이 아니다. 그 밖의 칸은 수 그대로다.
+        empty = [
+            value == 0 and _no_headroom(item)
+            for item, value in zip(comparison.combinations, saving, strict=True)
+        ]
+        for column in ("기간 절감액(원)", annual):
+            frame[column] = [
+                NO_SAVING if none else value
+                for none, value in zip(empty, frame[column], strict=True)
+            ]
         sheets["조합 비교"] = frame
     # **부록 셋** — Word 와 같은 재료를 쓴다 (22세션 3절).
     if sections.worksheets:
@@ -1130,6 +1148,21 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
     return shown
 
 
+def _no_headroom(item: CombinationResult) -> bool:
+    """조합 줄이 더한 수단이 **다 여지가 없는가** — 판정은 계약 ``no_saving`` · 역률
+    ``power_factor_no_headroom`` 한 자리씩이다 (S205 · S237 ㄴ). 수단이 없는 줄은 아니다."""
+    keys = item.spec.measure_keys
+    return bool(keys) and all(
+        (
+            key == "contract"
+            and item.contract_adjustment is not None
+            and item.contract_adjustment.no_saving
+        )
+        or (key == "power_factor" and item.power_factor_no_headroom)
+        for key in keys
+    )
+
+
 def _sensitivity_sheet(raw: pd.DataFrame, detail: pd.DataFrame) -> pd.DataFrame:
     """감도 범위 — **칸과 「표시」 가 감도 상세의 표기 값이다** (S250 결정 1 · S233 ㄱ).
 
@@ -1139,8 +1172,21 @@ def _sensitivity_sheet(raw: pd.DataFrame, detail: pd.DataFrame) -> pd.DataFrame:
     「표시」 는 원 단위 · kW 한 자리로 칸과 다른 값을 적었다.
     """
     frame = sensitivity_range_frame(raw)
+    for folded in _folded_ranges(raw, detail):
+        frame.loc[folded.label, ["기준값", "범위 하한", "범위 상한", "표시"]] = [
+            folded.base,
+            folded.low,
+            folded.high,
+            folded.text(),
+        ]
+    return frame
+
+
+def _folded_ranges(raw: pd.DataFrame, detail: pd.DataFrame) -> tuple[SensitivityRange, ...]:
+    """감도 범위를 **감도 상세의 표기 값으로 접은** 줄들 (S250 결정 1)."""
     shown = truncate_money_columns(detail)
     reference = load_sharpness_factors().base_label
+    folded: list[SensitivityRange] = []
     for item in sensitivity_ranges(raw):
         digits = _tail_decimals(item.metric) or 0
         base, low, high = (
@@ -1151,14 +1197,24 @@ def _sensitivity_sheet(raw: pd.DataFrame, detail: pd.DataFrame) -> pd.DataFrame:
                 (item.high, item.high_scenario),
             )
         )
-        folded = replace(item, base=base, low=low, high=high, decimals=digits)
-        frame.loc[item.label, ["기준값", "범위 하한", "범위 상한", "표시"]] = [
-            folded.base,
-            folded.low,
-            folded.high,
-            folded.text(),
-        ]
-    return frame
+        folded.append(replace(item, base=base, low=low, high=high, decimals=digits))
+    return tuple(folded)
+
+
+def sensitivity_items(
+    raw: pd.DataFrame,
+    comparison: ComparisonResult | None,
+    peers: Peers = (),
+    solar: SolarPoint | None = None,
+) -> tuple[SensitivityRange, ...]:
+    """Excel 「감도」 시트와 **같은 표기 값**의 감도 범위 (S251 결정 2 · S233 · S250 결정 1).
+
+    Word 감도 표가 받는다 — 같은 사실을 Excel 은 천 원 절사 · 0자리로, Word 는 날 글자로
+    적었다. 태양광 곡선이 없는 판(원자료에 첨예도 열이 없다)은 줄이 없다.
+    """
+    if "첨예도 s" not in raw.columns:
+        return ()
+    return _folded_ranges(raw, _same_combination_saving(raw, comparison, peers, solar))
 
 
 def _same_combination_saving(

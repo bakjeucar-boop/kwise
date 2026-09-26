@@ -485,7 +485,19 @@ def money_axis_title(axes: Axes, text: str) -> None:
     axes.set_title(text, loc="left", fontsize=9, pad=6)
     # 눈금도 라벨과 같은 꼴로 읽히게 한다 — 「10000」 옆에 「6,294만원」 이 서면
     # 같은 수를 두 꼴로 읽는다.
-    axes.yaxis.set_major_formatter(FuncFormatter(lambda value, _pos: f"{value:,.0f}"))
+    #
+    # **눈금끼리 갈리는 가장 적은 자리까지 적는다** (S251 · S234 ㄷ (나) 읽기 어려운 표기) —
+    # 0자리로 못박아 억원 축이 「0 · 0 · 1 · 1 · 1 · 1 · 1 · 2」 를, 작은 차액 축이
+    # 「-0 · 0 · 0」 을 냈다. 0 에는 부호를 달지 않는다.
+    def tick(value: float, _pos: int | None) -> str:
+        ticks = list(axes.yaxis.get_majorticklocs())
+        digits = next(
+            (d for d in range(5) if len({f"{t:,.{d}f}" for t in ticks}) == len(ticks)), 4
+        )
+        text = f"{value:,.{digits}f}"
+        return text.lstrip("-") if float(text.replace(",", "")) == 0 else text
+
+    axes.yaxis.set_major_formatter(FuncFormatter(tick))
 
 
 def combination_png(comparison: ComparisonResult) -> bytes:

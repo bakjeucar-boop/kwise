@@ -801,14 +801,14 @@ def _peak_block(diagnosis: Diagnosis) -> None:
     # **같은 값이면 한 줄로 접는다** (13세션). 연간 최대가 중간·최대부하 시간대에
     # 있으면 관측 최대와 요금적용 대상 최대가 같은 값이다 — 두 칸을 나란히 두면
     # 둘이 다른 개념인 줄 알고 차이를 찾게 된다. 야간 피크형에서만 갈린다.
-    split = peak.billing_demand_kw < peak.peak_kw * 0.99
+    split = notices.demand_split(peak.peak_kw, peak.billing_demand_kw)
     columns = st.columns(3)
     if split:
         columns[0].metric("관측 최대수요", notices.max_demand_text(peak.peak_kw))
         columns[1].metric("요금적용전력", notices.billing_demand_text(peak.billing_demand_kw))
     else:
         # **접었을 때 적는 것은 요금적용전력이다** (S159 3-2 · ②-81 갈래).
-        # 접는 문턱이 1% 라 **꼭 같지는 않다** — 용인 실측이 관측 최대
+        # 접는 문턱이 1 kW 라 **꼭 같지는 않다** — 용인 실측이 관측 최대
         # 132.28 kW · 요금적용전력 132.0 kW 인데 이 칸이 `peak_kw` 를 적어
         # **「= 요금적용전력」 이라 적으면서 132.3 을 냈다.** Excel 진단·PPT
         # 장05·3단계 계산 근거는 다 132.0 이라 이 자리만 갈렸다.

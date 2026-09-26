@@ -397,6 +397,22 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 **1-6. 고칠 자리 — 코드 8파일 · 계산 폴더 0 · 시험 3파일 · `CLAUDE.md` 0 · `tools\` 0(울타리 · 하한).** ① `report\document.py`(상향 권고 각주 · ESS 박힌 줄 이름 · 나-3 한 자리) · ② `report\slides.py`(주의사항 장 · 나-3 한 자리) · ③ `report\excel.py`(조합 비교 「없음」 · AMI 한 줄 · 감도 표기 한 자리) · ④ `report\notices.py`(나-3 판정) · ⑤ `ui\views\diagnose.py`(나-3 한 자리) · ⑥ `report\figures.py`(나-18) · ⑦ `ui\charts.py`(나-14 · 16자리) · ⑧ `ui\views\compare.py`(Word 감도 재료). 시험 — `test_base_fee_basis_words.py`(상향 권고 · 없음 · 감도 · AMI · 세로축) · `test_slides.py`(나-3 · 나-18 · 주의사항 장) · `test_ui_screen.py`(AMI 자리 · 1% 못).
 **1절 벽시계** 02:46:03 ~ 03:06:41(시각 명령 출력 · 커밋 앞 · 1절 동안 주의사항 전수 판을 뒤로 돌리며 2절 고침을 먼저 짓기 시작했다 — 2절 커밋에 싣는다).
 
+**2-1. 1-6 자리를 고쳤다 — 코드 8파일 +231 −42 · 계산 폴더 0**(`git diff --numstat -- src` 2절 커밋 앞 · 1-6 자리 안). `ruff check src` 통과(`ruff_20260927_030826.txt`) · 바꾼 다섯 모듈 `mypy` 0건(`mypy_20260927_030835.txt`).
+
+| 자리 | 줄 | 전 → 후 |
+|---|---:|---|
+| ① `report\document.py` | +15 −6 | 계약전력 수단 항목 `slide_note` — `contract.floor_not_binding` 한 조각 → 그 조각과 `contract.over_limit` 안내를 `narrative.note_line` 으로(상향 권고) · ESS 박힌 줄을 `ESS_PAYBACK_CAVEAT` 이름으로(글자 그대로) · Word 2.3 결론의 갈림 조건 `× 0.99` → `demand_split` |
+| ② `report\slides.py` | +73 −3 | 마지막 장 「주의사항」 — `slide_specs` 끝(「다음 단계」 뒤)에 줄이 있을 때만 · `CAUTION_SLIDE_FACTS`(사실 여섯 · 역률 추정만 첫 문장) · `CAUTION_SLIDE_LINES`(박힌 줄 둘) · `caution_rows` · `_build_cautions`(표 두 칸) · 피크특성 (1/2) 갈림 조건 → `demand_split` |
+| ③ `report\excel.py` | +64 −8 | 「조합 비교」 — `_no_headroom`(조합 줄이 더한 수단이 다 여지가 없는가 · 계약 `no_saving` · 역률 `power_factor_no_headroom`)이 참이고 적힌 절감액이 0 인 줄의 기간 절감액 · 12개월 환산 → 「없음」 · 요약 「미포함 요금요소」 뒤 `("산정 자료", "안내", AMI_BASIS_NOTICE)` · 감도 접기를 `_folded_ranges` 로 떼고 `sensitivity_items`(Excel 「감도」 와 같은 표기 값의 범위 줄)를 냈다 |
+| ④ `report\notices.py` | +12 | `demand_split(peak_kw, billing_kw)` — `billing_kw < round_kw(peak_kw)`(제7조 ①) |
+| ⑤ `ui\views\diagnose.py` | +2 −2 | 1단계 피크 지표 갈림 조건 → `notices.demand_split` · 주석 「1%」 → 「1 kW」 |
+| ⑥ `report\figures.py` | +13 −1 | `money_axis_title` 눈금 — `:,.0f` 못박음 → 눈금끼리 갈리는 가장 적은 자리(0 ~ 4) · 0 이면 부호를 뗀다 |
+| ⑦ `ui\charts.py` | +46 −16 | 세로축 이름 16자리에 `FLAT_TITLE`(색 · 눈금 투명을 쥔 두 축은 같은 다섯 값을 곁에 · 오른쪽 기온 축은 `titleAlign="right"`) |
+| ⑧ `ui\views\compare.py` | +6 −6 | PPT(Word 재료) `DocumentSections.sensitivity` — `sensitivity_ranges`(날값) → `sensitivity_items(감도 원자료, 조합, 단독 몫, 고른 태양광)` · 안 쓰게 된 인자 `sensitivity_ranges` 를 `_download_block` 과 부르는 세 자리에서 걷었다 |
+
+**2-2. 적게 닫은 것 · 번진 것.** 1-6 자리 그대로 · 적게 닫은 것 0 · 번짐 0(문서 0 · 계산 폴더 0). 주의사항 장은 세웠다(1-3 · 부딪침은 자리 하나라 값으로만). 목차는 안 고쳤다(1-3).
+**2절 벽시계** 03:06:41 ~ 03:08:40(시각 명령 출력 · 커밋 앞).
+
 ---
 ## 오늘 (2026-09-27) 250세션 — **고침 판 · 후보 N(Excel 표기 문 밖 시트) · K 앞 둘 · M 앞 하나 · 일괄 생성 옛 입력 이름을 고치고 · L · M 뒤 항목 재료와 홀로 남은 항목 가르기를 잰다**
 

@@ -86,6 +86,7 @@ from kwise.report.notices import (
     contract_annual_saving,
     contract_saving,
     contract_unpriced_reason,
+    demand_split,
     ess_capacity_text,
     ess_unpriced_reason,
     excess_not_measured_line,
@@ -839,6 +840,12 @@ def _surplus_remark(surplus: SurplusResult, scenario: SurplusScenario, *, chosen
 #: 계약전력 장이 이 안내를 각주로 옮겨 적는다 (59세션 9절).
 CONTRACT_FLOOR_NOT_BINDING_FACT = "contract.floor_not_binding"
 
+#: 계약전력을 넘겨 쓰는 벌의 상향 권고 안내 (S143 2절 · `measures\contract.py`).
+CONTRACT_OVER_LIMIT_FACT = "contract.over_limit"
+
+#: ESS 주의사항 첫 줄. PPT 마지막 장 「주의사항」 이 이 글자로 고른다 (S251).
+ESS_PAYBACK_CAVEAT = "규칙기반 단일 디스패치이며 OPEX·열화·교체비를 넣지 않은 단순 회수기간입니다."
+
 
 def measure_entries(
     *,
@@ -959,7 +966,12 @@ def measure_entries(
             # **「없음」 옆에 까닭이 서야 한다** (59세션 9절). 왜 안 주는지를
             # 계산이 이미 안내로 내고 있었고(화면 판정 줄에 있다), 슬라이드만
             # 그것을 안 읽었다. **문장을 새로 짓지 않는다.**
-            slide_note=_notice_text(contract.notices, CONTRACT_FLOOR_NOT_BINDING_FACT),
+            # **상향 권고도 이 줄에 선다** (S251 사람 결정 · 마-17) — 화면 · Word 가 적는 안내
+            # 그 글자다. 계약전력을 넘겨 쓰는 벌에만 있다.
+            slide_note=narrative.note_line(
+                _notice_text(contract.notices, CONTRACT_FLOOR_NOT_BINDING_FACT),
+                _notice_text(contract.notices, CONTRACT_OVER_LIMIT_FACT),
+            ),
         )
 
     if demand_response is not None:
@@ -1214,10 +1226,7 @@ def measure_entries(
             investment=_won(ess.investment_won),
             payback=_payback_text(ess.payback_years, ess.investment_won),
             certainty=str(ess.certainty),
-            cautions=(
-                "규칙기반 단일 디스패치이며 OPEX·열화·교체비를 넣지 않은 단순 회수기간입니다.",
-                *body_lines(ess.notices),
-            ),
+            cautions=(ESS_PAYBACK_CAVEAT, *body_lines(ess.notices)),
             notices=ess.notices,
             figure=ess_day,
             figure_caption=_ESS_DAY_CAPTION,
@@ -1677,7 +1686,7 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
         f"{billing_demand_text(peak.billing_demand_kw)} 입니다."
         + (
             " 경부하 시간대의 피크는 요금적용전력이 되지 않습니다."
-            if peak.billing_demand_kw < peak.peak_kw * 0.99
+            if demand_split(peak.peak_kw, peak.billing_demand_kw)
             else ""
         ),
     )
