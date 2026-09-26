@@ -1228,3 +1228,74 @@ def test_조합의_DR_감축_가능량은_조합_부하로_잰다(
     expected = evaluate_demand_response(again, unit_price_won_per_kwh=price).settlement_won
     assert _combined_dr_won(sample_diagnosis, combined, price) == expected
     assert _combined_dr_won(sample_diagnosis, combined, None) is None
+
+
+def test_기간_합산효과는_관측_기간_DR_정산금을_담고_권장안을_그것으로_고른다(
+    sample_usage: UsageData,
+    sample_bill: Any,
+    sample_diagnosis: Any,
+    sample_comparison: ComparisonResult,
+) -> None:
+    """**PPT · Word 기간 합산효과는 조합 부하로 잰 관측 기간 DR 정산금을 담는다** (S246 결정 1).
+
+    기간 값은 관측 기간 감축 가능량 × 단가 · 회수기간(12개월 기준)은 12개월 정산금을 담는다
+    — 새 가정이 없다. 권장안은 그 합산효과로 고르고 조합 표 · 요금 칸은 그대로다. Word
+    요약 표 · 결론 · PPT 장15 에 실제로 적힌 글자를 본다.
+    """
+    import io
+
+    from pptx import Presentation
+
+    from kwise.measures import evaluate_demand_response, payback_years
+    from kwise.report import DocumentSections, build_document, slides_bytes
+    from kwise.report.document import _won as word_won
+    from kwise.report.notices import combination_saving
+    from kwise.report.slides import _won as slide_won
+
+    measure = sample_diagnosis.dr_measure
+    price = 120.0
+    settled = sample_comparison.with_demand_response(measure, price)
+    assert sample_comparison.with_demand_response(measure, None) is sample_comparison
+    for item, before in zip(settled.combinations, sample_comparison.combinations, strict=True):
+        result = evaluate_demand_response(measure(item.load_kw), unit_price_won_per_kwh=price)
+        # 재료 — 정산금이 서고 기간 값과 12개월 값이 갈린다(같으면 기준을 못 가린다).
+        assert item.dr_period_won and item.dr_annual_won
+        assert item.dr_period_won != pytest.approx(item.dr_annual_won)
+        assert item.dr_period_won == pytest.approx(result.period_reducible_kwh * price)
+        assert item.dr_annual_won == pytest.approx(result.settlement_won)
+        assert item.settled_saving_won == pytest.approx(before.saving_won + item.dr_period_won)
+        # 요금 · 절감액 칸은 그대로다 — 조합 표 · 그림은 안 움직인다.
+        assert (item.saving_won, item.annual_saving_won, item.payback_years) == (
+            before.saving_won,
+            before.annual_saving_won,
+            before.payback_years,
+        )
+    best = settled.best
+    assert best.settled_saving_won == max(item.settled_saving_won for item in settled.combinations)
+    assert best.investment_won  # 재료 — 회수기간이 선다
+    assert best.dr_period_won is not None and best.dr_annual_won is not None
+    payback = payback_years(best.investment_won, best.annual_saving_won + best.dr_annual_won)
+    assert best.settled_payback_years == pytest.approx(payback)
+    assert best.settled_payback_years != pytest.approx(best.payback_years)
+
+    sections = DocumentSections(
+        usage=sample_usage, bill=sample_bill, diagnosis=sample_diagnosis, comparison=settled
+    )
+    total = combination_saving(settled, best) + best.dr_period_won
+    rows = {
+        row.cells[0].text: row.cells[1].text
+        for table in build_document(sections).tables
+        for row in table.rows
+        if len(row.cells) == 2
+    }
+    assert rows["기간 총 절감액"] == word_won(total), rows
+    words = "\n".join(item.text for item in build_document(sections).paragraphs)
+    assert f"기간에 {word_won(total)} 를 줄이고" in words
+    deck = Presentation(io.BytesIO(slides_bytes(sections)[0]))
+    texts = [
+        shape.text_frame.text
+        for slide in deck.slides
+        for shape in slide.shapes
+        if shape.has_text_frame
+    ]
+    assert slide_won(best.settled_saving_won) in texts

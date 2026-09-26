@@ -517,6 +517,66 @@ def test_contract_row_shows_the_reason_when_the_floor_is_unknown(
     assert row["회수기간"] == "—"
 
 
+@pytest.mark.parametrize("case", ["초과_없음", "최소_규격_미달", "성립_안_함"])
+def test_켠_ESS_가_결과를_못_내면_까닭대로_없음이나_미산출_줄이_선다(case: str) -> None:
+    """**켠 ESS 가 결과를 못 내도 요약표와 Excel 수단별 결과에 줄이 선다** (S246 결정 3).
+
+    초과 구간이 없어 곡선이 안 서면 깎을 몫이 없으므로 「없음」(S205 · S237 ㄴ 꼴) ·
+    사양을 못 정했으면 화면 · PPT 가 이미 쓰는 「미산출 — …」 사유다. 화면 요약표와
+    Excel 수단별 결과 두 표가 같은 낱말을 적는지 본다 — 새 글자는 없다.
+    """
+    from kwise.measures import EssOptimum, EssTargetCurve
+    from kwise.report import standalone_frame, standalone_rows
+    from kwise.report.notices import ess_unpriced_reason
+
+    curve = EssTargetCurve(
+        points=(),
+        best=None,
+        baseline_demand_kw=132.0,
+        observed_peak_kw=132.3,
+        base_fee_won_per_kw=8_230.0,
+        min_power_kw=50.0,
+        step_kw=1.0,
+        round_trip=0.9,
+        dod=0.9,
+    )
+    optimum = (
+        None
+        if case == "초과_없음"
+        else EssOptimum(
+            target_kw=0.0,
+            payback_years=None,
+            curve_target_kw=0.0,
+            window_kw=0.0,
+            widened=0,
+            at_edge=False,
+            viable=False,
+            below_minimum=case == "최소_규격_미달",
+            required_power_kw=25.3,
+            required_capacity_kwh=30.0,
+            required_discharge_hours=1.17,
+            minimum_power_kw=50.0,
+        )
+    )
+    reason = ess_unpriced_reason(optimum, curve)
+    # 재료 — 갈래가 판정대로 섰다(초과 없음이면 미산출 사유가 안 선다).
+    assert bool(reason) is (case != "초과_없음")
+    expected = reason or NO_SAVING
+
+    from kwise.measures import measure_kind
+
+    title = measure_kind("ess").title
+    sheet = measure_summary_frame(ess_optimum=optimum, ess_curve=curve)
+    assert list(sheet.index) == [title]
+    row = sheet.iloc[0]
+    assert row["기간 절감액(원)"] == row["12개월 환산(원)"] == expected
+    screen = standalone_frame(standalone_rows(ess_optimum=optimum, ess_curve=curve))
+    assert screen.iloc[0]["수단"] == title
+    assert screen.iloc[0]["12개월 환산 절감액"] == expected
+    # 곡선이 없으면(안 켰으면) 줄이 없다 — 「보지 않았다」 가 「없음」 으로 둔갑하지 않는다.
+    assert measure_summary_frame(ess_optimum=optimum).empty
+
+
 def test_sensitivity_sheet_says_why_it_is_empty() -> None:
     """태양광이 없으면 감도 시트가 빈 장이 아니라 사유로 채워진다 (9.2)."""
     frame = no_pv_sensitivity_frame()

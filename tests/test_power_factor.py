@@ -499,6 +499,42 @@ def test_감액_상한_이상이면_카드가_절감액_0_과_사유를_낸다(
     assert any("개선할 것이 없" in message for message in texts(result.notices))
 
 
+@pytest.mark.parametrize(("current", "arrow"), [(100.0, False), (97.0, False), (92.0, True)])
+def test_여지가_없으면_근거_줄이_목표로_가는_화살표를_세우지_않는다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    current: float,
+    arrow: bool,
+) -> None:
+    """**여지가 없는 벌의 근거 줄에 거짓 앞머리가 없다** (S246 결정 2 · S245 결정 3).
+
+    「주간(08~22시) 지상역률 100.0% → 97.0% 기준입니다.」 는 역률 100 에서 97 로 가는 것처럼
+    읽히는데 두 역률이 다 상한으로 접혀 가는 곳이 없다. 여지가 있으면 화살표가 그대로 선다.
+    Word 수단 장에 실제로 적힌 글자를 본다(화면 산출 근거 툴팁도 같은 안내에서 온다).
+    """
+    from kwise.report import DocumentSections, build_document, measure_entries
+
+    result = evaluate_power_factor(
+        sample_usage, tariff, CURRENT, current_pct=current, quality=sample_report
+    )
+    assert result.no_headroom is not arrow  # 재료 — 갈래가 판정대로 섰다
+    head = f"주간(08~22시) 지상역률 {current:.1f}%"
+    line = next(message for message in texts(result.notices) if message.startswith(head))
+    document = build_document(
+        DocumentSections(
+            usage=sample_usage,
+            bill=result.current_bill,
+            measures=measure_entries(power_factor=result),
+        )
+    )
+    written = [item.text for item in document.paragraphs if item.text.startswith(head)]
+    assert written, head
+    for text in (line, *written):
+        assert (f"→ {result.target_pct:.1f}%" in text) is arrow, text
+        assert "기준입니다. 기준 92%, 매 1%당 기본요금의 0.2%" in text, text
+
+
 @pytest.mark.parametrize("current", [95.0, 97.0])
 def test_목표가_상한_아래면_사유가_안_서고_악화_경고가_그대로다(
     sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable, current: float
