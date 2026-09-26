@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -239,8 +240,13 @@ def _rendered(
     )
     sections = DocumentSections(usage=usage, bill=bill, diagnosis=diagnosis)
     deck = build_slides(sections)
+    document = build_document(sections)
     return {
-        "Word": "\n".join(item.text for item in build_document(sections).paragraphs),
+        # 표 칸도 담는다 (S248) — 요금 구조 표의 부가금 줄은 문단이 아니라 표에 선다.
+        "Word": "\n".join(
+            [item.text for item in document.paragraphs]
+            + [cell.text for table in document.tables for row in table.rows for cell in row.cells]
+        ),
         "PPT": "\n".join(
             shape.text_frame.text
             for slide in deck.slides
@@ -277,6 +283,133 @@ def test_안_쟀다는_사실이_PPT_와_Word_에_선다(
             f"{name} 가 을 6,000 kW 벌(초과 0)에서 「안 쟀다」 를 적는다."
         )
         assert not_measured[name] != really_zero[name], f"{name} 에서 두 벌의 글자가 같다."
+
+
+#: 제67조의3 ① 1호 표 — (초과횟수 하한, 배수). **조문에서 옮겼다** — 기준 데이터를
+#: 읽어 기대값을 만들면 기준 데이터가 틀려도 초록이다. 첫 번째 초과는 예고라 표에 없다.
+FIRST_CLAUSE_TABLE = ((2, 1.5), (4, 2.0), (6, 2.5))
+
+
+def _first_clause_expected(bill_monthly: pd.DataFrame, contract_kw: float, rate: float) -> float:
+    """조문 식 그대로 — 초과한 달을 차례로 세어 (최대수요 − 계약전력) × 단가 × 배수."""
+    total, count = 0.0, 0
+    for peak in bill_monthly["max_demand_kw"]:
+        if not peak > contract_kw:
+            continue
+        count += 1
+        multiplier = max(
+            (value for floor, value in FIRST_CLAUSE_TABLE if count >= floor), default=0.0
+        )
+        total += (peak - contract_kw) * rate * multiplier
+    return total
+
+
+def test_저압_계약형_20kW_이상은_조문_식대로_부가금을_세고_고압은_산출하지_않는다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """**S248 · 사람 결정 마-24 · 웹 대화창 결정 1.** 제67조의3 ① 1호 — 저압 계약전력
+    20 kW 이상(세칙 제48조의2 ① 5호)은 초과전력 × 기본요금 단가 × 초과횟수 배수로 세어
+    청구 총액에 싣는다. 고압 계약형과 저압 20 kW 미만은 2호라 「산출하지 않았다」 그대로다.
+
+    값은 조문 식으로 따로 세고(``FIRST_CLAUSE_TABLE``), 흐름은 다른 종별의 꼴(총액 · 안내 ·
+    PPT · Word)을 산출물을 실제로 그려 본다.
+    """
+    from kwise.report.notices import excess_not_measured_line
+
+    low = TariffSelection("industrial_a_1", "low", "single")
+    rate = tariff.rates(low).base_won_per_kw
+    contract_kw = 3_000.0
+    bill = calculate_bill(
+        sample_usage, tariff, low, options=BillingOptions(contract_kw=contract_kw),
+        quality=sample_report,
+    )
+    expected = _first_clause_expected(bill.monthly, contract_kw, rate)
+    # 재료 — 세 배수가 다 서는 벌이다(여섯 달 넘게 넘는다).
+    assert (bill.monthly["max_demand_kw"] > contract_kw).sum() >= 6
+    assert bill.excess.applicable is True
+    assert expected > 0
+    assert bill.total_excess_won == pytest.approx(expected)
+    assert {item.multiplier for item in bill.excess.months} == {0.0, 1.5, 2.0, 2.5}
+    assert [item.charged for item in bill.excess.months][:2] == [False, True]  # 첫 달 예고
+    assert bill.total_won == pytest.approx(
+        bill.total_base_won + bill.total_power_factor_won + bill.total_energy_won + expected
+    )
+    said = [n.text for n in bill.notices if n.fact == "quality.over_contract"]
+    assert len(said) == 1 and "청구 총액에 넣었습니다" in said[0], said
+    assert excess_not_measured_line(bill) == ""
+
+    # 산출물 — 「안 쟀다」 가 빠지고 부가금이 선다(③ 벌과 같은 꼴).
+    rendered = _rendered(sample_usage, sample_report, tariff, low, contract_kw)
+    for name in ("Word", "PPT"):
+        assert NOT_MEASURED_TAIL not in rendered[name], name
+        assert "초과사용부가금" in rendered[name], name
+
+    # 넘지 않는 입력 — 0원이고 「안 쟀다」 도 아니다.
+    calm = calculate_bill(
+        sample_usage, tariff, low, options=BillingOptions(contract_kw=6_000.0),
+        quality=sample_report,
+    )
+    assert (calm.excess.applicable, calm.total_excess_won) == (True, 0.0)
+
+    # 경계 — 20 kW 이상이 1호, 미만은 2호(산출하지 않는다).
+    assert calculate_bill(
+        sample_usage, tariff, low, options=BillingOptions(contract_kw=20.0), quality=sample_report
+    ).excess.applicable is True
+    under = calculate_bill(
+        sample_usage, tariff, low, options=BillingOptions(contract_kw=19.0), quality=sample_report
+    )
+    assert (under.excess.applicable, under.total_excess_won) == (False, 0.0)
+
+    # 고압 계약형 — 2호 · 그대로 「산출하지 않았다」.
+    high = calculate_bill(
+        sample_usage, tariff, TariffSelection("industrial_a_1", "high_a", "I"),
+        options=BillingOptions(contract_kw=contract_kw), quality=sample_report,
+    )
+    assert (high.excess.applicable, high.total_excess_won) == (False, 0.0)
+    assert NOT_MEASURED_TAIL in excess_not_measured_line(high)
+
+    # 배수는 기준 데이터에서 읽는다 — 조문 표와 같아야 한다.
+    from kwise.tariff.excess import excess_count_multiplier
+
+    assert [excess_count_multiplier(n) for n in range(1, 8)] == [0.0, 1.5, 1.5, 2.0, 2.0, 2.5, 2.5]
+
+
+def test_부가금_경고는_호마다_조문_문턱을_댄다(
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
+) -> None:
+    """**S248 · 웹 대화창 결정 2.** 제67조의3 ① 1호는 「최대수요전력이 계약전력을 초과」,
+    2호는 「사용전력량이 계약전력 1㎾마다 월간 450㎾h를 초과」 가 문턱이다. 앞서 계약형
+    경고는 2호 갈래(고압 계약형)에도 1호 문턱을 댔다.
+
+    갑Ⅰ 고압A 5,250 kW — 관측 최대(5,293 kW)는 넘지만 어느 달도 450 kWh/kW 를 안 넘어
+    **안 선다.** 3,000 kW — 450 을 넘는 달이 있어 선다 · 문턱 조각이 조문 글자다.
+    저압 3,000 kW — 1호라 최대수요 문턱으로 선다.
+    """
+    high = TariffSelection("general_a_1", "high_a", "I")
+
+    def over_contract(selection: TariffSelection, contract_kw: float) -> tuple[list[str], Any]:
+        bill = calculate_bill(
+            sample_usage, tariff, selection, options=BillingOptions(contract_kw=contract_kw),
+            quality=sample_report,
+        )
+        return [n.text for n in bill.notices if n.fact == "quality.over_contract"], bill
+
+    said, bill = over_contract(high, 5_250.0)
+    per_kw = bill.monthly["total_kwh"] / 5_250.0
+    assert bill.monthly["max_demand_kw"].max() > 5_250.0  # 재료 — 1호 문턱은 넘는다
+    assert not (per_kw > 450.0).any()  # 재료 — 2호 문턱은 안 넘는다
+    assert said == []
+
+    said, bill = over_contract(high, 3_000.0)
+    assert ((bill.monthly["total_kwh"] / 3_000.0) > 450.0).any()  # 재료
+    assert len(said) == 1
+    assert "사용전력량이 계약전력 1 kW마다 월간 450 kWh 를 넘습니다" in said[0]
+    assert "관측 최대수요" not in said[0]
+    assert NOT_MEASURED_TAIL in said[0]
+
+    said, _ = over_contract(TariffSelection("industrial_a_1", "low", "single"), 3_000.0)
+    assert len(said) == 1 and "관측 최대수요" in said[0]
+    assert "계약전력 3,000 kW 를 넘습니다" in said[0]
 
 
 def test_요금_구성이_합계와_맞는다(

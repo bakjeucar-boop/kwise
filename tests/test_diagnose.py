@@ -437,13 +437,6 @@ def test_하한_비율을_모르면_1단계도_미산출이다(
     assert "contract.floor_unknown" in {item.fact for item in adequacy.notices}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "S170 1절 — 계약형 벌에서 계약전력 조정의 까닭이 「하한 비율이 요금 데이터에 없어」 다 · "
-        "어느 갈래로 들지는 계산 흐름이라 안 고쳤다"
-    ),
-)
 def test_계약형_벌에서_계약전력_조정의_까닭이_하한을_대지_않는다(
     sample_usage: UsageData, tariff: TariffTable, sample_report: QualityReport
 ) -> None:
@@ -453,7 +446,10 @@ def test_계약형_벌에서_계약전력_조정의_까닭이_하한을_대지_�
     `report\\excel.py` 「품질·진단」)를, 화면 계약전력 카드는 조정 안내
     (`measures\\contract.py::_UNKNOWN_NOTICE`)를 뜬다. 갑Ⅰ 고압A 에서 낮출 자리가 있는
     판(6,000 kW)과 관측 최대가 계약전력 위인 판(5,000 kW) 둘을 본다 — 덱 `small-a-short` 가
-    뒤 갈래다. 갈래 경로는 안 고쳤다 (S185 2-6).
+    뒤 갈래다.
+
+    **S248 에 xfail 을 걷었다** (사람 결정 나-17) — 그 줄을 빼고 「미산출」 표시는 남긴다.
+    뒤 판은 산출물(Word · PPT)을 실제로 그려 그 줄이 없고 「미산출」 이 남는지 본다.
     """
     selection = TariffSelection("general_a_1", "high_a", "I")
     said: list[str] = []
@@ -473,6 +469,17 @@ def test_계약형_벌에서_계약전력_조정의_까닭이_하한을_대지_�
             if "하한 비율이 요금 데이터에 없어" in text
         ]
     assert said == []
+    # 「미산출」 은 남는다 — 5,000 kW 판은 금액을 못 낸다.
+    assert adjustment.saving_won is None
+    assert "미산출" in adjustment.saving_basis
+
+    from tests.test_excess import _rendered
+
+    rendered = _rendered(sample_usage, sample_report, tariff, selection, 5_000.0)
+    for name in ("Word", "PPT"):
+        assert "하한 비율이 요금 데이터에 없어" not in rendered[name], name
+    # PPT 는 이 그리기가 수단 장을 안 세워 계약 장이 없다 — 「미산출」 은 Word 가 문다.
+    assert "미산출" in rendered["Word"]
 
 
 def test_1단계_적정성이_2단계_조정과_같은_말을_한다(

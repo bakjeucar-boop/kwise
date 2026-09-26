@@ -193,6 +193,10 @@ def test_validation_failure_does_not_save(sandbox: Path) -> None:
         ("dr.national_max_contract_kw", -1.0, "양수여야"),
         ("power_factor.lagging_rebate_cap_pct", 90.0, "기준 < 상한"),
         ("contract_type.threshold_kw.education", 100, "교육용"),
+        # 제67조의3 ① 1호 초과횟수 표 (S248) — 첫 초과는 예고라 하한은 2 부터다.
+        ("excess_charge.count_tiers", [[1, 1.5]], "2 이상 정수"),
+        ("excess_charge.count_tiers", [[2, 2.0], [4, 1.5]], "함께 커져야"),
+        ("excess_charge.first_clause_min_contract_kw", 0, "양수여야"),
     ],
 )
 def test_validation_catches_broken_values(
