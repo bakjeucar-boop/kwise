@@ -9,6 +9,7 @@ from __future__ import annotations
 import inspect
 import re
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -450,7 +451,49 @@ def test_계약형_벌에서_계약전력_조정의_까닭이_하한을_대지_�
 
     **S248 에 xfail 을 걷었다** (사람 결정 나-17) — 그 줄을 빼고 「미산출」 표시는 남긴다.
     뒤 판은 산출물(Word · PPT)을 실제로 그려 그 줄이 없고 「미산출」 이 남는지 본다.
+
+    **S249 에 넓혔다** (결정 2) — 같은 뜻의 금액 칸 사유(「하한 비율 없음 — 」 ·
+    「— 하한 규정 미확인」)도 계약형에서는 빠진다. 수요 기준 종별(요금표에 하한 비율만
+    빠진 판)은 그 사유가 참이라 그대로다 — 두 판을 수단 장까지 그려 맞댄다.
     """
+    from kwise.diagnose import ContractInfo, diagnose
+    from kwise.report.document import DocumentSections, build_document, measure_entries
+    from kwise.report.slides import build_slides
+
+    def drawn(table: TariffTable, pick: TariffSelection, kw: float) -> tuple[Any, str, str]:
+        """(조정, Word 글자, PPT 글자) — 수단 장까지 실제로 그린다."""
+        opts = BillingOptions(contract_kw=kw)
+        bill = calculate_bill(sample_usage, table, pick, options=opts, quality=sample_report)
+        result = evaluate_contract_adjustment(
+            sample_usage, bill, contract_kw=kw, table=table, options=opts
+        )
+        diagnosis = diagnose(
+            sample_usage,
+            table,
+            ContractInfo(pick, contract_kw=kw),
+            quality=sample_report,
+            options=opts,
+        )
+        sections = DocumentSections(
+            usage=sample_usage,
+            bill=bill,
+            diagnosis=diagnosis,
+            measures=measure_entries(contract=result),
+        )
+        document = build_document(sections)
+        deck = build_slides(sections)
+        word = "\n".join(
+            [item.text for item in document.paragraphs]
+            + [cell.text for grid in document.tables for row in grid.rows for cell in row.cells]
+        )
+        ppt = "\n".join(
+            shape.text_frame.text
+            for slide in deck.slides
+            for shape in slide.shapes
+            if shape.has_text_frame
+        )
+        return result, word, ppt
+
     selection = TariffSelection("general_a_1", "high_a", "I")
     said: list[str] = []
     for contract_kw in (6_000.0, 5_000.0):
@@ -469,17 +512,31 @@ def test_계약형_벌에서_계약전력_조정의_까닭이_하한을_대지_�
             if "하한 비율이 요금 데이터에 없어" in text
         ]
     assert said == []
-    # 「미산출」 은 남는다 — 5,000 kW 판은 금액을 못 낸다.
+    # 「미산출」 은 남는다 — 5,000 kW 판은 금액을 못 낸다. 사유 조각은 없다 (S249).
     assert adjustment.saving_won is None
-    assert "미산출" in adjustment.saving_basis
+    assert adjustment.saving_basis == "미산출"
 
-    from tests.test_excess import _rendered
+    reasons = ("하한 비율이 요금 데이터에 없어", "하한 규정 미확인", "하한 비율 없음")
+    on_contract, word, ppt = drawn(tariff, selection, 5_000.0)
+    assert on_contract.saving_won is None  # 전제 — 금액을 못 낸 판
+    for name, text in (("Word", word), ("PPT", ppt)):
+        assert [reason for reason in reasons if reason in text] == [], name
+        assert "미산출" in text, name
 
-    rendered = _rendered(sample_usage, sample_report, tariff, selection, 5_000.0)
-    for name in ("Word", "PPT"):
-        assert "하한 비율이 요금 데이터에 없어" not in rendered[name], name
-    # PPT 는 이 그리기가 수단 장을 안 세워 계약 장이 없다 — 「미산출」 은 Word 가 문다.
-    assert "미산출" in rendered["Word"]
+    # 수요 기준 종별(요금표에 하한 비율만 빠진 판)은 사유가 참이라 그대로다.
+    import copy
+    import json
+
+    from kwise.tariff import default_tariff_dir, parse_tariff
+
+    with (default_tariff_dir() / "tariff_kr_20260601.json").open(encoding="utf-8") as stream:
+        payload = copy.deepcopy(json.load(stream))
+    payload["contract_types"]["general_b"]["contract_floor_ratio"] = None
+    on_demand, word, ppt = drawn(parse_tariff(payload), CURRENT, 7_000.0)
+    assert on_demand.saving_won is None  # 전제 — 금액을 못 낸 판
+    assert on_demand.saving_basis == "하한 비율 없음 — 금액 미산출"
+    assert "미산출 — 하한 규정 미확인" in word
+    assert "하한 규정 미확인" in ppt
 
 
 def test_1단계_적정성이_2단계_조정과_같은_말을_한다(

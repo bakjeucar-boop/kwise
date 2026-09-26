@@ -574,7 +574,8 @@ def test_실제_항목_전부에_원문_확인처가_붙는다() -> None:
     # 97세션에 초·중·고교·유치원 특례가 넷을 더했다 — 33+49.
     # 109세션에 초과사용부가금이 둘을 더했다 — 35+49.
     # S248 에 제67조의3 ① 1호 · 2호가 셋을 더했다 — 38+49.
-    assert len(rows) == len(items) == 87  # rules_kr 38 + assumptions 49
+    # S249 에 별표26 5.가 실적위약금 계수가 하나를 더했다 — 39+49.
+    assert len(rows) == len(items) == 88  # rules_kr 39 + assumptions 49
     assert all(row.link.startswith(("한국", "국가", "에너지", "Open", "기술서")) for row in rows)
     # **바깥에 원문이 없는 값도 있다** (22세션). 화면 예산은 우리가 정한 규약이라
     # 확인처가 기술서다 — 그래도 따라갈 데는 있어야 한다.

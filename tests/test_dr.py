@@ -415,7 +415,8 @@ def test_단가가_없으면_사유를_낸다(sample_diagnosis: Diagnosis) -> No
     blocked = [item for item in result.notices if item.fact == "dr.no_price"]
     assert len(blocked) == 1, [item.text for item in blocked]
     assert "지역별 SMP로 정산" in blocked[0].text
-    assert "정산 단가 · 하루전에너지가격을 입력하지 않아" in blocked[0].text
+    # 지역을 모르면 육지 식이라 빠진 가격은 계통한계가격이다 (S249 · 나-18).
+    assert "정산 단가 · 계통한계가격을 입력하지 않아" in blocked[0].text
     assert "금액과 위약금 리스크를 산출하지 않았습니다" in blocked[0].text
     # 조사가 어긋나지 않는다 — 「리스크을」 이 아니라 「리스크를」 이다.
     assert "리스크을" not in blocked[0].text
@@ -495,26 +496,101 @@ def test_등록값을_바꾸면_감축량이_비례해_움직인다(sample_diagn
     assert half.annual_reducible_kwh == pytest.approx(base.annual_reducible_kwh / 2)
 
 
+#: 규칙 원문의 위약금계수 — 「PPCF : 자발적 수요감축 미이행에 대한 실적위약금 계수로
+#: 1을 적용」 ([별표 26] 5.가 · pdf 872쪽). **기준 데이터를 안 읽고 원문에서 옮겼다.**
+RULE_PPCF = 1.0
+
+
 def test_실적위약금은_별표26을_따른다() -> None:
-    """실적위약금 = (감축계획량 − 실제감축량) × Max(하루전에너지가격, 0)."""
-    assert shortfall_penalty_won(100.0, 60.0, 1.0, 120.0) == pytest.approx(4_800.0)
-    assert shortfall_penalty_won(100.0, 60.0, 2.0, 120.0) == pytest.approx(9_600.0)
+    """육지 × 계통한계가격 · 제주 × Max(하루전에너지가격, 0) · 둘 다 × 위약금계수 (S249)."""
+    assert rule_value("dr.penalty_factor") == RULE_PPCF
+    assert shortfall_penalty_won(100.0, 60.0, 1.0, 120.0) == pytest.approx(4_800.0 * RULE_PPCF)
+    assert shortfall_penalty_won(100.0, 60.0, 2.0, 120.0) == pytest.approx(9_600.0 * RULE_PPCF)
     assert shortfall_penalty_won(100.0, 100.0, 1.0, 120.0) == 0.0  # 계획을 채웠다
     assert shortfall_penalty_won(100.0, 130.0, 1.0, 120.0) == 0.0  # 넘겨도 0
-    assert shortfall_penalty_won(100.0, 0.0, 1.0, -50.0) == 0.0  # 음수 가격은 0 으로
+    # 음수 가격을 0 으로 보는 것은 제주 식뿐이다 — 육지 식 원문에는 Max 가 없다.
+    assert shortfall_penalty_won(100.0, 0.0, 1.0, -50.0, jeju=True) == 0.0
+    assert shortfall_penalty_won(100.0, 0.0, 1.0, -50.0) == pytest.approx(-5_000.0 * RULE_PPCF)
 
 
 def test_위약금_리스크를_적는다(sample_diagnosis: Diagnosis) -> None:
     """투자비는 0원이지만 리스크는 0이 아니다. 1회 최대 지속시간 기준이다."""
     profile = sample_diagnosis.dr
     assert profile is not None
-    result = evaluate_demand_response(profile, day_ahead_price_won_per_kwh=120.0)
-    assert result.penalty_per_shortfall_kw_won == pytest.approx(120.0 * dr_event_hours()[1])
+    result = evaluate_demand_response(profile, penalty_price_won_per_kwh=120.0)
+    assert result.penalty_per_shortfall_kw_won == pytest.approx(
+        120.0 * dr_event_hours()[1] * RULE_PPCF
+    )
     assert any("실적위약금" in message for message in texts(result.notices))
 
     without = evaluate_demand_response(profile)
     assert without.penalty_per_shortfall_kw_won is None
-    assert any("하루전에너지가격" in message for message in texts(without.notices))
+    assert any("계통한계가격" in message for message in texts(without.notices))
+
+
+def test_DR_위약금_식은_육지와_제주로_갈리고_위약금계수가_든다(
+    sample_usage: UsageData,
+    sample_bill: BillingResult,
+    sample_diagnosis: Diagnosis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**도구가 제주 식 하나로 모든 건물의 위약금을 셌다** (S249 · 나-18 · 결정 1).
+
+    [별표 26] 5.가 — 「… 계통한계가격(제주지역은 하루전에너지가격)과 미 이행에 대한
+    위약금계수를 곱하여 …」. 제주 여부는 옆단 지역이 쥐고, 모르면 육지 식이다.
+    무는 것 — ① 금액이 원문 식대로 갈린다(음수 가격 · 계수) ② 지역을 모르면 육지와
+    같다 ③ 그린 Word 에 그 식 글자가 선다 ④ 옆단 지역이 제주를 가른다.
+    """
+    import kwise.measures.demand_response as dr_module
+    from kwise.report import DocumentSections, build_document, measure_entries
+    from kwise.ui.building import BuildingInfo
+
+    profile = sample_diagnosis.dr
+    assert profile is not None
+    hours = dr_event_hours()[1]
+
+    def penalty(price: float, **kwargs: bool) -> float | None:
+        result = evaluate_demand_response(profile, penalty_price_won_per_kwh=price, **kwargs)
+        return result.penalty_per_shortfall_kw_won
+
+    # ① 원문 식 — 육지는 가격 그대로 · 제주는 Max(·, 0) · 둘 다 × 계수.
+    assert penalty(-50.0, jeju=False) == pytest.approx(-50.0 * hours * RULE_PPCF)
+    assert penalty(-50.0, jeju=True) == 0.0
+    assert penalty(120.0, jeju=True) == pytest.approx(120.0 * hours * RULE_PPCF)
+    # ② 지역을 모르면 육지 식이다.
+    assert penalty(-50.0) == penalty(-50.0, jeju=False)
+    # 계수가 식에 든다 — 원문 값이 1 이라 값으로 가리려면 계수를 갈아 본다.
+    monkeypatch.setattr(dr_module, "penalty_factor", lambda: 2.0)
+    assert penalty(120.0) == pytest.approx(120.0 * hours * 2.0)
+    monkeypatch.undo()
+
+    # ③ 그린 Word 에 선 식 글자.
+    def word_text(jeju: bool) -> str:
+        entries = measure_entries(demand_response=evaluate_demand_response(profile, jeju=jeju))
+        document = build_document(
+            DocumentSections(
+                usage=sample_usage, bill=sample_bill, diagnosis=sample_diagnosis, measures=entries
+            )
+        )
+        return "\n".join(
+            [item.text for item in document.paragraphs]
+            + [cell.text for grid in document.tables for row in grid.rows for cell in row.cells]
+        )
+
+    factor = f"위약금계수({RULE_PPCF:g})"
+    land, island = word_text(False), word_text(True)
+    assert f"(감축계획량 − 실제감축량) × 계통한계가격 × {factor}" in land
+    assert "위약금은 계통한계가격에 달려" in land
+    assert "하루전에너지가격" not in land
+    assert f"(감축계획량 − 실제감축량) × Max(하루전에너지가격, 0) × {factor}" in island
+    assert "위약금은 하루전에너지가격에 달려" in island
+    assert "계통한계가격" not in island
+
+    # ④ 옆단 지역이 제주를 가른다.
+    assert BuildingInfo(region_key="제주특별자치도/제주시").jeju
+    assert BuildingInfo(region_key="제주특별자치도/서귀포시").jeju
+    assert not BuildingInfo(region_key="경기도/용인시").jeju
+    assert not BuildingInfo(region_key="").jeju
 
 
 def test_기본요금_절감을_주장하지_않는다(sample_diagnosis: Diagnosis) -> None:
