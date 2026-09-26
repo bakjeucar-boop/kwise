@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -24,7 +25,7 @@ from kwise.compare import (
 )
 from kwise.compare import sensitivity as sensitivity_module
 from kwise.compare.sensitivity import BASE_SAVING, METRIC_LABELS
-from kwise.io import UsageData
+from kwise.io import UsageData, load_usage
 from kwise.measures import (
     Certainty,
     ContractAdjustment,
@@ -1125,6 +1126,9 @@ def test_3단계_화면과_산출물이_같은_조합에서_같은_계약전력_
     붙어 둘이 갈렸다(덱 `large-a` 5,294 대 5,143 kW · 이 표본 합성 청천 1,600 kWp 는 5,294 대
     4,976 kW). **S185 2절이 길 ㄷ 으로 모았다** — 조합도 목표는 원 부하 관측 최대로, 금액은
     조합 부하로 잰다. 한쪽만 옛 부하로 되돌리면 이 못이 빨개진다.
+
+    **금액도 같다** (S250 · 가-4) — 화면이 조합 청구서에 원 부하 · 현행 옵션(역률 92%)을
+    짝지어 불렀다. 판정 함수 독스트링대로 청구서를 뽑은 부하 · 옵션으로 잰다.
     """
     import streamlit as st
 
@@ -1163,6 +1167,63 @@ def test_3단계_화면과_산출물이_같은_조합에서_같은_계약전력_
     screen, report = seen[0].target_contract_kw, combined.contract_adjustment.target_contract_kw
     assert screen is not None and report is not None  # 전제 — 두 자리 다 목표가 선다
     assert screen == pytest.approx(report), (screen, report)
+    # 전제 — 태양광이 역률을 끌어내려 조합 청구서의 역률이 현행 옵션과 다르다.
+    assert combined.bill.power_factor.lagging_pct != pytest.approx(92.0)
+    money_screen = seen[0].annual_saving_won
+    money_report = combined.contract_adjustment.annual_saving_won
+    assert money_screen is not None and money_report is not None
+    assert money_screen == pytest.approx(money_report), (money_screen, money_report)
+
+
+def test_3단계_화면은_종별을_넘는_벌에서도_조합_청구서의_옵션으로_계약전력_몫을_잰다(
+    tariff: TariffTable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**종별을 넘는 벌에서만 옵션이 금액에 닿는다** (S250 · 가-4 · 185세션 1-4).
+
+    넘기 견적은 요금을 처음부터 다시 뽑아 그 옵션의 역률요금이 몫에 든다 — 덱 `small-b`
+    에서 화면이 현행 옵션(92%)을 짝지어 조합 몫과 25,391.84원 갈렸다. 여기서는 역률
+    97% 를 켠 조합으로 같은 갈래를 세운다(소형 사무빌딩 · 을 고압A 300 kW).
+    """
+    import streamlit as st
+
+    from kwise.ui.pipeline import ContractForm
+    from kwise.ui.views import compare as compare_view
+
+    office = Path(__file__).resolve().parent.parent / "input" / "사용량조회_소형사무빌딩.csv"
+    if not office.is_file():
+        pytest.skip(f"자료가 없습니다: {office}")
+    usage = load_usage(office)
+    form = ContractForm("general_b", "high_a", "I", contract_kw=300.0)
+    opts = form.billing_options()
+    baseline = calculate_bill(usage, tariff, form.selection, options=opts)
+    combined = evaluate_combination(
+        usage,
+        tariff,
+        CombinationSpec(
+            "역률 + 계약전력", form.selection, power_factor_pct=97.0, contract_kw=300.0
+        ),
+        baseline_bill=baseline,
+        options=opts,
+    )
+    seen: list[ContractAdjustment] = []
+    real = vars(compare_view)["evaluate_contract_adjustment"]
+
+    def grab(*args: Any, **kwargs: Any) -> ContractAdjustment:
+        seen.append(real(*args, **kwargs))
+        return seen[-1]
+
+    monkeypatch.setattr(compare_view, "evaluate_contract_adjustment", grab)
+    monkeypatch.setattr(st, "write", lambda *args, **kwargs: None)
+    compare_view._contract_headroom(usage, tariff, form, combined, None)
+
+    report = combined.contract_adjustment
+    assert report is not None and report.crossed_selection is not None  # 전제 — 종별을 넘는다
+    assert report.annual_saving_won is not None and len(seen) == 1
+    assert seen[0].crossed_selection == report.crossed_selection
+    assert seen[0].annual_saving_won == pytest.approx(report.annual_saving_won), (
+        seen[0].annual_saving_won,
+        report.annual_saving_won,
+    )
 
 
 @pytest.mark.parametrize(

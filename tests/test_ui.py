@@ -1056,3 +1056,31 @@ def test_화면_표는_한_자리를_지난다() -> None:
         "표를 내는 자리가 tables.py 밖에 있습니다 — " + " · ".join(outside) + ". "
         "`from kwise.ui import tables` 로 들여와 `tables.show(...)` 를 부르십시오."
     )
+
+
+def test_ESS_사양_표의_만원_아래_칸은_천_원_절사다() -> None:
+    """**만원 한 자리는 천 원 자리다** (S250 결정 3 · 절사 A · 단위 기준).
+
+    덱 `large-b-over` 첫 줄이 화면 「0.3만원」 · PPT · Word 「2,000」 이었다 — 만원 칸을
+    한 자리 반올림했다. 한 열 한 단위(만원 · S235 ④)는 그대로 두고 천 원 절사한 값을 적는다.
+    """
+    from kwise.report.frames import ess_spec_rows
+    from kwise.ui.views.measures import _ess_spec_view
+
+    frame = pd.DataFrame(
+        {
+            "목표 요금적용전력(kW)": ["5,220~5,240", "5,080"],
+            "저감량(kW)": [0.0, 150.0],
+            "출력(kW)": [75.0, 250.0],
+            "용량(kWh)": [50.0, 650.0],
+            "방전시간(h)": [0.67, 2.6],
+            "투자비(원)": [219_893_000.0, 793_560_000.0],
+            "연간 절감액(원)": [2_700.0, 25_000_000.0],
+            "회수기간(년)": [None, 31.7],
+            "표식": ["", ""],
+        }
+    )
+    screen = _ess_spec_view(frame)["12개월 환산 절감액"]
+    assert list(screen) == ["0.2만원", "2,500만원"]
+    ppt = ess_spec_rows(frame)[1][6]
+    assert float(ppt.replace(",", "")) / 10_000 == 0.2  # 같은 사실 · 같은 값

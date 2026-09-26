@@ -10,6 +10,7 @@ pvlib 결과는 항상 tz-aware 이고, Excel 이 파일을 열고 있으면 덮
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import re
 from pathlib import Path
@@ -21,6 +22,14 @@ from typer.testing import CliRunner
 
 from kwise.cli import app
 from kwise.compare import CombinationSpec, ComparisonResult, evaluate_combination
+from kwise.compare.sensitivity import (
+    ANNUAL_SAVING,
+    BASE_SAVING,
+    ENERGY_SAVING,
+    GENERATION,
+    SAVING,
+    SURPLUS,
+)
 from kwise.diagnose import Diagnosis
 from kwise.diagnose.contract import _MARGIN_NOTICE
 from kwise.io import UsageData
@@ -33,6 +42,7 @@ from kwise.measures import (
     TariffSwitchResult,
     evaluate_contract_adjustment,
 )
+from kwise.pv import load_sharpness_factors
 from kwise.quality import QualityReport
 from kwise.report import (
     CONTRACT_CHANGE_WARNING,
@@ -45,6 +55,7 @@ from kwise.report import (
     ReportWriteError,
     build_sheets,
     column_label,
+    combination_frame,
     export_report,
     format_won,
     load_batch_config,
@@ -201,7 +212,9 @@ def test_timeseries_sheet_carries_every_slot(
     """35,328 행이 통째로 실린다. 결측은 미보간이므로 표시만 한다."""
     timeseries = sample_sheets["15분 시계열"]
     assert len(timeseries) == len(sample_usage.kw)
-    assert list(timeseries.columns) == ["kw", "kwh", "결측"]
+    # 영문 열쇠가 아니라 다른 표가 쓰는 이름이다 (S250 결정 1 · 나-11).
+    assert list(timeseries.columns) == ["부하(kW)", "사용량(kWh)", "결측"]
+    assert timeseries.index.name == "시각"
     assert int(timeseries["결측"].sum()) == sample_usage.meta.missing_rows
 
 
@@ -680,9 +693,9 @@ def test_엑셀_시트가_날값을_그대로_싣지_않는다(
     「조합 비교」 회수기간이 `15.47137949227301` 이었고 **같은 시트의 다른 열은
     다 절사돼 있었다** — 규칙이 없는 것이 아니라 한 자리가 규칙 밖이었다.
 
-    **꼬리가 없는 열은 이 못 밖이다** — 「감도」 의 기준값·범위와 「요금 계산
-    명세」 의 일할 계수가 그렇다(지표 이름이 열이 아니라 줄에 있다). 미해결에
-    이름으로 남겼다.
+    **꼬리가 없는 열은 이 못 밖이다** — 「감도」 의 기준값·범위는 지표 이름이 열이
+    아니라 줄에 있어 아래 감도 못이 문다 · 「요금 계산 명세」 의 일할 계수는 S250 에
+    꼬리 규칙(「일할 계수」 4)을 얻어 이 못 안이다(아래 일할 계수 못이 값으로 문다).
     """
     over: list[str] = []
     for name, frame in sample_sheets.items():
@@ -698,6 +711,88 @@ def test_엑셀_시트가_날값을_그대로_싣지_않는다(
                     continue
                 over.append(f"{name}!{label} = {value!r} (자릿수 {decimals})")
     assert not over, f"날값이 시트에 남았습니다 — {' · '.join(over[:5])}"
+
+
+def _sensitivity_raw() -> pd.DataFrame:
+    """감도 원자료 세 시나리오 — 덱 `large-a` 의 날값 꼴(소수 열 자리 · kW 한 자리)."""
+    labels = load_sharpness_factors().labels
+    return pd.DataFrame(
+        {
+            "첨예도 s": [0.85, 1.0, 1.25],
+            GENERATION: [1_940_636.178448468, 1_940_781.394550219, 1_940_959.964991854],
+            SURPLUS: [0.0, 0.0, 0.0],
+            "요금적용전력(kW)": [5_100.4, 5_101.2, 5_105.0],
+            BASE_SAVING: [-76_320_000.0] * 3,
+            ENERGY_SAVING: [322_289_115.1461554, 322_307_267.1588745, 322_329_588.4640784],
+            SAVING: [320_922_029.5461553, 320_940_181.5588745, 320_962_502.8640784],
+            ANNUAL_SAVING: [320_922_029.5461553, 320_940_181.5588745, 320_962_502.8640784],
+            "투자비(원)": [None] * 3,
+            "회수기간(년)": [None] * 3,
+        },
+        index=pd.Index(list(labels), name="시나리오"),
+    )
+
+
+def test_감도_시트는_칸과_표시가_감도_상세의_표기_값이다(
+    sample_usage: UsageData, sample_bill: BillingResult
+) -> None:
+    """**지표가 줄에 있어도 날값을 싣지 않는다** (S250 결정 1 · 나-12 · S233 ㄱ).
+
+    기준값 · 범위가 `322307267.1588745` 로 서고 같은 줄 「표시」 는 원 단위 · kW 한
+    자리(「5,101.0kW」)로 칸과 다른 값을 적었다. 적는 값은 그 시나리오 줄의 감도 상세
+    표기 값이고 표시는 그 값을 적는다.
+    """
+    sheets = build_sheets(
+        ReportSections(usage=sample_usage, bill=sample_bill, sensitivity=_sensitivity_raw())
+    )
+    sheet, detail = sheets["감도"], sheets["감도 상세"]
+    base = load_sharpness_factors().base_label
+    checked = 0
+    for label, row in sheet.iterrows():
+        if pd.isna(row["기준값"]):
+            continue
+        digits = 0 if str(label).endswith(("(원)", "(kW)", "(kWh)")) else 1
+        cells = [float(row[name]) for name in ("기준값", "범위 하한", "범위 상한")]
+        assert all(value == round(value, digits) for value in cells), (label, cells)
+        if str(label).endswith("(원)"):
+            assert all(value % 1_000 == 0 for value in cells), (label, cells)
+        assert cells[0] == round(float(detail.at[base, label]), digits), (label, cells)
+        assert f"{cells[0]:,.{digits}f}" in row["표시"], (label, row["표시"])
+        assert f"{cells[2]:,.{digits}f}" in row["표시"], (label, row["표시"])
+        checked += 1
+    assert checked == 6  # 전제 — 금액 넷 · kW · kWh 줄이 다 섰다(회수기간은 미산출)
+    assert "5,101kW" in sheet.at["요금적용전력(kW)", "표시"]
+
+
+def test_요금_계산_명세의_일할_계수는_네_자리로_접힌다(
+    sample_usage: UsageData, sample_bill: BillingResult
+) -> None:
+    """**부분 달의 일할 계수가 날값으로 섰다** (S250 결정 1 · 나-12) — 덱 6벌 12칸
+    `0.1290322580645161`(4/31). Excel 셀 서식이 쓰는 네 자리로 값을 접는다."""
+    monthly = sample_bill.monthly.copy()
+    first = monthly.index[0]
+    monthly.loc[first, "base_fee_factor"] = 4 / 31
+    bill = dataclasses.replace(sample_bill, monthly=monthly)
+    sheet = build_sheets(ReportSections(usage=sample_usage, bill=bill))["요금 계산 명세"]
+    assert float(sheet.iloc[0][column_label("base_fee_factor")]) == 0.129
+
+
+def test_조합_그림은_그릴_막대가_없는_조합을_세우지_않는다(
+    sample_comparison: ComparisonResult,
+) -> None:
+    """**빈 축을 남기지 않는다** (S250 · 나-2 · 30세션 4절). 절감액 0원 · 투자비 0원인
+    「기준선 (현행)」 이 막대 없이 이름만 섰다(19벌 · 4벌은 「계약전력 조정」 도).
+    투자비를 모르는 조합은 그림이 그 사실을 적으므로 선다."""
+    names = [item.name for item in sample_comparison.combinations]
+    assert "기준선 (현행)" in names  # 전제 — 표에는 있다
+    frame = combination_frame(sample_comparison)
+    assert "기준선 (현행)" not in list(frame["조합"])
+    for item in sample_comparison.combinations:
+        empty = int(item.saving_won / 1_000) == 0 and item.investment_won == 0
+        assert (item.name in list(frame["조합"])) != empty, item.name
+    unpriced = dataclasses.replace(sample_comparison.baseline, investment_won=None)
+    shown = combination_frame(dataclasses.replace(sample_comparison, combinations=(unpriced,)))
+    assert list(shown["조합"]) == ["기준선 (현행)"]
 
 
 # --------------------------------------------------------------------- 조합 절감액은 재계산이다
@@ -785,6 +880,27 @@ def two_case_yaml(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+@pytest.mark.parametrize(
+    ("keys", "expected"),
+    [
+        ("    dr_day_ahead_price_won_per_kwh: 120\n", 120.0),
+        ("    dr_smp_won_per_kwh: 120\n", 120.0),
+        ("    dr_day_ahead_price_won_per_kwh: 120\n    dr_smp_won_per_kwh: 90\n", 90.0),
+    ],
+    ids=["옛 열쇠만", "새 열쇠만", "둘 다"],
+)
+def test_일괄_생성은_옛_새_DR_가격_열쇠를_같은_뜻으로_읽는다(
+    tmp_path: Path, keys: str, expected: float
+) -> None:
+    """**사람 자료가 읽기에서 멈추지 않는다** (S250 결정 5). S249 가 이름을
+    `dr_smp_won_per_kwh` 로 바꿔 옛 열쇠는 `TypeError` 로 멈췄다 — 일괄 생성은 늘 육지
+    가격이라 같은 뜻이다. 둘 다 있으면 새 열쇠가 이긴다."""
+    path = tmp_path / "cases.yaml"
+    path.write_text("cases:\n  - name: 건물A\n    usage: 건물A.csv\n" + keys, encoding="utf-8")
+    (case,) = load_batch_config(path).cases
+    assert case.dr_smp_won_per_kwh == expected
 
 
 def test_batch_config_reads_utf8_and_resolves_paths(two_case_yaml: Path) -> None:
