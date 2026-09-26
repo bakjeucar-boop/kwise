@@ -262,6 +262,22 @@ def standalone_rows(
                 payback_reason=UNPRICED,
             )
         )
+    elif ess_curve is not None and ess_curve.best is None:
+        # 초과 구간이 없어 곡선이 안 섰다 — 깎을 몫이 없으므로 「없음」 이다 (S246 결정 3 ·
+        # S205 · S237 ㄴ 꼴). 켠 수단이 표에서 사라지면 「보지 않았다」 와 갈리지 않는다.
+        rows.append(
+            StandaloneRow(
+                kind=measure_kind("ess"),
+                reduction="—",
+                annual_saving_won=None,
+                investment_won=None,
+                payback_years=None,
+                certainty=Certainty.HIGH,
+                zero_reason=NO_SAVING,
+                investment_reason="—",
+                payback_reason="—",
+            )
+        )
     # **7.7 잉여 활용을 41세션에 뺐다.** 개선안이 아니라 태양광의 결과다 —
     # 상계 수익은 태양광 카드 안에서 낸다 (:mod:`kwise.measures.surplus`).
     return tuple(rows)

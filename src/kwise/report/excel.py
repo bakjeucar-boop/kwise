@@ -47,13 +47,16 @@ from kwise.measures import (
     OFFSET_SCENARIO,
     ContractAdjustment,
     DemandResponseResult,
+    EssOptimum,
     EssResult,
+    EssTargetCurve,
     PowerFactorResult,
     SolarCurve,
     SolarPoint,
     SurplusResult,
     TariffSwitchResult,
     annualize,
+    measure_kind,
     payback_label,
     payback_years,
 )
@@ -68,6 +71,7 @@ from kwise.report.notices import (
     KNOWN_LIMITS,
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
+    UNPRICED,
     UNPRICED_REASONS,
     Peers,
     bill_lines,
@@ -77,6 +81,7 @@ from kwise.report.notices import (
     contract_annual_saving,
     contract_saving,
     ess_capacity_text,
+    ess_unpriced_reason,
     format_mwh,
     format_won,
     max_demand_text,
@@ -486,8 +491,13 @@ def measure_summary_frame(
     solar: SolarPoint | None = None,
     surplus: SurplusResult | None = None,
     base_fee_months: float | None = None,
+    ess_optimum: EssOptimum | None = None,
+    ess_curve: EssTargetCurve | None = None,
 ) -> pd.DataFrame:
     """수단별 결과 시트 (요구사항서 7장).
+
+    ``ess_optimum`` · ``ess_curve`` — ESS 결과가 없어도 켠 ESS 줄을 세운다 (S246 결정 3):
+    산출하지 못했으면 화면 · PPT 와 같은 「미산출」 사유 · 초과 구간이 없으면 「없음」.
 
     **7장 번호 순(7.1~7.6)으로 배치한다** — 선택요금 → 계약전력 → 경제성DR →
     역률 → 태양광 → ESS.
@@ -745,6 +755,29 @@ def measure_summary_frame(
                     ),
                 }
             )
+    elif unpriced := ess_unpriced_reason(ess_optimum, ess_curve):
+        rows.append(
+            {
+                "수단": measure_kind("ess").title,
+                "투자비(원)": f"{UNPRICED} — 사양 미정",
+                "기간 절감액(원)": unpriced,
+                "12개월 환산(원)": unpriced,
+                "회수기간": UNPRICED,
+                "비고": "—",
+            }
+        )
+    elif ess_curve is not None and ess_curve.best is None:
+        # 초과 구간이 없어 곡선이 안 섰다 — 깎을 몫이 없다 (S246 결정 3 · S205 · S237 ㄴ 꼴).
+        rows.append(
+            {
+                "수단": measure_kind("ess").title,
+                "투자비(원)": "—",
+                "기간 절감액(원)": NO_SAVING,
+                "12개월 환산(원)": NO_SAVING,
+                "회수기간": "—",
+                "비고": "—",
+            }
+        )
     if not rows:
         # 켠 수단이 하나도 없을 수 있다 (진단만 보는 경우). **열 구조는 유지한다** —
         # 빈 DataFrame 에 set_index 를 걸면 KeyError 로 산출물 생성이 통째로 멈춘다.

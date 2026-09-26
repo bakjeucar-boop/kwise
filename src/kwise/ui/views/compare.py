@@ -312,6 +312,11 @@ def render(
         if "demand_response" in enabled
         else None
     )
+    # PPT · Word 기간 합산효과와 권장안도 조합 부하로 잰 정산금을 담는다 (S246 결정 1).
+    if "demand_response" in enabled:
+        comparison = comparison.with_demand_response(
+            diagnosis.dr_measure, measure_float("demand_response", "unit_price")
+        )
     # **② 합산효과 — 단순 합과의 차이가 3단계의 존재 이유다** (14세션 5-2).
     if stale:
         callout.caution("선택이 변경되었습니다 — 다시 계산하십시오.")
@@ -850,6 +855,8 @@ class _MeasureResults:
             demand_response=self.demand_response,
             power_factor=self.power_factor,
             ess=self.ess,
+            ess_optimum=self.ess_optimum,
+            ess_curve=self.ess_curve,
             solar=self.solar,
             surplus=self.surplus,
             base_fee_months=self.base_fee_months,

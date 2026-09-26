@@ -397,6 +397,23 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - 시험 **3파일** — `test_compare.py`(못 (1)) · `test_power_factor.py`(못 (2)) · `test_report.py`(못 (3)).
 **1절 벽시계** 09:06:45 ~ 09:15:40(시각 명령 출력 · 커밋 앞).
 
+**2-1. 1-5 코드 11자리 · 문서 1자리를 고쳤다 — 코드 7파일 +124 −10 · 계산 폴더 2파일 +56 −4(`compare` +51 −3 · `measures` +5 −1 · 1-5 자리 넷만)**(`git diff --numstat` 2절 커밋 앞). 시험은 3절 몫. ruff check 일곱 파일 통과(`ruff_20260926_091810.txt` 첫 판 이 판 줄 하나 E501 → 줄을 갈라 `ruff_20260926_091820.txt` 통과) · `format --check` 어긋남 셋은 다 이 판이 안 건드린 줄(`document.py:1494` · `excel.py:608` · `slides.py:1415` — 저장소 어긋남 9 몫).
+
+| 자리 | 줄 | 전 → 후 |
+|---|---:|---|
+| ①②③ `compare\combination.py` `CombinationResult.dr_period_won` · `dr_annual_won` · `settled_saving_won` · `settled_payback_years` · `ComparisonResult.with_demand_response` · `best`(계산 폴더) | +51 −3 | 새 칸 둘(조합 부하로 잰 기간 · 12개월 DR 정산금 · 없으면 `None`) · 합산 속성 둘(기간 절감 + 기간 정산금 · 투자비 ÷ (12개월 절감 + 12개월 정산금) — 정산금이 없으면 옛 값 그대로) · 새 메서드(조합마다 `evaluate_demand_response(measure(load_kw), 단가)` → 기간 = `period_reducible_kwh × 단가` · 12개월 = `settlement_won` · 요금 · 절감액 칸 0줄) · `best` 열쇠 `saving_won` → `settled_saving_won` · 요금 식 · DR 재는 식 0줄 |
+| ④ `measures\power_factor.py` 근거 줄(계산 폴더) | +5 −1 | 「주간(08~22시) 지상역률 {현재}% → {목표}% 기준입니다. …」 → 여지 없음(`has_no_headroom`)이면 「→ {목표}%」 를 뺀다 · 금액 · 판정 0줄 |
+| ⑤ `ui\views\compare.py` `render` | +5 | DR 을 조합에 켰으면 `comparison.with_demand_response(diagnosis.dr_measure, 단가 칸)` — 화면 합산효과 셈(`dr_won`)은 그대로 |
+| ⑥ `ui\views\compare.py` `_MeasureResults.excel_frame` | +2 | `ess_optimum` · `ess_curve` 를 넘긴다 |
+| ⑦ `report\slides.py` 장15 합산효과 | +3 −2 | 「기간 총 절감액」 `best.saving_won` → `best.settled_saving_won` · 「회수기간」 `best.payback_years` → `best.settled_payback_years` |
+| ⑧⑨ `report\document.py` 요약 표 · 결론 · 새 `_settled_saving` | +9 −4 | 「기간 총 절감액」 · 결론 「기간에 N원」 = 적힌 조합 절감(`combination_saving`) + 기간 정산금 · 「회수기간」 두 자리 `settled_payback_years` |
+| ⑩ `report\standalone.py` `standalone_rows` | +16 | 곡선은 섰는데 `best is None`(초과 구간 없음) — 수단 「ESS」 · 개선 방안 「—」 · 12개월 「없음」 · 투자비 「—」 · 회수기간 「—」 줄 |
+| ⑪ `report\excel.py` `measure_summary_frame` | +33 | 인자 둘 · `ess` 가 없고 미산출 사유가 서면 수단 「ESS」 · 투자비 「미산출 — 사양 미정」 · 기간 · 12개월 사유 · 회수기간 「미산출」 · 비고 「—」 · 초과 구간 없음이면 투자비 「—」 · 기간 · 12개월 「없음」 · 회수기간 「—」 · 비고 「—」 · 이름 다섯 import |
+| `docs\MANUAL.md` 5장(+ `MANUAL.html` · `build_docs_20260926_091809.txt`) | +2 | 「PPT · Word 의 권장 조합 「기간 총 절감액」 도 그 조합 부하로 잰 관측 기간 정산금을 담고, 권장 조합은 그 값이 가장 큰 조합이다 (S246).」 |
+
+**2-2. 적게 닫은 것 · 번진 것.** 1-5 11자리 그대로 · 번짐 0. **1-4 예정과 갈린 것 하나** — Excel ① 줄의 비고를 2단계 카드 글 「어떤 목표에서도 초과 구간이 없어 곡선을 그리지 못했습니다.」 로 적을 예정이었으나 그 글자는 화면 모듈의 날글이라 산출물로 옮기면 두 자리에 같은 글이 박힌다 — 비고는 「—」(표 빈칸)로 두었다(「없음」 이 `money.py:44` 뜻 「줄어들 몫 자체가 없다」 를 이미 말한다 · 새 글자 0). 곁 — 일괄 생성(`batch.py`)은 `measure_summary_frame` 에 새 인자를 안 넘겨 옛 값 그대로(1-2 · 케이스 · 회귀값에 안 닿는다).
+**2절 벽시계** 09:15:40 ~ 09:18:49(시각 명령 출력 · 커밋 앞).
+
 ---
 ## 오늘 (2026-09-26) 245세션 — **고침 판 · 마-16(조합 부하로 DR 다시 재기 · 계산 변경) · 나-26 · 나-27 을 고치고 · DR 정산금 기간 값과 마-33 재료를 잰다**
 

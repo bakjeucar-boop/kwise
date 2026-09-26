@@ -2187,9 +2187,10 @@ def _build_combination(
         slide,
         guide,
         [
-            ("기간 총 절감액", _won(best.saving_won)),
+            # 기간 DR 정산금을 담는다 · 회수기간은 12개월 정산금을 담는다 (S246 결정 1).
+            ("기간 총 절감액", _won(best.settled_saving_won)),
             ("투자비", slide_investment(_won(best.investment_won))),
-            ("회수기간", _payback(best.payback_years, best.investment_won)),
+            ("회수기간", _payback(best.settled_payback_years, best.investment_won)),
         ],
         left=right_left,
         top=top + 0.42,

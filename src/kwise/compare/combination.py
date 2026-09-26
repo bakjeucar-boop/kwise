@@ -17,12 +17,13 @@ ESS 충전이 새 피크를 만드는지도 확인한다. 경부하 시간대 �
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
 from kwise import money
+from kwise.diagnose.dr import DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
     AppliedMeasure,
@@ -31,6 +32,7 @@ from kwise.measures import (
     annualize,
     apply_generation,
     dispatch_peak_shaving,
+    evaluate_demand_response,
     has_no_headroom,
     light_band_mask,
     load_ess_cost_model,
@@ -238,7 +240,24 @@ class CombinationResult:
     load_kw: pd.Series | None = None
     """조합 부하 — 태양광을 빼고 ESS 가 피크를 깎은 뒤 남은 부하 (S245 마-16).
     3단계가 경제성DR 감축 가능량을 이 부하로 다시 잰다. 요금에는 안 쓴다."""
+    dr_period_won: float | None = None
+    """조합 부하로 잰 경제성DR 기간 정산금 — 관측 기간 감축 가능량 × 단가 (S246).
+    단가가 없거나 DR 을 조합에서 뺐으면 ``None`` 이다. 요금에는 안 쓴다."""
+    dr_annual_won: float | None = None
+    """같은 부하로 잰 12개월 환산 정산금 (S246)."""
     notices: tuple[Notice, ...] = field(default=())
+
+    @property
+    def settled_saving_won(self) -> float:
+        """기간 합산효과 — 기간 절감에 기간 DR 정산금을 더한다 (S246 · S182 ㄱ)."""
+        return self.saving_won + (self.dr_period_won or 0.0)
+
+    @property
+    def settled_payback_years(self) -> float | None:
+        """합산효과의 회수기간 — 투자비 ÷ (12개월 절감 + 12개월 DR 정산금) (S246 · S244 결정 4)."""
+        if self.dr_annual_won is None or self.investment_won is None:
+            return self.payback_years
+        return payback_years(self.investment_won, self.annual_saving_won + self.dr_annual_won)
 
     @property
     def name(self) -> str:
@@ -371,10 +390,39 @@ class ComparisonResult:
             notices=aggregate_notices(combinations),
         )
 
+    def with_demand_response(
+        self,
+        measure: Callable[[pd.Series], DrProfile] | None,
+        unit_price_won_per_kwh: float | None,
+    ) -> ComparisonResult:
+        """조합마다 **조합 부하로 잰** 경제성DR 정산금을 얹는다 (S246 결정 1).
+
+        재는 방법은 2단계 카드와 같고 넣는 부하만 조합 부하다 (S245 마-16). 기간 값은
+        관측 기간 감축 가능량 × 단가, 12개월 값은 12개월 환산 감축 가능량 × 단가 —
+        새 가정이 없다. 요금 · 절감액 칸은 그대로다(잉여 :meth:`with_surplus_revenue` 꼴).
+        """
+        if measure is None or unit_price_won_per_kwh is None:
+            return self
+
+        def settle(item: CombinationResult) -> CombinationResult:
+            if item.load_kw is None:
+                return item
+            result = evaluate_demand_response(
+                measure(item.load_kw), unit_price_won_per_kwh=unit_price_won_per_kwh
+            )
+            return replace(
+                item,
+                dr_period_won=result.period_reducible_kwh * unit_price_won_per_kwh,
+                dr_annual_won=result.settlement_won,
+            )
+
+        combinations = tuple(settle(item) for item in self.combinations)
+        return replace(self, baseline=combinations[0], combinations=combinations)
+
     @property
     def best(self) -> CombinationResult:
-        """절감액이 가장 큰 조합. 투자비는 따로 본다."""
-        return max(self.combinations, key=lambda item: item.saving_won)
+        """기간 합산효과(DR 정산금 포함 · S246)가 가장 큰 조합. 투자비는 따로 본다."""
+        return max(self.combinations, key=lambda item: item.settled_saving_won)
 
 
 def _combination_certainty(spec: CombinationSpec) -> Certainty:

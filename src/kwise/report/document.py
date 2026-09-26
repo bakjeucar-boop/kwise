@@ -550,6 +550,11 @@ def _combination_investment(item: CombinationResult) -> str:
     )
 
 
+def _settled_saving(comparison: ComparisonResult, best: CombinationResult, peers: Peers) -> float:
+    """권장 조합의 기간 총 절감액 — 적힌 조합 절감에 기간 DR 정산금을 더한다 (S246 결정 1)."""
+    return combination_saving(comparison, best, peers) + (best.dr_period_won or 0.0)
+
+
 def _payback_text(years: float | None, investment_won: float | None) -> str:
     """회수기간 한 줄. **문구는 :func:`~kwise.measures.payback_label` 이 만든다** (S134 3절)."""
     return payback_label(years, investment_won)
@@ -1552,10 +1557,10 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
     if comparison is not None and best is not None:
         rows.append(["권장 조합", best.name])
         rows.append(
-            ["기간 총 절감액", _won(combination_saving(comparison, best, sections.peer_savings))]
+            ["기간 총 절감액", _won(_settled_saving(comparison, best, sections.peer_savings))]
         )
         rows.append(["투자비", _combination_investment(best)])
-        rows.append(["회수기간", _payback_text(best.payback_years, best.investment_won)])
+        rows.append(["회수기간", _payback_text(best.settled_payback_years, best.investment_won)])
     _add_table(document, rows)
 
     # **확실성 등급 줄을 뺐다** (53세션 1-4). 화면에서 28세션에 걷어낸 것이
@@ -1812,9 +1817,9 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
     _conclusion(
         document,
         f"권장안은 「{best.composition(baseline)}」 입니다. "
-        f"기간에 {_won(combination_saving(comparison, best, sections.peer_savings))} 를 줄이고 "
+        f"기간에 {_won(_settled_saving(comparison, best, sections.peer_savings))} 를 줄이고 "
         f"투자비는 {_combination_investment(best)}, 회수기간은 "
-        f"{_payback_text(best.payback_years, best.investment_won)} 입니다.",
+        f"{_payback_text(best.settled_payback_years, best.investment_won)} 입니다.",
     )
     # PPT 조합 장과 같은 이름이다 (S156 4-4 · S188).
     rows = [["조합", "요금제", "기간 절감액", "투자비", "회수기간"]]

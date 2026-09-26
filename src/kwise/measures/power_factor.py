@@ -234,8 +234,12 @@ def evaluate_power_factor(
     )
     notices += [
         # **근거** — 어느 기준·어느 창에서 나온 값인가.
+        # 여지가 없으면 「→ 목표」 를 세우지 않는다 — 두 역률이 다 상한으로 접혀 가는 곳이 없다
+        # (S246 결정 2 · S245 결정 3 을 근거 줄까지).
         basis(
-            f"주간(08~22시) 지상역률 {current_pct:.1f}% → {target_pct:.1f}% 기준입니다. "
+            f"주간(08~22시) 지상역률 {current_pct:.1f}%"
+            + ("" if has_no_headroom(current_pct, target_pct) else f" → {target_pct:.1f}%")
+            + " 기준입니다. "
             f"기준 {standard:.0f}%, 매 1%당 기본요금의 0.2% "
             "(한전 기본공급약관 제43조 ②).",
             fact="power_factor.standard_window",
