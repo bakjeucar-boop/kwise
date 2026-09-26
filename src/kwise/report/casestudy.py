@@ -658,6 +658,8 @@ def run_one_case(
             max_capacity_kwp=capacity,
             cost=cost,
             steps=1,
+            # 넣은 역률이 태양광 뒤 역률의 출발점이다 — 화면과 같다 (S247 결정 1 · S198).
+            power_factor_pct=definition.power_factor_pct,
             baseline=baseline,
             quality=quality,
             options=options,
@@ -746,8 +748,21 @@ def run_one_case(
         options=options,
         option_totals=diagnosis.option_totals,
     )
+    # 출발 역률은 넣은 역률이다 — 없으면 간주 92 (S247 결정 1 · 화면 `ui\\cache.py` 와 같다).
     power_factor = evaluate_power_factor(
-        usage, table, definition.selection, baseline=baseline, quality=quality, options=options
+        usage,
+        table,
+        definition.selection,
+        current_pct=definition.power_factor_pct,
+        baseline=baseline,
+        quality=quality,
+        options=options,
+    )
+    # 여지가 없으면 목표를 세우지 않는다 (S206 · S246 결정 2).
+    power_factor_span = (
+        f"{power_factor.current_pct:.0f}%"
+        if power_factor.no_headroom
+        else f"{power_factor.current_pct:.0f}→{power_factor.target_pct:.0f}%"
     )
     measure_rows: list[dict[str, object]] = [
         {
@@ -774,7 +789,7 @@ def run_one_case(
         },
         {
             "케이스": definition.label,
-            "수단": "7.4 역률 개선 (92→97%)",
+            "수단": f"7.4 역률 개선 ({power_factor_span})",
             SAVING: power_factor.saving_won,
             "12개월 환산(원)": power_factor.annual_saving_won,
             "확실성": str(power_factor.certainty),

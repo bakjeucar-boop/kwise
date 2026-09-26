@@ -1620,7 +1620,7 @@ def _ess(
     )
     best = curve.best
     if best is None:
-        _caution("어떤 목표에서도 초과 구간이 없어 곡선을 그리지 못했습니다.")
+        _caution(notices.ESS_NO_EXCESS)
         return
 
     # **목표는 곡선이 고르고 요금 재계산이 다시 고른다** (40세션 1절). 개략

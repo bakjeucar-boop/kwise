@@ -220,7 +220,8 @@ def run_case(
     # (`ui\\pipeline.py` 의 ``ContractForm.billing_options``) — 기준선·조합·
     # 감도·수단이 **한 밑둥** 위에 선다. 앞서는 기준선만 계약전력 없이 잡혀
     # 하한이 안 걸린 총액에서 하한이 걸린 절감액을 빼고 있었다.
-    options = BillingOptions(contract_kw=case.contract_kw)
+    # 넣은 역률도 싣는다 — 역률 카드만 읽고 나머지가 간주 92 로 돌았다 (S247 결정 1).
+    options = BillingOptions(contract_kw=case.contract_kw, power_factor_pct=case.power_factor_pct)
     diagnosis = diagnose(usage, table, contract, quality=quality, options=options)
     baseline = calculate_bill(usage, table, case.selection, options=options, quality=quality)
 

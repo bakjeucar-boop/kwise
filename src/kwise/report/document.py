@@ -74,6 +74,7 @@ from kwise.report.days import RepresentativeDay
 from kwise.report.notices import (
     CONTRACT_CHANGE_WARNING,
     DATA_SOURCES,
+    ESS_NO_EXCESS,
     NOT_INCLUDED_NOTICE,
     TRUNCATION_FOOTNOTE,
     UNPRICED,
@@ -318,7 +319,8 @@ def _contract_saving(contract: ContractAdjustment, value: float | None) -> str:
     적용했다고 읽힌다.**
     """
     if value is None:
-        return f"{_UNPRICED} — {contract.saving_basis}"
+        # 사유는 1장 · Excel 과 한 자리에서 (S247 결정 3 · S233 ㄱ).
+        return UNPRICED_REASONS["contract"]
     if contract.no_saving:
         return NO_SAVING
     return _won(value)
@@ -332,7 +334,7 @@ def _contract_adequacy_saving(adequacy: ContractAdequacy) -> str:
     판정은 수단 쪽과 같은 ``no_saving`` 이다 (S205 2절).
     """
     if adequacy.saving_won is None:
-        return f"{_UNPRICED} — {adequacy.saving_basis}"
+        return UNPRICED_REASONS["contract"]
     if adequacy.adjustment.no_saving:
         return NO_SAVING
     return _won(contract_saving(adequacy.adjustment))
@@ -978,7 +980,7 @@ def measure_entries(
             certainty=str(demand_response.certainty),
             has_saving=demand_response.is_priced and bool(demand_response.settlement_won),
             cautions=(
-                "정산 단가는 전력거래소 월별 순편익가격과 사업자 수수료로 정해집니다. "
+                "정산 단가는 전력거래소가 지역별 SMP로 정산하는 몫과 사업자 수수료로 정해집니다. "
                 "**수요관리사업자 상담이 필요합니다.**",
                 *body_lines(demand_response.notices),
             ),
@@ -1297,6 +1299,22 @@ def measure_entries(
             facts=facts,
             spec_table=frames.ess_spec_rows(margin_spec) if margin_spec is not None else (),
             spec_caption=frames.ess_spec_caption(margin_spec) if margin_spec is not None else "",
+        )
+    elif ess_curve is not None and ess_curve.best is None:
+        # **초과 구간이 없어 곡선이 안 섰다 — 깎을 몫이 없어 「없음」 이다** (S247 결정 2).
+        # 같은 산출물이 다른 「없음」 수단(역률 100 의 역률 개선 · 여지가 없는 계약전력)을
+        # 장 · 절로 세우므로 ESS 도 세운다. 글자는 화면 카드 · 요약표와 같다 (S246 결정 3).
+        entries["ess"] = MeasureEntry(
+            kind=measure_kind("ess"),
+            conclusion=ESS_NO_EXCESS,
+            saving=NO_SAVING,
+            saving_annual=NO_SAVING,
+            has_saving=False,
+            investment="—",
+            payback="—",
+            certainty=str(Certainty.HIGH),
+            actionable=False,
+            facts=(("요금적용전력", f"{ess_curve.baseline_demand_kw:,.0f} kW"),),
         )
 
     return tuple(entries[kind.key] for kind in MEASURE_CATALOG if kind.key in entries)
@@ -1753,7 +1771,10 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
                     "목표 계약전력",
                     f"{adequacy.target_contract_kw:,.0f} kW"
                     if adequacy.target_contract_kw is not None
-                    else NO_SAVING,
+                    # 여지가 없으면 「없음」 · 하한을 몰라 못 냈으면 「미산출」 (S247 결정 3).
+                    else NO_SAVING
+                    if adequacy.adjustment.no_saving
+                    else UNPRICED,
                 ],
                 [
                     "예상 기간 절감액",

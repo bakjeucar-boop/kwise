@@ -22,6 +22,8 @@ import pandas as pd
 
 # 열쇠는 감도 모듈 한 자리에 있다 (S220 2절) — 표를 만드는 쪽도 이 상수를 본다.
 from kwise.compare.sensitivity import BASE_SAVING, ENERGY_SAVING, GENERATION, SAVING
+from kwise.measures import default_target_pct
+from kwise.tariff import lagging_adjustment_ratio, lagging_standard_pct
 
 if TYPE_CHECKING:
     from kwise.report.casestudy import CaseResult, CaseStudy
@@ -266,14 +268,20 @@ def _measure_checks(result: CaseResult) -> list[Check]:
             )
         )
 
-    power_factor = rows.get("7.4 역률 개선 (92→97%)")
+    # 이름 괄호가 넣은 역률을 따라 갈린다 — 앞머리로 찾는다 (S247 결정 1).
+    power_factor = next(
+        (row for name, row in rows.items() if name.startswith("7.4 역률 개선")), None
+    )
     if power_factor is not None:
         value = float(power_factor[SAVING] or 0.0)  # type: ignore[arg-type]
-        expected = result.baseline.total_base_won * 0.01
+        # 기대값도 넣은 역률에서 낸다 — 식(제43조 ② 조정 비율의 차)은 그대로다.
+        current = result.definition.power_factor_pct or lagging_standard_pct()
+        ratio = lagging_adjustment_ratio(current) - lagging_adjustment_ratio(default_target_pct())
+        expected = result.baseline.total_base_won * ratio
         checks.append(
             Check(
                 label,
-                "역률 개선 절감액 = 기본요금의 1.0% (감액 상한)",
+                f"역률 개선 절감액 = 기본요금의 {ratio * 100:.1f}% (감액 상한)",
                 abs(value - expected) < max(1.0, expected * 1e-6),
                 f"{value:,.0f} 원 (기본요금 {result.baseline.total_base_won:,.0f} 의 "
                 f"{value / result.baseline.total_base_won * 100:.2f}%)",

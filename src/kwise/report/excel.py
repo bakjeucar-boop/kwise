@@ -897,7 +897,10 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
                     "목표 계약전력",
                     f"{contract.target_contract_kw:,.0f} kW"
                     if contract.target_contract_kw is not None
-                    else NO_SAVING,
+                    # 여지가 없으면 「없음」 · 하한을 몰라 못 냈으면 「미산출」 (S247 결정 3).
+                    else NO_SAVING
+                    if contract.adjustment.no_saving
+                    else UNPRICED,
                 ),
                 (
                     "계약전력 조정 기간 절감액",

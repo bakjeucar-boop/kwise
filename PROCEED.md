@@ -402,6 +402,27 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - 시험 **4파일** — `test_casestudy.py`(못 (1) 케이스 몫) · `test_report.py`(못 (1) 일괄 생성 몫 · (2) · 옛 표기 「순편익가격」 한 자리) · `test_document.py`(못 (3) (4)) · `test_dr.py`(못 (5) · 옛 표기 한 자리).
 **1절 벽시계** 15:40:56 ~ 15:49:04(시각 명령 출력 · 커밋 앞).
 
+**2-1. 1-6 코드 16자리 · 문서 1자리를 고쳤다 — 코드 8파일 +70 −17 · 계산 폴더 1파일 +4 −4(`measures\demand_response.py` · 1-6 자리 둘 · 글자와 독스트링만)**(`git diff --numstat` 2절 커밋 앞). 시험은 3절 몫. `ruff check` 여덟 파일 통과(`ruff_20260926_155149.txt`) · `build_docs`(`build_docs_20260926_155148.txt` · 앵커 31 다 있다).
+
+| 자리 | 줄 | 전 → 후 |
+|---|---:|---|
+| ①②③ `report\casestudy.py` | +17 −2 | 태양광 곡선에 `power_factor_pct=definition.power_factor_pct` · 역률 카드에 `current_pct=definition.power_factor_pct` · 수단 이름 「7.4 역률 개선 (92→97%)」 고정 → 「7.4 역률 개선 ({출발}→{목표}%)」 · 여지 없음이면 「({출발}%)」(`PowerFactorResult.no_headroom` · S206 · S246 결정 2) |
+| ④ `report\batch.py` | +2 −1 | `BillingOptions(contract_kw=…)` → `…, power_factor_pct=case.power_factor_pct` |
+| ⑤ `report\validity.py` | +11 −3 | 이름 열쇠 「7.4 역률 개선 (92→97%)」 → 앞머리 「7.4 역률 개선」 · 기대값 `기본요금 × 0.01` → `기본요금 × (조정 비율(넣은 역률 · 없으면 간주) − 조정 비율(기본 목표))`(`tariff.lagging_adjustment_ratio` — 식은 그대로 · 읽는 입력만) · 판정 이름 「기본요금의 1.0%」 → 「기본요금의 {비율}%」(92 에서 1.0% 그대로) |
+| ⑥ `report\document.py` `measure_entries` | +17 | 곡선은 섰는데 `best is None` — ESS 항목(결론 `ESS_NO_EXCESS` · 절감 「없음」 · 투자비 「—」 · 회수기간 「—」 · 확실성 높음 · `actionable=False` · 근거 수 「요금적용전력」) |
+| ⑦ `report\notices.py` `ESS_NO_EXCESS` | +4 | 화면 2단계 카드 문장을 상수로 옮겼다(글자 그대로) |
+| ⑧ `ui\views\measures.py:1623` | +1 −1 | 날글 → `notices.ESS_NO_EXCESS`(화면 글자 0) |
+| ⑨ `report\document.py` 2장 「목표 계약전력」 | +4 −1 | `None` → 「없음」 이 `no_saving` 이면 「없음」 · 아니면 「미산출」(`UNPRICED`) |
+| ⑩ `report\excel.py` 진단 「목표 계약전력」 | +4 −1 | 같다 |
+| ⑪⑫ `report\document.py` `_contract_saving` · `_contract_adequacy_saving` | +3 −2 | 「미산출 — {saving_basis}」 → `UNPRICED_REASONS["contract"]` 「미산출 — 하한 규정 미확인」(1장 · Excel 과 한 자리) |
+| ⑬ `report\notices.py` 알려진 한계 | +1 −1 | 「전력거래소가 매월 공지하는 순편익가격과」 → 「전력거래소가 지역별 SMP로 정산하는 몫과」 |
+| ⑭ `report\document.py` Word 3장 DR 주의 | +1 −1 | 「전력거래소 월별 순편익가격과」 → 「전력거래소가 지역별 SMP로 정산하는 몫과」 |
+| ⑮⑯ `measures\demand_response.py`(계산 폴더) | +4 −4 | 차단 `dr.no_price` 「전력거래소 월별 순편익가격과」 → 「전력거래소가 지역별 SMP로 정산하는 몫과」(위약금 몫 0자) · 독스트링 「매월 순편익가격(입찰 최소가격)을 공지하고」 → 「계획감축량을 지역별 SMP로 정산하고(별표26 Ⅰ.1)」 |
+| `docs\MANUAL.md`(+ `MANUAL.html`) | +2 −2 | 같은 글 |
+
+**2-2. 적게 닫은 것 · 번진 것.** 1-6 16자리 그대로 · 적게 닫은 것 0. **번짐 — 1-6 자리 밖 코드 0.** 1-6 안에서 미리 적어 둔 번짐 둘 — ⑪ 은 PPT 수단 장 각주도 같은 항목 값에서 선다(1-4) · ⑥ 은 PPT 「검토한 수단」 수 · 장 번호 · 부록 각주가 따라 움직인다(1-3). 곁 — `report\document.py` `_UNPRICED` 는 ESS 두 갈래가 계속 쓴다(고아 0).
+**2절 벽시계** 15:49:04 ~ 15:51:53(시각 명령 출력 · 커밋 앞).
+
 ---
 
 ## 오늘 (2026-09-26) 246세션 — **고침 판 · PPT · Word 기간 합산효과에 DR 정산금(계산 변경) · F 의 남은 근거 줄 · 후보 D 를 고치고 · 후보 C · G · I 재료와 E 고칠 자리를 잰다**
