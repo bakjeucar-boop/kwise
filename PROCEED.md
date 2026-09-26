@@ -400,6 +400,20 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - 시험 **3파일** — `test_report.py`(15분 머리 · 날값 못 넓힘 · 일괄 옛 열쇠) · `test_compare.py`(화면 판정 = 조합 판정 넓힘 · 조합 그림) · ESS 칸 못이 들 파일(`test_ess_cost.py` 또는 `test_ui.py` — 3-3 에서 자리).
 **1절 벽시계** 00:12:51 ~ 00:22:42(시각 명령 출력 · 커밋 앞).
 
+**2-1. 1-6 자리를 고쳤다 — 코드 6파일 +81 −15 · 계산 폴더 0**(`git diff --numstat` 2절 커밋 앞 · 1-6 자리 안). `ruff check` 여섯 파일 통과(`ruff_20260927_002538.txt`).
+
+| 자리 | 줄 | 전 → 후 |
+|---|---:|---|
+| ① `report\columns.py` | +2 | `DISPLAY_DECIMALS` 에 「일할 계수」 4(요금 계산 명세 · Excel 셀 서식 4자리와 같다) |
+| ② `report\excel.py` | +44 −8 | 「15분 시계열」 머리 `timestamp` · `kw` · `kwh` → 「시각」 · 「부하(kW)」 · 「사용량(kWh)」(이름은 `_timeseries_frame` 한 자리에 — 아래 2-2) · 「감도」 시트를 새 `_sensitivity_sheet` 로 — 하한 · 상한 시나리오는 원값으로 고르고 기준값 · 범위 하한 · 상한 · 표시는 그 시나리오 줄의 감도 상세 표기 값(금액 천 원 절사 · 조합 · 태양광 글자 · 그 밖 `EXCEL_DECIMALS` 자리) |
+| ③ `ui\views\compare.py` | +13 −3 | `_contract_headroom` 판정 — 부하 원 부하 → 조합 부하(`with_load(usage, combined.load_kw)`) · 옵션 현행 → 현행에서 역률만 조합 청구서가 든 값(`combined.bill.power_factor.lagging_pct`) · 목표 보전 선 `observed_max_kw=usage.observed_max_kw`(원 부하 · 전과 같다) |
+| ④ `report\frames.py` | +13 −3 | `combination_frame` 이 적힌 절감액 0원 · 투자비 0원 조합을 안 싣는다(투자비 미산출은 둔다) |
+| ⑤ `ui\views\measures.py` | +4 −1 | `_ess_spec_view` 만원 아래 칸 `value / 10_000` 반올림 → `money.truncate_won(value) / 10_000`(천 원 절사 뒤 만원) |
+| ⑥ `report\batch.py` | +5 | `load_batch_config` 가 옛 열쇠 `dr_day_ahead_price_won_per_kwh` 를 떼어 새 열쇠가 없을 때만 `dr_smp_won_per_kwh` 로 · 둘 다 있으면 새 열쇠 |
+
+**2-2. 적게 닫은 것 · 번진 것.** 1-6 자리 그대로 · 번짐 0(코드 자리 밖 0 · 문서 0). **1-6 계획과 갈린 것 하나** — ① 에서 15분 시계열 이름을 `COLUMN_LABELS` 에 `kw` · `kwh` 로 넣었다가 걷었다(영문 열쇠 `kw` 를 다른 계산 표 — `diagnose\peak.py:131` · `report\days.py:64` 따위 — 도 써서 번역표에 두면 번질 수 있다) → ② `_timeseries_frame` 에 이름을 적었다(파일 수 그대로 · ① 은 `DISPLAY_DECIMALS` 한 줄만). 적게 닫은 것 0 · 나-8 은 1-3 대로 0줄.
+**2절 벽시계** 00:22:42 ~ 00:25:43(시각 명령 출력 · 커밋 앞).
+
 ---
 
 ## 오늘 (2026-09-26) 249세션 — **고침 판 · 나-18 DR 위약금 식과 위약금계수(계산 변경) · 나-17 결정을 끝까지 적용하고 · 다음 뿌리 후보를 잰다**

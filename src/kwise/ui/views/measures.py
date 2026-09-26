@@ -25,6 +25,7 @@ import math
 import pandas as pd
 import streamlit as st
 
+from kwise import money
 from kwise.diagnose import Diagnosis
 from kwise.diagnose.dr import JUDGE_WINDOW, dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData
@@ -1416,9 +1417,11 @@ def _ess_spec_view(frame: pd.DataFrame) -> pd.DataFrame:
     savings = frame["연간 절감액(원)"]
     in_man = bool((savings.abs() >= 10_000).any())
 
+    # 만원 한 자리는 천 원 자리다 — 반올림이 아니라 천 원 절사다 (S250 결정 3 · 절사 A).
+    # PPT · Word 같은 표가 「2,000」 인데 이 칸만 「0.3만원」 이었다.
     def saving(value: float) -> str:
         if in_man and 0 < abs(value) < 10_000:
-            return f"{value / 10_000:,.1f}만원"
+            return f"{money.truncate_won(value) / 10_000:,.1f}만원"
         return fmt.won_short(value)
 
     return pd.DataFrame(

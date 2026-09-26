@@ -16,7 +16,7 @@ import datetime as dt
 import itertools
 import math
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,6 +28,7 @@ from kwise.compare import (
     SENSITIVITY_NOTE,
     ComparisonResult,
     sensitivity_range_frame,
+    sensitivity_ranges,
 )
 from kwise.compare.sensitivity import (
     ANNUAL_SAVING,
@@ -62,6 +63,7 @@ from kwise.measures import (
 )
 from kwise.measures.ess import NO_INVESTMENT_INPUT
 from kwise.notices import Notice, dedupe, prefixed
+from kwise.pv import load_sharpness_factors
 from kwise.report import narrative
 from kwise.report.appendix import basis_data_frame, known_limits, worksheet_frame
 from kwise.report.columns import display_frame, localize, season_label, value_label
@@ -991,13 +993,15 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
 
 
 def _timeseries_frame(usage: UsageData) -> pd.DataFrame:
+    # 이름은 다른 표가 이미 쓰는 것 — 하루 부하 표 「시각」 · 「부하(kW)」 · 월별 「사용량(kWh)」
+    # (S250 결정 1). 영문 열쇠(`kw` 따위)는 다른 계산 표도 써서 번역표에 안 넣는다.
     return pd.DataFrame(
         {
-            "kw": usage.kw,
-            "kwh": usage.energy_kwh(),
+            "부하(kW)": usage.kw,
+            "사용량(kWh)": usage.energy_kwh(),
             "결측": usage.kw.isna(),
         }
-    )
+    ).rename_axis("시각")
 
 
 def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
@@ -1101,11 +1105,12 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
     if sections.sensitivity is not None:
         # **범위로 보여 준다.** 3열 나열은 근거표(감도 상세)로 내린다 (9.2).
         if "첨예도 s" in sections.sensitivity.columns:
-            sheets["감도"] = sensitivity_range_frame(sections.sensitivity)
-            # 원자료 열 이름은 열쇠다 — 보이는 이름으로 바꿔 싣는다 (S220 2절).
-            sheets["감도 상세"] = _same_combination_saving(
+            detail = _same_combination_saving(
                 sections.sensitivity, sections.comparison, sections.peer_savings, sections.solar
-            ).rename(columns=METRIC_LABELS)
+            )
+            sheets["감도"] = _sensitivity_sheet(sections.sensitivity, detail)
+            # 원자료 열 이름은 열쇠다 — 보이는 이름으로 바꿔 싣는다 (S220 2절).
+            sheets["감도 상세"] = detail.rename(columns=METRIC_LABELS)
         else:
             sheets["감도"] = sections.sensitivity
     # **표기는 한 문에서 한다** (S161 2절). 절사 뒤에 :func:`display_frame` 이
@@ -1123,6 +1128,37 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
         if name in shown:
             shown[name].attrs[WRITE_INDEX] = False
     return shown
+
+
+def _sensitivity_sheet(raw: pd.DataFrame, detail: pd.DataFrame) -> pd.DataFrame:
+    """감도 범위 — **칸과 「표시」 가 감도 상세의 표기 값이다** (S250 결정 1 · S233 ㄱ).
+
+    하한 · 상한 시나리오는 원값으로 고르고, 적는 값은 그 시나리오 줄의 표기 값이다 —
+    금액은 감도 상세의 글자를 천 원 절사한 것, 그 밖은 셀 서식 자리(:data:`EXCEL_DECIMALS`).
+    지표 이름이 열이 아니라 줄에 있어 표기 문(열 꼬리)이 날값을 그대로 실었고, 같은 줄
+    「표시」 는 원 단위 · kW 한 자리로 칸과 다른 값을 적었다.
+    """
+    frame = sensitivity_range_frame(raw)
+    shown = truncate_money_columns(detail)
+    reference = load_sharpness_factors().base_label
+    for item in sensitivity_ranges(raw):
+        digits = _tail_decimals(item.metric) or 0
+        base, low, high = (
+            None if value is None else round(float(shown.at[scenario, item.metric]), digits)
+            for value, scenario in (
+                (item.base, reference),
+                (item.low, item.low_scenario),
+                (item.high, item.high_scenario),
+            )
+        )
+        folded = replace(item, base=base, low=low, high=high, decimals=digits)
+        frame.loc[item.label, ["기준값", "범위 하한", "범위 상한", "표시"]] = [
+            folded.base,
+            folded.low,
+            folded.high,
+            folded.text(),
+        ]
+    return frame
 
 
 def _same_combination_saving(

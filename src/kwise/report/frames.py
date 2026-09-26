@@ -16,6 +16,7 @@ from collections.abc import Sequence
 
 import pandas as pd
 
+from kwise import money
 from kwise.compare import ComparisonResult, SensitivityRange
 from kwise.diagnose import ChargeStructure, PeakProfile
 from kwise.diagnose.dr import JUDGE_WINDOW, DrProfile
@@ -801,12 +802,21 @@ def combination_frame(comparison: ComparisonResult) -> pd.DataFrame:
 
     **확실성 열을 뺐다** (53세션 1-4). 28세션에 그림에서 색을 걷어낸 뒤로 아무도
     읽지 않던 열이고, 산출물에서도 등급을 빼기로 했다.
+
+    **그릴 막대가 없는 조합은 싣지 않는다** (S250 · 나-2 · 30세션 4절 「빈 축을 남기지
+    않는다」). 적힌 절감액이 0원이고 투자비도 0원이면 이름만 축에 섰다 — 19벌 다
+    「기준선 (현행)」 · 4벌은 「계약전력 조정」 도. 투자비를 모르면 그림이 그 사실을 적으므로 둔다.
     """
+    shown = [
+        item
+        for item in comparison.combinations
+        if money.truncate_won(item.saving_won) or item.investment_won != 0
+    ]
     return pd.DataFrame(
         {
-            "조합": [item.name for item in comparison.combinations],
-            "절감액(원)": [item.saving_won for item in comparison.combinations],
-            "투자비(원)": [item.investment_won for item in comparison.combinations],
+            "조합": [item.name for item in shown],
+            "절감액(원)": [item.saving_won for item in shown],
+            "투자비(원)": [item.investment_won for item in shown],
         }
     )
 

@@ -185,6 +185,11 @@ def load_batch_config(path: Path) -> BatchConfig:
     cases: list[CaseSpec] = []
     for index, item in enumerate(raw_cases, start=1):
         values = dict(item)
+        # S249 앞 이름도 같은 뜻으로 읽는다 — 일괄 생성은 늘 육지 가격이다 (S250 결정 5).
+        # 둘 다 있으면 새 이름이 이긴다.
+        if "dr_day_ahead_price_won_per_kwh" in values:
+            old = values.pop("dr_day_ahead_price_won_per_kwh")
+            values.setdefault("dr_smp_won_per_kwh", old)
         name = str(values.pop("name", f"case{index}"))
         usage = Path(values.pop("usage"))
         if not usage.is_absolute():

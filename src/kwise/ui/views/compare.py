@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pandas as pd
 import streamlit as st
@@ -56,6 +56,7 @@ from kwise.measures import (
     load_ess_cost_model,
     payback_years,
     surplus_free_capacity_kwp,
+    with_load,
     with_surplus_revenue,
 )
 from kwise.notices import Notice, dedupe_key, dedupe_keys, tooltip
@@ -666,14 +667,23 @@ def _contract_headroom(
     """
     if form.contract_kw is None:
         return None
+    # **조합 청구서를 뽑은 부하 · 옵션으로 잰다** (S250 · 가-4 · `evaluate_contract_adjustment`
+    # 독스트링). 금액은 조합 부하, 목표는 원 부하 관측 최대 — 조합의 판정과 같은 넷이다.
+    # 옵션은 역률만 다르다 — 조합이 태양광 뒤 역률이나 켠 목표로 갈아 끼우고, 그 값을
+    # 청구서가 든다. 현행 옵션(92%)을 짝지으면 종별을 넘는 벌에서 역률요금이 몫에 섞였다.
+    load = usage if combined.load_kw is None else with_load(usage, combined.load_kw)
+    options = replace(
+        form.billing_options(), power_factor_pct=combined.bill.power_factor.lagging_pct
+    )
     adjustment = evaluate_contract_adjustment(
-        usage,
+        load,
         combined.bill,
         contract_kw=form.contract_kw,
         # **2단계 카드와 같은 조건으로 본다** (98세션). 한쪽만 종별을 넘게 두면
         # 「추가 하향」 이 앞 카드의 절감액을 빼는 순간 음수가 된다.
         table=table,
-        options=form.billing_options(),
+        options=options,
+        observed_max_kw=usage.observed_max_kw,
     )
     already = (standalone.annual_saving_won or 0.0) if standalone is not None else 0.0
     extra = (adjustment.annual_saving_won or 0.0) - already
