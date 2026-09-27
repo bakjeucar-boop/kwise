@@ -415,6 +415,17 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 계산 폴더 몫 — `tariff` 1(C1) · 나머지 다섯(measures · diagnose · compare · pv · quality) 0. `tools\` 0 · `CLAUDE.md` 0.
 **1절 벽시계** 06:57:54 ~ 07:03:30(시각 명령 출력 · 커밋 앞).
 
+**2-1. 11자리 다 고쳤다**(`git diff --cached --numstat` · +/−).
+- **C1** `tariff\source_excel.py` +35 −68 — `BorrowedOption`(클래스 · `__all__`) · `ContractRule.borrowed_options` · 갑Ⅱ 규칙의 빌림 둘 · `_add_borrowed_options` · `deepcopy` 걷기 → `PDF_ROWS`(옮김 파일 경로) · `_add_pdf_options`(행마다 전압 · 선택 · 「전체시간」 을 맞춰 넷 칸을 짓고 출처 「파일 쪽」 · 확인일을 단다 · 넣을 자리가 없으면 멈춘다 · 그 종별이 변환에 없으면 건너뛴다).
+- **C2** `report\worksheet.py:251` +1 −1 — 「초과 {n}개 월 ×」 → 「초과 {n}개월 ×」.
+- **D1** `data\kepco_pdf_rows_20260801.json` +14(새) — 열여섯 값 · 시행 요금월 · 출처(`2026-08-01_전기요금표(종합).pdf` · 1쪽 · 표 머리) · 확인일 `2026-09-28`.
+- **D2** `data\tariff_kr_20260601.json` +12 −4 — `tools\build_tariff.py` 로 다시 지었다(`build_tariff_20260928_070612.txt` · 회귀 대조 60 통과 · 검증 통과) · **값 0 갈림** · 넷 칸(`general_a_2` 고압A · B 선택Ⅲ · Ⅳ)에 `source` 「2026-08-01_전기요금표(종합).pdf 1쪽」 · `verified_on` 「2026-09-28」 만 붙었다(스키마 판독기는 모르는 칸을 안 읽는다).
+- **M1 · M2** `docs\MANUAL.md` +9 −9 — ESS 「상한」 일곱 줄 · #9 각주 예시와 풀이 여섯 줄(줄 수 같음). **M3** `docs\MANUAL.html` +3 −3(`build_docs_20260928_070614.txt`). **M4** `data\source\SOURCES.md:18` +1 −1(옮김 파일 한 마디). **M5** `docs\CALC_LOGIC.md:679` +1 −1(인용 두 글자).
+- **T1** `tests\test_tariff_source.py` +24 −17 — 독스트링 `BorrowedOption` 글자 · 못 `test_flat_options_match_the_type_a_1_high_voltage_rows`(빌림이 갈라지면 알리는 못)를 새 못 `test_갑Ⅱ_선택Ⅲ_Ⅳ_는_요금표_PDF_출처_값이고_빌려_쓰는_행이_없다` 로 갈았다. **T2** `tests\test_base_fee_basis_words.py` +3 — #18 에 「12개 월」 없음 · 「초과 12개월 ×」 여덟 자리.
+
+**2-2. 번짐 — 자리 하나가 옮겼다(수는 그대로).** D1 을 처음 `data\source\` 에 지었다가 `SOURCES.md:3` 「여기 있는 것은 원문이다. 우리가 만든 것이 아니다」 에 어긋나 `data\` 로 옮겼다 — `data\tariff_*.json` 이름은 `tariff\schema.py:55` 요금표 목록 글롭에 잡혀 피했다. 그래서 M4 는 새 행이 아니라 PDF 행에 한 마디다. 적게 닫은 자리 0 · 1-4 밖 자리 0.
+**2절 벽시계** 07:03:30 ~ 07:06:51(시각 명령 출력 · 커밋 앞).
+
 ---
 ## 오늘 (2026-09-28) 254세션 — **고침 판 · 문구 판 20 항목(사람 결정) · ESS 차익거래 잠재값 걷기(사람 결정) · 자료 대기 목록을 잰다**
 

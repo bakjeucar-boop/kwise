@@ -248,7 +248,7 @@ def _bill_rows(bill: BillingResult, *, title: str) -> list[WorkRow]:
         rows.append(
             WorkRow(
                 "초과사용부가금",
-                f"초과 {len(bill.excess.charged_months)}개 월 × 기본요금 단가 × 배수",
+                f"초과 {len(bill.excess.charged_months)}개월 × 기본요금 단가 × 배수",
                 _won(lines.excess),
             )
         )

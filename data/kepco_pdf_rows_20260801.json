@@ -1,0 +1,14 @@
+{
+  "note": "6-01 판 엑셀에 없는 선택요금을 요금표 원문에서 옮겨 적었다. 변환기(kwise.tariff.source_excel)가 이 파일을 읽어 요금 데이터에 넣는다.",
+  "source": "2026-08-01_전기요금표(종합).pdf",
+  "page": 1,
+  "table": "＊ 계약전력 300kW미만 시간대별 구분계량기 설치고객",
+  "verified_on": "2026-09-28",
+  "contract": "일반용(갑) II",
+  "rows": [
+    {"voltage": "고압A", "option": "선택Ⅲ", "band": "전체시간", "base_won_per_kw": 7170, "summer": 142.6, "spring_fall": 98.6, "winter": 130.3, "effective_date": "2026-12"},
+    {"voltage": "고압A", "option": "선택Ⅳ", "band": "전체시간", "base_won_per_kw": 8230, "summer": 138.6, "spring_fall": 94.3, "winter": 125.0, "effective_date": "2026-12"},
+    {"voltage": "고압B", "option": "선택Ⅲ", "band": "전체시간", "base_won_per_kw": 7170, "summer": 140.5, "spring_fall": 97.5, "winter": 127.3, "effective_date": "2026-12"},
+    {"voltage": "고압B", "option": "선택Ⅳ", "band": "전체시간", "base_won_per_kw": 8230, "summer": 135.2, "spring_fall": 92.2, "winter": 122.0, "effective_date": "2026-12"}
+  ]
+}

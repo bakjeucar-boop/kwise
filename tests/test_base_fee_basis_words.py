@@ -1760,6 +1760,9 @@ def _s254_check(item: str) -> None:
         excess = [r[-1] for r in rendered.rows if r[:4] == head]
         assert len(excess) == 1, excess
         assert excess[0].endswith("(청구 12개월, 분석 기간의 첫 초과 달은 예고)"), excess
+        # 같은 사실 같은 글자 (S255 결정 1) — 계산 근거 「초과 12개월 ×」 네 산출물.
+        assert not [t for t in lines if "12개 월" in t], rendered.key
+        assert len([t for t in lines if "초과 12개월 × 기본요금 단가 × 배수" in t]) == 8, "재료"
     elif item == "ESS":
         assert [t for t in screen if t.startswith("6. ESS")], "재료 — ESS 카드가 없다"
         assert not [t for t in lines if ARBITRAGE_WORDS.search(t)], rendered.key

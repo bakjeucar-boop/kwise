@@ -40,6 +40,8 @@ from kwise.tariff import (
 )
 from kwise.tariff.source_excel import (
     CONTRACT_RULES,
+    PDF_ROWS,
+    ContractRule,
     TariffSourceError,
     build_payload,
     read_rate_rows,
@@ -311,9 +313,8 @@ def test_flat_rate_types_have_equal_band_rates(tariff: TariffTable) -> None:
 def test_general_a_2_carries_the_two_flat_options(tariff: TariffTable) -> None:
     """갑Ⅱ 선택Ⅲ·Ⅳ — **8월 요금표 원문 1쪽의 열여섯 자리를 그대로 못 박는다.**
 
-    엑셀(6-01 판)에 없는 값이라 :class:`BorrowedOption` 이 갑Ⅰ 고압 행에서
-    가져온다. **두 자리가 갈라지면 여기가 먼저 알린다** — 옮겨 적은 값이
-    아니라 같은 행을 쓰기 때문에, 요금표가 한쪽만 고치면 이 시험이 깨진다.
+    엑셀(6-01 판)에 없는 값이라 변환기가 요금표 원문에서 옮겨 적은 파일
+    (:data:`~kwise.tariff.source_excel.PDF_ROWS`)을 읽는다 (S255 · 라-29).
 
         data\\source\\2026-08-01_전기요금표(종합).pdf 1쪽
         고압A 선택Ⅲ 7,170 전체시간 142.6 / 98.6 / 130.3
@@ -358,21 +359,27 @@ def test_general_a_2_carries_the_two_flat_options(tariff: TariffTable) -> None:
         )
 
 
-def test_flat_options_match_the_type_a_1_high_voltage_rows(tariff: TariffTable) -> None:
-    """갑Ⅱ 선택Ⅲ·Ⅳ 는 갑Ⅰ 고압 선택Ⅰ·Ⅱ 와 **한 자리도 다르지 않다.**"""
+def test_갑Ⅱ_선택Ⅲ_Ⅳ_는_요금표_PDF_출처_값이고_빌려_쓰는_행이_없다(source_path: Path) -> None:
+    """**갑Ⅰ 고압 행을 빌려 쓰지 않는다** (S255 · 라-29 사람 결정).
+
+    93세션부터 갑Ⅰ 고압 선택Ⅰ·Ⅱ 행을 그대로 썼다 — 근거가 「지금 값이 같다」
+    하나뿐이었다. 이제 넷 칸은 옮겨 적은 파일에서 오고 칸마다 출처와 확인일을 단다.
+    """
+    sheet = json.loads(PDF_ROWS.read_text(encoding="utf-8"))
+    assert (sheet["source"], sheet["page"]) == ("2026-08-01_전기요금표(종합).pdf", 1)
+    assert not [f for f in ContractRule.__dataclass_fields__ if "borrow" in f]
+    fresh = build_payload(source_path, effective_date=EFFECTIVE_DATE)
+    voltages = fresh["contract_types"]["general_a_2"]["voltages"]
     for voltage in ("high_a", "high_b"):
-        for borrowed, source in (("III", "I"), ("IV", "II")):
-            here = tariff.rates(TariffSelection("general_a_2", voltage, borrowed))
-            there = tariff.rates(TariffSelection("general_a_1", voltage, source))
-            assert here.base_won_per_kw == there.base_won_per_kw, (voltage, borrowed)
-            for season in sorted(there.energy):
-                for band in BANDS:
-                    assert here.rate(season, band) == there.rate(season, band), (
-                        voltage,
-                        borrowed,
-                        season,
-                        band,
-                    )
+        for option in ("III", "IV"):
+            block = voltages[voltage][option]
+            assert block["source"] == "2026-08-01_전기요금표(종합).pdf 1쪽", (voltage, option)
+            assert block["verified_on"] == sheet["verified_on"], (voltage, option)
+    rows = {(row["voltage"], row["option"]): row for row in sheet["rows"]}
+    assert len(rows) == 4
+    high_b_iv = voltages["high_b"]["IV"]
+    assert high_b_iv["base_won_per_kw"] == rows[("고압B", "선택Ⅳ")]["base_won_per_kw"]
+    assert high_b_iv["energy"]["winter"]["peak"] == rows[("고압B", "선택Ⅳ")]["winter"]
 
 
 def test_time_of_use_types_are_marked(tariff: TariffTable) -> None:

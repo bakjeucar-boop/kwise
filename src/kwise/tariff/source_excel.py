@@ -34,10 +34,10 @@
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from collections.abc import Mapping, Sequence
-from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -52,11 +52,11 @@ __all__ = [
     "HEADER_ROW",
     "INFO_SHEET",
     "OPTION_ALIASES",
+    "PDF_ROWS",
     "RATE_SHEETS",
     "SEASON_ALIASES",
     "SPECIAL_RULES",
     "VOLTAGE_ALIASES",
-    "BorrowedOption",
     "ContractRule",
     "RateRow",
     "TariffSourceError",
@@ -123,36 +123,12 @@ class TariffSourceError(ValueError):
     """엑셀 요금표를 읽지 못했을 때 발생한다."""
 
 
-@dataclass(frozen=True)
-class BorrowedOption:
-    """엑셀에 없는 선택요금. **단가를 코드에 적지 않고 같은 엑셀의 다른 행을 쓴다.**
-
-    일반용(갑)Ⅱ 선택Ⅲ·Ⅳ 가 그렇다. 약관 부칙 (2026. 5. 22) 로 신설됐는데
-    우리가 읽는 6-01 판 엑셀에는 행이 없다. 8월 요금표 원문(정본,
-    ``data\\source\\2026-08-01_전기요금표(종합).pdf`` 1쪽)에서 값을 확인해 보니
-    **일반용(갑)Ⅰ 고압 선택Ⅰ·Ⅱ 와 열여섯 자리가 모두 같다** — 기본요금
-    7,170 / 8,230 원, 전체시간 단가가 고압A 142.6·98.6·130.3 과
-    138.6·94.3·125.0, 고압B 140.5·97.5·127.3 과 135.2·92.2·122.0 이다.
-    제도로도 같은 자리다. 갑Ⅱ 는 시간대별 계량 고객이고 선택Ⅲ·Ⅳ 는 그
-    고객에게 **전체시간 단가**를 주는 요금제라 갑Ⅰ 고압과 겹친다.
-
-    그래서 값을 옮겨 적지 않고 **그 행을 그대로 쓴다.** 옮겨 적으면 요금표가
-    바뀔 때 한쪽만 고쳐진다. 두 자리가 갈라지면
-    ``tests\\test_tariff_source.py`` 의 못이 그것을 알린다.
-
-    Attributes:
-        effective_date: **이 선택요금**의 시행일. 약관이 「2026년 12월분
-            요금부터」 (부칙 제2항 제3호)로 정하므로 **날이 아니라 요금월**
-            (``2026-12``)로 적는다. 날로 적으면 없는 사실을 적는 것이다 —
-            검침 기간이 달을 걸치므로 12월분이 시작하는 날은 고객마다 다르다.
-        from_contract: 값을 가져올 종별의 **엑셀 표기**.
-        from_option: 그 종별 안의 선택요금 키.
-    """
-
-    option: str
-    from_contract: str
-    from_option: str
-    effective_date: str
+# 엑셀(6-01 판)에 없는 선택요금을 요금표 원문에서 옮겨 적은 파일. 일반용(갑)Ⅱ
+# 선택Ⅲ·Ⅳ 가 그렇다 — 약관 부칙 (2026. 5. 22) 로 신설돼 6-01 판 엑셀에 행이
+# 없고 8월 요금표 1쪽에만 있다 (S255 · 라-29). ``data\\source\\`` 는 원문만 두는
+# 곳이라 ``data\\`` 에 둔다 — ``tariff_*.json`` 이름은 요금표 목록에 잡혀 피했다.
+# 시행은 날이 아니라 요금월(``2026-12``)이다 — 검침 기간이 달을 걸친다.
+PDF_ROWS = Path(__file__).resolve().parents[3] / "data" / "kepco_pdf_rows_20260801.json"
 
 
 @dataclass(frozen=True)
@@ -219,7 +195,6 @@ class ContractRule:
     demand_bands: tuple[str, ...] = ("mid", "peak")
     demand_months: tuple[int, ...] = (7, 8, 9, 12, 1, 2)
     voltage_base_fee_basis: tuple[tuple[str, str], ...] = ()
-    borrowed_options: tuple[BorrowedOption, ...] = ()
     transition: Transition | None = None
 
 
@@ -263,13 +238,9 @@ CONTRACT_RULES: Mapping[str, ContractRule] = {
         base_fee_basis="billing_demand",
         time_of_use=True,
         contract_floor_ratio=0.3,
-        # 선택Ⅲ·Ⅳ 는 6-01 판 엑셀에 없다. :class:`BorrowedOption` 을 본다.
+        # 선택Ⅲ·Ⅳ 는 6-01 판 엑셀에 없다. :data:`PDF_ROWS` 를 본다.
         # **시행일로 후보를 막지 않는다** — 고객은 고를 수 있고, 계산은 고른
         # 하나로 기간 전체를 간다. 그 오차는 안내로 낸다.
-        borrowed_options=(
-            BorrowedOption("III", "일반용(갑) I", "I", "2026-12"),
-            BorrowedOption("IV", "일반용(갑) I", "II", "2026-12"),
-        ),
         # 부칙 (2026. 5. 22) 제2항 제1호 — 6월분~11월분은 신청 없이 낮은 쪽이다.
         transition=Transition("2026-06", "2026-11", (("I", "III"), ("II", "IV"))),
     ),
@@ -626,37 +597,33 @@ def _contract_payload(
     return payload
 
 
-def _add_borrowed_options(contract_types: dict[str, Any]) -> None:
-    """엑셀에 없는 선택요금을 **같은 엑셀의 다른 종별 행에서** 채운다.
+def _add_pdf_options(contract_types: dict[str, Any], path: Path) -> None:
+    """엑셀에 없는 선택요금을 **요금표 원문에서 옮겨 적은 파일**(:data:`PDF_ROWS`)로 채운다.
 
-    없는 것을 지어내지 않는다 — 가져올 종별이 이번 변환에 없으면 멈춘다.
+    칸마다 출처(파일 · 쪽)와 확인일을 단다. 그 종별이 이번 변환에 없으면 건너뛴다.
     """
-    for rule in CONTRACT_RULES.values():
-        target = contract_types.get(rule.key)
-        if target is None:
-            continue
-        for borrowed in rule.borrowed_options:
-            source_key = CONTRACT_RULES[borrowed.from_contract].key
-            source = contract_types.get(source_key)
-            if source is None:
-                raise TariffSourceError(
-                    f"{rule.key}/{borrowed.option}: 값을 가져올 종별이 "
-                    f"이번 변환에 없습니다: {borrowed.from_contract!r}"
-                )
-            for voltage, payload in target["voltages"].items():
-                rates = source["voltages"].get(voltage, {}).get(borrowed.from_option)
-                if rates is None:
-                    raise TariffSourceError(
-                        f"{rule.key}/{voltage}/{borrowed.option}: "
-                        f"{source_key}/{voltage}/{borrowed.from_option} 이 없습니다."
-                    )
-                payload[borrowed.option] = {
-                    "base_won_per_kw": rates["base_won_per_kw"],
-                    "effective_date": borrowed.effective_date,
-                    "time_of_use": rates["time_of_use"],
-                    "energy": deepcopy(rates["energy"]),
-                }
-            target["options"].append(borrowed.option)
+    sheet = json.loads(path.read_text(encoding="utf-8"))
+    target = contract_types.get(CONTRACT_RULES[sheet["contract"]].key)
+    if target is None:
+        return
+    for row in sheet["rows"]:
+        voltage = VOLTAGE_ALIASES[_normalize(row["voltage"])]
+        option = OPTION_ALIASES[_normalize(row["option"])]
+        if row["band"] != FLAT_BAND or voltage not in target["voltages"]:
+            raise TariffSourceError(f"{path.name}: 넣을 자리가 없는 행입니다: {row}")
+        target["voltages"][voltage][option] = {
+            "base_won_per_kw": float(row["base_won_per_kw"]),
+            "effective_date": row["effective_date"],
+            "time_of_use": False,  # '전체시간' 단일 단가
+            "energy": {
+                season: dict.fromkeys(BAND_ALIASES.values(), float(row[season]))
+                for season in dict.fromkeys(SEASON_ALIASES.values())
+            },
+            "source": f"{sheet['source']} {sheet['page']}쪽",
+            "verified_on": sheet["verified_on"],
+        }
+        if option not in target["options"]:
+            target["options"].append(option)
 
 
 def build_payload(
@@ -695,7 +662,7 @@ def build_payload(
         )
         for name in wanted
     }
-    _add_borrowed_options(contract_types)
+    _add_pdf_options(contract_types, PDF_ROWS)
     # **가리키는 종별이 이번 변환에 있는지 여기서 본다** (98세션). 없는 키를
     # 그대로 내보내면 계약전력 조정이 조용히 안 넘어간다 — 뜨지 않는 갈래가 된다.
     # **부록 A.4 의 「한 종별씩 넣기」 는 예외다** — 짝이 아직 없는 것이 정상이라
