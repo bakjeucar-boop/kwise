@@ -178,7 +178,7 @@ reference/          기존 pv_peak_cut 코드. **읽기 전용**
 |---|---|---|---|
 | `data/tariff_kr_*.json` | JSON | 요금표 8종별 × 전압 × 선택요금 ([부록 A](#부록-a-요금-데이터-스키마)) | 엑셀 원본에서 변환 |
 | `data/rules_kr.json` | JSON | **법령 유래** 35항목. 근거 조문 필수 | 화면·엑셀 |
-| `data/assumptions.json` | JSON | **판단값** 49항목 | 화면·엑셀 |
+| `data/assumptions.json` | JSON | **판단값** 51항목 | 화면·엑셀 |
 | `data/defaults/*.json` | JSON | 출고값. 읽기 전용, 커밋 | 손대지 않는다 |
 | `data/backup/*.json` | JSON | 편집 직전 스냅샷 최근 10개 | 자동 |
 | `data/rules_history.jsonl` | JSONL | 편집 이력 한 줄씩 | 자동 |

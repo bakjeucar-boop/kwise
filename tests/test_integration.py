@@ -239,6 +239,53 @@ def test_용도를_고르면_계약종별_후보가_좁아진다() -> None:
     assert narrow_contract_types(every, "없는용도") == every
 
 
+def test_건물_종류는_합친_이름이고_옛_값은_합친_쪽으로_읽는다() -> None:
+    """**같은 일을 하는 짝을 합쳤다** (S253 사람 결정 — 「공장」 → 「산업시설」 ·
+    「학교」 → 「교육시설」). 옛 값은 합친 쪽으로 읽고 계약종별 후보는 합치기 전과 같다.
+    교육시설이면 계약종별 자리에 학교 교육용(갑) 고압 안내 한 줄이 선다 (결정 1)."""
+    from kwise.report.notices import SCHOOL_HIGH_VOLTAGE_NOTICE
+    from kwise.tariff import load_tariff
+    from kwise.ui.building import building_uses, narrow_contract_types, resolve_use_key
+    from kwise.ui.pipeline import contract_type_choices
+
+    assert [item.label for item in building_uses()] == [
+        "사무실",
+        "상업시설",
+        "병원",
+        "산업시설",
+        "교육시설",
+    ]
+    assert resolve_use_key("factory") == "industry"
+    assert resolve_use_key("school") == "education"
+    every = contract_type_choices(load_tariff())
+    # 합치기 전 좁히기는 앞머리로 걸렀다 — 그 결과와 같다.
+    for old, new, prefix in (
+        ("factory", "industry", "industrial"),
+        ("school", "education", "education"),
+    ):
+        expected = tuple(item for item in every if item.contract_type.startswith(prefix))
+        assert narrow_contract_types(every, old) == narrow_contract_types(every, new) == expected
+
+    # 화면 — 위젯에 옛 값이 남아 있어도 합친 쪽이 선택되고 후보가 같다.
+    for old, new, label in (
+        ("factory", "industry", "산업시설"),
+        ("school", "education", "교육시설"),
+    ):
+        app = _blank(building_use=old)
+        assert not app.exception, app.exception
+        picked = next(box for box in app.sidebar.selectbox if box.key == "building_use")
+        assert picked.value == new, (old, picked.value)
+        assert label in picked.options and "공장" not in picked.options
+        assert "학교" not in picked.options
+        kinds = next(box for box in app.selectbox if box.label == "계약종별")
+        assert len(kinds.options) == len(narrow_contract_types(every, new))
+        captions = [str(item.value) for item in app.caption]
+        stands = SCHOOL_HIGH_VOLTAGE_NOTICE in captions
+        assert stands == (new == "education"), (old, stands)
+    # 고르지 않으면 안내가 없다.
+    assert SCHOOL_HIGH_VOLTAGE_NOTICE not in [str(item.value) for item in _blank().caption]
+
+
 def test_연면적을_넣으면_원단위가_나온다() -> None:
     """**없으면 줄 자체가 없다.** 국내 평균과 견주지 않는다 (16세션 2절)."""
     from kwise.ui.building import BuildingInfo, intensity_kwh_per_m2

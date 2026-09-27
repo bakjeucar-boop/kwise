@@ -187,13 +187,15 @@ def rendered_sums(request: pytest.FixtureRequest) -> Iterator[Rendered]:
     yield _render(request.param)
 
 
-def _render(key: str) -> Rendered:
-    if key not in _RENDERED:
-        _RENDERED[key] = _build(key)
-    return _RENDERED[key]
+def _render(key: str, use: str = "") -> Rendered:
+    """``use`` 는 옆단 「용도」 위젯 값이다 (S253) — 벌 정의에는 없는 칸이라 여기서 심는다."""
+    slot = f"{key}|{use}" if use else key
+    if slot not in _RENDERED:
+        _RENDERED[slot] = _build(key, use)
+    return _RENDERED[slot]
 
 
-def _build(case_key: str) -> Rendered:
+def _build(case_key: str, use: str = "") -> Rendered:
     from streamlit.testing.v1 import AppTest
 
     sys.path.insert(0, str(PROJECT_ROOT / "tools"))
@@ -235,6 +237,8 @@ def _build(case_key: str) -> Rendered:
         state["building_province"] = case.province
         state["building_sigungu"] = case.sigungu
         state["solar_inputs"] = render_deck.solar_inputs_for(case)
+        if use:
+            state["building_use"] = use
         # 연면적도 `render_deck` 과 같게 위젯 키로 (S252 결정 9 · `small-a2-pf100-offset-area`)
         if case.floor_area_m2 is not None:
             state["building_area"] = case.floor_area_m2
@@ -1634,3 +1638,26 @@ def test_연면적은_Excel_요약_데이터에_화면과_같은_글자로_서�
         assert not [row for row in rendered.rows if row[0] == out and "연면적" in row[-1]], out
     plain = _render("large-a")
     assert not [row for row in plain.excel_rows if row[:2] == ("데이터", "연면적")], plain.key
+
+
+def test_학교_안내는_교육시설일_때만_화면과_Word_에_같은_글자로_서고_PPT_Excel_에는_없다() -> None:
+    """**학교 교육용(갑) 고압은 계산에 넣지 않고 안내 한 줄만** (S253 사람 결정 · 결정 1).
+
+    화면은 계약종별 후보 자리 · Word 는 선택요금 전환 절이고 글자는 한 자리
+    (`report\\notices.py`)에서 온다. 옛 저장값 「학교」(`school`)로 심어 합친 쪽
+    (교육시설)으로 읽히는지도 함께 본다. 건물 종류를 안 고른 벌에는 없다.
+    """
+    from kwise.report.notices import SCHOOL_HIGH_VOLTAGE_NOTICE
+
+    def outputs(rendered: Rendered) -> list[str]:
+        return [row[0] for row in rendered.rows if SCHOOL_HIGH_VOLTAGE_NOTICE in row[-1]]
+
+    school = _render("small-edu-a", use="school")
+    assert sorted(outputs(school)) == ["Word", "화면"], outputs(school)
+    # 같은 글자 — 한 줄이 통째로 그 글자다(앞뒤로 다른 말이 안 붙는다).
+    assert all(
+        row[-1] == SCHOOL_HIGH_VOLTAGE_NOTICE
+        for row in school.rows
+        if SCHOOL_HIGH_VOLTAGE_NOTICE in row[-1]
+    )
+    assert outputs(_render("large-a")) == []

@@ -28,7 +28,7 @@ from dataclasses import dataclass
 
 import streamlit as st
 
-from kwise.diagnose.dr import BID_WINDOW
+from kwise.diagnose.dr import BID_WINDOW, dr_market_windows
 from kwise.pv import list_provinces, list_sigungu
 from kwise.quality import DEFAULT_OPERATING_HOURS
 from kwise.rules import assumption
@@ -243,6 +243,8 @@ def render_sidebar() -> BuildingInfo:
             help="태양광 기상 격자를 고릅니다. 격자가 25–31 km 라 같은 격자면 결과가 같습니다.",
         )
 
+    bid_windows = dr_market_windows(jeju=region_key.startswith("제주"))
+    bid_hours = "·".join(f"{start:02d}–{end:02d}시" for start, end in bid_windows)
     # **9시 출근을 전제하지 않는다** (21세션 4절). 8시에 여는 곳에서는 운영시간 외
     # 부하가 한 시간만큼 부풀고, DR 저부하일 판정도 그만큼 어긋난다.
     start_hour, end_hour = st.sidebar.select_slider(
@@ -255,8 +257,9 @@ def render_sidebar() -> BuildingInfo:
         # 해석하므로 한 줄에 둘이 들어가면 그 사이가 취소선이 된다.
         help=(
             "평일 이 시간대 밖의 부하를 따로 셉니다. 경제성DR 의 저부하일 판정에도 씁니다.\n\n"
-            # 입찰 시간대는 판단값이고 제주는 창이 달라 시각을 박지 않는다 (S253 결정 2).
-            f"경제성DR {BID_WINDOW}와는 다른 값입니다."
+            # 입찰 시간대는 판단값이라 「제도가 정한」 을 뗐고 시각은 이 건물의 창에서
+            # 읽는다 — 제주는 창이 다르다 (S253 결정 2).
+            f"DR {BID_WINDOW}(평일 {bid_hours})와는 다른 값입니다."
         ),
     )
 

@@ -3683,6 +3683,56 @@ def test_기온_그림이_실패하면_사용량만_그리고_기록을_남긴�
     assert "RuntimeError" in collector.messages[0]
 
 
+@pytest.mark.parametrize(
+    ("broken", "key"),
+    [
+        ("daily_usage_png", "usage_pattern"),
+        ("monthly_peak_png", "peak_summary"),
+        ("top_hour_png", "peak_detail"),
+        ("hourly_profile_png", "peak_detail"),
+        ("monthly_charge_png", "structure"),
+        ("band_donut_grid_png", "structure"),
+        ("combination_png", "combination"),
+    ],
+)
+def test_그림을_못_그리면_그_그림만_빠지고_장은_남는다(
+    full_sections: DocumentSections, broken: str, key: str
+) -> None:
+    """**덱의 그림 장은 잉여 장의 꼴을 따른다** (S253 결정 3).
+
+    4 · 5 · 6 · 7 · 조합 장은 굽기 예외가 덱을 통째로 멈췄다. 그림 하나가 빠지고
+    장(제목 · 한 줄 · 지표 · 표 · 각주)은 남아야 하고, 실패는 기록으로 남는다.
+    """
+    from kwise.report.figures import FigureFailureCollector
+
+    whole = build_slides(full_sections)
+    before = _slide_by_key(whole, full_sections, key)
+
+    def boom(*_args: object, **_kwargs: object) -> bytes:
+        raise RuntimeError(f"{broken} 이 깨졌다")
+
+    original = getattr(figures, broken)
+    try:
+        setattr(figures, broken, boom)
+        with FigureFailureCollector() as collector:
+            deck = build_slides(full_sections)
+    finally:
+        setattr(figures, broken, original)
+
+    after = _slide_by_key(deck, full_sections, key)
+    assert len(deck.slides) == len(whole.slides), "장 수가 그대로여야 합니다."
+
+    def pictures(slide: Any) -> int:
+        return sum(shape.shape_type == MSO_SHAPE_TYPE.PICTURE for shape in slide.shapes)
+
+    assert pictures(before) >= 1, f"{key} 장에 그림이 있어야 이 시험이 무엇을 본다."
+    assert pictures(after) == pictures(before) - 1, f"{key} 장에서 그 그림 하나만 빠져야 합니다."
+    title = SLIDE_TITLES[key]
+    assert title in _slide_text(after), f"장 제목이 남아야 합니다: {title}"
+    assert len(collector.messages) == 1, collector.messages
+    assert "RuntimeError" in collector.messages[0]
+
+
 def test_진단이_없으면_제목만_선다(full_sections: DocumentSections) -> None:
     """**물음 넷을 한 자리로 모았다** (60세션 11-3 의 8~11 · 12절 집행).
 

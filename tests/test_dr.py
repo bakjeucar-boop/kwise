@@ -282,6 +282,54 @@ def test_감축_여력은_운영_시간대로만_잰다(sample_diagnosis: Diagno
     assert 8 not in hours
 
 
+def test_입찰_시각은_판단값이고_제주는_제주_창이다(
+    sample_usage: UsageData, sample_diagnosis: Diagnosis
+) -> None:
+    """**입찰 시각을 정한 조문은 없다** (S253 결정 2).
+
+    입찰 요건 조문은 날만 정하고 창은 의무감축시간대를 빌렸다 — 판단값이다. 제주는
+    제주 창(10~21시) · 육지와 지역 모름은 육지 창 · 휴일 창은 없다(수입을 낙관하지
+    않는다). 감축 가능량을 재는 식은 그대로이고 창만 갈린다.
+    """
+    from kwise.diagnose import diagnose
+    from kwise.rules import assumptions, rules
+    from kwise.tariff import load_tariff
+    from kwise.ui.building import BuildingInfo
+
+    judged = assumptions()
+    assert judged["dr.market_hours"].source == "판단값"
+    assert judged["dr.market_hours_jeju"].source == "판단값"
+    assert "제12.4.1.2조" in judged["dr.market_hours"].note
+    assert "dr.market_hours" not in rules()
+    # 휴일 창은 없다 — 입찰 창 항목은 둘뿐이다.
+    windows_keys = [key for key in (*judged.item_keys(), *rules().item_keys()) if "hours" in key]
+    assert [key for key in windows_keys if key.startswith("dr.market_hours")] == [
+        "dr.market_hours",
+        "dr.market_hours_jeju",
+    ]
+    assert dr_market_windows() == ((9, 12), (13, 20))
+    assert dr_market_windows(jeju=True) == ((10, 21),)
+
+    # 지역 모름 · 육지 → 육지 창. 제주 → 제주 창(건물 운영 09~18시와 겹친 창).
+    assert not BuildingInfo(region_key="").jeju
+    island = diagnose(sample_usage, load_tariff(), None, jeju=True).dr
+    land = sample_diagnosis.dr
+    assert island is not None and land is not None
+    assert land.windows == ((9, 12), (13, 18))
+    assert island.windows == ((10, 18),)
+    assert island.period_reducible_kwh != land.period_reducible_kwh
+    # 조합 부하로 다시 잴 때도 같은 창이다 (S245 마-16 부분 함수).
+    rerun = diagnose(sample_usage, load_tariff(), None, jeju=True).dr_measure
+    assert rerun is not None and rerun(sample_usage.kw).windows == island.windows
+
+    # 점심 근거는 창이 둘인 육지에서만 선다 — 제주 창에서는 거짓이다.
+    def facts(jeju: bool) -> set[str]:
+        return {item.fact for item in evaluate_demand_response(land, jeju=jeju).notices}
+
+    assert "dr.window_rule" in facts(False)
+    assert "dr.window_rule" not in facts(True)
+
+
 def test_배수를_올리면_저부하일이_늘어난다(
     sample_usage: UsageData, calendar: HolidayCalendar
 ) -> None:
