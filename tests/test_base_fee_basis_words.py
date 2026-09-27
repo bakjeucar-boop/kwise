@@ -235,6 +235,9 @@ def _build(case_key: str) -> Rendered:
         state["building_province"] = case.province
         state["building_sigungu"] = case.sigungu
         state["solar_inputs"] = render_deck.solar_inputs_for(case)
+        # 연면적도 `render_deck` 과 같게 위젯 키로 (S252 결정 9 · `small-a2-pf100-offset-area`)
+        if case.floor_area_m2 is not None:
+            state["building_area"] = case.floor_area_m2
         # 잉여 처리도 `render_deck` 과 같게 (S234 — `small-b-sell` 은 외부 판매)
         if case.surplus_use:
             state["measure_solar_surplus_use"] = case.surplus_use
@@ -1421,6 +1424,8 @@ def test_자릿수_증상_사실이_네_산출물에서_같은_글자다(rendere
         cell for row in 부록 for cell in row[2:] if "중소형DR 산업체 계약전력 상한" in "".join(row)
     ]
     assert 값 and not [cell for cell in 값 if bare.match(cell)], (rendered.key, 값)
+    # 종별 문턱은 요금표 한 자리다 — 부록 B 에 기준 데이터 몫으로 따로 서지 않는다 (S252 결정 5).
+    assert not [row for row in 부록 if "임계 계약전력" in "".join(row)], rendered.key
 
     # ④ 만원으로 적는 화면 카드 안의 증감 · ESS 사양 표의 한 열은 만원으로 적는다.
     won = re.compile(r"(?<![만억\d,])-?[\d,]*\d원")
@@ -1563,3 +1568,69 @@ def test_Excel_요약에_AMI_기준_안내가_한_줄_선다(rendered: Rendered)
         row for row in rendered.rows if row[:2] == ("Excel", "요약") and AMI_BASIS_NOTICE in row
     ]
     assert len(rows) == 1, (rendered.key, rows)
+
+
+#: 잉여 세 수의 이름 — 합(화면 12개월 환산 · PPT 기간) · 평일 · 토·일·공휴일.
+SURPLUS_LABELS = ("12개월 환산 잉여", "기간 잉여", "평일 잉여", "토·일·공휴일 잉여")
+
+
+def _surplus_figures(rows: tuple[tuple[str, ...], ...], out: str) -> dict[str, int]:
+    """이름 줄 바로 뒤 줄(셋 안)의 첫 「N kWh」 — 화면 지표 · PPT 잉여 장은 이름과 값이
+    다른 줄이다."""
+    found: dict[str, int] = {}
+    for index, row in enumerate(rows):
+        if row[0] != out or row[-1] not in SURPLUS_LABELS:
+            continue
+        for near in rows[index + 1 : index + 4]:
+            match = re.search(r"([\d,]+) kWh", near[-1])
+            if near[0] == out and match:
+                found[row[-1]] = int(match.group(1).replace(",", ""))
+                break
+    return found
+
+
+def test_잉여_세_수는_적힌_수끼리_셈이_맞고_화면과_PPT_가_같은_글자다(
+    rendered_sums: Rendered,
+) -> None:
+    """**평일 + 토·일·공휴일 = 합 — 적힌 수끼리** (S252 결정 2 · 절사 A 의 방식을 kWh 에).
+
+    화면(12개월 환산)과 PPT 잉여 장(기간)이 한 자리(`notices.surplus_split_kwh`)에서 세 글자를
+    받는다 — 같은 합이면 같은 세 글자다(S233). `small-a2` · `small-ind-a2` 는 반올림을 따로 하면
+    4,586 + 9,154 = 13,740 대 13,739 였다.
+    """
+    seen: dict[str, tuple[int, int, int]] = {}
+    for out in ("화면", "PPT"):
+        found = _surplus_figures(rendered_sums.rows, out)
+        if not found:
+            continue
+        total = found.get("12개월 환산 잉여", found.get("기간 잉여"))
+        assert total is not None, (rendered_sums.key, out, found)
+        weekday, off_day = found["평일 잉여"], found["토·일·공휴일 잉여"]
+        assert weekday + off_day == total, (rendered_sums.key, out, found)
+        seen[out] = (total, weekday, off_day)
+    if len(seen) == 2 and seen["화면"][0] == seen["PPT"][0]:
+        assert seen["화면"] == seen["PPT"], (rendered_sums.key, seen)
+    if rendered_sums.key in ("small-a2", "small-ind-a2"):
+        assert len(seen) == 2, (rendered_sums.key, "그물이 잉여 세 수를 못 찾았다")
+
+
+def test_연면적은_Excel_요약_데이터에_화면과_같은_글자로_서고_PPT_Word_에는_없다() -> None:
+    """**연면적은 Excel 에만 입력값 한 줄** (S252 사람 결정 · 결정 9).
+
+    이름 · 단위 · 값은 화면 1단계 원단위 줄의 「연면적 3,000m²」 그대로다 — 새 이름을 짓지
+    않는다. PPT · Word 본문은 그대로이고, 연면적을 안 넣은 벌에는 그 줄이 없다.
+    """
+    rendered = _render("small-a2-pf100-offset-area")
+    screen = [
+        match.group(1)
+        for row in rendered.rows
+        if row[0] == "화면"
+        for match in [re.search(r"\(연면적 ([\d,]+m²) 기준\)", row[-1])]
+        if match
+    ]
+    assert len(screen) == 1, screen
+    assert ("데이터", "연면적", screen[0]) in rendered.excel_rows, rendered.key
+    for out in ("PPT", "Word"):
+        assert not [row for row in rendered.rows if row[0] == out and "연면적" in row[-1]], out
+    plain = _render("large-a")
+    assert not [row for row in plain.excel_rows if row[:2] == ("데이터", "연면적")], plain.key

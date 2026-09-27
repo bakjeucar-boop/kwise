@@ -1197,6 +1197,10 @@ def test_특례는_요금적용전력을_당월분으로만_잡는다(tmp_path: 
     # **이력 안내는 특례에서 뜨지 않는다** — 12개월 창을 타지 않으므로 사실이 아니다.
     assert any("직전 12개월 최대수요 이력이 없어" in text for text in texts(plain.notices))
     assert not any("직전 12개월 최대수요 이력이 없어" in text for text in texts(special.notices))
+    # **계절 안내도 특례에서 뜨지 않는다** (S252 결정 1) — 당월분이라 봄·가을 달의 피크
+    # 저감도 그 달 기본요금을 깎는다. 특례 아닌 벌에서는 그대로 선다.
+    assert any("봄·가을 피크 저감은" in text for text in texts(plain.notices))
+    assert not any("봄·가을 피크 저감은" in text for text in texts(special.notices))
 
 
 def test_특례는_하한을_15퍼센트로_내린다(tmp_path: Path, tariff: TariffTable) -> None:

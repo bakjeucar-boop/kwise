@@ -184,6 +184,20 @@ def test_validation_failure_does_not_save(sandbox: Path) -> None:
     assert payload["items"]["power_factor.lagging_floor_pct"]["value"] == 60.0
 
 
+def test_종별_문턱은_요금표_한_자리에만_있다(sandbox: Path) -> None:
+    """**사실마다 한 자리** (S252 결정 5 · S233). 계산이 읽는 요금표 종별 층의 문턱이
+    정본이고(95 · 96세션 판정) 기준 데이터 본 · 출고 사본에는 없다 — 있으면 계산이 안
+    읽는 둘째 값이 부록 B 에 따로 선다."""
+    from kwise.tariff import load_tariff
+
+    for ruleset in (rules(), load_defaults(RuleOrigin.STATUTORY)):
+        assert [key for key in ruleset.item_keys() if "threshold_kw" in key] == [], ruleset.path
+    table = load_tariff(max(DATA_DIR.glob("tariff_kr_*.json")))  # 모래상자에는 요금표가 없다
+    assert table.contract_types["education_a"].threshold_kw == 1000
+    assert table.contract_types["general_a_1"].threshold_kw == 300
+    assert table.contract_types["industrial_a_1"].threshold_kw == 300
+
+
 @pytest.mark.parametrize(
     ("key", "value", "reason"),
     [

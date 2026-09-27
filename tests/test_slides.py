@@ -1670,6 +1670,32 @@ def test_사양_표_열이_고르게_나뉘지_않는다() -> None:
     assert _fitting_lines(["5,240~5,260 kW"], span=monkey, size=size) == 2
 
 
+# ===================================================================== S252 · 학교 특례 각주
+
+
+def test_학교_특례_덱에는_직전_12개월_산식_각주가_없다(full_sections: DocumentSections) -> None:
+    """**그 벌에서 참인 말만** (S252 결정 1 · S207). 특례는 당월분이라 「직전 12개월
+    최대수요」 가 거짓이다 — 5장 · 계약전력 수단 장 각주에서 그 산식만 빠지고 나머지
+    용어는 그대로 선다. 특례 아닌 덱에는 그대로 선다."""
+    import dataclasses
+
+    from kwise.notices import basis
+
+    formula = "직전 12개월 최대수요 (하한이 걸리면 하한)"
+    school_bill = dataclasses.replace(
+        full_sections.bill,
+        notices=(*full_sections.bill.notices, basis("특례 적용", fact="tariff.school_exception")),
+    )
+    school = dataclasses.replace(full_sections, bill=school_bill)
+    for sections, stands in ((full_sections, True), (school, False)):
+        deck = build_slides(sections)
+        for key in ("peak_summary", "measure_contract"):
+            text = _slide_text(_slide_by_key(deck, sections, key))
+            assert (formula in text) is stands, (key, stands)
+        peak = _slide_text(_slide_by_key(deck, sections, "peak_summary"))
+        assert "상위 구간 정오 비중 = " in peak, stands
+
+
 # ===================================================================== 53세션 · 3절 잉여 장
 
 
