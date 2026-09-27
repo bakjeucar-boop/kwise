@@ -948,7 +948,8 @@ def tariff_delta_frame(switch: TariffSwitchResult) -> pd.DataFrame:
             "표식": frame["표식"],
             "현행 대비(원)": frame["현행 대비(원)"],
             "방향": [
-                "절감" if value < 0 else ("증가" if value > 0 else "현행")
+                # 범례가 「절감액」 지표와 섞이지 않게 무엇이 주는지 적는다 (S254 문구 판 #5).
+                "요금 절감" if value < 0 else ("요금 증가" if value > 0 else "현행")
                 for value in frame["현행 대비(원)"]
             ],
         }

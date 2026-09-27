@@ -920,6 +920,19 @@ def compare_combinations(
                 options=opts,
             )
         )
+    # **여지가 없는 ESS(방전 출력 0)만 더해 앞 줄과 절감액이 같은 줄은 마지막이어도 뺀다**
+    # (S254 문구 판 #12 · 사람 결정) — 합산효과 · 권장 조합은 앞 줄(실제 조합)을 읽는다.
+    kept: list[CombinationResult] = []
+    for item in results:
+        if (
+            kept
+            and item.dispatch is not None
+            and item.dispatch.power_kw <= 0
+            and item.saving_won == kept[-1].saving_won
+        ):
+            continue
+        kept.append(item)
+    results = kept
     # **여지가 없는 역률만 더한 줄은 세우지 않는다** (S239 결정 2 · S237 ㄴ · S206) — 금액이
     # 앞 줄과 같다. 마지막 줄은 둔다 — 합산효과 · 권장 조합이 그 줄을 읽는다.
     results = [

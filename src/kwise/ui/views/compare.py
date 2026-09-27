@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
@@ -59,7 +60,7 @@ from kwise.measures import (
     with_load,
     with_surplus_revenue,
 )
-from kwise.notices import Notice, dedupe_key, dedupe_keys, tooltip
+from kwise.notices import Notice, dedupe_key, dedupe_keys, prefixed, tooltip
 from kwise.quality import QualityReport
 from kwise.report import (
     SIMPLE_SUM_NOTE,
@@ -367,7 +368,10 @@ def render(
         for item in comparison.notices
         if dedupe_key(item, base=True) not in seen and item.fact_base not in _HIDDEN_FACTS
     )
-    for notice in screen_notices(fresh):
+    # **수단의 말은 조합 이름 머리를 떼고 한 번만 세운다** (S254 문구 판 #13 · S241 결정 1 을
+    # 화면 본문에도). 근거 툴팁(아래)은 그대로 둔다.
+    heads = _measure_notice_heads(comparison)
+    for notice in screen_notices(tuple(heads.get(item, item) for item in fresh)):
         callout.render_notice(notice)
     # **근거는 툴팁 하나로** (19세션 1절). 조합 표의 숫자가 어떻게 만들어졌는지는
     # 매번 볼 것은 아니지만, 표를 믿을지 판단할 때 필요하다.
@@ -486,6 +490,27 @@ def _standalone_block(rows: tuple[StandaloneRow, ...]) -> None:
     )
 
 
+def _measure_notice_heads(comparison: ComparisonResult) -> dict[Notice, Notice]:
+    """조합 이름 머리를 붙인 안내 → 머리 없는 안내 (S254 문구 판 #13).
+
+    수단의 말(사실이 ``combination.`` 몫이 아니다)이고 조합마다 한 글자일 때만 뗀다 —
+    조합마다 값이 다르면 머리가 어느 조합의 말인지 가른다(`report\\excel.py` 요약과 같은 잣대).
+    """
+    origin = {
+        shown: item
+        for index, result in enumerate(comparison.combinations)
+        for item, shown in zip(
+            result.notices, prefixed(result.notices, result.name, tag=f"c{index}"), strict=True
+        )
+    }
+    wording = Counter(fact for fact, _text in {(o.fact_base, o.text) for o in origin.values()})
+    return {
+        shown: item
+        for shown, item in origin.items()
+        if not item.fact_base.startswith("combination.") and wording[item.fact_base] == 1
+    }
+
+
 def _combined_block(
     usage: UsageData,
     table: TariffTable,
@@ -535,7 +560,9 @@ def _combined_block(
     # 회수기간이 곧 이 화면의 결론인데, 그것만 없어 수단별 회수기간을 눈으로
     # 더해야 했다. 투자비 합 ÷ 합산효과(12개월 환산)다.
     # 투자비가 0 인 수단만 고르면 「즉시」 다.
-    columns = st.columns(4)
+    # **2개씩 두 줄** (S254 문구 판 #10 · 사람 결정) — 한 줄 넷이면 억 단위 금액이
+    # 말줄임표로 잘렸다(을 6,000 kW 캡처 「1억 9,769만…」). 금액 표기는 그대로다.
+    columns = [*st.columns(2), *st.columns(2)]
     columns[0].metric("단순 합", fmt.won_year(simple))
     columns[1].metric("합산효과", fmt.won_year(actual))
     # 지표 「차이」 도 계산 근거와 같은 값 — 적힌 두 값의 차다 (S234 ㄱ · 덱 `small-a2`
@@ -559,7 +586,8 @@ def _combined_block(
     )
     # 「부하를 처음부터 다시 만들어…」 는 근거(``combination.not_additive``)가 같은
     # 말을 한다 (25세션 3-3 · M).
-    st.caption(f"**{combined.name}** 를 함께 도입했을 때의 12개월 환산 절감액입니다.")
+    # 조합 전체를 가리킨다 — 마지막 단계 이름이 아니다 (S254 문구 판 #11 · 사람 결정).
+    st.caption("이 조합을 모두 도입했을 때의 12개월 환산 절감액입니다.")
     excluded = [row for row in rows if not row.combinable]
     if excluded:
         # 정산금이 합산효과에 들어간 판에서는 그렇게 말한다 (S244 결정 4).

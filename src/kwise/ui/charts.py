@@ -776,7 +776,8 @@ def sensitivity_chart(ranges: tuple[SensitivityRange, ...]) -> alt.LayerChart:
     point = base.mark_point(size=90, filled=True, color="#08519c").encode(
         x="기준값:Q", tooltip=["지표", "범위"]
     )
-    return (span + point).properties(height=max(120, 38 * len(frame)))
+    # 행마다 이름이 잘리지 않게 하한을 키웠다 (S254 문구 판 #14 · 38 → 48).
+    return (span + point).properties(height=max(120, 48 * len(frame)))
 
 
 # ===================================================================== 15세션 · 2단계 그래프
@@ -830,7 +831,9 @@ def tariff_option_chart(switch: TariffSwitchResult) -> alt.LayerChart:
     )
     # **축 이름은 막대 켜에만 준다.** 켜 둘에 같은 이름을 실으면 그려지는 축은
     # 하나인데 스펙에는 둘이라 화면 감사가 문구를 두 번 센다 (S163 2-9).
-    bars = base.mark_bar().encode(
+    # **막대를 그림 칸 안에서 자른다** (S254 문구 판 #6). 축이 0 에서 안 열려 막대
+    # 밑동이 칸 아래로 뻗어 요금제 이름을 덮었다(을 6,000 kW 캡처).
+    bars = base.mark_bar(clip=True).encode(
         y=alt.Y(f"{shown}:Q", title=f"요금 ({unit})", scale=scale, axis=FLAT_TITLE),
         color=alt.Color(
             "구분:N",
@@ -901,7 +904,8 @@ def tariff_delta_chart(switch: TariffSwitchResult) -> alt.LayerChart:
                 "방향:N",
                 title=None,
                 scale=alt.Scale(
-                    domain=["절감", "현행", "증가"], range=["#31a354", "#bdbdbd", "#de2d26"]
+                    domain=["요금 절감", "현행", "요금 증가"],
+                    range=["#31a354", "#bdbdbd", "#de2d26"],
                 ),
                 legend=LEGEND,
             ),

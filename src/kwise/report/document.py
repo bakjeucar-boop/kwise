@@ -76,6 +76,7 @@ from kwise.report.notices import (
     DATA_SOURCES,
     ESS_NO_EXCESS,
     NOT_INCLUDED_NOTICE,
+    TARIFF_SWITCH_CAPTION,
     TRUNCATION_FOOTNOTE,
     UNPRICED,
     UNPRICED_REASONS,
@@ -96,6 +97,7 @@ from kwise.report.notices import (
     surplus_split_kwh,
     switch_annual_saving,
     switch_saving,
+    without_arbitrage,
 )
 from kwise.report.worksheet import COLUMNS, Worksheet
 from kwise.tariff import BillingResult, TariffTable
@@ -907,7 +909,7 @@ def measure_entries(
                 lambda: figures.tariff_option_png(switch, size=TARIFF_FIGURE),
                 "선택요금 전환 · 요금제별 구성",
             ),
-            figure_caption="요금제별 요금 구성과 현행 대비 차액",
+            figure_caption=TARIFF_SWITCH_CAPTION,
         )
 
     if contract is not None:
@@ -1222,8 +1224,9 @@ def measure_entries(
             investment=_won(ess.investment_won),
             payback=_payback_text(ess.payback_years, ess.investment_won),
             certainty=str(ess.certainty),
-            cautions=(ESS_PAYBACK_CAVEAT, *body_lines(ess.notices)),
-            notices=ess.notices,
+            # 차익거래 잠재값 줄은 걷는다 (S254 사람 결정).
+            cautions=(ESS_PAYBACK_CAVEAT, *body_lines(without_arbitrage(ess.notices))),
+            notices=without_arbitrage(ess.notices),
             figure=ess_day,
             figure_caption=_ESS_DAY_CAPTION,
             figures=_pair((ess_day, _ESS_DAY_CAPTION)),

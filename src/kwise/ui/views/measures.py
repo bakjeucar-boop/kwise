@@ -375,16 +375,15 @@ def _tariff_switch(
     # **① 차액이 먼저다** (17세션 1-3). 35억 위에서 5천만원이 움직이는 것을 절대
     # 금액 축에 그리면 막대 셋이 같은 높이로 보인다 — 변화만 떼어 먼저 보인다.
     st.altair_chart(charts.tariff_delta_chart(result), width="stretch")
-    # **읽는 법은 툴팁 하나로 족하다** (27세션 4-2). 「0 보다 왼쪽이면 절감」 이
-    # 물음표 안에 이미 있는데 바로 아래 캡션이 같은 말을 되풀이하고 있었다.
-    # 절사 각주도 여기 두지 않는다 — 3단계 「개선안별 요약」 한 곳이다 (25세션 4-5).
-    st.caption("현행 대비 차액", help=fmt.chart_tip("chart.tariff_delta"))
     # **② 그룹 막대** (17세션 1-2). 쌓으면 기본요금끼리·전력량요금끼리 견줄 수 없다.
     st.altair_chart(charts.tariff_option_chart(result), width="stretch")
-    # **막대를 열거하지 않는다** (S140 2절). 부가금이 붙은 벌에서는 막대가
-    # 넷이라 「기본·전력량·합계」 가 그 자리에서 거짓이 된다 — Word 가 이미
-    # 쓰는 이름으로 맞춘다 (``document.py`` 의 「요금제별 요금 구성」).
-    st.caption("요금제별 요금 구성", help=fmt.chart_tip("chart.tariff_option"))
+    # **캡션은 두 그림 아래 하나다** (S254 문구 판 #4 · 사람 결정) — 위 그림 밑 캡션이
+    # 아래 그림의 제목으로 읽혔다. 글자는 PPT · Word 와 한 상수 · 읽는 법은 툴팁 둘을 잇는다.
+    # 절사 각주는 여기 두지 않는다 — 3단계 「개선안별 요약」 한 곳이다 (25세션 4-5).
+    st.caption(
+        notices.TARIFF_SWITCH_CAPTION,
+        help=fmt.chart_tip("chart.tariff_delta") + "\n\n" + fmt.chart_tip("chart.tariff_option"),
+    )
     # 본문에서 내리는 사실 둘은 :data:`_TARIFF_HIDDEN_FACTS` 가 쥔다 (27세션 4-3·4-4).
     _notices(partition_facts(result.notices, _TARIFF_HIDDEN_FACTS)[1])
     _worksheet(tariff_switch_worksheet(result))
@@ -1764,9 +1763,7 @@ def _ess(
                 result.energy_saving_won * annual_factor,
             )
             + " 경부하에 충전해 최대부하에 방전하니 비싼 시간의 사용량이 싼 시간으로 "
-            "옮겨가지만, 왕복효율 손실만큼 총 사용량이 늘어 둘이 맞부딪힙니다.\n\n"
-            "**충방전 차익거래는 들어 있지 않습니다** — 도구가 돌리지 않는 운전이라 "
-            "확인사항에 잠재값으로 따로 적습니다."
+            "옮겨가지만, 왕복효율 손실만큼 총 사용량이 늘어 둘이 맞부딪힙니다."
         ),
     )
     columns[2].metric(
@@ -1820,7 +1817,8 @@ def _ess(
     # ``ess.feasibility``) 사실 ID 로 견주니 전부 중복이었다.
     # **두 기준의 차이를 적던 확인사항을 뺐다** (46세션). 곡선이 없어져
     # 설명할 차이가 없다 — 표가 전부 카드 기준 참값이다.
-    _notices((*result.notices, *optimum.notices))
+    # 차익거래 잠재값 줄은 걷는다 (S254 사람 결정) — 계산은 그대로 돈다.
+    _notices(notices.without_arbitrage((*result.notices, *optimum.notices)))
     _worksheet(ess_worksheet(result))
 
 

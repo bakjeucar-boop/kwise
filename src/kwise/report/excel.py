@@ -405,8 +405,8 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
                 "요금",
                 "초과사용부가금",
                 f"{format_won(lines.excess)} 원 "
-                f"(청구 {len(bill.excess.charged_months)}개 월, "
-                f"첫 초과 달은 예고)",
+                f"(청구 {len(bill.excess.charged_months)}개월, "
+                f"분석 기간의 첫 초과 달은 예고)",
             )
         )
     rows.append(("요금", "합계 (관측 기준)", f"{format_won(bill.total_won)} 원"))
@@ -520,7 +520,7 @@ def measure_summary_frame(
     역률 → 태양광 → ESS.
 
     **잉여는 태양광 아래 딸린 줄이다** (41세션 2-1·2-6). 7.7 개선안이 없어졌으므로
-    독립된 줄을 세우지 않는다 — ESS 아래 차익거래와 같은 자리다.
+    독립된 줄을 세우지 않는다.
 
     각 행은 **독립 평가**다 (14세션 2절). 현행 요금제·현행 사용량을 기준선으로
     "이 수단만 도입하면 얼마" 를 낸 값이며, 조합 상호작용은 3단계 합산효과에서만
@@ -576,8 +576,11 @@ def measure_summary_frame(
                         contract_annual_saving(contract), reason=contract_unpriced_reason(contract)
                     )
                 ),
-                "회수기간": payback_label(
-                    payback_years(0.0, contract.annual_saving_won or 0.0), 0.0
+                # 낮출 몫이 없는 줄은 회수기간도 같은 말이다 (S254 문구 판 #16 · 사람 결정).
+                "회수기간": (
+                    NO_SAVING
+                    if contract.no_saving
+                    else payback_label(payback_years(0.0, contract.annual_saving_won or 0.0), 0.0)
                 ),
                 "비고": contract.saving_basis,
             }
@@ -747,33 +750,7 @@ def measure_summary_frame(
                 ),
             }
         )
-        if ess.arbitrage is not None:
-            # 차익거래는 **별도 줄**이다 — 도구가 돌리지 않는 운전의 잠재값이다.
-            arbitrage = ess.arbitrage
-            rows.append(
-                {
-                    "수단": "└ 차익거래 잠재 (경부하 충전 → 최대부하 방전)",
-                    "투자비(원)": format_won(None, reason="—"),
-                    "기간 절감액(원)": UNPRICED_REASONS["arbitrage_not_summed"],
-                    "12개월 환산(원)": format_won(arbitrage.annual_won),
-                    "회수기간": (
-                        f"단독 {arbitrage.standalone_payback_years:,.1f}년"
-                        if arbitrage.standalone_payback_years is not None
-                        else UNPRICED_REASONS["no_saving"]
-                    ),
-                    "비고": (
-                        # 「연」 을 안 쓴다 (S214) — 12개월 환산값이다 (S220 2절).
-                        f"12개월 환산 {arbitrage.won_per_kwh_year:,.0f} 원/kWh · "
-                        f"평일 {arbitrage.cycles_per_day:g} 사이클 · 계시별 단가는 요금표에서 "
-                        "가져왔습니다. "
-                        + (
-                            "배터리 수명(10~15년)을 넘어 단독으로는 성립하지 않습니다."
-                            if arbitrage.outlives_battery
-                            else "배터리 수명 안에 들어옵니다."
-                        )
-                    ),
-                }
-            )
+        # 차익거래 잠재 줄은 걷었다 (S254 사람 결정) — 계산은 그대로 돈다.
     elif unpriced := ess_unpriced_reason(ess_optimum, ess_curve):
         rows.append(
             {
@@ -1114,6 +1091,11 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
                 NO_SAVING if none else value
                 for none, value in zip(empty, frame[column], strict=True)
             ]
+        # 낮출 자리가 없는 계약전력 조정 줄의 목표 칸도 같은 말이다 (S254 문구 판 #17).
+        frame["수단"] = [
+            NO_SAVING if value == "—" and item.spec.contract_kw is not None else value
+            for item, value in zip(comparison.combinations, frame["수단"], strict=True)
+        ]
         sheets["조합 비교"] = frame
     # **부록 셋** — Word 와 같은 재료를 쓴다 (22세션 3절).
     if sections.worksheets:

@@ -902,16 +902,21 @@ def _structure_block(usage: UsageData, diagnosis: Diagnosis, building: BuildingI
     base_with_power_factor_won = structure.base_with_power_factor_won
     total_won = structure.total_won
     excess_won = structure.excess_won
-    labels = ["기본요금", "전력량요금", *(["초과사용부가금"] if excess_won else []), "합계"]
-    values = [
-        base_with_power_factor_won,
-        structure.energy_won,
-        *([excess_won] if excess_won else []),
-        total_won,
+    #
+    # **대상인데 산출하지 않은 벌은 칸을 세우고 「미산출」 이라 적는다** (S254 문구 판 #1 ·
+    # 사람 결정) — 칸이 없으면 「0원」 과 「모른다」 가 같은 모양이다. 판정은 PPT · Word 와
+    # 같은 한 자리(``excess_not_measured_line``)다.
+    unmeasured = bool(notices.excess_not_measured_line(structure.bill))
+    excess_text = fmt.won_short(excess_won) if excess_won else notices.UNPRICED
+    cells = [
+        ("기본요금", fmt.won_short(base_with_power_factor_won)),
+        ("전력량요금", fmt.won_short(structure.energy_won)),
+        *([("초과사용부가금", excess_text)] if excess_won or unmeasured else []),
+        ("합계", fmt.won_short(total_won)),
     ]
-    columns = st.columns(len(labels) + 1)
-    for column, label, value in zip(columns, labels, values, strict=False):
-        column.metric(label, fmt.won_short(value))
+    columns = st.columns(len(cells) + 1)
+    for column, (label, text) in zip(columns, cells, strict=False):
+        column.metric(label, text)
     columns[-1].metric(
         "기본요금 비중",
         # **비중을 여기서 나누지 않는다** (S133 2절 · ②-39). 산식은

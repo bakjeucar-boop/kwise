@@ -343,9 +343,12 @@ class SurplusResult:
         """
         if self.total_kwh <= 0:
             return ""
+        # 기간 말 잔여가 0 이면 SMP 단가를 쓴 자리가 없다 — 쓴 단가만 적는다 (S254 문구 판 #9).
         return applied_price_note(
             smp_price_won_per_kwh=(
-                self.offset.smp_price_won_per_kwh if self.offset is not None else None
+                self.offset.smp_price_won_per_kwh
+                if self.offset is not None and self.offset.remaining_kwh > 0
+                else None
             ),
             external_price_won_per_kwh=self.external_price_won_per_kwh,
         )
@@ -543,7 +546,9 @@ def evaluate_surplus(
         # 사라졌으므로, 이 줄이 없으면 참고값이 확정값으로 읽힌다.
         price_note = applied_price_note(
             smp_price_won_per_kwh=(
-                settlement.smp_price_won_per_kwh if settlement is not None else None
+                settlement.smp_price_won_per_kwh
+                if settlement is not None and settlement.remaining_kwh > 0
+                else None
             ),
             external_price_won_per_kwh=external_price_won_per_kwh,
         )

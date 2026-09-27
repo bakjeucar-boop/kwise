@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from kwise.measures.power_factor import PowerFactorResult
     from kwise.measures.solar import SolarPoint
     from kwise.measures.tariff_switch import TariffSwitchResult
+    from kwise.notices import Notice
 
 __all__ = [
     "AMI_BASIS_NOTICE",
@@ -27,6 +28,7 @@ __all__ = [
     "NOT_INCLUDED_NOTICE",
     "RULES_UNCHANGED",
     "SCHOOL_HIGH_VOLTAGE_NOTICE",
+    "TARIFF_SWITCH_CAPTION",
     "TENTATIVE_BASE_FEE_BASIS_WARNING",
     "TRUNCATION_FOOTNOTE",
     "UNPRICED",
@@ -58,6 +60,7 @@ __all__ = [
     "surplus_split_kwh",
     "switch_annual_saving",
     "switch_saving",
+    "without_arbitrage",
 ]
 
 # **보고서 쪽이 「반드시 싣는 문구」 를 얻는 문은 여기 하나다** (65세션 3절).
@@ -112,6 +115,20 @@ SCHOOL_HIGH_VOLTAGE_NOTICE = (
     "이 분석의 요금 비교에는 들어 있지 않습니다."
 )
 
+#: 선택요금 전환 그림 캡션 — 화면 · PPT · Word 가 이 한 글자를 쓴다 (S254 문구 판 #4 · 사람 결정).
+#: 차례는 화면의 그림 차례다(차액 막대 → 그룹 막대).
+TARIFF_SWITCH_CAPTION = "현행 대비 차액과 요금제별 요금 구성"
+
+#: 차익거래 잠재값을 말하는 사실 — 화면과 산출물에서 걷는다 (S254 사람 결정). 계산은
+#: 그대로 돈다(`measures\arbitrage.py`) — 예비 운전 규칙을 정하면 다시 연다.
+_ARBITRAGE_FACTS = ("arbitrage.", "ess.payback_with_arbitrage")
+
+
+def without_arbitrage(notices: tuple[Notice, ...]) -> tuple[Notice, ...]:
+    """ESS 안내에서 차익거래 잠재값 줄을 뺀다 (S254 사람 결정)."""
+    return tuple(item for item in notices if not item.fact_base.startswith(_ARBITRAGE_FACTS))
+
+
 # 요구사항서 9.4 — 필수 경고
 CONTRACT_CHANGE_WARNING = (
     "계약전력을 하향할 경우, 예측 오차와 기상 변동을 고려하여 충분한 여유를 확보하십시오."
@@ -153,10 +170,6 @@ KNOWN_LIMITS: tuple[str, ...] = (
     "**ESS 참고단가는 하한선입니다.** 계통용 대형 ESS 기준이며 전용실·소화설비 등 "
     "안전 규제 대응비와 수배전 연계공사비가 빠져 있어 실제 견적은 반드시 이보다 "
     "높습니다. 따라서 '경제성 없음' 판정은 강하고 '가능성 있음' 판정은 약합니다.",
-    "ESS 차익거래 수익은 매 평일 한 사이클을 온전히 돌렸을 때의 잠재값이며 피크저감 "
-    "절감액에 합산하지 않았습니다. 그 운전을 하려면 그날 피크에 쓸 몫을 남기는 예비 "
-    "규칙이 필요한데 아직 정하지 않았고, 예비 없이 돌리면 피크를 못 깎아 회수기간이 "
-    "오히려 나빠집니다. 사이클이 수십 배로 늘어나는 열화도 반영하지 않았습니다.",
     "ESS 회수기간에 OPEX·열화·수명·교체비를 반영하지 않았습니다. 단순 회수기간입니다.",
     "태양광 설치 단가의 참고값을 제공하지 않습니다. 인용할 공개 자료를 확보하지 "
     "못했으므로 단가를 넣지 않으면 투자비와 회수기간을 산출하지 않습니다.",
@@ -175,8 +188,8 @@ LIMIT_FACTS: dict[str, str] = {
     KNOWN_LIMITS[2]: "solar.power_factor_estimated",
     KNOWN_LIMITS[7]: "surplus.eligibility",
     KNOWN_LIMITS[8]: "ess.strategy_limit",
-    KNOWN_LIMITS[16]: "solar.cost_reference_missing",
-    KNOWN_LIMITS[17]: "solar.scale_economy",
+    KNOWN_LIMITS[15]: "solar.cost_reference_missing",
+    KNOWN_LIMITS[16]: "solar.scale_economy",
 }
 #: 짝 가운데 **안내 쪽 글자를 남기는** 사실.
 LIMIT_YIELDS: frozenset[str] = frozenset({"tariff.not_included"})
@@ -201,10 +214,6 @@ UNPRICED_REASONS: dict[str, str] = {
     # 입력칸 이름 그대로 적는다 (27세션 7-2).
     "external_price": "미산출 — 잉여 판매 단가 미입력",
     "pv_price": "미산출 — 설치 단가 미입력",
-    "no_saving": "절감 없음",
-    "arbitrage_not_summed": (
-        "합산 안 함 — 예비 규칙 미정. 매 평일 한 사이클을 온전히 돌렸을 때의 잠재값입니다."
-    ),
 }
 
 #: 금액을 못 낸 칸의 머리말. **글자는 여기 하나다** (S165 2절) — 앞서는

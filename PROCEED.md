@@ -419,7 +419,27 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 | ⑨ | `report\excel.py` 계약 회수기간 · 조합 비교 수단 칸 · 부가금 줄 · 차익 줄 | #16 · #17 · #18 · ESS | 4 |
 | 계산 | `measures\catalog.py` 구간 이름 · `measures\surplus.py` 두 자리 · `compare\combination.py` 조합 줄 거름 | #2 · #9 · #12 | **4** |
 | 생성물 | `docs\MANUAL_ANCHORS.md`(도구로 다시 낸다) | #3 | 1 |
-**1절 벽시계** 00:55:17 ~ (시각 명령 출력).
+**1절 벽시계** 00:55:17 ~ 01:07:45(시각 명령 출력 · 커밋 앞 · 앞 캡처 한 판 01:03:38 ~ 01:06:07 포함 · 1절 커밋에 끝 시각이 빠져 5절에 적었다).
+
+**2-1. 1-5 자리를 고쳤다 — 코드 12파일 +126 −78(계산 폴더 몫 포함) · 계산 폴더 `compare` 1파일 +13 · `measures` 2파일 +8 −3 · 생성물 1 · 문서 1**(`git diff --numstat` 2절 커밋 앞). 바꾼 열두 모듈 `mypy` 0건(`mypy_20260928_011054.txt`) · `ruff check src` 통과(`ruff_20260928_011032.txt`) · `ruff format --check` 이 판 두 자리(`notices.py` 빈 줄 · `diagnose.py` 겹 조건) → 맞췄다(`…011045.txt`) · `document.py:1524` · `excel.py:630` 은 앞서부터의 어긋남이라 안 건드렸다.
+| 자리 | 줄 | 전 → 후 |
+|---|---:|---|
+| ① `ui\views\diagnose.py` | +14 −9 | #1 — 지표 칸을 (이름, 글자) 짝으로 · 부가금이 0 이고 `excess_not_measured_line`(PPT · Word 가 쓰는 한 자리)이 서면 칸 「초과사용부가금」 · 값 「미산출」(`notices.UNPRICED`) |
+| ② `ui\anchors.py` + `MANUAL_ANCHORS.md` | +1 −1 · +1 −1 | #3 「선택Ⅰ·Ⅱ·Ⅲ 의 설계 의도」 → 「선택요금의 설계 의도」 · 생성물은 `export_manual_anchors` 로(`export_manual_anchors_20260928_011024.txt`) |
+| ③ `report\notices.py` | +19 −10 | #4 `TARIFF_SWITCH_CAPTION` 「현행 대비 차액과 요금제별 요금 구성」 · ESS `without_arbitrage`(사실 `arbitrage.*` · `ess.payback_with_arbitrage` 를 뺀다) · `KNOWN_LIMITS` 「ESS 차익거래 수익은 … 예비 규칙 …」 한 항목 뺌 · `LIMIT_FACTS` 번호 16 · 17 → 15 · 16 · `UNPRICED_REASONS` 의 `arbitrage_not_summed` · `no_saving`(차익 줄만 쓰던 글 — 고아) 뺌 |
+| ④ `ui\views\measures.py` | +10 −12 | #4 캡션 둘 → 두 그림 아래 한 캡션(상수 · 툴팁 둘을 잇는다) · ESS 절감액 지표 툴팁 「**충방전 차익거래는 들어 있지 않습니다** — … 잠재값으로 따로 적습니다.」 뺌 · ESS 안내를 `without_arbitrage` 로 |
+| ⑤ `report\document.py` | +6 −3 | #4 그림 캡션 = 상수 · ESS 주의사항 · 안내를 `without_arbitrage` 로 |
+| ⑥ `report\frames.py` | +2 −1 | #5 방향 「절감」 · 「증가」 → 「요금 절감」 · 「요금 증가」 |
+| ⑦ `ui\charts.py` | +7 −3 | #5 범례 domain 같은 글자 · #6 그룹 막대 `mark_bar(clip=True)` · #14 행 높이 `max(120, 48 × 지표 수)` |
+| ⑧ `ui\views\compare.py` | +32 −4 | #10 `st.columns(2)` 두 줄 · #11 캡션 「이 조합을 모두 도입했을 때의 12개월 환산 절감액입니다.」 · #13 `_measure_notice_heads` — 수단의 말(사실이 `combination.` 몫 아님)이고 조합마다 한 글자면 머리 없는 안내로 갈아 본문에 세운다(근거 툴팁은 그대로) |
+| ⑨ `report\excel.py` | +14 −32 | #16 계약 행 회수기간 — `no_saving` 이면 「없음」 · #17 조합 비교 수단 칸 「—」 → 「없음」(계약전력을 넣은 줄만) · #18 「(청구 N개월, 분석 기간의 첫 초과 달은 예고)」 · ESS 「└ 차익거래 잠재 …」 줄 뺌 · 독스트링 한 줄 |
+| 계산 `measures\catalog.py` | +1 −1 | #2 `TIER_LOW` 「저투자」 |
+| 계산 `measures\surplus.py` | +7 −2 | #9 결과 속성과 안내 두 자리 — 기간 말 잔여가 0 보다 클 때만 SMP 단가를 넘긴다 |
+| 계산 `compare\combination.py` | +13 | #12 방전 출력 0 인 ESS 줄이 앞 줄과 절감액이 같으면 마지막이어도 뺀다(역률 거름 앞) |
+| 문서 `SCREEN_WORDING_S251.md` | +2 | 머리 한 줄 「S254 가 20 항목을 사람 결정대로 처리했다 — 결과는 254세션 절」 |
+
+**2-2. 적게 닫은 것 · 번진 것.** 적게 닫은 것 — #16 의 「미산출」 줄(`small-a-short` 한 벌 · 회수기간 「—」)은 「없음」 으로 안 바꿨다(그 줄의 절감 칸이 「미산출」 이라 같은 줄 같은 말이 「없음」 이 아니다). #14 는 화면에 그 그림이 없어(28세션) 함수 값만 고쳤다 — 캡처로 확인할 자리가 없다. **번짐** — ⓐ 한계 한 항목을 빼 뒤 항목 두 번호가 당겨진다(Excel 요약 알려진 한계 16 · 17 → 15 · 16 · 19벌) ⓑ #12 로 빠지는 ESS 줄의 조합 안내(ESS 크기 근거 「ESS 0 kW / 0 kWh …」 등)가 함께 빠진다 ⓒ #6 은 사람 결정 「줄바꿈 또는 기울임」 대신 막대 자르기 — 이름을 덮는 것이 막대라서다(1-2 #6 · 판단). `docs\MANUAL.md` 의 옛 각주 · 차익거래 상한 글(1-1 ④ · 산출물 밖)은 고치지 않았다.
+**2절 벽시계** 01:07:45 ~ 01:10:58(시각 명령 출력 · 커밋 앞).
 
 ---
 ## 오늘 (2026-09-27) 253세션 — **고침 판 · 학교 안내 한 줄 · 건물 종류 선택지 합치기(사람 결정) · DR 입찰 시간대(계산 변경) · 그림 폴백 통일을 고치고 · 남은 미해결을 잰다**
