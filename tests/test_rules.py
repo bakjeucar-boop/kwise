@@ -90,7 +90,6 @@ def test_law_derived_values_are_where_they_should_be(sandbox: Path) -> None:
     # 15% 는 종별 기본값이 아니라 **신청한 초·중·고교·유치원**의 특례다 (90세션).
     # 값은 그대로 두고 이름만 사실에 맞췄다 — 도구는 아직 이 특례를 안 쓴다.
     assert rule_value("demand.contract_floor_ratio.school_exception") == 0.15
-    assert rule_value("contract_type.threshold_kw.education") == 1000
     assert rule_value("dr.reference_capacity_kw") == 100.0
     assert rule_value("dr.national_max_contract_kw") == 200.0
     assert rule_value("dr.small_medium_industrial_max_kw") == 2000.0
@@ -192,7 +191,6 @@ def test_validation_failure_does_not_save(sandbox: Path) -> None:
         ("demand.contract_floor_ratio.default", 1.5, "비율은 0.0~1.0"),
         ("dr.national_max_contract_kw", -1.0, "양수여야"),
         ("power_factor.lagging_rebate_cap_pct", 90.0, "기준 < 상한"),
-        ("contract_type.threshold_kw.education", 100, "교육용"),
         # 제67조의3 ① 1호 초과횟수 표 (S248) — 첫 초과는 예고라 하한은 2 부터다.
         ("excess_charge.count_tiers", [[1, 1.5]], "2 이상 정수"),
         ("excess_charge.count_tiers", [[2, 2.0], [4, 1.5]], "함께 커져야"),

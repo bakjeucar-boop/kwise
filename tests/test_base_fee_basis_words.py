@@ -1416,7 +1416,10 @@ def test_자릿수_증상_사실이_네_산출물에서_같은_글자다(rendere
         for row in rendered.rows
         if row[0] in ("Word", "Excel") and ("법령 유래" in row or "판단값" in row)
     ]
-    값 = [cell for row in 부록 for cell in row[2:] if "임계 계약전력" in "".join(row)]
+    # 표본 — 네 자리 법령 유래 값(교육용 종별 문턱 1,000 은 S252 결정 5 로 부록 B 에서 빠졌다).
+    값 = [
+        cell for row in 부록 for cell in row[2:] if "중소형DR 산업체 계약전력 상한" in "".join(row)
+    ]
     assert 값 and not [cell for cell in 값 if bare.match(cell)], (rendered.key, 값)
 
     # ④ 만원으로 적는 화면 카드 안의 증감 · ESS 사양 표의 한 열은 만원으로 적는다.

@@ -1259,6 +1259,8 @@ def _download_block(
         f"{usage_token(usage)}|{rules_stamp()}|{count}|{get_form()}|{get_solar_inputs()}"
         f"|{get_combination_pick()}|{hours}|{region}|{measure_inputs}"
     )
+    # 연면적은 Excel 요약에만 한 줄로 선다 (S252 결정 9) — 갈면 Excel 파일도 갈린다.
+    area = building.floor_area_m2 if building else None
     excel_tab, deck_tab = st.tabs(["Excel — 분석자용", "PPT 보고서 — 의사결정자용"])
 
     with excel_tab:
@@ -1267,7 +1269,7 @@ def _download_block(
             help=manual_tip("excel-report"),
         )
         include_timeseries = st.checkbox("15분 시계열 시트 포함", value=True)
-        excel_token = f"{token}|{include_timeseries}"
+        excel_token = f"{token}|{include_timeseries}|{area}"
         if st.button("Excel 만들기", type="primary", key="build_excel"):
             sections = ReportSections(
                 usage=usage,
@@ -1284,6 +1286,7 @@ def _download_block(
                 measure_notices=results.notice_groups(),
                 solar=results.solar,
                 peer_savings=results.peer_savings(),
+                floor_area_m2=area,
             )
             _build(
                 lambda: build_report_bytes(sections, session_id=session_id()),

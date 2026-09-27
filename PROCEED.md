@@ -403,6 +403,24 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 | 시험 | `tests\test_rules.py` 둘(값 · 짝 검사 인자) · `tests\test_base_fee_basis_words.py:1419` 부록 B 쉼표 표본(교육용 문턱 → 「중소형DR 산업체 계약전력 상한 2,000」) | 5 | 3 |
 **1절 벽시계** 18:04:31 ~ 18:10:48(시각 명령 출력 · 커밋 앞 · 4절 조사 에이전트를 1절 첫머리에 뒤로 띄웠다).
 
+**2-1. 1-7 자리를 고쳤다 — 코드 8파일 +65 −34(계산 폴더 몫 포함) · 계산 폴더 `tariff` 1자리 +11 −3 · 기준 데이터 2파일 −48 · 시험 2파일 +4 −3**(`git diff --numstat` 2절 커밋 앞). 바꾼 여덟 모듈 `mypy` 0건(`mypy_20260927_181428.txt`) · `ruff check` 는 이 판 시험 한 줄 E501 → 맞췄다 · `ruff format --check` 어긋남 다섯 가운데 이 판 몫은 그 시험 한 줄(맞췄다) · 넷(`document.py:1518` · `excel.py:627` · `slides.py:1474` · `engine.py:1058`)은 앞서부터의 어긋남이라 안 건드렸다(`ruff_20260927_181424-2.txt`).
+
+| 자리 | 줄 | 전 → 후 |
+|---|---:|---|
+| ① `tariff\engine.py` | +11 −3 | 참고 「봄·가을 피크 저감은 …」(`tariff.season_asymmetry`) — 늘 → 특례를 켠 벌(`school`)에서는 안 세운다(결정 1) |
+| ② `report\slides.py` | +11 −2 | `_glossary_keys(sections, key)` — 특례 벌(요금 안내에 `tariff.school_exception` 이 선 벌)에서 용어 `billing_demand` 를 뺀다 · 5장 · 수단 장 두 부르는 곳이 이것을 부른다(결정 1) |
+| ③ `report\notices.py` | +17 | `surplus_split_kwh(합, 평일, 토·일·공휴일)` — 세 글자를 함께 · 합은 반올림 그대로 · 셈이 어긋나면 잘린 나머지가 가장 큰 줄을 1 kWh 옮긴다(결정 2) |
+| ④ `report\document.py` | +7 −11 | PPT 잉여 장 지표 세 칸 → ③ (import `surplus_kwh_text` → `surplus_split_kwh`) |
+| ⑤ `ui\views\measures.py` | +9 −3 | 화면 태양광 지표 세 칸(12개월 환산) → ③ |
+| ⑥ `report\excel.py` | +5 | `ReportSections.floor_area_m2` · 요약 「데이터 · 연면적 · 3,000m²」 한 줄(넣은 벌만 · 결정 9) |
+| ⑦ `ui\views\compare.py` | +4 −1 | Excel 재료에 옆단 연면적을 넘긴다 · Excel 지문(`excel_token`)에 연면적(PPT 지문은 그대로) |
+| ⑧ `rules\validate.py` | +1 −14 | 단일 검사 셋 · 교육용 > 일반용 짝 검사를 걷었다(결정 5 · 주석 한 줄) |
+| 데이터 | −24 · −24 | `data\rules_kr.json` · `data\defaults\rules_kr.json` 의 `contract_type.threshold_kw.*` 셋 |
+| 시험 | +4 −1 · −2 | `test_base_fee_basis_words.py` 부록 B 쉼표 표본 → 「중소형DR 산업체 계약전력 상한」 · `test_rules.py` 값 한 줄 · 짝 검사 인자 한 줄 |
+
+**2-2. 적게 닫은 것 · 번진 것.** 적게 닫은 것 0 · 결정 6 은 1-5 대로 0줄 · 결정 3 · 4 는 1-4 대로 0줄. **번짐 하나** — ⑦ 의 Excel 지문(1-6 이 예정에 적었다 · 1-7 자리 안). **결정 8** — `docs\SCREEN_WORDING_S251.md` 에 20 「마-10 「용도 (선택)」 …」 한 행 · 제목 「열아홉」 → 「스물」 · 머리 한 줄(+3 −2).
+**2절 벽시계** 18:11:49 ~ 18:14:37(시각 명령 출력 · 커밋 앞).
+
 ---
 ## 오늘 (2026-09-27) 251세션 — **고침 판 · 사람 결정 셋(상향 권고 PPT 한 줄 · 주의사항 · 조합 비교 「없음」) · 기록으로 서는 넷 · Word 감도 표를 고치고 · 사람 결정 열 항목 재료와 문구 판 목록을 잰다**
 

@@ -93,7 +93,7 @@ from kwise.report.notices import (
     format_mwh,
     max_demand_text,
     plain_text,
-    surplus_kwh_text,
+    surplus_split_kwh,
     switch_annual_saving,
     switch_saving,
 )
@@ -744,20 +744,16 @@ def surplus_page(
     if surplus is None or surplus.total_kwh <= 0:
         return None
     off_day_kwh = surplus.weekend_kwh + surplus.holiday_kwh
+    total_text, weekday_text, off_day_text = surplus_split_kwh(
+        surplus.total_kwh, surplus.weekday_kwh, off_day_kwh
+    )
     facts: list[tuple[str, str]] = [
         # **「기간 잉여」 다** (S213). ``total_kwh`` 가 관측 기간 값이라 화면
         # 지표의 「12개월 환산 잉여」 와 **한 이름이 두 값**이었다 (S214 에 그 지표가
         # 「연간 잉여」 에서 지금 이름으로 갔다).
-        ("기간 잉여", surplus_kwh_text(surplus.total_kwh)),
-        (
-            "평일 잉여",
-            f"{surplus_kwh_text(surplus.weekday_kwh)} "
-            f"({_share(surplus.weekday_kwh, surplus.total_kwh)})",
-        ),
-        (
-            "토·일·공휴일 잉여",
-            f"{surplus_kwh_text(off_day_kwh)} ({_share(off_day_kwh, surplus.total_kwh)})",
-        ),
+        ("기간 잉여", total_text),
+        ("평일 잉여", f"{weekday_text} ({_share(surplus.weekday_kwh, surplus.total_kwh)})"),
+        ("토·일·공휴일 잉여", f"{off_day_text} ({_share(off_day_kwh, surplus.total_kwh)})"),
     ]
     if surplus_free_kwp:
         facts.append(("잉여 없는 최대 용량", f"{surplus_free_kwp:,.0f} kWp"))

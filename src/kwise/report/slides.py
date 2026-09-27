@@ -1325,6 +1325,15 @@ def _peak_stats(sections: DocumentSections) -> list[tuple[str, str]]:
     return items
 
 
+def _glossary_keys(sections: DocumentSections, key: str) -> tuple[str, ...]:
+    """장에 깔 용어. **특례 벌에서는 요금적용전력 산식을 뺀다** (S252 결정 1 · S207) —
+    특례는 당월분이라 「직전 12개월 최대수요」 가 그 벌에서 거짓이다."""
+    keys = GLOSSARY_KEYS.get(key, ())
+    if any(item.fact == "tariff.school_exception" for item in sections.bill.notices):
+        return tuple(name for name in keys if name != "billing_demand")
+    return keys
+
+
 def _build_peak_summary(
     slide: Slide, guide: DesignGuide, sections: DocumentSections, spec: SlideSpec
 ) -> None:
@@ -1355,7 +1364,7 @@ def _build_peak_summary(
         width=geometry.content_width_in,
     )
     body = bottom + geometry.block_gap_in
-    note = narrative.glossary_note(GLOSSARY_KEYS["peak_summary"], diagnosis.pattern)
+    note = narrative.glossary_note(_glossary_keys(sections, "peak_summary"), diagnosis.pattern)
     _picture_block(
         slide,
         guide,
@@ -1975,7 +1984,7 @@ def _build_measure(
     )
     # **용어 풀이가 먼저다** (39세션 1-2 · 53세션 8-1). 표·지표를 읽는 데 바로
     # 쓰이고, 미산출 사유는 그 아래에서 받는다.
-    terms_note = narrative.glossary_note(GLOSSARY_KEYS.get(spec.key, ()))
+    terms_note = narrative.glossary_note(_glossary_keys(sections, spec.key))
     note = _measure_note(entry)
     # **장이 따로 적는 줄은 제 줄에 선다** (59세션 14절). 미산출 사유 뒤에
     # 「·」 로 이어 붙이면 「역률 영향 반영 시 279,249,000원」 이 또 하나의

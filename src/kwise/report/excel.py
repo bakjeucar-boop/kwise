@@ -299,6 +299,8 @@ class ReportSections:
     """고른 태양광 지점 — 용량 곡선의 같은 용량 줄이 계산 근거와 한 글자다 (S234 ㄱ)."""
     peer_savings: Peers = ()
     """단독 수단의 기간 절감 (원값, 표기 값) — 조합이 원값이 같으면 그 글자다 (S234 ㄴ)."""
+    floor_area_m2: float | None = None
+    """옆단 「연면적」. 넣은 벌만 요약 「데이터」 에 입력값 한 줄 (S252 결정 9 · 사람 결정)."""
 
 
 def _fact_key(item: Notice) -> tuple[str, str, str]:
@@ -372,6 +374,9 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
             ),
         ]
     )
+    if sections.floor_area_m2:
+        # 화면 원단위 줄이 쓰는 이름 · 단위 그대로 (「연면적 3,000m²」).
+        rows.append(("데이터", "연면적", f"{sections.floor_area_m2:,.0f}m²"))
 
     # **「기본요금」 은 역률 가감이 반영된 뒤의 금액이다** (S141 3절). 화면·PPT·
     # Word 셋은 109세션부터 이 몫을 세는데 **이 시트만 안 접고 있었다** —

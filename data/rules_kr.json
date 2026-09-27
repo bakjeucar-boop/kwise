@@ -1,29 +1,5 @@
 {
   "items": {
-    "contract_type.threshold_kw.education": {
-      "label": "교육용 갑·을 임계 계약전력 (kW)",
-      "note": "교육용만 1,000 kW 다. 일반용·산업용과 다르다.",
-      "source": "기본공급약관 제58조 ②",
-      "source_date": "2026-06-01",
-      "value": 1000,
-      "verified_on": "2026-09-02"
-    },
-    "contract_type.threshold_kw.general": {
-      "label": "일반용 갑·을 임계 계약전력 (kW)",
-      "note": "300 kW 이상이 을이다.",
-      "source": "기본공급약관 제57조 ②",
-      "source_date": "2026-06-01",
-      "value": 300,
-      "verified_on": "2026-09-02"
-    },
-    "contract_type.threshold_kw.industrial": {
-      "label": "산업용 갑·을 임계 계약전력 (kW)",
-      "note": "300 kW 이상이 을이다.",
-      "source": "기본공급약관 제59조 ②",
-      "source_date": "2026-06-01",
-      "value": 300,
-      "verified_on": "2026-09-02"
-    },
     "day_rules.exclude_temporary_holiday": {
       "label": "임시공휴일 제외 여부",
       "note": "기본은 제외. 사용자가 개별 지정으로 추가할 수 있다.",

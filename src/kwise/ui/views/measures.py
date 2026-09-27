@@ -1241,6 +1241,12 @@ def _surplus_verdict(
         free_kwp, gcr=density.gcr, area_per_kwp_m2=presets.area_per_kwp_m2
     )
     holiday_kwh = surplus.weekend_kwh + surplus.holiday_kwh
+    # 세 글자는 PPT 잉여 장과 한 자리에서 만든다 — 적힌 두 줄의 셈이 적힌 합이다 (S252 결정 2).
+    total_text, weekday_text, holiday_text = notices.surplus_split_kwh(
+        annualize(surplus.total_kwh, months),
+        annualize(surplus.weekday_kwh, months),
+        annualize(holiday_kwh, months),
+    )
 
     columns = st.columns(4)
     columns[0].metric(
@@ -1250,19 +1256,19 @@ def _surplus_verdict(
         "12개월 환산 잉여",
         # **잉여는 kWh 로 적는다** (S232 ㄴ · S192 증상 1 · 18㉯) — PPT · Excel · 부록 A 와
         # 같은 자리. MWh 한 자리는 40 kWh 를 「0.0」 으로 지웠다.
-        notices.surplus_kwh_text(annualize(surplus.total_kwh, months)),
+        total_text,
         f"발전량의 {fmt.ratio_pct(surplus.share_of_generation)}",
         delta_color="off",
     )
     columns[1].metric(
         "평일 잉여",
-        fmt.per_year(notices.surplus_kwh_text(annualize(surplus.weekday_kwh, months))),
+        fmt.per_year(weekday_text),
         _share(surplus.weekday_kwh, surplus.total_kwh),
         delta_color="off",
     )
     columns[2].metric(
         "토·일·공휴일 잉여",
-        fmt.per_year(notices.surplus_kwh_text(annualize(holiday_kwh, months))),
+        fmt.per_year(holiday_text),
         _share(holiday_kwh, surplus.total_kwh),
         delta_color="off",
     )

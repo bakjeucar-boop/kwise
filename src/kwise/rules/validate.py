@@ -243,9 +243,7 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "excess_charge.count_tiers": _excess_count_tiers,
     "excess_charge.first_clause_min_contract_kw": _positive,
     "excess_charge.kwh_per_kw_limit": _positive,
-    "contract_type.threshold_kw.general": _positive,
-    "contract_type.threshold_kw.industrial": _positive,
-    "contract_type.threshold_kw.education": _positive,
+    # 종별 문턱은 요금표 종별 층 한 자리다 (S252 결정 5 · 95 · 96세션 판정 「정본은 요금표」).
     "dr.reference_capacity_kw": _positive,
     "dr.national_max_contract_kw": _positive,
     "dr.small_medium_industrial_max_kw": _positive,
@@ -352,17 +350,6 @@ def _pair_checks(values: Mapping[str, Any]) -> list[ValidationIssue]:
                     f"{conservative} / {base} / {optimistic}",
                 )
             )
-
-    education = get("contract_type.threshold_kw.education")
-    general = get("contract_type.threshold_kw.general")
-    if education is not None and general is not None and education <= general:
-        issues.append(
-            ValidationIssue(
-                "contract_type.threshold_kw.education",
-                f"교육용 임계({education})가 일반용({general}) 이하입니다. "
-                "교육용은 1,000 kW 로 더 높습니다.",
-            )
-        )
     return issues
 
 

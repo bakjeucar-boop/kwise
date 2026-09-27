@@ -54,6 +54,7 @@ __all__ = [
     "solar_lines",
     "standalone_savings",
     "surplus_kwh_text",
+    "surplus_split_kwh",
     "switch_annual_saving",
     "switch_saving",
 ]
@@ -310,6 +311,22 @@ def format_mwh(value: float, *, decimals: int = 1) -> str:
 def surplus_kwh_text(kwh: float) -> str:
     """잉여량 — ``840 kWh``. MWh 한 자리로 접으면 40 kWh 가 「0.0 MWh」 다."""
     return f"{kwh:,.0f} kWh"
+
+
+def surplus_split_kwh(total: float, weekday: float, off_day: float) -> tuple[str, str, str]:
+    """잉여 합 · 평일 · 토·일·공휴일 세 글자 — **적힌 두 줄의 셈이 적힌 합이다**
+    (S252 결정 2 · 절사 A 의 방식을 kWh 에). 화면과 PPT 가 이 한 자리를 부른다 (S233).
+
+    합은 원값을 반올림한 그대로 두고, 두 줄을 따로 반올림해 셈이 어긋나면 잘린
+    나머지가 가장 큰 줄을 1 kWh 옮긴다 (최대잔여법). 원값에서 셈이 안 서면 손대지 않는다.
+    """
+    shown = [round(weekday), round(off_day)]
+    gap = round(total) - sum(shown)
+    if gap and abs(weekday + off_day - total) < 1:
+        parts = (weekday, off_day)
+        index = max(range(2), key=lambda i: gap * (parts[i] - shown[i]))
+        shown[index] += gap
+    return surplus_kwh_text(total), f"{shown[0]:,} kWh", f"{shown[1]:,} kWh"
 
 
 def ess_capacity_text(kwh: float) -> str:

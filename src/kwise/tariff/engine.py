@@ -1008,9 +1008,17 @@ def calculate_bill(
         # 「PV 의 기본요금 기여는 7~9월에 집중」 을 걷었다 (S170 2절) — 계약전력 기준이거나
         # 하한이 전 달에 걸린 벌에서는 그 기여가 0원이라 거짓이었다.
         info(NOT_INCLUDED_NOTICE, fact="tariff.not_included"),
-        info(
-            "봄·가을 피크 저감은 기본요금 절감 가치가 거의 없습니다.",
-            fact="tariff.season_asymmetry",
+        # 특례는 당월분이라 봄·가을 피크 저감도 그 달 기본요금을 깎는다 — 거짓이 되는
+        # 갈래에서는 세우지 않는다 (S252 결정 1 · S207).
+        *(
+            []
+            if school
+            else [
+                info(
+                    "봄·가을 피크 저감은 기본요금 절감 가치가 거의 없습니다.",
+                    fact="tariff.season_asymmetry",
+                )
+            ]
         ),
     ]
 
