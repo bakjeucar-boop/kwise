@@ -26,6 +26,7 @@ __all__ = [
     "LIMIT_YIELDS",
     "NOT_INCLUDED_NOTICE",
     "RULES_UNCHANGED",
+    "SCHOOL_HIGH_VOLTAGE_NOTICE",
     "TENTATIVE_BASE_FEE_BASIS_WARNING",
     "TRUNCATION_FOOTNOTE",
     "UNPRICED",
@@ -101,6 +102,15 @@ def rules_basis_line() -> str:
     tail = f" 외 {len(diffs) - _RULES_NAME_LIMIT}건" if len(diffs) > _RULES_NAME_LIMIT else ""
     return f"출고값과 다른 항목 {len(diffs)}건 — {names}{tail}."
 
+
+#: 학교 교육용(갑) 고압 안내 한 줄 (S253 사람 결정 · 결정 1). **계산에는 넣지 않는다** —
+#: 건물 종류가 교육시설일 때 화면 계약종별 자리와 Word 선택요금 전환 절에만 선다
+#: (PPT · Excel 0). 글은 약관 제58조 ④ 글자에서 짓고 한 자리에서 만든다 (S233).
+SCHOOL_HIGH_VOLTAGE_NOTICE = (
+    "교육용전력(을) 고객 중 초·중등교육법에 따른 학교는 희망하면 교육용전력(갑) "
+    "고압전력을 적용받을 수 있습니다(기본공급약관 제58조 ④). "
+    "이 분석의 요금 비교에는 들어 있지 않습니다."
+)
 
 # 요구사항서 9.4 — 필수 경고
 CONTRACT_CHANGE_WARNING = (

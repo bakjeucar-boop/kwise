@@ -42,6 +42,7 @@ from kwise.diagnose.dr import (
     DrResourceType,
     dr_bid_restriction_months,
     dr_event_hours,
+    dr_market_windows,
 )
 from kwise.measures.base import Certainty
 from kwise.notices import Notice, basis, block, info, warn
@@ -253,7 +254,12 @@ def evaluate_demand_response(
         ),
         # **시간대와 한도는 카드 본문이 이미 낸다** (25세션 3-3 · D). 여기서는
         # 본문에 없는 사실 하나만 적는다 — 왜 창이 둘로 갈라져 있는가.
-        basis(f"점심시간(12–13시)은 {BID_WINDOW}에서 빠집니다.", fact="dr.window_rule"),
+        # **창이 하나인 제주 입찰 창에서는 거짓이라 안 세운다** (S253 결정 2).
+        *(
+            (basis(f"점심시간(12–13시)은 {BID_WINDOW}에서 빠집니다.", fact="dr.window_rule"),)
+            if len(dr_market_windows(jeju=jeju)) > 1
+            else ()
+        ),
         basis(
             "**기본요금 절감은 계산하지 않았습니다.** SMP 기준으로 산발적으로 입찰하므로 "
             # **「연중」 이 아니라 「기간」 이다** (S213) — 대표일 이름과 같은 낱말로

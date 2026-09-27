@@ -130,6 +130,8 @@ def render(table: TariffTable, building: BuildingInfo | None = None) -> Analysis
         rules_stamp(),
         hours,
         dr_off_days(),
+        # 제주면 DR 입찰 창이 갈린다 (S253 결정 2 · 모르면 육지 — S249 결정 1 과 같은 자리).
+        building is not None and building.jeju,
     )
 
     _headline_block(usage, diagnosis)
@@ -369,6 +371,10 @@ def _contract_block(table: TariffTable, building: BuildingInfo | None) -> Contra
             )
             choice = by_key[picked]
             contract_type = choice.contract_type
+            # **교육시설일 때만 한 줄** (S253 사람 결정 · 결정 1) — 계산에 넣지 않은 갈래를
+            # 후보를 보여 주는 이 자리에 적는다. 글자는 한 자리(`report\notices.py`)다.
+            if building is not None and building.education:
+                st.caption(notices.SCHOOL_HIGH_VOLTAGE_NOTICE)
 
             voltages = voltage_choices(table, contract_type)
             voltage_keys = [key for key, _label in voltages]

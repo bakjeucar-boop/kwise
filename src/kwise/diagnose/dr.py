@@ -121,7 +121,7 @@ LIBRARY_HOLIDAY_GAPS: tuple[str, ...] = (
 #: 가리켰고, 카드 개요는 이름 없이 「09–20시」 로 적었다. 매뉴얼 7.3 이 이미 쓰는
 #: 두 말을 화면·산출물이 따른다. 「운영 시간대」 는 옆단 **건물** 값에만 남는다.
 BID_WINDOW = "입찰 시간대"
-"""제도가 정한 시장 시간대 (``dr.market_hours``). 건물과 무관하다."""
+"""입찰 시간대 (:func:`dr_market_windows` · 판단값 · S253). 건물 운영 시간대와 무관하다."""
 JUDGE_WINDOW = "판정 시간대"
 """입찰 시간대 ∩ 건물 운영 시간대 (:func:`overlap_windows`). 감축 여력을 재는 창이다."""
 
@@ -161,18 +161,21 @@ def small_medium_dr_industrial_max_kw() -> float:
     return float(rule_value("dr.small_medium_industrial_max_kw"))
 
 
-def dr_market_windows() -> tuple[tuple[int, int], ...]:
-    """경제성DR **시장** 운영 시간대. 평일 09~12시·13~20시 (점심 제외).
+def dr_market_windows(*, jeju: bool = False) -> tuple[tuple[int, int], ...]:
+    """경제성DR **입찰** 시간대. 육지 평일 09~12시·13~20시 (점심 제외) · 제주 10~21시.
 
     감축 여력은 이 구간의 부하로만 잰다. 하루 전체 평균으로 재면 참여할 수 없는
     시간대의 부하까지 여력으로 세어 과대 산출된다 (13세션).
 
-    **건물 운영 시간대와 다른 값이다** (21세션 4절). 이쪽은 제도 규정이라 건물
-    사정과 무관하고, 건물 쪽은 사람이 그 시간에 일하느냐다. 감축 여력은 둘이
-    겹치는 시간대로 잰다 — 시장이 열려 있어도 건물이 비어 있으면 줄일 것이 없고,
+    **판단값이다** (S253 결정 2). 입찰 요건 조문은 날만 정하고, 이 창은 규칙
+    제12.4.1.2조의 의무감축시간대를 빌렸다. 제주 여부는 옆단 지역이고 모르면
+    육지 창이다 (S249 결정 1 과 같은 자리). 휴일 창은 두지 않는다.
+
+    **건물 운영 시간대와 다른 값이다** (21세션 4절). 감축 여력은 둘이 겹치는
+    시간대로 잰다 — 시장이 열려 있어도 건물이 비어 있으면 줄일 것이 없고,
     건물이 돌아도 시장이 닫혀 있으면 입찰할 수 없다.
     """
-    windows = rule_value("dr.market_hours")
+    windows = assumption("dr.market_hours_jeju" if jeju else "dr.market_hours")
     return tuple((int(start), int(end)) for start, end in windows)
 
 
@@ -545,6 +548,7 @@ def dr_profile(
     registration_quantile: float | None = None,
     high_capacity_kw: float | None = None,
     off_days: Iterable[DateLike] = (),
+    jeju: bool = False,
 ) -> DrProfile:
     """경제성DR 참여 여력을 진단한다 (요구사항서 6.6 · 14세션 4절).
 
@@ -555,7 +559,8 @@ def dr_profile(
             라이브러리가 못 잡는 날을 사람이 메우는 자리다
             (:data:`LIBRARY_HOLIDAY_GAPS`). 거래 가능일에서 빠지고 기준선
             모집단으로 옮겨 가므로 **문턱과 감축량이 다시 계산된다.**
-        windows: 감축 여력을 재는 **시장** 시간대. 기본은 규칙 값(09~12·13~20시).
+        windows: 감축 여력을 재는 **입찰** 시간대. 기본은 판단값(:func:`dr_market_windows`).
+        jeju: 건물이 제주인가 — 제주 입찰 창을 쓴다. **모르면 거짓 — 육지 창이다.**
         operating_hours: **건물** 운영 시간대. 주면 시장 시간대와 겹치는 구간만
             본다 — 사람이 없는 시간의 부하는 감축 여력이 아니다 (21세션 4절).
         low_load_ratio: 저부하 평일 판정 배수 (기본은 assumptions.json 의 1.2).
@@ -566,7 +571,7 @@ def dr_profile(
         raise ValueError("관측된 수요가 없어 DR 참여 여력을 산출할 수 없습니다.")
 
     # 기본값은 파일에서 온다 (요구사항서 12장). 코드에 두지 않는다.
-    market = dr_market_windows() if windows is None else windows
+    market = dr_market_windows(jeju=jeju) if windows is None else windows
     windows = market if operating_hours is None else overlap_windows(market, operating_hours)
     multiple = low_load_multiple() if low_load_ratio is None else low_load_ratio
     registration = (

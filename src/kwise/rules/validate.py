@@ -278,6 +278,8 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "dr.penalty_factor": _positive,
     "dr.max_events_per_day": _positive,
     "dr.market_hours": _hour_windows,
+    # 제주 입찰 창 (S253 결정 2 · 판단값).
+    "dr.market_hours_jeju": _hour_windows,
     "dr.event_hours": _hour_window,
     "progress.total_seconds": _positive,
     "progress.slow_stage_seconds": _positive,

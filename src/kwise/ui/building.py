@@ -13,8 +13,8 @@
     준공연도    선택. 지금은 기록만 한다
 
 **운영 시간대는 경제성DR 의 시장 운영 시간대와 다른 값이다** (21세션 4절).
-이쪽은 사람이 그 시간에 일하느냐이고, 저쪽은 제도가 정한 입찰 가능 시간대다
-(``dr.market_hours``, 평일 09~12·13~20시). 이름을 갈라 두지 않으면 8시 출근
+이쪽은 사람이 그 시간에 일하느냐이고, 저쪽은 입찰 가능 시간대다
+(``dr.market_hours`` 판단값, 육지 평일 09~12·13~20시). 이름을 갈라 두지 않으면 8시 출근
 사업장의 사정이 제도 값을 흔들게 된다.
 
 **용도로 계약종별을 확정하지 않는다.** 대응은 흔한 경우를 적은 판단값이고
@@ -44,6 +44,7 @@ __all__ = [
     "intensity_kwh_per_m2",
     "narrow_contract_types",
     "render_sidebar",
+    "resolve_use_key",
 ]
 
 BUILDING_KEY = "building_info"
@@ -63,6 +64,16 @@ class BuildingUse:
     key: str
     label: str
     contract_prefixes: tuple[str, ...]
+    old_keys: tuple[str, ...] = ()
+    """합쳐진 옛 열쇠 (S253 사람 결정 — 「공장」 은 「산업시설」, 「학교」 는 「교육시설」 로)."""
+
+
+def resolve_use_key(use_key: str) -> str:
+    """**옛 열쇠는 합친 쪽으로 읽는다** (S253 사람 결정). 모르는 열쇠는 그대로다."""
+    return next(
+        (item.key for item in building_uses() if use_key == item.key or use_key in item.old_keys),
+        use_key,
+    )
 
 
 @dataclass(frozen=True)
@@ -91,6 +102,11 @@ class BuildingInfo:
         """제주 건물인가 — DR 위약금 가격이 갈린다 (별표26 5.가 · S249 · 나-18)."""
         return self.region_key.startswith("제주")
 
+    @property
+    def education(self) -> bool:
+        """교육시설인가 — 학교 교육용(갑) 고압 안내가 선다 (S253 사람 결정)."""
+        return resolve_use_key(self.use_key) == "education"
+
 
 def building_uses() -> tuple[BuildingUse, ...]:
     """용도 목록. **코드에 표를 두지 않는다** (요구사항서 12장)."""
@@ -99,6 +115,7 @@ def building_uses() -> tuple[BuildingUse, ...]:
             key=str(item["key"]),
             label=str(item.get("label", item["key"])),
             contract_prefixes=tuple(str(name) for name in item.get("contract_prefixes", ())),
+            old_keys=tuple(str(name) for name in item.get("old_keys", ())),
         )
         for item in assumption("building.uses") or ()
     )
@@ -115,7 +132,8 @@ def narrow_contract_types(
     **종별로 좁힌다** — 한 종별이 선택지 둘인 자리(초·중·고교·유치원 특례)에서는
     둘이 함께 남거나 함께 빠진다. 특례는 시설 속성이라 용도가 가릴 것이 아니다.
     """
-    prefixes = next((item.contract_prefixes for item in building_uses() if item.key == use_key), ())
+    key = resolve_use_key(use_key)
+    prefixes = next((item.contract_prefixes for item in building_uses() if item.key == key), ())
     if not prefixes:
         return choices
     narrowed = tuple(
@@ -171,7 +189,13 @@ def render_sidebar() -> BuildingInfo:
     uses = building_uses()
     use_keys = [_UNSET, *(item.key for item in uses)]
     use_labels = {_UNSET: _UNSET_LABEL} | {item.key: item.label for item in uses}
-    default_use = saved.use_key if saved and saved.use_key in use_keys else _UNSET
+    # **옛 값(「공장」 · 「학교」)은 합친 쪽으로 읽는다** (S253 사람 결정). 위젯 상태가
+    # 옛 열쇠를 쥐고 있으면 선택지에 없어 「선택 안 함」 으로 떨어진다.
+    held = st.session_state.get("building_use")
+    if isinstance(held, str) and resolve_use_key(held) != held:
+        st.session_state["building_use"] = resolve_use_key(held)
+    saved_use = resolve_use_key(saved.use_key) if saved else _UNSET
+    default_use = saved_use if saved_use in use_keys else _UNSET
     use_key = st.sidebar.selectbox(
         "용도 (선택)",
         use_keys,
@@ -231,7 +255,8 @@ def render_sidebar() -> BuildingInfo:
         # 해석하므로 한 줄에 둘이 들어가면 그 사이가 취소선이 된다.
         help=(
             "평일 이 시간대 밖의 부하를 따로 셉니다. 경제성DR 의 저부하일 판정에도 씁니다.\n\n"
-            f"제도가 정한 DR {BID_WINDOW}(평일 09–12시·13–20시)와는 다른 값입니다."
+            # 입찰 시간대는 판단값이고 제주는 창이 달라 시각을 박지 않는다 (S253 결정 2).
+            f"경제성DR {BID_WINDOW}와는 다른 값입니다."
         ),
     )
 

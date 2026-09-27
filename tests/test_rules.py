@@ -465,14 +465,22 @@ def test_구분은_키_이름이_아니라_파일이_정한다(sandbox: Path) ->
     from kwise.rules.expiry import source_link_of
 
     judged = assumptions()
-    for key in ("dr.event_hours", "dr.max_events_per_day", "dr.high_capacity_kw"):
+    # 입찰 시간대 둘도 판단값이다 (S253 결정 2 — 조문은 의무감축시간대를 빌렸다).
+    for key in (
+        "dr.event_hours",
+        "dr.max_events_per_day",
+        "dr.high_capacity_kw",
+        "dr.market_hours",
+        "dr.market_hours_jeju",
+    ):
         scope, _link = source_link_of(judged[key])
         assert scope == "판단값", key
     assert source_link_of(assumptions()["ui.notice_budget"])[0] == "화면 규약"
 
     statutory = rules()
     assert "dr.event_hours" not in statutory
-    assert source_link_of(statutory["dr.market_hours"])[0] == "전력시장운영규칙"
+    assert "dr.market_hours" not in statutory
+    assert source_link_of(statutory["dr.bid_restriction_months"])[0] == "전력시장운영규칙"
     assert source_link_of(statutory["demand.months"])[0] == "약관·규칙"
 
 

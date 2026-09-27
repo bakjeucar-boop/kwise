@@ -1360,6 +1360,9 @@ class DocumentSections:
     기간을 사전 취득분이 덮지 못할 수도 있다 (화면과 같은 규칙)."""
     peer_savings: Peers = ()
     """단독 수단의 기간 절감 (원값, 표기 값) — 조합이 원값이 같으면 그 글자다 (S234 ㄴ)."""
+    school_notice: str = ""
+    """학교 교육용(갑) 고압 안내 (S253 결정 1). 교육시설일 때만 차고 **Word 선택요금 전환
+    절만 싣는다** — PPT 는 안 읽는다."""
 
     @property
     def prepared(self) -> dt.date:
@@ -1832,6 +1835,8 @@ def _chapter_measures(document: DocumentType, sections: DocumentSections, number
         if entry.cautions:
             _para(document, "주의사항")
             _add_bullets(document, entry.cautions)
+        if entry.kind.key == "tariff_switch" and sections.school_notice:
+            _para(document, sections.school_notice)
     document.add_page_break()
 
 

@@ -79,7 +79,12 @@ from kwise.report import (
 )
 from kwise.report.days import RepresentativeDay
 from kwise.report.excel import sensitivity_items
-from kwise.report.notices import Peers, combination_saving, standalone_savings
+from kwise.report.notices import (
+    SCHOOL_HIGH_VOLTAGE_NOTICE,
+    Peers,
+    combination_saving,
+    standalone_savings,
+)
 from kwise.report.worksheet import (
     Worksheet,
     combination_worksheet,
@@ -1357,6 +1362,12 @@ def _download_block(
                 reviewed_labels=scope.reviewed_labels,
                 skipped_labels=scope.skipped_labels,
                 peer_savings=results.peer_savings(),
+                # Word 선택요금 전환 절에만 선다 · PPT 는 안 읽는다 (S253 결정 1).
+                school_notice=(
+                    SCHOOL_HIGH_VOLTAGE_NOTICE
+                    if building is not None and building.education
+                    else ""
+                ),
             )
             _build(
                 lambda: slides_bytes(document),

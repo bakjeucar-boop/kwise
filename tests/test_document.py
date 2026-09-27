@@ -802,7 +802,7 @@ def test_부록_B_는_기준_데이터에서_생성된다() -> None:
     kinds = {row[0] for row in rows}
     assert kinds == {"법령 유래", "판단값"}
     assert len(rows) == len(rules().item_keys()) + len(assumptions().item_keys())
-    for key in ("dr.market_hours", "power_factor.lagging_standard_pct"):
+    for key in ("dr.bid_restriction_months", "power_factor.lagging_standard_pct"):
         assert rules()[key].label in labels, key
     # 근거 조문과 확인일이 함께 실린다 — 값만 있으면 출처를 되짚을 수 없다.
     statutory = [row for row in rows if row[0] == "법령 유래"]

@@ -401,6 +401,28 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 | 문서 | `docs\MANUAL.md` 세 자리(용도 · DR 두 문단) + 생성물 | 사람 · 2 | 1 |
 **1절 벽시계** 20:49:30 ~ 20:57:45(시각 명령 출력 · 커밋 앞 · 4절 조사 에이전트를 1절 가운데(20:55) 뒤로 띄웠다).
 
+**2-1. 1-6 자리를 고쳤다 — 코드 12파일 +157 −44(계산 폴더 몫 포함) · 계산 폴더 `diagnose` 2파일 +17 −9 · `measures` 1파일 +7 −1 · 기준 데이터 4파일 +70 −64 · 시험 3파일 +13 −5 · 문서 5파일 +18 −14(생성물 둘 포함)**(`git diff --numstat` 2절 커밋 앞). 바꾼 열두 모듈 `mypy` 0건(`mypy_20260927_210233.txt` · 첫 판 한 건 — 이 판 `_usage_figure` 의 변수 형 · 이름을 갈라 고쳤다) · `ruff check src tests` 통과(`ruff_20260927_210215.txt`) · `ruff format --check` 이 판 한 줄(`slides.py` 폴백 함수 부르는 곳) → 맞췄다 · 셋(`document.py:1521` · `slides.py:1505` · `test_document.py:962`)은 앞서부터의 어긋남이라 안 건드렸다(`ruff_20260927_210233.txt`).
+
+| 자리 | 줄 | 전 → 후 |
+|---|---:|---|
+| ① `report\notices.py` | +10 | `SCHOOL_HIGH_VOLTAGE_NOTICE` 「교육용전력(을) 고객 중 초·중등교육법에 따른 학교는 희망하면 교육용전력(갑) 고압전력을 적용받을 수 있습니다(기본공급약관 제58조 ④). 이 분석의 요금 비교에는 들어 있지 않습니다.」(사람 결정 · 결정 1) |
+| ② `ui\views\diagnose.py` | +6 | 계약종별 드롭다운 밑에 ① 을 한 줄(교육시설일 때만) · 진단 캐시에 `building.jeju` |
+| ③ `report\document.py` | +5 | `DocumentSections.school_notice` · Word 3장 「선택요금 전환」 절 끝에 한 문단(값이 있을 때만) |
+| ④ `ui\views\compare.py` | +12 −1 | PPT 단추의 재료(= Word 재료)에 교육시설일 때 ① · PPT 는 그 칸을 안 읽는다 |
+| ⑤ `ui\building.py` | +30 −5 | `BuildingUse.old_keys` · `resolve_use_key` · 좁히기와 위젯 상태 · 저장된 `use_key` 가 옛 열쇠를 합친 쪽으로 읽는다 · `BuildingInfo.education` · 운영 시간대 풀이 「제도가 정한 DR 입찰 시간대(평일 09–12시·13–20시)와는 다른 값입니다.」 → 「경제성DR 입찰 시간대와는 다른 값입니다.」 · 모듈 머리 한 줄 |
+| ⑥ `ui\cache.py` · `ui\pipeline.py` | +7 −1 | `jeju` 를 캐시 열쇠와 진단에 넘긴다 |
+| ⑦ `rules\validate.py` | +2 | `dr.market_hours_jeju` 시각 창 검사 |
+| ⑧ `report\slides.py` | +61 −26 | `_safe_picture_block`(굽기를 `_safe_figure` 로 · 못 구우면 그 그림만 뺀다) · 4장(사용량 그림도 `_safe_figure` · 없으면 그림 칸만 뺀다) · 5장 · 6장 둘 · 7장 둘 · 조합 장 |
+| 계산 `diagnose\dr.py` | +14 −9 | `dr_market_windows(jeju=)` 가 판단값 `dr.market_hours` / `dr.market_hours_jeju` 를 읽는다 · `dr_profile(jeju=)` · 이름 독스트링 한 줄 |
+| 계산 `diagnose\report.py` | +3 | `diagnose(jeju=)` → `dr_profile`(부분 함수라 조합 부하 DR 도 같은 창) |
+| 계산 `measures\demand_response.py` | +7 −1 | 근거 「점심시간(12–13시)은 입찰 시간대에서 빠집니다.」 는 창이 둘일 때만(제주 창 0) |
+| 데이터 | +35 −15 · +35 −15 · −17 · −17 | 판단값 본 · 출고 사본 — 건물 종류 일곱 → 다섯(`old_keys` 둘 · 확인일 2026-09-27) · `dr.market_hours`(판단값 · 비고에 제12.4.2.1조 ① 1호 · 제12.4.1.2조 · 휴일 창을 안 넣는 까닭) · `dr.market_hours_jeju` 10 ~ 21 / 법령 본 · 출고 사본 — `dr.market_hours` 뺌 |
+| 시험 | +10 −2 · +1 −1 · +2 −1 | `test_rules.py` 판단값 표본에 입찰 시간대 둘 · 법령 쪽 표본을 `dr.bid_restriction_months` 로 · `test_document.py` 부록 B 법령 표본 같은 갈음 · `test_ui.py` 85 → 86(주석 한 줄) |
+| 문서 | +12 −6 · 생성물 | `MANUAL.md` 용도 풀이(산업시설 · 교육시설) · 판정 창 문단(육지 · 제주 · 판단값 · `assumptions.json`) · DR 절 한 문단(판단값 까닭 · 제주 · 휴일 창) · 7절 「전체 85개」 → 「86개」 |
+
+**2-2. 적게 닫은 것 · 번진 것.** 적게 닫은 것 0. **번짐 넷(자리와 까닭)** — ⓐ 항목 수 글자 다섯 자리 `TECHNICAL.md:180` · `:1613-1614` · `collaboration.md:68 · 70` · `project-overview.md:347`(35 · 51 — 결정 2 로 항목이 옮고 는다 · S252 3-8 이 같은 못에 물렸다) ⓑ 매뉴얼 7절 「전체 86개」 ⓒ 생성물 `MANUAL.html` · `TECHNICAL.html`(`build_docs_20260927_210215.txt`) ⓓ `ui\building.py` · `diagnose\dr.py` 독스트링의 「제도가 정한」 두 줄(결정 2 로 거짓). `PROCEED.md` 「현재 상태」 의 항목 수 칸은 5절 몫.
+**2절 벽시계** 20:58:00 ~ 21:02:41(시각 명령 출력 · 커밋 앞).
+
 ---
 ## 오늘 (2026-09-27) 252세션 — **고침 판 · 재료 열 항목 가운데 기록으로 서는 여섯과 연면적(사람 결정)을 고치거나 닫고 · DR 입찰 시간대 조문과 학교 갈래 · 건물 종류 선택지를 잰다**
 

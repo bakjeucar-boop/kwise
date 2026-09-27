@@ -55,6 +55,7 @@ from kwise.report.document import (
     DocumentSections,
     MeasureEntry,
     MeasureFigure,
+    _safe_figure,
 )
 from kwise.report.narrative import GLOSSARY_KEYS
 from kwise.report.notices import (
@@ -834,6 +835,27 @@ def _picture_block(
     )
 
 
+def _safe_picture_block(
+    slide: Slide,
+    guide: DesignGuide,
+    make: Callable[[], bytes],
+    what: str,
+    caption: str,
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+) -> None:
+    """그림을 굽되 **못 구우면 그 그림만 빼고 장은 남긴다** (S253 결정 3 — 잉여 장의 꼴).
+
+    실패는 :func:`~kwise.report.document._safe_figure` 가 기록으로 남긴다. 새 글자는 없다.
+    """
+    png = _safe_figure(make, what)
+    if png is not None:
+        _picture_block(slide, guide, png, caption, left=left, top=top, width=width, height=height)
+
+
 #: 표에 쓸 스타일 — **테두리도 띠도 없는 것** (36세션 3-4). 줄은 우리가 긋는다.
 _PLAIN_TABLE_STYLE = "{2D5ABB26-0587-4C30-8999-92F81FD0307C}"
 
@@ -1250,16 +1272,17 @@ def _build_usage_pattern(
     body = bottom + geometry.block_gap_in
     png, caption = _usage_figure(sections)
     note = narrative.glossary_note(GLOSSARY_KEYS["usage_pattern"], pattern)
-    _picture_block(
-        slide,
-        guide,
-        png,
-        caption,
-        left=geometry.margin_in,
-        top=body,
-        width=geometry.content_width_in,
-        height=_note_top(guide, note) - body,
-    )
+    if png is not None:
+        _picture_block(
+            slide,
+            guide,
+            png,
+            caption,
+            left=geometry.margin_in,
+            top=body,
+            width=geometry.content_width_in,
+            height=_note_top(guide, note) - body,
+        )
     _note(slide, guide, note)
 
 
@@ -1272,11 +1295,12 @@ _TEMPERATURE_CAPTION = "일별 사용량과 일평균 기온"
 _USAGE_ONLY_CAPTION = "일별 사용량"
 
 
-def _usage_figure(sections: DocumentSections) -> tuple[bytes, str]:
+def _usage_figure(sections: DocumentSections) -> tuple[bytes | None, str]:
     """4장의 그림 하나. **기온이 없으면 사유를 캡션에 적고 사용량만 그린다.**
 
     빈 축을 남기지 않는 것이 화면의 규칙이고(30세션 4절), 슬라이드는 지역 입력
-    없이도 한 장이 채워져야 한다.
+    없이도 한 장이 채워져야 한다. **사용량 그림마저 못 구우면 ``None`` 이고 장은
+    그림만 빼고 남는다** (S253 결정 3).
     """
     temperature = sections.temperature
     if temperature is not None and len(temperature):
@@ -1290,7 +1314,11 @@ def _usage_figure(sections: DocumentSections) -> tuple[bytes, str]:
             # **조용히 삼키지 않는다** (60세션 11절). 기온이 빠진 채 사용량만
             # 그려도 장은 채워지므로 아무도 모른 채 지나간다.
             figures.note_figure_failure("전력사용현황 · 일별 기온", exc)
-    return figures.daily_usage_png(sections.usage, size=FULL_FIGURE), _USAGE_ONLY_CAPTION
+    usage_png = _safe_figure(
+        lambda: figures.daily_usage_png(sections.usage, size=FULL_FIGURE),
+        "전력사용현황 · 일별 사용량",
+    )
+    return usage_png, _USAGE_ONLY_CAPTION
 
 
 def _peak_stats(sections: DocumentSections) -> list[tuple[str, str]]:
@@ -1365,10 +1393,11 @@ def _build_peak_summary(
     )
     body = bottom + geometry.block_gap_in
     note = narrative.glossary_note(_glossary_keys(sections, "peak_summary"), diagnosis.pattern)
-    _picture_block(
+    _safe_picture_block(
         slide,
         guide,
-        figures.monthly_peak_png(diagnosis.peak, size=FULL_FIGURE),
+        lambda: figures.monthly_peak_png(diagnosis.peak, size=FULL_FIGURE),
+        "피크특성 · 월별 최대수요",
         # 「기본요금을 매기는」 을 뗐다 (S170 2절) — 계약형 벌에서는 계약전력이 매긴다.
         "월별 최대수요 — 붉은 점선이 요금적용전력입니다.",
         left=geometry.margin_in,
@@ -1399,22 +1428,25 @@ def _build_peak_detail(
     # **문장이 말하는 그림이 왼쪽이다** (53세션 4-5). 해석 한 줄이 「상위 ○○구간」
     # 을 말하는데 그 그림이 오른쪽에 있어, 읽는 눈이 문장에서 오른쪽으로 건너뛴
     # 뒤 다시 왼쪽으로 돌아와야 했다.
-    for index, (png, caption) in enumerate(
+    for index, (make, what, caption) in enumerate(
         (
             (
-                figures.top_hour_png(peak, size=HALF_FIGURE_WITH_LEGEND),
+                lambda: figures.top_hour_png(peak, size=HALF_FIGURE_WITH_LEGEND),
+                "피크특성 · 상위 구간 시각",
                 f"최대수요 상위 {peak.top_n}구간이 발생한 시각",
             ),
             (
-                figures.hourly_profile_png(peak, size=HALF_FIGURE),
+                lambda: figures.hourly_profile_png(peak, size=HALF_FIGURE),
+                "피크특성 · 시간대별 평균 부하",
                 "하루 24시간의 평균 부하 모양",
             ),
         )
     ):
-        _picture_block(
+        _safe_picture_block(
             slide,
             guide,
-            png,
+            make,
+            what,
             caption,
             left=geometry.margin_in + (half + gap) * index,
             top=top,
@@ -1491,10 +1523,11 @@ def _build_structure(
         )
         + gap
     )
-    _picture_block(
+    _safe_picture_block(
         slide,
         guide,
-        figures.monthly_charge_png(structure, size=WIDE_FIGURE),
+        lambda: figures.monthly_charge_png(structure, size=WIDE_FIGURE),
+        "요금 구조 · 월별 요금 구성",
         # **이름을 고쳐서 푼다** (S156 4-2). 「직전 12개월 최대수요」 는
         # 요금적용전력 기준 종별의 말이라 **계약전력으로 매기는 갑Ⅰ·갑Ⅱ 에서
         # 거짓이다** — `small-ind-a1` 은 다섯 달 다 계약전력 75 kW 로 매겨진다.
@@ -1508,10 +1541,11 @@ def _build_structure(
         width=left_width,
         height=bottom_y - chart_top,
     )
-    _picture_block(
+    _safe_picture_block(
         slide,
         guide,
-        figures.band_donut_grid_png(structure, season_pairs(structure)),
+        lambda: figures.band_donut_grid_png(structure, season_pairs(structure)),
+        "요금 구조 · 계시 도넛",
         "계절별 계시 시간대 사용량 구성",
         left=right_left,
         top=top,
@@ -2256,10 +2290,11 @@ def _build_combination(
         width=half,
     )
     chart_top = stats_bottom + gap
-    _picture_block(
+    _safe_picture_block(
         slide,
         guide,
-        figures.combination_png(comparison),
+        lambda: figures.combination_png(comparison),
+        "조합구성 · 조합별 절감",
         "조합별 기간 절감액과 투자비",
         left=right_left,
         top=chart_top,

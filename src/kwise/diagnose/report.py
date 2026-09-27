@@ -95,6 +95,7 @@ def diagnose(
     contract_floor_ratio: float | None = None,
     operating_hours: tuple[int, int] = DEFAULT_OPERATING_HOURS,
     dr_off_days: Iterable[DateLike] = (),
+    jeju: bool = False,
 ) -> Diagnosis:
     """업로드와 계약 정보만으로 진단한다.
 
@@ -108,6 +109,7 @@ def diagnose(
         dr_off_days: 사용자가 「쉬는 날」 로 지목한 날짜 (29세션). **DR 판정에만
             쓴다** — 요금 계산의 공휴일은 법정 공휴일이므로 건드리지 않는다.
             근로자의 날(2025년까지)은 한전 요금에서 평일이 맞다.
+        jeju: 건물이 제주인가 — DR 입찰 창만 가른다 (S253 결정 2). 모르면 육지 창.
     """
     report = quality if quality is not None else check_quality(usage)
     interval = usage.meta.interval_minutes
@@ -171,6 +173,7 @@ def diagnose(
         outage_mask=outage_slot_mask(index, report.outages),
         operating_hours=operating_hours,
         off_days=dr_off_days,
+        jeju=jeju,
     )
     dr = dr_measure(usage.kw)
 
