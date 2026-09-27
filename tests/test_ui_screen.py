@@ -1523,8 +1523,8 @@ def test_ESS_절감액_툴팁이_전력량요금_절감의_까닭을_밝힌다()
     assert "맞부딪힙니다" in source
     # 31세션 문구는 남지 않는다 — 합만 적으면 물음이 되돌아온다.
     assert "기본요금 절감 + 전력량요금 절감입니다." not in source
-    # 차익거래가 빠져 있다는 사실은 이 자리 하나에만 있다 (중복 금지).
-    assert source.count("충방전 차익거래는 들어 있지 않습니다") == 1
+    # 차익거래 잠재값을 가리키던 한 문장은 걷었다 (S254 사람 결정).
+    assert "충방전 차익거래는 들어 있지 않습니다" not in source
 
     # 전력량요금이 줄어든 경우 — 비중을 적는다. 이 갈래는 100% 를 넘지 않는다.
     plus = ess_saving_line(10_409_000, 16_000, 16_000)
@@ -2419,7 +2419,8 @@ def test_콘덴서와_자동역률조정장치라는_말이_없다() -> None:
 def test_투자_구분_이름에도_없다() -> None:
     from kwise.measures.catalog import TIER_LOW
 
-    assert TIER_LOW == "저투자 (역률 개선)"
+    # 구간 이름에 수단 이름을 박지 않는다 (S254 문구 판 #2 · 사람 결정).
+    assert TIER_LOW == "저투자"
 
 
 def test_탭을_오가도_입력이_남는다() -> None:
@@ -3791,7 +3792,8 @@ def test_ESS_절감액_툴팁이_구성을_밝힌다() -> None:
     # 전력량요금이 왜 줄어드는지가 적힌다 (옮겨 담기 ↔ 왕복효율 손실).
     assert "싼 시간으로" in ess_tip
     assert "왕복효율 손실" in ess_tip
-    assert "차익거래는 들어 있지 않습니다" in ess_tip
+    # 차익거래 잠재값 표시를 걷어 그것을 가리키던 문장도 없다 (S254 사람 결정).
+    assert "차익거래" not in ess_tip
     # 금액 둘은 같은 화면의 「계산 근거」 표가 낸다 — 툴팁에 다시 적지 않는다.
     grounds = [str(item.value) for item in screen.dataframe]
     assert any("기본요금 절감" in text and "전력량요금 절감" in text for text in grounds)
@@ -3814,16 +3816,17 @@ def test_ESS_절감액이_기본요금과_전력량요금의_합이다(sample_es
     assert sample_ess.payback_with_arbitrage_years < sample_ess.payback_years
 
 
-def test_차익거래_안내가_무엇에_더하지_않았는지_적는다() -> None:
-    """「피크저감 절감액」 은 화면 어디에도 없는 이름이었다 (31세션 5-2)."""
+def test_차익거래_안내가_화면에_없다() -> None:
+    """**차익거래 잠재값 안내는 걷었다** (S254 사람 결정 · 31세션 5-2 못을 뒤집었다).
+
+    계산(`measures\\arbitrage.py`)은 그대로 돌아 안내를 낸다 — 화면이 거른다(재료).
+    """
     from kwise.measures.arbitrage import ESS_SAVING_LABEL
 
     screen = _running(nav_page="2단계 · 개선 수단", measure_on_ess=True)
-    body = " ".join(
-        str(item.value) for group in (screen.markdown, screen.caption) for item in group
-    )
-    assert f"{ESS_SAVING_LABEL}에 더하지 않은 값입니다" in body, body
-    assert "피크저감 절감액에 더하지 않았습니다" not in body
+    body = _ess_screen_text(screen)
+    assert [item for item in screen.metric if item.label == "12개월 환산 절감액"], "재료 — ESS 카드"
+    assert f"{ESS_SAVING_LABEL}에 더하지 않은 값입니다" not in body, body
 
 
 def _ess_screen_text(screen: AppTest) -> str:
@@ -3840,17 +3843,17 @@ def _ess_screen_text(screen: AppTest) -> str:
     return " ".join(parts)
 
 
-def test_차익거래_근거가_예비_규칙_문제를_밝힌다() -> None:
-    """26세션의 「이중 계산」 은 근거가 틀렸다 (41세션 1-1·1-2).
+def test_차익거래_예비_규칙_글이_화면에_없다() -> None:
+    """**「예비 규칙을 아직 정하지 않았다」 글은 걷었다** (S254 사람 결정).
 
-    그 「일부」 를 재 보니 사이클 1.06% · 금액 0.80% 였고, 화면 툴팁이 그 1% 를
-    함께 찍고 있어 읽는 사람에게 모순으로 보였다. 실질은 **예비 규칙**이다 —
-    없이 돌리면 피크를 못 깎아 회수기간이 30.75 → 50.61년이 된다 (샘플 실측).
+    41세션 1-1 못을 뒤집었다.
+
+    운전 규칙을 정하게 되면 다시 연다(`docs\\HANDOVER.md` 5절).
     """
     screen = _running(nav_page="2단계 · 개선 수단", measure_on_ess=True)
     body = _ess_screen_text(screen)
-    assert "몫을 남기는 운전 규칙" in body, body
-    assert "피크를 못 깎아" in body, body
+    assert "몫을 남기는 운전 규칙" not in body, body
+    assert "피크를 못 깎아" not in body, body
 
 
 def test_겹침_비율과_이중_계산이_화면에_없다() -> None:
@@ -3866,15 +3869,14 @@ def test_겹침_비율과_이중_계산이_화면에_없다() -> None:
     assert "이미 일부를 실현" not in body, body
 
 
-def test_차익거래_잠재값은_화면에_그대로_남는다() -> None:
-    """**빼는 것은 근거이지 값이 아니다** (41세션 1-4).
-
-    「이만큼의 여지가 있으나 지금 계산에는 넣지 않았다」 가 사용자에게 유용하다.
-    """
+def test_차익거래_잠재값이_화면에_없다(sample_ess: EssResult) -> None:
+    """**잠재값 표시는 걷었다 — 계산은 그대로 돈다** (S254 사람 결정 · 41세션 1-4 못을 뒤집었다)."""
+    assert sample_ess.payback_with_arbitrage_years is not None, "재료 — 계산은 잠재값을 낸다"
     screen = _running(nav_page="2단계 · 개선 수단", measure_on_ess=True)
     body = _ess_screen_text(screen)
-    assert "차익거래 잠재 수익까지 더하면" in body, body
-    assert "이쪽이 상한입니다" in body, body
+    assert "차익거래 잠재 수익까지 더하면" not in body, body
+    assert "이쪽이 상한입니다" not in body, body
+    assert "차익거래 단독 회수기간" not in body, body
 
 
 def test_잉여가_0이면_처리_선택지가_안_나온다() -> None:
@@ -4176,6 +4178,36 @@ def test_미산출_문구가_한_칸에_들어간다() -> None:
         assert len(reason) <= 24, f"{name}: {len(reason)}자 — {reason}"
         assert "." not in reason, f"{name}: 문장이 둘 이상입니다 — {reason}"
     assert UNPRICED_REASON == "미산출 — 정산 단가 미입력"
+
+
+def test_합산효과_지표_넷은_2개씩_두_줄이다(stage3: AppTest) -> None:
+    """**한 줄 넷이면 억 단위 금액이 말줄임표로 잘렸다** (S254 문구 판 #10 · 사람 결정).
+
+    지표마다 제 칸이 두 칸짜리 줄(폭 1/2)에 선다 — 넷짜리 줄이면 1/4 이다.
+    """
+    names = ("단순 합", "합산효과", "차이", "회수기간")
+    weights = {
+        label: column.weight
+        for column in stage3.columns
+        for label in [str(item.label) for item in column.metric]
+        if label in names
+    }
+    assert set(weights) == set(names), weights
+    assert set(weights.values()) == {0.5}, weights
+
+
+def test_감도_막대_행_높이_하한() -> None:
+    """**지표가 많아도 이름이 잘리지 않게 행마다 48px** (S254 문구 판 #14 · 사람 결정).
+
+    이 그림은 화면에 안 그려진다(28세션 · 위 감도 시험) — 값만 문다.
+    """
+    from kwise.compare.sensitivity import SensitivityRange
+    from kwise.ui.charts import sensitivity_chart
+
+    ranges = tuple(
+        SensitivityRange(f"지표{index}", "원", 1.0, 0.5, 1.5, "낮음", "높음") for index in range(5)
+    )
+    assert sensitivity_chart(ranges).to_dict()["height"] == 48 * 5
 
 
 def test_합산효과에_회수기간이_있다(stage3: AppTest) -> None:

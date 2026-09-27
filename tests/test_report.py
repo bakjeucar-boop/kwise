@@ -423,7 +423,9 @@ def test_summary_carries_every_known_limit(summary_text: str) -> None:
     역률 정정(약관 제41·42·43조)으로 두 항목이, 경제성DR(전력시장운영규칙 제12장)로
     두 항목이 늘었다.
     """
-    assert len(KNOWN_LIMITS) == 18
+    # 차익거래 잠재값 한 항목을 걷었다 (S254 사람 결정) — 18 → 17.
+    assert len(KNOWN_LIMITS) == 17
+    assert not [limit for limit in KNOWN_LIMITS if "차익거래" in limit]
     for limit in KNOWN_LIMITS:
         # **마크다운 표식은 벗겨져 실린다** (S161 2절). Excel 은 별표를 그리지
         # 않으므로 시트에 그대로 두면 `**대한민국 전용 도구입니다.**` 로 뜬다 —

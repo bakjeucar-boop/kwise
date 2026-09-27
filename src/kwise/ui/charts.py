@@ -826,7 +826,8 @@ def tariff_option_chart(switch: TariffSwitchResult) -> alt.LayerChart:
     base = alt.Chart(framed).encode(
         # **가로축 이름을 눕힌다** (S163 2-4). vega 는 이름씨 축의 눈금 이름을
         # 기본으로 −90° 돌려 적어 「선택Ⅰ」 이 한 글자씩 세로로 쌓였다.
-        x=alt.X("요금제:N", title=None, sort=order, axis=alt.Axis(labelAngle=0)),
+        # S254 문구 판 #6 — 억원 축에서 이름이 막대 밑동에 가려 **기울인다**(사람 결정).
+        x=alt.X("요금제:N", title=None, sort=order, axis=alt.Axis(labelAngle=-30)),
         xOffset=alt.XOffset("구분:N", sort=list(parts)),
     )
     # **축 이름은 막대 켜에만 준다.** 켜 둘에 같은 이름을 실으면 그려지는 축은

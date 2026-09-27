@@ -1661,3 +1661,124 @@ def test_학교_안내는_교육시설일_때만_화면과_Word_에_같은_글�
         if SCHOOL_HIGH_VOLTAGE_NOTICE in row[-1]
     )
     assert outputs(_render("large-a")) == []
+
+
+#: 차익거래 잠재값 글 (S254 사람 결정으로 걷었다) — 화면 · PPT · Excel · Word 어디에도 없다.
+ARBITRAGE_WORDS = re.compile(
+    r"예비 규칙|이쪽이 상한|차익거래 단독|차익거래 잠재|충방전 차익거래|더하지 않은 값입니다"
+    r"|계시별 단가는 요금표에서 가져왔습니다\. 사용자|최대부하가 존재하는 날만|왕복효율 \d+% 가정"
+)
+
+
+def _s254_lines(key: str) -> tuple[Rendered, list[str], list[str]]:
+    rendered = _render(key)
+    screen = [row[-1] for row in rendered.rows if row[0] == "화면"]
+    return rendered, screen, [" | ".join(row) for row in rendered.rows]
+
+
+def _s254_metrics(rendered: Rendered) -> list[tuple[str, str]]:
+    return [
+        (row[3], row[4])
+        for row in rendered.rows
+        if row[0] == "화면" and row[1].endswith("1단계 · 진단") and row[2] == "Metric"
+    ]
+
+
+def _s254_check(item: str) -> None:
+    """항목 하나를 그 항목이 서는 벌의 실물로 본다. 재료(수단이 서는가)는 항목마다 함께 본다."""
+    from kwise.measures.contract import MARGIN_NOTICE
+
+    rendered, screen, lines = _s254_lines("small-a2" if item in ("#9", "#13") else "large-b-short")
+    combo = [row for row in rendered.rows if row[:2] == ("Excel", "조합 비교")]
+    measure = [row for row in rendered.rows if row[:2] == ("Excel", "수단별 결과")]
+    if item == "#1":
+        short = _s254_metrics(_render("small-a-short"))
+        at = short.index(("라벨", "초과사용부가금"))
+        assert short[at + 1] == ("지표", "미산출"), short[at : at + 2]
+        assert ("라벨", "초과사용부가금") not in _s254_metrics(_render("large-a"))
+    elif item == "#2":
+        assert "저투자" in screen and not [t for t in lines if "저투자 (역률 개선)" in t]
+    elif item == "#3":
+        assert [t for t in screen if "선택요금의 설계 의도" in t]
+        assert not [t for t in lines if "선택Ⅰ·Ⅱ·Ⅲ 의 설계 의도" in t]
+    elif item == "#4":
+        from kwise.report.notices import TARIFF_SWITCH_CAPTION
+
+        assert screen.count(TARIFF_SWITCH_CAPTION) == 1, rendered.key
+        assert TARIFF_SWITCH_CAPTION == "현행 대비 차액과 요금제별 요금 구성"
+        assert "현행 대비 차액" not in screen and "요금제별 요금 구성" not in screen
+        for out in ("PPT", "Word"):
+            assert [r for r in rendered.rows if r[0] == out and TARIFF_SWITCH_CAPTION in r[-1]], out
+    elif item == "#5":
+        legend = {
+            row[-1]
+            for row in rendered.figures
+            if row[0] == "화면" and "현행 대비" in row[1] and row[2] == "범례"
+        }
+        assert legend == {"요금 절감", "현행", "요금 증가"}, legend
+    elif item == "#6":
+        # 그룹 막대(요금제 × 구분)의 요금제 이름은 기울이고 막대는 그림 칸 안에서 잘린다 —
+        # 밑동이 이름을 안 덮는다(을 6,000 kW 캡처).
+        layers = [
+            layer
+            for spec in rendered.charts
+            for layer in json.loads(spec).get("layer", [])
+            if "xOffset" in (layer.get("encoding") or {})
+            and layer["encoding"].get("x", {}).get("field") == "요금제"
+            and "mark" in layer
+        ]
+        marks = [
+            layer["mark"] if isinstance(layer["mark"], dict) else {"type": layer["mark"]}
+            for layer in layers
+        ]
+        bars = [mark for mark in marks if mark.get("type") == "bar"]
+        assert bars and all(mark.get("clip") is True for mark in bars), marks
+        angles = {layer["encoding"]["x"].get("axis", {}).get("labelAngle") for layer in layers}
+        assert angles == {-30}, angles
+    elif item == "#9":
+        assert not [t for t in lines if "상계거래 SMP" in t], rendered.key
+        assert [t for t in lines if "외부 판매 140원/kWh 로 산출했습니다" in t], "재료 — 각주"
+    elif item == "#11":
+        assert "이 조합을 모두 도입했을 때의 12개월 환산 절감액입니다." in screen
+    elif item == "#12":
+        names = [row[2] for row in combo[1:]]
+        assert names[-1] == "+ 태양광 1,600 kWp", names
+        assert not [t for t in lines if "+ ESS 목표" in t], rendered.key
+    elif item == "#13":
+        stage3 = [row[-1] for row in rendered.rows if row[0] == "화면" and "3단계" in row[1]]
+        margin = [t for t in stage3 if "계약전력을 하향할 경우" in t and t.startswith("⚠")]
+        assert margin == [f"⚠ **{MARGIN_NOTICE}**"], margin
+    elif item == "#16":
+        column = list(measure[0]).index("회수기간")
+        row = next(r for r in measure if r[2].startswith("계약전력 조정"))
+        assert (row[3:5], row[column]) == (("0", "없음"), "없음"), row
+    elif item == "#17":
+        contract = next(row for row in combo if row[2].endswith("계약전력 조정"))
+        assert contract[list(combo[0]).index("수단")] == "없음", contract
+    elif item == "#18":
+        head = ("Excel", "요약", "요금", "초과사용부가금")
+        excess = [r[-1] for r in rendered.rows if r[:4] == head]
+        assert len(excess) == 1, excess
+        assert excess[0].endswith("(청구 12개월, 분석 기간의 첫 초과 달은 예고)"), excess
+    elif item == "ESS":
+        assert [t for t in screen if t.startswith("6. ESS")], "재료 — ESS 카드가 없다"
+        assert not [t for t in lines if ARBITRAGE_WORDS.search(t)], rendered.key
+    else:
+        pytest.fail(f"모르는 항목 {item}")
+
+
+S254_ITEMS = ["#1", "#2", "#3", "#4", "#5", "#6", "#9", "#11", "#12", "#13", "#16", "#17", "#18"]
+
+
+@pytest.mark.parametrize("item", [*S254_ITEMS, "ESS"])
+def test_문구_판_S254_항목이_실물에_선다(item: str) -> None:
+    """**문구 판 20 항목 · ESS 차익거래 걷기** (S254 사람 결정) — 항목마다 그 항목이 서는 벌.
+
+    `large-b-short` — #2 구간 이름 · #3 선택요금 앵커 · #4 캡션 한 줄(세 산출물 한 글자) ·
+    #5 범례 · #6 그룹 막대 기울임 · 자르기 · #11 합산효과 캡션 · #12 여지 없는 ESS 줄 ·
+    #16 · #17 「없음」 · #18 부가금 줄 · 차익거래 잠재값 글.
+    `small-a2` — #9 쓴 단가만(잔여 0 · 외부 판매 각주는 남는다) ·
+    #13 조합 이름 머리 없는 여유 확보 경고.
+    `small-a-short` — #1 대상인데 미산출인 부가금 칸(`large-a` 에는 없다).
+    """
+    _s254_check(item)
