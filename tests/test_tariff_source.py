@@ -40,7 +40,6 @@ from kwise.tariff import (
 )
 from kwise.tariff.source_excel import (
     CONTRACT_RULES,
-    PDF_ROWS,
     ContractRule,
     TariffSourceError,
     build_payload,
@@ -365,7 +364,8 @@ def test_갑Ⅱ_선택Ⅲ_Ⅳ_는_요금표_PDF_출처_값이고_빌려_쓰는_�
     93세션부터 갑Ⅰ 고압 선택Ⅰ·Ⅱ 행을 그대로 썼다 — 근거가 「지금 값이 같다」
     하나뿐이었다. 이제 넷 칸은 옮겨 적은 파일에서 오고 칸마다 출처와 확인일을 단다.
     """
-    sheet = json.loads(PDF_ROWS.read_text(encoding="utf-8"))
+    rows_file = PROJECT_ROOT / "data" / "kepco_pdf_rows_20260801.json"
+    sheet = json.loads(rows_file.read_text(encoding="utf-8"))
     assert (sheet["source"], sheet["page"]) == ("2026-08-01_전기요금표(종합).pdf", 1)
     assert not [f for f in ContractRule.__dataclass_fields__ if "borrow" in f]
     fresh = build_payload(source_path, effective_date=EFFECTIVE_DATE)
