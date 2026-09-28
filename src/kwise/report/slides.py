@@ -62,6 +62,7 @@ from kwise.report.notices import (
     AMI_BASIS_NOTICE,
     CONTRACT_CHANGE_WARNING,
     NOT_INCLUDED_NOTICE,
+    SETTLED_ROW_NAME,
     TRUNCATION_FOOTNOTE,
     UNPRICED,
     billing_demand_text,
@@ -71,6 +72,8 @@ from kwise.report.notices import (
     max_demand_text,
     plain_text,
     rules_basis_line,
+    settled_composition,
+    settled_row,
 )
 from kwise.report.worksheet import COLUMNS
 from kwise.tariff.labels import SEASON_LABELS, option_label
@@ -1535,7 +1538,12 @@ def _build_structure(
         # 각주가 이미 쓰는 「기본요금 기준전력」 이 두 갈래에서 다 참이고,
         # `columns.py` 의 `base_demand_kw` · `worksheet.py` · 용어집이 함께 쓰는
         # 이름이다 — 새 문구를 짓지 않고 그 이름으로 맞춘다.
-        "월별 요금 구성 — 기본요금은 기준전력으로 매겨져 매달 같습니다.",
+        # **뒷말은 월별 기본요금이 실제로 같을 때만 선다** (S256 고8 ㄱ) — 요금적용전력이
+        # 달마다 움직이는 벌에서 「매달 같습니다」 가 거짓이었다. 막대의 기본요금 조각
+        # (역률 포함 · :func:`~kwise.report.frames.monthly_charge_frame`)으로 가른다.
+        "월별 요금 구성 — 기본요금은 기준전력으로 매겨져 매달 같습니다."
+        if _base_fee_flat(structure)
+        else "월별 요금 구성",
         left=geometry.margin_in,
         top=chart_top,
         width=left_width,
@@ -1553,6 +1561,13 @@ def _build_structure(
         height=height,
     )
     _note(slide, guide, *notes)
+
+
+def _base_fee_flat(structure: ChargeStructure) -> bool:
+    """월별 기본요금(역률 포함 · 원 단위)이 모든 달에 같은가 — 7장 캡션 뒷말 (S256 고8 ㄱ)."""
+    monthly = structure.monthly
+    base = monthly["base_won"] + monthly.get("power_factor_won", 0.0)
+    return len({round(float(value)) for value in base}) <= 1
 
 
 def _build_measure_summary(
@@ -1574,8 +1589,15 @@ def _build_measure_summary(
     top = _title(slide, guide, spec.title)
     diagnosis = sections.diagnosis
     if diagnosis is not None:
-        saving = _won(diagnosis.summary.no_investment_saving_won)
-        top = _lead(slide, guide, narrative.measure_summary_lead(diagnosis, saving), top=top)
+        # 투자비가 없는 수단 전부 — 경제성DR 기간 정산금도 담는다 (S256 고4 · S182 ㄱ ·
+        # 화면 2단계가 DR 을 「투자 0원」 에 두는 것과 같은 잣대).
+        saving = _won(diagnosis.summary.no_investment_saving_won + (sections.dr_period_won or 0.0))
+        top = _lead(
+            slide,
+            guide,
+            narrative.measure_summary_lead(diagnosis, saving, dr_won=sections.dr_period_won),
+            top=top,
+        )
         top = (
             _stats(
                 slide,
@@ -2229,7 +2251,8 @@ def _build_combination(
     _text(
         slide,
         guide,
-        [best.composition(baseline)],
+        # 합산효과가 담는 DR 정산금도 이 조합의 몫이다 (S256 고3 ㄴ).
+        [settled_composition(best, baseline)],
         left=geometry.margin_in,
         top=top + 0.42,
         width=half,
@@ -2250,6 +2273,15 @@ def _build_combination(
         [item.name, _won(item.saving_won), _payback(item.payback_years, item.investment_won)]
         for item in comparison.combinations
     )
+    # 끝 줄이 합산효과와 같다 — 합산효과가 담는 DR 정산금을 이미 쓰는 수단 이름으로 (S256 고3 ㄴ).
+    if (settled := settled_row(comparison)) is not None:
+        rows.append(
+            [
+                SETTLED_ROW_NAME,
+                _won(settled.settled_saving_won),
+                _payback(settled.settled_payback_years, settled.investment_won),
+            ]
+        )
     _table(
         slide,
         guide,

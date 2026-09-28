@@ -33,6 +33,7 @@ from kwise import money
 from kwise.diagnose import ChargeStructure, ImprovementSummary, PeakProfile
 from kwise.diagnose.dr import JUDGE_WINDOW, DrProfile
 from kwise.diagnose.summary import PvPotential
+from kwise.measures.catalog import measure_kind
 from kwise.quality import (
     DEFAULT_NIGHT_HOURS,
     DEFAULT_OPERATING_HOURS,
@@ -804,7 +805,9 @@ _FREE_MEASURE_LABELS: tuple[tuple[str, str], ...] = (
 )
 
 
-def measure_summary_lead(diagnosis: SummarySource, saving_text: str) -> str:
+def measure_summary_lead(
+    diagnosis: SummarySource, saving_text: str, *, dr_won: float | None = None
+) -> str:
     """8장 — **투자 없이 가능한 절감액이 먼저다** (39세션 6-1).
 
     **근거로 드는 수단이 사실과 같아야 한다** (53세션 4-7). 39세션은 「요금제와
@@ -813,16 +816,16 @@ def measure_summary_lead(diagnosis: SummarySource, saving_text: str) -> str:
 
     **0 이거나 미산출인 수단은 근거에서 뺀다.** 여럿이면 절감액 순으로 둘까지만
     적는다 — 셋을 이어 적으면 해석 한 줄이 두 줄로 흐른다.
+
+    ``dr_won`` — 경제성DR 기간 정산금(단가를 넣은 판). 투자비가 없는 수단이라 함께
+    센다 (S256 고4 · S182 ㄱ).
     """
     summary = diagnosis.summary
-    priced = sorted(
-        (
-            (float(getattr(summary, field) or 0.0), label)
-            for field, label in _FREE_MEASURE_LABELS
-            if (getattr(summary, field) or 0.0) > 0
-        ),
-        reverse=True,
-    )
+    amounts = [
+        (float(getattr(summary, field) or 0.0), label) for field, label in _FREE_MEASURE_LABELS
+    ]
+    amounts.append((float(dr_won or 0.0), measure_kind("demand_response").label))
+    priced = sorted(((won, label) for won, label in amounts if won > 0), reverse=True)
     if not priced:
         # **투자 없는 수단이 하나도 절감을 못 내면 문장이 달라야 한다.**
         return (

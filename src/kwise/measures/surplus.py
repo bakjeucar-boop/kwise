@@ -345,13 +345,27 @@ class SurplusResult:
             return ""
         # 기간 말 잔여가 0 이면 SMP 단가를 쓴 자리가 없다 — 쓴 단가만 적는다 (S254 문구 판 #9).
         return applied_price_note(
-            smp_price_won_per_kwh=(
-                self.offset.smp_price_won_per_kwh
-                if self.offset is not None and self.offset.remaining_kwh > 0
-                else None
-            ),
+            smp_price_won_per_kwh=self._used_smp_price,
             external_price_won_per_kwh=self.external_price_won_per_kwh,
         )
+
+    @property
+    def _used_smp_price(self) -> float | None:
+        if self.offset is not None and self.offset.remaining_kwh > 0:
+            return self.offset.smp_price_won_per_kwh
+        return None
+
+    def chosen_price_note(self, scenario: str) -> str:
+        """**고른 처리가 쓴 단가만** 한 줄 — 화면 잉여 처리 · Excel 잉여 줄 (S256 고8 ㄴ).
+
+        상계거래를 골랐으면 외부 판매 단가는 쓴 자리가 없다(S254 #9 를 끝까지). 세 방안을
+        다 싣는 자리(PPT 잉여 장 · Word 부록)는 :attr:`applied_price_note` 그대로다.
+        """
+        if scenario != OFFSET_SCENARIO:
+            return self.applied_price_note
+        if self.total_kwh <= 0:
+            return ""
+        return applied_price_note(smp_price_won_per_kwh=self._used_smp_price)
 
     @property
     def off_day_share(self) -> float | None:

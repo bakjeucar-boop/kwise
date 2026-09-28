@@ -76,6 +76,7 @@ from kwise.report.notices import (
     DATA_SOURCES,
     ESS_NO_EXCESS,
     NOT_INCLUDED_NOTICE,
+    SETTLED_ROW_NAME,
     TARIFF_SWITCH_CAPTION,
     TRUNCATION_FOOTNOTE,
     UNPRICED,
@@ -94,6 +95,8 @@ from kwise.report.notices import (
     format_mwh,
     max_demand_text,
     plain_text,
+    settled_composition,
+    settled_row,
     surplus_split_kwh,
     switch_annual_saving,
     switch_saving,
@@ -394,7 +397,10 @@ def _power_factor_conclusion(result: PowerFactorResult) -> str:
     target = f"{result.target_pct:,.0f}%"
     if result.no_headroom:
         cap = f"{lagging_rebate_cap_pct():,.0f}%"
-        return f"지상역률 {current} 는 감액 상한 {cap} 이상이라 개선할 것이 없습니다."
+        # 현재 역률은 카드 · 안내 · 요약표와 같은 한 자리 소수다 — 99.68 이 「100%」 로
+        # 섰다 (S256 고5 · S233).
+        current_shown = f"{result.current_pct:,.1f}%"
+        return f"지상역률 {current_shown} 는 감액 상한 {cap} 이상이라 개선할 것이 없습니다."
     if result.improvement_pct <= 0:
         return f"지상역률 {current} 에서 목표 {target} 로 올릴 여지가 없습니다."
     if result.is_penalty_removal:
@@ -1031,14 +1037,32 @@ def measure_entries(
         entries["power_factor"] = MeasureEntry(
             kind=measure_kind("power_factor"),
             conclusion=_power_factor_conclusion(power_factor),
-            saving=_measure_saving(power_factor.annual_saving_won, power_factor.saving_won),
+            # 여지가 없으면 절감 「없음」 · 투자비 「—」 · 회수기간 「없음」 — 계약 항목 꼴
+            # (S256 고5 · S237 ㄴ · S238 결정 2).
+            saving=(
+                NO_SAVING
+                if power_factor.no_headroom
+                else _measure_saving(power_factor.annual_saving_won, power_factor.saving_won)
+            ),
             saving_label=_measure_saving_label(
                 power_factor.annual_saving_won, power_factor.saving_won
             ),
-            saving_annual=_annual_saving(power_factor.annual_saving_won, power_factor.saving_won),
+            saving_annual=(
+                NO_SAVING
+                if power_factor.no_headroom
+                else _annual_saving(power_factor.annual_saving_won, power_factor.saving_won)
+            ),
             has_saving=bool(power_factor.saving_won),
-            investment=_won(power_factor.investment_won, reason=NO_INVESTMENT_INPUT),
-            payback=_payback_text(power_factor.payback_years, power_factor.investment_won),
+            investment=(
+                "—"
+                if power_factor.no_headroom
+                else _won(power_factor.investment_won, reason=NO_INVESTMENT_INPUT)
+            ),
+            payback=(
+                NO_SAVING
+                if power_factor.no_headroom
+                else _payback_text(power_factor.payback_years, power_factor.investment_won)
+            ),
             certainty=str(power_factor.certainty),
             cautions=body_lines(power_factor.notices),
             notices=power_factor.notices,
@@ -1116,7 +1140,11 @@ def measure_entries(
             # 화면은 같은 함수에 12개월 값을 넣고 「절감액 = 」 을 떼어 쓴다. 고른
             # 잉여가 없으면 빈 글이라 이름도 안 단다 — 달면 각주가 「기간 · 」 로 선다.
             breakdown = narrative.solar_saving_breakdown(
-                self_consumption_won=solar.self_consumption_saving_won,
+                # 적힌 수끼리 셈이 맞는다 — 적힌 기간 절감액 − 적힌 잉여 (S256 고6 · 절사 A ·
+                # Excel 곡선 고른 줄과 같은 글자).
+                self_consumption_won=money.gap_won(
+                    solar.total_saving_won, solar.surplus_revenue_won
+                ),
                 surplus_scenario=solar.surplus_scenario,
                 surplus_revenue_won=solar.surplus_revenue_won,
             )
@@ -1366,6 +1394,12 @@ class DocumentSections:
     school_notice: str = ""
     """학교 교육용(갑) 고압 안내 (S253 결정 1). 교육시설일 때만 차고 **Word 선택요금 전환
     절만 싣는다** — PPT 는 안 읽는다."""
+    power_factor_billed: bool = False
+    """1단계 「역률 (선택)」 을 넣었는가 — 넣었으면 「역률은 추정값」 한계를 싣지 않는다
+    (S256 고2)."""
+    dr_period_won: float | None = None
+    """경제성DR 기간 정산금 (단가를 넣은 판) — PPT 8장 「투자 없이」 가 담는다
+    (S256 고4 · S182 ㄱ)."""
 
     @property
     def prepared(self) -> dt.date:
@@ -1409,7 +1443,7 @@ class DocumentSections:
             worksheets=self.worksheets,
             grounds=grounds,
             cases=self.ess_cases,
-            limits=known_limits(*groups),
+            limits=known_limits(*groups, power_factor_billed=self.power_factor_billed),
             assumptions_rows=reference_rows(self.tariff_table),
         )
 
@@ -1590,7 +1624,10 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
     comparison = sections.comparison
     best = comparison.best if comparison is not None else None
     if comparison is not None and best is not None:
-        rows.append(["권장 조합", best.name])
+        # 기간 총 절감액이 DR 정산금을 담으면 이름도 조합 표 끝 줄이다 (S256 고3 ㄴ).
+        rows.append(
+            ["권장 조합", SETTLED_ROW_NAME if best.dr_period_won is not None else best.name]
+        )
         rows.append(
             ["기간 총 절감액", _won(_settled_saving(comparison, best, sections.peer_savings))]
         )
@@ -1856,7 +1893,7 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
     baseline = comparison.combinations[0].selection if comparison.combinations else None
     _conclusion(
         document,
-        f"권장안은 「{best.composition(baseline)}」 입니다. "
+        f"권장안은 「{settled_composition(best, baseline)}」 입니다. "
         f"기간에 {_won(_settled_saving(comparison, best, sections.peer_savings))} 를 줄이고 "
         f"투자비는 {_combination_investment(best)}, 회수기간은 "
         f"{_payback_text(best.settled_payback_years, best.investment_won)} 입니다.",
@@ -1872,6 +1909,17 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
                 _won(combination_saving(comparison, item, sections.peer_savings)),
                 _combination_investment(item),
                 _payback_text(item.payback_years, item.investment_won),
+            ]
+        )
+    # 합산효과가 담는 DR 정산금을 끝 줄로 — 그 줄이 기간 총 절감액과 같다 (S256 고3 ㄴ).
+    if (settled := settled_row(comparison)) is not None:
+        rows.append(
+            [
+                SETTLED_ROW_NAME,
+                "—",
+                _won(_settled_saving(comparison, settled, sections.peer_savings)),
+                _combination_investment(settled),
+                _payback_text(settled.settled_payback_years, settled.investment_won),
             ]
         )
     _add_table(document, rows)

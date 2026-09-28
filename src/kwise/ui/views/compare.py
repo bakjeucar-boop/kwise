@@ -1294,6 +1294,10 @@ def _download_block(
     )
     # 연면적은 Excel 요약에만 한 줄로 선다 (S252 결정 9) — 갈면 Excel 파일도 갈린다.
     area = building.floor_area_m2 if building else None
+    # 1단계 「역률 (선택)」 을 넣었으면 「역률은 추정값」 한계를 안 싣는다 (S256 고2) — 폼은
+    # 토큰이 이미 문다.
+    form = get_form()
+    billed = form is not None and form.power_factor_pct is not None
     excel_tab, deck_tab = st.tabs(["Excel — 분석자용", "PPT 보고서 — 의사결정자용"])
 
     with excel_tab:
@@ -1320,6 +1324,7 @@ def _download_block(
                 solar=results.solar,
                 peer_savings=results.peer_savings(),
                 floor_area_m2=area,
+                power_factor_billed=billed,
             )
             _build(
                 lambda: build_report_bytes(sections, session_id=session_id()),
@@ -1395,6 +1400,13 @@ def _download_block(
                     SCHOOL_HIGH_VOLTAGE_NOTICE
                     if building is not None and building.education
                     else ""
+                ),
+                power_factor_billed=billed,
+                # PPT 8장 「투자 없이」 가 담는 DR 기간 정산금 (S256 고4).
+                dr_period_won=(
+                    results.demand_response.period_settlement_won
+                    if results.demand_response is not None
+                    else None
                 ),
             )
             _build(

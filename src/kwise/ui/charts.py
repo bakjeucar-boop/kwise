@@ -63,6 +63,7 @@ from kwise.report.frames import (
     tariff_parts,
     temperature_mean_frame,
     top_hour_frame,
+    triangle_label,
 )
 
 __all__ = [
@@ -929,8 +930,12 @@ def dr_daily_chart(profile: DrProfile) -> alt.LayerChart | alt.FacetChart:
     깔고 저부하 평일에 표식을 찍으면 그 사실이 그림 하나로 읽힌다.
     """
     frame = dr_daily_frame(profile)
+    # 툴팁은 참 · 거짓을 「예 · 아니오」 로 적는다 (S256 고9 ㅂ) — 표식 층은 참 · 거짓으로 거른다.
+    shown = frame.assign(
+        **{"저부하 평일 표기": frame["저부하 평일"].map({True: "예", False: "아니오"})}
+    )
     points = (
-        alt.Chart(frame)
+        alt.Chart(shown)
         .mark_circle(size=26, opacity=0.75)
         .encode(
             x=alt.X("날짜:T", title="날짜", axis=date_axis()),
@@ -945,7 +950,7 @@ def dr_daily_chart(profile: DrProfile) -> alt.LayerChart | alt.FacetChart:
                 date_tooltip(),
                 "구분",
                 alt.Tooltip(f"{DR_WINDOW_MEAN}:Q", format=",.0f"),
-                "저부하 평일",
+                alt.Tooltip("저부하 평일 표기:N", title="저부하 평일"),
             ],
         )
     )
@@ -1047,10 +1052,7 @@ def power_triangle_chart(result: PowerFactorResult) -> alt.LayerChart:
     # **각도와 역률을 도형 옆에 직접 적는다** (17세션 2절). 범례에 기대면 값을
     # 바꿔 보는 동안 어느 선이 어느 쪽인지 매번 다시 찾아야 한다.
     marked = frame.assign(
-        설명=[
-            f"{row['구분']} — 역률 {row['역률(%)']:.1f}% · {row['각도(도)']:.1f}°"
-            for _, row in frame.iterrows()
-        ],
+        설명=[triangle_label(row) for _, row in frame.iterrows()],
         각도라벨=[
             f"{row['각도(도)']:.1f}°" if square else FLAT_TRIANGLE_LABEL
             for _, row in frame.iterrows()

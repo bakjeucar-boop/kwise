@@ -78,6 +78,7 @@ from kwise.report.frames import (
     tariff_parts,
     temperature_mean_frame,
     top_hour_frame,
+    triangle_label,
 )
 from kwise.report.notices import billing_demand_text, format_mwh
 
@@ -770,7 +771,7 @@ def power_triangle_png(result: PowerFactorResult) -> bytes:
             [0.0, 0.0, row["무효전력"], 0.0],
             color=color,
             linewidth=1.8,
-            label=f"{row['구분']} — 역률 {row['역률(%)']:.0f}% · {row['각도(도)']:.0f}°",
+            label=triangle_label(row),
         )
     axes.set_xlabel("유효전력 (기준 1)")
     axes.set_ylabel("무효전력")

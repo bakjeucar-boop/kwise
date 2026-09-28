@@ -17,17 +17,20 @@ if TYPE_CHECKING:
     from kwise.measures.solar import SolarPoint
     from kwise.measures.tariff_switch import TariffSwitchResult
     from kwise.notices import Notice
+    from kwise.tariff import TariffSelection
 
 __all__ = [
     "AMI_BASIS_NOTICE",
     "CONTRACT_CHANGE_WARNING",
     "DATA_SOURCES",
+    "ESTIMATED_POWER_FACTOR_FACTS",
     "KNOWN_LIMITS",
     "LIMIT_FACTS",
     "LIMIT_YIELDS",
     "NOT_INCLUDED_NOTICE",
     "RULES_UNCHANGED",
     "SCHOOL_HIGH_VOLTAGE_NOTICE",
+    "SETTLED_ROW_NAME",
     "TARIFF_SWITCH_CAPTION",
     "TENTATIVE_BASE_FEE_BASIS_WARNING",
     "TRUNCATION_FOOTNOTE",
@@ -50,10 +53,13 @@ __all__ = [
     "excess_not_measured_line",
     "format_mwh",
     "format_won",
+    "known_limit_lines",
     "max_demand_text",
     "plain_text",
     "power_factor_charges",
     "rules_basis_line",
+    "settled_composition",
+    "settled_row",
     "solar_lines",
     "standalone_savings",
     "surplus_kwh_text",
@@ -70,6 +76,7 @@ __all__ = [
 # 에서 바로 들여왔다. 한 파일 안에서 같은 갈래가 두 문으로 들어오면 다음 사람이
 # 셋째를 붙일 때 문을 아무 데나 고른다.
 from kwise import money
+from kwise.measures.catalog import measure_kind
 from kwise.money import TRUNCATION_FOOTNOTE
 from kwise.rules import diff_from_defaults
 from kwise.tariff import (
@@ -193,6 +200,21 @@ LIMIT_FACTS: dict[str, str] = {
 }
 #: 짝 가운데 **안내 쪽 글자를 남기는** 사실.
 LIMIT_YIELDS: frozenset[str] = frozenset({"tariff.not_included"})
+
+#: 「역률은 추정값」 을 말하는 사실 — 청구서 역률을 넣은 판에는 세우지 않는다 (S256 고2).
+ESTIMATED_POWER_FACTOR_FACTS: frozenset[str] = frozenset(
+    {"solar.power_factor_estimated", "power_factor.estimated_only"}
+)
+
+
+def known_limit_lines(*, power_factor_billed: bool = False) -> tuple[str, ...]:
+    """알려진 한계 목록 — 청구서 역률을 넣었으면 역률 추정 한 줄을 뺀다 (S256 고2)."""
+    return tuple(
+        line
+        for line in KNOWN_LIMITS
+        if not (power_factor_billed and LIMIT_FACTS.get(line) in ESTIMATED_POWER_FACTOR_FACTS)
+    )
+
 
 # 출처 표기 (요구사항서 7.5). 산출물과 README 에 그대로 싣는다.
 DATA_SOURCES: tuple[str, ...] = (
@@ -479,6 +501,28 @@ def combination_saving(
         if abs(item.saving_won - raw) < 1:
             return shown
     return money.gap_won(comparison.baseline.total_won, item.total_won)
+
+
+#: 조합 표 끝 줄 이름 — 합산효과가 담는 경제성DR 정산금 (S256 고3 ㄴ · 이미 쓰는 수단 이름).
+SETTLED_ROW_NAME = f"+ {measure_kind('demand_response').label}"
+
+
+def settled_row(comparison: ComparisonResult) -> CombinationResult | None:
+    """조합 표 끝에 「+ 경제성DR」 줄을 세울 조합 — 마지막 조합이 DR 정산금을 담으면 그것.
+
+    그 줄의 기간 · 12개월 · 회수기간은 합산효과와 같은 값이다(:attr:`settled_saving_won` ·
+    :attr:`settled_payback_years` · S244 결정 4 · S246). 단가가 없으면 줄이 없다.
+    """
+    last = comparison.combinations[-1] if comparison.combinations else None
+    return last if last is not None and last.dr_period_won is not None else None
+
+
+def settled_composition(item: CombinationResult, baseline: TariffSelection | None) -> str:
+    """「가장 유리한 조합」 · 권장안 구성 — DR 정산금을 담으면 경제성DR 도 적는다 (S256 고3 ㄴ)."""
+    text = item.composition(baseline)
+    if item.dr_period_won is None:
+        return text
+    return f"{text} + {measure_kind('demand_response').label}"
 
 
 def combination_annual_saving(

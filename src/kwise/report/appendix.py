@@ -24,7 +24,12 @@ import pandas as pd
 from kwise.notices import Notice, report_appendix
 from kwise.progress import STAGES
 from kwise.report.columns import VALUE_LABELS
-from kwise.report.notices import KNOWN_LIMITS, LIMIT_FACTS, LIMIT_YIELDS
+from kwise.report.notices import (
+    ESTIMATED_POWER_FACTOR_FACTS,
+    LIMIT_FACTS,
+    LIMIT_YIELDS,
+    known_limit_lines,
+)
 from kwise.report.worksheet import COLUMNS, Worksheet
 from kwise.rules import RuleItem, assumptions, rules
 from kwise.tariff import TariffTable
@@ -102,8 +107,22 @@ def reference_rows(table: TariffTable | None = None) -> tuple[tuple[str, ...], .
     for key in rules().item_keys():
         add("법령 유래", rules()[key])
     for key in assumptions().item_keys():
-        add("판단값", assumptions()[key])
+        if key not in TOOL_SETTINGS:
+            add("판단값", assumptions()[key])
     return tuple(rows)
+
+
+#: 계산값 · 산출물 글자에 닿지 않는 도구 내부 설정 — 부록 B 에 싣지 않는다 (S256 고9 ㄹ).
+#: 기준 데이터 파일과 기준 데이터 화면에는 그대로 있다.
+TOOL_SETTINGS: frozenset[str] = frozenset(
+    {
+        "progress.slow_stage_seconds",
+        "progress.total_seconds",
+        "progress.weights",
+        "ui.body_line_budget",
+        "ui.notice_budget",
+    }
+)
 
 
 #: 부록 B 값 칸 사전 열쇠의 이름 — **이미 있는 이름이다** (S243 · 결정 2): 계절 · 시간대 ·
@@ -153,7 +172,9 @@ def basis_data_frame(table: TariffTable | None = None) -> pd.DataFrame:
     )
 
 
-def known_limits(*notices: tuple[Notice, ...]) -> tuple[str, ...]:
+def known_limits(
+    *notices: tuple[Notice, ...], power_factor_billed: bool = False
+) -> tuple[str, ...]:
     """부록 C — 알려진 한계 + **참고 등급 문구** (5.5절에서 옮겼다).
 
     **같은 사실을 두 번 싣지 않는다** (S240 결정 3). 한계 글에 단 사실 ID
@@ -162,8 +183,15 @@ def known_limits(*notices: tuple[Notice, ...]) -> tuple[str, ...]:
     안내의 글자(앞머리 없는 글)를 싣는다 — Word 는 조합 안내를 먼저 넘겨 앞머리 붙은
     글이 먼저 선다. 짝 가운데 안내 쪽 글자를 남기는 사실
     (:data:`~kwise.report.notices.LIMIT_YIELDS`)은 한계 글 자리에 그 글자를 싣는다.
+
+    ``power_factor_billed`` — 청구서 역률을 넣었으면 「역률은 추정값」 을 말하는 한계 글과
+    안내를 싣지 않는다 (S256 고2).
     """
-    appendix = report_appendix(*notices)
+    appendix = tuple(
+        item
+        for item in report_appendix(*notices)
+        if not (power_factor_billed and item.fact_base in ESTIMATED_POWER_FACTOR_FACTS)
+    )
     first: dict[str, Notice] = {}
     for item in appendix:
         held = first.get(item.fact_base)
@@ -171,7 +199,7 @@ def known_limits(*notices: tuple[Notice, ...]) -> tuple[str, ...]:
             first[item.fact_base] = item
     out: list[str] = []
     seen: set[str] = set()
-    for line in KNOWN_LIMITS:
+    for line in known_limit_lines(power_factor_billed=power_factor_billed):
         fact = LIMIT_FACTS.get(line)
         if fact is not None:
             seen.add(fact)

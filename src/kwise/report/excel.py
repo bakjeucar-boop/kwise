@@ -73,8 +73,8 @@ from kwise.report.notices import (
     AMI_BASIS_NOTICE,
     CONTRACT_CHANGE_WARNING,
     DATA_SOURCES,
-    KNOWN_LIMITS,
     NOT_INCLUDED_NOTICE,
+    SETTLED_ROW_NAME,
     TRUNCATION_FOOTNOTE,
     UNPRICED,
     UNPRICED_REASONS,
@@ -90,9 +90,11 @@ from kwise.report.notices import (
     ess_unpriced_reason,
     format_mwh,
     format_won,
+    known_limit_lines,
     max_demand_text,
     power_factor_charges,
     rules_basis_line,
+    settled_row,
     solar_lines,
     surplus_kwh_text,
     switch_annual_saving,
@@ -301,6 +303,9 @@ class ReportSections:
     """단독 수단의 기간 절감 (원값, 표기 값) — 조합이 원값이 같으면 그 글자다 (S234 ㄴ)."""
     floor_area_m2: float | None = None
     """옆단 「연면적」. 넣은 벌만 요약 「데이터」 에 입력값 한 줄 (S252 결정 9 · 사람 결정)."""
+    power_factor_billed: bool = False
+    """1단계 「역률 (선택)」 을 넣었는가 — 넣었으면 「역률은 추정값」 한계를 싣지 않는다
+    (S256 고2)."""
 
 
 def _fact_key(item: Notice) -> tuple[str, str, str]:
@@ -363,8 +368,13 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
             (
                 "데이터",
                 "총 사용량",
-                f"{format_mwh(usage.total_kwh)} (그리드 이탈 "
-                f"{usage.meta.off_grid_kwh:,.2f} kWh 포함)",
+                # 이탈분이 0 이면 괄호를 세우지 않는다 (S256 고9 ㅂ).
+                format_mwh(usage.total_kwh)
+                + (
+                    f" (그리드 이탈 {usage.meta.off_grid_kwh:,.2f} kWh 포함)"
+                    if round(usage.meta.off_grid_kwh, 2)
+                    else ""
+                ),
             ),
             ("데이터", "최대수요", max_demand_text(usage.meta.max_demand_kw)),
             (
@@ -465,7 +475,8 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
     # 정했다) — 안내 블록에 한 줄, 글은 화면 · PPT 와 한 상수.
     rows.append(("산정 자료", "안내", AMI_BASIS_NOTICE))
     rows.append(("계약전력 변경 경고", "필수 안내", CONTRACT_CHANGE_WARNING))  # 9.4
-    for number, limit in enumerate(KNOWN_LIMITS, start=1):  # 부록 D
+    limits = known_limit_lines(power_factor_billed=sections.power_factor_billed)
+    for number, limit in enumerate(limits, start=1):  # 부록 D
         rows.append(("알려진 한계", f"{number}", limit))
     for source in DATA_SOURCES:  # 출처 표기 (7.5)
         rows.append(("데이터 출처", "", source))
@@ -536,9 +547,15 @@ def measure_summary_frame(
                 # 코드 열쇠가 그대로 나갔다** (S156 3-3). 전환은 **현행 종별·
                 # 전압 안에서만** 고르므로(`evaluate_tariff_switch`) 양쪽에서
                 # 갈리는 것은 선택요금 하나다 — 그것만 이름으로 적는다.
+                # 바뀌지 않으면 화면 · PPT 의 「유지」 글자다 — 계약 줄 「(290 kW 유지)」 꼴
+                # (S256 고9 ㄷ).
                 "수단": (
-                    f"선택요금 전환 ({option_label(switch.current.selection.option)} → "
-                    f"{option_label(switch.best.selection.option)})"
+                    f"선택요금 전환 ({option_label(switch.current.selection.option)} 유지)"
+                    if switch.current.selection.option == switch.best.selection.option
+                    else (
+                        f"선택요금 전환 ({option_label(switch.current.selection.option)} → "
+                        f"{option_label(switch.best.selection.option)})"
+                    )
                 ),
                 "투자비(원)": format_won(0.0),
                 # 적힌 두 합계의 차 (S233 ㄴ) · 환산은 같은 값이면 같은 글자.
@@ -590,10 +607,15 @@ def measure_summary_frame(
             {
                 "수단": f"경제성DR (등록 {demand_response.registered_capacity_kw:,.0f} kW)",
                 "투자비(원)": format_won(0.0),
-                # **정산금은 12개월 환산값이라 기간 칸에 싣지 않는다** (S219) —
-                # 12개월 칸에만 선다. 빈 칸은 이 표의 꼴(「—」)을 따른다.
-                "기간 절감액(원)": format_won(None, reason="—"),
-                "12개월 환산(원)": demand_response.settlement_label,
+                # **기간 칸은 기간 정산금이다** (S246 결정 1 · S256 고7) — 관측 기간 감축
+                # 가능량 × 단가. 두 칸 다 이 표의 다른 줄처럼 천 원 절사다. 단가가 없으면
+                # 기간 칸은 이 표의 빈 꼴(「—」) · 12개월 칸은 사유 그대로다.
+                "기간 절감액(원)": format_won(demand_response.period_settlement_won, reason="—"),
+                "12개월 환산(원)": (
+                    format_won(demand_response.settlement_won)
+                    if demand_response.is_priced
+                    else demand_response.settlement_label
+                ),
                 "회수기간": payback_label(
                     payback_years(0.0, demand_response.settlement_won or 0.0), 0.0
                 ),
@@ -624,11 +646,25 @@ def measure_summary_frame(
                         f"({power_factor.current_pct:.1f} → {power_factor.target_pct:.1f}%)"
                     )
                 ),
-                "투자비(원)": format_won(power_factor.investment_won, reason=NO_INVESTMENT_INPUT),
-                "기간 절감액(원)": format_won(power_factor.saving_won),
-                "12개월 환산(원)": format_won(power_factor.annual_saving_won),
-                "회수기간": payback_label(
-                    power_factor.payback_years, power_factor.investment_won
+                # 여지가 없으면 절감 「없음」 · 투자비 「—」 · 회수기간 「없음」 (S256 고5 ·
+                # S237 ㄴ · S238 결정 2) — 계약 줄의 「없음」 꼴이다.
+                "투자비(원)": (
+                    "—"
+                    if power_factor.no_headroom
+                    else format_won(power_factor.investment_won, reason=NO_INVESTMENT_INPUT)
+                ),
+                "기간 절감액(원)": (
+                    NO_SAVING if power_factor.no_headroom else format_won(power_factor.saving_won)
+                ),
+                "12개월 환산(원)": (
+                    NO_SAVING
+                    if power_factor.no_headroom
+                    else format_won(power_factor.annual_saving_won)
+                ),
+                "회수기간": (
+                    NO_SAVING
+                    if power_factor.no_headroom
+                    else payback_label(power_factor.payback_years, power_factor.investment_won)
                 ),
                 # **상한 이상이면 투입 제어를 권하지 않는다** (S206 2-2). 끝
                 # 문장은 **설비를 들이는 쪽에 주는 권고**인데 상한 이상에서는
@@ -718,7 +754,8 @@ def measure_summary_frame(
                             if is_offset and offset is not None
                             else scenario.admin_burden
                         )
-                        + (f" {surplus.applied_price_note}" if surplus.applied_price_note else "")
+                        # 고른 처리가 쓴 단가만 (S256 고8 ㄴ · 화면 잉여 처리와 한 자리).
+                        + (f" {note}" if (note := surplus.chosen_price_note(scenario.name)) else "")
                     ),
                 }
             )
@@ -754,7 +791,8 @@ def measure_summary_frame(
     elif unpriced := ess_unpriced_reason(ess_optimum, ess_curve):
         rows.append(
             {
-                "수단": measure_kind("ess").title,
+                # 다른 줄과 같은 꼴 — 절 번호를 뗀 이름 (S256 고9 ㄱ).
+                "수단": measure_kind("ess").label,
                 "투자비(원)": f"{UNPRICED} — 사양 미정",
                 "기간 절감액(원)": unpriced,
                 "12개월 환산(원)": unpriced,
@@ -766,7 +804,7 @@ def measure_summary_frame(
         # 초과 구간이 없어 곡선이 안 섰다 — 깎을 몫이 없다 (S246 결정 3 · S205 · S237 ㄴ 꼴).
         rows.append(
             {
-                "수단": measure_kind("ess").title,
+                "수단": measure_kind("ess").label,
                 "투자비(원)": "—",
                 "기간 절감액(원)": NO_SAVING,
                 "12개월 환산(원)": NO_SAVING,
@@ -798,6 +836,14 @@ def solar_curve_sheet(curve: SolarCurve, chosen: SolarPoint | None = None) -> pd
         same = chosen is not None and abs(point.capacity_kwp - chosen.capacity_kwp) < 1e-9
         return solar_lines(chosen if same and chosen is not None else point)
 
+    def self_saving(point: SolarPoint) -> tuple[float, float | None]:
+        """(기간 자가소비 절감액, 12개월 환산) — 고른 줄은 **적힌 수끼리 셈이 맞는다** (S256 고6 ·
+        절사 A): 적힌 기간 절감액 − 적힌 잉여 = 계산 근거 · PPT 각주와 같은 글자."""
+        if chosen is None or abs(point.capacity_kwp - chosen.capacity_kwp) >= 1e-9:
+            return point.total_saving_won, point.annual_saving_won
+        shown = money.truncate_won(chosen.total_saving_won) - lines(point)[4]
+        return shown, money.same_won(point.annual_saving_won, point.total_saving_won, shown)
+
     # **총 절감액에 든 몫을 다 열로 세운다** (S243 · 결정 1 · S159 가 남긴 자리) — 기본 ·
     # 전력량 둘만 적어 역률 · 초과사용부가금 몫만큼 한 줄 안에서 합이 안 맞았다(덱 5벌 73줄).
     # 이름은 계산 근거 표 · 요금 계산 명세와 같다. 몫이 한 줄에도 안 서는 벌은 열을 안 세운다.
@@ -824,8 +870,10 @@ def solar_curve_sheet(curve: SolarCurve, chosen: SolarPoint | None = None) -> pd
             "기간 기본요금 절감(원)": lines(point)[0],
             "기간 전력량요금 절감(원)": lines(point)[1],
             **{name: values[index] for name, values in shares.items() if any(values)},
-            "기간 총 절감액(원)": point.total_saving_won,
-            "12개월 환산(원)": point.annual_saving_won,
+            # 잉여를 뺀 값이라 화면 「자가소비 절감액」 과 같은 이름이다 — 기간 꼴 (S159 ·
+            # S256 고9 ㄴ).
+            "기간 자가소비 절감액(원)": self_saving(point)[0],
+            "12개월 환산(원)": self_saving(point)[1],
             "투자비(원)": point.investment_won,
             "회수기간(년)": point.payback_years,
             "도입 후 역률(%)": point.power_factor_after_pct,
@@ -1096,6 +1144,23 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
             NO_SAVING if value == "—" and item.spec.contract_kw is not None else value
             for item, value in zip(comparison.combinations, frame["수단"], strict=True)
         ]
+        # **합산효과를 PPT · Word 와 같은 값으로 싣는다** (S256 고3 ㄴ · ㄷ) — 이미 있는 줄
+        # 꼴로 끝에 「+ 경제성DR」 한 줄: 적힌 마지막 조합 절감 + DR 정산금(기간 · 12개월 ·
+        # S246) · 회수기간은 합산효과 회수기간. 요금 · 요금적용전력은 요금이 아니라 「—」.
+        if (settled := settled_row(comparison)) is not None:
+            frame.loc[SETTLED_ROW_NAME] = pd.Series(
+                {
+                    "요금제": "—",
+                    "수단": measure_kind("demand_response").label,
+                    bill: "—",
+                    "기간 절감액(원)": saving[-1] + (settled.dr_period_won or 0.0),
+                    annual: combination_annual_saving(comparison, settled, peers)
+                    + (settled.dr_annual_won or 0.0),
+                    "투자비(원)": settled.investment_won,
+                    "회수기간(년)": settled.settled_payback_years,
+                    "요금적용전력(kW)": "—",
+                }
+            )
         sheets["조합 비교"] = frame
     # **부록 셋** — Word 와 같은 재료를 쓴다 (22세션 3절).
     if sections.worksheets:
@@ -1106,7 +1171,9 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
         groups.append(sections.diagnosis.notices)
     if sections.comparison is not None:
         groups.append(sections.comparison.notices)
-    sheets["부록 C 한계와 전제"] = pd.DataFrame({"항목": list(known_limits(*groups))})
+    sheets["부록 C 한계와 전제"] = pd.DataFrame(
+        {"항목": list(known_limits(*groups, power_factor_billed=sections.power_factor_billed))}
+    )
     if sections.sensitivity is not None:
         # **범위로 보여 준다.** 3열 나열은 근거표(감도 상세)로 내린다 (9.2).
         if "첨예도 s" in sections.sensitivity.columns:

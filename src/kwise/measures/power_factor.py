@@ -143,12 +143,15 @@ def evaluate_power_factor(
     baseline: BillingResult | None = None,
     quality: QualityReport | None = None,
     options: BillingOptions | None = None,
+    billed: bool = False,
 ) -> PowerFactorResult:
     """역률 개선 설비 조정으로 역률을 올렸을 때의 절감액을 **재계산해서** 낸다.
 
     Args:
         current_pct: 현재 주간(08~22시) 지상역률. 기본값 92% 는 약관 제42조의
             무효전력계 미설치 간주값이며, 이 값에서는 추가·감액이 0 이다.
+        billed: 현재 역률이 청구서 값(1단계 「역률 (선택)」)인가. 참이면 「추정값」
+            주의를 세우지 않는다 (S256 고2).
         target_pct: 목표 역률. 기본값 97% 는 감액 상한이다 — 더 올려도 요금은
             내려가지 않으므로 과보상만 남는다. **현재보다 낮은 값도 받는다** —
             거절하지 않고 늘어나는 요금을 낸다 (25세션 1절).
@@ -224,14 +227,16 @@ def evaluate_power_factor(
             )
         )
     # **주의** — 추정값이라는 사실은 금액을 그대로 믿으면 안 된다는 뜻이다.
-    notices.append(
-        warn(
-            "무효전력 실측이 없어 현재 역률은 추정값입니다 (한전 기본공급약관 제42조는 "
-            "30분 누적 계량을 요구합니다). 청구서의 역률 항목을 1단계 「역률 (선택)」 "
-            "에 넣으면 그 값으로 다시 계산합니다.",
-            fact="power_factor.estimated_only",
+    # 청구서 역률을 넣었으면 추정이 아니라 세우지 않는다 (S256 고2).
+    if not billed:
+        notices.append(
+            warn(
+                "무효전력 실측이 없어 현재 역률은 추정값입니다 (한전 기본공급약관 제42조는 "
+                "30분 누적 계량을 요구합니다). 청구서의 역률 항목을 1단계 「역률 (선택)」 "
+                "에 넣으면 그 값으로 다시 계산합니다.",
+                fact="power_factor.estimated_only",
+            )
         )
-    )
     notices += [
         # **근거** — 어느 기준·어느 창에서 나온 값인가.
         # 여지가 없으면 「→ 목표」 를 세우지 않는다 — 두 역률이 다 상한으로 접혀 가는 곳이 없다

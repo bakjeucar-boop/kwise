@@ -192,7 +192,8 @@ def evaluate_tariff_switch(
             fact="tariff_switch.no_sensitivity",
         ),
         info(
-            "설비 도입과 무관하게 나오는 절감액입니다. 투자가 필요하지 않습니다.",
+            # 부록 C 에서 주어를 잃지 않게 수단 이름을 앞에 둔다 (S256 고9 ㅁ).
+            "선택요금 전환은 설비 도입과 무관하게 나오는 절감액입니다. 투자가 필요하지 않습니다.",
             fact="tariff_switch.no_investment",
         ),
     ]

@@ -732,8 +732,12 @@ def _power_factor(
         SAVING_LABEL,
         NO_SAVING if result.no_headroom else fmt.won_short(result.annual_saving_won),
     )
+    # 여지가 없으면 회수기간도 같은 말이다 (S256 고5 · S238 결정 2).
     columns[3].metric(
-        "회수기간", fmt.payback(result.payback_years, investment_won=result.investment_won)
+        "회수기간",
+        NO_SAVING
+        if result.no_headroom
+        else fmt.payback(result.payback_years, investment_won=result.investment_won),
     )
     # **각이 좁아지는 모습**이 개선의 전부다 (15세션 2-3).
     triangle_col, day_col = st.columns(2)
@@ -1365,9 +1369,10 @@ def _surplus_handling(
         # **어느 단가로 나온 금액인가** (58세션). 기본값이 생겨 「미산출」 이
         # 사라졌으므로 이 줄이 없으면 참고값이 확정값으로 읽힌다. 문구는
         # :meth:`SurplusResult.applied_price_note` 하나이고 PPT·Excel·Word 가
-        # 같은 것을 쓴다.
-        if result.applied_price_note:
-            st.caption(fmt.markdown_safe(result.applied_price_note))
+        # 같은 것을 쓴다. 고른 처리가 쓴 단가만 적는다 — 상계거래를 골랐으면 외부
+        # 판매 단가는 안 적는다 (S256 고8 ㄴ · Excel 잉여 줄과 한 자리).
+        if note := result.chosen_price_note(choice):
+            st.caption(fmt.markdown_safe(note))
         # **잉여가 주말에 몰리는지**가 보여야 한다 (15세션 2-6). 7.7 카드가 지고
         # 있던 그림인데, 41세션에 카드를 없애면서 여기로 옮겼다 — 무엇을 팔지
         # 정하는 자리라 오히려 제자리다. 접힘 안이므로 본문 예산에 들지 않는다.

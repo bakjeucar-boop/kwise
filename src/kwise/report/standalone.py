@@ -191,6 +191,8 @@ def standalone_rows(
                 certainty=contract.certainty,
                 saving_reason=contract.saving_basis,
                 zero_reason=NO_SAVING if contract.no_saving else "",
+                # 낮출 몫이 없는 줄은 회수기간도 같은 말이다 (S254 #16 을 화면에도 · S256 고9 ㄷ).
+                payback_reason=NO_SAVING if contract.no_saving else "",
             )
         )
     if demand_response is not None:
@@ -216,10 +218,14 @@ def standalone_rows(
                     else f"{power_factor.current_pct:,.1f}% → {power_factor.target_pct:,.1f}% 개선"
                 ),
                 annual_saving_won=power_factor.annual_saving_won,
-                investment_won=power_factor.investment_won,
+                # 여지가 없으면 투자 대상이 아니다 — 절감 「없음」 · 투자비 「—」 · 회수기간
+                # 「없음」 (S256 고5 · S237 ㄴ · S238 결정 2).
+                investment_won=None if power_factor.no_headroom else power_factor.investment_won,
                 payback_years=power_factor.payback_years,
                 certainty=power_factor.certainty,
-                investment_reason=NO_INVESTMENT_INPUT,
+                zero_reason=NO_SAVING if power_factor.no_headroom else "",
+                investment_reason="—" if power_factor.no_headroom else NO_INVESTMENT_INPUT,
+                payback_reason=NO_SAVING if power_factor.no_headroom else "",
             )
         )
     if solar is not None:

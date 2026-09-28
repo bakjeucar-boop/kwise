@@ -154,23 +154,18 @@ class DemandResponseResult:
         return self.settlement_won is not None
 
     @property
+    def period_settlement_won(self) -> float | None:
+        """기간 정산금 — 관측 기간 감축 가능량 × 단가 (S246 결정 1 의 식 · S256 고4 · 고7)."""
+        if self.unit_price_won_per_kwh is None:
+            return None
+        return self.period_reducible_kwh * self.unit_price_won_per_kwh
+
+    @property
     def settlement_label(self) -> str:
         """금액 또는 사유. **빈칸으로 두지 않는다.**"""
         if self.settlement_won is None:
             return UNPRICED_REASON
         return f"{self.settlement_won:,.0f}"
-
-
-def _object_particle(word: str) -> str:
-    """목적격 조사 ``을``/``를``. **받침이 있으면 을이다.**
-
-    문구를 조립하면 조사가 어긋난다 — 「위약금 리스크을」 이 그랬다. 한글 음절은
-    ``(코드 - 0xAC00) % 28`` 이 0 이 아니면 종성이 있다.
-    """
-    last = word.strip()[-1:] if word.strip() else ""
-    if not last or not ("가" <= last <= "힣"):
-        return "를"
-    return "을" if (ord(last) - 0xAC00) % 28 else "를"
 
 
 def evaluate_demand_response(
@@ -274,38 +269,27 @@ def evaluate_demand_response(
         # 이것을 주의로 직접 그리면서 확인사항 넷 가운데 하나를 차지하고 있었다.
         basis(profile.notice, fact="dr.participation"),
     ]
-    # **차단은 한 줄이다** (22세션 1절). 단가 둘이 다 없으면 같은 말을 두 번 하는
-    # 셈이라 확인사항 예산을 둘이나 먹었다. 어느 쪽이 비었는지는 문구가 밝힌다.
-    missing = tuple(
-        (name, outcome)
-        for name, outcome, value in (
-            ("정산 단가", "금액", unit_price_won_per_kwh),
-            (price_name, "위약금 리스크", penalty_price_won_per_kwh),
-        )
-        if value is None
+    # **차단은 정산 단가 하나다** (S256 결정 가 · 고1). 위약금 가격은 화면에 입력 칸이
+    # 없어 「입력하지 않아」 가 입력을 전제한 문장이었다 — 빠진 입력에서 걷는다. 단가를
+    # 넣은 판에는 가격이 무엇에 달렸는지만 주의(⚠)로 남긴다.
+    basis_text = (
+        f"정산 단가는 전력거래소가 지역별 SMP로 정산하는 몫과 사업자 수수료에, 위약금은 "
+        f"{price_name}에 달려 있습니다 (전력시장운영규칙 별표26)."
     )
-    if missing:
-        inputs = " · ".join(name for name, _ in missing)
-        outcomes = "과 ".join(outcome for _, outcome in missing)
-        # **「감축 가능량만 참고」 는 정산 단가가 없을 때만 선다** (S167 1절). 합치기
-        # 전(22세션)에는 정산 단가 줄에만 있던 말인데 합치면서 조건이 「둘 중 하나라도
-        # 없음」 으로 넓어졌다 — 화면에는 하루전에너지가격 칸이 없어 단가를 넣어도
-        # 이 말이 정산금 곁에 섰다.
-        only_kwh = "감축 가능량(kWh)만 참고하십시오 — " if unit_price_won_per_kwh is None else ""
+    if unit_price_won_per_kwh is None:
         notices.append(
             block(
-                f"{inputs}{_object_particle(inputs)} 입력하지 않아 "
-                f"{outcomes}{_object_particle(outcomes)} 산출하지 않았습니다. "
-                f"{only_kwh}정산 단가는 전력거래소가 지역별 "
-                f"SMP로 정산하는 몫과 사업자 수수료에, 위약금은 {price_name}에 달려 "
-                "있습니다 (전력시장운영규칙 별표26).",
+                "정산 단가를 입력하지 않아 금액을 산출하지 않았습니다. "
+                f"감축 가능량(kWh)만 참고하십시오 — {basis_text}",
                 fact="dr.no_price",
             )
         )
+    elif penalty_price_won_per_kwh is None:
+        notices.append(warn(basis_text, fact="dr.no_price"))
     if not profile.meets_reference_capacity:
         notices.append(
             warn(
-                f"등록 가능 용량이 참고 문턱 100 kW 아래입니다 ({capacity:,.0f} kW). "
+                f"등록 권장 용량이 참고 문턱 100 kW 아래입니다 ({capacity:,.0f} kW). "
                 "자원 단위 기준이라 다른 고객과 묶여 참여할 수 있으므로 사업자와 "
                 "상담하십시오 (제12.4.2.1조 제1항 2호).",
                 fact="dr.below_reference",

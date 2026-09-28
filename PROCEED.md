@@ -462,6 +462,33 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 계산 폴더 몫 — `measures` 6(K1 ~ K6) · `diagnose` 2(K7 · K8) · `tariff` 1(K9) · `compare` · `pv` · `quality` 0. **요금 · 절감액을 만드는 식 0**(K3 은 S246 결정 1 이 조합에 쓰는 기간 정산금 식을 단독 값으로 옮기는 속성 · 합산 · 요금 계산에 안 쓴다). `tools\` 0 · `CLAUDE.md` 0. 시험 자리는 3-1 에서 옛 표기를 문 것이 더 드러나면 번짐으로 적는다.
 **1절 벽시계** 08:56:45 ~ 09:11:10(시각 명령 출력 · 커밋 앞).
 
+**2-1. 코드 · 문서 27자리를 고쳤다 — T1 · T2(시험)는 3절이 3-1 옛 표기 · 3-3 못으로 짓는다**(`git diff --numstat` · +/−).
+- **K1 · K2 · K3** `measures\demand_response.py` +19 −35 — 빠진 입력에서 계통한계가격을 걷어 단가가 없으면 차단 「정산 단가를 입력하지 않아 금액을 산출하지 않았습니다. 감축 가능량(kWh)만 참고하십시오 — 정산 단가는 …에, 위약금은 계통한계가격에 달려 있습니다 (…).」 · 단가를 넣고 위약금 가격이 없으면 주의(⚠) 「정산 단가는 …에, 위약금은 계통한계가격에 달려 있습니다 (…).」(사실 ID `dr.no_price` 그대로 · 제주는 하루전에너지가격 · 안 쓰이게 된 조사 함수 `_object_particle` 걷음) · 「등록 권장 용량이 참고 문턱 …」 · 속성 `period_settlement_won`(관측 기간 감축 가능량 × 단가 · 단가 없으면 없음).
+- **K4** `measures\power_factor.py` +12 −7 — 인자 `billed`(기본 거짓 · 케이스 스터디 · 일괄 생성은 안 넘긴다) · 참이면 `power_factor.estimated_only` 를 안 세운다.
+- **K5** `measures\surplus.py` +19 −5 — `SurplusResult.chosen_price_note(고른 방안)` · 상계거래면 쓴 SMP 단가만(잔여 0 이면 빈 글) · 그 밖은 `applied_price_note` 그대로.
+- **K6 · K7 · K8 · K9** `measures\tariff_switch.py` +2 −1 「선택요금 전환은 설비 도입과 …」 · `diagnose\dr.py` +2 −1 「경제성DR 은 요금 계량의 …」 · `diagnose\summary.py` +2 −1 「진단 시트의 시각 분포는 …」 · `tariff\engine.py` +3 −1 「3~6월·10~11월 피크 저감은 …」.
+- **R1** `ui\cache.py` +2 — `billed=form.power_factor_pct is not None`(폼이 캐시 열쇠에 이미 있다).
+- **R2** `ui\views\compare.py` +12 — Excel · PPT 재료에 `power_factor_billed` · PPT 재료에 `dr_period_won`(단독 DR 기간 정산금).
+- **R3** `ui\views\measures.py` +9 −4 — 여지 없는 역률 카드 회수기간 「없음」 · 잉여 캡션을 `chosen_price_note(고른 방안)`.
+- **R4** `ui\charts.py` +8 −6 — DR 그림 점 툴팁 「저부하 평일」 을 「예 / 아니오」 표기 칸으로(표식 층은 참 · 거짓으로 거른다) · 삼각형 설명을 `triangle_label` 로.
+- **R5** `report\standalone.py` +8 −2 — 역률 여지 없음 「없음 · — · 없음」 · 계약 여지 없음 회수기간 「없음」.
+- **R6** `report\document.py` +57 −9 — 재료 칸 둘(`power_factor_billed` · `dr_period_won`) · Word 부록 C 거르기 · 표2 권장 조합(DR 을 담으면 「+ 경제성DR」) · 권장안 구성(`settled_composition`) · 표13 끝 「+ 경제성DR」 줄 · 역률 항목(여지 없으면 「없음 · — · 없음」) · 여지 없음 결론 「지상역률 99.7% 는 …」 · PPT 13 각주 자가소비 = `money.gap_won(기간 절감액, 잉여)`.
+- **R7** `report\slides.py` +36 −4 — 16장 「가장 유리한 조합」 구성 · 표 끝 「+ 경제성DR」 줄(합산효과 · 합산효과 회수기간) · 8장 「투자 없이」 에 DR 기간 정산금 · 7장 캡션 뒷말은 월별 기본요금(역률 포함 · 원 단위)이 다 같을 때만(`_base_fee_flat`).
+- **R8** `report\narrative.py` +12 −9 — 8장 머리 문장에 DR 기간 정산금을 이름 「경제성DR」 로(이미 있는 갈래 「설비 투자 없이 기간에 …을 줄일 수 있습니다 — …입니다.」).
+- **R9** `report\frames.py` +20 −8 — 조합 그림 표 끝 「+ 경제성DR」 막대 · `triangle_label`(화면이 쓰던 한 자리 소수 글을 한 자리로).
+- **R10** `report\figures.py` +2 −1 — 삼각형 범례 `triangle_label`.
+- **R11** `report\excel.py` +88 −21 — `power_factor_billed` 칸 · 알려진 한계 · 부록 C 거르기 · 그리드 이탈 0 이면 괄호 없음 · 「선택요금 전환 (선택Ⅱ 유지)」 · DR 줄 기간 = 기간 정산금 · 두 칸 천 원 절사 · 역률 여지 없음 「— · 없음 · 없음 · 없음」 · 잉여 줄 `chosen_price_note` · ESS 줄 「ESS」 · 곡선 열 「기간 자가소비 절감액(원)」 · 고른 줄 = 적힌 기간 절감액 − 적힌 잉여(12개월도 같은 값이면 같은 글자) · 조합 비교 끝 「+ 경제성DR」 줄.
+- **R12** `report\appendix.py` +33 −5 — 부록 B 판단값 다섯(`TOOL_SETTINGS`) 안 실음 · `known_limits(…, power_factor_billed=)`.
+- **R13** `report\notices.py` +44 — `ESTIMATED_POWER_FACTOR_FACTS` · `known_limit_lines` · `SETTLED_ROW_NAME`(「+ 경제성DR」 · 수단 목록 이름에서) · `settled_row` · `settled_composition`.
+- **R14** `report\worksheet.py` +2 −1 — 역률 계산 근거 「목표 역률」 줄은 여지 없으면 안 세운다(화면 계산 근거 · 부록 A 가 한 표).
+- **M1 · M2 · M3** `docs\MANUAL.md` +7 −3 — 잉여 단가 문장(고른 방안이 쓴 단가만 · 256세션) · 조합 표 끝 「+ 경제성DR」 · 투자 없이에 PPT 8장 DR. **M4** `docs\MANUAL.html` +3 −3(`build_docs_20260928_091803.txt`).
+- 정적 확인(좁게) — `ruff check src` 통과 · `ruff format --check src` 어긋남 3(`report\document.py:1558` · `report\slides.py:1509` · `tariff\engine.py:1060` — 다 앞서 있던 줄 · 이 판 줄 0) · `mypy src` 이상 없음(`mypy_20260928_091830.txt`).
+
+**2-2. 적게 닫았거나 번진 자리.**
+- **고3 (ㄱ) · (ㄹ) 은 안 고쳤다**(1-1 · 1-2 · 1-3 — 사람 결정과 부딪침 · 이미 있는 이유 글자로 안 됨). 고2 곁 「도입 전 추정 역률」 · 화면 태양광 툴팁 자가소비 · Word 「투자 없이」 도 안 고쳤다(1-2 곁).
+- **번짐 넷** — ① 전력삼각형 범례는 PPT · Word 가 정수로 접던 것을 화면 글(`.1f` · 각도 `.1f°`)과 한 자리로 모았다 → 19벌 범례 38줄이 「92%」 → 「92.0%」 꼴로 갈린다(같은 사실 같은 글자 · S233). ② 역률 계산 근거 「목표 역률」 줄은 화면 계산 근거와 부록 A 가 한 표라 화면 카드 계산 근거에서도 빠진다(여지 없는 벌). ③ 삼각형 한 자리 함수(`report\frames.py` · `ui\charts.py`)는 1-5 R4 · R9 · R10 안이다. ④ 1-5 에 없던 파일 0.
+**2절 벽시계** 09:11:10 ~ 09:18:42(시각 명령 출력 · 기록 짓기 앞).
+
 ---
 ## 오늘 (2026-09-28) 255세션 — **짧은 고침 판 · 라-29 요금표 값을 8월 요금표 PDF 로 채우고(사람 결정) · 남은 「12개 월」 과 매뉴얼 옛 글을 고치고(웹 대화창 결정 1 · 2) · 산출물 밖 항목을 가른다**
 

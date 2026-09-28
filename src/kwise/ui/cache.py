@@ -558,6 +558,8 @@ def cached_power_factor(
         baseline=_baseline,
         quality=_quality,
         options=form.billing_options(),
+        # 1단계 「역률 (선택)」 을 넣었으면 청구서 값이다 (S256 고2).
+        billed=form.power_factor_pct is not None,
     )
 
 

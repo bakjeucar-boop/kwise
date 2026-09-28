@@ -46,7 +46,7 @@ from kwise.measures import (
 )
 from kwise.report.columns import option_label
 from kwise.report.days import day_profile
-from kwise.report.notices import format_won
+from kwise.report.notices import SETTLED_ROW_NAME, format_won, settled_row
 from kwise.tariff import day_window, option_sort_key
 
 __all__ = [
@@ -95,6 +95,7 @@ __all__ = [
     "tariff_parts",
     "temperature_mean_frame",
     "top_hour_frame",
+    "triangle_label",
     "whole_percents",
 ]
 
@@ -812,13 +813,15 @@ def combination_frame(comparison: ComparisonResult) -> pd.DataFrame:
         for item in comparison.combinations
         if money.truncate_won(item.saving_won) or item.investment_won != 0
     ]
-    return pd.DataFrame(
-        {
-            "조합": [item.name for item in shown],
-            "절감액(원)": [item.saving_won for item in shown],
-            "투자비(원)": [item.investment_won for item in shown],
-        }
-    )
+    names = [item.name for item in shown]
+    savings = [item.saving_won for item in shown]
+    investments = [item.investment_won for item in shown]
+    # 합산효과가 담는 DR 정산금을 표와 같은 끝 줄로 (S256 고3 ㄴ).
+    if (settled := settled_row(comparison)) is not None:
+        names.append(SETTLED_ROW_NAME)
+        savings.append(settled.settled_saving_won)
+        investments.append(settled.investment_won)
+    return pd.DataFrame({"조합": names, "절감액(원)": savings, "투자비(원)": investments})
 
 
 def sensitivity_frame(ranges: tuple[SensitivityRange, ...]) -> pd.DataFrame:
@@ -1031,6 +1034,15 @@ def power_triangle_frame(result: PowerFactorResult) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows)
+
+
+def triangle_label(row: pd.Series) -> str:
+    """전력삼각형 한 줄 이름 — 화면 · PPT · Word 가 이 한 자리를 쓴다 (S256 고5 · S233).
+
+    PPT · Word 만 역률을 정수로 접어 99.68% 가 「100%」 로 섰다 — 같은 그림 화면은 한 자리
+    소수였다.
+    """
+    return f"{row['구분']} — 역률 {row['역률(%)']:.1f}% · {row['각도(도)']:.1f}°"
 
 
 def power_factor_day_frame(

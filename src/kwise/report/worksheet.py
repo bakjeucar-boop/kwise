@@ -494,7 +494,8 @@ def power_factor_worksheet(result: PowerFactorResult) -> Worksheet:
     """7.4 역률 개선 — **92% 기준 대비 조정률.**"""
     rows = [
         WorkRow("현재 역률", "주간(08~22시) 지상", f"{result.current_pct:,.1f}%"),
-        WorkRow("목표 역률", "", f"{result.target_pct:,.1f}%"),
+        # 여지가 없으면 목표를 말하지 않는다 (S206 · S256 고5) — 두 역률이 다 상한으로 접힌다.
+        *(() if result.no_headroom else (WorkRow("목표 역률", "", f"{result.target_pct:,.1f}%"),)),
         # **접힌 뒤의 역률로 잰다** (S155 1-3). 앞서는 `(목표 − 현재) × 0.2` 라
         # 약관 나목의 간주(60~97 밖은 접는다)를 빼고 세었다 — 현재 100%·목표
         # 97% 에서 **−0.6%p** 가 뜨는데 실제로는 둘 다 97 로 접혀 **0.0%p** 이고,
