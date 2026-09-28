@@ -1843,8 +1843,8 @@ def _s256_check(item: str) -> None:
         estimated = ("현재 역률은 추정값", "역률요금은 추정 역률 기반")
         assert not [t for t in lines if any(word_ in t for word_ in estimated)], confirm.key
         # 재료 — 역률을 안 넣은 벌에는 네 자리(화면 · PPT · Excel · Word)에 선다.
-        plain = [row for row in _render("large-a").rows if any(w in row[-1] for w in estimated)]
-        assert {row[0] for row in plain} == {"화면", "PPT", "Excel", "Word"}, plain
+        stood = [row for row in _render("large-a").rows if any(w in row[-1] for w in estimated)]
+        assert {row[0] for row in stood} == {"화면", "PPT", "Excel", "Word"}, stood
     elif item == "고3":
         # PPT 16장 · Word 조합 표 · Excel 조합 비교의 끝 줄 = 합산효과 (고3 ㄴ · ㄷ).
         where = next(row[1] for row in ppt if row[2:] == ("조합", "기간 절감액", "회수기간"))
@@ -1876,8 +1876,8 @@ def _s256_check(item: str) -> None:
         assert ("PPT", "8표", "역률 개선", "없음", "—", "없음") in rows, [
             row for row in ppt if row[1] == "8표"
         ]
-        excel = next(r for r in rows if r[:2] == ("Excel", "수단별 결과") and "역률 개선" in r[2])
-        assert excel[2:7] == (
+        pf_row = next(r for r in rows if r[:2] == ("Excel", "수단별 결과") and "역률 개선" in r[2])
+        assert pf_row[2:7] == (
             "역률 개선 (현재 99.7% · 개선 여지 없음)",
             "—",
             "없음",
@@ -1909,17 +1909,19 @@ def _s256_check(item: str) -> None:
             _next_after([r for r in ppt if r[1] == "13"], "12개월 환산 절감액")
         )
     elif item == "고7":
-        dr = next(
+        dr_row = next(
             r for r in rows if r[:2] == ("Excel", "수단별 결과") and r[2].startswith("경제성DR")
         )
-        assert dr[4] != "—" and dr[5] == "573,000", dr
+        assert dr_row[4] != "—" and dr_row[5] == "573,000", dr_row
         assert not [t for t in lines if "등록 가능 용량" in t]
         assert [t for t in lines if "등록 권장 용량이 참고 문턱" in t], "재료"
     elif item == "고8":
         caption = [row[-1] for row in ppt if row[1] == "7" and row[-1].startswith("월별 요금 구성")]
         assert caption == ["월별 요금 구성"], caption
-        surplus = next(r for r in rows if r[:2] == ("Excel", "수단별 결과") and "└ 잉여" in r[2])
-        assert "외부 판매" not in surplus[-1], surplus
+        surplus_row = next(
+            r for r in rows if r[:2] == ("Excel", "수단별 결과") and "└ 잉여" in r[2]
+        )
+        assert "외부 판매" not in surplus_row[-1], surplus_row
         assert [t for t in lines if t.startswith("PPT") and "외부 판매 140원/kWh 로 산출" in t]
         assert not [t for t in lines if "부록 B 의 시각 분포" in t or "봄·가을 피크" in t]
         assert [t for t in lines if "진단 시트의 시각 분포" in t]

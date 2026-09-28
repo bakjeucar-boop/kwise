@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -567,11 +568,12 @@ def test_DR_그림_툴팁은_참_거짓이_아니라_예_아니오다(sample_dia
     profile = sample_diagnosis.dr
     assert profile is not None
     chart = dr_daily_chart(profile)
-    points = chart.layer[0].data
+    points: Any = chart.layer[0].data  # altair 자료형 — 여기서는 DataFrame 이다
+    marks: Any = chart.layer[-1].data
     assert set(points["저부하 평일"]) <= {"예", "아니오"}, set(points["저부하 평일"])
     assert (points["저부하 평일"] == "예").sum() == profile.low_load_days_count
     if profile.low_load_days_count:
-        assert len(chart.layer[-1].data) == profile.low_load_days_count
+        assert len(marks) == profile.low_load_days_count
 
 
 def test_단가가_있으면_정산금을_낸다(sample_diagnosis: Diagnosis) -> None:

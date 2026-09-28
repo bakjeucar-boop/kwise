@@ -3191,7 +3191,9 @@ def test_역률_카드는_도입을_말하지_않고_제도를_설명하지_않�
     from kwise.measures.ess import NO_INVESTMENT_INPUT
 
     값 = [item.text for item in card if item.kind == "Metric" and item.slot == "지표"]
-    assert 값[3] == NO_INVESTMENT_INPUT, f"{갈래} 벌 회수기간이 {값[3]} 입니다."
+    # 여지가 없으면 회수기간도 「없음」 이다 (256세션 고5 · S238 결정 2).
+    기대회수 = NO_SAVING if current_pct == 100.0 else NO_INVESTMENT_INPUT
+    assert 값[3] == 기대회수, f"{갈래} 벌 회수기간이 {값[3]} 입니다."
     assert (값[2] == NO_SAVING) is (current_pct == 100.0), f"{갈래} 벌 금액 칸 {값[2]}"
     적힌금액 = [item.text for item in card if "절감액은 0원" in item.text]
     assert not 적힌금액, f"{갈래} 벌 안내가 금액을 적습니다: {적힌금액}"
@@ -4067,12 +4069,13 @@ def test_적용_단가를_네_산출물이_같이_쓴다() -> None:
     """**같은 글이 두 자리에 따로 생기지 않게 한다** (46세션 줄기 · 58세션 2절).
 
     화면 캡션 · PPT 잉여 장 각주 · Excel 「수단별 결과」 비고 · Word 부록이
-    모두 :meth:`SurplusResult.applied_price_note` 에서 읽는다.
+    모두 :meth:`SurplusResult.applied_price_note` 에서 읽는다. 화면은 고른
+    방안이 쓴 단가만 적는 :meth:`SurplusResult.chosen_price_note` 로 부른다(256세션).
     """
     from kwise.measures import APPLIED_PRICE_TAIL
 
     measures_src = (VIEWS / "measures.py").read_text(encoding="utf-8")
-    assert "result.applied_price_note" in measures_src
+    assert "result.chosen_price_note" in measures_src
     report = Path("src") / "kwise" / "report"
     for name in ("document.py", "excel.py"):
         source = (report / name).read_text(encoding="utf-8")
@@ -5204,8 +5207,9 @@ def test_여지_없는_수단을_2단계는_빼고_3단계_조합은_담는다()
     assert "개선 여지 없음" in str(rows[0]["개선 방안"]), (
         f"{case.key} — 2단계가 역률을 「개선 여지 없음」 이라 적지 않습니다: {rows[0]}"
     )
-    assert str(rows[0]["12개월 환산 절감액"]) == "0원", (
-        f"{case.key} — 2단계 역률 절감액이 「0원」 이 아닙니다: {rows[0]['12개월 환산 절감액']}"
+    # 여지 없는 역률은 「0원」 이 아니라 「없음」 이다 (256세션 고5).
+    assert str(rows[0]["12개월 환산 절감액"]) == "없음", (
+        f"{case.key} — 2단계 역률 절감액이 「없음」 이 아닙니다: {rows[0]['12개월 환산 절감액']}"
     )
 
     # ── 자리 B — 3단계 계산 근거. **그 0원 조각이 조합에 들어 있다는 실물 증거다.**
@@ -5270,7 +5274,8 @@ def test_역률_체크를_풀면_차이가_0원이고_요약표에는_남는다(
     )
     rows = [row for row in summary.to_dict("records") if "역률" in str(row["수단"])]
     assert len(rows) == 1, f"{case.key} — 조합에서 뺀 역률 행이 요약표에 {len(rows)}개입니다."
-    assert str(rows[0]["12개월 환산 절감액"]) == "0원", (
+    # 여지 없는 역률은 「0원」 이 아니라 「없음」 이다 (256세션 고5).
+    assert str(rows[0]["12개월 환산 절감액"]) == "없음", (
         f"{case.key} — 조합에서 뺀 역률의 절감액이 「{rows[0]['12개월 환산 절감액']}」 입니다."
     )
 
