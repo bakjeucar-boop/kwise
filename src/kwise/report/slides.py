@@ -338,8 +338,10 @@ def caution_notes(entry: MeasureEntry) -> tuple[str, ...]:
         part = CAUTION_NOTE_FACTS.get(notice.fact_base)
         if part is None:
             continue
-        head, _, tail = notice.text.partition(". ")
-        lines.append({"first": f"{head}.", "rest": tail or head}.get(part, notice.text))
+        # 굵은 글씨 표식을 먼저 뗀다 — 「…아닙니다.** 감축…」 은 「. 」 로 안 갈린다.
+        text = plain_text(notice.text).strip()
+        head, _, tail = text.partition(". ")
+        lines.append({"first": f"{head}.", "rest": tail or head}.get(part, text))
     return tuple(dict.fromkeys(plain_text(line).strip() for line in lines))
 
 

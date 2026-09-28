@@ -1999,7 +1999,8 @@ def test_부하패턴_문장_둘이_각각_갈린다(sample_diagnosis: Diagnosis
     assert "기저부하" not in pattern_lead(base)
     both = pattern_lead(replace(base, load_factor=flat, base_load_ratio=low))
     assert "하루 내내 고르게" in both
-    assert "충전 여력이 있습니다" in both
+    # 거울 문장 「밤 부하가 낮아 ESS 충전 여력이 있습니다」 도 안 세운다 (S258 결정 7).
+    assert "충전 여력" not in both and "기저부하" not in both, both
     # 값이 없으면 그 문장이 통째로 빠진다.
     assert "기저부하" not in pattern_lead(replace(base, base_load_ratio=None))
     assert "산출하지 못했습니다" in pattern_lead(
@@ -2647,15 +2648,22 @@ def test_ESS_표식의_뜻이_표_아래에_있다() -> None:
     assert spec_mark_note([]) == ""
 
 
-def test_조합_문장이_수단_수로_갈린다() -> None:
-    """**겹칠 것이 없으면 겹침을 설명하지 않는다** (53세션 4-14)."""
+def test_조합_문장은_어느_입력에서도_한_문장이다() -> None:
+    """**조합 장 머리는 한 문장이다** (S258 결정 2 · 사람이 정했다 — 53세션 4-14 의 갈래를 걷었다).
+
+    조합 줄 수로 가르던 「켠 수단이 하나라 …」 가 태양광 · DR 둘을 켠 벌에도 섰다.
+    """
     from types import SimpleNamespace
 
-    from kwise.report.narrative import COMBINATION_LEAD, SINGLE_MEASURE_LEAD, combination_lead
+    from kwise.report import narrative
+    from kwise.report.narrative import COMBINATION_LEAD, combination_lead
 
-    assert combination_lead(None) == COMBINATION_LEAD
-    assert combination_lead(SimpleNamespace(combinations=(1, 2))) == SINGLE_MEASURE_LEAD
-    assert combination_lead(SimpleNamespace(combinations=(1, 2, 3))) == COMBINATION_LEAD
+    lead = "수단을 함께 도입하면 서로 영향을 주므로 조합을 통째로 다시 계산했습니다."
+    assert lead == COMBINATION_LEAD
+    for combinations in ((1,), (1, 2), (1, 2, 3)):
+        assert combination_lead(SimpleNamespace(combinations=combinations)) == lead
+    assert combination_lead(None) == lead
+    assert not hasattr(narrative, "SINGLE_MEASURE_LEAD")
 
 
 def _peak_stub(
@@ -3789,17 +3797,16 @@ def test_자리표가_모르는_열쇠는_이름과_함께_걸린다(
         build_slides(full_sections)
 
 
-# ================================================= S251 사람 결정 — 주의사항 장
+# ================================================= S251 사람 결정 — 주의사항 (S258 결정 3)
 
 
-def test_주의사항_장은_중대로_가른_것만_마지막_한_장에_있는_글자로_선다(
+def test_주의사항은_마지막_장이_아니라_해당_수단_장의_각주_한_줄씩으로_선다(
     full_sections: DocumentSections,
 ) -> None:
-    """**빼면 덱을 오독할 주의사항만 마지막 장 하나에 모은다** (S251 사람 결정).
+    """**「주의사항」 장을 세우지 않는다 — 그 줄은 해당 수단 장 ※ 한 줄씩** (S258 결정 3 · 사람).
 
-    가른 잣대는 사실 여섯과 박힌 줄 둘이다(251세션 절 1-3). 글자는 수단 항목이 이미
-    든 글자 그대로이고(역률 추정만 첫 문장) · 실행할 것이 없는 수단은 싣지 않는다 ·
-    줄이 없으면 장도 없다.
+    가른 잣대는 S251 그대로(사실 여섯과 박힌 줄 둘 · 실행할 것이 없는 수단은 싣지 않는다).
+    역률 추정은 첫 문장 · 경제성DR 위약금은 투자비 칸과 겹치는 첫 문장을 뗀다.
     """
     from dataclasses import replace
 
@@ -3807,7 +3814,12 @@ def test_주의사항_장은_중대로_가른_것만_마지막_한_장에_있는
     from kwise.notices import basis, warn
 
     # 표본 수단(선택요금 · 하향 여지 없는 계약전력)에는 고를 줄이 없다 — 안내 둘을 든 항목을 더한다.
-    risk = warn("투자비는 0원이지만 리스크는 0이 아닙니다.", fact="dr.penalty_risk")
+    risk = warn(
+        # 실물 안내처럼 첫 문장이 굵다 — 표식을 떼고 갈라야 한다(S258 3-2 가 실물에서 봤다).
+        "**투자비는 0원이지만 리스크는 0이 아닙니다.** 감축계획량을 채우지 못하면 위약금이 "
+        "부과됩니다 (별표26).",
+        fact="dr.penalty_risk",
+    )
     guess = warn(
         "역률은 추정값입니다 (근거). 화면에 넣으십시오.", fact="power_factor.estimated_only"
     )
@@ -3822,41 +3834,29 @@ def test_주의사항_장은_중대로_가른_것만_마지막_한_장에_있는
         cautions=(risk.text, guess.text, idle.text),
         notices=(risk, guess, idle),
     )
-    full_sections = replace(full_sections, measures=(*full_sections.measures, extra))
-    rows = slides_module.caution_rows(full_sections)
-    assert rows, "재료 — 표본 덱에 중대 주의사항이 선다"
-    assert [line for _, line in rows][-2:] == [risk.text, "역률은 추정값입니다 (근거)."], rows
-    by_title = {measure_slide_title(entry): entry for entry in full_sections.measures}
-    for measure, line in rows:
-        entry = by_title[measure]
-        assert entry.actionable, (measure, line)
-        picked = [plain_text(text).strip() for text in entry.cautions]
-        notices = [
-            (item.fact_base, plain_text(item.text).strip())
-            for item in entry.notices
-            if item.fact_base in slides_module.CAUTION_SLIDE_FACTS
-        ]
-        fixed = [plain_text(text) for text in slides_module.CAUTION_SLIDE_LINES]
-        first = slides_module.CAUTION_SLIDE_FACTS
-        assert (line in picked and line in fixed) or any(
-            line == text or (first[fact] and text.startswith(line[:-1])) for fact, text in notices
-        ), (measure, line)
-    specs = slide_specs(full_sections)
-    assert [spec.key for spec in specs].count("cautions") == 1
-    assert specs[-1].key == "cautions" and specs[-2].key == "closing"
-    deck = build_slides(full_sections)
-    last = deck.slides[len(deck.slides) - 1]
-    cells = [
-        [cell.text for cell in line.cells]
-        for shape in last.shapes
-        if shape.has_table
-        for line in shape.table.rows
-    ]
-    assert cells == [["수단", "주의사항"], *[list(row) for row in rows]]
-    empty = DocumentSections(
-        usage=full_sections.usage, bill=full_sections.bill, diagnosis=full_sections.diagnosis
+    moved = (
+        "감축계획량을 채우지 못하면 위약금이 부과됩니다 (별표26).",
+        "역률은 추정값입니다 (근거).",
     )
-    assert "cautions" not in [spec.key for spec in slide_specs(empty)]
+    assert slides_module.caution_notes(extra) == moved
+    assert slides_module.caution_notes(replace(extra, actionable=False)) == ()
+    full_sections = replace(full_sections, measures=(*full_sections.measures, extra))
+    specs = slide_specs(full_sections)
+    keys = [spec.key for spec in specs]
+    assert "cautions" not in keys and keys[-1] == "closing", keys
+    deck = build_slides(full_sections)
+    titles = [
+        shape.text_frame.text
+        for slide in deck.slides
+        for shape in slide.shapes
+        if shape.has_text_frame
+    ]
+    assert "주의사항" not in titles, titles[-5:]
+    page = deck.slides[keys.index("measure_demand_response")]
+    texts = [shape.text_frame.text for shape in page.shapes if shape.has_text_frame]
+    for line in moved:
+        assert any(slides_module.mark_note(line) in text for text in texts), (line, texts)
+    assert not any("리스크는 0이 아닙니다" in text for text in texts), texts
 
 
 # ================================================= S251 결정 1 — 기록으로 서는 넷

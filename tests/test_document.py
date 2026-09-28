@@ -616,7 +616,9 @@ def test_한계와_추적성이_마지막_장에_있다(full_document: DocumentT
     """
     text = _chapter_text(full_document, CHAPTER_SCOPE)
     assert "기후환경요금" in text  # 미포함 요금요소 (5.1)
-    assert "충분한 여유를 확보하십시오" in text  # 계약전력 경고 (9.4)
+    # 계약전력 경고 (9.4) — 하향을 권하는 벌에서만 선다(S258 결정 4). 표본은 권하지 않는다 —
+    # 서는 쪽은 `test_하향_여지가_있는_계약전력_절에_경고가_한_번만_선다` 가 본다.
+    assert "충분한 여유를 확보하십시오" not in text
     assert "적용 요금표:" in text  # 추적성 (5.8)
     assert "Open-Meteo" in text  # 출처
     assert "인증·신고용 산출물이 아닙니다" in _chapter_text(full_document, "부록 C")  # 알려진 한계
@@ -975,6 +977,8 @@ def test_Word_7_2_주의사항에_같은_경고가_두_번_서지_않는다(
 
     assert block.count(CONTRACT_CHANGE_WARNING) == 1, block
     assert "주의사항" in block, "주의사항 자리 자체가 사라지면 안 된다."
+    # 하향을 권하는 벌이라 5장 「계약전력 변경 시 주의」 절도 선다 (S258 결정 4).
+    assert [text for text in (para.text for para in paragraphs) if "계약전력 변경 시 주의" in text]
 
 
 def _row_value(document: DocumentType, chapter: str, label: str) -> str:
@@ -1167,8 +1171,10 @@ def test_켠_ESS_의_없음은_PPT_와_Word_에서_다른_없음_수단과_같�
         ESS_NO_EXCESS,
         money.NO_SAVING,
         "—",
-        "—",
+        # 절감 「없음」 이면 회수기간도 「없음」 (S258 결정 9) — 계약전력도 같은 꼴이다.
+        money.NO_SAVING,
     )
+    assert entries[0].payback == money.NO_SAVING, entries[0].payback
 
     sections = DocumentSections(
         usage=sample_usage, bill=sample_bill, diagnosis=sample_diagnosis, measures=entries

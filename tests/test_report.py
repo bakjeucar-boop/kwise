@@ -380,7 +380,10 @@ def test_summary_carries_the_contract_change_warning(
     """
     summary = sample_sheets["요약"].reset_index()
     required = [str(row[-1]) for row in summary.itertuples(index=False) if row[-2] == "필수 안내"]
-    assert required == [_requirements_9_4()]
+    # **하향을 권하는 벌에서만 선다** (S258 결정 4 · 사람이 정했다) — 표본은 권하지 않는 벌이다.
+    # 서는 쪽은 아래 20,000 kW 못이 원문 글자로 본다.
+    assert required == [], required
+    assert _requirements_9_4() == CONTRACT_CHANGE_WARNING
 
 
 def test_요약_시트에_계약전력_변경_경고가_한_번만_선다(
@@ -974,7 +977,8 @@ def test_batch_case_report_has_the_required_sheets(
         workbook.close()
     summary = pd.read_excel(path, sheet_name="요약", index_col=0)
     text = "\n".join(str(value) for value in summary.to_numpy().ravel())
-    assert CONTRACT_CHANGE_WARNING in text
+    # 하향 경고는 하향을 권하는 벌에서만 선다 (S258 결정 4) — 이 케이스는 권하지 않는다.
+    assert CONTRACT_CHANGE_WARNING not in text
     assert NOT_INCLUDED_NOTICE in text
     assert KNOWN_LIMITS[0] in text
     assert NO_PV_SENSITIVITY_NOTE in pd.read_excel(path, sheet_name="감도").to_string()

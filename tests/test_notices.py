@@ -299,8 +299,12 @@ def test_Excel_요약이_여유_확보_안내를_한_번만_싣는다(
     sample_diagnosis: Diagnosis,
     sample_comparison: ComparisonResult,
     여유_확보_안내가_있나: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """**요약 시트에 그 안내가 두 번 서지 않는다** (S182 4-3 · S210 2절 · S240 결정 2).
+
+    「필수 안내」 줄은 하향을 권하는 벌에서만 선다(S258 결정 4) — 이 못은 두 번 서지 않는지를
+    보므로 그 판정을 참으로 세운다(표본은 권하지 않는 벌이다).
 
     `measures\\contract.py` 의 :data:`~kwise.measures.MARGIN_NOTICE` 는
     `report\\notices.py` 의 ``CONTRACT_CHANGE_WARNING`` 과 **글자까지 같은
@@ -319,9 +323,11 @@ def test_Excel_요약이_여유_확보_안내를_한_번만_싣는다(
     """
     from kwise.compare.combination import aggregate_notices
     from kwise.measures import MARGIN_FACT, MARGIN_NOTICE
+    from kwise.report import excel as excel_module
     from kwise.report.excel import ReportSections, _summary_rows
     from kwise.report.notices import CONTRACT_CHANGE_WARNING
 
+    monkeypatch.setattr(excel_module, "lowering_recommended", lambda *_args: True)
     실린것 = (warn(MARGIN_NOTICE, fact=MARGIN_FACT),) if 여유_확보_안내가_있나 else ()
     diagnosis = dataclasses.replace(
         sample_diagnosis,

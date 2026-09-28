@@ -207,7 +207,16 @@ def _render_confirm() -> Rendered:
     return _RENDERED[slot]
 
 
-def _build(case_key: str, use: str = "", *, confirm: bool = False) -> Rendered:
+def _render_human() -> Rendered:
+    """S258 확인 사례 (가) — 사람 실물 입력(S257 뒤 재점검). 태양광은 **남동으로 계산한 결과**가
+    저장돼 있고 화면 방위는 남이다(1-3 · 1-5) — 사람 화면에서 읽은 값이 그 판이다."""
+    slot = "human"
+    if slot not in _RENDERED:
+        _RENDERED[slot] = _build(CONFIRM_KEY, "office", confirm=True, human=True)
+    return _RENDERED[slot]
+
+
+def _build(case_key: str, use: str = "", *, confirm: bool = False, human: bool = False) -> Rendered:
     from dataclasses import replace
 
     from streamlit.testing.v1 import AppTest
@@ -271,6 +280,21 @@ def _build(case_key: str, use: str = "", *, confirm: bool = False) -> Rendered:
                 region_key=case.sigungu, area_m2=case.area_m2, unit_cost_won_per_kwp=2_500_000.0
             )
             state[input_key("demand_response", "off_days")] = ["2025-10-02"]
+        if human:
+            # S258 (가) — 건물명 · 준공 · 야간 진상역률 100 · 저장 방위 남동(화면 위젯은 기본 남).
+            state["building_name"] = "용인건물"
+            state["building_year"] = 2000
+            state["contract_form"] = replace(state["contract_form"], leading_power_factor_pct=100.0)
+            state["diag_pf_lagging"] = 99.68
+            state["diag_pf_leading_known"] = True
+            state["diag_pf_leading"] = 100.0
+            state["solar_inputs"] = SolarInputs(
+                region_key=case.sigungu,
+                area_m2=case.area_m2,
+                density_key="normal",
+                azimuth_deg=135.0,
+                unit_cost_won_per_kwp=2_500_000.0,
+            )
         app.run()
         assert not app.exception, app.exception
         if confirm:
@@ -1496,23 +1520,35 @@ def test_상향_권고는_화면_Word_PPT_가_같은_글자다() -> None:
     assert ppt, (line, [row for row in rendered.rows if row[0] == "PPT" and head in row[-1]])
 
 
-def test_PPT_마지막_장_주의사항은_Word_3장이_적는_글자다(rendered: Rendered) -> None:
-    """**마지막 한 장 「주의사항」 은 있는 글자만 쓴다** (S251 사람 결정 · 마-19).
+def test_PPT_수단_장으로_옮긴_주의사항은_Word_3장이_적는_글자다(rendered: Rendered) -> None:
+    """**주의사항은 수단 장 ※ 한 줄씩 · 있는 글자만 쓴다** (S251 사람 결정 · 마-19 · S258 결정 3).
 
-    줄마다 Word 3장 수단 주의사항 목록에 같은 글자(역률 추정은 그 첫 문장)가 선다 — 새
-    사실을 더하지 않는다. 그 장은 덱에 하나고 「다음 단계」 뒤 마지막이다.
+    「주의사항」 장은 없고 덱 끝은 「다음 단계」 다. 옮긴 줄마다 Word 3장 수단 주의사항 목록에
+    같은 글자(역률 추정은 그 첫 문장 · 경제성DR 위약금은 첫 문장을 뗀 뒤)가 선다 — 새 사실을
+    더하지 않는다.
     """
     ppt = [row for row in rendered.rows if row[0] == "PPT"]
     last = max(int(row[1].removesuffix("표")) for row in ppt if row[1].removesuffix("표").isdigit())
-    titles = [row[2] for row in ppt if row[1] == str(last)]
-    assert titles[:1] == ["주의사항"], (rendered.key, titles)
-    assert [row[2] for row in ppt if row[1] == str(last - 1)][:1] == ["다음 단계"], rendered.key
-    assert sum(row[2] == "주의사항" for row in ppt if row[1].isdigit()) == 1, rendered.key
-    table = [row[2:] for row in ppt if row[1] == f"{last}표"]
-    assert table[0] == ("수단", "주의사항") and len(table) > 1, (rendered.key, table)
+    assert [row[2] for row in ppt if row[1] == str(last)][:1] == ["다음 단계"], rendered.key
+    assert not [row for row in ppt if len(row) == 3 and row[2] == "주의사항"], rendered.key
     words = [row[-1] for row in rendered.rows if row[:2] == ("Word", "List Bullet")]
-    for _measure, line in table[1:]:
-        assert line in words or [w for w in words if w.startswith(line[:-1])], (rendered.key, line)
+    fixed = (
+        "계약전력을 하향할 경우",
+        "계약전력 하향은 되돌리기",
+        "감축계획량을 채우지",
+        "무효전력 실측이 없어",
+        "규칙기반 단일 디스패치",
+        "기본요금을 계약전력으로 매겼습니다",
+        "종별을 확인하십시오",
+    )
+    moved = [
+        row[-1].removeprefix("※ ")
+        for row in ppt
+        if len(row) == 3 and row[2].startswith("※ ") and any(w in row[2] for w in fixed)
+    ]
+    assert moved, (rendered.key, "재료 — 옮긴 줄")
+    for line in moved:
+        assert [w for w in words if line[:-1] in w], (rendered.key, line)
 
 
 def test_Excel_조합_비교의_여지_없는_칸은_없음이다() -> None:
@@ -1853,7 +1889,8 @@ def _s256_check(item: str) -> None:
         combo = [row for row in ppt if row[1] == where][1:]
         assert combo[-1][2] == "+ 경제성DR", combo
         ppt_text = [row for row in ppt if row[1] == where.removesuffix("표")]
-        assert combo[-1][3] == _next_after(ppt_text, "기간 총 절감액"), combo[-1]
+        # 누적 칸의 괄호(그 줄 몫)는 S258 결정 5 가 붙였다 — 앞 값이 합산효과다.
+        assert combo[-1][3].split(" (")[0] == _next_after(ppt_text, "기간 총 절감액"), combo[-1]
         assert "경제성DR" in _next_after(ppt_text, "가장 유리한 조합")
         total = next(row[3] for row in word if row[2] == "기간 총 절감액")
         header = ("조합", "요금제", "기간 절감액", "투자비", "회수기간")
@@ -2030,3 +2067,118 @@ def test_S257_결정이_확인_사례_실물에_선다(item: str) -> None:
     """**S257 결정 1 ~ 7** — 계약 빈 줄 · 조합 DR 원 부하 · 묵은 결과 · ESS 문장 · DR 시간대 글 ·
     품질 경고 둘 · 차이 이유 줄을 S256 확인 사례 입력의 화면 · 네 산출물로 본다."""
     _s257_check(item)
+
+
+def _slide(rows: list[tuple[str, ...]], title: str) -> list[tuple[str, ...]]:
+    """제목이 ``title`` 인 PPT 장의 줄(표 칸 포함) — 목차(2장)에 같은 이름이 서도 뒤 장이다."""
+    page = [row[1] for row in rows if row[0] == "PPT" and len(row) == 3 and row[2] == title][-1]
+    return [row for row in rows if row[0] == "PPT" and row[1] in (page, f"{page}표")]
+
+
+def _s258_check(item: str) -> None:
+    """S258 결정 1 ~ 11 을 사람 실물 확인 사례 (가) 의 화면 · 네 산출물로 본다."""
+    from kwise.report.narrative import COMBINATION_LEAD
+
+    human = _render_human()
+    rows = list(human.rows)
+    lines = [" | ".join(row) for row in rows]
+    screen = [row for row in rows if row[0] == "화면"]
+    ppt = [row for row in rows if row[0] == "PPT"]
+    excel = [row for row in rows if row[:2] == ("Excel", "조합 비교")]
+    dr = [row[-1] for row in _slide(rows, "경제성DR")]
+    if item == "1":
+        note = (
+            "※ 정산 단가 120원/kWh 로 산출했습니다. 정산 단가는 전력거래소가 지역별 SMP로 "
+            "정산하는 몫과 사업자 수수료에 달려 있습니다."
+        )
+        assert note in dr, dr
+        assert not [row for row in ppt if "쉬는 날로 지목한" in row[-1]]
+        assert [row for row in screen if "2025-10-02" in row[-1]], "재료 — 화면 쉬는 날 목록"
+    elif item == "2":
+        heads = [row[-1] for row in _slide(rows, "조합구성 및 합산효과")]
+        assert COMBINATION_LEAD in heads, heads
+        assert not [t for t in lines if "켠 수단이 하나라" in t]
+    elif item == "3":
+        assert not [row for row in ppt if len(row) == 3 and row[2] == "주의사항"]
+        assert (
+            "※ 감축계획량을 채우지 못하면 실적위약금 = (감축계획량 − 실제감축량) × 계통한계가격 "
+            "× 위약금계수(1) 이 부과됩니다 (전력시장운영규칙 별표26)."
+        ) in dr, dr
+        assert not [row for row in ppt if "리스크는 0이 아닙니다" in row[-1]]
+    elif item == "4":
+        assert not [t for t in lines if "계약전력을 하향할 경우" in t]
+        assert not [t for t in lines if "계약전력 변경 시 주의" in t or "계약전력 변경 경고" in t]
+        assert [t for t in lines if t.startswith("Word") and "5.2 추적성" in t], "재료 — 당긴 절"
+    elif item == "5":
+        table = [row[2:] for row in _slide(rows, "조합구성 및 합산효과") if row[1].endswith("표")]
+        assert ("+ 경제성DR", "528만원 (+57만원)", "15.1년") in table, table
+        assert ("+ 태양광 32 kWp", "471만원", "17.0년") in table, table
+        heads = [row[-1] for row in _slide(rows, "조합구성 및 합산효과")]
+        assert "조합별 누적 기간 절감액과 누적 투자비" in heads, heads
+    elif item == "6":
+        assert (
+            "Excel | 부록 A 산출 근거 | 태양광 계산 근거 | 기간 역률요금 절감 | "
+            "도입 후 역률 99.6% · 기본요금이 준 만큼 감액도 준다 | -4,000원"
+        ) in lines, [t for t in lines if "기간 역률요금 절감" in t]
+    elif item == "7":
+        assert not [t for t in lines if "충전 여력" in t]
+        assert [row for row in _slide(rows, "전력사용현황 및 부하패턴") if "부하율" in row[-1]]
+    elif item == "8":
+        head = list(excel[0])
+        assert excel[-1][2] == "+ 경제성DR", excel[-1]
+        end = _digits(excel[-1][head.index("기간 절감액(원)")])
+        basis = [row[-1] for row in screen if row[1].endswith("3단계 · 개선안 조합 › 계산 근거")]
+        assert end == 5_282_000 and "5,282,000원" in basis, (end, basis)
+        # S257 확인 사례(= S258 (다))에서 갈렸다 — 끝 줄 5,743,000 · 계산 근거 5,744,000.
+        other = list(_render_confirm().rows)
+        table = [row for row in other if row[:2] == ("Excel", "조합 비교")]
+        written = _digits(table[-1][list(table[0]).index("기간 절감액(원)")])
+        shown = [
+            row[-1]
+            for row in other
+            if row[0] == "화면" and row[1].endswith("3단계 · 개선안 조합 › 계산 근거")
+        ]
+        assert written == 5_743_000 and "5,743,000원" in shown, (written, shown)
+        assert "5,744,000원" not in shown, shown
+    elif item == "9":
+        summary = [row[2:] for row in _slide(rows, "개선안별 요약") if row[1].endswith("표")]
+        contract = next(row for row in summary if row[0] == "계약전력 조정")
+        assert contract[1:] == ("없음", "—", "없음"), contract
+        page = [row[-1] for row in _slide(rows, "계약전력 조정")]
+        assert page[page.index("회수기간") + 1] == "없음", page
+    elif item == "10":
+        # 사람 실물 값 여덟 칸(S258 머리) — 태양광 12개월 · 경제성DR · 단순 합 · 합산효과 · 차이 ·
+        # 회수기간 · Excel 끝 줄 · 용량 곡선 32 kWp 줄(도입 후 역률 · 역률요금 절감).
+        measure = {
+            row[2]: row for row in rows if row[:2] == ("Excel", "수단별 결과") and len(row) > 5
+        }
+        assert measure["태양광 32 kWp"][5] == "4,709,000", measure["태양광 32 kWp"]
+        dr_row = next(row for name, row in measure.items() if name.startswith("경제성DR"))
+        assert dr_row[5] == "573,000", dr_row
+        assert _metric(screen, "단순 합") == _metric(screen, "합산효과") == "528만원/년"
+        assert _metric(screen, "차이") == "0원/년"
+        assert _metric(screen, "회수기간") == "15.1년"
+        head = list(excel[0])
+        assert _digits(excel[-1][head.index("기간 절감액(원)")]) == 5_282_000
+        curve = [row for row in rows if row[:2] == ("Excel", "태양광 용량 곡선")]
+        names = list(curve[0])
+        row32 = next(row for row in curve if row[2] == "32")
+        assert float(row32[names.index("도입 후 역률(%)")]) == pytest.approx(99.6, abs=0.05)
+        assert int(float(row32[names.index("기간 역률요금 절감(원)")])) == -4_000
+    elif item == "11":
+        # 실제 입력 변화 — 저장 방위(남동)와 화면 방위(남)가 갈려 경고가 선다(고치지 않았다 · 1-3).
+        stale = [row for row in screen if "입력이 변경되었습니다" in row[-1]]
+        assert stale and all("5. 태양광" in row[1] for row in stale), stale
+    else:
+        pytest.fail(f"모르는 항목 {item}")
+
+
+@pytest.mark.parametrize("item", [str(n) for n in range(1, 12)])
+def test_S258_결정이_사람_실물_확인_사례에_선다(item: str) -> None:
+    """**S258 결정 1 ~ 11** — 사람 실물 재점검(S257 뒤) 확인 사례 (가) 의 화면 · 네 산출물.
+
+    입력 — `small-a2-pf100-offset-area` 에 역률 99.68 · 야간 진상 100 · 사무실 · 8~17시 · 준공
+    2000 · DR 120 · 쉬는 날 2025-10-02 · 태양광 400 m² 보통 2,500,000원/kWp(저장 방위 남동 ·
+    화면 방위 남) · 잉여 상계 · SMP 120. 결정 10 은 사람 실물 값 여덟 칸이 같은지다.
+    """
+    _s258_check(item)
