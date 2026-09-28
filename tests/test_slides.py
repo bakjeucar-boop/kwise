@@ -783,10 +783,14 @@ def test_용어_풀이가_화면_툴팁에서_온다() -> None:
     table = narrative.terms()
     for key in ("load_factor", "base_load_ratio", "weekend_ratio", "off_hours_energy_share"):
         term = table[key]
-        assert term.formula and term.meaning
         assert term.tooltip.startswith(term.formula)
-        assert term.meaning in term.tooltip
         assert term.name in term.line
+        # 기저부하 비율은 의미 줄이 없다 — ESS 충전 여력 문장을 걷었다 (S257 결정 4).
+        if key == "base_load_ratio":
+            assert not term.meaning and term.tooltip == term.formula
+            continue
+        assert term.formula and term.meaning
+        assert term.meaning in term.tooltip
 
     source = (SRC_ROOT / "ui" / "views" / "diagnose.py").read_text(encoding="utf-8")
     assert "narrative.terms(" in source, "화면이 용어를 따로 들고 있으면 두 벌이 된다."
@@ -1989,10 +1993,10 @@ def test_부하패턴_문장_둘이_각각_갈린다(sample_diagnosis: Diagnosis
     base = replace(sample_diagnosis.pattern, load_factor=peaky, base_load_ratio=high)
     # **배수는 부하율의 역수다** (S169 2절) — 각주 「평균 수요 ÷ 최대 수요」 를 뒤집은 값.
     assert f"최대 수요가 평균 수요의 {1 / peaky:.1f}배입니다" in pattern_lead(base)
-    # **「좁습니다」 를 쓰지 않는다** (59세션 6절). 폭이 좁다는 말로 읽혀 무엇이
-    # 좁은지 되묻게 된다 — 뜻은 「여력이 제한적이다」 이다.
-    assert "충전 여력이 제한적입니다" in pattern_lead(base)
-    assert "좁습니다" not in pattern_lead(base)
+    # **「밤에도 설비가 돌아 ESS 충전 여력이 제한적입니다」 는 세우지 않는다** (S257 결정 4 ·
+    # S207) — 충전을 막는 것은 목표 − 밤 부하다. 기저부하가 높으면 둘째 문장이 없다.
+    assert "충전 여력" not in pattern_lead(base)
+    assert "기저부하" not in pattern_lead(base)
     both = pattern_lead(replace(base, load_factor=flat, base_load_ratio=low))
     assert "하루 내내 고르게" in both
     assert "충전 여력이 있습니다" in both

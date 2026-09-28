@@ -360,6 +360,39 @@ def test_역률_100_벌은_태양광이_낀_조합에서도_역률_몫이_0_이�
     assert rows((base_spec, pf_spec), 100.0) == ["기준선 (현행)", "+ 역률 97%"]
 
 
+def test_여지_없는_같은_금액_계약전력_줄은_조합_표에_서지_않는다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+) -> None:
+    """**여지 없는 계약전력만 더해 앞 줄과 금액 · 요금제가 같은 줄은 세우지 않는다** (S257 결정 1).
+
+    S239 결정 2 와 같은 원칙이다. 금액이 다른 줄(낮출 자리가 있는 계약)은 서고, 마지막
+    줄이면 둔다. 글자는 Excel 「조합 비교」 가 싣는 표(``frame``)의 조합 열이다.
+    """
+    from dataclasses import replace
+
+    base_spec = CombinationSpec("기준선 (현행)", CURRENT)
+
+    def run(contract_kw: float, *, tail: bool = True) -> ComparisonResult:
+        contract = replace(base_spec, name="+ 계약전력 조정", contract_kw=contract_kw)
+        switch = replace(contract, name="+ 요금제", selection=BEST)
+        specs = (base_spec, contract, switch) if tail else (base_spec, contract)
+        return compare_combinations(sample_usage, tariff, specs, quality=sample_report)
+
+    idle = run(6_000.0)
+    # 재료 — 6,000 kW 는 낮출 자리가 없다(하한이 어느 달에도 안 걸린다).
+    assert list(idle.frame().index) == ["기준선 (현행)", "+ 요금제"]
+    kept = run(6_000.0, tail=False)
+    assert list(kept.frame().index) == ["기준선 (현행)", "+ 계약전력 조정"]
+    assert kept.combinations[-1].contract_adjustment is not None
+    assert kept.combinations[-1].contract_adjustment.no_saving
+    busy = run(20_000.0)
+    # 하한이 걸리는 계약은 금액이 달라 선다.
+    assert list(busy.frame().index) == ["기준선 (현행)", "+ 계약전력 조정", "+ 요금제"]
+    assert busy.combinations[1].saving_won != busy.combinations[0].saving_won
+
+
 @pytest.mark.xfail(
     strict=True,
     reason=(
@@ -1253,42 +1286,37 @@ def test_적힌_차이가_0이면_이유_줄이_없다(simple: float, combined: 
     assert words.count("이유 ") == reasons, words
 
 
-def test_조합의_DR_감축_가능량은_조합_부하로_잰다(
+def test_조합의_DR_감축_가능량은_원_부하로_잰_2단계_카드_값과_같다(
     sample_usage: UsageData,
     sample_diagnosis: Any,
     sample_comparison: ComparisonResult,
 ) -> None:
-    """**조합의 DR 감축 가능량은 태양광 · ESS 를 반영한 조합 부하로 잰 값이다** (S245 마-16).
+    """**조합의 DR 감축 가능량은 원 부하로 잰 2단계 카드 값이다** (S257 결정 2 · 마-16 을 뒤집었다).
 
-    재는 방법은 2단계 DR 카드와 같고(``Diagnosis.dr_measure``) 넣는 부하만 다르다 —
-    ESS 는 피크를 깎은 뒤 남은 부하다. 2단계 카드는 원 부하 그대로다. 화면 합산효과가
-    부르는 ``_combined_dr_won`` 이 낸 값을 본다.
+    조합 부하(태양광을 빼고 ESS 가 깎은 부하)로 재면 태양광이 낮 부하를 낮춘 날이
+    저부하 평일로 잡혀 이미 센 발전량이 DR 감축으로 한 번 더 세어졌다. 화면 합산효과
+    (``_combined_dr_won``)와 산출물 조합 값(``with_demand_response``)이 다 카드 값이다.
     """
     import numpy as np
 
     from kwise.measures import evaluate_demand_response
     from kwise.ui.views.compare import _combined_dr_won
 
-    measure = sample_diagnosis.dr_measure
     card = sample_diagnosis.dr
-    assert measure is not None and card is not None
+    assert card is not None
     combined = sample_comparison.combinations[-1]
-    # 재료 — 마지막 조합에 태양광 · ESS 가 다 들고, 그 부하가 ESS 가 깎은 뒤의 부하다.
-    assert combined.spec.has_pv and combined.spec.has_ess and combined.dispatch is not None
-    assert combined.load_kw is not None
-    assert np.allclose(
-        combined.load_kw.to_numpy(), combined.dispatch.net_kw.to_numpy(), equal_nan=True
-    )
-    # 2단계 카드는 원 부하 그대로 — 같은 함수로 원 부하를 재면 카드 값이다.
-    assert measure(sample_usage.kw).annual_reducible_kwh == card.annual_reducible_kwh
-    again = measure(combined.load_kw)
-    # 재료 — 조합 부하가 감축 가능량을 움직인다(안 움직이면 이 못이 아무것도 안 문다).
-    assert again.annual_reducible_kwh != card.annual_reducible_kwh
+    # 재료 — 마지막 조합에 태양광 · ESS 가 다 들어 조합 부하가 원 부하와 다르다.
+    assert combined.spec.has_pv and combined.spec.has_ess and combined.load_kw is not None
+    assert not np.allclose(combined.load_kw.to_numpy(), sample_usage.kw.to_numpy(), equal_nan=True)
 
     price = 120.0
-    expected = evaluate_demand_response(again, unit_price_won_per_kwh=price).settlement_won
-    assert _combined_dr_won(sample_diagnosis, combined, price) == expected
-    assert _combined_dr_won(sample_diagnosis, combined, None) is None
+    expected = evaluate_demand_response(card, unit_price_won_per_kwh=price)
+    assert _combined_dr_won(sample_diagnosis, price) == expected.settlement_won
+    assert _combined_dr_won(sample_diagnosis, None) is None
+    settled = sample_comparison.with_demand_response(card, price)
+    for item in settled.combinations:
+        assert item.dr_annual_won == pytest.approx(expected.settlement_won)
+        assert item.dr_period_won == pytest.approx(card.period_reducible_kwh * price)
 
 
 def test_기간_합산효과는_관측_기간_DR_정산금을_담고_권장안을_그것으로_고른다(
@@ -1297,7 +1325,7 @@ def test_기간_합산효과는_관측_기간_DR_정산금을_담고_권장안�
     sample_diagnosis: Any,
     sample_comparison: ComparisonResult,
 ) -> None:
-    """**PPT · Word 기간 합산효과는 조합 부하로 잰 관측 기간 DR 정산금을 담는다** (S246 결정 1).
+    """**PPT · Word 기간 합산효과는 관측 기간 DR 정산금을 담는다** (S246 결정 1 · S257 원 부하).
 
     기간 값은 관측 기간 감축 가능량 × 단가 · 회수기간(12개월 기준)은 12개월 정산금을 담는다
     — 새 가정이 없다. 권장안은 그 합산효과로 고르고 조합 표 · 요금 칸은 그대로다. Word
@@ -1313,12 +1341,12 @@ def test_기간_합산효과는_관측_기간_DR_정산금을_담고_권장안�
     from kwise.report.notices import combination_saving
     from kwise.report.slides import _won as slide_won
 
-    measure = sample_diagnosis.dr_measure
+    card = sample_diagnosis.dr
     price = 120.0
-    settled = sample_comparison.with_demand_response(measure, price)
-    assert sample_comparison.with_demand_response(measure, None) is sample_comparison
+    settled = sample_comparison.with_demand_response(card, price)
+    assert sample_comparison.with_demand_response(card, None) is sample_comparison
+    result = evaluate_demand_response(card, unit_price_won_per_kwh=price)
     for item, before in zip(settled.combinations, sample_comparison.combinations, strict=True):
-        result = evaluate_demand_response(measure(item.load_kw), unit_price_won_per_kwh=price)
         # 재료 — 정산금이 서고 기간 값과 12개월 값이 갈린다(같으면 기준을 못 가린다).
         assert item.dr_period_won and item.dr_annual_won
         assert item.dr_period_won != pytest.approx(item.dr_annual_won)

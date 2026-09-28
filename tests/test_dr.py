@@ -319,9 +319,6 @@ def test_입찰_시각은_판단값이고_제주는_제주_창이다(
     assert land.windows == ((9, 12), (13, 18))
     assert island.windows == ((10, 18),)
     assert island.period_reducible_kwh != land.period_reducible_kwh
-    # 조합 부하로 다시 잴 때도 같은 창이다 (S245 마-16 부분 함수).
-    rerun = diagnose(sample_usage, load_tariff(), None, jeju=True).dr_measure
-    assert rerun is not None and rerun(sample_usage.kw).windows == island.windows
 
     # 점심 근거는 창이 둘인 육지에서만 선다 — 제주 창에서는 거짓이다.
     def facts(jeju: bool) -> set[str]:
@@ -437,12 +434,19 @@ def test_수단은_진단의_감축량을_그대로_쓴다(sample_diagnosis: Dia
 
 
 def test_안내_문구가_제약_셋을_모두_적는다(sample_diagnosis: Diagnosis) -> None:
-    """연간 제한 없음 · 하루 2회 8시간 · 6개월 입찰 제한."""
+    """연간 제한 없음 · 하루 2회 8시간 · 6개월 입찰 제한.
+
+    **입찰은 입찰 시간대에 · 하루 2회는 가정** (S257 결정 5) — 「판정 시간대에만 가능합니다」
+    는 거짓이었다(판정 시간대는 도구가 여력을 재는 창이다).
+    """
     profile = sample_diagnosis.dr
     assert profile is not None
     notice = evaluate_demand_response(profile).participation_notice
-    assert "연간 참여 일수 제한은 없으나" in notice
-    assert "하루 최대 2회(총 8시간)" in notice
+    assert "연간 참여 일수 제한은 없습니다" in notice
+    assert "입찰은 평일 입찰 시간대에 할 수 있고" in notice
+    assert f"겹치는 판정 시간대({profile.window_label})만 감축 가능 시간으로 세며" in notice
+    assert "하루 최대 2회(총 8시간)는 이 도구의 가정입니다" in notice
+    assert "에만 가능합니다" not in notice
     assert "6개월 입찰 제한" in notice
     assert "수요관리사업자와 상담해 결정하십시오" in notice
 

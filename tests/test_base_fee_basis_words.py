@@ -1521,6 +1521,9 @@ def test_Excel_조합_비교의_여지_없는_칸은_없음이다() -> None:
     `small-a2` 의 「계약전력 조정」 줄 — 하한이 안 걸려 계약전력을 낮춰도 한 푼 안 준다.
     다른 산출물(수단별 결과 · 요약)이 같은 사실을 「없음」 으로 적는다. 기준선 줄의 0 은
     계산해서 0 이라 수 그대로다.
+
+    **S257 결정 1 곁** — 그 줄은 앞 줄(기준선 0원)과 금액 · 요금제가 같아 이제 서지 않는다.
+    「없음」 칸은 그런 줄이 설 때(마지막 줄)의 꼴로 남는다 — 이 벌에서는 줄이 없음을 본다.
     """
     rendered = _render("small-a2")
     combo = {row[2]: row for row in rendered.rows if row[:2] == ("Excel", "조합 비교")}
@@ -1529,8 +1532,7 @@ def test_Excel_조합_비교의_여지_없는_칸은_없음이다() -> None:
     # 재료 — 같은 벌 수단별 결과가 계약전력 조정을 「없음」 으로 적는다.
     measure = [row for row in rendered.rows if row[:2] == ("Excel", "수단별 결과")]
     assert [row for row in measure if row[2].startswith("계약전력 조정") and "없음" in row], measure
-    row = combo["계약전력 조정"]
-    assert (row[saving], row[annual]) == ("없음", "없음"), row
+    assert "계약전력 조정" not in combo, list(combo)
     base = combo["기준선 (현행)"]
     assert (base[saving], base[annual]) == ("0", "0"), base
     others = [r for name, r in combo.items() if name not in ("조합", "계약전력 조정")]
@@ -1772,8 +1774,8 @@ def _s254_check(item: str) -> None:
         row = next(r for r in measure if r[2].startswith("계약전력 조정"))
         assert (row[3:5], row[column]) == (("0", "없음"), "없음"), row
     elif item == "#17":
-        contract = next(row for row in combo if row[2].endswith("계약전력 조정"))
-        assert contract[list(combo[0]).index("수단")] == "없음", contract
+        # S257 결정 1 곁 — 앞 줄과 금액 · 요금제가 같은 여지 없는 계약 줄은 이제 서지 않는다.
+        assert not [row for row in combo if row[2].endswith("계약전력 조정")], combo
     elif item == "#18":
         head = ("Excel", "요약", "요금", "초과사용부가금")
         excess = [r[-1] for r in rendered.rows if r[:4] == head]
@@ -1954,3 +1956,77 @@ def test_사람_실물_점검_S256_항목이_실물에_선다(item: str) -> None
     2025-10-02 · 운영 8~17시 · 설치 단가 2,500,000원/kWp. 대조 벌 `large-a`(역률 간주 · 단가 없음).
     """
     _s256_check(item)
+
+
+def _metric(screen: list[tuple[str, ...]], label: str) -> str:
+    """화면 3단계 지표 — 라벨 줄 바로 다음 「지표」 줄의 글자."""
+    stage3 = [row for row in screen if "3단계" in row[1] and row[2] == "Metric"]
+    at = next(i for i, row in enumerate(stage3) if row[3:] == ("라벨", label))
+    return stage3[at + 1][-1]
+
+
+def _s257_check(item: str) -> None:
+    """S257 결정 1 ~ 7 을 확인 사례(S256 과 같은 입력)의 화면 · 네 산출물로 본다."""
+    confirm = _render_confirm()
+    rows = list(confirm.rows)
+    lines = [" | ".join(row) for row in rows]
+    screen = [row for row in rows if row[0] == "화면"]
+    if item == "1":
+        # 여지 없는 같은 금액 계약 줄(0원 = 기준선 0원)이 조합 표 네 자리에 없다.
+        combos = [
+            row
+            for row in rows
+            if row[:2] == ("Excel", "조합 비교")
+            or (row[0] in ("PPT", "Word") and row[1].endswith("표") and "경제성DR" in "".join(row))
+        ]
+        assert combos, "재료 — 조합 표"
+        assert not [t for t in lines if re.search(r"\| (\+ )?계약전력 조정 \| (선택|0원)", t)], [
+            t for t in lines if "| 계약전력 조정 |" in t or "| + 계약전력 조정 |" in t
+        ]
+        assert not [t for t in lines if "combination_png" in t and t.endswith("계약전력 조정")]
+    elif item == "2":
+        # 합산효과의 DR = 2단계 카드(원 부하) — 차이가 0 이고 끝 줄이 단순 합과 같다.
+        assert _metric(screen, "합산효과") == _metric(screen, "단순 합") == "574만원/년"
+        excel = [row for row in rows if row[:2] == ("Excel", "조합 비교")]
+        last, head = excel[-1], list(excel[0])
+        # 기간 값 = 적힌 태양광 줄 5,170,000 + 기간 정산금 573,370 → 5,743,000 (S256 고3 ㄷ 꼴).
+        assert last[2] == "+ 경제성DR", last
+        assert _digits(last[head.index("기간 절감액(원)")]) == 5_743_000, last
+        total = next(row[3] for row in rows if row[:3] == ("Word", "표2", "기간 총 절감액"))
+        assert _digits(total) == 5_743_000, total
+        dr_row = next(
+            r for r in rows if r[:2] == ("Excel", "수단별 결과") and r[2].startswith("경제성DR")
+        )
+        assert dr_row[5] == "573,000", "재료 — 2단계 카드 12개월 정산금"
+    elif item == "3":
+        assert not [t for t in lines if "입력이 변경되었습니다" in t or "묵은 결과" in t]
+        assert [t for t in lines if t.startswith("화면") and "5. 태양광" in t], "재료 — 카드"
+    elif item == "4":
+        assert not [t for t in lines if "충전 여력이 제한적" in t], confirm.key
+        assert [t for t in lines if "| 기저부하 비율 |" in t], "재료 — 이름 · 값은 선다"
+    elif item == "5":
+        assert not [t for t in lines if "에만 가능합니다" in t or "남는 제약은" in t]
+        assert [t for t in lines if "하루 최대 2회(총 8시간)는 이 도구의 가정입니다" in t]
+        assert [t for t in lines if "은 이 도구의 가정이고, 입찰 시간대 가운데" in t]
+        assert [t for t in screen if "하루 한도(가정) 2회" in t[-1]]
+        assert [t for t in screen if "이 도구는 하루 최대 2회로 가정합니다" in t[-1]]
+    elif item == "6":
+        assert not [
+            t for t in lines if "최대수요 과소평가 위험" in t or "피크 시간대 편중 배수" in t
+        ]
+        assert not [t for t in lines if "kW 미만 구간" in t]
+    elif item == "7":
+        basis_rows = [
+            row[-1] for row in screen if row[1].endswith("3단계 · 개선안 조합 › 계산 근거")
+        ]
+        assert "차이" in basis_rows and "0원" in basis_rows, basis_rows
+        assert not [t for t in basis_rows if t.startswith("이유 ")], basis_rows
+    else:
+        pytest.fail(f"모르는 항목 {item}")
+
+
+@pytest.mark.parametrize("item", ["1", "2", "3", "4", "5", "6", "7"])
+def test_S257_결정이_확인_사례_실물에_선다(item: str) -> None:
+    """**S257 결정 1 ~ 7** — 계약 빈 줄 · 조합 DR 원 부하 · 묵은 결과 · ESS 문장 · DR 시간대 글 ·
+    품질 경고 둘 · 차이 이유 줄을 S256 확인 사례 입력의 화면 · 네 산출물로 본다."""
+    _s257_check(item)

@@ -231,19 +231,35 @@ def test_synthetic_skew_verdict_flips_when_outage_excluded(tmp_path: Path) -> No
 
 
 def test_skew_flag_reaches_warnings(tmp_path: Path) -> None:
-    """정전으로 판정되지 않는 편중은 그대로 경고로 나가야 한다."""
-    values = month_rows(march_2024_dates())
-    for date in ("2024-03-06", "2024-03-13", "2024-03-20"):
-        for label in make_labels(date):
-            stamp = parse_label(label)
-            if pd.Timestamp(f"{date} 10:15") <= stamp <= pd.Timestamp(f"{date} 16:00"):
-                del values[label]
-    report = check_quality(load_usage(write_csv(tmp_path / "skewed.csv", to_rows(values))))
+    """정전으로 판정되지 않는 편중은 그대로 경고로 나가야 한다.
 
-    assert report.outages == ()  # 흔적이 없으니 정전이 아니다
-    assert report.skew.flagged
-    assert report.skew.multiple > 1.5
-    assert any("최대수요 과소평가 위험" in message for message in texts(report.notices))
+    **다만 월별 신뢰도와 한 기준이다** (S257 결정 6 ㄱ) — 편중 구간 결측이 「정상」
+    달(결측률 5% 이하)에만 들면 세우지 않는다. 사흘(2.4%)은 정상 달 · 이레(5.6%)는 신뢰 제한 달.
+    """
+
+    def skewed(name: str, dates: tuple[str, ...]) -> QualityReport:
+        values = month_rows(march_2024_dates())
+        for date in dates:
+            for label in make_labels(date):
+                stamp = parse_label(label)
+                if pd.Timestamp(f"{date} 10:15") <= stamp <= pd.Timestamp(f"{date} 16:00"):
+                    del values[label]
+        return check_quality(load_usage(write_csv(tmp_path / name, to_rows(values))))
+
+    normal = skewed("normal.csv", ("2024-03-06", "2024-03-13", "2024-03-20"))
+    assert normal.outages == ()  # 흔적이 없으니 정전이 아니다
+    assert normal.skew.multiple > 1.5  # 재료 — 배수만 보면 편중이다
+    assert normal.flagged_months == ()
+    assert not normal.skew.flagged
+    assert not any("과소평가 위험" in message for message in texts(normal.notices))
+
+    days = tuple(f"2024-03-{day:02d}" for day in (4, 5, 6, 7, 8, 11, 12))
+    limited = skewed("limited.csv", days)
+    assert limited.outages == ()
+    assert [str(month.month) for month in limited.flagged_months] == ["2024-03"]
+    assert limited.skew.flagged
+    assert limited.skew.multiple > 1.5
+    assert any("최대수요 과소평가 위험" in message for message in texts(limited.notices))
 
 
 # --------------------------------------------------------------------- 이상치·일관성

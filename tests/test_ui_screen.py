@@ -406,6 +406,10 @@ def test_지표_툴팁이_산식과_의미_두_줄이다() -> None:
     for key, tip in tips.items():
         formula, _, meaning = tip.partition("\n\n")
         assert "÷" in formula, f"{key} 에 산식이 없습니다: {formula}"
+        # 기저부하 비율은 산식만이다 — 의미 줄 「ESS 충전 여력이 제한적」 을 걷었다 (S257 결정 4).
+        if key == "base_load_ratio":
+            assert not meaning, meaning
+            continue
         assert meaning.strip(), f"{key} 에 의미 줄이 없습니다."
         assert meaning.strip().endswith("다."), f"{key} 의미 줄이 문장이 아닙니다: {meaning}"
 
