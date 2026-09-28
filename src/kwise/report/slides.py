@@ -69,6 +69,7 @@ from kwise.report.notices import (
     demand_split,
     excess_not_measured_line,
     format_mwh,
+    lowering_recommended,
     max_demand_text,
     plain_text,
     rules_basis_line,
@@ -343,6 +344,21 @@ def caution_notes(entry: MeasureEntry) -> tuple[str, ...]:
         head, _, tail = text.partition(". ")
         lines.append({"first": f"{head}.", "rest": tail or head}.get(part, text))
     return tuple(dict.fromkeys(plain_text(line).strip() for line in lines))
+
+
+def combination_notes(sections: DocumentSections) -> tuple[str, ...]:
+    """조합 장 ※ — **조합만 하향을 권하는 벌**에서 필수 안내 한 줄 (S259 결정 3).
+
+    2단계가 하향을 권하면 계약 장 ※ 가 이미 싣는다(:func:`caution_notes`) — 같은 원칙으로
+    권하는 장에만 선다 (S258 결정 3 · 4).
+    """
+    adequacy = sections.diagnosis.contract if sections.diagnosis is not None else None
+    adjustment = adequacy.adjustment if adequacy is not None else None
+    if lowering_recommended(None, sections.comparison) and not lowering_recommended(
+        adjustment, None
+    ):
+        return (CONTRACT_CHANGE_WARNING,)
+    return ()
 
 
 #: 수단별 장을 가리키는 목차 한 줄 (38세션 1-1).
@@ -2208,12 +2224,15 @@ def _build_combination(
     gap = geometry.block_gap_in
     half = (geometry.content_width_in - gap) / 2
     right_left = geometry.margin_in + half + gap
+    # ※ 가 서면 표 · 그림 · 세로줄이 그 위에서 끝난다 (S259 결정 3). 없으면 본문 바닥이다.
+    notes = combination_notes(sections)
+    floor = _note_top(guide, *notes)
     _vrule(
         slide,
         guide,
         left=geometry.margin_in + half + gap / 2,
         top=top,
-        length=geometry.height_in - geometry.margin_in - top - 0.1,
+        length=floor - top - 0.1,
         color=colors.rule,
     )
 
@@ -2314,7 +2333,7 @@ def _build_combination(
         top=table_top,
         width=half,
         height=min(
-            geometry.height_in - geometry.margin_in - table_top - 0.1,
+            floor - table_top - 0.1,
             0.36 * len(rows),
         ),
         widths=(0.46, 0.3, 0.24),
@@ -2355,8 +2374,9 @@ def _build_combination(
         left=right_left,
         top=chart_top,
         width=half,
-        height=geometry.height_in - geometry.margin_in - chart_top,
+        height=floor - chart_top,
     )
+    _note(slide, guide, *notes)
 
 
 #: 부록 한 장에 담을 근거 줄 수. **넘치면 장을 나눈다** (39세션 5절).

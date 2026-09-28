@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 
 import streamlit as st
 
@@ -33,6 +34,7 @@ __all__ = [
     "get_combination_pick",
     "get_form",
     "get_solar_inputs",
+    "hold_choice",
     "input_key",
     "measure_float",
     "measure_price",
@@ -96,6 +98,19 @@ def carry_inputs() -> None:
         }
     )
     st.session_state[_CARRY] = shadow
+
+
+def hold_choice(key: str, options: Sequence[str]) -> None:
+    """**라벨이 바뀌는 라디오의 고른 값을 지킨다** (S259 결정 1).
+
+    Streamlit 은 라디오 값을 **라벨 글자**로 주고받는다. 라벨이 실행 사이에 바뀌면
+    (계산 뒤 방위의 상대 발전량 · 면적이 바뀐 밀도의 환산 용량) 브라우저가 쥔 옛
+    글자가 새 선택지에 없어 **기본값으로 풀린다** — 태양광 계산 뒤 아무 동작에서
+    방위가 남으로 돌아갔다. 그리기 전에 값을 다시 박으면 백엔드가 새 라벨 글자를
+    브라우저에 돌려준다. 이 실행 처음의 값은 아직 옛 라벨로 읽히므로 맞는 값이다.
+    """
+    if st.session_state.get(key) in options:
+        st.session_state[key] = st.session_state[key]
 
 
 # --------------------------------------------------------------------- 업로드

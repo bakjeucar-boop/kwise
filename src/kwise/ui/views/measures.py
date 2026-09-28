@@ -98,6 +98,7 @@ from kwise.ui.spec import DR_PRICED_HEADLINE, MEASURES, NO_HEADROOM_OVERVIEW, Me
 from kwise.ui.state import (
     ess_pricing,
     get_solar_inputs,
+    hold_choice,
     input_key,
     measure_float,
     set_solar_inputs,
@@ -106,11 +107,14 @@ from kwise.ui.state import (
 )
 
 __all__ = [
+    "STALE_INPUT",
     "WEATHER_SOURCE_LABELS",
     "chosen_surplus_revenue",
     "dr_off_days",
     "render",
     "solar_surplus_scenario",
+    "stale_lines",
+    "stale_measures",
     "weather_source_label",
 ]
 
@@ -118,6 +122,24 @@ __all__ = [
 #: 2단계 카드 지표의 절감액 이름 — **값이 12개월 환산이다** (S218 · 사람이 정했다).
 #: 이름이 곁에 서므로 값에 「/년」 을 안 붙인다 (S216).
 SAVING_LABEL = "12개월 환산 절감액"
+
+#: 묵은 결과 경고 — 카드와 3단계 막힘 줄이 같은 글자를 쓴다 (S259 결정 2).
+STALE_INPUT = "입력이 변경되었습니다 — 다시 계산하십시오."
+
+#: 묵은 결과 판정이 선 수단 키 — **2단계가 매 실행에 비우고 채운다** (S259 결정 2).
+#: 3단계는 같은 실행에서 뒤에 그려지므로 카드 경고와 같은 판정을 읽는다 (S233).
+_STALE = "_kwise_stale_measures"
+
+
+def stale_measures() -> tuple[str, ...]:
+    """이번 실행에서 묵은 결과 경고가 선 수단 키."""
+    return tuple(st.session_state.get(_STALE, ()))
+
+
+def stale_lines() -> tuple[str, ...]:
+    """막힌 자리에 세울 줄 — 묵은 수단마다 「5. 태양광 — 입력이 변경되었습니다 — …」."""
+    titles = {spec.key: measure_title(spec.title) for spec in MEASURES}
+    return tuple(f"{titles[key]} — {STALE_INPUT}" for key in stale_measures())
 
 
 #: 기상 출처의 **표시 이름** (31세션 4-2).
@@ -155,6 +177,7 @@ def render(
         context.quality,
     )
     st.header("🛠 2단계 · 개선 수단")
+    st.session_state[_STALE] = []
     # **머리말 캡션을 뺐다** (31세션 1-1). 「개선안 일곱을 차례로 놓았습니다」 는
     # 화면을 보면 아는 사실이었다. 달려 있던 `combination` 앵커는 제 자리인
     # 3단계 「조합 구성」 으로 옮겼다 — 조합 이야기를 하는 화면이 그쪽이다.
@@ -496,7 +519,12 @@ def _demand_response(
         _overview(spec)
         _caution("경제성DR 참여 여력을 산출하지 못했습니다.")
         return
-    priced = st.checkbox("정산 단가를 안다 (사업자 제시값)", value=False)
+    # 키가 있어야 옆단을 다녀와도 남는다 (S259 결정 1 · :func:`carry_inputs`).
+    priced = st.checkbox(
+        "정산 단가를 안다 (사업자 제시값)",
+        value=False,
+        key=input_key("demand_response", "priced"),
+    )
     unit_price = (
         st.number_input(
             "정산 단가 (원/kWh)",
@@ -803,6 +831,7 @@ def _solar(
         return
 
     # ---- 기본 입력 둘 (3.3). **2열로 나눈다** — 지역이 옆단으로 올라가 둘만 남았다.
+    # 입력마다 키를 둔다 — 키가 없으면 옆단을 다녀올 때 값을 잃는다 (S259 결정 1).
     area_col, density_col = st.columns(2)
     with area_col:
         area = st.number_input(
@@ -810,6 +839,7 @@ def _solar(
             min_value=0.0,
             value=float(saved.area_m2) if saved else 1000.0,
             step=50.0,
+            key=input_key("solar", "area"),
         )
     density_keys = [item.key for item in presets.densities]
     # **환산 용량은 라벨에, 상충 관계는 툴팁에** (15세션 1-2). 선택지와 설명이
@@ -822,6 +852,8 @@ def _solar(
     default_density = (
         saved.density_key if saved and saved.density_key in density_keys else presets.default.key
     )
+    # 라벨의 환산 용량이 면적을 따라 바뀐다 (S259 결정 1).
+    hold_choice(input_key("solar", "density"), density_keys)
     with density_col:
         density = st.radio(
             presets.density_label,
@@ -829,6 +861,7 @@ def _solar(
             index=density_keys.index(default_density),
             format_func=lambda key: density_labels[key],
             horizontal=True,
+            key=input_key("solar", "density"),
             # 밀도 설명은 **기준 데이터에서 온다.** 툴팁도 마크다운을 해석하므로
             # 파일에서 온 글은 escape 해서 넣는다 (25세션 2절).
             help="\n\n".join(
@@ -870,6 +903,7 @@ def _solar(
             "견적 단가입니다. 넣지 않으면 투자비와 회수기간을 산출하지 않습니다.\n\n"
             + manual_tip("pv-cost")
         ),
+        key=input_key("solar", "unit_cost"),
     )
 
     # ---- 확장 패널 (접어 둔다)
@@ -882,6 +916,7 @@ def _solar(
                 min_value=0.0,
                 value=0.0,
                 step=10.0,
+                key=input_key("solar", "capacity"),
             )
             azimuth_override = st.number_input(
                 "방위각 직접 입력 (도) — 0 이면 위 8방위 선택",
@@ -890,6 +925,7 @@ def _solar(
                 value=0.0,
                 step=5.0,
                 help="8방위 격자(45도)에 없는 각도를 쓸 때만 넣습니다.",
+                key=input_key("solar", "azimuth_override"),
             )
         with detail_right:
             # 슬라이더 대신 수치 입력 (16세션 0-2) — 끄는 동안 실행이 이어지지 않는다.
@@ -907,6 +943,7 @@ def _solar(
                 min_value=0.0,
                 value=0.0,
                 step=1_000_000.0,
+                key=input_key("solar", "total_cost"),
             )
         # **다중 어레이** (15세션 1-1). 벽면은 경사 90° 라 방위 영향이 훨씬 크다.
         st.markdown("**벽면 어레이** — 지붕과 방위를 따로 고릅니다. 0 이면 지붕 한 벌입니다.")
@@ -915,6 +952,7 @@ def _solar(
             min_value=0.0,
             value=float(saved.wall_area_m2) if saved else 0.0,
             step=50.0,
+            key=input_key("solar", "wall_area"),
         )
         wall_azimuth = (
             _azimuth_picker(
@@ -965,7 +1003,8 @@ def _solar(
     )
     stale = filled != inputs
     if stale:
-        _caution("입력이 변경되었습니다 — 다시 계산하십시오. 아래는 이전 결과입니다.")
+        st.session_state[_STALE].append(spec.key)
+        _caution(f"{STALE_INPUT} 아래는 이전 결과입니다.")
     inputs = saved_run
 
     # 4·5단계 — **파이프라인에서 가장 오래 걸리는 구간이다** (실측 43%).
@@ -1573,6 +1612,8 @@ def _azimuth_picker(
             options = {item.key: item.label for item in presets.azimuths}
 
     keys = [item.key for item in presets.azimuths]
+    # 계산 뒤 라벨에 상대 발전량이 붙는다 — 옛 라벨 글자로 남으로 풀렸다 (S259 결정 1).
+    hold_choice(input_key("solar", field), keys)
     picked = st.radio(
         "방위",
         keys,

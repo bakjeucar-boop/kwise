@@ -140,7 +140,7 @@ from kwise.ui.state import (
     set_combination_pick,
     surplus_prices,
 )
-from kwise.ui.views.measures import chosen_surplus_revenue
+from kwise.ui.views.measures import chosen_surplus_revenue, stale_lines, stale_measures
 
 __all__ = ["render"]
 
@@ -154,7 +154,20 @@ _HIDDEN_FACTS: frozenset[str] = frozenset()
 
 #: 「태양광 계산」 을 누르기 전 위젯 값 — 산출물은 저장된 태양광 입력만 읽는다.
 _SOLAR_WIDGETS = frozenset(
-    input_key("solar", f) for f in ("system_loss", "azimuth", "wall_azimuth")
+    input_key("solar", f)
+    for f in (
+        "system_loss",
+        "azimuth",
+        "wall_azimuth",
+        # 키를 새로 준 태양광 입력도 계산 전 위젯이다 (S259 결정 1).
+        "area",
+        "density",
+        "unit_cost",
+        "capacity",
+        "azimuth_override",
+        "total_cost",
+        "wall_area",
+    )
 )
 
 #: **산출물 만들기가 실패했을 때 기록이 나가는 자리** (82세션 1절).
@@ -331,8 +344,10 @@ def render(
             diagnosis.dr, measure_float("demand_response", "unit_price")
         )
     # **② 합산효과 — 단순 합과의 차이가 3단계의 존재 이유다** (14세션 5-2).
-    if stale:
-        callout.caution("선택이 변경되었습니다 — 다시 계산하십시오.")
+    # 묵은 수단을 쓴 합산효과도 같은 흐림으로 둔다 — 막힘 줄은 단추 위에 섰다 (S259 결정 2).
+    if stale or any(key in enabled for key in stale_measures()):
+        if stale:
+            callout.caution("선택이 변경되었습니다 — 다시 계산하십시오.")
         with callout.stale(_STALE_KEY):
             _combined_block(
                 usage,
@@ -449,7 +464,11 @@ def _combination_picker(reviewed: tuple[str, ...]) -> tuple[str, ...]:
     # **계산 버튼을 둔다** (33세션 5절 · 태양광과 같은 규칙 13세션).
     # 체크 하나에 조합 전부의 요금이 다시 돌아 화면이 그때마다 멈췄다 —
     # 다 고르고 한 번 누르게 한다.
-    if st.button("합산효과 계산", type="primary", key=_RUN_KEY):
+    # **묵은 수단이 있으면 누를 수 없다** (S259 결정 2) — 카드 경고와 같은 판정 · 같은 글자.
+    blocked = stale_lines()
+    for line in blocked:
+        callout.caution(line)
+    if st.button("합산효과 계산", type="primary", key=_RUN_KEY, disabled=bool(blocked)):
         set_combination_pick(tuple(picked))
         st.rerun()
     return tuple(picked)
@@ -1311,6 +1330,8 @@ def _download_block(
     # 토큰이 이미 문다.
     form = get_form()
     billed = form is not None and form.power_factor_pct is not None
+    # **묵은 수단이 있으면 만들지도 내려받지도 못한다** (S259 결정 2).
+    blocked = stale_lines()
     excel_tab, deck_tab = st.tabs(["Excel — 분석자용", "PPT 보고서 — 의사결정자용"])
 
     with excel_tab:
@@ -1320,7 +1341,9 @@ def _download_block(
         )
         include_timeseries = st.checkbox("15분 시계열 시트 포함", value=True)
         excel_token = f"{token}|{include_timeseries}|{area}"
-        if st.button("Excel 만들기", type="primary", key="build_excel"):
+        for line in blocked:
+            callout.caution(line)
+        if st.button("Excel 만들기", type="primary", key="build_excel", disabled=bool(blocked)):
             sections = ReportSections(
                 usage=usage,
                 bill=baseline,
@@ -1351,6 +1374,7 @@ def _download_block(
             label="Excel 내려받기",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="dl_excel",
+            disabled=bool(blocked),
         )
 
     # ================================================================= 36세션 1절 · Word
@@ -1383,7 +1407,9 @@ def _download_block(
         name = building.title if building is not None else NAME_MISSING
         st.caption(f"표지 이름 — **{name}** (옆단 「건물 정보」 에서 고칩니다)")
         deck_token = f"{token}|{name}"
-        if st.button("PPT 보고서 만들기", type="primary", key="build_ppt"):
+        for line in blocked:
+            callout.caution(line)
+        if st.button("PPT 보고서 만들기", type="primary", key="build_ppt", disabled=bool(blocked)):
             document = DocumentSections(
                 usage=usage,
                 bill=baseline,
@@ -1434,6 +1460,7 @@ def _download_block(
             label="PPT 내려받기",
             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
             key="dl_ppt",
+            disabled=bool(blocked),
         )
 
 
@@ -1466,13 +1493,20 @@ def _build(make: Callable[[], tuple[bytes, str]], *, slot: str, label: str, toke
     remember(slot, payload, filename, token=token)
 
 
-def _offer(*, slot: str, token: str, label: str, mime: str, key: str) -> None:
+def _offer(
+    *, slot: str, token: str, label: str, mime: str, key: str, disabled: bool = False
+) -> None:
     """담아 둔 바이트를 내려받게 한다. **서버에 남기지 않는다** (10.2)."""
     artifact = recall(slot, token=token)
     if artifact is None:
         return
     st.download_button(
-        label, data=artifact.payload, file_name=artifact.filename, mime=mime, key=key
+        label,
+        data=artifact.payload,
+        file_name=artifact.filename,
+        mime=mime,
+        key=key,
+        disabled=disabled,
     )
     st.caption(
         f"{artifact.filename} · {fmt.count(artifact.kilobytes, 'KB')} — 서버에는 남기지 않습니다."
