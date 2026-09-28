@@ -281,7 +281,9 @@ def _build(case_key: str, use: str = "", *, confirm: bool = False, human: bool =
             )
             state[input_key("demand_response", "off_days")] = ["2025-10-02"]
         if human:
-            # S258 (가) — 건물명 · 준공 · 야간 진상역률 100 · 저장 방위 남동(화면 위젯은 기본 남).
+            # S258 (가) — 건물명 · 준공 · 야간 진상역률 100 · 저장 방위 남동 · 화면 방위도 남동
+            # (S259 — 사람은 방위를 되돌리지 않았다 · 남은 스스로 풀린 값이었다).
+            state[input_key("solar", "azimuth")] = "southeast"
             state["building_name"] = "용인건물"
             state["building_year"] = 2000
             state["contract_form"] = replace(state["contract_form"], leading_power_factor_pct=100.0)
@@ -2166,9 +2168,9 @@ def _s258_check(item: str) -> None:
         assert float(row32[names.index("도입 후 역률(%)")]) == pytest.approx(99.6, abs=0.05)
         assert int(float(row32[names.index("기간 역률요금 절감(원)")])) == -4_000
     elif item == "11":
-        # 실제 입력 변화 — 저장 방위(남동)와 화면 방위(남)가 갈려 경고가 선다(고치지 않았다 · 1-3).
-        stale = [row for row in screen if "입력이 변경되었습니다" in row[-1]]
-        assert stale and all("5. 태양광" in row[1] for row in stale), stale
+        # S259 가 바로잡았다 — 사람 화면의 방위는 남동이라 묵은 결과 경고가 없다(S258 은 스스로
+        # 풀린 남을 사람 입력으로 읽어 경고가 선다고 물었다).
+        assert not [row for row in screen if "입력이 변경되었습니다" in row[-1]]
     else:
         pytest.fail(f"모르는 항목 {item}")
 
@@ -2179,6 +2181,237 @@ def test_S258_결정이_사람_실물_확인_사례에_선다(item: str) -> None
 
     입력 — `small-a2-pf100-offset-area` 에 역률 99.68 · 야간 진상 100 · 사무실 · 8~17시 · 준공
     2000 · DR 120 · 쉬는 날 2025-10-02 · 태양광 400 m² 보통 2,500,000원/kWp(저장 방위 남동 ·
-    화면 방위 남) · 잉여 상계 · SMP 120. 결정 10 은 사람 실물 값 여덟 칸이 같은지다.
+    화면 방위 남동 — S259 가 바로잡았다) · 잉여 상계 · SMP 120. 결정 10 은 사람 실물 값 여덟
+    칸이 같은지다.
     """
     _s258_check(item)
+
+
+# ===================================================================== S259
+
+
+#: 막힘 줄 — 카드 경고 글자에 수단 이름을 붙인다 (S259 결정 2).
+S259_BLOCK_LINE = "5. 태양광 — 입력이 변경되었습니다 — 다시 계산하십시오."
+_S259: dict[str, Any] = {}
+
+
+def _browser_radio(patch: pytest.MonkeyPatch) -> None:
+    """**AppTest 라디오를 브라우저처럼** (S259 1-1).
+
+    AppTest 는 실행마다 세션 값을 지금 라벨로 다시 적어 보내지만, 브라우저는 사람이 고른
+    그 순간의 **라벨 글자**를 쥐고 있다가 백엔드가 값을 새로 박을 때만 바꾼다. 그 차이로
+    S258 재현이 방위 풀림을 못 봤다 — 라디오마다 브라우저가 쥔 글자를 따로 든다.
+    """
+    from streamlit.proto.WidgetStates_pb2 import WidgetState
+    from streamlit.testing.v1 import element_tree as et
+
+    held: dict[str, str] = {}
+    init, setter = et.Radio.__init__, et.Radio.set_value
+
+    def _init(self: Any, proto: Any, root: Any) -> None:
+        init(self, proto, root)
+        if proto.set_value and proto.raw_value:
+            held[proto.id] = proto.raw_value
+        elif proto.id not in held and proto.HasField("default") and self.options:
+            held[proto.id] = self.options[proto.default]
+
+    def _set(self: Any, value: Any) -> Any:
+        setter(self, value)
+        held[self.id] = self.options[self.options.index(self.format_func(value))]
+        return self
+
+    def _state(self: Any) -> Any:
+        state = WidgetState()
+        state.id = self.id
+        if self.id in held:
+            state.string_value = held[self.id]
+        return state
+
+    patch.setattr(et.Radio, "__init__", _init)
+    patch.setattr(et.Radio, "set_value", _set)
+    patch.setattr(et.Radio, "_widget_state", property(_state))
+
+
+def _s259_view(app: Any, keys: dict[str, str]) -> dict[str, Any]:
+    """지금 화면 — 사람이 고른 입력 · 묵은 결과 경고 · 막힘 줄 · 눌리지 않는 단추."""
+    state = app.session_state
+    values = {name: state[key] for name, key in keys.items() if key in state}
+    texts = [str(item.value) for item in app.markdown]
+    buttons = {item.key: item.disabled for item in app.button if item.key}
+    buttons |= {item.key: item.disabled for item in app.get("download_button") if item.key}
+    return {
+        "values": values,
+        "stale": [t for t in texts if "입력이 변경되었습니다" in t],
+        "blocks": [t for t in texts if S259_BLOCK_LINE in t],
+        "disabled": sorted(key for key, off in buttons.items() if off),
+        "buttons": buttons,
+    }
+
+
+def _s259_flow() -> dict[str, Any]:
+    """사람 순서 한 판 — 입력 → 태양광 계산 → 그 뒤 동작들 → 방위를 바꾸고 → 다시 계산."""
+    if _S259:
+        return _S259
+    from dataclasses import replace
+
+    from streamlit.testing.v1 import AppTest
+
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    import render_deck
+
+    from kwise.pv import load_pv_presets
+    from kwise.ui.pipeline import ContractForm
+    from kwise.ui.state import input_key
+
+    case = replace(render_deck.BY_KEY[CONFIRM_KEY], power_factor_pct=99.68)
+    if not case.csv.is_file():
+        pytest.skip(f"자료가 없습니다: {case.csv}")
+    presets = load_pv_presets()
+    density = next(item.key for item in presets.densities if item.key != presets.default.key)
+    keys = {
+        "방위": input_key("solar", "azimuth"),
+        "벽면 방위": input_key("solar", "wall_azimuth"),
+        "밀도": input_key("solar", "density"),
+        "면적": input_key("solar", "area"),
+        "설치 단가": input_key("solar", "unit_cost"),
+        "총 투자비": input_key("solar", "total_cost"),
+        "벽면 면적": input_key("solar", "wall_area"),
+        "정산 단가를 안다": input_key("demand_response", "priced"),
+    }
+    chosen = {
+        "방위": "southeast",
+        "벽면 방위": "east",
+        "밀도": density,
+        "면적": 400.0,
+        "설치 단가": 2_500_000.0,
+        "총 투자비": 80_000_000.0,
+        "벽면 면적": 100.0,
+        "정산 단가를 안다": True,
+    }
+    patch = pytest.MonkeyPatch()
+    patch.delenv("KWISE_WEATHER_DIR", raising=False)
+    _browser_radio(patch)
+    views: dict[str, Any] = {}
+    try:
+        app = AppTest.from_file(str(render_deck.APP), default_timeout=900)
+        state = app.session_state
+        state["upload_bytes"] = case.csv.read_bytes()
+        state["upload_name"] = case.csv.name
+        state["contract_form"] = ContractForm(
+            contract_type=case.contract_type,
+            voltage=case.voltage,
+            option=case.option or render_deck._first_option(case.contract_type, case.voltage),
+            contract_kw=case.contract_kw,
+            power_factor_pct=case.power_factor_pct,
+        )
+        state["building_province"] = case.province
+        state["building_sigungu"] = case.sigungu
+        for key in ("solar", "demand_response"):
+            state[f"measure_on_{key}"] = True
+
+        def step(name: str) -> None:
+            app.run()
+            assert not app.exception, (name, app.exception)
+            views[name] = _s259_view(app, keys)
+
+        step("시작")
+        app.checkbox(key=keys["정산 단가를 안다"]).check()
+        step("정산 단가")
+        app.number_input(key=input_key("demand_response", "unit_price")).set_value(120.0)
+        app.number_input(key=keys["면적"]).set_value(400.0)
+        app.number_input(key=keys["설치 단가"]).set_value(2_500_000.0)
+        app.number_input(key=keys["총 투자비"]).set_value(80_000_000.0)
+        app.number_input(key=keys["벽면 면적"]).set_value(100.0)
+        step("수치 입력")
+        app.radio(key=keys["밀도"]).set_value(density)
+        app.radio(key=keys["방위"]).set_value("southeast")
+        app.radio(key=keys["벽면 방위"]).set_value("east")
+        step("방위 · 밀도")
+        app.button(key="solar_run").click()
+        step("태양광 계산")
+        app.radio(key=input_key("solar", "surplus_use")).set_value("상계거래(한전)")
+        step("잉여 상계")
+        app.button(key="nav_rules").click()
+        step("기준 데이터")
+        app.button(key="nav_analysis").click()
+        step("돌아오기")
+        app.selectbox(key=input_key("common", "ref_day")).set_value("custom")
+        step("대표일")
+        app.button(key="combo_run").click()
+        step("합산효과")
+        app.button(key="build_ppt").click()
+        step("PPT 만들기")
+        app.radio(key=keys["방위"]).set_value("south")
+        step("방위 남(계산 안 함)")
+        app.button(key="solar_run").click()
+        step("다시 계산")
+    finally:
+        patch.undo()
+    _S259.update(views=views, chosen=chosen)
+    return _S259
+
+
+#: 사람이 입력을 안 바꾼 흐름 — 태양광 계산 뒤 동작들 (1-1 이 해 본 후보).
+S259_KEPT = (
+    "태양광 계산",
+    "잉여 상계",
+    "기준 데이터",
+    "돌아오기",
+    "대표일",
+    "합산효과",
+    "PPT 만들기",
+)
+#: 막힐 자리 — 3단계 합산효과 · Excel · PPT 만들기 · 이미 만든 PPT 내려받기.
+S259_BLOCKED = ["build_excel", "build_ppt", "combo_run", "dl_ppt"]
+
+
+def _s259_check(item: str) -> None:
+    flow = _s259_flow()
+    views, chosen = flow["views"], flow["chosen"]
+    if item == "1":
+        for name in S259_KEPT:
+            view = views[name]
+            if name == "기준 데이터":  # 분석 화면을 안 그린다 — 값은 돌아온 뒤에 본다
+                continue
+            assert view["values"] == chosen, (name, view["values"])
+            assert view["stale"] == [] and view["disabled"] == [], (name, view)
+    elif item == "2":
+        view = views["방위 남(계산 안 함)"]
+        assert view["values"]["방위"] == "south", view["values"]
+        assert view["disabled"] == S259_BLOCKED, view["disabled"]
+        # 막힌 자리마다 한 줄 — 합산효과 단추 위 · Excel 탭 · PPT 탭.
+        assert len(view["blocks"]) == 3, view["blocks"]
+    elif item == "3":
+        view = views["다시 계산"]
+        assert view["stale"] == [] and view["blocks"] == [] and view["disabled"] == [], view
+        # 다시 계산하면 저장 입력이 바뀌어 옛 파일은 내밀지 않는다(S193 토큰) — 새로 만든다.
+        assert "dl_ppt" not in view["buttons"], view["buttons"]
+    elif item == "4":
+        from kwise.report.notices import CONTRACT_CHANGE_WARNING
+
+        line = f"※ {CONTRACT_CHANGE_WARNING}"
+        for key, expected in (("small-a2", True), ("small-ind-a2", True), ("large-a", False)):
+            rows = list(_render(key).rows)
+            combo = [row[-1] for row in _slide(rows, "조합구성 및 합산효과")]
+            assert (line in combo) is expected, (key, combo)
+            # 계약 장 ※ 에도 서는 벌(2단계가 하향을 권한다)은 조합 장에 두 번 세우지 않는다.
+            everywhere = [row for row in rows if row[0] == "PPT" and row[-1] == line]
+            assert not expected or len(everywhere) == 1, (key, everywhere)
+    else:
+        pytest.fail(f"모르는 항목 {item}")
+
+
+@pytest.mark.parametrize("item", ["1", "2", "3", "4"])
+def test_S259_사람이_고른_입력이_남고_묵은_결과로는_산출물을_못_만든다(item: str) -> None:
+    """**S259 결정 1 ~ 3.**
+
+    1 태양광 계산 뒤 아무 동작(잉여 처리 · 옆단 기준 데이터 다녀오기 · 대표일 · 합산효과 ·
+      만들기)에도 사람이 고른 입력(방위 · 벽면 방위 · 밀도 · 면적 · 단가 · 총 투자비 · 벽면
+      면적 · 「정산 단가를 안다」)이 남고 경고 · 막힘이 없다 — 라디오는 브라우저처럼 옛 라벨
+      글자를 보낸다.
+    2 사람이 방위를 바꾸고 다시 계산하지 않으면 합산효과 계산 · Excel · PPT 만들기 · 이미 만든
+      내려받기가 눌리지 않고 막힌 자리마다 「5. 태양광 — 입력이 변경되었습니다 — …」 한 줄.
+    3 태양광을 다시 계산하면 풀린다.
+    4 조합만 하향을 권하는 벌(`small-a2` · `small-ind-a2`)에서만 PPT 조합 장에 필수 안내 ※.
+    """
+    _s259_check(item)
