@@ -17,7 +17,7 @@ ESS 충전이 새 피크를 만드는지도 확인한다. 경부하 시간대 �
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 
 import pandas as pd
@@ -238,13 +238,13 @@ class CombinationResult:
     안 갈린다 — :func:`~kwise.measures.has_no_headroom` 한 자리가 가른다. 계산에는
     안 쓴다 — 이름(:attr:`applied`)과 이유 줄이 읽는다."""
     load_kw: pd.Series | None = None
-    """조합 부하 — 태양광을 빼고 ESS 가 피크를 깎은 뒤 남은 부하 (S245 마-16).
-    3단계가 경제성DR 감축 가능량을 이 부하로 다시 잰다. 요금에는 안 쓴다."""
+    """조합 부하 — 태양광을 빼고 ESS 가 피크를 깎은 뒤 남은 부하 (S245).
+    3단계 계약전력 추가 하향이 이 부하로 잰다. 요금에는 안 쓴다."""
     dr_period_won: float | None = None
-    """조합 부하로 잰 경제성DR 기간 정산금 — 관측 기간 감축 가능량 × 단가 (S246).
+    """경제성DR 기간 정산금 — 원 부하로 잰 관측 기간 감축 가능량 × 단가 (S246 · S257 결정 2).
     단가가 없거나 DR 을 조합에서 뺐으면 ``None`` 이다. 요금에는 안 쓴다."""
     dr_annual_won: float | None = None
-    """같은 부하로 잰 12개월 환산 정산금 (S246)."""
+    """같은 감축 가능량의 12개월 환산 정산금 (S246)."""
     notices: tuple[Notice, ...] = field(default=())
 
     @property
@@ -392,31 +392,28 @@ class ComparisonResult:
 
     def with_demand_response(
         self,
-        measure: Callable[[pd.Series], DrProfile] | None,
+        profile: DrProfile | None,
         unit_price_won_per_kwh: float | None,
     ) -> ComparisonResult:
-        """조합마다 **조합 부하로 잰** 경제성DR 정산금을 얹는다 (S246 결정 1).
+        """조합마다 경제성DR 정산금을 얹는다 (S246 결정 1).
 
-        재는 방법은 2단계 카드와 같고 넣는 부하만 조합 부하다 (S245 마-16). 기간 값은
-        관측 기간 감축 가능량 × 단가, 12개월 값은 12개월 환산 감축 가능량 × 단가 —
-        새 가정이 없다. 요금 · 절감액 칸은 그대로다(잉여 :meth:`with_surplus_revenue` 꼴).
+        **감축 가능량은 원 부하로 잰 2단계 카드 값이다** (S257 결정 2 · 마-16 을 뒤집었다) —
+        조합 부하로 재면 태양광이 낮 부하를 낮춘 날이 저부하 평일로 잡혀, 이미 전력량요금
+        절감으로 센 발전량이 DR 감축으로 한 번 더 세어졌다. 기간 값은 관측 기간 감축
+        가능량 × 단가, 12개월 값은 12개월 환산 감축 가능량 × 단가 — 새 가정이 없다.
+        요금 · 절감액 칸은 그대로다(잉여 :meth:`with_surplus_revenue` 꼴).
         """
-        if measure is None or unit_price_won_per_kwh is None:
+        if profile is None or unit_price_won_per_kwh is None:
             return self
-
-        def settle(item: CombinationResult) -> CombinationResult:
-            if item.load_kw is None:
-                return item
-            result = evaluate_demand_response(
-                measure(item.load_kw), unit_price_won_per_kwh=unit_price_won_per_kwh
-            )
-            return replace(
+        result = evaluate_demand_response(profile, unit_price_won_per_kwh=unit_price_won_per_kwh)
+        combinations = tuple(
+            replace(
                 item,
                 dr_period_won=result.period_reducible_kwh * unit_price_won_per_kwh,
                 dr_annual_won=result.settlement_won,
             )
-
-        combinations = tuple(settle(item) for item in self.combinations)
+            for item in self.combinations
+        )
         return replace(self, baseline=combinations[0], combinations=combinations)
 
     @property
@@ -943,6 +940,23 @@ def compare_combinations(
         or item.spec.has_pv
         or item.spec.has_ess
     ]
+    # **여지가 없는 계약전력만 더해 앞 줄과 금액 · 요금제가 같은 줄도 세우지 않는다** (S257
+    # 결정 1 · S239 결정 2 와 같은 원칙). 요금제를 다시 고르거나 금액이 다르면 둔다.
+    kept = []
+    for index, item in enumerate(results):
+        if (
+            kept
+            and index < len(results) - 1
+            and kept[-1].spec.contract_kw is None
+            and item.spec.contract_kw is not None
+            and item.contract_adjustment is not None
+            and item.contract_adjustment.no_saving
+            and item.saving_won == kept[-1].saving_won
+            and item.selection == kept[-1].selection
+        ):
+            continue
+        kept.append(item)
+    results = kept
 
     # **조합명은 여기서 붙인다** (20세션 4절). 조합이 여럿이라 어느 조합의 말인지
     # 밝혀야 하는데, 문구에 심어 두면 그 앞말이 지문이 되어 같은 조합의 다른 경고를

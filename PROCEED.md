@@ -417,6 +417,25 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 계산 폴더 몫 — `compare` 2(K1 · K2) · `diagnose` 3(K3 ~ K5) · `quality` 2(K6 · K7) · `tariff` · `measures` · `pv` 0. **요금 식 0 · 감축 가능량 식 0**(K1 은 넣는 부하만 원 부하로). `tools\` 0 · `CLAUDE.md` 0. 결정 8 은 기록(4-1).
 **1절 벽시계** 13:42:20 ~ 13:47:11(시각 명령 출력 · 커밋 앞).
 
+**2-1. 코드 · 문서 15자리를 고쳤다 — T1 ~ T4(시험)는 3절이 짓는다**(`git diff --numstat` · +/−).
+- **K1 · K2** `compare\combination.py` +35 −21 — `with_demand_response(profile, 단가)`: 원 부하 `DrProfile` 하나를 한 번 재어 조합마다 같은 `dr_period_won` · `dr_annual_won`(쓰이지 않게 된 `Callable` 가져오기 걷음 · `load_kw` · DR 칸 글) · `compare_combinations` 끝에 계약 줄 거르기(앞 줄에 계약이 없고 이 줄에 들며 · `contract_adjustment.no_saving` · 기간 절감액 같음 · 요금제 같음 · 마지막 줄 아님).
+- **K3** `diagnose\report.py` +3 −11 — `Diagnosis.dr_measure` · `functools.partial` 걷음 · `dr = dr_profile(usage.kw, …)` 로(S245 앞 꼴 · 인자 같다).
+- **K4 · K5** `diagnose\dr.py` +11 −7 — 참여 안내 「연간 참여 일수 제한은 없습니다. 입찰은 평일 입찰 시간대에 할 수 있고, 이 도구는 그 가운데 운영 시간과 겹치는 판정 시간대(…)만 감축 가능 시간으로 세며, 하루 최대 2회(총 8시간)는 이 도구의 가정입니다. 낙찰 후 …」 · 참고 「**연간 참여 일수 제한은 없습니다**. 하루 2회 × 최대 4시간(하루 8시간)은 이 도구의 가정이고, 입찰 시간대 가운데 운영 시간과 겹치는 판정 시간대(…)만 감축 가능 시간으로 세므로, 실질 제약은 …」.
+- **K6** `quality\missing.py` +5 −1 — `PeakHourSkew.peak_missing_months`(편중 구간 결측이 든 달 · 월 귀속은 `monthly_missing` 과 같은 구간 시작 시각).
+- **K7** `quality\checks.py` +8 −9 — 편중 구간 결측이 든 달 가운데 신뢰 제한 달이 없으면 `skew.flagged` 를 끈다(경고 · 화면 줄 · 이름표 한 값) · `quality.low_load` 근거 줄 걷음(`OutlierSummary` 값은 둔다).
+- **R1 · R2** `ui\views\compare.py` +18 −19 — `_combined_dr_won(diagnosis, 단가)` = 원 부하 카드 정산금 · `render` 가 `with_demand_response(diagnosis.dr, …)` · `_combined_block` 글 · 차이(`money.gap_won(적힌 합산효과, 적힌 단순 합)`)가 0 이면 이유 줄 없음.
+- **R3 · R4** `ui\views\measures.py` +13 −2 — 저장 입력의 빈 밀도 · 방위를 기본값(`presets.default.key` · `presets.default_azimuth_deg`)으로 채워 견준다(계산은 저장 입력 그대로) · DR 캡션 「하루 한도(가정)」.
+- **R5** `ui\spec.py` +2 −2 — 「평일 입찰 시간대에 참여할 수 있고 이 도구는 하루 최대 2회로 가정합니다. 낙찰 후 …」.
+- **R6** `report\narrative.py` +7 −9 — 4장 기저부하 비율이 판단값 이상이면 둘째 문장 없음(거울 문장은 둔다) · 용어 의미 줄 비움 · `Term.tooltip` 은 의미가 비면 산식만.
+- **M1** `docs\MANUAL.md` +8 −8 — 조합 DR 원 부하 문단(S257) · 결측 편중 표 한 칸 · 「100 kW 미만 저부하 구간」 을 근거 목록에서 걷음. **M2** `docs\MANUAL.html` +4 −4(`build_docs_20260928_135008.txt`).
+- 정적 확인(좁게) — `ruff check src` 통과 · `ruff format --check src` 어긋남 3(`report\document.py:1558` · `report\slides.py:1509` · `tariff\engine.py:1060` — 다 앞서 있던 줄) · `mypy src` 이상 없음(`mypy_20260928_135012.txt`).
+
+**2-2. 적게 닫았거나 번진 자리.**
+- **K4 는 입찰 시간대 칸을 안 붙였다** — 1-4 표는 「입찰 시간대 칸」 을 적었으나 글이 시각 대신 이름 「입찰 시간대」 를 쓰면(화면 개요 · S168 3절 「시각을 적지 않고 이름을 적는다」 와 같은 꼴) 칸이 필요 없다 — `DrProfile` 필드 0 · 적게 닫음 1.
+- **번짐 둘(M1 안)** — 매뉴얼 품질 목록의 「100 kW 미만 저부하 구간」 · 결측 편중 뜻 칸은 결정 6 이 걷거나 좁힌 줄을 적던 자리라 같이 고쳤다(1-4 M1 은 조합 DR 문단만 적었다).
+- 계산 폴더 밖 파일 0 늘었다 · 1-4 에 없던 파일 0.
+**2절 벽시계** 13:47:11 ~ 13:50:18(시각 명령 출력 · 기록 짓기 앞).
+
 ---
 
 ## 오늘 (2026-09-28) 256세션 — **고침 판 · 사람 실물 점검(화면 · PPT · Excel) 결과를 고치고(결정 가 · 고1 ~ 고9) · 원인을 모르는 자리를 잰다**

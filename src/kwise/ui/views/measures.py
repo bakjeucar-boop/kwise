@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+from dataclasses import replace
 
 import pandas as pd
 import streamlit as st
@@ -562,7 +563,8 @@ def _demand_response(
         ),
     )
     st.caption(
-        f"{JUDGE_WINDOW} {fmt.markdown_safe(diagnosis.dr.window_label)} · 하루 한도 "
+        # 하루 한도는 조문이 아니라 도구의 가정(판단값)이다 (S257 결정 5 · 89세션).
+        f"{JUDGE_WINDOW} {fmt.markdown_safe(diagnosis.dr.window_label)} · 하루 한도(가정) "
         f"{dr_max_events_per_day()}회 × 최대 {fmt.hours(dr_event_hours()[1], decimals=0)} "
         f"(하루 {fmt.hours(result.daily_hours_cap, decimals=0)}) · 참여 가능 시간 합 "
         f"{fmt.hours(result.participation_hours, decimals=0)}"
@@ -952,7 +954,16 @@ def _solar(
     if saved_run is None:
         _hint("면적·설치 밀도·지역·단가를 넣고 「태양광 계산」 을 누르십시오.")
         return
-    stale = saved_run != inputs
+    # **위젯이 채운 기본값은 입력 변경이 아니다** (S257 결정 3) — 저장 입력의 빈 밀도 ·
+    # 방위는 계산에서 기본값으로 풀리므로 그 값으로 채워 견준다. 계산은 저장 입력 그대로다.
+    filled = replace(
+        saved_run,
+        density_key=saved_run.density_key or presets.default.key,
+        azimuth_deg=(
+            presets.default_azimuth_deg if saved_run.azimuth_deg is None else saved_run.azimuth_deg
+        ),
+    )
+    stale = filled != inputs
     if stale:
         _caution("입력이 변경되었습니다 — 다시 계산하십시오. 아래는 이전 결과입니다.")
     inputs = saved_run

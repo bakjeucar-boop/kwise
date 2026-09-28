@@ -90,6 +90,8 @@ class PeakHourSkew:
     threshold: float
     flagged: bool
     excluded_slots: int
+    peak_missing_months: tuple[pd.Period, ...] = ()
+    """피크 시간대 결측이 든 달 (구간 시작 시각 귀속 — :func:`monthly_missing` 과 같다)."""
 
     @property
     def label(self) -> str:
@@ -206,7 +208,8 @@ def peak_hour_skew(
     overall_expected = int(keep.sum())
     overall_missing = int((missing & keep).sum())
     peak_expected = int((in_peak & keep).sum())
-    peak_missing = int((missing & in_peak & keep).sum())
+    peak_gap = (missing & in_peak & keep).to_numpy()
+    peak_missing = int(peak_gap.sum())
 
     overall_ratio = overall_missing / overall_expected if overall_expected else 0.0
     peak_ratio = peak_missing / peak_expected if peak_expected else 0.0
@@ -227,4 +230,5 @@ def peak_hour_skew(
         threshold=threshold,
         flagged=multiple > threshold,
         excluded_slots=int(len(index) - overall_expected),
+        peak_missing_months=tuple(sorted(set(starts[peak_gap].to_period("M")))),
     )

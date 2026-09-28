@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
@@ -207,6 +207,11 @@ def check_quality(
     )
 
     monthly = monthly_missing(usage.kw, interval, threshold=monthly_threshold)
+    # **편중은 월별 신뢰도와 한 기준으로 선다** (S257 결정 6 ㄱ) — 편중 구간의 결측이
+    # 「정상」 달에만 들면 세우지 않는다. 같은 달에 「위험」 과 「정상」 이 갈리지 않게.
+    limited = {month.month for month in monthly if month.flagged}
+    if skew.flagged and not limited.intersection(skew.peak_missing_months):
+        skew = replace(skew, flagged=False)
     outliers = _outliers(
         usage,
         contract_kw=contract_kw,
@@ -312,14 +317,8 @@ def _with_warnings(report: QualityReport) -> QualityReport:
     outliers = report.outliers
     if outliers.zero_kw_slots:
         messages.append(basis(f"0 kW 구간 {outliers.zero_kw_slots:,}건.", fact="quality.zero_kw"))
-    if outliers.low_load_count:
-        messages.append(
-            basis(
-                f"{outliers.low_load_kw:,.0f} kW 미만 구간 {outliers.low_load_count:,}건 "
-                f"(첫 시각 {outliers.low_load_slots[0]}).",
-                fact="quality.low_load",
-            )
-        )
+    # 저부하 구간 수는 근거 줄로 세우지 않는다 (S257 결정 6 ㄴ) — 근거 기록 없는 고정
+    # 문턱(100 kW)이라 작은 건물에서는 거의 모든 구간이 걸렸다. 값은 ``outliers`` 에 둔다.
     if outliers.over_contract_slots:
         # **주의** — 초과사용부가금 대상이다.
         messages.append(

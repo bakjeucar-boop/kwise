@@ -159,7 +159,7 @@ class Term:
     @property
     def tooltip(self) -> str:
         """화면 툴팁. **산식 한 줄 + 의미 한 줄** (21세션 2절)."""
-        return f"{self.formula}\n\n{self.meaning}"
+        return f"{self.formula}\n\n{self.meaning}" if self.meaning else self.formula
 
 
 def terms(pattern: LoadPattern | None = None) -> dict[str, Term]:
@@ -188,7 +188,7 @@ def terms(pattern: LoadPattern | None = None) -> dict[str, Term]:
         "base_load_ratio": Term(
             "기저부하 비율",
             f"야간({night_text}) 평균 수요 ÷ 주간 평균 수요.",
-            "높을수록 밤에도 도는 설비가 있어 ESS 충전 여력이 제한적입니다.",
+            "",  # ESS 충전 여력 문장은 세우지 않는다 (S257 결정 4)
             f"야간({night_short}) 평균 ÷ 주간 평균",
         ),
         "weekend_ratio": Term(
@@ -526,7 +526,7 @@ def solar_saving_breakdown(
 
 
 def pattern_lead(pattern: LoadPattern) -> str:
-    """4장 — **부하율과 기저부하로 두 문장.** 피크를 낮출지는 7장이 말한다."""
+    """4장 — **부하율 한 문장 · 기저부하가 낮으면 한 문장 더.** 피크를 낮출지는 7장이 말한다."""
     # **첫 문장은 모양만 말한다** (S169 2절). 앞서는 「짧은 피크 하나가 기본요금을
     # 끌어올리고 있어 피크를 낮출 여지가 큽니다」 로 원의 결론까지 적어, 기본요금
     # 비중만 보는 7장(:func:`structure_lead`)과 덱 벌 열다섯에서 반대로 말했다.
@@ -542,13 +542,11 @@ def pattern_lead(pattern: LoadPattern) -> str:
     else:
         first = f"부하율 {_pct(factor)}로 최대 수요가 평균 수요의 {1 / factor:.1f}배입니다."
     base = pattern.base_load_ratio
-    if base is None:
+    # 「밤에도 설비가 돌아 ESS 충전 여력이 제한적입니다」 는 세우지 않는다 (S257 결정 4 ·
+    # S207) — 충전을 실제로 막는 것은 밤 평균 ÷ 낮 평균이 아니라 목표 − 밤 부하다.
+    if base is None or base >= base_load_high():
         return first
-    if base >= base_load_high():
-        second = f"기저부하 비율 {_pct(base)}로 밤에도 설비가 돌아 ESS 충전 여력이 제한적입니다."
-    else:
-        second = f"기저부하 비율 {_pct(base)}로 밤 부하가 낮아 ESS 충전 여력이 있습니다."
-    return f"{first} {second}"
+    return f"{first} 기저부하 비율 {_pct(base)}로 밤 부하가 낮아 ESS 충전 여력이 있습니다."
 
 
 #: 태양광 판정을 문장으로. **판정과 근거 숫자를 함께 적는다** (39세션 1-1).
