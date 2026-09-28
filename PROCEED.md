@@ -376,6 +376,47 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - **(나) 지금 값** — 2단계 DR 카드 12개월 감축 34,349.8 kWh · 기간 33,785.1 kWh · 저부하 평일 2 · 정산금 4,121,973 · 조합 다섯 「기준선 (현행)」 · 「선택요금 전환 (II)」 53,579,556 · 「+ 계약전력 조정」 53,579,556(앞 줄과 같다) · 「+ 역률 97%」 58,797,470 · 「+ 태양광 1,600 kWp」 332,003,598(**DR 기간 4,378,909 · 12개월 4,452,094 — 조합 부하** · 합산 336,382,507 · 회수 7.14년) · 앞 넷의 DR 기간 4,054,214 · 12개월 4,121,973(원 부하와 같다) · 권장 「+ 태양광 1,600 kWp」.
 **0절 벽시계** 13:38:26 ~ 13:42:20(시각 명령 출력 · 커밋 앞).
 
+**1-1. 결정 2 — 조합 경제성DR 이 흐르는 자리**(Grep · Read · 0-2 스냅 `s257_show_20260928_134553.txt`).
+- **재는 자리 둘** — ① 화면 합산효과 `ui\views\compare.py` `_combined_dr_won`(`diagnosis.dr_measure(combined.load_kw)` · S245) ② PPT · Word · Excel 조합 값 `compare\combination.py` `ComparisonResult.with_demand_response(measure, 단가)`(조합마다 `measure(item.load_kw)` · S246) — 화면 `render` 가 `diagnosis.dr_measure` 를 넘긴다. `diagnose\report.py` `Diagnosis.dr_measure`(S245 `functools.partial`)는 이 둘과 시험 둘(`test_compare.py` · `test_dr.py` 제주 줄)만 쓴다 — 되돌리면 쓰는 자리가 없어진다.
+- **흘러가는 칸** — 화면 합산효과 · 차이 · 회수기간(`_combined_block` 의 `dr_won`) · 조합마다 `dr_period_won` · `dr_annual_won` → `settled_saving_won` · `settled_payback_years` · `best`(권장안) → PPT 15 · 16 「가장 유리한 조합」 · 표 끝 「+ 경제성DR」 · Word 표2 「권장 조합」 · 표13/14 끝 줄 · 권장안 문장 · Excel 조합 비교 끝 줄 · 조합 그림 끝 막대. **캐시 열쇠** — 조합 캐시(`cached_comparison`)는 DR 을 안 든다(얹기는 캐시 밖) · 바뀌는 열쇠 0.
+- **확인 사례 전 → 후(예정)** — (가) 조합 DR 781,350 → **573,370**(= 2단계 카드) · 합산효과 5,952,188 → **5,744,208**(595 → **574만원/년** = 단순 합) · 차이 21만원/년 → **0** · 회수기간 13.4 → 13.9년(8,000만원 ÷ 5,744,208 — 예정 셈) · 조합 표 끝 줄 595만원 → 574만원 · 권장안 「+ 태양광 32 kWp」 그대로(예정). (나) 끝 조합 DR 기간 4,378,909 → **4,054,214** · 12개월 4,452,094 → **4,121,973** · 합산(기간) 336,382,507 → **336,057,812** · 차이 −1,506만원/년 → 약 −1,539만원/년(예정) · 권장안 그대로(예정 · 앞 넷의 DR 이 이미 원 부하 값이라 순서가 안 바뀐다).
+- **마-16 을 문 시험** — `test_compare.py::test_조합의_DR_감축_가능량은_조합_부하로_잰다`(뒤집는다) · `test_compare.py::test_기간_합산효과는_관측_기간_DR_정산금을_담고_권장안을_그것으로_고른다`(`measure(item.load_kw)` 로 기대값을 짓는다 — 원 부하로) · `test_dr.py` 제주 창 못의 `dr_measure` 두 줄(S245).
+**1-2. 결정 1 · 7.**
+- **계약전력 빈 줄** — 만드는 자리 `compare\combination.py` `compare_combinations` 줄 거르기(ESS · 역률 거르기 곁 · 네 산출물과 화면 표가 다 `comparison.combinations` 를 읽는다). 서는 벌 — S256 1-2 가 센 **10벌**(`large-b` · `large-b-short` · `large-b-pf85` · `large-edu-b` · `large-ind-b` · `small-edu-a` — 선택요금 전환 줄과 같은 금액 · `small-a2` · `small-a2-pf100-offset` · `-area` · `small-ind-a2` — 기준선과 같은 0원) · `small-a-short` 는 여지가 「미산출」(판정 `ContractAdjustment.no_saving` 거짓)이라 밖. **다른 수단 변화** — 계약 줄이 싣는 다른 변화는 선택요금 재선정(`retuned` · 결과 `selection`)뿐이다 — 판정: 여지 없음(`contract_adjustment.no_saving`) · 앞 줄과 기간 절감액 같음 · 앞 줄과 요금제 같음 · 마지막 줄 아님(S239 결정 2). 확인 사례 — (가) 「계약전력 조정」(0원 = 기준선 0원 · 선택Ⅱ 그대로) 빠짐 · (나) 「+ 계약전력 조정」(53,579,556 = 앞 줄 · 선택Ⅱ 그대로) 빠짐. 뺀 뒤 — (가) 조합 표 「+ 태양광 32 kWp」 · 「+ 경제성DR」 두 줄 · (나) 「선택요금 전환 (II)」 · 「+ 역률 97%」 · 「+ 태양광 1,600 kWp」 · 「+ 경제성DR」.
+- **차이 이유 줄** — 만드는 자리 `ui\views\compare.py` `_interaction_reasons`(화면 계산 근거에만 선다 · 산출물 0) · 서는 조건 = 요금제가 바뀜 · 태양광/ESS 로 기본요금 기준 전력이 움직임 · 역률(여지 있음). 차이의 적힌 글자 — (가) 「21만원/년」 · 계산 근거 「208,000원」(결정 2 뒤 0 예정 → 이유 1 줄 안 섬) · (나) 「-1,506만원/년」 · 「-15,056,000원」(0 아님 → 이유 셋 그대로).
+**1-3. 결정 3 ~ 6.**
+- **결정 3** — `ui\views\measures.py` 태양광 카드 `stale = saved_run != inputs`(칸 통째) · 위젯이 채우는 기본값 둘 — 밀도(저장 `""` ↔ 위젯 기본 밀도 키) · 방위(저장 `None` ↔ 위젯 기본 방위 180°) — 둘 다 계산에서 같은 값으로 풀린다(`SolarInputs.preset` · `pv.layout` · `ui\pipeline.py:386`). 고친 뒤 — 저장 입력의 빈 두 칸을 그 기본값으로 채운 뒤 견준다 · 계산은 저장 입력 그대로. 확인 사례 (가) · 19벌 ⚠ 「입력이 변경되었습니다」 · 「**묵은 결과**」 두 줄이 빠진다(예정).
+- **결정 4** — ESS 문장이 서는 자리 둘: `report\narrative.py` `pattern_lead`(PPT 4장 「기저부하 비율 N%로 밤에도 설비가 돌아 ESS 충전 여력이 제한적입니다.」) · 같은 뜻 — 용어 「기저부하 비율」 의 의미 줄 「높을수록 밤에도 도는 설비가 있어 ESS 충전 여력이 제한적입니다.」(화면 1단계 지표 툴팁 · `Term.tooltip`). 거울 문장 「밤 부하가 낮아 ESS 충전 여력이 있습니다.」 는 결정 글자 밖 — 둔다(값으로 낸다). 기준 데이터 note(「이 위면 ESS 충전 여력이 제한적이라고 적는다」 · 산출물에 안 선다)는 안 고친다.
+- **결정 5** — 서는 자리 넷: ① 참여 안내 `diagnose\dr.py` `PARTICIPATION_NOTICE`(화면 DR 툴팁 · Excel 진단 · 수단별 결과 비고 · Word 주의 둘) 「연간 참여 일수 제한은 없으나 하루 최대 2회(총 8시간)이며 평일 판정 시간대(…)에만 가능합니다.」 ② 참고 `dr.no_annual_cap`(Excel · Word 부록 C) 「남는 제약은 하루 2회 × 최대 4시간(하루 8시간)과 판정 시간대(…) 뿐이므로」 ③ 화면 캡션 「판정 시간대 … · 하루 한도 2회 × 최대 4시간 (하루 8시간) · …」(`ui\views\measures.py`) ④ 화면 개요 「평일 입찰 시간대에 하루 최대 2회 참여할 수 있으며」(`ui\spec.py`). 매뉴얼(7.3 · `docs\MANUAL.md:777-800`)은 이미 사실대로다(판단값 · 입찰 ∩ 운영) — 0. 고친 뒤(예정) — ① 「연간 참여 일수 제한은 없습니다. 입찰은 평일 입찰 시간대(09~12시 · 13~20시)에 할 수 있고, 이 도구는 그 가운데 운영 시간과 겹치는 판정 시간대(…)만 감축 가능 시간으로 셉니다. 하루 최대 2회(총 8시간)는 이 도구의 가정입니다. 낙찰 후 …」 ② 「… 하루 2회 × 최대 4시간(하루 8시간)은 이 도구의 가정이고, 입찰 시간대(…) 가운데 운영 시간과 겹치는 판정 시간대(…)만 감축 가능 시간으로 세므로, 실질 제약은 …」 ③ 「하루 한도(가정) 2회 × …」 ④ 「평일 입찰 시간대에 참여할 수 있고 이 도구는 하루 최대 2회로 가정합니다. 낙찰 후 …」. 「하루 한도 8시간으로 자른 값」(근거 한 줄) · 「하루 상한 8시간」(Excel 셈 칸)은 셈을 적는 칸이라 둔다.
+- **결정 6 (ㄱ)** — 편중: `quality\missing.py` `peak_hour_skew`(평일 10 ~ 16시 결측률 ÷ 전체 > 1.5) · 월별: `monthly_missing`(달 결측률 > 5% → 신뢰 제한) · 경고 `quality\checks.py` `quality.peak_skew` · 화면 1단계 「피크 시간대 편중 배수 …」 줄(`ui\views\diagnose.py` · `skew.flagged`). 갈리는 벌 — 확인 사례 (가)(편중 2.80배 · 신뢰 제한 달 0). 고친 뒤 — 편중 구간의 결측이 든 달 가운데 신뢰 제한 달이 없으면 `flagged` 를 끈다(경고 · 화면 줄 · 이름표가 한 값). (나)(`large-b`)는 편중 경고가 원래 없다.
+- **결정 6 (ㄴ)** — `quality\checks.py` `quality.low_load` 근거 「100 kW 미만 구간 N건 (첫 시각 …)」(Excel 요약 · 화면 1단계 근거 툴팁). 그 판정 값(`OutlierSummary.low_load_slots`)을 쓰는 다른 계산 0(정전 판정은 제 문턱을 따로 쓴다) · 값은 둔다(`test_quality.py` 가 문다) · 줄만 뺀다.
+**1-4. 고칠 자리 — 19(울타리 · 하한).**
+
+| # | 갈래 | 자리 | 결정 |
+|---|---|---|---|
+| K1 | 계산 `compare` | `compare\combination.py` `with_demand_response` — 원 부하 프로파일 하나로 | 2 |
+| K2 | 계산 `compare` | `compare\combination.py` `compare_combinations` — 여지 없는 같은 금액 계약 줄 | 1 |
+| K3 | 계산 `diagnose` | `diagnose\report.py` `Diagnosis.dr_measure` 걷기(쓰는 자리 0) | 2 |
+| K4 | 계산 `diagnose` | `diagnose\dr.py` 참여 안내 · 입찰 시간대 칸 | 5 |
+| K5 | 계산 `diagnose` | `diagnose\dr.py` 참고 `dr.no_annual_cap` | 5 |
+| K6 | 계산 `quality` | `quality\missing.py` 편중 구간 결측이 든 달 | 6 (ㄱ) |
+| K7 | 계산 `quality` | `quality\checks.py` 편중 판정 · 저부하 근거 줄 | 6 (ㄱ) (ㄴ) |
+| R1 | 코드 | `ui\views\compare.py` `render` · `_combined_dr_won` 원 부하 | 2 |
+| R2 | 코드 | `ui\views\compare.py` 차이 0 이면 이유 줄 없음 | 7 |
+| R3 | 코드 | `ui\views\measures.py` 묵은 결과 판정 | 3 |
+| R4 | 코드 | `ui\views\measures.py` DR 캡션 | 5 |
+| R5 | 코드 | `ui\spec.py` DR 개요 | 5 |
+| R6 | 코드 | `report\narrative.py` 4장 ESS 문장 · 용어 의미 줄 | 4 |
+| M1 | 문서 | `docs\MANUAL.md:1553-1563` 조합 DR 원 부하 | 2 |
+| M2 | 문서(생성물) | `docs\MANUAL.html` | M1 |
+| T1 | 시험 | `tests\test_compare.py` 마-16 못 뒤집기 · S246 못 기대값 · 결정 1 · 7 못 | 1 · 2 · 7 |
+| T2 | 시험 | `tests\test_dr.py` 제주 줄 · 결정 5 못 | 2 · 5 |
+| T3 | 시험 | `tests\test_slides.py` 4장 문장 못 | 4 |
+| T4 | 시험 | `tests\test_quality.py` · 화면 시험(결정 3) · 확인 사례 실물 못 | 3 · 6 |
+
+계산 폴더 몫 — `compare` 2(K1 · K2) · `diagnose` 3(K3 ~ K5) · `quality` 2(K6 · K7) · `tariff` · `measures` · `pv` 0. **요금 식 0 · 감축 가능량 식 0**(K1 은 넣는 부하만 원 부하로). `tools\` 0 · `CLAUDE.md` 0. 결정 8 은 기록(4-1).
+**1절 벽시계** 13:42:20 ~ 13:47:11(시각 명령 출력 · 커밋 앞).
+
 ---
 
 ## 오늘 (2026-09-28) 256세션 — **고침 판 · 사람 실물 점검(화면 · PPT · Excel) 결과를 고치고(결정 가 · 고1 ~ 고9) · 원인을 모르는 자리를 잰다**
