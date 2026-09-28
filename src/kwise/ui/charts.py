@@ -931,9 +931,7 @@ def dr_daily_chart(profile: DrProfile) -> alt.LayerChart | alt.FacetChart:
     """
     frame = dr_daily_frame(profile)
     # 툴팁은 참 · 거짓을 「예 · 아니오」 로 적는다 (S256 고9 ㅂ) — 표식 층은 참 · 거짓으로 거른다.
-    shown = frame.assign(
-        **{"저부하 평일 표기": frame["저부하 평일"].map({True: "예", False: "아니오"})}
-    )
+    shown = frame.assign(**{"저부하 평일": frame["저부하 평일"].map({True: "예", False: "아니오"})})
     points = (
         alt.Chart(shown)
         .mark_circle(size=26, opacity=0.75)
@@ -950,7 +948,7 @@ def dr_daily_chart(profile: DrProfile) -> alt.LayerChart | alt.FacetChart:
                 date_tooltip(),
                 "구분",
                 alt.Tooltip(f"{DR_WINDOW_MEAN}:Q", format=",.0f"),
-                alt.Tooltip("저부하 평일 표기:N", title="저부하 평일"),
+                "저부하 평일",
             ],
         )
     )

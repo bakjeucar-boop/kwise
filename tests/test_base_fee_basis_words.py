@@ -195,7 +195,21 @@ def _render(key: str, use: str = "") -> Rendered:
     return _RENDERED[slot]
 
 
-def _build(case_key: str, use: str = "") -> Rendered:
+#: 사람 실물 점검 입력 (S256 확인 사례) — 밑 벌에서 더 심는 것. 역률 99.68 · DR 정산 단가 120 ·
+#: 쉬는 날 · 운영 8~17시 · 설치 단가. 벌 정의에는 없는 칸이라 여기서 심는다.
+CONFIRM_KEY = "small-a2-pf100-offset-area"
+
+
+def _render_confirm() -> Rendered:
+    slot = "confirm"
+    if slot not in _RENDERED:
+        _RENDERED[slot] = _build(CONFIRM_KEY, "office", confirm=True)
+    return _RENDERED[slot]
+
+
+def _build(case_key: str, use: str = "", *, confirm: bool = False) -> Rendered:
+    from dataclasses import replace
+
     from streamlit.testing.v1 import AppTest
 
     sys.path.insert(0, str(PROJECT_ROOT / "tools"))
@@ -205,10 +219,13 @@ def _build(case_key: str, use: str = "") -> Rendered:
     from kwise.report import slides_bytes
     from kwise.report.document import document_bytes
     from kwise.ui.artifacts import ARTIFACT_KEY
-    from kwise.ui.pipeline import ContractForm
+    from kwise.ui.pipeline import ContractForm, SolarInputs
+    from kwise.ui.state import input_key
     from kwise.ui.views import compare as compare_view
 
     case = render_deck.BY_KEY[case_key]
+    if confirm:
+        case = replace(case, power_factor_pct=99.68)
     if not case.csv.is_file():
         pytest.skip(f"자료가 없습니다: {case.csv}")
     patch = pytest.MonkeyPatch()
@@ -248,8 +265,19 @@ def _build(case_key: str, use: str = "") -> Rendered:
         for key in render_deck.ALL_MEASURES:
             state[f"measure_on_{key}"] = True
         state["combination_pick"] = render_deck.ALL_MEASURES
+        if confirm:
+            state["building_hours"] = (8, 17)
+            state["solar_inputs"] = SolarInputs(
+                region_key=case.sigungu, area_m2=case.area_m2, unit_cost_won_per_kwp=2_500_000.0
+            )
+            state[input_key("demand_response", "off_days")] = ["2025-10-02"]
         app.run()
         assert not app.exception, app.exception
+        if confirm:
+            box = next(item for item in app.checkbox if str(item.label).startswith("정산 단가를"))
+            box.check().run()
+            app.number_input(key=input_key("demand_response", "unit_price")).set_value(120.0).run()
+            assert not app.exception, app.exception
         collected = screen_audit.collect(app)
         screen = [(line.slot, line.text) for line in collected]
         texts = [text for _slot, text in screen]
@@ -1088,29 +1116,20 @@ def test_절사한_줄끼리의_셈이_적힌_합계와_선다(rendered_sums: Re
                     f"요금 계산 명세 {column['월']} {energy} 줄 합 · {total} {column[total]}"
                 )
 
-    # Excel 태양광 용량 곡선 — 줄마다 몫 열(「하한 걸린 달」 과 총 절감액 사이)의 합이 총
-    # 절감액이다 (S243 · 결정 1 · 가-4). **잉여 수익을 실은 고른 줄은 뺀다** — 그 줄의 기본 ·
-    # 전력량은 계산 근거 표 글자(S234 ㄱ)이고 총 절감액은 곡선 지점이라 다른 사실이다
-    # (`small-b-sell` 80 kWp −1,000원 · 고치지 않았다 · 243세션 절 1-2).
-    sold = {
-        float(texts["설치 용량"].replace(" kWp", "").replace(",", ""))
-        for texts in (
-            {label: text for label, _, text in lines}
-            for lines in _worksheet_tables(rendered.rows).values()
-        )
-        if "설치 용량" in texts and any(label.startswith("잉여 ") for label in texts)
-    }
+    # Excel 태양광 용량 곡선 — 줄마다 몫 열(「하한 걸린 달」 과 자가소비 절감액 사이)의 합이
+    # 자가소비 절감액이다 (S243 · 결정 1 · 가-4). **잉여 수익을 실은 고른 줄도 문다** (S256 고6) —
+    # S243 이 남긴 꼬리(`small-b-sell` 80 kWp −1,000원)를 적힌 기간 절감액 − 적힌 잉여로 닫았다.
     heads = [row[2:] for row in rendered.rows if row[:2] == ("Excel", "태양광 용량 곡선")][:1]
     if heads:
         head = list(heads[0])
-        shares = head[head.index("하한 걸린 달") + 1 : head.index("기간 총 절감액(원)")]
+        shares = head[head.index("하한 걸린 달") + 1 : head.index("기간 자가소비 절감액(원)")]
         for point in _sheet(rendered.rows, "태양광 용량 곡선"):
             capacity = point["용량(kWp)"]
             # 용량 0 줄은 자가소비율 칸이 비어 칸 자리가 밀린다 — 몫도 다 0 이다
-            if float(capacity) == 0 or float(capacity) in sold:
+            if float(capacity) == 0:
                 continue
             written = sum(float(point[name]) for name in shares)
-            if written != float(point["기간 총 절감액(원)"]):
+            if written != float(point["기간 자가소비 절감액(원)"]):
                 gaps.append(f"용량 곡선 {capacity} kWp {shares} 합 {written:,.0f}")
 
     summary = {
@@ -1785,3 +1804,151 @@ def test_문구_판_S254_항목이_실물에_선다(item: str) -> None:
     `small-a-short` — #1 대상인데 미산출인 부가금 칸(`large-a` 에는 없다).
     """
     _s254_check(item)
+
+
+def _digits(text: str) -> int:
+    """「5,951,000원」 · 「5951000」 → 5951000."""
+    return int(re.sub(r"[^\d]", "", text))
+
+
+def _next_after(rows: list[tuple[str, ...]], label: str) -> str:
+    """PPT 지표 — 라벨 줄 바로 다음 줄의 글자."""
+    at = next(i for i, row in enumerate(rows) if row[-1] == label)
+    return rows[at + 1][-1]
+
+
+def _s256_check(item: str) -> None:
+    """사람 실물 점검 입력(역률 99.68 · DR 정산 단가 120 · 상계거래 · 쉬는 날)의 네 산출물을 본다.
+
+    재료(수단 · 금액이 서는가)와 되돌림 대조 벌(`large-a` — 역률 간주 · 단가 없음)을 함께 본다.
+    """
+    confirm = _render_confirm()
+    rows = list(confirm.rows)
+    lines = [" | ".join(row) for row in rows]
+    ppt = [row for row in rows if row[0] == "PPT"]
+    word = [row for row in rows if row[0] == "Word"]
+    screen = [row for row in rows if row[0] == "화면"]
+    if item == "가":
+        # 단가를 넣은 판 — 빨간 차단 없이 ⚠ 한 문장 (결정 가 · 고1).
+        basis = "정산 단가는 전력거래소가 지역별 SMP로 정산하는 몫과 사업자 수수료에, 위약금은 "
+        dr = [row for row in screen if "경제성DR — 입력과 결과" in row[1]]
+        warned = [r for r in dr if r[2] == "Markdown" and r[-1].startswith("⚠")]
+        assert [r for r in warned if _plain(r[-1]).startswith(basis)], warned
+        assert not [t for t in lines if "입력하지 않아" in t], [t for t in lines if "입력하지" in t]
+        # 단가 없는 벌 — 차단은 정산 단가 하나 · 계통한계가격 입력을 전제하지 않는다.
+        plain = [" | ".join(row) for row in _render("large-a").rows]
+        assert [t for t in plain if "| 정산 단가를 입력하지 않아 금액을 산출하지 않았습니다." in t]
+        assert not [t for t in plain if "계통한계가격을 입력" in t]
+    elif item == "고2":
+        estimated = ("현재 역률은 추정값", "역률요금은 추정 역률 기반")
+        assert not [t for t in lines if any(word_ in t for word_ in estimated)], confirm.key
+        # 재료 — 역률을 안 넣은 벌에는 네 자리(화면 · PPT · Excel · Word)에 선다.
+        plain = [row for row in _render("large-a").rows if any(w in row[-1] for w in estimated)]
+        assert {row[0] for row in plain} == {"화면", "PPT", "Excel", "Word"}, plain
+    elif item == "고3":
+        # PPT 16장 · Word 조합 표 · Excel 조합 비교의 끝 줄 = 합산효과 (고3 ㄴ · ㄷ).
+        where = next(row[1] for row in ppt if row[2:] == ("조합", "기간 절감액", "회수기간"))
+        combo = [row for row in ppt if row[1] == where][1:]
+        assert combo[-1][2] == "+ 경제성DR", combo
+        ppt_text = [row for row in ppt if row[1] == where.removesuffix("표")]
+        assert combo[-1][3] == _next_after(ppt_text, "기간 총 절감액"), combo[-1]
+        assert "경제성DR" in _next_after(ppt_text, "가장 유리한 조합")
+        total = next(row[3] for row in word if row[2] == "기간 총 절감액")
+        header = ("조합", "요금제", "기간 절감액", "투자비", "회수기간")
+        word_where = next(row[1] for row in word if row[2:] == header)
+        word_combo = [row for row in word if row[1] == word_where][1:]
+        assert word_combo[-1][2] == "+ 경제성DR" and word_combo[-1][4] == total, word_combo[-1]
+        excel = [row for row in rows if row[:2] == ("Excel", "조합 비교")]
+        excel_head = list(excel[0])
+        last = excel[-1]
+        assert last[2] == "+ 경제성DR", last
+        assert _digits(last[excel_head.index("기간 절감액(원)")]) == _digits(total), (last, total)
+        figure = [
+            row for row in confirm.figures if "combination_png" in row[1] and row[2] == "눈금"
+        ]
+        assert figure and figure[-1][-1] == "+ 경제성DR", figure
+    elif item == "고4":
+        text = [row for row in ppt if row[1] == "8"]
+        free = _next_after(text, "투자 없이 가능한 기간 절감액")
+        assert free not in ("0원", "—"), free
+        assert [row for row in text if "경제성DR" in row[-1] and row[-1].startswith("설비 투자")]
+    elif item == "고5":
+        assert ("PPT", "8표", "역률 개선", "없음", "—", "없음") in rows, [
+            row for row in ppt if row[1] == "8표"
+        ]
+        excel = next(r for r in rows if r[:2] == ("Excel", "수단별 결과") and "역률 개선" in r[2])
+        assert excel[2:7] == (
+            "역률 개선 (현재 99.7% · 개선 여지 없음)",
+            "—",
+            "없음",
+            "없음",
+            "없음",
+        )
+        assert [t for t in lines if "지상역률 99.7% 는 감액 상한 97% 이상이라" in t]
+        assert not [t for t in lines if "지상역률 100% 는" in t]
+        legend = [r[-1] for r in confirm.figures if "power_triangle_png" in r[1] and r[2] == "범례"]
+        assert legend and all(t.startswith("현재 — 역률 99.7% · ") for t in legend), legend
+        assert not [r for r in rows if r[:2] == ("Excel", "부록 A 산출 근거") and "목표 역률" in r]
+    elif item == "고6":
+        note = next(row[-1] for row in ppt if "자가소비로 줄인 요금" in row[-1])
+        own, surplus = (_digits(part) for part in re.findall(r"[\d,]+원", note)[:2])
+        curve = [row for row in rows if row[:2] == ("Excel", "태양광 용량 곡선")]
+        head = list(curve[0])
+        chosen = next(row for row in curve if row[-1].startswith("◀"))
+        parts = [
+            int(float(chosen[head.index(name)]))
+            for name in (
+                "기간 기본요금 절감(원)",
+                "기간 전력량요금 절감(원)",
+                "기간 역률요금 절감(원)",
+            )
+        ]
+        written = int(float(chosen[head.index("기간 자가소비 절감액(원)")]))
+        assert sum(parts) == written == own, (parts, written, own)
+        assert own + surplus == _digits(
+            _next_after([r for r in ppt if r[1] == "13"], "12개월 환산 절감액")
+        )
+    elif item == "고7":
+        dr = next(
+            r for r in rows if r[:2] == ("Excel", "수단별 결과") and r[2].startswith("경제성DR")
+        )
+        assert dr[4] != "—" and dr[5] == "573,000", dr
+        assert not [t for t in lines if "등록 가능 용량" in t]
+        assert [t for t in lines if "등록 권장 용량이 참고 문턱" in t], "재료"
+    elif item == "고8":
+        caption = [row[-1] for row in ppt if row[1] == "7" and row[-1].startswith("월별 요금 구성")]
+        assert caption == ["월별 요금 구성"], caption
+        surplus = next(r for r in rows if r[:2] == ("Excel", "수단별 결과") and "└ 잉여" in r[2])
+        assert "외부 판매" not in surplus[-1], surplus
+        assert [t for t in lines if t.startswith("PPT") and "외부 판매 140원/kWh 로 산출" in t]
+        assert not [t for t in lines if "부록 B 의 시각 분포" in t or "봄·가을 피크" in t]
+        assert [t for t in lines if "진단 시트의 시각 분포" in t]
+        assert [t for t in lines if "3~6월·10~11월 피크 저감은" in t]
+    elif item == "고9":
+        tools = (
+            "예상 소요를 미리 알릴",
+            "샘플 한 벌 전체 실측",
+            "진행률 단계 가중치",
+            "화면 본문 줄 수 한도",
+        )
+        assert not [t for t in lines if any(w in t for w in (*tools, "화면 확인사항 개수 한도"))]
+        # Excel 수단별 결과 줄 이름만 — Word 절 제목(「3.6 7.6 ESS」)은 이 항목 밖이다.
+        assert not [t for t in lines if t.startswith("Excel | 수단별 결과 | 7.6 ESS")]
+        assert [t for t in lines if t.startswith("Excel | 수단별 결과 | ESS |")], "재료"
+        assert not [t for t in lines if "그리드 이탈 0.00" in t]
+        assert [t for t in lines if "| 선택요금 전환 (선택Ⅱ 유지) |" in t]
+        assert [t for t in lines if "| 선택요금 전환은 설비 도입과 무관하게" in t]
+        assert [t for t in lines if "| 경제성DR 은 요금 계량의 평일 판정과" in t]
+        assert [t for t in lines if "기간 자가소비 절감액(원)" in t]
+    else:
+        pytest.fail(f"모르는 항목 {item}")
+
+
+@pytest.mark.parametrize("item", ["가", "고2", "고3", "고4", "고5", "고6", "고7", "고8", "고9"])
+def test_사람_실물_점검_S256_항목이_실물에_선다(item: str) -> None:
+    """**사람 실물 점검(S256)** — 결정 가 · 고2 ~ 고9 를 확인 사례 입력의 네 산출물로 본다.
+
+    확인 사례 — `small-a2-pf100-offset-area` 에 역률 99.68 · DR 정산 단가 120 · 쉬는 날
+    2025-10-02 · 운영 8~17시 · 설치 단가 2,500,000원/kWp. 대조 벌 `large-a`(역률 간주 · 단가 없음).
+    """
+    _s256_check(item)

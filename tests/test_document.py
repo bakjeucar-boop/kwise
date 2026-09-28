@@ -795,14 +795,19 @@ def test_계산_근거가_화면_Excel_Word_에서_같다(
 
 def test_부록_B_는_기준_데이터에서_생성된다() -> None:
     """**손으로 옮겨 적지 않는다** (요구사항서 12장 · 22세션 3절)."""
-    from kwise.report.appendix import reference_rows
+    from kwise.report.appendix import TOOL_SETTINGS, reference_rows
     from kwise.rules import assumptions, rules
 
     rows = reference_rows()
     labels = {row[1] for row in rows}
     kinds = {row[0] for row in rows}
     assert kinds == {"법령 유래", "판단값"}
-    assert len(rows) == len(rules().item_keys()) + len(assumptions().item_keys())
+    # 도구 내부 설정(계산값 · 산출물 글자에 안 닿는다)은 싣지 않는다 (S256 고9 ㄹ).
+    assert set(assumptions().item_keys()) >= TOOL_SETTINGS
+    assert len(rows) == (
+        len(rules().item_keys()) + len(assumptions().item_keys()) - len(TOOL_SETTINGS)
+    )
+    assert not {assumptions()[key].label for key in TOOL_SETTINGS} & labels
     for key in ("dr.bid_restriction_months", "power_factor.lagging_standard_pct"):
         assert rules()[key].label in labels, key
     # 근거 조문과 확인일이 함께 실린다 — 값만 있으면 출처를 되짚을 수 없다.
@@ -1244,7 +1249,8 @@ def test_감액_상한_이상이면_산출물이_목표도_투입_제어도_말�
         )
     )
     cap = f"{lagging_rebate_cap_pct():,.0f}%"
-    verdict = f"지상역률 {current_pct:,.0f}% 는 감액 상한 {cap} 이상이라 개선할 것이 없습니다."
+    # 여지 없음 결론의 현재 역률은 한 자리 소수다 (S256 고5 · 카드 · 요약표와 같은 글자).
+    verdict = f"지상역률 {current_pct:,.1f}% 는 감액 상한 {cap} 이상이라 개선할 것이 없습니다."
     rebate = f"지상역률을 {current_pct:,.0f}% → {cap} 로 올리면"
     assert (verdict in word) is no_headroom, (current_pct, verdict)
     assert (rebate in word) is not no_headroom, (current_pct, rebate)
@@ -1279,6 +1285,21 @@ def test_감액_상한_이상이면_산출물이_목표도_투입_제어도_말�
         ]
 
     blank = cells(result)
+    if no_headroom:
+        # 여지가 없으면 투자 대상이 아니다 — 투자비 「—」 · 회수기간 「없음」 (S256 고5 ·
+        # S238 결정 2). 넣은 투자비도 같다.
+        assert blank == ["—", NO_SAVING] * 4, (current_pct, blank)
+        paid = evaluate_power_factor(
+            sample_usage,
+            tariff,
+            sample_bill.selection,
+            current_pct=current_pct,
+            investment_won=3_000_000.0,
+            baseline=sample_bill,
+            quality=sample_report,
+        )
+        assert cells(paid) == ["—", NO_SAVING] * 4, (current_pct, cells(paid))
+        return
     assert blank[:6] == [NO_INVESTMENT_INPUT] * 6, (current_pct, blank)
     assert blank[6:] == ["미산출", "미산출"], (current_pct, blank)
     paid = evaluate_power_factor(

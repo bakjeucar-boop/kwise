@@ -393,6 +393,46 @@ def test_leading_risk_is_always_warned(
     assert any("추정값" in message for message in texts(result.notices))
 
 
+def test_billed_power_factor_is_not_called_an_estimate(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+) -> None:
+    """**청구서 역률을 넣었으면 「추정값」 이 아니다** (S256 고2) — 넣은 판은 그 주의가 없다.
+
+    요금 계산은 한 원도 안 갈린다 — 안내 한 줄만 갈린다.
+    """
+    from kwise.report.appendix import known_limits
+    from kwise.report.notices import KNOWN_LIMITS, known_limit_lines
+
+    def run(billed: bool) -> Any:
+        return evaluate_power_factor(
+            sample_usage,
+            tariff,
+            CURRENT,
+            current_pct=95.0,
+            baseline=sample_bill,
+            quality=sample_report,
+            billed=billed,
+        )
+
+    guessed, billed = run(False), run(True)
+    assert [item.fact for item in guessed.notices if "추정값" in item.text] == [
+        "power_factor.estimated_only"
+    ]
+    assert not [item for item in billed.notices if "추정값" in item.text]
+    assert billed.saving_won == guessed.saving_won
+    # 알려진 한계 · 부록 C 도 넣은 판에서 역률 추정 줄을 뺀다 — 다른 줄은 그대로다.
+    estimate = next(line for line in KNOWN_LIMITS if line.startswith("역률요금은 추정 역률"))
+    assert estimate in known_limit_lines() and estimate not in known_limit_lines(
+        power_factor_billed=True
+    )
+    assert len(known_limit_lines(power_factor_billed=True)) == len(KNOWN_LIMITS) - 1
+    assert estimate not in known_limits(guessed.notices, power_factor_billed=True)
+    assert estimate in known_limits(guessed.notices)
+
+
 def test_payback_uses_the_investment(
     sample_usage: UsageData,
     sample_report: QualityReport,

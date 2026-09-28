@@ -459,15 +459,17 @@ def test_단가가_없으면_사유를_낸다(sample_diagnosis: Diagnosis) -> No
     # 안내가 말한다 — 같은 설명을 표 안에서 되풀이하지 않는다.
     assert result.settlement_label == "미산출 — 정산 단가 미입력"
     assert result.annual_reducible_kwh > 0  # 감축량은 낸다
-    # **차단은 한 줄이다** (22세션 1절). 단가 둘이 다 없으면 한 문장으로 묶는다.
+    # **차단은 정산 단가 하나다** (22세션 1절 · S256 결정 가 · 고1) — 화면에 입력 칸이 없는
+    # 위약금 가격은 빠진 입력으로 적지 않는다.
     blocked = [item for item in result.notices if item.fact == "dr.no_price"]
     assert len(blocked) == 1, [item.text for item in blocked]
     assert "지역별 SMP로 정산" in blocked[0].text
-    # 지역을 모르면 육지 식이라 빠진 가격은 계통한계가격이다 (S249 · 나-18).
-    assert "정산 단가 · 계통한계가격을 입력하지 않아" in blocked[0].text
-    assert "금액과 위약금 리스크를 산출하지 않았습니다" in blocked[0].text
-    # 조사가 어긋나지 않는다 — 「리스크을」 이 아니라 「리스크를」 이다.
-    assert "리스크을" not in blocked[0].text
+    assert blocked[0].text.startswith("정산 단가를 입력하지 않아 금액을 산출하지 않았습니다."), (
+        blocked[0].text
+    )
+    # 지역을 모르면 육지 식이라 위약금 가격 이름은 계통한계가격이다 (S249 · 나-18).
+    assert "위약금은 계통한계가격에 달려 있습니다" in blocked[0].text
+    assert "계통한계가격을 입력" not in blocked[0].text
 
 
 def test_DR_정산_단가_설명은_규칙_원문_글자를_쓴다(
@@ -524,6 +526,52 @@ def test_감축_가능량만_참고하라는_말은_정산_단가가_없을_때�
         return any(phrase in item.text for item in result.notices)
 
     assert (says(None), says(120.0)) == (True, False)
+
+
+def test_단가를_넣으면_가격_안내는_주의_한_문장이다(sample_diagnosis: Diagnosis) -> None:
+    """**단가를 넣은 판에는 빨간 차단이 없다** (S256 결정 가 · 고1).
+
+    화면에 계통한계가격 칸이 없어 「계통한계가격을 입력하지 않아 …」 는 입력을 전제한
+    문장이었다 — 남는 것은 가격이 무엇에 달렸는지 한 문장이고, 같은 카드의 다른 주의와
+    같은 ⚠ 꼴이다. 위약금 가격까지 넣으면(일괄 생성) 그 문장도 없다.
+    """
+    from kwise.notices import Severity
+
+    profile = sample_diagnosis.dr
+    assert profile is not None
+    priced = evaluate_demand_response(profile, unit_price_won_per_kwh=120.0)
+    notes = [item for item in priced.notices if item.fact == "dr.no_price"]
+    assert [(item.severity, item.text) for item in notes] == [
+        (
+            Severity.WARN,
+            "정산 단가는 전력거래소가 지역별 SMP로 정산하는 몫과 사업자 수수료에, 위약금은 "
+            "계통한계가격에 달려 있습니다 (전력시장운영규칙 별표26).",
+        )
+    ], notes
+    full = evaluate_demand_response(
+        profile, unit_price_won_per_kwh=120.0, penalty_price_won_per_kwh=150.0
+    )
+    assert not [item for item in full.notices if item.fact == "dr.no_price"]
+    # 기간 정산금 — 관측 기간 감축 가능량 × 단가 (S246 결정 1 · 단가 없으면 없다).
+    assert priced.period_settlement_won == pytest.approx(priced.period_reducible_kwh * 120.0)
+    assert evaluate_demand_response(profile).period_settlement_won is None
+
+
+def test_DR_그림_툴팁은_참_거짓이_아니라_예_아니오다(sample_diagnosis: Diagnosis) -> None:
+    """**툴팁에 「false / true」 가 섰다** (S256 고9 ㅂ) — 점 층 자료는 「예 / 아니오」 다.
+
+    표식 층(저부하 평일 삼각형)은 그대로 거른다 — 그 층 수가 저부하 평일 수다.
+    """
+    from kwise.ui.charts import dr_daily_chart
+
+    profile = sample_diagnosis.dr
+    assert profile is not None
+    chart = dr_daily_chart(profile)
+    points = chart.layer[0].data
+    assert set(points["저부하 평일"]) <= {"예", "아니오"}, set(points["저부하 평일"])
+    assert (points["저부하 평일"] == "예").sum() == profile.low_load_days_count
+    if profile.low_load_days_count:
+        assert len(chart.layer[-1].data) == profile.low_load_days_count
 
 
 def test_단가가_있으면_정산금을_낸다(sample_diagnosis: Diagnosis) -> None:

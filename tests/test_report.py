@@ -441,7 +441,7 @@ def test_summary_records_the_pv_judgement_population(summary_text: str) -> None:
     """어느 모집단으로 태양광 등급을 매겼는지 밝힌다 (5.2 ①)."""
     assert "태양광 판정 모집단" in summary_text
     assert "요금적용전력 대상 슬롯(중간·최대부하)" in summary_text
-    assert "부록 B 의 시각 분포는 전 슬롯" in summary_text
+    assert "진단 시트의 시각 분포는 전 슬롯" in summary_text  # S256 고8 ㄷ
 
 
 def test_summary_records_the_missing_data_policy(summary_text: str) -> None:
@@ -582,7 +582,8 @@ def test_켠_ESS_가_결과를_못_내면_까닭대로_없음이나_미산출_�
 
     title = measure_kind("ess").title
     sheet = measure_summary_frame(ess_optimum=optimum, ess_curve=curve)
-    assert list(sheet.index) == [title]
+    # Excel 줄 이름은 다른 줄과 같은 꼴 — 절 번호를 뗀 이름 (S256 고9 ㄱ).
+    assert list(sheet.index) == [measure_kind("ess").label]
     row = sheet.iloc[0]
     assert row["기간 절감액(원)"] == row["12개월 환산(원)"] == expected
     screen = standalone_frame(standalone_rows(ess_optimum=optimum, ess_curve=curve))

@@ -1153,9 +1153,14 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
                     "요금제": "—",
                     "수단": measure_kind("demand_response").label,
                     bill: "—",
-                    "기간 절감액(원)": saving[-1] + (settled.dr_period_won or 0.0),
-                    annual: combination_annual_saving(comparison, settled, peers)
-                    + (settled.dr_annual_won or 0.0),
+                    # 금액 칸은 이 표의 다른 줄처럼 표기 값(천 원 절사)이다 — Word 와 한 글자.
+                    "기간 절감액(원)": money.truncate_won(
+                        saving[-1] + (settled.dr_period_won or 0.0)
+                    ),
+                    annual: money.truncate_won(
+                        combination_annual_saving(comparison, settled, peers)
+                        + (settled.dr_annual_won or 0.0)
+                    ),
                     "투자비(원)": settled.investment_won,
                     "회수기간(년)": settled.settled_payback_years,
                     "요금적용전력(kW)": "—",

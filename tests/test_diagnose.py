@@ -955,7 +955,8 @@ def test_night_peak_diagnosis_uses_the_masked_population(
     result = diagnose(night_peak_usage, tariff, ContractInfo(CURRENT, contract_kw=2_000.0))
     assert result.summary.pv_potential is PvPotential.HIGH
     assert "요금적용전력 대상 슬롯" in result.summary.pv_basis
-    assert "부록 B" in result.summary.pv_basis
+    # 시각 분포 줄은 Excel 「진단」 시트에 선다 (S256 고8 ㄷ).
+    assert "진단 시트의 시각 분포" in result.summary.pv_basis
     # 야간 최대 2,000 kW 는 요금적용전력이 되지 못한다.
     assert result.peak.peak_kw == pytest.approx(2_000.0)
     assert result.peak.billing_demand_kw == pytest.approx(1_200.0)
