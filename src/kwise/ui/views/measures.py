@@ -1138,7 +1138,7 @@ def _solar(
             help=fmt.chart_tip("chart.solar_day"),
         )
     _notices(curve.notices)
-    _worksheet(solar_worksheet(curve, point))
+    _worksheet(solar_worksheet(curve, point, power_factor_pct=form.lagging_pct))
 
 
 def solar_surplus_scenario() -> str:

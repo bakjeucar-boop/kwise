@@ -281,7 +281,7 @@ def standalone_rows(
                 certainty=Certainty.HIGH,
                 zero_reason=NO_SAVING,
                 investment_reason="—",
-                payback_reason="—",
+                payback_reason=NO_SAVING,  # 절감 「없음」 이면 회수기간도 「없음」 (S258 결정 9)
             )
         )
     # **7.7 잉여 활용을 41세션에 뺐다.** 개선안이 아니라 태양광의 결과다 —

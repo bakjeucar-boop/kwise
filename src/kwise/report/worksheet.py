@@ -516,8 +516,31 @@ def power_factor_worksheet(result: PowerFactorResult) -> Worksheet:
 # --------------------------------------------------------------------- 7.5
 
 
-def solar_worksheet(curve: SolarCurve, point: SolarPoint | None = None) -> Worksheet:
-    """7.6 태양광 — **용량 → 발전량 → 절감액.**"""
+def _solar_factor_formula(point: SolarPoint, power_factor_pct: float | None) -> str:
+    """태양광 「기간 역률요금 절감」 산식 칸 — **도입 후 역률을 적는다** (S258 결정 6).
+
+    감액률이 그대로면 기본요금이 준 만큼 감액도 준다 — 값은 기본요금 절감 × 감액률이다.
+    조정률(감액률 · 추가율)이 바뀌거나 추가 쪽이면 전 → 후를 적는다(부호는 기본요금 조정 —
+    음수가 감액).
+    """
+    if power_factor_pct is None:
+        return "기본요금이 줄면 함께 준다"
+    after = point.power_factor_after_pct
+    before_rate = lagging_adjustment_ratio(power_factor_pct) * 100.0
+    after_rate = lagging_adjustment_ratio(after) * 100.0
+    if abs(after_rate - before_rate) < 1e-9 and before_rate < 0:
+        return f"도입 후 역률 {after:,.1f}% · 기본요금이 준 만큼 감액도 준다"
+    return f"도입 후 역률 {after:,.1f}% · {before_rate:+,.1f}% → {after_rate:+,.1f}%"
+
+
+def solar_worksheet(
+    curve: SolarCurve, point: SolarPoint | None = None, *, power_factor_pct: float | None = None
+) -> Worksheet:
+    """7.6 태양광 — **용량 → 발전량 → 절감액.**
+
+    ``power_factor_pct`` 는 요금에 넣은 주간 지상역률이다 — 역률 줄 산식 칸이 도입 후
+    역률과 조정률을 적는다 (S258 결정 6). 모르면 옛 산식 글이다.
+    """
     best = point if point is not None else curve.verdict().best
     if best is None:
         return Worksheet("solar", "태양광 계산 근거")
@@ -558,7 +581,13 @@ def solar_worksheet(curve: SolarCurve, point: SolarPoint | None = None) -> Works
     # 줄 이름은 이미 선 이름이다 — 계약 표의 「기간 역률요금 절감」 · 청구 표의 「초과사용부가금」.
     parts = ["기본", "전력량"]
     if factor_shown:
-        rows.append(WorkRow("기간 역률요금 절감", "기본요금이 줄면 함께 준다", _won(factor_shown)))
+        rows.append(
+            WorkRow(
+                "기간 역률요금 절감",
+                _solar_factor_formula(best, power_factor_pct),
+                _won(factor_shown),
+            )
+        )
         parts.append("역률")
     if excess_shown:
         rows.append(WorkRow("초과사용부가금", "", _won(excess_shown)))

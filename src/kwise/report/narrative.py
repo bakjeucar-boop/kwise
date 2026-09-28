@@ -53,7 +53,6 @@ __all__ = [
     "GLOSSARY_KEYS",
     "NOTE_JOIN",
     "NOTE_MARK",
-    "SINGLE_MEASURE_LEAD",
     "FlaggedMonthSource",
     "PeakDetailSource",
     "PeakSource",
@@ -526,7 +525,7 @@ def solar_saving_breakdown(
 
 
 def pattern_lead(pattern: LoadPattern) -> str:
-    """4장 — **부하율 한 문장 · 기저부하가 낮으면 한 문장 더.** 피크를 낮출지는 7장이 말한다."""
+    """4장 — **부하율 한 문장.** 피크를 낮출지는 7장이 말한다."""
     # **첫 문장은 모양만 말한다** (S169 2절). 앞서는 「짧은 피크 하나가 기본요금을
     # 끌어올리고 있어 피크를 낮출 여지가 큽니다」 로 원의 결론까지 적어, 기본요금
     # 비중만 보는 7장(:func:`structure_lead`)과 덱 벌 열다섯에서 반대로 말했다.
@@ -541,12 +540,9 @@ def pattern_lead(pattern: LoadPattern) -> str:
         first = f"부하율 {_pct(factor)}로 하루 내내 고르게 씁니다."
     else:
         first = f"부하율 {_pct(factor)}로 최대 수요가 평균 수요의 {1 / factor:.1f}배입니다."
-    base = pattern.base_load_ratio
-    # 「밤에도 설비가 돌아 ESS 충전 여력이 제한적입니다」 는 세우지 않는다 (S257 결정 4 ·
-    # S207) — 충전을 실제로 막는 것은 밤 평균 ÷ 낮 평균이 아니라 목표 − 밤 부하다.
-    if base is None or base >= base_load_high():
-        return first
-    return f"{first} 기저부하 비율 {_pct(base)}로 밤 부하가 낮아 ESS 충전 여력이 있습니다."
+    # 기저부하 비율로 ESS 충전 여력을 말하지 않는다 — 제한적(S257 결정 4) · 여력 있음(S258
+    # 결정 7) 둘 다. 충전을 실제로 막는 것은 밤 평균 ÷ 낮 평균이 아니라 목표 − 밤 부하다.
+    return first
 
 
 #: 태양광 판정을 문장으로. **판정과 근거 숫자를 함께 적는다** (39세션 1-1).
@@ -835,30 +831,15 @@ def measure_summary_lead(
     return f"설비 투자 없이 기간에 {saving_text}을 줄일 수 있습니다 — {names}입니다."
 
 
-#: 조합 장 — **조합은 다시 계산한다.** 캡션에 있던 사실을 해석 줄로 올렸다.
-COMBINATION_LEAD = (
-    "조합마다 요금을 처음부터 다시 계산했습니다. "
-    "수단을 함께 쓰면 효과가 겹치므로 개별 절감액의 단순 합이 아닙니다."
-)
-
-#: 수단이 하나뿐일 때 (53세션 4-14). **겹칠 것이 없다.**
-#:
-#: 「수단을 함께 쓰면 효과가 겹치므로」 는 조건절이라 거짓은 아니지만, 겹칠
-#: 것이 하나도 없는 덱에서 **겹침을 설명하는 것은 없는 이야기를 하는 것**이다.
-SINGLE_MEASURE_LEAD = (
-    "켠 수단이 하나라 겹치는 효과가 없습니다. 그래도 요금은 처음부터 다시 계산했습니다."
-)
+#: 조합 장 — **어느 입력에서도 한 문장이다** (S258 결정 2 · 사람이 정했다). 화면 3단계의
+#: 말이다. 수단 수로 갈리던 두 문장은 조합 줄 수로 갈라 태양광 · DR 을 켠 벌에도 「켠 수단이
+#: 하나라」 가 섰다 — 입력에 따라 거짓이 되는 갈래를 없앴다.
+COMBINATION_LEAD = "수단을 함께 도입하면 서로 영향을 주므로 조합을 통째로 다시 계산했습니다."
 
 
 def combination_lead(comparison: object | None = None) -> str:
-    """조합 장 해석 한 줄. **수단 수로 갈린다** (53세션 4-14).
-
-    ``comparison`` 을 주지 않으면 여러 수단을 전제한 문장을 낸다 — 옛 부름을
-    깨지 않으려는 것이고, 슬라이드는 언제나 넘긴다.
-    """
-    combinations = getattr(comparison, "combinations", None)
-    if combinations is not None and len(combinations) <= 2:
-        return SINGLE_MEASURE_LEAD
+    """조합 장 해석 한 줄 — :data:`COMBINATION_LEAD` 하나 (S258 결정 2)."""
+    del comparison
     return COMBINATION_LEAD
 
 

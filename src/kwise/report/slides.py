@@ -134,7 +134,6 @@ SLIDE_TITLES: dict[str, str] = {
     "combination": "조합구성 및 합산효과",
     "appendix": APPENDIX_SLIDE_TITLE,
     "closing": CLOSING_SLIDE_TITLE,
-    "cautions": "주의사항",
 }
 
 #: 레이아웃 형태 (36세션 3-4). **같은 형태를 반복하지 않는다.**
@@ -300,49 +299,48 @@ def slide_specs(sections: DocumentSections) -> tuple[SlideSpec, ...]:
         for index, page in enumerate(appendix_pages(sections))
     )
     specs.append(SlideSpec("closing", SLIDE_TITLES["closing"], "closing"))
-    # **빼면 덱을 오독할 주의사항만 마지막 한 장에 모은다** (S251 사람 결정). 없으면 장도 없다.
-    if caution_rows(sections):
-        specs.append(SlideSpec("cautions", SLIDE_TITLES["cautions"], "table"))
+    # 마지막 「주의사항」 장은 세우지 않는다 — 그 줄은 수단 장 ※ 로 간다 (S258 결정 3).
     return tuple(specs)
 
 
-#: 마지막 장 「주의사항」 에 싣는 안내의 사실과 **첫 문장만 싣는가** (S251 사람 결정).
+#: 수단 장 ※ 에 싣는 안내의 사실과 **싣는 몫** (S251 사람 결정 · S258 결정 3 이 수단 장으로 옮겼다).
+#:
+#:     all    글자 그대로
+#:     first  첫 문장만 — 역률 추정의 뒷 문장은 화면 입력 안내라 덱에서 뗀다
+#:     rest   첫 문장을 뗀다 — DR 「투자비는 0원이지만 …」 는 투자비 칸과 겹친다 (S258 결정 3)
 #:
 #: 잣대는 「빼도 덱 전체를 오해하지 않는가」 다 — 수단 장 · 요약 · 각주가 이미 적는 것과
 #: 숫자가 어디서 왔는지(근거)는 빼도 오해하지 않는다. 남는 것은 덱의 금액 · 목표를 그대로
-#: 믿으면 틀리는 것뿐이다(251세션 절 1-3 이 81 묶음을 갈랐다). 역률 추정의 뒷 문장은 화면
-#: 입력 안내라 덱에서 뗀다.
-CAUTION_SLIDE_FACTS: dict[str, bool] = {
-    "tariff.contract_type_threshold": False,
-    "tariff.tentative_base_fee_basis": False,
-    "tariff.school_exception_available": False,
-    "contract.penalty": False,
-    "dr.penalty_risk": False,
-    "power_factor.estimated_only": True,
+#: 믿으면 틀리는 것뿐이다(251세션 절 1-3 이 81 묶음을 갈랐다).
+CAUTION_NOTE_FACTS: dict[str, str] = {
+    "tariff.contract_type_threshold": "all",
+    "tariff.tentative_base_fee_basis": "all",
+    "tariff.school_exception_available": "all",
+    "contract.penalty": "all",
+    "dr.penalty_risk": "rest",
+    "power_factor.estimated_only": "first",
 }
 
 #: 수단 항목이 박은 줄 가운데 같은 잣대로 싣는 것 — 하향 여유 · ESS 단순 회수기간.
-CAUTION_SLIDE_LINES: tuple[str, ...] = (CONTRACT_CHANGE_WARNING, ESS_PAYBACK_CAVEAT)
+CAUTION_NOTE_LINES: tuple[str, ...] = (CONTRACT_CHANGE_WARNING, ESS_PAYBACK_CAVEAT)
 
 
-def caution_rows(sections: DocumentSections) -> tuple[tuple[str, str], ...]:
-    """「주의사항」 장의 줄 — ``(수단, 글자)``. **있는 글자만 쓴다** (S251).
+def caution_notes(entry: MeasureEntry) -> tuple[str, ...]:
+    """수단 장 맨 아래 ※ 로 옮긴 주의사항 — 한 줄에 하나 (S258 결정 3). **있는 글자만 쓴다.**
 
     실행할 것이 없는 수단(:attr:`MeasureEntry.actionable` 이 거짓)은 싣지 않는다 —
     하지도 않을 일을 조심하라는 말이다 (39세션 4-2 · :func:`_cautions` 와 같은 잣대).
     """
-    rows: dict[str, str] = {}
-    for entry in sections.measures:
-        if not entry.actionable:
+    if not entry.actionable:
+        return ()
+    lines = [line for line in entry.cautions if line in CAUTION_NOTE_LINES]
+    for notice in entry.notices:
+        part = CAUTION_NOTE_FACTS.get(notice.fact_base)
+        if part is None:
             continue
-        lines = [line for line in entry.cautions if line in CAUTION_SLIDE_LINES]
-        for notice in entry.notices:
-            first = CAUTION_SLIDE_FACTS.get(notice.fact_base)
-            if first is not None:
-                lines.append(notice.text.split(". ", 1)[0] + "." if first else notice.text)
-        for line in lines:
-            rows.setdefault(plain_text(line).strip(), measure_slide_title(entry))
-    return tuple((measure, line) for line, measure in rows.items())
+        head, _, tail = notice.text.partition(". ")
+        lines.append({"first": f"{head}.", "rest": tail or head}.get(part, notice.text))
+    return tuple(dict.fromkeys(plain_text(line).strip() for line in lines))
 
 
 #: 수단별 장을 가리키는 목차 한 줄 (38세션 1-1).
@@ -1013,6 +1011,19 @@ def _won(value: float | None, *, reason: str | None = None) -> str:
     if value is None:
         return reason if reason is not None else _UNPRICED
     return money.won_short(value, reason=_UNPRICED)
+
+
+def _cumulative(value: float, previous: float) -> str:
+    """조합 표 누적 칸 — ``528만원 (+57만원)`` (S258 결정 5). 몫은 **적힌 두 수의 차**다."""
+    gap = _shown_short(value) - _shown_short(previous)
+    return f"{_won(value)} ({'+' if gap >= 0 else ''}{_won(gap)})"
+
+
+def _shown_short(value: float) -> float:
+    """:func:`money.won_short` 가 **적는 수** — 만원 반올림 · 1만원 아래는 천 원 절사."""
+    size = round(abs(value))
+    shown = money.truncate_won(size) if size < 10_000 else round(size / 10_000) * 10_000
+    return math.copysign(shown, value)
 
 
 def _payback(years: float | None, investment_won: float | None) -> str:
@@ -2045,9 +2056,10 @@ def _build_measure(
     # **장이 따로 적는 줄은 제 줄에 선다** (59세션 14절). 미산출 사유 뒤에
     # 「·」 로 이어 붙이면 「역률 영향 반영 시 279,249,000원」 이 또 하나의
     # 미산출 사유처럼 읽힌다 — 다른 종류의 말이므로 ※ 를 따로 단다.
-    extra = entry.slide_note
+    # 옮겨 온 주의사항은 그 아래 줄마다 ※ 하나 (S258 결정 3).
+    notes = (terms_note, note, entry.slide_note, *caution_notes(entry))
     body = bottom + geometry.block_gap_in
-    height = _note_top(guide, terms_note, note, extra) - body - _BODY_TAIL
+    height = _note_top(guide, *notes) - body - _BODY_TAIL
     drawings = entry.slide_figures
     crowded = False
     if entry.spec_table:
@@ -2069,12 +2081,12 @@ def _build_measure(
         crowded = height < _MIN_FIGURE_BLOCK
     if drawings and height > _MIN_FIGURE_BLOCK:
         _measure_pictures(slide, guide, drawings, top=body, height=height)
-        _note(slide, guide, terms_note, note, extra)
+        _note(slide, guide, *notes)
         return
     # **여지가 없는 수단은 그 사실을 숫자로 보인다** (39세션 4-2·4-3). 실행
     # 주의사항 대신 「왜 없는지」 를 세우는 자리다.
     if crowded:
-        _note(slide, guide, terms_note, note, extra)
+        _note(slide, guide, *notes)
         return
     if not entry.actionable and entry.facts and not entry.facts_first:
         # **위 지표에 붙인다** (60세션 3절). 여기는 그림이 없는 장이라 남는
@@ -2088,7 +2100,7 @@ def _build_measure(
             top=body - geometry.block_gap_in + _STAT_ROW_GAP,
             width=geometry.content_width_in,
         )
-        _note(slide, guide, terms_note, note, extra)
+        _note(slide, guide, *notes)
         return
     # **여기는 그림 굽기가 실패했을 때의 폴백이다** (60세션 10절). `_safe_figure`
     # 가 ``None`` 을 돌려주면(13세션) 수단 장에 그림이 없고, 그때 실을 것이
@@ -2099,7 +2111,7 @@ def _build_measure(
         # **빈 표를 그리지 않는다** (60세션 10절). 「주의사항 / —」 만 남는
         # 자리가 있었다 — 실행할 것이 없는 수단(`actionable=False`)은
         # `_cautions` 가 빈 것을 돌려주기 때문이다. 뜨지 않느니만 못한 표다.
-        _note(slide, guide, terms_note, note, extra)
+        _note(slide, guide, *notes)
         return
     rows = [["주의사항"], *[[line] for line in cautions]]
     table_height = min(height, 0.7 * len(rows))
@@ -2114,7 +2126,7 @@ def _build_measure(
         width=geometry.content_width_in,
         height=table_height,
     )
-    _note(slide, guide, terms_note, note, extra)
+    _note(slide, guide, *notes)
 
 
 def _build_surplus(
@@ -2268,20 +2280,30 @@ def _build_combination(
     # Excel 은 열 이름 둘(「절감액(원)」·「12개월 환산 절감액(원)」)로 가르고 Word 는 한 칸에 함께
     # 적는데 **PPT 만 안 갈랐다.** 각주를 하나 더 두지 않고 **이름을 고친다** —
     # 기온 기준선을 「기간 평균」 이라 부르는 `frames.py` 의 규약과 같은 꼴이다.
-    rows = [["조합", "기간 절감액", "회수기간"]]
-    rows.extend(
-        [item.name, _won(item.saving_won), _payback(item.payback_years, item.investment_won)]
+    lines = [
+        (item.name, item.saving_won, _payback(item.payback_years, item.investment_won))
         for item in comparison.combinations
-    )
+    ]
     # 끝 줄이 합산효과와 같다 — 합산효과가 담는 DR 정산금을 이미 쓰는 수단 이름으로 (S256 고3 ㄴ).
     if (settled := settled_row(comparison)) is not None:
-        rows.append(
-            [
+        lines.append(
+            (
                 SETTLED_ROW_NAME,
-                _won(settled.settled_saving_won),
+                settled.settled_saving_won,
                 _payback(settled.settled_payback_years, settled.investment_won),
-            ]
+            )
         )
+    # **줄마다 윗줄까지를 더한 누적값이다** (S258 결정 5) — 두 번째 수단 줄부터 그 줄 몫을
+    # 괄호로 단다. 몫은 적힌 수끼리의 차다. 첫 줄은 기준선이다.
+    rows = [["조합", "기간 절감액", "회수기간"]]
+    rows.extend(
+        [
+            name,
+            _cumulative(saving, lines[index - 1][1]) if index >= 2 else _won(saving),
+            payback,
+        ]
+        for index, (name, saving, payback) in enumerate(lines)
+    )
     _table(
         slide,
         guide,
@@ -2327,7 +2349,7 @@ def _build_combination(
         guide,
         lambda: figures.combination_png(comparison),
         "조합구성 · 조합별 절감",
-        "조합별 기간 절감액과 투자비",
+        "조합별 누적 기간 절감액과 누적 투자비",
         left=right_left,
         top=chart_top,
         width=half,
@@ -2499,25 +2521,6 @@ def _appendix_note(sections: DocumentSections) -> str:
     return note
 
 
-def _build_cautions(
-    slide: Slide, guide: DesignGuide, sections: DocumentSections, spec: SlideSpec
-) -> None:
-    """주의사항 — **표형. 수단과 글자 두 칸** (S251 사람 결정). 글자는 Word 3장과 같다."""
-    geometry = guide.slide
-    top = _title(slide, guide, spec.title)
-    rows = [["수단", "주의사항"], *[list(row) for row in caution_rows(sections)]]
-    _table(
-        slide,
-        guide,
-        rows,
-        left=geometry.margin_in,
-        top=top,
-        width=geometry.content_width_in,
-        height=min(geometry.height_in - geometry.margin_in - top, 0.6 * len(rows)),
-        widths=(0.22, 0.78),
-    )
-
-
 # ===================================================================== 37세션 · 마무리
 #
 # **샌드위치의 아랫빵이다** (가이드 3-2). 36세션은 표지만 다크로 두었는데,
@@ -2685,7 +2688,6 @@ _BUILDERS: dict[str, Callable[[Slide, DesignGuide, DocumentSections, SlideSpec],
     "combination": _build_combination,
     "closing": _build_closing,
     "appendix": _build_appendix,
-    "cautions": _build_cautions,
 }
 
 

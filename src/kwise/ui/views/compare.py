@@ -84,6 +84,7 @@ from kwise.report.notices import (
     SCHOOL_HIGH_VOLTAGE_NOTICE,
     Peers,
     combination_saving,
+    settled_saving_shown,
     standalone_savings,
 )
 from kwise.report.worksheet import (
@@ -546,6 +547,10 @@ def _combined_block(
         actual, combined.saving_won, combination_saving(comparison, combined, peers)
     )
     combined_shown = actual if shown is None else shown
+    if dr_won is not None and combined.dr_annual_won is not None:
+        # DR 정산금을 담으면 Excel 조합 비교 끝 줄과 한 자리 — 적힌 조합 절감 + 정산금의 절사
+        # (S258 결정 8). 원값 합을 절사하면 같은 값이 1,000원 갈렸다.
+        combined_shown = settled_saving_shown(comparison, combined, peers, annual=True)
     simple_same = money.same_won(simple, actual, combined_shown)
     simple_shown = simple if simple_same is None else simple_same
 
@@ -982,7 +987,16 @@ class _MeasureResults:
         if self.power_factor is not None:
             sheets.append(power_factor_worksheet(self.power_factor))
         if self.solar_curve is not None:
-            sheets.append(solar_worksheet(self.solar_curve, self.solar))
+            # 요금에 넣은 역률 — 태양광 곡선이 쓴 값과 같다 (S258 결정 6).
+            sheets.append(
+                solar_worksheet(
+                    self.solar_curve,
+                    self.solar,
+                    power_factor_pct=(
+                        self.bill.power_factor.lagging_pct if self.bill is not None else None
+                    ),
+                )
+            )
         if self.ess is not None:
             sheets.append(ess_worksheet(self.ess))
         return tuple(sheet for sheet in sheets if sheet)

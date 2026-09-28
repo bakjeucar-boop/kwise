@@ -54,12 +54,14 @@ __all__ = [
     "format_mwh",
     "format_won",
     "known_limit_lines",
+    "lowering_recommended",
     "max_demand_text",
     "plain_text",
     "power_factor_charges",
     "rules_basis_line",
     "settled_composition",
     "settled_row",
+    "settled_saving_shown",
     "solar_lines",
     "standalone_savings",
     "surplus_kwh_text",
@@ -140,6 +142,23 @@ def without_arbitrage(notices: tuple[Notice, ...]) -> tuple[Notice, ...]:
 CONTRACT_CHANGE_WARNING = (
     "계약전력을 하향할 경우, 예측 오차와 기상 변동을 고려하여 충분한 여유를 확보하십시오."
 )
+
+
+def lowering_recommended(
+    adjustment: ContractAdjustment | None, comparison: ComparisonResult | None
+) -> bool:
+    """**하향을 권하는 벌인가** — :data:`CONTRACT_CHANGE_WARNING` 을 세우는 조건 (S258 결정 4).
+
+    2단계 목표 계약전력이 서거나(``adjustment.reducible``) 조합이 추가 하향을 권한다(조합
+    계약 조정이 ``reducible``). 산출물의 필수 안내 자리가 다 이 한 판정을 쓴다.
+    """
+    if adjustment is not None and adjustment.reducible:
+        return True
+    return comparison is not None and any(
+        item.contract_adjustment is not None and item.contract_adjustment.reducible
+        for item in comparison.combinations
+    )
+
 
 # 요구사항서 부록 D — 알려진 한계
 KNOWN_LIMITS: tuple[str, ...] = (
@@ -533,6 +552,24 @@ def combination_annual_saving(
         item.annual_saving_won, item.saving_won, combination_saving(comparison, item, peers)
     )
     return item.annual_saving_won if shown is None else shown
+
+
+def settled_saving_shown(
+    comparison: ComparisonResult, item: CombinationResult, peers: Peers = (), *, annual: bool
+) -> float:
+    """합산효과(DR 정산금을 담은 조합 절감)의 표기 값 — **적힌 조합 절감 + DR 정산금의 절사**.
+
+    Excel 조합 비교 끝 줄 · Word 기간 총 절감액 · 화면 3단계 계산 근거가 이 한 자리를
+    쓴다 (S258 결정 8 · S233 ㄱ · S246 결정 1). 화면만 원값 합을 절사해 같은 값이 1,000원
+    갈렸다(5,743,000 · 5,744,000). ``annual`` 이면 12개월 값이다.
+    """
+    if annual:
+        return money.truncate_won(
+            combination_annual_saving(comparison, item, peers) + (item.dr_annual_won or 0.0)
+        )
+    return money.truncate_won(
+        combination_saving(comparison, item, peers) + (item.dr_period_won or 0.0)
+    )
 
 
 def contract_saving(result: ContractAdjustment) -> float | None:

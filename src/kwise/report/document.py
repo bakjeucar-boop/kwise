@@ -39,7 +39,7 @@ from kwise.compare import (
     SensitivityRange,
 )
 from kwise.diagnose import ContractAdequacy, Diagnosis
-from kwise.diagnose.dr import DR_OFF_DAYS_FACT, JUDGE_WINDOW, DrProfile
+from kwise.diagnose.dr import JUDGE_WINDOW, DrProfile
 from kwise.io import UsageData
 from kwise.measures import (
     MARGIN_FACT,
@@ -93,10 +93,12 @@ from kwise.report.notices import (
     ess_unpriced_reason,
     excess_not_measured_line,
     format_mwh,
+    lowering_recommended,
     max_demand_text,
     plain_text,
     settled_composition,
     settled_row,
+    settled_saving_shown,
     surplus_split_kwh,
     switch_annual_saving,
     switch_saving,
@@ -563,8 +565,9 @@ def _combination_investment(item: CombinationResult) -> str:
 
 
 def _settled_saving(comparison: ComparisonResult, best: CombinationResult, peers: Peers) -> float:
-    """권장 조합의 기간 총 절감액 — 적힌 조합 절감에 기간 DR 정산금을 더한다 (S246 결정 1)."""
-    return combination_saving(comparison, best, peers) + (best.dr_period_won or 0.0)
+    """권장 조합의 기간 총 절감액 — 적힌 조합 절감에 기간 DR 정산금을 더한다 (S246 결정 1 ·
+    Excel 끝 줄 · 화면 계산 근거와 한 자리 · S258 결정 8)."""
+    return settled_saving_shown(comparison, best, peers, annual=False)
 
 
 def _payback_text(years: float | None, investment_won: float | None) -> str:
@@ -604,6 +607,17 @@ def _notice_text(notices: tuple[Notice, ...], fact: str) -> str:
     ``dropped_rows`` 와 같은 규약).
     """
     return next((item.text for item in notices if item.fact == fact), "")
+
+
+def _dr_price_note(price: float | None) -> str:
+    """경제성DR 장 각주 — **정산 단가를 넣은 경우에만** (S258 결정 1 · 사람이 정했다)."""
+    if price is None:
+        return ""
+    shown = f"{price:,.0f}" if float(price).is_integer() else f"{price:,.1f}"
+    return (
+        f"정산 단가 {shown}원/kWh 로 산출했습니다. 정산 단가는 전력거래소가 지역별 SMP로 "
+        "정산하는 몫과 사업자 수수료에 달려 있습니다."
+    )
 
 
 def _dr_conclusion(result: DemandResponseResult, profile: DrProfile | None) -> str:
@@ -932,8 +946,13 @@ def measure_entries(
             investment=_won(0.0),
             # **회수기간은 Excel 과 같은 말이다** (83세션 13). 절감이 없는데
             # 「즉시」 라 적으면 즉시 회수된다고 읽힌다 — 판정은 S134 3절에
-            # ``payback_years`` 한 자리로 모았다.
-            payback=_payback_text(payback_years(0.0, contract.annual_saving_won or 0.0), 0.0),
+            # ``payback_years`` 한 자리로 모았다. 절감 「없음」 이면 회수기간도 「없음」
+            # (S258 결정 9).
+            payback=(
+                NO_SAVING
+                if contract.no_saving
+                else _payback_text(payback_years(0.0, contract.annual_saving_won or 0.0), 0.0)
+            ),
             certainty=str(contract.certainty),
             # **같은 문장을 두 번 싣지 않는다** (102세션 4절). `MARGIN_NOTICE`
             # 가 `CONTRACT_CHANGE_WARNING` 과 **글자까지 같은 사본**이라, 앞에
@@ -1002,7 +1021,8 @@ def measure_entries(
                 *body_lines(demand_response.notices),
             ),
             notices=demand_response.notices,
-            slide_note=_notice_text(demand_response.notices, DR_OFF_DAYS_FACT),
+            # 쉬는 날 목록은 화면 · Word 에 그대로 두고 슬라이드는 정산 단가만 적는다 (S258 결정 1).
+            slide_note=_dr_price_note(demand_response.unit_price_won_per_kwh),
             figure=(
                 _safe_figure(
                     lambda: figures.dr_daily_png(dr_profile, size=MEASURE_FULL_FIGURE),
@@ -1348,7 +1368,7 @@ def measure_entries(
             saving_annual=NO_SAVING,
             has_saving=False,
             investment="—",
-            payback="—",
+            payback=NO_SAVING,  # 절감 「없음」 이면 회수기간도 「없음」 (S258 결정 9)
             certainty=str(Certainty.HIGH),
             actionable=False,
             facts=(("요금적용전력", f"{ess_curve.baseline_demand_kw:,.0f} kW"),),
@@ -1408,6 +1428,14 @@ class DocumentSections:
     @property
     def building(self) -> str:
         return self.building_name or self.usage.meta.source_name
+
+    @property
+    def lowering_recommended(self) -> bool:
+        """하향을 권하는 벌인가 — 필수 안내(요구사항서 9.4)를 세우는 조건 (S258 결정 4)."""
+        adequacy = self.diagnosis.contract if self.diagnosis is not None else None
+        return lowering_recommended(
+            adequacy.adjustment if adequacy is not None else None, self.comparison
+        )
 
     def appendix(self) -> tuple[str, ...]:
         """보고서 부록에 실을 **참고 등급** 전부 (19세션 1절).
@@ -1872,9 +1900,15 @@ def _chapter_measures(document: DocumentType, sections: DocumentSections, number
                 _para(document, entry.spec_caption)
         if entry.figure is not None:
             _add_figure(document, entry.figure, f"그림 {number}-{index}. {entry.figure_caption}")
-        if entry.cautions:
+        # 필수 안내는 하향을 권하는 벌에서만 (S258 결정 4).
+        cautions = tuple(
+            line
+            for line in entry.cautions
+            if line != CONTRACT_CHANGE_WARNING or sections.lowering_recommended
+        )
+        if cautions:
             _para(document, "주의사항")
-            _add_bullets(document, entry.cautions)
+            _add_bullets(document, cautions)
         if entry.kind.key == "tariff_switch" and sections.school_notice:
             _para(document, sections.school_notice)
     document.add_page_break()
@@ -1975,10 +2009,14 @@ def _chapter_scope(document: DocumentType, sections: DocumentSections, number: i
     _para(document, NOT_INCLUDED_NOTICE)
     _para(document, TRUNCATION_FOOTNOTE)
 
-    _heading(document, f"{number}.2 계약전력 변경 시 주의", level=2)
-    _para(document, CONTRACT_CHANGE_WARNING)
+    # 하향을 권하는 벌에서만 절을 세운다 — 없으면 뒤 절이 한 칸 당긴다 (S258 결정 4).
+    part = 2
+    if sections.lowering_recommended:
+        _heading(document, f"{number}.2 계약전력 변경 시 주의", level=2)
+        _para(document, CONTRACT_CHANGE_WARNING)
+        part = 3
 
-    _heading(document, f"{number}.3 추적성", level=2)
+    _heading(document, f"{number}.{part} 추적성", level=2)
     _add_bullets(document, sections.bill.traceability())
     _add_bullets(document, DATA_SOURCES)
 

@@ -91,10 +91,12 @@ from kwise.report.notices import (
     format_mwh,
     format_won,
     known_limit_lines,
+    lowering_recommended,
     max_demand_text,
     power_factor_charges,
     rules_basis_line,
     settled_row,
+    settled_saving_shown,
     solar_lines,
     surplus_kwh_text,
     switch_annual_saving,
@@ -474,7 +476,12 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
     # **Excel 은 달마다 두 값을 청구서와 나란히 놓는 산출물이다** (73세션 2-2 가 자리와 글을
     # 정했다) — 안내 블록에 한 줄, 글은 화면 · PPT 와 한 상수.
     rows.append(("산정 자료", "안내", AMI_BASIS_NOTICE))
-    rows.append(("계약전력 변경 경고", "필수 안내", CONTRACT_CHANGE_WARNING))  # 9.4
+    # 9.4 — 하향을 권하는 벌에서만 (S258 결정 4 · 사람이 정했다).
+    adequacy = diagnosis.contract if diagnosis is not None else None
+    if lowering_recommended(
+        adequacy.adjustment if adequacy is not None else None, sections.comparison
+    ):
+        rows.append(("계약전력 변경 경고", "필수 안내", CONTRACT_CHANGE_WARNING))
     limits = known_limit_lines(power_factor_billed=sections.power_factor_billed)
     for number, limit in enumerate(limits, start=1):  # 부록 D
         rows.append(("알려진 한계", f"{number}", limit))
@@ -808,7 +815,8 @@ def measure_summary_frame(
                 "투자비(원)": "—",
                 "기간 절감액(원)": NO_SAVING,
                 "12개월 환산(원)": NO_SAVING,
-                "회수기간": "—",
+                # 절감 「없음」 이면 회수기간도 「없음」 (S258 결정 9 · S254 #16).
+                "회수기간": NO_SAVING,
                 "비고": "—",
             }
         )
@@ -1153,14 +1161,12 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
                     "요금제": "—",
                     "수단": measure_kind("demand_response").label,
                     bill: "—",
-                    # 금액 칸은 이 표의 다른 줄처럼 표기 값(천 원 절사)이다 — Word 와 한 글자.
-                    "기간 절감액(원)": money.truncate_won(
-                        saving[-1] + (settled.dr_period_won or 0.0)
+                    # 금액 칸은 이 표의 다른 줄처럼 표기 값(천 원 절사)이다 — Word · 화면 계산
+                    # 근거와 한 자리 (S258 결정 8).
+                    "기간 절감액(원)": settled_saving_shown(
+                        comparison, settled, peers, annual=False
                     ),
-                    annual: money.truncate_won(
-                        combination_annual_saving(comparison, settled, peers)
-                        + (settled.dr_annual_won or 0.0)
-                    ),
+                    annual: settled_saving_shown(comparison, settled, peers, annual=True),
                     "투자비(원)": settled.investment_won,
                     "회수기간(년)": settled.settled_payback_years,
                     "요금적용전력(kW)": "—",

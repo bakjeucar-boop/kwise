@@ -418,6 +418,24 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 계산 폴더 몫 — `tariff` · `measures` · `diagnose` · `compare` · `pv` · `quality` **0**. `tools\` 0 · `CLAUDE.md` 0. 결정 11 은 기록(4-2).
 **1절 벽시계** 18:10:22 ~ 18:16:50(시각 명령 출력 · 커밋 앞).
 
+**2-1. 코드 · 문서 13자리를 고쳤다 — T1 ~ T4(시험)는 3절이 짓는다**(`git diff --numstat` · +/−). 결정 11 은 실제 입력 변화라 안 고쳤다(1-3).
+- **R1 · R7** `report\document.py` +50 −12 — 경제성DR `slide_note` = `_dr_price_note(단가)`(단가가 있을 때만 「정산 단가 {단가}원/kWh 로 산출했습니다. 정산 단가는 전력거래소가 지역별 SMP로 정산하는 몫과 사업자 수수료에 달려 있습니다.」 · 쓰이지 않게 된 `DR_OFF_DAYS_FACT` 가져오기 걷음) · 계약 항목 · ESS 초과 없음 항목 `payback` 을 절감 「없음」 이면 「없음」 · `DocumentSections.lowering_recommended` · Word 3장 주의사항에서 필수 안내를 그 조건으로 거름 · 5장 「5.2 계약전력 변경 시 주의」 를 그 조건으로(없으면 「추적성」 이 5.2) · `_settled_saving` 이 R5 를 쓴다(값 같다).
+- **R2 · R8** `report\narrative.py` +10 −29 — `COMBINATION_LEAD` = 「수단을 함께 도입하면 서로 영향을 주므로 조합을 통째로 다시 계산했습니다.」 한 문장 · `SINGLE_MEASURE_LEAD` 걷음 · `combination_lead` 는 그 문장만 · `pattern_lead` 는 첫 문장만(거울 문장 걷음).
+- **R3 · R4** `report\slides.py` +66 −64 — `slide_specs` 끝 「주의사항」 장 · `SLIDE_TITLES["cautions"]` · `_build_cautions` · `caution_rows` 걷음 → `caution_notes(entry)`(`CAUTION_NOTE_FACTS` 몫 all · first · rest — DR 위약금은 rest · `CAUTION_NOTE_LINES`) 를 `_build_measure` 의 ※ 줄 끝에 한 줄씩 · 조합 표 `_cumulative`(두 번째 수단 줄부터 「{누적} ({+몫})」 · 몫은 `_shown_short` 적힌 수끼리) · 그림 캡션 「조합별 누적 기간 절감액과 누적 투자비」.
+- **R5** `report\notices.py` +37 −0 — `lowering_recommended(계약 조정, 조합)` · `settled_saving_shown(…, annual=)`(적힌 조합 절감 + DR 정산금의 절사).
+- **R6** `report\excel.py` +15 −9 — 요약 「계약전력 변경 경고 | 필수 안내」 를 R5 조건으로 · 조합 비교 끝 줄 두 칸이 R5(값 같다) · ESS 초과 없음 「회수기간」 「없음」.
+- **R9** `report\worksheet.py` +32 −3 — `solar_worksheet(…, power_factor_pct=)` · `_solar_factor_formula`(감액률 그대로면 「도입 후 역률 {x}% · 기본요금이 준 만큼 감액도 준다」 · 조정률이 바뀌거나 추가 쪽이면 「도입 후 역률 {x}% · {전}% → {후}%」 · 역률을 안 주면 옛 글).
+- **R10 · R12** `ui\views\compare.py` +15 −1 · `ui\views\measures.py` +1 −1 — 두 자리가 `solar_worksheet` 에 요금에 넣은 역률(`form.lagging_pct` · `bill.power_factor.lagging_pct`) · 3단계 계산 근거 합산효과가 DR 을 담으면 R5(12개월).
+- **R11** `report\standalone.py` +1 −1 — ESS 초과 없음 `payback_reason` 「없음」.
+- **M1** `docs\REQUIREMENTS_kwise.md` +2 −0 — 9.4 인용 아래 곁 줄(인용 글자 그대로).
+- 정적 확인(좁게) — `ruff check src` 첫 판 E501 1(내 주석) → 고쳐 통과 · `ruff format --check src` 첫 판 어긋남 4(내 `notices.py` 빈 줄 하나 + 앞서 있던 셋) → 고쳐 3(`document.py` · `slides.py` · `tariff\engine.py` — S257 과 같은 자리) · `mypy src` 이상 없음(`mypy_20260928_182242.txt`).
+**2-2. 적게 닫았거나 번진 자리.**
+- **M2 0** — 매뉴얼에 PPT 주의사항 장 · 조합 머리 · 거울 문장을 적은 자리가 없다(`docs\MANUAL.md` Grep 0 · 「산출물 마지막 장에 전문이 실린다」(알려진 한계)는 Word · Excel 부록 이야기라 밖) — 적게 닫음 1.
+- **결정 4 는 화면 두 자리 · PPT 를 안 고쳤다** — 화면 2단계 카드 ⚠(`result.reducible`) · 3단계 ⚠(조합 계약 조정 안내) · PPT 계약 장 ※(`actionable`) 는 이미 조건의 한 쪽이라 하향을 권하지 않는 벌에 안 선다 · 조건 없이 서던 Excel · Word 둘 세 자리만 R5 로.
+- **번짐 둘** — ① 결정 6 산식 칸은 한 함수라 화면 2단계 태양광 계산 근거 표에도 선다(1-5 가 적은 자리 안 · 글자 교체라 화면 줄 수 0) ② `narrative.base_load_high`(판단값 · 함수)는 이제 문장이 안 쓴다 — 기준 데이터 항목이라 두었다(시험 하나가 부른다).
+- 계산 폴더 여섯 0줄 · 1-6 에 없던 파일 0.
+**2절 벽시계** 18:18:06 ~ 18:23:00(시각 명령 출력 · 기록 짓기 앞).
+
 ---
 
 ## 오늘 (2026-09-28) 257세션 — **고침 판 · 조합 경제성DR 을 원 부하로(계산 변경) · 계약전력 빈 줄 · 실물 점검 남은 글자를 고친다**
