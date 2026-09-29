@@ -866,7 +866,7 @@ def dr_lead(profile: DrProfile | None) -> str:
     if not profile.low_load_days:
         return (
             f"거래 가능일 {profile.eligible_days:,}일 가운데 부하가 쉬는 날 수준까지 "
-            "내려오는 평일이 없어 추가로 줄일 여지가 없습니다."
+            "내려오는 평일이 없어 줄일 여지가 없습니다."
         )
     # **「245일 가운데 245일만」 은 성립하지 않는다** (53세션 4-10). 평탄한 부하
     # (C3)에서는 거래 가능일이 전부 저부하로 잡힌다 — 「만」 은 적다는 뜻이라

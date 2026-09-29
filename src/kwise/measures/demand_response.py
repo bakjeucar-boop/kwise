@@ -214,13 +214,22 @@ def evaluate_demand_response(
     price_name = _penalty_price_name(jeju)
     price_term = f"Max({price_name}, 0)" if jeju else price_name
 
+    # 감축 가능량이 0 이면 참여를 전제로 한 주의(위약금 · 정산 단가 · 참고 문턱)를 세우지
+    # 않는다 — 그 벌에서 참인 말만 (S261 고침 1 · S207). 「저부하 평일이 없습니다」 는 선다.
+    reducible = annual_kwh > 0
     notices: list[Notice] = [
         # **주의** — 위약·리스크. 결과를 그대로 받아들이면 안 되는 것들이다.
-        warn(
-            "**투자비는 0원이지만 리스크는 0이 아닙니다.** 감축계획량을 채우지 못하면 "
-            f"실적위약금 = (감축계획량 − 실제감축량) × {price_term} × "
-            f"위약금계수({penalty_factor():g}) 이 부과됩니다 (전력시장운영규칙 별표26).",
-            fact="dr.penalty_risk",
+        *(
+            (
+                warn(
+                    "**투자비는 0원이지만 리스크는 0이 아닙니다.** 감축계획량을 채우지 못하면 "
+                    f"실적위약금 = (감축계획량 − 실제감축량) × {price_term} × "
+                    f"위약금계수({penalty_factor():g}) 이 부과됩니다 (전력시장운영규칙 별표26).",
+                    fact="dr.penalty_risk",
+                ),
+            )
+            if reducible
+            else ()
         ),
         # **근거** — 숫자가 어디서 나왔는가. 산식·모수·판정 창이다.
         basis(
@@ -284,9 +293,9 @@ def evaluate_demand_response(
                 fact="dr.no_price",
             )
         )
-    elif penalty_price_won_per_kwh is None:
+    elif penalty_price_won_per_kwh is None and reducible:
         notices.append(warn(basis_text, fact="dr.no_price"))
-    if not profile.meets_reference_capacity:
+    if not profile.meets_reference_capacity and reducible:
         notices.append(
             warn(
                 f"등록 권장 용량이 참고 문턱 100 kW 아래입니다 ({capacity:,.0f} kW). "

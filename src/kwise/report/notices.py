@@ -552,16 +552,19 @@ def settled_row(comparison: ComparisonResult) -> CombinationResult | None:
     """조합 표 끝에 「+ 경제성DR」 줄을 세울 조합 — 마지막 조합이 DR 정산금을 담으면 그것.
 
     그 줄의 기간 · 12개월 · 회수기간은 합산효과와 같은 값이다(:attr:`settled_saving_won` ·
-    :attr:`settled_payback_years` · S244 결정 4 · S246). 단가가 없으면 줄이 없다.
+    :attr:`settled_payback_years` · S244 결정 4 · S246). 단가가 없거나 정산금이 0원이면
+    줄이 없다 — 앞 줄과 금액이 같다 (S261 고침 2 · S237 ㄴ · S239 결정 2).
     """
     last = comparison.combinations[-1] if comparison.combinations else None
-    return last if last is not None and last.dr_period_won is not None else None
+    return last if last is not None and last.dr_period_won else None
 
 
 def settled_composition(item: CombinationResult, baseline: TariffSelection | None) -> str:
-    """「가장 유리한 조합」 · 권장안 구성 — DR 정산금을 담으면 경제성DR 도 적는다 (S256 고3 ㄴ)."""
+    """「가장 유리한 조합」 · 권장안 구성 — DR 정산금을 담으면 경제성DR 도 적는다 (S256 고3 ㄴ).
+
+    정산금이 0원이면 적지 않는다 (S261 고침 2)."""
     text = item.composition(baseline)
-    if item.dr_period_won is None:
+    if not item.dr_period_won:
         return text
     return f"{text} + {measure_kind('demand_response').label}"
 

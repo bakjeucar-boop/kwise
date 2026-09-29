@@ -1022,7 +1022,12 @@ def measure_entries(
             ),
             notices=demand_response.notices,
             # 쉬는 날 목록은 화면 · Word 에 그대로 두고 슬라이드는 정산 단가만 적는다 (S258 결정 1).
-            slide_note=_dr_price_note(demand_response.unit_price_won_per_kwh),
+            # 감축 가능량이 0 이면 참여 전제 각주라 세우지 않는다 (S261 고침 1).
+            slide_note=(
+                _dr_price_note(demand_response.unit_price_won_per_kwh)
+                if demand_response.annual_reducible_kwh > 0
+                else ""
+            ),
             figure=(
                 _safe_figure(
                     lambda: figures.dr_daily_png(dr_profile, size=MEASURE_FULL_FIGURE),
@@ -1654,7 +1659,7 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
     if comparison is not None and best is not None:
         # 기간 총 절감액이 DR 정산금을 담으면 이름도 조합 표 끝 줄이다 (S256 고3 ㄴ).
         rows.append(
-            ["권장 조합", SETTLED_ROW_NAME if best.dr_period_won is not None else best.name]
+            ["권장 조합", SETTLED_ROW_NAME if best.dr_period_won else best.name]
         )
         rows.append(
             ["기간 총 절감액", _won(_settled_saving(comparison, best, sections.peer_savings))]
