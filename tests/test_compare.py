@@ -212,7 +212,8 @@ def test_조합의_태양광_전_역률은_원_부하_역률이고_수단의_목
     #    기준 위로 남아 켠 쪽 경고가 사라진다.
     off = combined(None)
     assert len(drop_warnings(off)) == 1
-    assert f"{off.bill.power_factor.lagging_pct:.1f}%" in drop_warnings(off)[0]
+    # 경고는 요금을 셈한 역률(1% 반올림 · 정수 %)을 적는다 (S262 결정 1).
+    assert f"{off.bill.power_factor.lagging_pct:,.0f}%" in drop_warnings(off)[0]
     assert drop_warnings(combined(97.0)) == drop_warnings(off)
 
     # ② **원 부하 역률이 100 이면 무효전력이 없어 태양광이 못 떨어뜨린다.**
@@ -233,7 +234,8 @@ def test_조합에_켠_역률_수단은_태양광_뒤에도_목표로_요금을_
     도달점은 목표 — 로 요금을 낸다.
 
     값은 표본 벌(을 고압A 선택Ⅰ · 원 부하 간주 92 · 500 kWp · 태양광 뒤
-    91.1163%)에서 켬과 끔 조합 절감액의 차다.
+    91.1163%)에서 켬과 끔 조합 절감액의 차다. **S262 결정 1 로 끔 쪽이 91% 로 셈한다**
+    (1% 반올림 · 제7조 ①) — 5,894,646.67 → 6,011,179.20.
     """
     kwargs = {
         "baseline_bill": sample_bill,
@@ -247,7 +249,8 @@ def test_조합에_켠_역률_수단은_태양광_뒤에도_목표로_요금을_
 
     on, off = combined(97.0), combined(None)
     assert on.bill.power_factor.lagging_pct == 97.0
-    assert on.saving_won - off.saving_won == pytest.approx(5_894_646.67, abs=0.01)
+    assert off.bill.power_factor.lagging_pct == 91.0
+    assert on.saving_won - off.saving_won == pytest.approx(6_011_179.20, abs=0.01)
 
 
 def test_역률_100_벌은_태양광이_낀_조합에서도_역률_몫이_0_이다(

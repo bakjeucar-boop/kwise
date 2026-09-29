@@ -1414,7 +1414,8 @@ def test_ppt_에_잉여_장이_없고_태양광_장이_진다(
     assert "자가소비로 줄인 요금" not in solar.slide_note, solar.slide_note
     # **역률이 기준을 밑돌면 그 사실이 앞에 선다** (79세션 1절). 이 점은 74.2% 다.
     assert solar.slide_note.startswith("예상 역률 "), solar.slide_note
-    assert "역률 영향 반영 시" in solar.slide_note, solar.slide_note
+    # 절감액이 역률 변화를 담은 한 값이라 두 번째 금액을 안 단다 (S262 결정 2).
+    assert "역률 영향 반영 시" not in solar.slide_note, solar.slide_note
 
     # **고르면 절감액이 무엇의 합인지 한 줄 적는다** (59세션 5절). 화면은 절감액
     # 물음표가 늘 이 줄을 낸다 (57세션) — PPT 에만 없었다.
@@ -2328,14 +2329,15 @@ def test_부록이_효과_있는_수단을_빠뜨리지_않는다(full_sections:
     assert "자리가 모자라" not in note
 
 
-def test_역률_영향을_큰_글자에_녹이지_않는다(
+def test_태양광_절감액은_역률_변화를_담은_한_값이다(
     sample_usage: UsageData, tariff: TariffTable, sample_bill: BillingResult
 ) -> None:
-    """**둘을 나눠 보인다** (59세션 12절 · 목록 P6 · 31세션 독립 평가).
+    """**한 사실에 금액 하나** (S262 결정 2 · 결함 유형 ① 「큰 글자는 실제로 남는 돈」).
 
-    태양광이 유효전력만 상쇄해 역률이 떨어지고 역률요금이 는다 — 사실이고
-    계산이 이미 내던 값인데(``power_factor_extra_won``) **어느 산출물에도 금액
-    으로 서 있지 않았다.** 큰 글자는 조정 전 값이고 조정값은 곁에 적는다.
+    59세션 12절은 큰 글자를 조정 전 값으로 두고 「역률 영향 반영 시 …」 를 곁에 달았다 —
+    한 보고서에 태양광 금액이 둘로 섰다. 절감액이 이제 도입 후 역률로 다시 셈한 한 값이라
+    그 꼬리를 세우지 않는다. **기준 미달이라는 사실은 남긴다** (79세션 1절 — 덱에서 태양광
+    장이 역률을 말하는 유일한 자리다). 역률은 요금을 셈한 정수 % 다(결정 1).
     """
     import dataclasses
 
@@ -2344,7 +2346,7 @@ def test_역률_영향을_큰_글자에_녹이지_않는다(
     from kwise.measures import solar_point
     from kwise.report.document import measure_entries
     from kwise.report.excel import measure_summary_frame
-    from kwise.report.narrative import power_factor_adjusted_saving
+    from kwise.report.narrative import power_factor_shortfall
     from kwise.tariff import TariffSelection
 
     selection = TariffSelection("general_b", "high_a", "I")
@@ -2360,77 +2362,40 @@ def test_역률_영향을_큰_글자에_녹이지_않는다(
         total_saving_won=29_564_000.0,
         annual_saving_won=29_564_000.0,
         power_factor_extra_won=156_000.0,
-        power_factor_after_pct=91.8,
+        power_factor_after_pct=90.0,
     )
-    line = power_factor_adjusted_saving(saving_won=29_564_000.0, extra_won=156_000.0)
-    assert line == "역률 영향 반영 시 29,408,000원"
-    # **값을 주면 왜 늘었는지도 적는다** (79세션 1절). 덱에서는 이 한 줄이
-    # 태양광 장이 역률을 말하는 유일한 자리다 — 주의사항 표는 그림 굽기가
-    # 실패했을 때만 서기 때문이다 (60세션 10절).
-    flagged = power_factor_adjusted_saving(
-        saving_won=29_564_000.0, extra_won=156_000.0, after_pct=91.8
-    )
-    assert flagged == "예상 역률 91.8% 로 기준 92% 미달, 역률 영향 반영 시 29,408,000원"
+    flagged = power_factor_shortfall(extra_won=156_000.0, after_pct=90.0)
+    assert flagged == "예상 역률 90% 로 기준 92% 미달"
+    # 91.6% 는 92% 로 셈해 미달이 아니다 · 조정이 없으면 빈 글이다.
+    assert power_factor_shortfall(extra_won=156_000.0, after_pct=91.6) == ""
+    assert power_factor_shortfall(extra_won=0.0, after_pct=90.0) == ""
 
     entry = next(
         item
         for item in measure_entries(solar=dropped, base_fee_months=12.0)
         if item.kind.key == "solar"
     )
-    # **큰 글자는 조정 전이다.**
+    # **큰 글자가 곧 남는 돈이다.** 곁에 두 번째 금액이 없다.
     assert entry.saving_annual.startswith("29,564,000원"), entry.saving_annual
-    assert "역률" not in entry.saving_annual
-    # 곁에 적는다 — PPT 는 각주, Word 는 주의사항 목록. **같은 문장이다.**
-    # 12개월 환산값이 라벨 없이 서므로 「/년」 을 단다 (S219 규칙 나).
-    assert f"{flagged}/년" in entry.slide_note
-    assert f"{flagged}/년" in entry.cautions
+    assert flagged in entry.slide_note and flagged in entry.cautions
+    assert "역률 영향 반영 시" not in entry.slide_note
+    assert not [line for line in entry.cautions if "역률 영향 반영 시" in line]
 
-    # **기준을 넘으면 앞의 사실이 붙지 않는다** (79세션 1절). 없는 경고를
-    # 적지 않는다 — 금액 줄만 남는다.
-    kept = dataclasses.replace(dropped, power_factor_after_pct=93.4)
+    # **기준을 넘으면 미달 줄이 안 선다** (79세션 1절).
+    kept = dataclasses.replace(dropped, power_factor_after_pct=93.0)
     fine = next(
         item
         for item in measure_entries(solar=kept, base_fee_months=12.0)
         if item.kind.key == "solar"
     )
     assert "예상 역률" not in fine.slide_note, fine.slide_note
-    assert line in fine.slide_note
 
-    # Excel 도 같은 문장을 쓴다. **값을 주지 않아 예전 그대로다** — 「도입 후
-    # 역률 91.8%」 를 이미 제 조각으로 적고 있어 같은 말이 두 번 서지 않는다.
-    # 금액은 기간 값이고 같은 줄에 12개월 환산 열이 서서 「기간」 을 단다 (S219 규칙 다).
+    # Excel 비고는 도입 후 역률(정수 %)까지만 적는다.
     frame = measure_summary_frame(solar=dropped, base_fee_months=12.0)
     key = next(name for name in frame.index if str(name).startswith("태양광"))
     row = frame.loc[key]
-    assert "역률 영향 반영 시 기간 29,408,000원" in str(row["비고"]), row["비고"]
+    assert row["비고"] == "자가소비율 100%, 도입 후 역률 90%", row["비고"]
     assert str(row["기간 절감액(원)"]).startswith("29,564,000")
-
-    # **12개월 미만 벌은 값 쪽에서 문다** (S219 규칙 나·다). 4.00개월분이면 두 값이
-    # 갈린다 — PPT·Word 줄은 12개월 값에 「/년」 · Excel 비고는 기간 값에 「기간」 ·
-    # Word 3장 칸 이름은 괄호에 12개월 값이 함께 서서 「기간 절감액」 이다.
-    short = dataclasses.replace(dropped, total_saving_won=9_855_000.0)
-    brief = next(
-        item
-        for item in measure_entries(solar=short, base_fee_months=4.0)
-        if item.kind.key == "solar"
-    )
-    annual_line = power_factor_adjusted_saving(
-        saving_won=29_564_000.0, extra_won=156_000.0 * 3, after_pct=91.8
-    )
-    assert f"{annual_line}/년" in brief.cautions, brief.cautions
-    assert brief.saving_label == "기간 절감액", brief.saving
-    period_row = measure_summary_frame(solar=short, base_fee_months=4.0).loc[key]
-    assert "역률 영향 반영 시 기간 9,699,000원" in str(period_row["비고"]), period_row["비고"]
-
-    # **영향이 0 이면 어디에도 줄이 없다.**
-    flat = dataclasses.replace(dropped, power_factor_extra_won=0.0)
-    quiet = next(
-        item
-        for item in measure_entries(solar=flat, base_fee_months=12.0)
-        if item.kind.key == "solar"
-    )
-    assert "역률 영향 반영 시" not in quiet.slide_note
-    assert not [line for line in quiet.cautions if "역률 영향 반영 시" in line]
 
 
 def test_덱이_태양광_역률_미달을_싣는다(
@@ -2471,7 +2436,7 @@ def test_덱이_태양광_역률_미달을_싣는다(
         total_saving_won=29_564_000.0,
         annual_saving_won=29_564_000.0,
         power_factor_extra_won=156_000.0,
-        power_factor_after_pct=91.8,
+        power_factor_after_pct=90.0,
     )
 
     def deck_text(solar: SolarPoint) -> str:
@@ -2484,13 +2449,13 @@ def test_덱이_태양광_역률_미달을_싣는다(
         return _deck_text(Presentation(str(export_slides(sections, output_dir=tmp_path))))
 
     body = deck_text(dropped)
-    assert "예상 역률 91.8% 로 기준 92% 미달" in body, body
-    assert "역률 영향 반영 시 29,408,000원" in body
+    assert "예상 역률 90% 로 기준 92% 미달" in body, body
+    # 두 번째 금액은 안 선다 (S262 결정 2).
+    assert "역률 영향 반영 시" not in body
 
     # **기준을 넘는 벌에는 뜨지 않는다.** 둘 다 보지 않으면 못이 아니다.
-    kept = deck_text(dataclasses.replace(dropped, power_factor_after_pct=93.4))
+    kept = deck_text(dataclasses.replace(dropped, power_factor_after_pct=93.0))
     assert "예상 역률" not in kept
-    assert "역률 영향 반영 시 29,408,000원" in kept
 
 
 # **`test_합산효과는_태양광_역률_영향을_반영하지_않는다` 를 지웠다** (78세션).

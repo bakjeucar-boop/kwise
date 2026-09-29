@@ -136,17 +136,22 @@ def test_meeting_the_standard_is_not_a_shortfall() -> None:
     assert "추가" not in text or "추가·감액 없음" in text
 
 
-def test_a_small_shortfall_is_not_rounded_to_zero() -> None:
-    """**0 이 아닌 값을 0 으로 적지 않는다** (31세션 0-1).
+def test_a_small_shortfall_is_billed_at_the_rounded_percent() -> None:
+    """**요금은 1% 반올림한 역률로 셈한다** (S262 결정 1 · 약관 제7조 ①).
 
-    91.96% 는 진짜 미달인데 ``.1f`` 로는 역률도 미달폭도 뭉개져
-    「92.0% — 0.0%p 미달」 이 됐다. 보일 때까지 자릿수를 늘린다.
+    31세션 0-1 은 91.96% 를 「0.04%p 미달」 로 적게 했는데, 조문은 역률의 계산단위를
+    1% 로 두고 끝수를 첫째자리에서 반올림한다 — 91.96% 는 92% 로 셈해 추가·감액이 없다.
+    머리의 역률은 넣은 값을 되비춘다(``.1f`` 로 뭉개지 않는다).
     """
     charge = power_factor_charge(1_000_000.0, lagging_pct=91.96)
     text = next(item.text for item in charge.notices if item.fact == "power_factor.lagging_ratio")
-    assert "0.04%p 미달" in text, text
     assert "91.96%" in text, text
-    assert "0.0%p" not in text
+    assert "충족" in text and "미달" not in text, text
+    assert charge.total_won == pytest.approx(0.0)
+    # 반올림은 첫째자리에서 — 91.5 는 92 · 91.4 는 91 (짝수 쪽으로 붙이지 않는다).
+    assert lagging_adjustment_ratio(91.5) == pytest.approx(0.0)
+    assert lagging_adjustment_ratio(91.4) == pytest.approx(0.002)
+    assert lagging_adjustment_ratio(96.5) == lagging_adjustment_ratio(97.0)
 
 
 def test_exceeding_the_standard_reads_as_a_rebate() -> None:
@@ -159,13 +164,15 @@ def test_exceeding_the_standard_reads_as_a_rebate() -> None:
 
 
 def test_leading_shortfall_shows_its_size() -> None:
-    """야간 진상도 같은 병을 앓았다 — 94.96% 가 「95.0% 가 기준 95% 에 미달」 이었다."""
-    charge = power_factor_charge(1_000_000.0, leading_pct=94.96)
+    """야간 진상도 1% 반올림한 역률로 셈한다 (S262 결정 1) — 94.96% 는 95% 라 추가가 없고,
+    94.4% 는 94% 라 1%p 미달 · 0.2% 추가다. 머리의 역률은 넣은 값이다."""
+    assert power_factor_charge(1_000_000.0, leading_pct=94.96).leading_won == pytest.approx(0.0)
+    charge = power_factor_charge(1_000_000.0, leading_pct=94.4)
     text = next(
         item.text for item in charge.notices if item.fact == "power_factor.leading_below_standard"
     )
-    assert "94.96%" in text, text
-    assert "0.01% 가 추가" in text, text
+    assert "94.4%" in text, text
+    assert "0.2% 가 추가" in text, text
 
 
 def test_charge_splits_lagging_and_leading() -> None:
@@ -908,17 +915,23 @@ def test_solar_curve_prices_the_power_factor_damage(sample_curve: SolarCurve) ->
     largest = sample_curve.points[-1]
     assert largest.power_factor_after_pct < lagging_standard_pct()
     assert largest.power_factor_extra_won > 0
-    assert largest.saving_after_power_factor_won == pytest.approx(
-        largest.total_saving_won - largest.power_factor_extra_won
-    )
+    # 도입 후 역률은 요금을 셈한 정수 % 다 (S262 결정 1) — 절감액이 그 역률로 다시 셈한
+    # 한 값이다(결정 2 · `test_measures` 의 재계산 못).
+    assert largest.power_factor_after_pct == float(round(largest.power_factor_after_pct))
     assert any("역률 개선 설비" in message for message in texts(sample_curve.notices))
     assert any("08~22시" in note for note in texts(sample_curve.notices))
 
 
 def test_power_factor_damage_grows_with_capacity(sample_curve: SolarCurve) -> None:
-    extras = [point.power_factor_extra_won for point in sample_curve.points]
-    assert extras == sorted(extras)
-    assert extras[0] == pytest.approx(0.0, abs=1.0)
+    """용량이 크면 역률이 더 떨어진다. **추가요금은 1% 계단이다** (S262 결정 1) — 같은
+    계단 안에서는 기본요금이 줄며 조금씩 준다. 그래서 역률 쪽과 부호를 문다."""
+    points = sample_curve.points
+    factors = [point.power_factor_after_pct for point in points]
+    assert factors == sorted(factors, reverse=True)
+    assert points[0].power_factor_extra_won == pytest.approx(0.0, abs=1.0)
+    for point in points:
+        dropped = point.power_factor_after_pct < factors[0]
+        assert (point.power_factor_extra_won > 0) == dropped, point
 
 
 def test_improvement_warns_about_apfr_and_fixed_banks(

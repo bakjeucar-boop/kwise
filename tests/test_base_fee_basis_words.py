@@ -816,18 +816,14 @@ def test_12개월_환산값_자리가_네_산출물에서_연이라_말하지_�
         if "12개월 환산 자가소비 절감액" not in cells:
             어긋.append(f"화면 용량 표 머리에 이름이 없다 {cells[:8]}")
         어긋 += [f"화면 용량 표 {cell}" for cell in cells if cell.endswith("원/년")]
-    역률 = {
-        name: [line for line in 글자[name] if "역률 영향 반영 시" in line]
-        for name in ("PPT", "Word", "Excel")
-    }
-    assert all(역률.values()), (rendered.key, 역률)
+    # 태양광 절감액은 역률 변화를 담은 한 값이라 「역률 영향 반영 시 …」 가 어디에도 안 선다
+    # (S262 결정 2 · 앞서는 여기서 그 줄의 표시를 물었다).
     어긋 += [
         f"{name} {line}"
-        for name in ("PPT", "Word")
-        for line in 역률[name]
-        if not re.search(r"역률 영향 반영 시 [\d,]+원/년", line)
+        for name in ("화면", "PPT", "Word", "Excel")
+        for line in 글자[name]
+        if "역률 영향 반영 시" in line
     ]
-    어긋 += [f"Excel {line}" for line in 역률["Excel"] if "역률 영향 반영 시 기간 " not in line]
     경고 = {
         name: [line for line in 글자[name] if "역률요금이" in line and " 늘어 " in line]
         for name in ("화면", "Word")
@@ -1485,7 +1481,8 @@ def test_자릿수_증상_사실이_네_산출물에서_같은_글자다(rendere
             shown = row[4]
         elif row[2] == "Metric" and row[3] == "증감" and re.search("만원|억원", shown):
             카드.append((shown, row[4]))
-    assert [c for c in 카드 if "역률 영향 반영 시" in c[1]], (rendered.key, 카드)
+    # 태양광 카드 증감 「역률 영향 반영 시」 는 S262 결정 2 로 걷혔다 — 남은 증감도 만원이다.
+    assert not [c for c in 카드 if "역률 영향 반영 시" in c[1]], (rendered.key, 카드)
     assert [c for c in 카드 if won.search(c[1])] == [], (rendered.key, 카드)
     ess = [
         row[4]
@@ -2122,7 +2119,7 @@ def _s258_check(item: str) -> None:
     elif item == "6":
         assert (
             "Excel | 부록 A 산출 근거 | 태양광 계산 근거 | 기간 역률요금 절감 | "
-            "도입 후 역률 99.6% · 기본요금이 준 만큼 감액도 준다 | -4,000원"
+            "도입 후 역률 100% · 기본요금이 준 만큼 감액도 준다 | -4,000원"
         ) in lines, [t for t in lines if "기간 역률요금 절감" in t]
     elif item == "7":
         assert not [t for t in lines if "충전 여력" in t]
@@ -2167,7 +2164,8 @@ def _s258_check(item: str) -> None:
         curve = [row for row in rows if row[:2] == ("Excel", "태양광 용량 곡선")]
         names = list(curve[0])
         row32 = next(row for row in curve if row[2] == "32")
-        assert float(row32[names.index("도입 후 역률(%)")]) == pytest.approx(99.6, abs=0.05)
+        # 도입 후 역률은 요금을 셈한 1% 반올림 값이다 (S262 결정 1 — 99.6 → 100).
+        assert float(row32[names.index("도입 후 역률(%)")]) == 100.0
         assert int(float(row32[names.index("기간 역률요금 절감(원)")])) == -4_000
     elif item == "11":
         # S259 가 바로잡았다 — 사람 화면의 방위는 남동이라 묵은 결과 경고가 없다(S258 은 스스로
@@ -2604,3 +2602,126 @@ def test_S261_경제성DR_0_이면_참여_전제_글자와_0원_조합_줄이_�
       0 보다 크면 선다.
     """
     _s261_check(item, zero)
+
+
+def _s262_check(item: str, request: pytest.FixtureRequest) -> None:
+    """S262 결정 1 ~ 3 을 확인 사례 · 덱 벌의 화면 · 네 산출물과 계산 결과로 본다."""
+    from kwise.tariff import TariffSelection
+
+    selection = TariffSelection("general_b", "high_a", "I")
+    if item == "1":
+        from kwise.tariff import lagging_adjustment_ratio
+
+        # 요금 셈 — 1% 단위 · 첫째자리 반올림 (제7조 ①)
+        assert lagging_adjustment_ratio(95.5) == lagging_adjustment_ratio(96.0)
+        assert lagging_adjustment_ratio(95.4) == lagging_adjustment_ratio(95.0)
+        # (가1) 99.68 — 설명 글의 폭은 반올림한 100 에서 · 머리는 넣은 값 · 도입 후 역률은 정수
+        lines = [" | ".join(row) for row in _render_human().rows]
+        head = "주간 지상역률 99.7% — 기준 92% 대비 8.0%p 초과, 기본요금의 1.0% 감액"
+        assert [t for t in lines if head in t], [t for t in lines if "기준 92% 대비" in t]
+        assert not [t for t in lines if "7.7%p" in t]
+        assert [t for t in lines if "도입 후 역률 100% · 기본요금이 준 만큼 감액도 준다" in t]
+        # 입력 되비춤 — 역률 개선 표의 현재 역률은 넣은 값이다
+        echo = [t for t in lines if t.startswith("Word | 표") and "현재 역률 |" in t]
+        assert [t for t in echo if t.endswith("| 99.7%")], echo
+    elif item == "2":
+        from kwise.measures import EssCostInput, evaluate_ess, with_load
+        from kwise.report.worksheet import ess_worksheet
+        from kwise.tariff import BillingOptions, calculate_bill
+
+        # 태양광 — 「역률 영향 반영 시」 가 어디에도 없고 카드가 부록 기간 절감액과 같은 값이다
+        rendered = _render("large-a")
+        texts = [" | ".join(str(v) for v in row) for row in rendered.rows]
+        assert not [t for t in texts if "역률 영향 반영 시" in t]
+        note = [t for t in texts if t.startswith("PPT | 13") and "예상 역률" in t]
+        assert note == ["PPT | 13 | ※ 예상 역률 90% 로 기준 92% 미달"], note
+        formula = "도입 후 역률 90% · 추가 0.0% → 0.4%"
+        solar = [t for t in texts if "태양광 계산 근거 | 기간 역률요금 절감 | " + formula in t]
+        assert solar, [t for t in texts if "기간 역률요금 절감" in t]
+        # ESS — 도입 후 역률로 다시 셈한 한 값 · 부록 역률 줄이 같은 원천의 꼴
+        usage = request.getfixturevalue("sample_usage")
+        tariff = request.getfixturevalue("tariff")
+        options = BillingOptions(power_factor_pct=96.0)
+        ess = evaluate_ess(
+            usage,
+            tariff,
+            selection,
+            target_kw=5_200.0,
+            cost=EssCostInput.unpriced(),
+            options=options,
+        )
+        after = BillingOptions(power_factor_pct=ess.power_factor_after_pct)
+        base = calculate_bill(usage, tariff, selection, options=options)
+        billed = calculate_bill(
+            with_load(usage, ess.dispatch.net_kw), tariff, selection, options=after
+        )
+        assert ess.total_saving_won == pytest.approx(base.total_won - billed.total_won)
+        rows = {row.label: row.formula for row in ess_worksheet(ess).rows}
+        assert rows["기간 역률요금 절감"] == (
+            f"도입 후 역률 {ess.power_factor_after_pct:,.0f}% · 기본요금이 준 만큼 감액도 준다"
+        ), rows
+    elif item == "3":
+        from kwise.compare import CombinationSpec, compare_combinations
+        from kwise.measures import high_rate_discharge_hours, min_pcs_power_kw, snap_spec
+        from kwise.measures.ess import BELOW_MINIMUM_CONCLUSION
+        from kwise.report import slides_bytes
+        from kwise.report.document import DocumentSections, document_bytes
+
+        comparison = request.getfixturevalue("sample_comparison")
+        row = comparison.combinations[-1]
+        dispatch = row.dispatch
+        assert dispatch is not None
+        power, capacity = dispatch.power_kw, dispatch.capacity_kwh
+        # 2단계와 같은 조달 규격 — 격자에 올린 값이다
+        assert snap_spec(power, capacity) == (power, capacity), (power, capacity)
+        spec = f"{power:,.0f} kW / {capacity:,.0f} kWh (목표 5,000 kW)"
+        assert row.row_name == f"+ ESS {spec}"
+        assert f"ESS {spec}" in str(comparison.frame().loc[row.name, "수단"])
+        hours = capacity / power
+        facts = {item.fact for item in row.notices}
+        assert ("ess.high_c_rate" in facts) == (0 < hours < high_rate_discharge_hours())
+        sections = DocumentSections(
+            usage=request.getfixturevalue("sample_usage"),
+            bill=request.getfixturevalue("sample_bill"),
+            diagnosis=request.getfixturevalue("sample_diagnosis"),
+            comparison=comparison,
+        )
+        deck = _deck(slides_bytes(sections)[0])
+        word = _document(document_bytes(sections)[0])
+        assert [t for t in deck if t == f"+ ESS {spec}"], [t for t in deck if "ESS" in t]
+        assert [t for t in word if t == f"+ ESS {spec}"], [t for t in word if "ESS" in t]
+        # 최소 규격 미만 — 줄이 서지 않고 까닭은 2단계 문구 원천 한 줄이다
+        usage = request.getfixturevalue("sample_usage")
+        target = float(usage.kw.max()) - 20.0
+        short = compare_combinations(
+            usage,
+            request.getfixturevalue("tariff"),
+            (
+                CombinationSpec("기준선", selection),
+                CombinationSpec(f"+ ESS 목표 {target:,.0f} kW", selection, ess_target_kw=target),
+            ),
+        )
+        assert [item.name for item in short.combinations] == ["기준선"]
+        needed = short.ess_below_minimum_note
+        assert needed.startswith("필요 출력이 ") and needed.endswith("산출하지 않았습니다."), needed
+        assert needed == BELOW_MINIMUM_CONCLUSION.format(
+            power=float(needed.split(" ")[2].replace(",", "")), minimum=min_pcs_power_kw()
+        )
+    else:
+        pytest.fail(f"모르는 항목 {item}")
+
+
+@pytest.mark.parametrize("item", ["1", "2", "3"])
+def test_S262_역률_반올림_태양광_ESS_한_값_조합_ESS_규격(
+    item: str, request: pytest.FixtureRequest
+) -> None:
+    """**S262 결정 1 ~ 3** (웹 대화창 판단 · 약관 제7조 ① · 결함 유형 ① · S233).
+
+    1 역률은 1% 단위 반올림으로 요금을 셈하고 설명 글(폭)은 반올림 값 · 입력 되비춤은 입력값 ·
+      도입 후 역률은 정수 %.
+    2 태양광 · ESS 금액은 도입 후 역률로 다시 셈한 한 값 — 「역률 영향 반영 시」 가 서지 않고
+      부록 역률 줄은 한 원천의 꼴(ESS 포함).
+    3 조합 ESS 는 2단계와 같은 조달 규격 · 최소 규격 미만이면 줄이 서지 않는다(까닭 한 줄) ·
+      PPT · Word 조합 줄과 Excel 수단 칸에 사양.
+    """
+    _s262_check(item, request)

@@ -1552,7 +1552,11 @@ def test_solar_saving_is_recalculated_not_subtracted(
     sample_bill: BillingResult,
     sample_unit_pv: pd.Series,
 ) -> None:
-    """곡선의 절감액이 순부하로 다시 계산한 요금과 정확히 맞는지 본다."""
+    """곡선의 절감액이 순부하로 다시 계산한 요금과 정확히 맞는지 본다.
+
+    **도입 후 역률로 셈한다** (S262 결정 2) — 기본요금이 준 몫과 조정률이 바뀐 몫이 한
+    절감액에 든다. 조합과 같은 식이다(요금 옵션에 도입 후 역률).
+    """
     point = solar_curve(
         sample_usage,
         tariff,
@@ -1566,7 +1570,13 @@ def test_solar_saving_is_recalculated_not_subtracted(
     ).points[-1]
 
     net = apply_generation(sample_usage, sample_unit_pv * 500.0)
-    recomputed = calculate_bill(net.usage, tariff, CURRENT, quality=sample_report)
+    recomputed = calculate_bill(
+        net.usage,
+        tariff,
+        CURRENT,
+        options=BillingOptions(power_factor_pct=point.power_factor_after_pct),
+        quality=sample_report,
+    )
     assert point.total_saving_won == pytest.approx(sample_bill.total_won - recomputed.total_won)
     assert point.generation_kwh == pytest.approx(net.generated_kwh)
 
@@ -1607,7 +1617,11 @@ def test_power_factor_warning_appears_below_the_standard(
     point = curve.points[-1]
     assert point.power_factor_after_pct < 92.0
     assert point.power_factor_extra_won > 0  # 92% 미만이므로 추가요금이다
-    assert point.saving_after_power_factor_won < point.total_saving_won
+    # 절감액은 그 추가요금을 이미 담은 한 값이다 (S262 결정 2) — 경고의 뒷값이 그 글자다.
+    assert any(
+        f"→ {won(point.total_saving_won, reason='—')} 이 됩니다" in message
+        for message in texts(curve.notices)
+    )
     assert any("역률 개선 설비" in message for message in texts(curve.notices))
     assert any("제41·43조" in message for message in texts(curve.notices))
 
@@ -2948,9 +2962,10 @@ def test_카드_절감액은_그_수단만_켠_청구서_총액_차다(
         options=opts,
     )
     net = apply_generation(usage, sample_unit_pv * condition.solar_kwp)
+    # 태양광 · ESS 를 켠 청구서는 도입 후 역률로 셈한다 (S262 결정 2 — 켜면 역률도 움직인다).
     cards["태양광"] = (
         point.total_saving_won - point.surplus_revenue_won,
-        gap(sel, net.usage, opts),
+        gap(sel, net.usage, replace(opts, power_factor_pct=point.power_factor_after_pct)),
     )
 
     if condition.ess_target_kw is not None:
@@ -2965,7 +2980,10 @@ def test_카드_절감액은_그_수단만_켠_청구서_총액_차다(
             options=opts,
         )
         after_ess = with_load(usage, ess.dispatch.net_kw, source_suffix=" + ESS")
-        cards["ESS"] = (ess.total_saving_won, gap(sel, after_ess, opts))
+        cards["ESS"] = (
+            ess.total_saving_won,
+            gap(sel, after_ess, replace(opts, power_factor_pct=ess.power_factor_after_pct)),
+        )
 
     residual = {name: card - total for name, (card, total) in cards.items()}
     assert {name for name, won in residual.items() if abs(won) > 0.01} == set(), residual
