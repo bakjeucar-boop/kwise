@@ -380,6 +380,39 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - **(나)** — 2,749줄 · 덱 스냅 `large-b` 와 줄 수가 같다.
 **0절 벽시계** 10:29:06 ~ 10:39:00(시각 명령 출력 · 커밋 앞).
 
+**1-1. 결정 1 · 5 — 「기준 데이터」 행과 「출고값」.**
+- **원천 한 자리** — `report\notices.py` `RULES_UNCHANGED`(「기준 데이터는 출고값 그대로입니다.」) · `rules_basis_line()`(바꾼 항목이 있으면 「출고값과 다른 항목 N건 — 키 …」). 쓰는 자리 둘 — **PPT 3장 표**(`report\slides.py` `_build_building` 「기준 데이터」 행) · **Excel 요약**(`report\excel.py` 「계산 조건 | 기준 데이터」). **Word · 화면 0**(`document.py` · `ui\` 가 안 부른다). 덱 스냅 — 「기준 데이터는」 19벌 × 2자리(Excel 요약 · PPT 3표).
+- **기준 데이터를 바꿨는지** — `kwise.rules.diff_from_defaults()` 가 비었는가(`rules_basis_line` 이 이미 읽는 값). **경제성DR 장이 서는 조건** — `slide_specs` 가 `sections.measures` 마다 수단 장을 세운다 → `entry.kind.key == "demand_response"` 가 있으면 선다. 덱 19벌은 다 DR 을 켰다(「3. 경제성DR」 19벌).
+- **「출고값」 이 서는 다른 자리(사람이 읽는 글자) — 13** — `ui\views\rules_admin.py` 4(「● 출고값과 다름」 · 되돌리기 도움말 「출고값 … 로 되돌립니다.」 · 캡션 「출고값 — …」 · 단추 「확인했습니다 — 출고값으로 되돌립니다」) · `ui\rules_view.py` 2(출고 복원 미리보기 표 「출고값」 열 · 빈 표 열 이름) · `rules\__init__.py` 5(복원 메시지 넷 · 이력 비고 「항목별 출고값 복원」 — 기준 데이터 화면이 그대로 띄운다) · `rules\store.py` 1(손상 알림) · `report\notices.py` 1(`rules_basis_line` 다른 갈래). `rules\` 는 계산 폴더 여섯 밖이다 — 결정 5 를 끝까지 적용하는 번짐이다.
+- **고친 뒤(예정 · (가1))** — PPT 3장 「**적용 기준** | 한전 기본공급약관 · 전기요금표 · 전력시장운영규칙」(DR 장이 없으면 앞 둘만 · 바꾼 항목이 있으면 끝에 「 — 일부 값을 바꿔 계산했습니다 (Excel 부록 B)」 — 「출고값과 다른 항목 N건」 갈래는 PPT 에서 이 꼴로 갈음) · Excel 요약 「기준 데이터는 기본값 그대로입니다.」(바꿨으면 「기본값과 다른 항목 N건 — …」).
+**1-2. 결정 2 · 4.**
+- **「올려 주신」 — 원천 `tariff\engine.py` `AMI_BASIS_NOTICE`(계산 폴더 · 0줄로 둔다)** · 쓰는 자리 셋(`test_ui_screen.py` `_AMI_ALLOWED_USERS`) — 화면 `ui\views\diagnose.py`(`kwise.tariff` 에서 바로) · PPT 「현재 요금 구조」 장 각주 · Excel 요약 「산정 자료」(둘 다 `report\notices.py` 문으로 들어온다). Word 0. 덱 스냅 「올려 주신」 19벌 × 3자리. **고치는 길** — `report\notices.py` 가 고객 산출물 판을 짓는다(엔진 글자에서 「올려 주신 」 만 뺀다) · 화면은 엔진 글자 그대로. 고친 뒤(예정) 「요금적용전력과 기본요금은 AMI 계량 자료로 계산한 값입니다. 한전 청구서에 적힌 값과 다를 수 있습니다.」.
+- **「통째로」 — 둘** — `report\narrative.py` `COMBINATION_LEAD`(PPT 조합 장 머리) · `report\standalone.py` `SIMPLE_SUM_NOTE`(화면 3단계 수단별 요약 풀이). 덱 스냅 「통째로 다시」 19벌 × 2자리(화면 · PPT). Word 는 「조합마다 요금을 다시 계산했습니다」 — 「통째로」 없음. 고친 뒤(예정) 「…조합을 합쳐서 다시 계산했습니다.」 · 「…합산효과에서 조합을 합쳐서 다시 계산합니다.」.
+**1-3. 결정 3 — 코드 0줄 · 이미 선다.** 원천 `measures\surplus.py` `SurplusResult._used_smp_price`(기간 말 잔여 > 0 일 때만 SMP 단가 · S254 문구 판 #9). 덱 스냅 — 잔여가 있는 벌 **`small-ind-a1`**(PPT 14표 「기간 말 잔여 8,125 kWh」) PPT 14장 「※ 상계거래 SMP 120원/kWh, 외부 판매 140원/kWh 로 산출했습니다. …」 · 잔여 0 인 벌 `small-a2`(「기간 말 잔여 0 kWh」) 「※ 외부 판매 140원/kWh 로 산출했습니다. …」 만 · 이 건물((가1) · (가2) 「기간 말 잔여 0 kWh」)도 SMP 가 안 선다(`s260_values_20260929_103855.txt` · 스냅 grep). 「상계거래 SMP」 19벌 가운데 `small-ind-a1` 1벌 · 4자리(화면 · Excel · PPT · Word).
+**1-4. 고칠 자리 — 16(울타리 · 하한).**
+
+| # | 갈래 | 자리 | 결정 |
+|---|---|---|---|
+| C1 | 코드 | `report\notices.py` `RULES_UNCHANGED` | 5 |
+| C2 | 코드 | `report\notices.py` `rules_basis_line` 다른 갈래 | 5 |
+| C3 | 코드 | `report\notices.py` 새 `applied_basis_line` | 1 |
+| C4 | 코드 | `report\slides.py` 3장 「적용 기준」 행 | 1 |
+| C5 | 코드 | `report\notices.py` `AMI_BASIS_NOTICE` 고객 판 | 2 |
+| C6 | 코드 | `report\narrative.py` `COMBINATION_LEAD` | 4 |
+| C7 | 코드 | `report\standalone.py` `SIMPLE_SUM_NOTE` | 4 |
+| C8 | 코드 | `ui\views\rules_admin.py` 넷 | 5 |
+| C9 | 코드 | `ui\rules_view.py` 둘 | 5 |
+| C10 | 코드 | `rules\__init__.py` 다섯 | 5 |
+| C11 | 코드 | `rules\store.py` 하나 | 5 |
+| T1 | 시험 | `test_slides.py` 조합 문장 글자 | 4 |
+| T2 | 시험 | `test_base_fee_basis_words.py` Excel AMI 원천 | 2 |
+| T3 | 시험 | `test_ui_screen.py` `_ami_users` 정의 자리 빼기 | 2 |
+| T4 | 시험 | `test_ui.py` 미리보기 열 이름 | 5 |
+| T5 | 시험 | 새 못 인자 다섯(결정 1 ~ 5) | 1 ~ 5 |
+
+**고치지 않을 자리와 까닭** — `docs\` 의 「출고값」 10(MANUAL 3 · REQUIREMENTS 4 · TECHNICAL 3 — 문서 · 울타리 `ui\` · `report\` 밖) · 「출고 상태로」 · 「출고 복원 대상」 · 「출고 기본값」(낱말이 「출고값」 이 아니다 · 결정 글자 밖으로 짓지 않는다) · `rules\__init__.py` `as_row` 「출고값」 열쇠(`src` 에서 부르는 자리 0 — 화면 · 산출물에 안 선다) · 주석 · 독스트링. 계산 폴더 몫 — `tariff` · `measures` · `diagnose` · `compare` · `pv` · `quality` **0**. `tools\` 0 · `CLAUDE.md` 0.
+**덱 19벌에서 갈릴 줄(예정)** — 벌마다 6(PPT 3표 행 · PPT 요금 구조 각주 · PPT 조합 장 머리 · Excel 요약 기준 데이터 · Excel 산정 자료 · 화면 3단계 풀이) = **114**.
+
 ## 오늘 (2026-09-28) 259세션 — **짧은 판 · 태양광 방위가 스스로 풀리는 뿌리를 고치고 · 묵은 결과로 산출물을 만들지 못하게 막는다 · 계산 변경 없음**
 
 **사람 바로잡음(S258 뒤 · `docs\HANDOVER.md` 5절 행)** — S258 결정 11 의 판정(실제 입력 변화)은 틀렸다 · 사람은 방위를 남동으로 고르고 단가를 넣고 「태양광 계산」 을 누른 뒤 태양광 조건을 바꾸지 않았다 · 화면 방위 남은 스스로 풀린 값이고 경고는 거짓이었다(S258 행에 곁 줄). **사람 결정** — 결정 2(묵은 결과 판정이 선 수단이 있으면 3단계 합산효과 계산 · Excel · PPT · Word 만들기 · 이미 만든 내려받기를 막고 합산효과 칸을 묵은 결과 꼴로 · 막힌 자리마다 「⚠ {번호}. {수단 이름} — 입력이 변경되었습니다 — 다시 계산하십시오.」 · S257 결정 3 행에 곁 줄). **웹 대화창 판단(사람 결정이 아니다)** — 결정 1(사람이 고른 입력은 바꾸기 전까지 남는다 · 뿌리를 찾아 까닭에 맞춰 고친다) · 결정 3(조합만 하향을 권하는 벌의 PPT 조합 장 ※ 필수 안내). **앞서 정한 것(가리키기만 · HANDOVER 5절)** — 절사 A · S207 · S233 · S251 · S257 결정 3 · S258 결정 1 ~ 10 · 고객 산출물 말투.
