@@ -2532,3 +2532,75 @@ def test_S260_사람_실물_재점검_글자가_선다(item: str) -> None:
     5 「출고값」 → 「기본값」 — Excel 요약 · 화면 · 기준 데이터 화면 글자.
     """
     _s260_check(item)
+
+
+def _render_zero_dr() -> Rendered:
+    """감축 가능량 0 에 정산 단가를 넣은 판 (S261) — `small-a` 에 확인 사례 입력(단가 120).
+
+    저부하 평일이 0일이라 DR 정산금이 0원이고, 조합 끝에 「+ 경제성DR (+0원)」 줄이 서던 벌이다."""
+    slot = "zero-dr"
+    if slot not in _RENDERED:
+        _RENDERED[slot] = _build("small-a", "office", confirm=True)
+    return _RENDERED[slot]
+
+
+#: 감축 가능량이 0 이면 서지 않는 참여 전제 글자 (S261 고침 1).
+_DR_PREMISE = (
+    "리스크는 0이 아닙니다",
+    "위약금은 계통한계가격에 달려",
+    "참고 문턱 100 kW 아래",
+    "로 산출했습니다. 정산 단가는",
+    "감축계획량을 채우지 못하면",
+)
+
+
+def _s261_check(item: str, zero: bool) -> None:
+    """S261 고침 1 · 2 를 감축 0 판(`small-a`)과 0 보다 큰 판((가1))의 화면 · 네 산출물로 본다."""
+    rendered = _render_zero_dr() if zero else _render_human()
+    rows = [tuple(str(v) for v in row) for row in rendered.rows]
+    plain = [row for row in rows if not row[1].startswith("그림")]
+    texts = [" | ".join(row) for row in plain]
+    if item == "1":
+        premise = [t for t in texts if any(word in t for word in _DR_PREMISE)]
+        screen = [row[-1] for row in plain if row[0] == "화면"]
+        dr = [row[-1] for row in _slide(rows, "경제성DR")]
+        if zero:
+            assert not premise, premise
+            assert [t for t in screen if "저부하 평일이 없습니다." in t], "화면 ⚠ 는 남는다"
+            assert [t for t in dr if t.endswith("평일이 없어 줄일 여지가 없습니다.")], dr
+        else:
+            # (가1) — 등록 31 kW(문턱 아래) · 단가를 넣었다 · 다섯이 다 선다
+            missing = [w for w in _DR_PREMISE if not any(w in t for t in premise)]
+            assert not missing, missing
+        assert not [t for t in texts if "추가로 줄일 여지" in t]
+    elif item == "2":
+        combo = [row for row in plain if row[:2] == ("Excel", "조합 비교")]
+        excel = [row for row in combo if row[2].startswith("+ ")]
+        word = [t for t in texts if t.startswith("Word") and "권장안은" in t]
+        dr_rows = [t for t in texts if "+ 경제성DR" in t and not t.startswith("화면")]
+        if zero:
+            assert not dr_rows, dr_rows
+            assert not [t for t in word if "경제성DR" in t], word
+        else:
+            assert excel[-1][2] == "+ 경제성DR", excel[-1]
+            assert word and word[0].split("」")[0].endswith("+ 경제성DR"), word
+        # 끝 줄 = 합산효과 — Excel 끝 줄 기간 절감이 Word 권장안의 기간 총 절감액과 같다
+        assert [t for t in word if f"기간에 {int(excel[-1][6]):,}원" in t], (excel[-1], word)
+    else:
+        pytest.fail(f"모르는 항목 {item}")
+
+
+@pytest.mark.parametrize("zero", [True, False], ids=["감축0", "감축있음"])
+@pytest.mark.parametrize("item", ["1", "2"])
+def test_S261_경제성DR_0_이면_참여_전제_글자와_0원_조합_줄이_서지_않는다(
+    item: str, zero: bool
+) -> None:
+    """**S261 고침 1 · 2** (웹 대화창 판단 · 대형건물 사람 실물 점검).
+
+    1 감축 가능량 0 이면 화면 ⚠ · Word · PPT ※ 의 참여 전제 글자(위약금 · 정산 단가 · 참고
+      문턱)가 서지 않고 「저부하 평일이 없습니다」 는 선다 · PPT 머리에 「추가로」 가 없다.
+      0 보다 크면 그대로 선다.
+    2 효과 0 인 경제성DR 은 조합 끝 줄 · 권장안 이름에 서지 않고 끝 줄 = 합산효과 ·
+      0 보다 크면 선다.
+    """
+    _s261_check(item, zero)
