@@ -461,7 +461,7 @@ def restore_defaults(
             message=(
                 f"출고 복원 대상 {len(diffs)}건입니다. 아래 목록을 확인한 뒤 진행하십시오."
                 if diffs
-                else "출고값과 다른 항목이 없습니다. 복원할 것이 없습니다."
+                else "기본값과 다른 항목이 없습니다. 복원할 것이 없습니다."
             ),
             changes=tuple(
                 RuleChange(
@@ -499,7 +499,7 @@ def restore_defaults(
         backup=safety,
         changes=tuple(changes),
         message=(
-            f"출고값으로 복원했습니다 ({len(changes)}건). "
+            f"기본값으로 복원했습니다 ({len(changes)}건). "
             f"직전 상태는 {safety.name if safety else '—'}"
         ),
     )
@@ -516,11 +516,11 @@ def restore_item(
     current = rules(root) if origin is RuleOrigin.STATUTORY else assumptions(root)
     factory = load_defaults(origin, root)
     if key not in factory:
-        return EditResult(ok=False, message=f"출고값에 없는 항목입니다: {key}")
+        return EditResult(ok=False, message=f"기본값에 없는 항목입니다: {key}")
     before = current[key]
     target = factory[key]
     if before.value == target.value:
-        return EditResult(ok=True, message=f"{key} 는 이미 출고값입니다.")
+        return EditResult(ok=True, message=f"{key} 는 이미 기본값입니다.")
 
     items = dict(current.items)
     items[key] = replace(before, value=target.value, verified_on=dt.date.today())
@@ -531,7 +531,7 @@ def restore_item(
         before=before.value,
         after=target.value,
         action="restore_item",
-        note="항목별 출고값 복원",
+        note="항목별 기본값 복원",
     )
     return _commit(replace(current, items=items), [change], root=root, action="항목 복원")
 

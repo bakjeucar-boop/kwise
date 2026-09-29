@@ -834,7 +834,7 @@ def measure_summary_lead(
 #: 조합 장 — **어느 입력에서도 한 문장이다** (S258 결정 2 · 사람이 정했다). 화면 3단계의
 #: 말이다. 수단 수로 갈리던 두 문장은 조합 줄 수로 갈라 태양광 · DR 을 켠 벌에도 「켠 수단이
 #: 하나라」 가 섰다 — 입력에 따라 거짓이 되는 갈래를 없앴다.
-COMBINATION_LEAD = "수단을 함께 도입하면 서로 영향을 주므로 조합을 통째로 다시 계산했습니다."
+COMBINATION_LEAD = "수단을 함께 도입하면 서로 영향을 주므로 조합을 합쳐서 다시 계산했습니다."
 
 
 def combination_lead(comparison: object | None = None) -> str:

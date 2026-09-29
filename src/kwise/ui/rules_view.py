@@ -194,13 +194,13 @@ def diff_frame(diffs: Iterable[ItemDiff]) -> pd.DataFrame:
             "이름": item.label,
             "구분": item.origin,
             "현재 값": item.current,
-            "출고값": item.default,
+            "기본값": item.default,
             "상태": item.status,
         }
         for item in diffs
     ]
     if not rows:
-        return pd.DataFrame(columns=["항목", "이름", "구분", "현재 값", "출고값", "상태"])
+        return pd.DataFrame(columns=["항목", "이름", "구분", "현재 값", "기본값", "상태"])
     return pd.DataFrame(rows)
 
 

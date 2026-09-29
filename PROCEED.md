@@ -412,6 +412,15 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 **고치지 않을 자리와 까닭** — `docs\` 의 「출고값」 10(MANUAL 3 · REQUIREMENTS 4 · TECHNICAL 3 — 문서 · 울타리 `ui\` · `report\` 밖) · 「출고 상태로」 · 「출고 복원 대상」 · 「출고 기본값」(낱말이 「출고값」 이 아니다 · 결정 글자 밖으로 짓지 않는다) · `rules\__init__.py` `as_row` 「출고값」 열쇠(`src` 에서 부르는 자리 0 — 화면 · 산출물에 안 선다) · 주석 · 독스트링. 계산 폴더 몫 — `tariff` · `measures` · `diagnose` · `compare` · `pv` · `quality` **0**. `tools\` 0 · `CLAUDE.md` 0.
 **덱 19벌에서 갈릴 줄(예정)** — 벌마다 6(PPT 3표 행 · PPT 요금 구조 각주 · PPT 조합 장 머리 · Excel 요약 기준 데이터 · Excel 산정 자료 · 화면 3단계 풀이) = **114**.
+**1절 벽시계** 10:39:00 ~ 10:40:06(시각 명령 출력 · 커밋 앞). 1절 커밋을 0절 메시지로 잘못 달아 커밋 전에 올리지 않은 채 메시지만 고쳤다(`git commit --amend` · 내용은 그대로).
+
+**2-1. 코드 11자리를 고쳤다 — T1 ~ T5(시험)는 3절이 짓는다**(`git diff --numstat` · +/−).
+- **C1 · C2 · C3 · C5** `report\notices.py` +26 −4 — `AMI_BASIS_NOTICE` = 엔진 글자(`_SCREEN_AMI_BASIS_NOTICE` 로 들여온다)에서 「올려 주신 」 을 뺀 고객 판 · `RULES_UNCHANGED` 「기준 데이터는 **기본값** 그대로입니다.」 · `rules_basis_line` 다른 갈래 「**기본값**과 다른 항목 N건 — …」 · 새 `applied_basis_line(market_rules=)`(「한전 기본공급약관 · 전기요금표」 + DR 장이면 「 · 전력시장운영규칙」 + 바꾼 항목이 있으면 「 — 일부 값을 바꿔 계산했습니다 (Excel 부록 B)」 · 글자는 상수 셋).
+- **C4** `report\slides.py` +6 −4 — 3장 행 「기준 데이터 | rules_basis_line()」 → 「적용 기준 | applied_basis_line(market_rules)」(`market_rules` = `sections.measures` 에 `demand_response` 가 있는가) · `rules_basis_line` 가져오기를 걷었다(이 파일에서 안 쓴다).
+- **C6** `report\narrative.py` +1 −1 · **C7** `report\standalone.py` +1 −1 — 「통째로」 → 「합쳐서」.
+- **C8** `ui\views\rules_admin.py` +4 −4 · **C9** `ui\rules_view.py` +2 −2 · **C10** `rules\__init__.py` +5 −5 · **C11** `rules\store.py` +1 −1 — 「출고값」 → 「기본값」.
+- 정적 확인(좁게) — `ruff check src` 통과 · `ruff format --check src` 첫 판 어긋남 4(내 `slides.py` 3장 행 한 자리 + 앞서 있던 셋) → 조건을 지역 이름 하나로 뺐다 → **3**(`document.py` · `slides.py` · `tariff\engine.py` — S259 와 같은 자리 · `ruff_20260929_104125.txt`) · `mypy src` 이상 없음(`mypy_20260929_104111.txt`).
+**2-2. 적게 닫았거나 번진 자리.** 적게 닫음 0 · 1-4 에 없던 파일 0. **번짐 둘** — C10 · C11(`rules\` · 기준 데이터 화면이 띄우는 글자 — 1-1 에 적었다). 계산 폴더 여섯 0줄 · `tools\` 0 · `CLAUDE.md` 0.
 
 ## 오늘 (2026-09-28) 259세션 — **짧은 판 · 태양광 방위가 스스로 풀리는 뿌리를 고치고 · 묵은 결과로 산출물을 만들지 못하게 막는다 · 계산 변경 없음**
 

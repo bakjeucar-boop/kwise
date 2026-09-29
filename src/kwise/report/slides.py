@@ -65,6 +65,7 @@ from kwise.report.notices import (
     SETTLED_ROW_NAME,
     TRUNCATION_FOOTNOTE,
     UNPRICED,
+    applied_basis_line,
     billing_demand_text,
     demand_split,
     excess_not_measured_line,
@@ -72,7 +73,6 @@ from kwise.report.notices import (
     lowering_recommended,
     max_demand_text,
     plain_text,
-    rules_basis_line,
     settled_composition,
     settled_row,
 )
@@ -1208,6 +1208,8 @@ def _build_building(
     short_period = next(
         (item.text for item in bill.notices if item.fact == "quality.short_period"), ""
     )
+    # 경제성DR 장이 서는 덱이면 전력시장운영규칙도 적용 기준이다 (S260 결정 1).
+    market_rules = any(entry.kind.key == "demand_response" for entry in sections.measures)
     rows = [
         ["항목", "내용"],
         ["건물명", sections.building],
@@ -1227,9 +1229,9 @@ def _build_building(
             f"{meta.missing_rows:,}구간 ({meta.missing_ratio:.1%}) — 보간하지 않고 뺐습니다",
         ],
         ["적용 요금표 시행일", f"{bill.effective_date}"],
-        # **어느 기준 데이터로 계산했는가** (56세션 3절). 실물과 재현이 갈릴 때
-        # 이 줄이 조건을 말한다 — 전문은 Excel 부록 「기준 데이터」 에 있다.
-        ["기준 데이터", rules_basis_line()],
+        # **어느 기준으로 계산했는가** (56세션 3절 · S260 결정 1 — 고객이 읽는 이름으로).
+        # 바꾼 값이 있으면 그 사실만 적는다 — 전문은 Excel 부록 B 에 있다.
+        ["적용 기준", applied_basis_line(market_rules=market_rules)],
         ["작성일", f"{sections.prepared:%Y-%m-%d}"],
     ]
     if quality is not None:

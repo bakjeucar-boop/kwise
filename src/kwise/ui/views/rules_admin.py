@@ -193,7 +193,7 @@ def _row(row: RuleRow) -> None:
     if row.needs_check:
         flags.append("⚠ 확인 필요")
     if row.changed:
-        flags.append("● 출고값과 다름")
+        flags.append("● 기본값과 다름")
 
     with st.container(border=True):
         head, edit = st.columns([3, 2])
@@ -245,11 +245,11 @@ def _editor(row: RuleRow) -> None:
     if row.changed and buttons[2].button(
         "되돌리기",
         key=f"revert_{row.key}",
-        help=markdown_safe(f"출고값 {row.view.default_value!r} 로 되돌립니다."),
+        help=markdown_safe(f"기본값 {row.view.default_value!r} 로 되돌립니다."),
     ):
         _report(apply_rule_edit(restore_item(row.key)))
     if row.changed:
-        st.caption(f"출고값 — `{row.view.default_value!r}`")
+        st.caption(f"기본값 — `{row.view.default_value!r}`")
 
 
 def _report(result: EditResult) -> None:
@@ -290,7 +290,7 @@ def _restore_block() -> None:
         if diffs:
             tables.show(diff_frame(diffs), hide_index=True, width="stretch")
         columns = st.columns(2)
-        if columns[0].button("확인했습니다 — 출고값으로 되돌립니다", type="primary"):
+        if columns[0].button("확인했습니다 — 기본값으로 되돌립니다", type="primary"):
             result = apply_rule_edit(restore_defaults(origin, confirmed=True))
             st.session_state.pop(_CONFIRM_KEY, None)
             _report(result)

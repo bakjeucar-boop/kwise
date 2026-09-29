@@ -166,7 +166,7 @@ def read_ruleset(origin: RuleOrigin, root: Path | None = None) -> RuleSet:
         )
 
     raise RuleDataError(
-        f"기준 데이터가 손상되었고 복구할 백업·출고값도 없습니다: {path}\n사유: {broken}"
+        f"기준 데이터가 손상되었고 복구할 백업·기본값도 없습니다: {path}\n사유: {broken}"
     )
 
 
