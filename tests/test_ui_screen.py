@@ -5006,6 +5006,8 @@ def _ami_users() -> dict[str, list[int]]:
         주석·독스트링    애초에 나무에 없다
 
     정의한 곳(`tariff\\engine.py`)과 내보내기(`tariff\\__init__.py`)는 폴더째 뺀다.
+    고객 산출물 판을 짓는 자리(`report\\notices.py` · S260 결정 2)는 이름을 **쓰지** 않고
+    **짓는다** — 읽기(:class:`ast.Load`)만 센다.
     """
     root = Path("src") / "kwise"
     home = root / "tariff"
@@ -5017,7 +5019,9 @@ def _ami_users() -> dict[str, list[int]]:
         lines = [
             node.lineno
             for node in ast.walk(tree)
-            if isinstance(node, ast.Name) and node.id == "AMI_BASIS_NOTICE"
+            if isinstance(node, ast.Name)
+            and node.id == "AMI_BASIS_NOTICE"
+            and isinstance(node.ctx, ast.Load)
         ]
         if lines:
             found[path.relative_to(root).as_posix()] = sorted(lines)

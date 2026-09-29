@@ -594,7 +594,7 @@ def test_분류를_모르면_키를_그대로_보여준다() -> None:
 def test_출고_복원_미리보기_표() -> None:
     diffs = (ItemDiff("a.x", "라벨", "법령", 2.0, 1.0, "변경"),)
     frame = diff_frame(diffs)
-    assert list(frame.columns) == ["항목", "이름", "구분", "현재 값", "출고값", "상태"]
+    assert list(frame.columns) == ["항목", "이름", "구분", "현재 값", "기본값", "상태"]
     assert frame.iloc[0]["현재 값"] == 2.0
     assert diff_frame(()).empty  # 차이가 없어도 열 구조는 유지한다
 

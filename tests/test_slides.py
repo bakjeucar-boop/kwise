@@ -2658,7 +2658,8 @@ def test_조합_문장은_어느_입력에서도_한_문장이다() -> None:
     from kwise.report import narrative
     from kwise.report.narrative import COMBINATION_LEAD, combination_lead
 
-    lead = "수단을 함께 도입하면 서로 영향을 주므로 조합을 통째로 다시 계산했습니다."
+    # S260 결정 4 — 「통째로」 → 「합쳐서」.
+    lead = "수단을 함께 도입하면 서로 영향을 주므로 조합을 합쳐서 다시 계산했습니다."
     assert lead == COMBINATION_LEAD
     for combinations in ((1,), (1, 2), (1, 2, 3)):
         assert combination_lead(SimpleNamespace(combinations=combinations)) == lead

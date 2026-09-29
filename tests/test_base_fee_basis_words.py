@@ -1624,8 +1624,10 @@ def test_화면_차트의_세로축_이름은_가로로_선다(rendered: Rendere
 
 
 def test_Excel_요약에_AMI_기준_안내가_한_줄_선다(rendered: Rendered) -> None:
-    """**요약 시트 안내 블록에 AMI 기준 한 줄** (나-4 · 73세션 2-2 가 자리와 글을 정했다)."""
-    from kwise.tariff import AMI_BASIS_NOTICE
+    """**요약 시트 안내 블록에 AMI 기준 한 줄** (나-4 · 73세션 2-2 가 자리와 글을 정했다).
+
+    고객 산출물 판이다 — 「올려 주신」 을 뺐다 (S260 결정 2)."""
+    from kwise.report.notices import AMI_BASIS_NOTICE
 
     rows = [
         row for row in rendered.rows if row[:2] == ("Excel", "요약") and AMI_BASIS_NOTICE in row
@@ -2415,3 +2417,118 @@ def test_S259_사람이_고른_입력이_남고_묵은_결과로는_산출물을
     4 조합만 하향을 권하는 벌(`small-a2` · `small-ind-a2`)에서만 PPT 조합 장에 필수 안내 ※.
     """
     _s259_check(item)
+
+
+# ===================================================================== S260
+
+
+def _user_strings(folder: Path) -> list[tuple[str, str]]:
+    """``folder`` 아래 소스의 글자 상수 — 독스트링 · 식 문장 글자(주석 꼴)는 뺀다."""
+    import ast
+
+    found: list[tuple[str, str]] = []
+    for path in sorted(folder.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        skip = {
+            id(node.value)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+        }
+        found += [
+            (path.name, node.value)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and id(node) not in skip
+        ]
+    return found
+
+
+def _s260_check(item: str) -> None:
+    """S260 결정 1 ~ 5 를 확인 사례 (가1) 의 화면 · 네 산출물로 본다."""
+    from kwise.report import notices
+    from kwise.report.narrative import COMBINATION_LEAD
+    from kwise.report.slides import SLIDE_TITLES
+    from kwise.rules import ItemDiff
+    from kwise.tariff import AMI_BASIS_NOTICE as SCREEN_AMI
+
+    rows = list(_render_human().rows)
+    outputs = [row for row in rows if row[0] in ("Excel", "PPT", "Word")]
+    screen = [row for row in rows if row[0] == "화면"]
+    changed = (ItemDiff("surplus.smp_won_per_kwh", "", "판단", 130, 120, "변경"),)
+    patch = pytest.MonkeyPatch()
+    try:
+        if item == "1":
+            # PPT 3장 — 「기준 데이터」 행이 「적용 기준」 이 된다 · DR 장이 서면 전력시장운영규칙
+            ppt = [row for row in outputs if row[0] == "PPT"]
+            basis = [row for row in ppt if row[2:3] == ("적용 기준",)]
+            assert [row[-1] for row in basis] == [
+                "한전 기본공급약관 · 전기요금표 · 전력시장운영규칙"
+            ], basis
+            assert not [row for row in ppt if "기준 데이터" in row[2:3]]
+            plain = notices.applied_basis_line(market_rules=False)
+            assert plain == "한전 기본공급약관 · 전기요금표", plain
+            patch.setattr(notices, "diff_from_defaults", lambda: changed)
+            assert notices.applied_basis_line(market_rules=True) == (
+                "한전 기본공급약관 · 전기요금표 · 전력시장운영규칙"
+                " — 일부 값을 바꿔 계산했습니다 (Excel 부록 B)"
+            )
+        elif item == "2":
+            # 고객 산출물에서 「올려 주신」 을 뺀다 · 화면은 그대로
+            assert SCREEN_AMI.replace("올려 주신 ", "") == notices.AMI_BASIS_NOTICE
+            assert not [row for row in outputs if "올려 주신" in " ".join(row)]
+            for name in ("Excel", "PPT"):
+                hits = [r for r in outputs if r[0] == name and notices.AMI_BASIS_NOTICE in r[-1]]
+                assert len(hits) == 1, (name, hits)
+            assert [row for row in screen if SCREEN_AMI in row[-1]], "화면 AMI 줄이 빠졌다"
+        elif item == "3":
+            # 잉여 장 SMP 단가 — 기간 말 잔여가 있을 때만 선다(코드 0줄 · S254 #9)
+            title = SLIDE_TITLES["surplus"]
+            for key, remains in (("small-ind-a1", True), ("small-a2", False), ("human", False)):
+                page = _slide(list(rows if key == "human" else _render(key).rows), title)
+                texts = [" | ".join(row) for row in page]
+                left = [m for t in texts for m in re.findall(r"기간 말 잔여 ([\d,]+) kWh", t)]
+                assert left and (left[0] != "0") is remains, (key, left)
+                assert any("상계거래 SMP" in t for t in texts) is remains, (key, texts)
+        elif item == "4":
+            assert COMBINATION_LEAD.endswith("조합을 합쳐서 다시 계산했습니다.")
+            combo = [row[-1] for row in _slide(rows, "조합구성 및 합산효과")]
+            assert COMBINATION_LEAD in combo, combo
+            note = "합산효과에서 조합을 합쳐서 다시 계산합니다"
+            assert [row for row in screen if note in row[-1]]
+            assert not [row for row in rows if "통째로" in " ".join(row)]
+        elif item == "5":
+            excel = [row for row in outputs if row[:2] == ("Excel", "요약")]
+            summary = [row for row in excel if "기준 데이터" in row]
+            assert [row[-1] for row in summary] == ["기준 데이터는 기본값 그대로입니다."], summary
+            assert not [row for row in rows if "출고값" in " ".join(row)]
+            src = PROJECT_ROOT / "src" / "kwise"
+            left = [
+                hit
+                for folder in ("ui", "report", "rules")
+                for hit in _user_strings(src / folder)
+                if "출고값" in hit[1]
+            ]
+            # `rules.ItemView.as_row` 의 열 이름 하나는 남긴다 — 화면 · 산출물에 안 서고
+            # `tools\export_rules_xlsx.py` 가 그 이름으로 열을 고른다(S260 · tools 0줄).
+            assert left == [("__init__.py", "출고값")], left
+            patch.setattr(notices, "diff_from_defaults", lambda: changed)
+            assert notices.rules_basis_line().startswith("기본값과 다른 항목 1건 — ")
+        else:
+            pytest.fail(f"모르는 항목 {item}")
+    finally:
+        patch.undo()
+
+
+@pytest.mark.parametrize("item", ["1", "2", "3", "4", "5"])
+def test_S260_사람_실물_재점검_글자가_선다(item: str) -> None:
+    """**S260 결정 1 ~ 5** — 확인 사례 (가1)(S259 (가) 그대로)의 화면 · 네 산출물.
+
+    1 PPT 3장 「적용 기준 | 한전 기본공급약관 · 전기요금표」(DR 장이 서면 「 · 전력시장운영규칙」 ·
+      기준 데이터를 바꿨으면 「 — 일부 값을 바꿔 계산했습니다 (Excel 부록 B)」).
+    2 PPT · Excel 의 AMI 기준 한 줄에 「올려 주신」 이 없다 · 화면은 그대로.
+    3 잉여 장 상계거래 SMP 단가는 기간 말 잔여가 있을 때만 선다(사람이 다시 확인 · 코드 0줄).
+    4 「통째로」 → 「합쳐서」 — PPT 조합 장 머리 · 화면 3단계 풀이.
+    5 「출고값」 → 「기본값」 — Excel 요약 · 화면 · 기준 데이터 화면 글자.
+    """
+    _s260_check(item)
