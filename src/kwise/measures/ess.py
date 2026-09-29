@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
@@ -42,6 +42,7 @@ from kwise.measures.ess_cost import (
     load_ess_spec_grid,
 )
 from kwise.measures.netload import with_load
+from kwise.measures.solar import power_factor_after_pct
 from kwise.notices import Notice, basis, info, warn
 from kwise.progress import ProgressReporter, record
 from kwise.quality import QualityReport
@@ -51,9 +52,11 @@ from kwise.tariff import (
     BillingResult,
     TariffSelection,
     TariffTable,
+    billed_pct,
     build_calendar,
     calculate_bill,
     classify_slots,
+    deemed_lagging_pct,
 )
 
 __all__ = [
@@ -82,6 +85,7 @@ __all__ = [
     "ess_target_curve",
     "evaluate_ess",
     "excess_slots_by_day",
+    "high_c_rate_notice",
     "high_rate_discharge_hours",
     "light_band_mask",
     "min_pcs_power_kw",
@@ -204,6 +208,34 @@ def snap_spec(
 def high_rate_discharge_hours() -> float:
     """이 아래는 정치형 셀의 통상 연속 방전(0.5~1C)을 넘어선다. 고출력 셀 사양이다."""
     return float(assumption("ess.high_rate_discharge_hours"))
+
+
+def high_c_rate_notice(discharge_hours: float) -> Notice | None:
+    """방전시간이 고출력 경계 아래면 경고 하나 — 2단계 카드와 조합이 같이 쓴다 (S262 결정 3)."""
+    if not 0 < discharge_hours < high_rate_discharge_hours():
+        return None
+    return warn(
+        f"산출 사양이 {c_rate(discharge_hours):.1f}C 방전에 해당합니다 "
+        f"(방전시간 {discharge_hours:.2f}h). 정치형 LFP 는 통상 0.5~1C 연속이므로 "
+        "고출력 셀 사양이며, 도입 사례보다 비쌀 수 있습니다.",
+        fact="ess.high_c_rate",
+    )
+
+
+def _after_options(usage: UsageData, net_kw: pd.Series, opts: BillingOptions) -> BillingOptions:
+    """ESS 도입 후 역률로 요금을 셈할 옵션 (S262 결정 2 · 태양광과 같은 식).
+
+    ESS 도 계량 유효전력을 줄이므로 같은 무효전력에서 역률이 떨어진다 — ESS 가 줄인 부하를
+    :func:`~kwise.measures.solar.power_factor_after_pct` 에 넘기고 1% 반올림한 값을 쓴다.
+    """
+    before = opts.power_factor_pct if opts.power_factor_pct is not None else deemed_lagging_pct()
+    after = power_factor_after_pct(
+        usage.kw,
+        usage.kw - net_kw,
+        power_factor_pct=before,
+        interval_minutes=usage.meta.interval_minutes,
+    )
+    return replace(opts, power_factor_pct=billed_pct(after))
 
 
 def default_target_step_ratio() -> float:
@@ -1015,6 +1047,10 @@ class EssResult:
 
     계산 근거 표가 역률 몫과 갈라 적는다 (S243 · 결정 1).
     """
+    power_factor_before_pct: float | None = None
+    """요금에 넣은 주간 지상역률 — 부록 역률 줄 산식이 읽는다 (S262 결정 2)."""
+    power_factor_after_pct: float | None = None
+    """ESS 도입 후 주간 지상역률(1% 반올림) — 요금을 이 값으로 다시 셈했다 (S262 결정 2)."""
     notices: tuple[Notice, ...] = field(default=())
 
     @property
@@ -1118,7 +1154,9 @@ def evaluate_ess(
         else calculate_bill(usage, table, selection, options=opts, quality=quality)
     )
     after = with_load(usage, dispatch.net_kw, source_suffix=" + ESS")
-    bill = calculate_bill(after, table, selection, options=opts, quality=quality)
+    # 도입 후 역률로 다시 셈한다 — 기본요금이 준 몫과 조정률이 바뀐 몫이 함께 든다 (S262 결정 2).
+    after_options = _after_options(usage, dispatch.net_kw, opts)
+    bill = calculate_bill(after, table, selection, options=after_options, quality=quality)
 
     # **투자비는 조달 사례 모델이 기본이다** (13세션). 설비비와 전기공사비를 나눠
     # 산정하고, 사용자가 단가나 총액을 넣었으면 그쪽이 이긴다.
@@ -1188,15 +1226,8 @@ def evaluate_ess(
                 fact="ess.target_unmet",
             )
         )
-    if 0 < discharge_hours < high_rate_discharge_hours():
-        notices.append(
-            warn(
-                f"산출 사양이 {c_rate(discharge_hours):.1f}C 방전에 해당합니다 "
-                f"(방전시간 {discharge_hours:.2f}h). 정치형 LFP 는 통상 0.5~1C 연속이므로 "
-                "고출력 셀 사양이며, 도입 사례보다 비쌀 수 있습니다.",
-                fact="ess.high_c_rate",
-            )
-        )
+    if (high_rate := high_c_rate_notice(discharge_hours)) is not None:
+        notices.append(high_rate)
     if (
         breakeven is not None
         and cost.unit_cost_won_per_kw is not None
@@ -1336,6 +1367,10 @@ def evaluate_ess(
         required_power_kw=required_power,
         required_capacity_kwh=required_capacity,
         excess_saving_won=base_bill.total_excess_won - bill.total_excess_won,
+        power_factor_before_pct=(
+            opts.power_factor_pct if opts.power_factor_pct is not None else deemed_lagging_pct()
+        ),
+        power_factor_after_pct=after_options.power_factor_pct,
         notices=tuple(notices),
     )
 
@@ -1401,7 +1436,14 @@ def ess_payback_curve(
             dod=dod,
         )
         after = with_load(usage, dispatch.net_kw, source_suffix=" + ESS")
-        bill = calculate_bill(after, table, selection, options=opts, quality=quality)
+        # 카드와 같이 도입 후 역률로 셈한다 (S262 결정 2).
+        bill = calculate_bill(
+            after,
+            table,
+            selection,
+            options=_after_options(usage, dispatch.net_kw, opts),
+            quality=quality,
+        )
         annual = annualize(base_bill.total_won - bill.total_won, base_bill.base_fee_months)
         investment = power * item.unit_cost_won_per_kw(hours)
         arbitrage = arbitrage_value(
@@ -1864,7 +1906,8 @@ def refine_ess_target(
                 with_load(usage, dispatch.net_kw, source_suffix=" + ESS"),
                 table,
                 selection,
-                options=opts,
+                # 카드와 같이 도입 후 역률로 셈한다 (S262 결정 2).
+                options=_after_options(usage, dispatch.net_kw, opts),
                 quality=quality,
             )
             saving = annualize(base_bill.total_won - after.total_won, base_bill.base_fee_months)

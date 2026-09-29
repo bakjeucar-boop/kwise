@@ -66,7 +66,6 @@ from kwise.measures import (
 from kwise.measures.ess import NO_INVESTMENT_INPUT
 from kwise.notices import Notice, dedupe, prefixed
 from kwise.pv import load_sharpness_factors
-from kwise.report import narrative
 from kwise.report.appendix import basis_data_frame, known_limits, worksheet_frame
 from kwise.report.columns import display_frame, localize, season_label, value_label
 from kwise.report.notices import (
@@ -701,24 +700,11 @@ def measure_summary_frame(
                 # **표시 상한을 여기서도 태운다** (S134 3절). 앞서는 손으로
                 # 적어 500년·3,000년이 그대로 나갔다 — 태양광만 예외였다.
                 "회수기간": payback_label(solar.payback_years, solar.investment_won),
-                # **역률 조정값을 곁에 적는다** (59세션 12절 · 목록 P6). 금액
-                # 칸은 조정 전 값이다 — 카드의 절감액은 「그 수단만 적용했을 때」
-                # 여야 한다 (31세션). 문장은 화면·PPT·Word 와 같은 것을 쓴다.
+                # 금액 칸은 역률 변화를 담은 한 값이다 — 「역률 영향 반영 시 …」 를 곁에
+                # 세우지 않는다 (S262 결정 2). 도입 후 역률은 요금을 셈한 정수 % 다(결정 1).
                 "비고": (
-                    ", ".join(
-                        part
-                        for part in (
-                            f"자가소비율 {solar.self_consumption_ratio:.0%}",
-                            f"도입 후 역률 {solar.power_factor_after_pct:.1f}%",
-                            narrative.power_factor_adjusted_saving(
-                                saving_won=solar.total_saving_won,
-                                extra_won=solar.power_factor_extra_won,
-                                # 같은 줄에 12개월 환산값이 서면 기간을 단다 (S219 규칙 다).
-                                basis="기간" if solar.annual_saving_won is not None else "",
-                            ),
-                        )
-                        if part
-                    )
+                    f"자가소비율 {solar.self_consumption_ratio:.0%}, "
+                    f"도입 후 역률 {solar.power_factor_after_pct:,.0f}%"
                     if solar.self_consumption_ratio is not None
                     else "발전량 0"
                 ),

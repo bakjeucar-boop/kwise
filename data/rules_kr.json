@@ -286,6 +286,14 @@
       "value": 95.0,
       "verified_on": "2026-09-02"
     },
+    "power_factor.rounding_unit_pct": {
+      "label": "역률 계산단위 (%)",
+      "note": "요금 등을 계산하는 단위는 다음과 같습니다. 이때 계산단위 미만의 끝수는 계산단위 이하 첫째자리에서 반올림합니다 — 역률 1%.",
+      "source": "기본공급약관 제7조 ①",
+      "source_date": "2026-06-01",
+      "value": 1.0,
+      "verified_on": "2026-09-29"
+    },
     "school_exception.base_discount_ratio": {
       "label": "초·중·고교·유치원 특례 — 기본사용 전력량 할인율",
       "note": "12~2월분과 7~8월분의 전력량요금 등을 기본사용과 냉난방 사용 비중으로 나눈 뒤 기본사용분에 붙는다.",

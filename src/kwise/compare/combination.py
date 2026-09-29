@@ -37,12 +37,15 @@ from kwise.measures import (
     light_band_mask,
     load_ess_cost_model,
     lowest_certainty,
+    measure_kind,
+    min_pcs_power_kw,
     payback_years,
     size_for_target,
+    snap_spec,
     with_load,
 )
 from kwise.measures.contract import ContractAdjustment, evaluate_contract_adjustment
-from kwise.measures.ess import analyze_peak_excess
+from kwise.measures.ess import BELOW_MINIMUM_CONCLUSION, analyze_peak_excess, high_c_rate_notice
 from kwise.measures.pv_cost import PV_UNPRICED_REASON, PvCostInput
 from kwise.measures.solar import (
     power_factor_after_pct,
@@ -58,6 +61,7 @@ from kwise.tariff import (
     BillingResult,
     TariffSelection,
     TariffTable,
+    billed_pct,
     calculate_bill,
     deemed_lagging_pct,
     option_label,
@@ -245,7 +249,33 @@ class CombinationResult:
     단가가 없거나 DR 을 조합에서 뺐으면 ``None`` 이다. 요금에는 안 쓴다."""
     dr_annual_won: float | None = None
     """같은 감축 가능량의 12개월 환산 정산금 (S246)."""
+    ess_below_minimum_kw: float | None = None
+    """조합 부하에서 ESS 필요 출력이 상업용 최소 규격에 못 미쳤을 때 그 출력 (S262 결정 3).
+
+    2단계와 같은 판단(미산출)이라 ESS 를 물리지 않았다 — :func:`compare_combinations` 가
+    이 줄을 세우지 않고 까닭 한 줄을 남긴다."""
     notices: tuple[Notice, ...] = field(default=())
+
+    @property
+    def ess_spec_text(self) -> str:
+        """조합 ESS 사양 — 「75 kW / 50 kWh (목표 5,180 kW)」 (S262 결정 3 · 3단계 요약의 꼴)."""
+        if self.dispatch is None or self.spec.ess_target_kw is None:
+            return ""
+        return (
+            f"{self.dispatch.power_kw:,.0f} kW / {self.dispatch.capacity_kwh:,.0f} kWh "
+            f"(목표 {self.spec.ess_target_kw:,.0f} kW)"
+        )
+
+    @property
+    def row_name(self) -> str:
+        """PPT · Word 조합 표 줄 — ESS 를 더한 줄은 사양을 함께 적는다 (S262 결정 3).
+
+        조합 이름(:attr:`name`)의 「ESS 목표 N kW」 조각만 사양 꼴로 갈아 끼운다.
+        """
+        text = self.ess_spec_text
+        if not text:
+            return self.name
+        return self.name.replace(f"ESS 목표 {self.spec.ess_target_kw:,.0f} kW", f"ESS {text}")
 
     @property
     def settled_saving_won(self) -> float:
@@ -299,8 +329,15 @@ class CombinationResult:
 
     @property
     def measure_labels(self) -> tuple[str, ...]:
-        """조합 표의 「수단」 열. :attr:`applied` 와 같은 목록이다."""
-        return tuple(item.label for item in self.applied)
+        """조합 표의 「수단」 열. :attr:`applied` 와 같은 목록이다.
+
+        ESS 는 사양을 함께 적는다 (S262 결정 3) — 「ESS 75 kW / 50 kWh (목표 5,180 kW)」.
+        """
+        spec = self.ess_spec_text
+        return tuple(
+            f"{measure_kind('ess').label} {spec}" if item.key == "ess" and spec else item.label
+            for item in self.applied
+        )
 
     @property
     def selection(self) -> TariffSelection:
@@ -336,6 +373,9 @@ class ComparisonResult:
     base_fee_months: float
     period_label: str
     notices: tuple[Notice, ...] = field(default=())
+    ess_below_minimum_note: str = ""
+    """조합 ESS 가 최소 규격에 못 미쳐 세우지 않은 까닭 한 줄 (S262 결정 3 · 2단계 원천 글자).
+    화면 3단계 합산효과 아래에 선다. 없으면 빈 글이다."""
 
     def frame(self) -> pd.DataFrame:
         """조합 | 요금제 | 절감액 | 투자비 | 회수기간. **확실성 열은 없다** (53세션 1-4).
@@ -582,8 +622,11 @@ def evaluate_combination(
         # 도구가 PCS 의 무효전력 거동을 모르고 여기서 범위를 넓히면 두 자리가
         # 다른 규칙을 쓰게 된다. **봤다는 사실만 남긴다.**
         before_pct = original_pct if original_pct is not None else deemed_lagging_pct()
-        after_pct = power_factor_after_pct(
-            usage.kw, generation, power_factor_pct=before_pct, interval_minutes=interval
+        # 요금을 셈하는 역률 — 1% 반올림 (S262 결정 1 · 제7조 ①). 판정도 이 값으로 가른다.
+        after_pct = billed_pct(
+            power_factor_after_pct(
+                usage.kw, generation, power_factor_pct=before_pct, interval_minutes=interval
+            )
         )
         start_pct = after_pct
         opts = opts if spec.has_power_factor else replace(opts, power_factor_pct=after_pct)
@@ -598,11 +641,19 @@ def evaluate_combination(
             )
 
     dispatch: DispatchResult | None = None
+    below_minimum_kw: float | None = None
     if spec.ess_target_kw is not None:
         excess = analyze_peak_excess(working.kw, spec.ess_target_kw, interval)
         sized_power, sized_capacity = size_for_target(excess)
-        power = spec.ess_power_kw if spec.ess_power_kw is not None else sized_power
-        capacity = spec.ess_capacity_kwh if spec.ess_capacity_kwh is not None else sized_capacity
+        # **2단계와 같은 원천으로 사양을 정한다** (S262 결정 3 · S233 — 같은 수단은 같은 규칙).
+        # 필요 사양을 살 수 있는 규격으로 올리고 투자비도 그 용량으로 잡는다 — 사양을 넣은
+        # 조합(견적)은 그대로다. 필요 출력이 최소 규격에 못 미치면 물리지 않는다(미산출).
+        grid_power, grid_capacity = snap_spec(sized_power, sized_capacity)
+        power = spec.ess_power_kw if spec.ess_power_kw is not None else grid_power
+        capacity = spec.ess_capacity_kwh if spec.ess_capacity_kwh is not None else grid_capacity
+        if spec.ess_power_kw is None and 0.0 < sized_power < min_pcs_power_kw():
+            below_minimum_kw = sized_power
+    if spec.ess_target_kw is not None and below_minimum_kw is None:
         mask = (
             charge_mask
             if charge_mask is not None
@@ -628,6 +679,9 @@ def evaluate_combination(
                 fact="combination.ess_sizing",
             )
         )
+        # 고출력 셀 경고도 2단계와 같은 원천이다 (S262 결정 3 · 방전 0.5시간).
+        if (high_rate := high_c_rate_notice(capacity / power if power > 0 else 0.0)) is not None:
+            notices.append(high_rate)
         # **조합명을 문구에 심지 않는다** (20세션 4절). 앞말이 지문이 되어 아래
         # 경고 둘이 하나로 접혔다. 조합명은 :func:`compare_combinations` 가
         # 표시할 때 붙인다.
@@ -746,6 +800,7 @@ def evaluate_combination(
         contract_adjustment=adjustment,
         power_factor_no_headroom=pf_no_headroom,
         load_kw=working.kw,
+        ess_below_minimum_kw=below_minimum_kw,
         notices=tuple(notices),
     )
 
@@ -917,6 +972,17 @@ def compare_combinations(
                 options=opts,
             )
         )
+    # **필요 출력이 최소 규격에 못 미친 ESS 줄은 세우지 않는다** (S262 결정 3 · 2단계와 같은
+    # 판단) — 마지막 줄이어도 그렇다. 까닭은 2단계 문구 원천 한 줄로 남긴다.
+    short = next((item for item in results if item.ess_below_minimum_kw is not None), None)
+    below_note = (
+        BELOW_MINIMUM_CONCLUSION.format(
+            power=short.ess_below_minimum_kw, minimum=min_pcs_power_kw()
+        )
+        if short is not None
+        else ""
+    )
+    results = [item for item in results if item.ess_below_minimum_kw is None]
     # **여지가 없는 ESS(방전 출력 0)만 더해 앞 줄과 절감액이 같은 줄은 마지막이어도 뺀다**
     # (S254 문구 판 #12 · 사람 결정) — 합산효과 · 권장 조합은 앞 줄(실제 조합)을 읽는다.
     kept: list[CombinationResult] = []
@@ -968,4 +1034,5 @@ def compare_combinations(
         base_fee_months=base.base_fee_months,
         period_label=base.period_label,
         notices=aggregate_notices(results),
+        ess_below_minimum_note=below_note,
     )

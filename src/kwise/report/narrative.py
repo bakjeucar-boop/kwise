@@ -45,7 +45,7 @@ from kwise.report.notices import format_mwh
 from kwise.rules import assumption
 from kwise.tariff import TariffTable
 from kwise.tariff.labels import season_label
-from kwise.tariff.power_factor import lagging_standard_pct
+from kwise.tariff.power_factor import billed_pct, lagging_standard_pct
 
 __all__ = [
     "COMBINATION_LEAD",
@@ -74,7 +74,7 @@ __all__ = [
     "peak_month_close",
     "peak_month_lead",
     "peak_summary_lead",
-    "power_factor_adjusted_saving",
+    "power_factor_shortfall",
     "solar_saving_breakdown",
     "structure_lead",
     "surplus_lead",
@@ -446,58 +446,23 @@ def building_lead(quality: QualityReport | None) -> str:
     )
 
 
-def power_factor_adjusted_saving(
-    *,
-    saving_won: float,
-    extra_won: float,
-    after_pct: float | None = None,
-    basis: str = "",
-    short: bool = False,
-) -> str:
-    """역률 영향을 반영한 절감액 한 줄 (59세션 12절 · 목록 P6).
+def power_factor_shortfall(*, extra_won: float, after_pct: float) -> str:
+    """태양광 도입 후 역률이 기준에 못 미친다는 한 줄 (79세션 1절 · S262 결정 2).
 
-    **큰 글자는 조정 전 값이다.** 2단계 카드의 절감액은 「그 수단만 적용했을 때」
-    여야 한다 (31세션) — 태양광이 역률을 떨어뜨려 역률요금이 느는 것은 사실이지만
-    그것을 큰 글자에 녹이면 독립 평가가 깨진다. **둘을 나눠 보인다.**
+    **금액을 적지 않는다** (S262 결정 2). 59세션 12절이 큰 글자를 조정 전 값으로 두고
+    「역률 영향 반영 시 …」 를 곁에 달았는데 한 사실에 두 금액이 섰다(결함 유형 ①) —
+    절감액이 이제 역률 변화를 담은 한 값이라 그 꼬리를 뺐다. 남는 것은 **기준 미달이라는
+    사실**이다 — 덱은 이 한 줄이 태양광 장에서 역률을 말하는 **유일한 자리**다(수단 장의
+    주의사항 표는 그림 굽기 실패 때의 폴백이라 정상 경로에서는 서지 않는다 · 60세션 10절).
 
-    **원 단위로 반올림해 0 이면 빈 글이다** — 없는 조정을 적지 않는다. 발전이
-    0 인 점에서도 부동소수 찌꺼기(1e-11 원)가 남아 「역률 영향 반영 시 0원」 이
-    섰다.
-
-    금액은 부르는 쪽이 **같은 기준으로** 넘긴다 (둘 다 관측 기간이거나 둘 다
-    12개월 환산). 이 함수는 서식만 잡는다.
-
-    ``after_pct`` 를 주면 **기준 미달일 때만** 그 사실을 앞에 붙인다 (79세션 1절).
-    금액만으로는 「왜 역률요금이 늘었나」 를 못 말한다 — 덱은 이 한 줄이 태양광
-    장에서 역률을 말하는 **유일한 자리**다. 수단 장의 주의사항 표는 그림 굽기가
-    실패했을 때의 폴백이라(60세션 10절) 정상 경로에서는 서지 않고, 그래서 78세션이
-    덱 전문을 훑어 0건을 셌다.
-
-    **줄을 더하지 않고 있는 줄에 붙인다.** 전문(무효전력 설명·약관 조문)은
-    :func:`kwise.measures.solar.power_factor_drop_warning` 이 화면 2단계와 Excel
-    부록에 이미 내고 있다 — 덱은 보는 자리라 같은 말을 세 문장으로 늘리지 않는다.
-    부르는 쪽이 값을 안 주면 **문장은 예전 그대로다** (화면·Excel 이 그 자리다).
-
-    ``basis`` 는 금액의 표시다 (S219 규칙) — ``"/년"`` 이면 금액 뒤에(라벨 없이
-    서는 12개월 환산값), ``"기간"`` 이면 금액 앞에(12개월 값과 함께 서는 기간
-    값) 단다. 비우면 안 단다 — 화면은 같은 지표의 라벨이 이름을 쥔다.
-
-    ``short`` 는 **만원으로 적는 카드**가 준다 (S235 ④) — 카드 안의 증감도 그
-    카드의 단위로 적는다(:func:`kwise.money.won_short`).
+    **조정이 없으면(원 단위 0) 빈 글이다** — 태양광이 역률을 안 옮긴 점에 적지 않는다.
+    역률은 요금을 셈한 값(1% 반올림 · 결정 1)이다.
     """
-    if round(extra_won) == 0:
-        return ""
-    write = money.won_short if short else money.won
-    amount = write(saving_won - extra_won, reason="—")
-    if basis == "/년":
-        amount = f"{amount}/년"
-    elif basis:
-        amount = f"{basis} {amount}"
-    adjusted = f"역률 영향 반영 시 {amount}"
     standard = lagging_standard_pct()
-    if after_pct is None or after_pct >= standard:
-        return adjusted
-    return f"예상 역률 {after_pct:.1f}% 로 기준 {standard:.0f}% 미달, {adjusted}"
+    after = billed_pct(after_pct)
+    if round(extra_won) == 0 or after >= standard:
+        return ""
+    return f"예상 역률 {after:,.0f}% 로 기준 {standard:.0f}% 미달"
 
 
 def solar_saving_breakdown(

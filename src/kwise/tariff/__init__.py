@@ -62,6 +62,7 @@ from kwise.tariff.pending import (
 from kwise.tariff.power_factor import (
     PowerFactorCharge,
     adjustment_per_percent,
+    billed_pct,
     day_window,
     deemed_lagging_pct,
     deemed_leading_pct,
@@ -146,6 +147,7 @@ __all__ = [
     "adjustment_per_percent",
     "apply_contract_floor",
     "available_tariff_files",
+    "billed_pct",
     "billing_demands",
     "build_calendar",
     "calculate_bill",

@@ -1059,21 +1059,11 @@ def _solar(
     columns[1].metric("발전량", fmt.per_year(fmt.mwh(annualize(point.generation_kwh, months))))
     # **지표를 늘리지 않는다** (48세션). 자가소비분과 잉여 수익을 두 칸에 세우면
     # 어느 쪽이 결론인지 흐려진다 — 한 칸에 합쳐 내고 툴팁이 가른다.
-    # **역률 영향은 큰 글자에 녹이지 않고 곁에 적는다** (59세션 12절 · 31세션).
-    # 태양광이 유효전력만 상쇄해 역률이 떨어지고 역률요금이 는다 — 계산이 이미
-    # 내던 값인데(``power_factor_extra_won``) 어느 산출물에도 금액으로 서 있지
-    # 않았다. 카드의 절감액은 「그 수단만 적용했을 때」 여야 하므로 큰 글자는
-    # 그대로 두고 조정값을 아래 줄에 놓는다. **영향이 0 이면 줄이 없다.**
+    # **절감액은 역률 변화를 담은 한 값이다** (S262 결정 2) — 「역률 영향 반영 시 …」
+    # 증감을 세우지 않는다(한 사실에 두 금액 · 결함 유형 ①).
     columns[2].metric(
         SAVING_LABEL,
         fmt.won_short(point.annual_saving_won),
-        narrative.power_factor_adjusted_saving(
-            saving_won=point.annual_saving_won,
-            extra_won=annualize(point.power_factor_extra_won, months),
-            short=True,
-        )
-        or None,
-        delta_color="off",
         help=_solar_saving_tip(point, months),
     )
     columns[3].metric(

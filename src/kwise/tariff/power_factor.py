@@ -57,6 +57,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from kwise.magnitude import magnitude, places
@@ -66,6 +67,7 @@ from kwise.rules import rule_value
 __all__ = [
     "PowerFactorCharge",
     "adjustment_per_percent",
+    "billed_pct",
     "day_window",
     "deemed_lagging_pct",
     "deemed_leading_pct",
@@ -135,6 +137,23 @@ def leading_lagging_deemed_pct() -> float:
     return float(rule_value("power_factor.leading_lagging_deemed_pct"))
 
 
+def rounding_unit_pct() -> float:
+    """역률의 계산단위 (%) — 약관 제7조 ①."""
+    return float(rule_value("power_factor.rounding_unit_pct"))
+
+
+def billed_pct(power_factor_pct: float) -> float:
+    """**요금을 셈하는 역률** — 계산단위 미만의 끝수를 첫째자리에서 반올림한다 (S262 결정 1).
+
+    약관 제7조 ① 「계산단위 미만의 끝수는 계산단위 이하 첫째자리에서 반올림합니다」 ·
+    역률의 계산단위는 1% 다 — 95.5 → 96 · 95.4 → 95. ``round`` 는 짝수 쪽으로 붙어
+    (96.5 → 96) 조문과 어긋나므로 쓰지 않는다. 입력을 되비추는 글은 이 값이 아니라
+    입력값을 쓴다.
+    """
+    unit = rounding_unit_pct()
+    return math.floor(power_factor_pct / unit + 0.5) * unit
+
+
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
@@ -159,7 +178,7 @@ def lagging_adjustment_ratio(
     floor = lagging_floor_pct() if floor_pct is None else floor_pct
     cap = lagging_rebate_cap_pct() if rebate_cap_pct is None else rebate_cap_pct
     rate = adjustment_per_percent() if per_percent is None else per_percent
-    effective = _clamp(power_factor_pct, floor, cap)
+    effective = _clamp(billed_pct(power_factor_pct), floor, cap)
     return (standard - effective) * rate
 
 
@@ -201,7 +220,7 @@ def leading_adjustment_ratio(
     standard = leading_standard_pct() if standard_pct is None else standard_pct
     floor = leading_floor_pct() if floor_pct is None else floor_pct
     rate = adjustment_per_percent() if per_percent is None else per_percent
-    effective = _clamp(power_factor_pct, floor, standard)
+    effective = _clamp(billed_pct(power_factor_pct), floor, standard)
     return (standard - effective) * rate
 
 
@@ -285,9 +304,13 @@ def power_factor_charge(
     #
     # 자릿수도 함께 늘린다. 91.96% 는 진짜 미달인데 `.1f` 로는 역률도 미달폭도
     # 0 으로 뭉개져 「92.0% — 0.0%p 미달」 이 됐다 (:mod:`kwise.magnitude`).
-    gap = standard - lagging_pct
+    #
+    # **폭 · 갈래 · 조정률은 요금을 셈한 역률(1% 반올림)로 적는다** (S262 결정 1 · 제7조 ①).
+    # 머리의 역률은 넣은 값을 되비춘다 — 91.96% 는 92% 로 셈해 「충족」 이다.
+    billed = billed_pct(lagging_pct)
+    gap = standard - billed
     digits = places(gap)
-    shown_pct = f"{lagging_pct:,.{digits}f}%"
+    shown_pct = f"{lagging_pct:,.{places(standard - lagging_pct)}f}%"
     if gap == 0.0:
         notices.append(
             basis(
@@ -315,7 +338,7 @@ def power_factor_charge(
                 fact="power_factor.lagging_ratio",
             )
         )
-    if lagging_pct < floor:
+    if billed < floor:
         notices.append(
             warn(
                 f"주간 지상역률 {lagging_pct:.1f}% 가 {floor:.0f}% 미만입니다. "
@@ -325,7 +348,7 @@ def power_factor_charge(
                 fact="power_factor.lagging_below_floor",
             )
         )
-    if lagging_pct < standard:
+    if billed < standard:
         notices.append(
             warn(
                 f"주간 지상역률이 기준 {standard:.0f}% 에 미달합니다 ({shown_pct}). "

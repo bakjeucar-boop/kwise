@@ -59,7 +59,6 @@ from kwise.measures import (
     SurplusResult,
     SurplusScenario,
     TariffSwitchResult,
-    annualize,
     measure_kind,
     payback_label,
     payback_years,
@@ -1174,27 +1173,12 @@ def measure_entries(
                 surplus_revenue_won=solar.surplus_revenue_won,
             )
             surplus_note = f"기간 {breakdown}" if breakdown else ""
-        # **역률 영향을 큰 글자에 녹이지 않는다** (59세션 12절 · 목록 P6).
-        # 태양광이 유효전력만 상쇄해 역률이 떨어지고 역률요금이 는다 — 사실이고
-        # 계산이 이미 내고 있다(``power_factor_extra_won``). 그러나 카드의
-        # 절감액은 「그 수단만 적용했을 때」 여야 하므로(31세션) **둘을 나눠
-        # 보인다.** Word 는 주의사항 목록이, PPT 는 각주가 받는다 —
-        # **같은 문장**이다.
-        #
-        # **역률을 함께 넘긴다** (79세션 1절). 금액만으로는 「왜 늘었나」 를 못
-        # 말하는데, 덱에서 이 각주가 태양광 장이 역률을 말하는 유일한 자리다 —
-        # 주의사항 표는 그림 굽기 실패 시의 폴백이라 서지 않는다 (60세션 10절).
-        # 화면 2단계와 Excel 은 이미 제 자리에서 내고 있어 값을 주지 않는다.
-        power_factor_line = narrative.power_factor_adjusted_saving(
-            saving_won=(solar.annual_saving_won if base_fee_months else solar.total_saving_won),
-            extra_won=(
-                annualize(solar.power_factor_extra_won, base_fee_months)
-                if base_fee_months
-                else solar.power_factor_extra_won
-            ),
-            after_pct=solar.power_factor_after_pct,
-            # 12개월 환산값이 라벨 없이 서므로 꼬리표를 단다 (S219 규칙 나).
-            basis="/년" if base_fee_months else "",
+        # **절감액은 역률 변화를 담은 한 값이다** (S262 결정 2) — 「역률 영향 반영 시 …」
+        # 를 세우지 않는다. 기준 미달이라는 사실만 남긴다(79세션 1절 — 덱에서 이 각주가
+        # 태양광 장이 역률을 말하는 유일한 자리다). Word 는 주의사항 목록이, PPT 는 각주가
+        # 받는다 — **같은 문장**이다.
+        power_factor_line = narrative.power_factor_shortfall(
+            extra_won=solar.power_factor_extra_won, after_pct=solar.power_factor_after_pct
         )
         if power_factor_line:
             cautions.append(power_factor_line)
@@ -1942,7 +1926,8 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
     for item in comparison.combinations:
         rows.append(
             [
-                item.name,
+                # ESS 를 더한 줄은 사양을 함께 적는다 (S262 결정 3).
+                item.row_name,
                 option_label(item.selection.option),
                 # 적힌 기준선 요금 − 적힌 조합 요금 (S233 ㄴ · Excel 조합 비교와 한 글자).
                 _won(combination_saving(comparison, item, sections.peer_savings)),

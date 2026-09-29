@@ -2303,8 +2303,9 @@ def _build_combination(
     # Excel 은 열 이름 둘(「절감액(원)」·「12개월 환산 절감액(원)」)로 가르고 Word 는 한 칸에 함께
     # 적는데 **PPT 만 안 갈랐다.** 각주를 하나 더 두지 않고 **이름을 고친다** —
     # 기온 기준선을 「기간 평균」 이라 부르는 `frames.py` 의 규약과 같은 꼴이다.
+    # ESS 를 더한 줄은 사양을 함께 적는다 (S262 결정 3).
     lines = [
-        (item.name, item.saving_won, _payback(item.payback_years, item.investment_won))
+        (item.row_name, item.saving_won, _payback(item.payback_years, item.investment_won))
         for item in comparison.combinations
     ]
     # 끝 줄이 합산효과와 같다 — 합산효과가 담는 DR 정산금을 이미 쓰는 수단 이름으로 (S256 고3 ㄴ).

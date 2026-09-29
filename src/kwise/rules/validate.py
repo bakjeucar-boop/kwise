@@ -236,6 +236,8 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "power_factor.leading_lagging_deemed_pct": _percent,
     "power_factor.adjustment_per_percent": _ratio,
     "power_factor.day_window": _hour_window,
+    # 역률 계산단위 (제7조 ① · S262) — 0 이면 반올림이 0 으로 나눈다.
+    "power_factor.rounding_unit_pct": _positive,
     # 초과사용부가금 (제67조의3 ③·④ · 109세션).
     "excess_charge.ratio_tiers": _excess_tiers,
     "excess_charge.grace_months": _positive,

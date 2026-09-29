@@ -44,6 +44,7 @@ from kwise.tariff import (
     BillingResult,
     TariffSelection,
     TariffTable,
+    billed_pct,
     calculate_bill,
     lagging_rebate_cap_pct,
     lagging_standard_pct,
@@ -88,7 +89,8 @@ def has_no_headroom(current_pct: float, target_pct: float) -> bool:
     로 그 자리를 값으로 봤다.
     """
     cap = lagging_rebate_cap_pct()
-    return current_pct >= cap and target_pct >= cap
+    # 요금을 셈하는 역률(1% 반올림)로 가른다 (S262 결정 1) — 96.6% 는 97% 로 셈한다.
+    return billed_pct(current_pct) >= cap and billed_pct(target_pct) >= cap
 
 
 @dataclass(frozen=True, eq=False)
@@ -217,7 +219,7 @@ def evaluate_power_factor(
                 fact="power_factor.target_over_cap",
             )
         )
-    if current_pct < standard:
+    if billed_pct(current_pct) < standard:
         notices.append(
             warn(
                 f"현재 역률 {current_pct:.1f}% 는 한전 기본공급약관 제41조의 유지 의무"

@@ -624,6 +624,9 @@ def _combined_block(
         st.caption(
             "조합에서 뺀 개선안 — " + ", ".join(measure_title(row.title) for row in dropped) + "."
         )
+    # 조합 ESS 가 최소 규격에 못 미쳐 세우지 않은 까닭 — 2단계 문구 원천 그대로 (S262 결정 3).
+    if comparison.ess_below_minimum_note:
+        st.caption(comparison.ess_below_minimum_note)
 
     # **이유는 계산 근거로 내린다** (22세션 2절). 「왜 단순 합과 다른가」 는
     # 산출 근거이지 결론이 아니다. 본문에 세 줄을 쌓으면 정작 위의 지표 셋이

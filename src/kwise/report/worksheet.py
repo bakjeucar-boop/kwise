@@ -44,7 +44,7 @@ from kwise.report.notices import (
     surplus_kwh_text,
     switch_saving,
 )
-from kwise.tariff import BillingResult, lagging_adjustment_ratio
+from kwise.tariff import BillingResult, billed_pct, lagging_adjustment_ratio
 from kwise.tariff.labels import option_label
 
 __all__ = [
@@ -516,21 +516,27 @@ def power_factor_worksheet(result: PowerFactorResult) -> Worksheet:
 # --------------------------------------------------------------------- 7.5
 
 
-def _solar_factor_formula(point: SolarPoint, power_factor_pct: float | None) -> str:
-    """태양광 「기간 역률요금 절감」 산식 칸 — **도입 후 역률을 적는다** (S258 결정 6).
+def _factor_formula(before_pct: float | None, after_pct: float | None) -> str:
+    """「기간 역률요금 절감」 산식 칸 — **도입 후 역률을 적는다** (S258 결정 6 · S262 결정 2).
 
-    감액률이 그대로면 기본요금이 준 만큼 감액도 준다 — 값은 기본요금 절감 × 감액률이다.
-    조정률(감액률 · 추가율)이 바뀌거나 추가 쪽이면 전 → 후를 적는다(부호는 기본요금 조정 —
-    음수가 감액).
+    태양광 · ESS 가 같은 원천이다. 조정률(감액률 · 추가율)이 그대로면 기본요금이 준 만큼
+    감액(추가)도 준다 — 바뀌면 「감액 {전}% → {후}%」 로 적는다. 부호(−)로 적지 않고 역률은
+    요금을 셈한 정수 % 다(결정 1). 감액에서 추가로 넘어가면 두 쪽 이름을 다 적는다.
     """
-    if power_factor_pct is None:
+    if before_pct is None or after_pct is None:
         return "기본요금이 줄면 함께 준다"
-    after = point.power_factor_after_pct
-    before_rate = lagging_adjustment_ratio(power_factor_pct) * 100.0
-    after_rate = lagging_adjustment_ratio(after) * 100.0
-    if abs(after_rate - before_rate) < 1e-9 and before_rate < 0:
-        return f"도입 후 역률 {after:,.1f}% · 기본요금이 준 만큼 감액도 준다"
-    return f"도입 후 역률 {after:,.1f}% · {before_rate:+,.1f}% → {after_rate:+,.1f}%"
+    before = lagging_adjustment_ratio(before_pct) * 100.0
+    after = lagging_adjustment_ratio(after_pct) * 100.0
+    head = f"도입 후 역률 {billed_pct(after_pct):,.0f}%"
+
+    def side(rate: float) -> str:
+        return "감액" if rate < 0 else "추가"
+
+    if abs(after - before) < 1e-9:
+        return f"{head} · 기본요금이 준 만큼 {side(before)}도 준다"
+    if before and after and side(before) != side(after):
+        return f"{head} · {side(before)} {abs(before):,.1f}% → {side(after)} {abs(after):,.1f}%"
+    return f"{head} · {side(before or after)} {abs(before):,.1f}% → {abs(after):,.1f}%"
 
 
 def solar_worksheet(
@@ -584,7 +590,7 @@ def solar_worksheet(
         rows.append(
             WorkRow(
                 "기간 역률요금 절감",
-                _solar_factor_formula(best, power_factor_pct),
+                _factor_formula(power_factor_pct, best.power_factor_after_pct),
                 _won(factor_shown),
             )
         )
@@ -666,7 +672,9 @@ def ess_worksheet(result: EssResult) -> Worksheet:
     rows.append(WorkRow("기간 기본요금 절감", "요금적용전력 저감 × 단가", _won(base_shown)))
     rows.append(WorkRow("기간 전력량요금 절감", "충·방전 단가차", _won(energy_shown)))
     if factor_shown:
-        rows.append(WorkRow("기간 역률요금 절감", "기본요금이 줄면 함께 준다", _won(factor_shown)))
+        # 산식 칸은 태양광과 같은 원천이다 (S262 결정 2 · S258 결정 6).
+        formula = _factor_formula(result.power_factor_before_pct, result.power_factor_after_pct)
+        rows.append(WorkRow("기간 역률요금 절감", formula, _won(factor_shown)))
     if excess_shown:
         rows.append(WorkRow("초과사용부가금", "", _won(excess_shown)))
     rows.append(

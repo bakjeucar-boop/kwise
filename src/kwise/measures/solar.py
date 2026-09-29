@@ -46,6 +46,7 @@ from kwise.tariff import (
     BillingResult,
     TariffSelection,
     TariffTable,
+    billed_pct,
     calculate_bill,
     day_window,
     lagging_adjustment_ratio,
@@ -101,7 +102,7 @@ def power_factor_drop_warning(*, capacity_kwp: float, after_pct: float, detail: 
         part
         for part in (
             f"PV {capacity_kwp:,.0f} kWp 도입 시 예상 주간(08~22시) 지상역률이 "
-            f"{after_pct:.1f}% 로 기준 {power_factor_floor_pct():.0f}% 를 밑돕니다. "
+            f"{billed_pct(after_pct):,.0f}% 로 기준 {power_factor_floor_pct():.0f}% 를 밑돕니다. "
             "무효전력은 그대로인데 유효전력만 상쇄되기 때문입니다.",
             detail,
             "역률 개선 설비 용량 조정이 필요합니다 (한전 기본공급약관 제41·43조).",
@@ -310,8 +311,13 @@ class SolarPoint:
     investment_won: float | None
     payback_years: float | None
     power_factor_after_pct: float
+    """도입 후 주간 지상역률 — **요금을 셈한 값(1% 반올림)이다** (S262 결정 1 · 제7조 ①)."""
     power_factor_extra_won: float
-    """도입 후 역률로 늘어나는 역률요금 (원). 감액이면 음수다 (약관 제43조)."""
+    """도입 후 역률로 늘어나는 역률요금 (원). 감액이면 음수다 (약관 제43조).
+
+    **절감액에 이미 든 몫이다** (S262 결정 2) — 미달 경고가 「역률요금이 기간 N원 늘어」 로
+    읽고, 0 이면 역률을 말하는 한 줄이 안 선다. 절감액에서 다시 빼지 않는다.
+    """
     surplus_revenue_won: float = 0.0
     """**고른** 잉여 처리의 수익 (관측 기간, 원) — 48세션.
 
@@ -337,11 +343,6 @@ class SolarPoint:
     **포화의 까닭이 이것 하나는 아니다.** 하한에 안 닿은 달은 태양이 못 미치는
     시간대의 잔여 피크에서 멈춘다 — 그쪽은 계약전력을 낮춰도 안 준다.
     """
-
-    @property
-    def saving_after_power_factor_won(self) -> float:
-        """역률 악화분을 뺀 절감액. **이것이 실제로 남는 돈이다.**"""
-        return self.total_saving_won - self.power_factor_extra_won
 
     @property
     def self_consumption_saving_won(self) -> float:
@@ -639,13 +640,13 @@ def capacity_verdict(curve: SolarCurve) -> CapacityVerdict:
         shortest = min(point.payback_years or math.inf for point in priced)
         ceiling = shortest * (1.0 + payback_tie_ratio())
         tied = [point for point in priced if (point.payback_years or math.inf) <= ceiling]
-        best = max(tied, key=lambda point: point.saving_after_power_factor_won)
+        best = max(tied, key=lambda point: point.total_saving_won)
         ordered = [point.payback_years or math.inf for point in usable]
         monotonic = all(later <= earlier + 1e-9 for earlier, later in pairwise(ordered))
     else:
         basis = "절감액"
-        best = max(usable, key=lambda point: point.saving_after_power_factor_won)
-        ordered = [point.saving_after_power_factor_won for point in usable]
+        best = max(usable, key=lambda point: point.total_saving_won)
+        ordered = [point.total_saving_won for point in usable]
         monotonic = all(later >= earlier - 1e-9 for earlier, later in pairwise(ordered))
 
     at_limit = abs(best.capacity_kwp - limit.capacity_kwp) < 1e-9
@@ -679,20 +680,30 @@ def _evaluate_point(
     """
     generation = unit * capacity_kwp
     net = apply_generation(usage, generation)
-    bill = calculate_bill(net.usage, table, selection, options=options, quality=quality)
+    # **도입 후 역률로 요금을 다시 셈한다** (S262 결정 2 · 결함 유형 ① 「큰 글자는 실제로 남는
+    # 돈」). 기본요금이 준 몫과 조정률(감액률 · 추가율)이 바뀐 몫이 한 절감액에 든다 — 조합과
+    # 같은 식이다(요금 옵션에 도입 후 역률). 역률은 1% 반올림한 값이다(결정 1 · 제7조 ①).
+    after_pct = billed_pct(
+        power_factor_after_pct(
+            usage.kw,
+            generation,
+            power_factor_pct=power_factor_pct,
+            interval_minutes=usage.meta.interval_minutes,
+        )
+    )
+    bill = calculate_bill(
+        net.usage,
+        table,
+        selection,
+        options=replace(options, power_factor_pct=after_pct),
+        quality=quality,
+    )
 
     investment = pricing.investment_won(capacity_kwp)
     saving = base_bill.total_won - bill.total_won
     annual_saving = annualize(saving, base_bill.base_fee_months)
 
-    # 역률 악화분 (약관 제43조). 기준 역률 대비 조정 비율의 차이를
-    # 도입 후 기본요금에 곱한다. 92% 미만이면 양수(추가)다.
-    after_pct = power_factor_after_pct(
-        usage.kw,
-        generation,
-        power_factor_pct=power_factor_pct,
-        interval_minutes=usage.meta.interval_minutes,
-    )
+    # 그 가운데 조정률이 바뀐 몫 (약관 제43조) — 미달 경고가 읽는다. 92% 미만이면 양수(추가)다.
     extra_won = bill.total_base_won * (
         lagging_adjustment_ratio(after_pct) - lagging_adjustment_ratio(power_factor_pct)
     )
@@ -879,6 +890,7 @@ def solar_curve(
         )
 
     largest = points[-1]
+    before_won = largest.total_saving_won + largest.power_factor_extra_won
     if largest.power_factor_after_pct < power_factor_floor_pct():
         notices.append(
             warn(
@@ -890,13 +902,14 @@ def solar_curve(
                     # 떨어진 역률로 요금을 냈으므로 견줄 앞값이 없다.
                     # **「기간」 을 단다** (S219 규칙 다) — 이 글이 서는 화면 카드와
                     # Word 3장에 12개월 환산 절감액이 함께 선다. 앞 금액(역률요금 증가액)도
-                    # 기간 값이다 (S220 2절).
+                    # 기간 값이다 (S220 2절). 절감액은 이미 역률 변화를 담은 값이라(S262 결정 2)
+                    # 앞값은 그 몫을 되돌린 것이다 — 뒤값이 카드와 같은 글자다.
                     detail=(
                         "역률요금이 기간 "
                         f"{money.won(largest.power_factor_extra_won, reason='—')} 늘어 "
                         "기간 절감액이 "
-                        f"{money.won(largest.total_saving_won, reason='—')} → "
-                        f"{money.won(largest.saving_after_power_factor_won, reason='—')} 이 됩니다."
+                        f"{money.won(before_won, reason='—')} → "
+                        f"{money.won(largest.total_saving_won, reason='—')} 이 됩니다."
                     ),
                 ),
                 fact="solar.power_factor_drop",
