@@ -381,6 +381,35 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 **0-2. 미해결 89** — 가 1 · 나 9 · 다 9 · 라 57 · 마 13(`daily_brief --cells` 끝 줄 · `daily_brief_20261001_071832.txt`). 지시서가 적은 85 는 S263 4절 값이다 — 「S263 뒤 마감」 이 나 넷을 올려 89 가 됐다(263세션 절 끝). **회귀값 여덟 · 케이스 스터디 기준선** — S263 3-5 판 xlsx(그 판 스크래치 `case_after\casestudy_20260930.xlsx` · 그 뒤 커밋은 기록뿐)를 이 판 스크래치 `case_before\` 로 옮겼다(회귀값 여덟은 S263 3-5 와 같다). **덱 스냅 기준선** — S263 3-4 뒤 스냅 `cache\deck_words\s263_after.json` 이 이 PC 에 있다(새로 뜨지 않았다). **확인 사례 스냅(지금 코드)** — S263 스크래치 `s263_case.py` 를 이 판 스크래치로 옮겨 그대로 돌렸다((다) 방위 남동 · 쉬는 날 2023-05-01 · 2023-10-02) → `cache\deck_words\s264_case_before.json`(가1 2,653줄 · 다 2,758줄 · 나 2,749줄 · `s263_case_20261001_072010.txt`). S263 3-2 뒤 스냅 `s263_case_after.json` 과 줄 모음으로 맞대니 벌마다 **빠진 3 · 새 3 = 작성일 줄뿐**(2026-09-30 → 2026-10-01 · `s263_rowdiff_20261001_072026.txt`) — (가1) · (다) 의 지시서 값(합산효과 528만원 · 끝 줄 5,282,000 · ESS 150 kW / 100 kWh · 261,893,000 · 조합 ESS 75 kW / 50 kWh · 8,698만원 · 5억 4,989만원 · 6.3년)은 S263 3-2 가 칸마다 맞댄 값 그대로다.
 **0절 벽시계** 07:17:59 ~ 07:23:03(시각 명령 출력 · 커밋 앞).
 
+**1-1. 결정 1 (조합 장 ESS 크기 안내).** 원천 — 조합 ESS 사양은 `compare\combination.py` `CombinationResult.dispatch`(출력 · 용량) · `spec.ess_target_kw`(목표) · 태양광은 `spec.has_pv`. **2단계 ESS 사양은 산출물 재료에 값으로 없다** — `report\document.py` ESS 장 `MeasureEntry` 는 `_ess_conclusion` 글자(「ESS 150 kW / 100 kWh 가 필요합니다」)만 들고 `DocumentSections` 에는 `EssResult` 가 없다 → ESS 장 `MeasureEntry` 에 2단계 (목표 · 출력 · 용량) 칸 하나를 더해 `EssResult` 에서 채운다(글자를 되읽지 않는다). 견주는 조합 — 조합 표 줄 가운데 ESS 가 든 첫 줄(누적 줄이라 뒤 줄도 같은 ESS 다).
+- **서는 벌** — 확인 사례 (다) **하나**: 조합 75 kW / 50 kWh(목표 5,180 kW · 태양광 160 kWp) < 2단계 150 kW / 100 kWh(목표 5,180 kW). **안 서는 벌** — (가1) · (나) 는 조합에 ESS 줄이 없다(스냅 「+ ESS」 줄 0). **19벌은 조합 ESS 줄 0벌**(`s263_after.json` 정규식 「^\+ ESS」 0 · `s264_re_20261001_072321.txt`) — 서는 벌 0 · 「참이 아니라 안 선 벌」(조합이 더 크다 · 태양광 없이 작다 · 목표가 다르다 · 한쪽만 작다) **0**.
+- 자리 — PPT 조합 장 ※ = `report\slides.py` `combination_notes`(349 · `_build_combination` 이 `_note_top` · `_note` 로 맨 아래 각주 띠에 그린다 · ※ 표식은 `mark_note` 가 붙인다). **Word 조합 절은 이 원천을 안 쓴다**(`combination_notes` 는 slides 만 부른다) — Word 0.
+- 고친 뒤(예정 · (다)) — PPT 15장 맨 아래 「※ 태양광이 피크를 먼저 낮춰, 조합의 ESS 는 단독 도입(150 kW / 100 kWh)보다 작은 75 kW / 50 kWh 로 충분합니다.」.
+
+**1-2. 결정 2 · 4.**
+- **결정 2 자리 둘** — `measures\power_factor.py` 194(안내 `power_factor.no_headroom` 「현재 지상역률 N% 는 감액 상한 97% 이상이라 …」 → 화면 역률 카드 툴팁 · Word 주의 목록 둘) · `report\document.py` 404 `_power_factor_conclusion`(「지상역률 N% 는 …」 → PPT 역률 장 · Word 결론). 스냅(`s264_re_20261001_072411.txt`) — **(가1) 5줄**(화면 1 · PPT 1 · Word 3 · 입력 99.68 → 반올림 100) · **19벌 15줄 = 역률 100 세 벌 × 5 · 입력 100.0 = 반올림 100 이라 괄호 0 · 글자 그대로**. 원천 — S263 이 지은 `tariff\power_factor.py` `_billed_note`(「요금 계산은 1% 단위 반올림 N%」 · 같으면 빈 글)를 공개 이름으로 열어 두 자리가 쓴다(계산 폴더 tariff 는 글자 함수 이름뿐 · 금액 식 0줄). 고친 뒤(예정 · (가1)) — 「지상역률 99.7% (요금 계산은 1% 단위 반올림 100%) 는 감액 상한 97% 이상이라 개선할 것이 없습니다.」 · 「현재 지상역률 99.7% (요금 계산은 1% 단위 반올림 100%) 는 …」. 96.5 ~ 97 미만 입력은 19벌 · 확인 사례에 없다 — 확인 입력 96.7(→ 97)을 3-3 못에서 `evaluate_power_factor` 로 본다: 「현재 지상역률 96.7% (요금 계산은 1% 단위 반올림 97%) 는 …」.
+- **결정 4 — 0줄.** 조정률 칸(`report\worksheet.py` 503 ~ 507 · 부록 역률 개선 · 화면 계산 근거 · Excel 부록 A · Word · PPT 부록)은 **한 칸에 조정률 차 한 값**이다((가1) 「+0.0%p」 · (다) 「+0.2%p」 · (나) 「+1.0%p」) — 입력값은 옆 줄 「현재 역률」 칸에 따로 선다. 태양광 · ESS 역률 줄 산식 칸(`_factor_formula` 530 「도입 후 역률 96% · 기본요금이 준 만큼 감액도 준다」)도 반올림 값 하나다. 한 칸에 입력값과 반올림 값이 섞이는 자리 0.
+
+**1-3. 결정 3 · 5 · 6 · 고칠 자리.**
+- **결정 3** — Word 부록 A `report\document.py` 2036 `_appendix_a` 가 근거 표를 그대로 싣는다. PPT 의 합치기는 `report\slides.py` `_ess_investment_row`(2462) — **`report\worksheet.py` 로 옮겨 PPT · Word 가 한 원천을 쓴다**(Excel 부록 A 는 부르지 않는다 · 세 줄 그대로). 19벌 Word 표22 **대형 여섯 벌 × 3줄 = 18줄 → 6줄** · 확인 사례 (다) · (나) 3줄 → 1줄 · (가1) ESS 부록 없음(`s264_re_20261001_072239.txt`).
+- **결정 5** — 스냅 전수 정규식 「ESS (목표 )?N kW」(뒤에 「 /」 없음 · `s264_re_20261001_072108.txt`) — **화면 0줄** · Excel 「수단별 결과」 A 열 「ESS 목표 5,180 kW (150 kW / 100 kWh)」(2단계 줄 · 조합 표가 아니다 · 목록 밖). 화면 3단계의 표는 수단별 요약 하나이고 ESS 줄은 2단계 사양 「150 kW / 100 kWh 설치 (목표 5,180 kW)」 로 이미 규격 꼴 · 조합 그림 눈금은 S263 결정 6 이 `short_name` 으로 고쳤다 — **화면에 고칠 자리가 없다.** 조합 이름 원천(`spec.name` 「+ ESS 목표 N kW」)을 그대로 쓰는 자리는 **`report\batch.py` 395 `best_combination=best.name`(배치 요약 CSV) 하나** — `short_name`(「+ ESS 75 kW / 50 kWh」)으로. 19벌 · 확인 사례 스냅 밖(배치 CSV).
+- **결정 6** — `compare\combination.py` 697 안내 글 앞머리 「ESS {출력} kW / {용량} kWh — 」 를 뺀다 — 이 안내(`combination.ess_sizing`)는 줄 이름을 머리에 단 자리(`aggregate_notices` · Excel 요약 `_combination_notices` · 화면 3단계 툴팁)에만 선다. (다) **2줄**(Excel 요약 1 · 화면 툴팁 1) · 19벌 0.
+- **고칠 자리 — 9(울타리 · 하한).**
+
+| # | 갈래 | 자리 | 결정 |
+|---|---|---|---|
+| C1 | 코드 | `report\slides.py` `combination_notes` ESS 크기 안내 · `_ess_investment_row` 를 옮김 | 1 · 3 |
+| C2 | 코드 | `report\document.py` ESS 장 `MeasureEntry` 2단계 사양 칸 · 상한 판정 결론 · Word 부록 A ESS 표 | 1 · 2 · 3 |
+| C3 | 코드 | `report\worksheet.py` ESS 투자비 한 줄 원천 | 3 |
+| C4 | 코드 · **계산 폴더** | `measures\power_factor.py` 상한 판정 안내 | 2 |
+| C5 | 코드 · **계산 폴더** | `tariff\power_factor.py` 반올림 안내 함수 공개 이름(`__init__` 내보냄 포함) | 2 |
+| C6 | 코드 · **계산 폴더** | `compare\combination.py` 조합 ESS 크기 안내 앞머리 | 6 |
+| C7 | 코드 | `report\batch.py` 요약 CSV 권장 조합 이름 | 5 |
+| T1 | 시험 | 새 못(결정 1 서는 조건 · 안 서는 조건 · 결정 2 · 3 · 5 · 6 · 결정 4 0줄) | 1 ~ 6 |
+| T2 | 시험 | 옛 표기를 문 시험 전 → 후(`test_base_fee_basis_words` 고5 「지상역률 99.7% 는 감액 상한」 · 3-1 에서 이름으로) | 2 |
+
+**계산 폴더 몫 — C4 · C5 · C6 세 파일 · 세 폴더**(`measures` · `tariff` · `compare`) · 글자와 함수 이름뿐 · 금액 식 0줄. `diagnose` · `pv` · `quality` 0. `tools\` 0 · `CLAUDE.md` 0.
+
 ---
 
 ## 오늘 (2026-09-30) 263세션 — **고침 판 · 사람 실물 재점검(S262 뒤) PPT 의견 넷 · 조합 ESS 역률(계산 변경) · 조합 ESS 이름 · 역률 설명 글**
