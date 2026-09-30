@@ -102,7 +102,8 @@ RULES_UNCHANGED = "기준 데이터는 기본값 그대로입니다."
 #: PPT 건물현황 장 「적용 기준」 칸 (S260 결정 1).
 APPLIED_BASIS = "한전 기본공급약관 · 전기요금표"
 APPLIED_BASIS_MARKET = " · 전력시장운영규칙"
-APPLIED_BASIS_CHANGED = " — 일부 값을 바꿔 계산했습니다 (Excel 부록 B)"
+#: PPT 에서 Excel 을 가리키지 않는다 — 고객은 Excel 을 받지 않는다 (S263 결정 3 곁).
+APPLIED_BASIS_CHANGED = " — 일부 값을 바꿔 계산했습니다"
 
 #: 한 줄에 이름을 몇 개까지 적을지. 넘으면 개수로 접는다.
 _RULES_NAME_LIMIT = 3
@@ -131,7 +132,7 @@ def applied_basis_line(*, market_rules: bool) -> str:
     """PPT 「적용 기준」 칸 (S260 결정 1). 고객은 「기준 데이터」 를 모른다.
 
     경제성DR 장이 서는 덱이면 전력시장운영규칙을 붙이고, 기준 데이터를 바꿔
-    계산했으면 끝에 그 사실을 적는다 — 무엇을 바꿨는지는 Excel 부록 B 가 싣는다.
+    계산했으면 끝에 그 사실을 적는다(무엇을 바꿨는지는 분석자용 Excel 부록 B 가 싣는다).
     """
     line = APPLIED_BASIS + (APPLIED_BASIS_MARKET if market_rules else "")
     return line + (APPLIED_BASIS_CHANGED if diff_from_defaults() else "")

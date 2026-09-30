@@ -342,7 +342,7 @@ def _combination_notices(
         shown: item
         for index, result in enumerate(comparison.combinations)
         for item, shown in zip(
-            result.notices, prefixed(result.notices, result.name, tag=f"c{index}"), strict=True
+            result.notices, prefixed(result.notices, result.row_name, tag=f"c{index}"), strict=True
         )
     }
     out: list[Notice] = []

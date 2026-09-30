@@ -154,6 +154,23 @@ def billed_pct(power_factor_pct: float) -> float:
     return math.floor(power_factor_pct / unit + 0.5) * unit
 
 
+def _billed_note(power_factor_pct: float) -> str:
+    """입력값과 요금을 셈한 값이 다르면 「요금 계산은 1% 단위 반올림 100%」 (S263 결정 7).
+
+    폭 · 조정률 · 판정은 반올림 값에서 나오는데 머리는 입력값이라 한 문장에서 셈이
+    틀려 보인다 — 두 값을 함께 밝힌다. 같으면(96.0 → 96) 빈 글이다.
+    """
+    billed = billed_pct(power_factor_pct)
+    if billed == power_factor_pct:
+        return ""
+    return f"요금 계산은 {rounding_unit_pct():g}% 단위 반올림 {billed:,.0f}%"
+
+
+def _rate_text(percent: float) -> str:
+    """조정률 — 정수가 되는 값은 정수 % 로 적는다 (S263 결정 7 · 0.2% 배수라 나머지는 한 자리)."""
+    return magnitude(percent, "%", decimals=0 if round(percent, 6).is_integer() else 1)
+
+
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
@@ -307,33 +324,36 @@ def power_factor_charge(
     #
     # **폭 · 갈래 · 조정률은 요금을 셈한 역률(1% 반올림)로 적는다** (S262 결정 1 · 제7조 ①).
     # 머리의 역률은 넣은 값을 되비춘다 — 91.96% 는 92% 로 셈해 「충족」 이다.
+    # **입력값과 반올림 값이 다르면 두 값을 함께 밝힌다** (S263 결정 7) — 「99.7% — 8.0%p
+    # 초과」 는 셈이 틀려 보였다. 반올림 값에서 나온 폭은 정수 %p 다.
     billed = billed_pct(lagging_pct)
     gap = standard - billed
-    digits = places(gap)
     shown_pct = f"{lagging_pct:,.{places(standard - lagging_pct)}f}%"
+    note = _billed_note(lagging_pct)
+    head = f"주간 지상역률 {shown_pct}" + (f" ({note})" if note else "")
     if gap == 0.0:
         notices.append(
             basis(
-                f"주간 지상역률 {shown_pct} — 기준 {standard:.0f}% 충족, 추가·감액 없음.",
+                f"{head} — 기준 {standard:.0f}% 충족, 추가·감액 없음.",
                 fact="power_factor.lagging_ratio",
             )
         )
     elif gap > 0.0:
         notices.append(
             basis(
-                f"주간 지상역률 {shown_pct} — 기준 {standard:.0f}% 대비 "
-                f"{magnitude(gap, '%p', decimals=digits)} 미달, "
+                f"{head} — 기준 {standard:.0f}% 대비 "
+                f"{magnitude(gap, '%p', decimals=0)} 미달, "
                 # **부호를 붙이지 않는다** — 「+0.1% 추가」 는 같은 말을 두 번 한다.
-                f"기본요금의 {magnitude(lagging_ratio * 100.0, '%')} 추가.",
+                f"기본요금의 {_rate_text(lagging_ratio * 100.0)} 추가.",
                 fact="power_factor.lagging_ratio",
             )
         )
     else:
         notices.append(
             basis(
-                f"주간 지상역률 {shown_pct} — 기준 {standard:.0f}% 대비 "
-                f"{magnitude(-gap, '%p', decimals=digits)} 초과, "
-                f"기본요금의 {magnitude(-lagging_ratio * 100.0, '%')} 감액 "
+                f"{head} — 기준 {standard:.0f}% 대비 "
+                f"{magnitude(-gap, '%p', decimals=0)} 초과, "
+                f"기본요금의 {_rate_text(-lagging_ratio * 100.0)} 감액 "
                 f"({cap:.0f}% 초과분은 인정되지 않습니다).",
                 fact="power_factor.lagging_ratio",
             )
@@ -351,8 +371,9 @@ def power_factor_charge(
     if billed < standard:
         notices.append(
             warn(
-                f"주간 지상역률이 기준 {standard:.0f}% 에 미달합니다 ({shown_pct}). "
-                f"기본요금의 {magnitude(lagging_ratio * 100.0, '%')} 가 추가됩니다. "
+                f"주간 지상역률이 기준 {standard:.0f}% 에 미달합니다 "
+                f"({shown_pct}" + (f", {note}" if note else "") + "). "
+                f"기본요금의 {_rate_text(lagging_ratio * 100.0)} 가 추가됩니다. "
                 "역률 개선 설비 용량 조정을 "
                 "검토하십시오 (한전 기본공급약관 제41·43조).",
                 fact="power_factor.lagging_below_standard",
@@ -362,6 +383,9 @@ def power_factor_charge(
     # 제43조 ② 2호 나목 — 지상인 야간은 100% 로 간주되어 추가가 0 이다.
     deemed = deemed_leading_pct(leading_pct)
     leading_ratio = leading_adjustment_ratio(deemed)
+    # 입력값과 반올림 값이 다르면 머리에 함께 밝힌다 (S263 결정 7 · 지상 머리와 같은 꼴).
+    leading_note = _billed_note(leading_pct) if leading_pct is not None else ""
+    leading_tail = f" ({leading_note})" if leading_note else ""
     if leading_pct is None:
         notices.append(
             basis(
@@ -388,10 +412,10 @@ def power_factor_charge(
         leading_digits = places(leading_standard_pct() - leading_pct)
         notices.append(
             warn(
-                f"야간 진상역률 {leading_pct:,.{leading_digits}f}% 가 "
+                f"야간 진상역률 {leading_pct:,.{leading_digits}f}%{leading_tail} 가 "
                 f"기준 {leading_standard_pct():.0f}% 에 미달합니다"
                 + (f" (하한 {leading_floor_pct():.0f}% 적용)" if deemed != leading_pct else "")
-                + f". 기본요금의 {magnitude(leading_ratio * 100.0, '%')} 가 추가됩니다. "
+                + f". 기본요금의 {_rate_text(leading_ratio * 100.0)} 가 추가됩니다. "
                 "**역률 개선 설비 과보상입니다** — 부하가 줄어든 야간에 진상 무효전력이 남는 "
                 "것이므로 고정형 역률 개선 설비 용량을 줄이거나 자동제어형 역률 개선 설비로 "
                 "시간대별 투입 단수를 조절하십시오.",
@@ -401,7 +425,7 @@ def power_factor_charge(
     else:
         notices.append(
             basis(
-                f"야간 진상역률 {leading_pct:.1f}% — 기준 95% 이상이라 추가 없음.",
+                f"야간 진상역률 {leading_pct:.1f}%{leading_tail} — 기준 95% 이상이라 추가 없음.",
                 fact="power_factor.leading_ok",
             )
         )

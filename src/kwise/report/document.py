@@ -860,8 +860,11 @@ CONTRACT_FLOOR_NOT_BINDING_FACT = "contract.floor_not_binding"
 #: 계약전력을 넘겨 쓰는 벌의 상향 권고 안내 (S143 2절 · `measures\contract.py`).
 CONTRACT_OVER_LIMIT_FACT = "contract.over_limit"
 
-#: ESS 주의사항 첫 줄. PPT 마지막 장 「주의사항」 이 이 글자로 고른다 (S251).
-ESS_PAYBACK_CAVEAT = "규칙기반 단일 디스패치이며 OPEX·열화·교체비를 넣지 않은 단순 회수기간입니다."
+#: ESS 주의사항 첫 줄. PPT ESS 장 ※ 가 이 글자로 고른다 (S251 · S263 결정 1 — 고객이 읽는 말).
+ESS_PAYBACK_CAVEAT = (
+    "충전·방전은 정해진 규칙 한 가지로 운전한다고 보고 계산했습니다. "
+    "회수기간에는 유지보수비, 배터리 성능 저하, 교체비를 넣지 않았습니다."
+)
 
 
 def measure_entries(
@@ -1642,9 +1645,7 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
     best = comparison.best if comparison is not None else None
     if comparison is not None and best is not None:
         # 기간 총 절감액이 DR 정산금을 담으면 이름도 조합 표 끝 줄이다 (S256 고3 ㄴ).
-        rows.append(
-            ["권장 조합", SETTLED_ROW_NAME if best.dr_period_won else best.name]
-        )
+        rows.append(["권장 조합", SETTLED_ROW_NAME if best.dr_period_won else best.short_name])
         rows.append(
             ["기간 총 절감액", _won(_settled_saving(comparison, best, sections.peer_savings))]
         )

@@ -813,7 +813,8 @@ def combination_frame(comparison: ComparisonResult) -> pd.DataFrame:
         for item in comparison.combinations
         if money.truncate_won(item.saving_won) or item.investment_won != 0
     ]
-    names = [item.name for item in shown]
+    # ESS 는 목표가 아니라 규격을 적는다 — 「+ ESS 75 kW / 50 kWh」 (S263 결정 6).
+    names = [item.short_name for item in shown]
     savings = [item.saving_won for item in shown]
     investments = [item.investment_won for item in shown]
     # 합산효과가 담는 DR 정산금을 표와 같은 끝 줄로 (S256 고3 ㄴ).

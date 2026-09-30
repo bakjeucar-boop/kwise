@@ -537,7 +537,8 @@ def combination_png(comparison: ComparisonResult) -> bytes:
     axes.set_yticklabels(frame["조합"], fontsize=9)
     axes.invert_yaxis()
     axes.set_xlabel(unit)
-    add_legend(axes)
+    # 범례는 막대가 선 차례(위 투자비 → 아래 절감액)대로 (S263 결정 2).
+    add_legend(axes, reverse=True)
     return render_png(figure)
 
 
@@ -1154,7 +1155,8 @@ def monthly_charge_png(
     axes.set_xticks(list(positions))
     axes.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
     axes.set_ylabel(f"요금 ({unit})")
-    add_legend(axes)
+    # 범례는 쌓인 차례(위 조각 → 밑단 기본요금)대로 (S263 결정 2).
+    add_legend(axes, reverse=True)
     return render_png(figure)
 
 

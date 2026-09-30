@@ -418,6 +418,18 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 **계산 폴더 몫 — C1 · C2 두 파일 · 두 폴더**(`compare` · `tariff`). `measures` · `diagnose` · `pv` · `quality` 0. `tools\` 0 · `CLAUDE.md` 0.
 **1절 벽시계** 09:58:30 ~ 10:02:09(시각 명령 출력 · 커밋 앞).
 
+**2-1. 8자리를 고쳤다(코드 C1 ~ C8) — T1 · T2(시험)는 3절 · R1(기록)은 4절**(`git diff --numstat` · +/−).
+- **결정 5** — C1 `compare\combination.py`(아래 결정 6 과 합쳐 +50 −15) — ESS 조각 뒤(디스패치를 물린 조합만)에 원 부하에서 태양광 · ESS 가 함께 줄인 부하로 `billed_pct(power_factor_after_pct(…))` → 출발 역률 · 역률 수단이 없으면 요금 역률(태양광 조각과 같은 규칙) · 78세션 주석(620 ~ 623)에 곁 줄 한 줄(옛 글자 그대로).
+- **결정 6** — C1 `ess_size_text`(「75 kW / 50 kWh」) · `short_name`(「+ ESS 75 kW / 50 kWh」) · `row_name` 은 한 함수(`_with_ess`)로 · `composition` 이 「ESS {목표} kW」 조각을 규격으로 · `frame` A 열 `row_name` · `aggregate_notices` 머리 `row_name` · C8 `report\excel.py` +1 −1(조합 안내 원천 맞춤) · C7 `report\frames.py` +2 −1(그림 눈금 `short_name`) · C3 `report\document.py`(권장 조합 칸 `short_name`).
+- **결정 1** — C3 `document.py` +6 −5(`ESS_PAYBACK_CAVEAT` 새 글자 · 권장 조합 칸 포함) · C4 `report\slides.py`(아래와 합쳐 +38 −35) — 사양 표가 서는 장이면 단서를 `_spec_block` 글상자 줄 끝에 잇고 맨 아래 각주에서 뺀다 · 그 글상자 높이를 줄바꿈 수로.
+- **결정 2** — C6 `report\figures.py` +4 −2(`combination_png` · `monthly_charge_png` 범례 `reverse=True`).
+- **결정 3 · 3 곁** — C4 `_appendix_note` 를 걷고 부록 장 각주를 안 세운다(표 높이는 각주 없는 바닥까지) · C5 `report\notices.py` +3 −2(「 (Excel 부록 B)」 꼬리 뺌).
+- **결정 4** — C4 `appendix_pages` 가 ESS 표에서만 `_ess_investment_row`(설비비 · 전기공사 · 투자비 → 「투자비 | 설비와 전기공사 포함 | 값」).
+- **결정 7** — C2 `tariff\power_factor.py` +37 −13 — `_billed_note`(입력값 ≠ 반올림 값이면 「요금 계산은 1% 단위 반올림 N%」 · 단위는 기준 데이터 `rounding_unit_pct`) · `_rate_text`(조정률 — 정수가 되는 값은 정수 %) · 지상 머리 세 갈래 · 지상 미달 경고(괄호 안 「, 요금 계산은 …」) · 진상 미달 경고 · 진상 충족 · 폭은 `decimals=0`.
+- 정적 확인(좁게) — `ruff check src` 첫 판 1(내 줄 E501 · 독스트링) → 고쳐 통과(`ruff_20260930_100554.txt`) · `ruff format --check src` 어긋남 **3**(`document.py` · `slides.py` · `tariff\engine.py` — S262 과 같은 파일 · 내 줄 하나(권장 조합 칸)를 포매터 꼴로 맞춘 뒤 남은 것은 옛 자리 · `ruff_20260930_100554-2.txt`) · `mypy src` 이상 없음(`mypy_20260930_100541.txt`).
+**2-2. 적게 닫았거나 번진 자리.** 적게 닫음 0 · 1-4 에 없던 파일 0. **같은 원천이라 따라간 자리(1-3 에 적은 번짐)** — Word ESS 주의 목록 글자(결정 1) · 화면 3단계 조합 그림 눈금 · 화면 3단계 조합 안내 머리(결정 6) · 화면 툴팁 둘 · Excel 요약 · Word 둘의 역률 안내(결정 7). 계산 폴더는 C1 · C2 두 파일뿐 · `tools\` 0 · `CLAUDE.md` 0.
+**2절 벽시계** 10:02:59 ~ 10:05:54(시각 명령 출력 · 커밋 앞).
+
 ## 오늘 (2026-09-30) 262세션 — **고침 판(계산 변경) · 역률 1% 반올림(약관 제7조 ①) · 태양광 · ESS 금액을 역률 변화까지 담은 한 값으로 · 조합 ESS 를 조달 규격으로**
 
 **0-1. PC — 1번 PC** — `run_tool open_values`(`open_values_20260930_071923.txt`) 첫 줄 `BOOK-DC2VCGD99B · Intel(R) Core(TM) Ultra 7 258V · cpu 8 · RAM 33834070016 B (31.5 GB) · -n auto 일꾼 8`. **저장소** — `git pull` Already up to date · HEAD **35a5bda** = `origin/master`(마감 판 보고 값과 같다) · 워크트리 깨끗.

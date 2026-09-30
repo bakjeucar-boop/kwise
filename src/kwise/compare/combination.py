@@ -257,25 +257,39 @@ class CombinationResult:
     notices: tuple[Notice, ...] = field(default=())
 
     @property
-    def ess_spec_text(self) -> str:
-        """조합 ESS 사양 — 「75 kW / 50 kWh (목표 5,180 kW)」 (S262 결정 3 · 3단계 요약의 꼴)."""
+    def ess_size_text(self) -> str:
+        """조합 ESS 규격 — 「75 kW / 50 kWh」 (S263 결정 6). ESS 가 없으면 빈 글이다."""
         if self.dispatch is None or self.spec.ess_target_kw is None:
             return ""
-        return (
-            f"{self.dispatch.power_kw:,.0f} kW / {self.dispatch.capacity_kwh:,.0f} kWh "
-            f"(목표 {self.spec.ess_target_kw:,.0f} kW)"
-        )
+        return f"{self.dispatch.power_kw:,.0f} kW / {self.dispatch.capacity_kwh:,.0f} kWh"
 
     @property
-    def row_name(self) -> str:
-        """PPT · Word 조합 표 줄 — ESS 를 더한 줄은 사양을 함께 적는다 (S262 결정 3).
+    def ess_spec_text(self) -> str:
+        """조합 ESS 사양 — 「75 kW / 50 kWh (목표 5,180 kW)」 (S262 결정 3 · 3단계 요약의 꼴)."""
+        size = self.ess_size_text
+        return f"{size} (목표 {self.spec.ess_target_kw:,.0f} kW)" if size else ""
 
-        조합 이름(:attr:`name`)의 「ESS 목표 N kW」 조각만 사양 꼴로 갈아 끼운다.
-        """
-        text = self.ess_spec_text
+    def _with_ess(self, text: str) -> str:
+        """조합 이름의 「ESS 목표 N kW」 조각을 「ESS {text}」 로 갈아 끼운다."""
         if not text:
             return self.name
         return self.name.replace(f"ESS 목표 {self.spec.ess_target_kw:,.0f} kW", f"ESS {text}")
+
+    @property
+    def row_name(self) -> str:
+        """조합 표 줄 — ESS 를 더한 줄은 사양을 함께 적는다 (S262 결정 3).
+
+        PPT · Word 조합 표 · Excel 조합 비교 A 열 · 조합 안내 머리가 쓴다 (S263 결정 6).
+        """
+        return self._with_ess(self.ess_spec_text)
+
+    @property
+    def short_name(self) -> str:
+        """「+ ESS 75 kW / 50 kWh」 — 조합 그림 눈금 · Word 권장 조합 칸 (S263 결정 6).
+
+        「ESS 5,180 kW」 는 5,180 kW 짜리 ESS 로 읽힌다 — 목표가 아니라 규격을 적는다.
+        """
+        return self._with_ess(self.ess_size_text)
 
     @property
     def settled_saving_won(self) -> float:
@@ -351,8 +365,15 @@ class CombinationResult:
         return self.bill.selection
 
     def composition(self, baseline: TariffSelection | None = None) -> str:
-        """조합 구성 한 줄 — :meth:`CombinationSpec.composition` 에 **나온 값**을 준다."""
-        return self.spec.composition(baseline, applied=self.applied, selection=self.selection)
+        """조합 구성 한 줄 — :meth:`CombinationSpec.composition` 에 **나온 값**을 준다.
+
+        ESS 는 목표가 아니라 규격을 적는다 — 「ESS 75 kW / 50 kWh」 (S263 결정 6).
+        """
+        text = self.spec.composition(baseline, applied=self.applied, selection=self.selection)
+        size = self.ess_size_text
+        if not size:
+            return text
+        return text.replace(f"ESS {self.spec.ess_target_kw:,.0f} kW", f"ESS {size}")
 
     @property
     def total_won(self) -> float:
@@ -387,7 +408,7 @@ class ComparisonResult:
         """
         rows = [
             {
-                "조합": item.name,
+                "조합": item.row_name,
                 "요금제": option_label(item.selection.option),
                 "수단": ", ".join(item.measure_labels) or "—",
                 # **기간 값에 「기간」 을 단다** (S219 규칙 다 · S220 2절) — 곁에 12개월
@@ -621,6 +642,7 @@ def evaluate_combination(
         # 쓴다 — ESS 도 계량 유효전력을 줄이므로 같은 이유로 역률을 떨어뜨리지만,
         # 도구가 PCS 의 무효전력 거동을 모르고 여기서 범위를 넓히면 두 자리가
         # 다른 규칙을 쓰게 된다. **봤다는 사실만 남긴다.**
+        # [S263 결정 5 곁 — 이제 ESS 도 본다 · ESS 조각 뒤에서 2단계 ESS 와 같은 원천으로 다시 잰다]
         before_pct = original_pct if original_pct is not None else deemed_lagging_pct()
         # 요금을 셈하는 역률 — 1% 반올림 (S262 결정 1 · 제7조 ①). 판정도 이 값으로 가른다.
         after_pct = billed_pct(
@@ -712,6 +734,19 @@ def evaluate_combination(
                     fact="ess.target_unmet",
                 )
             )
+        # **조합의 ESS 도 도입 후 역률로 셈한다** (S263 결정 5 · S262 결정 2 · S233). 2단계 ESS 와
+        # 같은 원천이다 — 원 부하에서 태양광 · ESS 가 함께 줄인 부하로 재어 1% 반올림한다.
+        # 태양광만 켠 조합에서는 위 조각과 같은 값이다. 역률 수단을 켰으면 요금 역률은 목표다.
+        before_pct = original_pct if original_pct is not None else deemed_lagging_pct()
+        start_pct = billed_pct(
+            power_factor_after_pct(
+                usage.kw,
+                usage.kw - working.kw,
+                power_factor_pct=before_pct,
+                interval_minutes=interval,
+            )
+        )
+        opts = opts if spec.has_power_factor else replace(opts, power_factor_pct=start_pct)
 
     bill, adjustment = _price(working, table, spec, opts, quality, usage.observed_max_kw)
     contract_saving = adjustment.saving_won if adjustment is not None else None
@@ -919,7 +954,7 @@ def aggregate_notices(results: Sequence[CombinationResult]) -> tuple[Notice, ...
         *(
             item
             for index, result in enumerate(results)
-            for item in prefixed(result.notices, result.name, tag=f"c{index}")
+            for item in prefixed(result.notices, result.row_name, tag=f"c{index}")
         ),
         basis(
             "조합의 절감액은 수단별 절감액의 단순 합이 아니라, 각 조합의 부하를 "

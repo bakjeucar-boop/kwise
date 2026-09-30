@@ -1945,8 +1945,12 @@ def _spec_block(
     *,
     top: float,
     height: float,
+    tail: Sequence[str] = (),
 ) -> tuple[float, float, tuple[MeasureFigure, ...]]:
     """목표별 사양 표와 그 아래 참고 한 줄 (46세션 · 53세션 2절에 배분을 다시 잡았다).
+
+    ``tail`` 은 같은 ※ 글상자에 이어 적는 줄이다 — ESS 단순 회수기간 단서 (S263 결정 1).
+    맨 아래 각주로 따로 세우면 한 칸 떠 보인다.
 
     **표가 먼저다.** 「이 목표는 어디서 나왔나」 에 답하는 자리라 그림보다 위에
     온다. 표에 줄 수만큼 주고 **남는 것이 그림 몫**이다 — 46세션의 ``height * 0.55``
@@ -1962,8 +1966,12 @@ def _spec_block(
     # **표식의 뜻도 표 바로 아래가 자리다** (53세션 4-13). 슬라이드 맨 아래
     # 각주로 내리면 :func:`_note_top` 이 그만큼 예약해 **그림이
     # 자리를 잃는다** — 표를 읽는 데 바로 쓰이는 글이라 표에 붙인다.
-    lines = [mark_note(line) for line in (entry.spec_caption, entry.spec_note) if line]
-    caption_height = _SPEC_CAPTION_HEIGHT * len(lines)
+    lines = [mark_note(line) for line in (entry.spec_caption, entry.spec_note, *tail) if line]
+    # 줄바꿈까지 센다 — 두 줄로 흐르는 단서를 한 줄로 잡으면 아래 그림을 덮는다.
+    caption_height = _SPEC_CAPTION_HEIGHT * sum(
+        _fitting_lines([line], span=geometry.content_width_in, size=guide.type_scale.caption)
+        for line in lines
+    )
     wanted = _SPEC_ROW_HEIGHT * _spec_lines(
         entry.spec_table,
         width=geometry.content_width_in,
@@ -2077,13 +2085,18 @@ def _build_measure(
     # 「·」 로 이어 붙이면 「역률 영향 반영 시 279,249,000원」 이 또 하나의
     # 미산출 사유처럼 읽힌다 — 다른 종류의 말이므로 ※ 를 따로 단다.
     # 옮겨 온 주의사항은 그 아래 줄마다 ※ 하나 (S258 결정 3).
-    notes = (terms_note, note, entry.slide_note, *caution_notes(entry))
+    cautions = caution_notes(entry)
+    # ESS 단순 회수기간 단서는 사양 표 아래 ※ 글상자에 잇는다 (S263 결정 1).
+    tail = tuple(line for line in cautions if entry.spec_table and line == ESS_PAYBACK_CAVEAT)
+    notes = (terms_note, note, entry.slide_note, *(line for line in cautions if line not in tail))
     body = bottom + geometry.block_gap_in
     height = _note_top(guide, *notes) - body - _BODY_TAIL
     drawings = entry.slide_figures
     crowded = False
     if entry.spec_table:
-        body, height, drawings = _spec_block(slide, guide, entry, drawings, top=body, height=height)
+        body, height, drawings = _spec_block(
+            slide, guide, entry, drawings, top=body, height=height, tail=tail
+        )
         # **표가 자리를 다 썼으면 그것으로 끝이다** (53세션 2절·4-13). 남은
         # 틈에 주의사항 표를 밀어 넣으면 결론이 이미 한 말을 되풀이하면서
         # 줄이 눌린다 — ESS 가 그랬다.
@@ -2432,12 +2445,29 @@ def appendix_pages(sections: DocumentSections) -> tuple[AppendixPage, ...]:
         records = [
             (str(value[0]), str(value[1]), str(value[2])) for value in sheet.frame().to_numpy()
         ]
+        if sheet.key == "ess":
+            records = _ess_investment_row(records)
         chunks = appendix_chunks(records)
         name = labels.get(sheet.key, sheet.title)
         for index, chunk in enumerate(chunks, start=1):
             suffix = f" ({index}/{len(chunks)})" if len(chunks) > 1 else ""
             pages.append(AppendixPage(f"{APPENDIX_SLIDE_TITLE} — {name}{suffix}", tuple(chunk)))
     return tuple(pages) or (AppendixPage(APPENDIX_SLIDE_TITLE, ()),)
+
+
+#: ESS 근거 표에서 PPT 가 투자비 한 줄로 합치는 줄 (S263 결정 4). Excel 부록 A 는 세 줄 그대로다.
+_ESS_COST_PARTS = ("설비비", "전기공사")
+
+
+def _ess_investment_row(records: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    """「설비비 · 전기공사 · 투자비」 → 「투자비 | 설비와 전기공사 포함 | {값}」 (S263 결정 4)."""
+    if not all(any(record[0] == part for record in records) for part in _ESS_COST_PARTS):
+        return records
+    return [
+        ("투자비", "설비와 전기공사 포함", record[2]) if record[0] == "투자비" else record
+        for record in records
+        if record[0] not in _ESS_COST_PARTS
+    ]
 
 
 def _is_blank(record: tuple[str, str, str]) -> bool:
@@ -2488,8 +2518,9 @@ def _build_appendix(
     기준 데이터(Word 부록 B), 알려진 한계와 전제(Word 부록 C)는 여기 오지
     않는다 — 셋 다 **Word 에는 그대로 남아 있다.**
 
-    **절감액이 없는 수단은 빼고, 뺐다는 사실을 각주가 적는다** — 조용히 빼면
-    「검토하지 않았다」 로 읽힌다.
+    **절감액이 없는 수단은 뺀다.** 뺐다는 각주는 두지 않는다 (S263 결정 3) — 고객은
+    Excel 을 받지 않고 같은 줄이 부록 장마다 되풀이됐다. 검토한 수단은 「개선안별 요약」
+    표가 적는다.
 
     **해석 한 줄을 두지 않는다** (53세션 1-6). 부록은 근거를 그대로 펼치는
     자리이지 읽는 법을 일러 주는 자리가 아니다 — 같은 문장이 부록 장마다
@@ -2503,7 +2534,6 @@ def _build_appendix(
     rows.extend([list(record) for record in page.rows])
     if len(rows) == 1:
         rows.append(["계산 근거", "절감액이 산출된 수단이 없습니다", "—"])
-    appendix_note = _appendix_note(sections)
     _table(
         slide,
         guide,
@@ -2512,38 +2542,11 @@ def _build_appendix(
         top=top,
         width=geometry.content_width_in,
         height=min(
-            _table_room_above(guide, top=top, note_top=_note_top(guide, appendix_note)),
+            _table_room_above(guide, top=top, note_top=_note_top(guide)),
             0.4 * len(rows),
         ),
         widths=(0.24, 0.5, 0.26),
     )
-    _caption(
-        slide,
-        guide,
-        mark_note(appendix_note),
-        left=geometry.margin_in,
-        top=geometry.height_in - geometry.margin_in - 0.3,
-        width=geometry.content_width_in,
-    )
-
-
-def _appendix_note(sections: DocumentSections) -> str:
-    """부록 각주. **제작 사정을 적지 않는다** (39세션 2-4).
-
-    「자리가 모자라 뺐습니다」 는 우리 쪽 사정이다. 뺀 것이 있다면 **무엇을 왜
-    뺐는지**와 전문이 어디 있는지를 적는다.
-
-    **규칙을 정확히 적는다** (59세션 11절). 뺀 갈래는 둘이다 — 「값이 0」 과
-    「못 냈다」. 「산출되지 않은」 이라고만 적으면 계약전력 조정처럼 **산출은
-    됐는데 0 인** 줄이 못 낸 것으로 읽힌다. 8절이 값 자리에서 둘을 가른 것과
-    같은 자리다.
-    """
-    dropped = [entry for entry in sections.measures if not entry.has_saving]
-    note = "전문은 Excel 부록 A 에 있습니다."
-    if dropped:
-        names = " · ".join(measure_slide_title(entry) for entry in dropped)
-        note = f"절감액이 0 이거나 산출되지 않은 수단({names})은 근거를 싣지 않았습니다. {note}"
-    return note
 
 
 # ===================================================================== 37세션 · 마무리
