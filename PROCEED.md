@@ -374,6 +374,15 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 ---
 
+## 오늘 (2026-09-30) 263세션 — **고침 판 · 사람 실물 재점검(S262 뒤) PPT 의견 넷 · 조합 ESS 역률(계산 변경) · 조합 ESS 이름 · 역률 설명 글**
+
+**0-1. PC — 1번 PC** — `run_tool open_values`(`open_values_20260930_094928.txt`) 첫 줄 `BOOK-DC2VCGD99B · Intel(R) Core(TM) Ultra 7 258V · cpu 8 · RAM 33834070016 B (31.5 GB) · -n auto 일꾼 8`. **저장소** — `git pull` Already up to date · HEAD **ec51721** = `origin/master`(S262 보고 값과 같다) · 워크트리 깨끗.
+**0-2. 미해결 83** — 가 1 · 나 3 · 다 9 · 라 57 · 마 13(`daily_brief --cells` 끝 줄 · `daily_brief_20260930_095012.txt`). **회귀값 여덟 · 케이스 스터디 기준선** — S262 3-5 판 xlsx(그 판 스크래치 `case_after\casestudy_20260930.xlsx` · 그 뒤 커밋은 기록뿐)를 이 판 스크래치 `case_before\` 로 옮겼다 · 회귀값 여덟은 S262 3-5 와 같다(`케이스` 시트 갈림 0 판). **덱 스냅 기준선** — S262 3-4 뒤 스냅 `cache\deck_words\s262_after.json` 이 이 PC 에 있다(새로 뜨지 않았다). **확인 사례 스냅(지금 코드)** — 스크래치 `s263_case.py`(S262 `s262_case.py` 에 산출물 파일 담기 인자 하나만 더했다 · (다) 는 방위 남동 · 쉬는 날 2023-05-01 · 2023-10-02) → `cache\deck_words\s263_case_before.json`(가1 2,655줄 · 다 2,765줄 · 나 2,756줄 · `s263_case_20260930_095230.txt`).
+- **(가1) 지시서 값 대조 — 칸마다 같다**(`s263_values_20260930_095259.txt`) — 태양광 4,709,000 · DR 573,000 · 합산효과 528만원(PPT 16장) · 끝 줄 5,282,000(Word 표2 · 권장안 문장 · 표13 「+ 경제성DR」).
+- **(다) 지시서 값 대조 — 칸마다 같다**(`s263_values_20260930_095249.txt`) — 태양광 27,354,000 · ESS 8,168,000(150 kW / 100 kWh · 261,893,000) · 단순 합 9,056만원/년(화면 계산 근거 「합산효과 − 단순 합」 90,559,000원) · 합산효과 8,698만원/년 · 조합 투자비 5억 4,989만원 · 회수기간 6.3년 · 조합 ESS 75 kW / 50 kWh(PPT 15표 · Word 표14 · Excel 조합 비교 수단 칸).
+**0-3. 전체 pytest(S262 가 못 돈 판 · 지금 코드) — 지시서 3-7 꼴 · 초록** — **1,995 passed · 3 xfailed · failed 0**(`python_20260930_095756.txt` · `pytest_counts --base 1998` 합 1,998 같다). 첫 부름은 `run_tool` 에 `python` 을 넘겨 시스템 python 이 잡혀 `No module named pytest` 로 0.0초에 끝났다(`python_20260930_095008.txt` · 판 수에 넣는다) — `.venv` python 온 경로로 다시 불렀다.
+**0절 벽시계** 09:49:27 ~ 09:58:30(시각 명령 출력 · 커밋 앞).
+
 ## 오늘 (2026-09-30) 262세션 — **고침 판(계산 변경) · 역률 1% 반올림(약관 제7조 ①) · 태양광 · ESS 금액을 역률 변화까지 담은 한 값으로 · 조합 ESS 를 조달 규격으로**
 
 **0-1. PC — 1번 PC** — `run_tool open_values`(`open_values_20260930_071923.txt`) 첫 줄 `BOOK-DC2VCGD99B · Intel(R) Core(TM) Ultra 7 258V · cpu 8 · RAM 33834070016 B (31.5 GB) · -n auto 일꾼 8`. **저장소** — `git pull` Already up to date · HEAD **35a5bda** = `origin/master`(마감 판 보고 값과 같다) · 워크트리 깨끗.
