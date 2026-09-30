@@ -103,10 +103,10 @@ from kwise.report.notices import (
     switch_saving,
     without_arbitrage,
 )
-from kwise.report.worksheet import COLUMNS, Worksheet
+from kwise.report.worksheet import COLUMNS, Worksheet, ess_investment_rows
 from kwise.tariff import BillingResult, TariffTable
 from kwise.tariff.labels import option_label
-from kwise.tariff.power_factor import lagging_rebate_cap_pct, lagging_standard_pct
+from kwise.tariff.power_factor import billed_note, lagging_rebate_cap_pct, lagging_standard_pct
 
 __all__ = [
     "CHAPTER_COMPARISON",
@@ -248,6 +248,8 @@ class MeasureEntry:
     대형 자료의 사양 표에 「마진 미달」 이 셋인데 덱 어디에도 그 뜻이 없었다.
     :func:`~kwise.measures.spec_mark_note` 가 **표에 실제로 붙은 표식만** 골라
     적는다 — 셋을 늘 깔면 없는 표식을 설명하게 된다."""
+    ess_sizing: tuple[float, float, float] | None = None
+    """2단계 ESS (목표 kW, 출력 kW, 용량 kWh) — PPT 조합 장 ESS 크기 안내가 견준다 (S264 결정 1)."""
 
     @property
     def slide_saving(self) -> str:
@@ -401,6 +403,9 @@ def _power_factor_conclusion(result: PowerFactorResult) -> str:
         # 현재 역률은 카드 · 안내 · 요약표와 같은 한 자리 소수다 — 99.68 이 「100%」 로
         # 섰다 (S256 고5 · S233).
         current_shown = f"{result.current_pct:,.1f}%"
+        # 판정은 반올림 값이라 입력값과 다르면 두 값을 함께 밝힌다 (S264 결정 2).
+        if note := billed_note(result.current_pct):
+            current_shown += f" ({note})"
         return f"지상역률 {current_shown} 는 감액 상한 {cap} 이상이라 개선할 것이 없습니다."
     if result.improvement_pct <= 0:
         return f"지상역률 {current} 에서 목표 {target} 로 올릴 여지가 없습니다."
@@ -1273,6 +1278,7 @@ def measure_entries(
             spec_table=ess_table,
             spec_caption=ess_caption,
             spec_note=spec_mark_note(row[-1] for row in ess_table[1:]),
+            ess_sizing=(ess.excess.target_kw, ess.power_kw, ess.capacity_kwh),
         )
     elif ess_optimum is not None and ess_optimum.below_minimum and ess_curve is not None:
         # **최소 규격에 못 미치면 사양 표를 싣지 않는다** (50세션 3-3). 회수기간도
@@ -2033,7 +2039,11 @@ def _appendix_a(document: DocumentType, sections: DocumentSections) -> None:
     grounds = dict(data.grounds)
     for sheet in data.worksheets:
         _heading(document, sheet.title, level=2)
-        _add_table(document, [list(COLUMNS), *[list(row) for row in sheet.frame().to_numpy()]])
+        records = [(str(row[0]), str(row[1]), str(row[2])) for row in sheet.frame().to_numpy()]
+        # ESS 투자비는 PPT 와 같은 한 줄이다 (S264 결정 3) — Excel 부록 A 는 세 줄 그대로다.
+        if sheet.key == "ess":
+            records = ess_investment_rows(records)
+        _add_table(document, [list(COLUMNS), *[list(row) for row in records]])
         lines = grounds.get(sheet.key, ())
         if lines:
             _add_bullets(document, lines)

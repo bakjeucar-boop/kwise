@@ -51,6 +51,7 @@ from kwise.tariff import (
     leading_floor_pct,
     leading_standard_pct,
 )
+from kwise.tariff.power_factor import billed_note
 
 __all__ = [
     "NO_HEADROOM_LABEL",
@@ -189,9 +190,11 @@ def evaluate_power_factor(
         # 접히므로 요금은 한 원도 안 갈린다 — 절감액이 음수가 아니라 **0** 이다.
         # 아래 「악화」 경고를 그대로 내보내면 화면이 있지도 않은 손해를 말한다.
         # 금액은 적지 않는다 — 카드 금액 칸이 계약 카드처럼 「없음」 을 적는다 (S237 ㄴ).
+        # 판정은 반올림 값이라 입력값과 다르면 두 값을 함께 밝힌다 (S264 결정 2).
+        note = f" ({text})" if (text := billed_note(current_pct)) else ""
         notices.append(
             basis(
-                f"현재 지상역률 {current_pct:.1f}% 는 감액 상한 {cap:.0f}% 이상이라 "
+                f"현재 지상역률 {current_pct:.1f}%{note} 는 감액 상한 {cap:.0f}% 이상이라 "
                 "개선할 것이 없습니다.",
                 fact="power_factor.no_headroom",
             )

@@ -392,7 +392,8 @@ def run_case(
         billing_demand_kw=baseline.billing_demand_kw,
         total_kwh=usage.total_kwh,
         baseline_won=baseline.total_won,
-        best_combination=best.name,
+        # ESS 는 목표가 아니라 규격으로 적는다 — Word 권장 조합 칸과 같은 이름 (S264 결정 5).
+        best_combination=best.short_name,
         saving_won=best.saving_won,
         annual_saving_won=best.annual_saving_won,
         investment_won=best.investment_won,

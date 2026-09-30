@@ -54,6 +54,7 @@ __all__ = [
     "combination_worksheet",
     "contract_worksheet",
     "demand_response_worksheet",
+    "ess_investment_rows",
     "ess_worksheet",
     "low_load_multiple_text",
     "low_load_threshold_line",
@@ -689,6 +690,22 @@ def ess_worksheet(result: EssResult) -> Worksheet:
             )
         )
     return Worksheet("ess", "ESS 계산 근거", tuple(rows))
+
+
+#: ESS 근거 표에서 PPT · Word 가 투자비 한 줄로 합치는 줄 (S263 결정 4 · S264 결정 3).
+#: Excel 부록 A 는 세 줄 그대로다(분석자용).
+_ESS_COST_PARTS = ("설비비", "전기공사")
+
+
+def ess_investment_rows(records: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    """「설비비 · 전기공사 · 투자비」 → 「투자비 | 설비와 전기공사 포함 | {값}」 (S263 결정 4)."""
+    if not all(any(record[0] == part for record in records) for part in _ESS_COST_PARTS):
+        return records
+    return [
+        ("투자비", "설비와 전기공사 포함", record[2]) if record[0] == "투자비" else record
+        for record in records
+        if record[0] not in _ESS_COST_PARTS
+    ]
 
 
 # --------------------------------------------------------------------- 3단계

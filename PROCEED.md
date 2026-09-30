@@ -409,6 +409,18 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 | T2 | 시험 | 옛 표기를 문 시험 전 → 후(`test_base_fee_basis_words` 고5 「지상역률 99.7% 는 감액 상한」 · 3-1 에서 이름으로) | 2 |
 
 **계산 폴더 몫 — C4 · C5 · C6 세 파일 · 세 폴더**(`measures` · `tariff` · `compare`) · 글자와 함수 이름뿐 · 금액 식 0줄. `diagnose` · `pv` · `quality` 0. `tools\` 0 · `CLAUDE.md` 0.
+**1절 벽시계** 07:23:14 ~ 07:24:51(시각 명령 출력 · 커밋 앞 · 1절 커밋에 이 줄이 빠져 2절 커밋에 싣는다).
+
+**2-1. 코드 7자리를 고쳤다(C1 ~ C7) — T1 · T2(시험)는 3절**(`git diff --numstat` · +/−).
+- **결정 1** — C2 `report\document.py`(아래와 합쳐 +13 −3) — `MeasureEntry.ess_sizing`(2단계 목표 · 출력 · 용량) 칸 · ESS 장 entry 가 `EssResult` 에서 채운다. C1 `report\slides.py`(아래와 합쳐 +42 −20) — `ESS_SIZE_NOTE`(결정 글 그대로 · ※ 는 `_note` 가 붙인다) · `ess_size_note`(조합 표에서 ESS 가 든 첫 줄 · 태양광 · 목표 같음 · 출력 · 용량 다 이하이고 같지 않음 — 넷이 다 참일 때만 · kW 정수 글자로 견준다) · `combination_notes` 가 계약 하향 ※ 아래에 잇는다.
+- **결정 2** — C5 `tariff\power_factor.py` +6 −3(`_billed_note` → `billed_note` · `__all__` · 부르는 두 자리) · C4 `measures\power_factor.py` +4 −1(상한 판정 안내에 괄호) · C2 `_power_factor_conclusion`(같은 괄호).
+- **결정 3** — C3 `report\worksheet.py` +17 −0(`ess_investment_rows` · 옮겨 온 원천) · C1 `slides.py` 옛 `_ess_investment_row` 를 걷고 새 원천을 부른다 · C2 `_appendix_a` 가 ESS 표에만 같은 원천을 부른다(Excel 부록 A 는 안 부른다).
+- **결정 5** — C7 `report\batch.py` +2 −1(요약 CSV `best_combination` → `short_name`).
+- **결정 6** — C6 `compare\combination.py` +2 −1(안내 앞머리 「ESS {출력} kW / {용량} kWh — 」 뺌).
+- **결정 4** — 0줄(1-2).
+- 정적 확인(좁게) — `ruff check src` 통과(`ruff_20261001_072642.txt`) · `ruff format --check src` 어긋남 **3**(`document.py` 1584 · `slides.py` 1577 · `tariff\engine.py` 1060 — S263 과 같은 옛 자리 · 내 줄 0 · `ruff_20261001_072642-2.txt`) · `mypy src` 이상 없음(`mypy_20261001_072645.txt`).
+**2-2. 적게 닫았거나 번진 자리.** 적게 닫음 0 · 1-3 에 없던 파일 0 · 번짐 0(결정 3 의 원천 옮김은 1-3 C1 · C3 에 적었다). 계산 폴더는 C4 · C5 · C6 세 파일뿐(글자 · 이름) · `tools\` 0 · `CLAUDE.md` 0.
+**2절 벽시계** 07:24:51 ~ 07:26:52(시각 명령 출력 · 커밋 앞).
 
 ---
 

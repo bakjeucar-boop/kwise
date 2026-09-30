@@ -67,6 +67,7 @@ from kwise.rules import rule_value
 __all__ = [
     "PowerFactorCharge",
     "adjustment_per_percent",
+    "billed_note",
     "billed_pct",
     "day_window",
     "deemed_lagging_pct",
@@ -154,8 +155,10 @@ def billed_pct(power_factor_pct: float) -> float:
     return math.floor(power_factor_pct / unit + 0.5) * unit
 
 
-def _billed_note(power_factor_pct: float) -> str:
+def billed_note(power_factor_pct: float) -> str:
     """입력값과 요금을 셈한 값이 다르면 「요금 계산은 1% 단위 반올림 100%」 (S263 결정 7).
+
+    역률 상한 판정 글도 이 원천을 쓴다 (S264 결정 2).
 
     폭 · 조정률 · 판정은 반올림 값에서 나오는데 머리는 입력값이라 한 문장에서 셈이
     틀려 보인다 — 두 값을 함께 밝힌다. 같으면(96.0 → 96) 빈 글이다.
@@ -329,7 +332,7 @@ def power_factor_charge(
     billed = billed_pct(lagging_pct)
     gap = standard - billed
     shown_pct = f"{lagging_pct:,.{places(standard - lagging_pct)}f}%"
-    note = _billed_note(lagging_pct)
+    note = billed_note(lagging_pct)
     head = f"주간 지상역률 {shown_pct}" + (f" ({note})" if note else "")
     if gap == 0.0:
         notices.append(
@@ -384,7 +387,7 @@ def power_factor_charge(
     deemed = deemed_leading_pct(leading_pct)
     leading_ratio = leading_adjustment_ratio(deemed)
     # 입력값과 반올림 값이 다르면 머리에 함께 밝힌다 (S263 결정 7 · 지상 머리와 같은 꼴).
-    leading_note = _billed_note(leading_pct) if leading_pct is not None else ""
+    leading_note = billed_note(leading_pct) if leading_pct is not None else ""
     leading_tail = f" ({leading_note})" if leading_note else ""
     if leading_pct is None:
         notices.append(

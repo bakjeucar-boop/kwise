@@ -692,9 +692,10 @@ def evaluate_combination(
             respect_target_when_charging=spec.ess_respect_target_when_charging,
         )
         working = with_load(working, dispatch.net_kw, source_suffix=" + ESS")
+        # 사양은 앞머리의 줄 이름이 이미 적는다 — 한 번만 선다 (S264 결정 6).
         notices.append(
             basis(
-                f"ESS {power:,.0f} kW / {capacity:,.0f} kWh — 하루 최대 초과 에너지 "
+                "하루 최대 초과 에너지 "
                 f"{excess.max_daily_excess_kwh:,.1f} kWh 기준으로 잡았습니다. "
                 f"부록 B 의 총 초과 에너지({excess.total_excess_kwh:,.1f} kWh)는 기간 합계라 "
                 "용량 산정에 쓰지 않습니다.",

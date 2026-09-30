@@ -76,7 +76,7 @@ from kwise.report.notices import (
     settled_composition,
     settled_row,
 )
-from kwise.report.worksheet import COLUMNS
+from kwise.report.worksheet import COLUMNS, ess_investment_rows
 from kwise.tariff.labels import SEASON_LABELS, option_label
 
 __all__ = [
@@ -350,15 +350,52 @@ def combination_notes(sections: DocumentSections) -> tuple[str, ...]:
     """조합 장 ※ — **조합만 하향을 권하는 벌**에서 필수 안내 한 줄 (S259 결정 3).
 
     2단계가 하향을 권하면 계약 장 ※ 가 이미 싣는다(:func:`caution_notes`) — 같은 원칙으로
-    권하는 장에만 선다 (S258 결정 3 · 4).
+    권하는 장에만 선다 (S258 결정 3 · 4). ESS 크기 안내가 그 아래에 선다 (S264 결정 1).
     """
     adequacy = sections.diagnosis.contract if sections.diagnosis is not None else None
     adjustment = adequacy.adjustment if adequacy is not None else None
+    notes: list[str] = []
     if lowering_recommended(None, sections.comparison) and not lowering_recommended(
         adjustment, None
     ):
-        return (CONTRACT_CHANGE_WARNING,)
-    return ()
+        notes.append(CONTRACT_CHANGE_WARNING)
+    if (size := ess_size_note(sections)) is not None:
+        notes.append(size)
+    return tuple(notes)
+
+
+#: 조합 장 ESS 크기 안내 (S264 결정 1 · 사람 결정). ※ 표식은 :func:`_note` 가 붙인다.
+ESS_SIZE_NOTE = (
+    "태양광이 피크를 먼저 낮춰, 조합의 ESS 는 단독 도입({power} kW / {capacity} kWh)보다 "
+    "작은 {combo_power} kW / {combo_capacity} kWh 로 충분합니다."
+)
+
+
+def ess_size_note(sections: DocumentSections) -> str | None:
+    """조합 ESS 가 2단계 ESS 보다 작은 까닭 한 줄 (S264 결정 1).
+
+    **이 글이 참일 때만 선다** — 조합 표에서 ESS 가 든 첫 줄에 태양광이 들고, 목표가
+    2단계와 같고, 출력 · 용량이 다 2단계 이하이며 둘이 같지 않을 때다. 조합이 더 크거나 ·
+    태양광 없이 작거나 · 목표가 다르면 세우지 않는다. 값은 적힌 글자(kW 정수)로 견준다.
+    """
+    comparison = sections.comparison
+    stage = next((e.ess_sizing for e in sections.measures if e.ess_sizing is not None), None)
+    if comparison is None or stage is None:
+        return None
+    row = next((item for item in comparison.combinations if item.ess_size_text), None)
+    if row is None or row.dispatch is None or row.spec.ess_target_kw is None:
+        return None
+    target, power, capacity = (round(value) for value in stage)
+    combo = (round(row.dispatch.power_kw), round(row.dispatch.capacity_kwh))
+    smaller = combo[0] <= power and combo[1] <= capacity and combo != (power, capacity)
+    if not (row.spec.has_pv and round(row.spec.ess_target_kw) == target and smaller):
+        return None
+    return ESS_SIZE_NOTE.format(
+        power=f"{power:,}",
+        capacity=f"{capacity:,}",
+        combo_power=f"{combo[0]:,}",
+        combo_capacity=f"{combo[1]:,}",
+    )
 
 
 #: 수단별 장을 가리키는 목차 한 줄 (38세션 1-1).
@@ -2446,28 +2483,13 @@ def appendix_pages(sections: DocumentSections) -> tuple[AppendixPage, ...]:
             (str(value[0]), str(value[1]), str(value[2])) for value in sheet.frame().to_numpy()
         ]
         if sheet.key == "ess":
-            records = _ess_investment_row(records)
+            records = ess_investment_rows(records)
         chunks = appendix_chunks(records)
         name = labels.get(sheet.key, sheet.title)
         for index, chunk in enumerate(chunks, start=1):
             suffix = f" ({index}/{len(chunks)})" if len(chunks) > 1 else ""
             pages.append(AppendixPage(f"{APPENDIX_SLIDE_TITLE} — {name}{suffix}", tuple(chunk)))
     return tuple(pages) or (AppendixPage(APPENDIX_SLIDE_TITLE, ()),)
-
-
-#: ESS 근거 표에서 PPT 가 투자비 한 줄로 합치는 줄 (S263 결정 4). Excel 부록 A 는 세 줄 그대로다.
-_ESS_COST_PARTS = ("설비비", "전기공사")
-
-
-def _ess_investment_row(records: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
-    """「설비비 · 전기공사 · 투자비」 → 「투자비 | 설비와 전기공사 포함 | {값}」 (S263 결정 4)."""
-    if not all(any(record[0] == part for record in records) for part in _ESS_COST_PARTS):
-        return records
-    return [
-        ("투자비", "설비와 전기공사 포함", record[2]) if record[0] == "투자비" else record
-        for record in records
-        if record[0] not in _ESS_COST_PARTS
-    ]
 
 
 def _is_blank(record: tuple[str, str, str]) -> bool:
