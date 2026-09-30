@@ -795,7 +795,8 @@ def test_조합_그림은_그릴_막대가_없는_조합을_세우지_않는다(
     assert "기준선 (현행)" not in list(frame["조합"])
     for item in sample_comparison.combinations:
         empty = int(item.saving_won / 1_000) == 0 and item.investment_won == 0
-        assert (item.name in list(frame["조합"])) != empty, item.name
+        # 눈금은 짧은 이름이다 (S263 결정 6 — ESS 줄은 규격)
+        assert (item.short_name in list(frame["조합"])) != empty, item.short_name
     unpriced = dataclasses.replace(sample_comparison.baseline, investment_won=None)
     shown = combination_frame(dataclasses.replace(sample_comparison, combinations=(unpriced,)))
     assert list(shown["조합"]) == ["기준선 (현행)"]

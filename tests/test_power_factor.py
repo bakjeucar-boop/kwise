@@ -158,7 +158,7 @@ def test_exceeding_the_standard_reads_as_a_rebate() -> None:
     """초과 쪽도 폭을 적는다. 감액이므로 「추가」 라 하지 않는다."""
     charge = power_factor_charge(1_000_000.0, lagging_pct=93.0)
     text = next(item.text for item in charge.notices if item.fact == "power_factor.lagging_ratio")
-    assert "1.0%p 초과" in text
+    assert "1%p 초과" in text  # S263 결정 7 — 반올림 값에서 나온 폭은 정수 (옛 「1.0%p」)
     assert "0.2% 감액" in text
     assert "미달" not in text
 

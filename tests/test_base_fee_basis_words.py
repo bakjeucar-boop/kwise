@@ -1536,7 +1536,7 @@ def test_PPT_수단_장으로_옮긴_주의사항은_Word_3장이_적는_글자�
         "계약전력 하향은 되돌리기",
         "감축계획량을 채우지",
         "무효전력 실측이 없어",
-        "규칙기반 단일 디스패치",
+        "정해진 규칙 한 가지로 운전한다고",  # S263 결정 1 — 옛 「규칙기반 단일 디스패치」
         "기본요금을 계약전력으로 매겼습니다",
         "종별을 확인하십시오",
     )
@@ -2469,7 +2469,7 @@ def _s260_check(item: str) -> None:
             patch.setattr(notices, "diff_from_defaults", lambda: changed)
             assert notices.applied_basis_line(market_rules=True) == (
                 "한전 기본공급약관 · 전기요금표 · 전력시장운영규칙"
-                " — 일부 값을 바꿔 계산했습니다 (Excel 부록 B)"
+                " — 일부 값을 바꿔 계산했습니다"  # S263 결정 3 곁 — 「(Excel 부록 B)」 를 뺐다
             )
         elif item == "2":
             # 고객 산출물에서 「올려 주신」 을 뺀다 · 화면은 그대로
@@ -2617,7 +2617,11 @@ def _s262_check(item: str, request: pytest.FixtureRequest) -> None:
         assert lagging_adjustment_ratio(95.4) == lagging_adjustment_ratio(95.0)
         # (가1) 99.68 — 설명 글의 폭은 반올림한 100 에서 · 머리는 넣은 값 · 도입 후 역률은 정수
         lines = [" | ".join(row) for row in _render_human().rows]
-        head = "주간 지상역률 99.7% — 기준 92% 대비 8.0%p 초과, 기본요금의 1.0% 감액"
+        # S263 결정 7 — 두 값을 함께 · 폭과 감액률은 정수 (옛 「99.7% — … 8.0%p 초과, … 1.0% 감액」)
+        head = (
+            "주간 지상역률 99.7% (요금 계산은 1% 단위 반올림 100%) — 기준 92% 대비 8%p 초과, "
+            "기본요금의 1% 감액"
+        )
         assert [t for t in lines if head in t], [t for t in lines if "기준 92% 대비" in t]
         assert not [t for t in lines if "7.7%p" in t]
         assert [t for t in lines if "도입 후 역률 100% · 기본요금이 준 만큼 감액도 준다" in t]
@@ -2676,7 +2680,8 @@ def _s262_check(item: str, request: pytest.FixtureRequest) -> None:
         assert snap_spec(power, capacity) == (power, capacity), (power, capacity)
         spec = f"{power:,.0f} kW / {capacity:,.0f} kWh (목표 5,000 kW)"
         assert row.row_name == f"+ ESS {spec}"
-        assert f"ESS {spec}" in str(comparison.frame().loc[row.name, "수단"])
+        # S263 결정 6 — Excel 조합 비교 A 열도 줄 이름 꼴
+        assert f"ESS {spec}" in str(comparison.frame().loc[row.row_name, "수단"])
         hours = capacity / power
         facts = {item.fact for item in row.notices}
         assert ("ess.high_c_rate" in facts) == (0 < hours < high_rate_discharge_hours())
@@ -2725,3 +2730,191 @@ def test_S262_역률_반올림_태양광_ESS_한_값_조합_ESS_규격(
       PPT · Word 조합 줄과 Excel 수단 칸에 사양.
     """
     _s262_check(item, request)
+
+
+def _s263_legend(figure: Any) -> tuple[list[str], list[str]]:
+    """그림 하나의 (범례 차례, 막대가 위에서 아래로 선 차례) — 첫 칸의 막대로 잰다."""
+    axes = figure.axes[0]
+    legend = [text.get_text() for text in axes.get_legend().get_texts()]
+    bars = [(box.get_label(), box.patches[0]) for box in axes.containers]
+    if axes.yaxis_inverted():  # 가로 무리 막대 — y 가 작을수록 위다
+        drawn = [label for label, _bar in sorted(bars, key=lambda item: item[1].get_y())]
+    else:  # 세로 누적 막대 — 밑단이 높을수록 위다
+        drawn = [label for label, _bar in sorted(bars, key=lambda item: -item[1].get_y())]
+    return legend, drawn
+
+
+def _s263_check(item: str, request: pytest.FixtureRequest) -> None:
+    """S263 결정 1 ~ 7 · 3 곁을 덱 벌 · 확인 사례 (가1) · 표본 비교의 실물과 계산으로 본다."""
+    from kwise.report.document import ESS_PAYBACK_CAVEAT
+
+    old_caveat = "규칙기반 단일 디스패치"
+    if item == "1":
+        from pptx import Presentation
+
+        rendered = _render("large-b-over")
+        texts = [" | ".join(str(v) for v in row) for row in rendered.rows]
+        assert not [t for t in texts if old_caveat in t]
+        assert [t for t in texts if t.startswith("Word") and ESS_PAYBACK_CAVEAT in t]
+        # PPT ESS 장 — 단서가 윗줄 ※ 와 한 글상자에 잇는다
+        boxes = [
+            [p.text for p in shape.text_frame.paragraphs]
+            for slide in Presentation(io.BytesIO(rendered.payloads["ppt"])).slides
+            for shape in slide.shapes
+            if shape.has_text_frame
+            and any(ESS_PAYBACK_CAVEAT in p.text for p in shape.text_frame.paragraphs)
+        ]
+        assert len(boxes) == 1, boxes
+        assert [t for t in boxes[0] if t.startswith("※ 표식")], boxes
+    elif item == "2":
+        from kwise.report import figures
+
+        captured: list[Any] = []
+
+        def grab(figure: Any) -> bytes:
+            captured.append(figure)
+            return b""
+
+        patch = pytest.MonkeyPatch()
+        patch.setattr(figures, "render_png", grab)
+        try:
+            figures.combination_png(request.getfixturevalue("sample_comparison"))
+            structure = request.getfixturevalue("sample_diagnosis").structure
+            figures.monthly_charge_png(structure)
+        finally:
+            patch.undo()
+        combination, monthly = (_s263_legend(figure) for figure in captured)
+        assert combination == (["투자비", "절감액"], ["투자비", "절감액"]), combination
+        assert monthly[0] == monthly[1] and monthly[0][-1] == "기본요금", monthly
+    elif item == "3":
+        rendered = _render("large-b-over")
+        deck = [" | ".join(str(v) for v in row) for row in rendered.rows if row[0] == "PPT"]
+        assert not [t for t in deck if "Excel" in t or "근거를 싣지 않았습니다" in t]
+    elif item == "3곁":
+        from kwise.report import notices
+
+        patch = pytest.MonkeyPatch()
+        patch.setattr(notices, "diff_from_defaults", lambda: ("바꾼 항목",))
+        try:
+            line = notices.applied_basis_line(market_rules=False)
+        finally:
+            patch.undo()
+        assert line == "한전 기본공급약관 · 전기요금표 — 일부 값을 바꿔 계산했습니다", line
+    elif item == "4":
+        rendered = _render("large-b-over")
+        tables = [
+            row[2:] for row in rendered.rows if row[0] == "PPT" and str(row[1]).endswith("표")
+        ]
+        invest = [row for row in tables if row[:2] == ("투자비", "설비와 전기공사 포함")]
+        assert len(invest) == 1, invest
+        assert not [row for row in tables if row[0] in ("설비비", "전기공사")]
+        excel = [row for row in rendered.rows if row[0] == "Excel" and "ESS 계산 근거" in row]
+        assert [row for row in excel if "설비비" in row] and [r for r in excel if "전기공사" in r]
+        total = next(row for row in excel if "투자비" in row)
+        assert total[-1] == invest[0][2], (total, invest)
+    elif item == "5":
+        from kwise.compare import CombinationSpec, evaluate_combination
+        from kwise.measures import power_factor_after_pct, with_load
+        from kwise.tariff import BillingOptions, TariffSelection, billed_pct, calculate_bill
+
+        usage = request.getfixturevalue("sample_usage")
+        tariff = request.getfixturevalue("tariff")
+        selection = TariffSelection("general_b", "high_a", "I")
+        # 반올림 경계(92.5 → 93) — ESS 가 낮 부하를 줄이면 92 로 셈한다
+        options = BillingOptions(power_factor_pct=92.5)
+        row = evaluate_combination(
+            usage,
+            tariff,
+            CombinationSpec("+ ESS 목표 5,200 kW", selection, ess_target_kw=5_200.0),
+            baseline_bill=calculate_bill(usage, tariff, selection, options=options),
+            options=options,
+        )
+        assert row.dispatch is not None and row.load_kw is not None
+        after = billed_pct(
+            power_factor_after_pct(
+                usage.kw,
+                usage.kw - row.load_kw,
+                power_factor_pct=92.5,
+                interval_minutes=usage.meta.interval_minutes,
+            )
+        )
+        assert after == 92.0, after
+        billed = calculate_bill(
+            with_load(usage, row.load_kw),
+            tariff,
+            row.selection,
+            options=BillingOptions(power_factor_pct=after),
+        )
+        assert row.bill.total_won == pytest.approx(billed.total_won)
+    elif item == "6":
+        from kwise.report import slides_bytes
+        from kwise.report.document import DocumentSections, document_bytes
+        from kwise.report.frames import combination_frame
+
+        comparison = request.getfixturevalue("sample_comparison")
+        row = comparison.combinations[-1]
+        assert row.dispatch is not None and comparison.best is row
+        size = f"{row.dispatch.power_kw:,.0f} kW / {row.dispatch.capacity_kwh:,.0f} kWh"
+        short = f"+ ESS {size}"
+        full = f"+ ESS {size} (목표 5,000 kW)"
+        assert (row.short_name, row.row_name) == (short, full)
+        assert f"ESS {size}" in row.composition() and "ESS 5,000 kW" not in row.composition()
+        assert full in comparison.frame().index
+        assert short in list(combination_frame(comparison)["조합"])
+        assert [n for n in comparison.notices if n.text.startswith(f"{full} — ")]
+        assert not [n for n in comparison.notices if "ESS 목표 5,000 kW" in n.text]
+        sections = DocumentSections(
+            usage=request.getfixturevalue("sample_usage"),
+            bill=request.getfixturevalue("sample_bill"),
+            diagnosis=request.getfixturevalue("sample_diagnosis"),
+            comparison=comparison,
+        )
+        deck = _deck(slides_bytes(sections)[0])
+        word = _document(document_bytes(sections)[0])
+        assert [t for t in word if t == short], [t for t in word if "ESS" in t]
+        assert [t for t in deck + word if f"+ ESS {size} + " in t or t.endswith(f"+ ESS {size}")]
+        assert not [t for t in deck + word if "ESS 목표 5,000 kW" in t or "ESS 5,000 kW" in t]
+    elif item == "7":
+        from kwise.tariff import power_factor_charge
+
+        def said(**kwargs: float) -> list[str]:
+            return [n.text for n in power_factor_charge(1_000_000.0, **kwargs).notices]
+
+        # (가1) 99.68 — 입력값과 반올림 값을 함께 · 폭과 감액률은 정수
+        lines = [" | ".join(row) for row in _render_human().rows]
+        head = (
+            "주간 지상역률 99.7% (요금 계산은 1% 단위 반올림 100%) — 기준 92% 대비 8%p 초과, "
+            "기본요금의 1% 감액"
+        )
+        hits = [t for t in lines if head in t]
+        assert [t for t in hits if t.startswith("Excel | 요약")], hits
+        assert not [t for t in lines if "8.0%p" in t]
+        # 같으면 괄호가 없다 · 판정이 반올림 값에서 나오면 두 값을 함께
+        assert "주간 지상역률 96.0% — 기준 92% 대비 4%p 초과, 기본요금의 0.8% 감액" in " ".join(
+            said(lagging_pct=96.0)
+        )
+        assert said(lagging_pct=91.6)[2].startswith(
+            "주간 지상역률 91.6% (요금 계산은 1% 단위 반올림 92%) — 기준 92% 충족"
+        )
+        below = [t for t in said(lagging_pct=89.6) if t.startswith("주간 지상역률이")]
+        assert below and "(89.6%, 요금 계산은 1% 단위 반올림 90%)" in below[0], below
+        assert (
+            "야간 진상역률 94.6% (요금 계산은 1% 단위 반올림 95%) — 기준 95% 이상이라 추가 없음."
+            in said(lagging_pct=96.0, leading_pct=94.6)
+        )
+    else:
+        pytest.fail(f"모르는 항목 {item}")
+
+
+@pytest.mark.parametrize("item", ["1", "2", "3", "3곁", "4", "5", "6", "7"])
+def test_S263_PPT_의견_넷_조합_ESS_역률_이름_역률_설명_글(
+    item: str, request: pytest.FixtureRequest
+) -> None:
+    """**S263 결정 1 ~ 7** (사람 결정 1 ~ 4 · 웹 대화창 판단 3 곁 · 5 · 6 · 7).
+
+    1 ESS 단서는 새 글자 · PPT 에서 윗줄 ※ 와 한 글상자. 2 조합 · 월별 요금 그림의 범례 차례 =
+    막대가 선 차례. 3 PPT 에 Excel 안내 · 뺀 수단 각주가 없다. 3곁 적용 기준 꼬리에 Excel 이 없다.
+    4 PPT ESS 부록 투자비 한 줄 · Excel 부록 A 는 세 줄. 5 조합 ESS 도 도입 후 역률로 셈한다.
+    6 조합 ESS 는 규격으로 이름을 적는다. 7 역률 설명 글은 입력값과 반올림 값을 함께 · 정수 %.
+    """
+    _s263_check(item, request)

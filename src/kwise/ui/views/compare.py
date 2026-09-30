@@ -518,7 +518,7 @@ def _measure_notice_heads(comparison: ComparisonResult) -> dict[Notice, Notice]:
         shown: item
         for index, result in enumerate(comparison.combinations)
         for item, shown in zip(
-            result.notices, prefixed(result.notices, result.name, tag=f"c{index}"), strict=True
+            result.notices, prefixed(result.notices, result.row_name, tag=f"c{index}"), strict=True
         )
     }
     wording = Counter(fact for fact, _text in {(o.fact_base, o.text) for o in origin.values()})

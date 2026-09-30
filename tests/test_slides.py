@@ -721,7 +721,8 @@ LEAD_SLIDES: tuple[str, ...] = (
     "structure",
     "measure_summary",
     "combination",
-    "appendix",
+    # 「appendix」 는 뺐다 (S263 결정 3) — 그 장의 「니다.」 한 줄은 뺀 수단 각주였고
+    # 부록은 해석 한 줄을 두지 않는 장이다(53세션 1-6 · `_build_appendix`).
 )
 
 
@@ -1184,8 +1185,9 @@ def test_부록이_넘치면_장을_나눈다(full_sections: DocumentSections) -
 def test_부록이_수단마다_한_장_이상이다(full_sections: DocumentSections) -> None:
     """**분석한 자료를 감추지 않는다** (39세션 5절).
 
-    절감액이 산출된 수단은 모두 근거가 실리고, 0이거나 미산출인 수단은 빠지되
-    **뺐다는 사실을 각주가 적는다** — 조용히 빼면 「검토하지 않았다」 로 읽힌다.
+    절감액이 산출된 수단은 모두 근거가 실리고, 0이거나 미산출인 수단은 빠진다.
+    **뺐다는 각주는 두지 않는다** (S263 결정 3 — 고객은 Excel 을 받지 않고 같은 줄이 부록
+    장마다 되풀이됐다). 검토했다는 사실은 「개선안별 요약」 표가 적는다.
     """
     sections = full_sections
     priced = [entry for entry in sections.measures if entry.has_saving]
@@ -1203,8 +1205,8 @@ def test_부록이_수단마다_한_장_이상이다(full_sections: DocumentSect
         assert not any(measure_slide_title(entry) in title for title in titles)
     text = _deck_text(build_slides(sections))
     for entry in dropped:
-        assert entry.kind.label in text, "뺐다는 사실을 각주가 적는다."
-    assert "전문은 Excel 부록 A 에 있습니다" in text
+        assert entry.kind.label in text, "검토한 수단은 요약 표가 적는다."
+    assert "Excel 부록" not in text and "근거를 싣지 않았습니다" not in text
 
 
 # ===================================================================== ⑦ 글꼴·한글
@@ -2293,7 +2295,7 @@ def test_부록이_효과_있는_수단을_빠뜨리지_않는다(full_sections:
     import dataclasses
     import inspect
 
-    from kwise.report.slides import _appendix_note, appendix_pages, measure_slide_title
+    from kwise.report.slides import appendix_pages, measure_slide_title
 
     sections = dataclasses.replace(full_sections, measures=_all_measures(full_sections))
     titles = " ".join(page.title for page in appendix_pages(sections))
@@ -2320,13 +2322,10 @@ def test_부록이_효과_있는_수단을_빠뜨리지_않는다(full_sections:
     ):
         assert name in source, f"근거 표를 만들지 않는 수단이 있습니다: {name}"
 
-    note = _appendix_note(sections)
-    dropped = [item for item in sections.measures if not item.has_saving]
-    if dropped:
-        assert "절감액이 0 이거나 산출되지 않은 수단" in note, note
-        for entry in dropped:
-            assert measure_slide_title(entry) in note, note
-    assert "자리가 모자라" not in note
+    # 부록 장 각주는 두지 않는다 (S263 결정 3 — 옛 「절감액이 0 이거나 … 전문은 Excel 부록 A」).
+    text = _deck_text(build_slides(sections))
+    assert "근거를 싣지 않았습니다" not in text and "Excel 부록" not in text
+    assert "자리가 모자라" not in text
 
 
 def test_태양광_절감액은_역률_변화를_담은_한_값이다(

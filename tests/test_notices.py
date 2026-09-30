@@ -380,15 +380,18 @@ def test_Excel_요약이_여유_확보_안내를_한_번만_싣는다(
     assert 선줄 == ["계약전력 변경 경고"], 선줄
     조합 = [text for _label, kind, text in rows if kind == "조합"]
     assert [text for text in 조합 if text.endswith(공통.text)] == [공통.text], 조합
-    assert [text for text in 조합 if text.endswith(홀로.text)] == [f"{바꾼[1].name} — {홀로.text}"]
-    값다른 = [f"{item.name} — 조합마다 값이 다른 문장 {i}." for i, item in enumerate(바꾼) if i]
+    # 머리는 조합 표 줄 이름이다 (S263 결정 6 — ESS 줄은 규격 · 목표까지)
+    assert [text for text in 조합 if text.endswith(홀로.text)] == [
+        f"{바꾼[1].row_name} — {홀로.text}"
+    ]
+    값다른 = [f"{item.row_name} — 조합마다 값이 다른 문장 {i}." for i, item in enumerate(바꾼) if i]
     assert [text for text in 조합 if "조합마다 값이 다른 문장" in text] == 값다른
     assert [text for text in 조합 if text.endswith(수단.text)] == [수단.text], 조합
     assert [text for text in 조합 if text.endswith(조합몫.text)] == [
-        f"{바꾼[i].name} — {조합몫.text}" for i in 일부
+        f"{바꾼[i].row_name} — {조합몫.text}" for i in 일부
     ], 조합
     assert [text for text in 조합 if "수단 값이 다른 문장" in text] == [
-        f"{바꾼[i].name} — 수단 값이 다른 문장 {i}." for i in 일부
+        f"{바꾼[i].row_name} — 수단 값이 다른 문장 {i}." for i in 일부
     ], 조합
 
 
@@ -506,7 +509,8 @@ def test_경부하_새_피크가_한_번만_나오고_다른_경고를_먹지_�
     assert bases.count("ess.charge_new_peak") == 1
     # 조합명은 **문구에만** 있다. 사실 ID 는 깨끗하다.
     peak = next(item for item in kept if item.fact_base == "ess.charge_new_peak")
-    assert peak.text.startswith("+ ESS 목표 450 kW — ")
+    # 머리는 조합 표 줄 이름이다 (S263 결정 6 — 옛 「+ ESS 목표 450 kW — 」)
+    assert peak.text.startswith("+ ESS 2,000 kW / 5,000 kWh (목표 450 kW) — ")
     assert peak.fact == "ess.charge_new_peak:c1"
 
 
