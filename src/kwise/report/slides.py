@@ -367,7 +367,7 @@ def combination_notes(sections: DocumentSections) -> tuple[str, ...]:
 #: 조합 장 ESS 크기 안내 (S264 결정 1 · 사람 결정). ※ 표식은 :func:`_note` 가 붙인다.
 ESS_SIZE_NOTE = (
     "태양광이 피크를 먼저 낮춰, 조합의 ESS 는 단독 도입({power} kW / {capacity} kWh)보다 "
-    "작은 {combo_power} kW / {combo_capacity} kWh 로 충분합니다."
+    "작은 {combopower} kW / {combocapacity} kWh 로 충분합니다."
 )
 
 
@@ -393,8 +393,8 @@ def ess_size_note(sections: DocumentSections) -> str | None:
     return ESS_SIZE_NOTE.format(
         power=f"{power:,}",
         capacity=f"{capacity:,}",
-        combo_power=f"{combo[0]:,}",
-        combo_capacity=f"{combo[1]:,}",
+        combopower=f"{combo[0]:,}",
+        combocapacity=f"{combo[1]:,}",
     )
 
 

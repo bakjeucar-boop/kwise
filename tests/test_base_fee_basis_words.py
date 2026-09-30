@@ -1924,7 +1924,12 @@ def _s256_check(item: str) -> None:
             "없음",
             "없음",
         )
-        assert [t for t in lines if "지상역률 99.7% 는 감액 상한 97% 이상이라" in t]
+        # 판정은 반올림 값이라 두 값을 함께 밝힌다 (S264 결정 2).
+        assert [
+            t
+            for t in lines
+            if "지상역률 99.7% (요금 계산은 1% 단위 반올림 100%) 는 감액 상한 97% 이상이라" in t
+        ]
         assert not [t for t in lines if "지상역률 100% 는" in t]
         legend = [r[-1] for r in confirm.figures if "power_triangle_png" in r[1] and r[2] == "범례"]
         assert legend and all(t.startswith("현재 — 역률 99.7% · ") for t in legend), legend
@@ -2918,3 +2923,165 @@ def test_S263_PPT_의견_넷_조합_ESS_역률_이름_역률_설명_글(
     6 조합 ESS 는 규격으로 이름을 적는다. 7 역률 설명 글은 입력값과 반올림 값을 함께 · 정수 %.
     """
     _s263_check(item, request)
+
+
+def _s264_sections(
+    request: pytest.FixtureRequest, stage: tuple[float, float, float], *, pv: bool = True
+) -> Any:
+    """표본 비교(끝 줄 = 태양광 500 kWp + ESS 목표 5,000 kW)에 2단계 ESS 사양을 단 재료."""
+    from dataclasses import replace
+
+    from kwise.measures import measure_kind
+    from kwise.report.document import DocumentSections, MeasureEntry
+
+    comparison = request.getfixturevalue("sample_comparison")
+    if not pv:
+        rows = tuple(
+            replace(item, spec=replace(item.spec, pv_capacity_kwp=0.0))
+            for item in comparison.combinations
+        )
+        comparison = replace(comparison, combinations=rows)
+    entry = MeasureEntry(
+        kind=measure_kind("ess"),
+        conclusion="",
+        saving="",
+        investment="",
+        payback="",
+        certainty="",
+        ess_sizing=stage,
+    )
+    return DocumentSections(
+        usage=request.getfixturevalue("sample_usage"),
+        bill=request.getfixturevalue("sample_bill"),
+        diagnosis=request.getfixturevalue("sample_diagnosis"),
+        comparison=comparison,
+        measures=(entry,),
+    )
+
+
+def _s264_check(item: str, request: pytest.FixtureRequest, tmp_path: Path) -> None:
+    """S264 결정 1 ~ 6 을 표본 비교 · 덱 벌 · 실제로 만든 산출물의 글자로 본다."""
+    from kwise.report.slides import combination_notes
+
+    comparison = request.getfixturevalue("sample_comparison")
+    row = comparison.combinations[-1]
+    assert row.dispatch is not None and row.spec.has_pv
+    power, capacity = round(row.dispatch.power_kw), round(row.dispatch.capacity_kwh)
+    if item == "1":
+        from kwise.report import slides_bytes
+
+        sections = _s264_sections(request, (5_000.0, power + 100.0, capacity + 100.0))
+        text = (
+            f"태양광이 피크를 먼저 낮춰, 조합의 ESS 는 단독 도입({power + 100:,} kW / "
+            f"{capacity + 100:,} kWh)보다 작은 {power:,} kW / {capacity:,} kWh 로 충분합니다."
+        )
+        assert text in combination_notes(sections), combination_notes(sections)
+        deck = _deck(slides_bytes(sections)[0])
+        assert f"※ {text}" in deck, [t for t in deck if t.startswith("※")]
+    elif item == "1안":
+        # 참이 아니면 세우지 않는다 — 같다 · 조합이 더 크다 · 목표가 다르다 · 태양광 없이 작다
+        cases = {
+            "같다": _s264_sections(request, (5_000.0, float(power), float(capacity))),
+            "조합이 더 크다": _s264_sections(request, (5_000.0, power / 2, capacity / 2)),
+            "한쪽만 작다": _s264_sections(request, (5_000.0, power + 100.0, capacity / 2)),
+            "목표가 다르다": _s264_sections(request, (5_100.0, power + 100.0, capacity + 100.0)),
+            "태양광 없음": _s264_sections(
+                request, (5_000.0, power + 100.0, capacity + 100.0), pv=False
+            ),
+        }
+        for name, sections in cases.items():
+            assert not [t for t in combination_notes(sections) if "조합의 ESS" in t], name
+        ppt = [row for row in _render("large-b-over").rows if row[0] == "PPT"]
+        assert not [row for row in ppt if "조합의 ESS 는 단독 도입" in str(row[-1])]
+    elif item == "2":
+        from kwise.measures import evaluate_power_factor
+        from kwise.report.document import _power_factor_conclusion
+        from kwise.tariff import TariffSelection
+
+        selection = TariffSelection("general_b", "high_a", "I")
+        usage = request.getfixturevalue("sample_usage")
+        tariff = request.getfixturevalue("tariff")
+        tail = " 는 감액 상한 97% 이상이라 개선할 것이 없습니다."
+        mixed = evaluate_power_factor(usage, tariff, selection, current_pct=96.7)
+        assert mixed.no_headroom
+        head = "지상역률 96.7% (요금 계산은 1% 단위 반올림 97%)"
+        assert f"현재 {head}{tail}" in [n.text for n in mixed.notices]
+        assert _power_factor_conclusion(mixed) == f"{head}{tail}"
+        same = evaluate_power_factor(usage, tariff, selection, current_pct=98.0)
+        assert f"현재 지상역률 98.0%{tail}" in [n.text for n in same.notices]
+        assert _power_factor_conclusion(same) == f"지상역률 98.0%{tail}"
+    elif item == "3":
+        rendered = _render("large-b-over")
+        word = [
+            row[2:] for row in rendered.rows if row[0] == "Word" and str(row[1]).startswith("표")
+        ]
+        invest = [row for row in word if row[:2] == ("투자비", "설비와 전기공사 포함")]
+        assert len(invest) == 1, invest
+        assert not [row for row in word if row[:2] == ("설비비", "도입 사례 회귀")]
+        assert not [row for row in word if row[:2] == ("전기공사", "옥외 기준 구간의 대표값")]
+        excel = [row for row in rendered.rows if row[0] == "Excel" and "ESS 계산 근거" in row]
+        assert [row for row in excel if "설비비" in row] and [r for r in excel if "전기공사" in r]
+        total = next(row for row in excel if "투자비" in row)
+        assert total[-1] == invest[0][2], (total, invest)
+    elif item == "4":
+        # 0줄 — 조정률 칸은 반올림 값에서 나온 한 값이고 입력값은 옆 줄에 따로 선다
+        from kwise.measures import evaluate_power_factor
+        from kwise.report.worksheet import power_factor_worksheet
+        from kwise.tariff import TariffSelection
+
+        result = evaluate_power_factor(
+            request.getfixturevalue("sample_usage"),
+            request.getfixturevalue("tariff"),
+            TariffSelection("general_b", "high_a", "I"),
+            current_pct=96.4,
+        )
+        cells = {r.label: r.value for r in power_factor_worksheet(result).rows}
+        assert (cells["현재 역률"], cells["조정률"]) == ("96.4%", "+0.2%p"), cells
+    elif item == "5":
+        from kwise.report.batch import CaseSpec, run_case
+        from tests.conftest import ESS_COST_WON_PER_KW, SAMPLE_USAGE_CSV
+
+        if not SAMPLE_USAGE_CSV.is_file():
+            pytest.skip(f"샘플 파일이 없습니다: {SAMPLE_USAGE_CSV}")
+        patch = pytest.MonkeyPatch()
+        patch.setenv("PROJECT_CACHE", str(tmp_path / "cache"))
+        try:
+            summary = run_case(
+                CaseSpec(
+                    name="S264",
+                    usage=SAMPLE_USAGE_CSV,
+                    ess_target_kw=5_000.0,
+                    ess_unit_cost_won_per_kw=ESS_COST_WON_PER_KW,
+                ),
+                request.getfixturevalue("tariff"),
+                output_dir=tmp_path / "out",
+                include_timeseries=False,
+            )
+        finally:
+            patch.undo()
+        name = summary.best_combination
+        assert re.search(r"\+ ESS [\d,]+ kW / [\d,]+ kWh$", name), name
+        assert "목표" not in name, name
+    elif item == "6":
+        size = f"{power:,} kW / {capacity:,} kWh"
+        sizing = [n.text for n in comparison.notices if n.fact.startswith("combination.ess_sizing")]
+        assert sizing and all(
+            t.startswith(f"+ ESS {size} (목표 5,000 kW) — 하루 최대 초과 에너지 ") for t in sizing
+        ), sizing
+        assert all(t.count(size) == 1 for t in sizing), sizing
+    else:
+        pytest.fail(f"모르는 항목 {item}")
+
+
+@pytest.mark.parametrize("item", ["1", "1안", "2", "3", "4", "5", "6"])
+def test_S264_조합_ESS_크기_안내_역률_상한_글_ESS_투자비_한_줄_이름(
+    item: str, request: pytest.FixtureRequest, tmp_path: Path
+) -> None:
+    """**S264 결정 1 ~ 6** (사람 결정 1 · 웹 대화창 판단 2 ~ 6).
+
+    1 조합 ESS 가 2단계보다 작고 태양광이 들면 PPT 조합 장 ※ 한 줄. 1안 참이 아니면 안 선다.
+    2 역률 상한 판정 글은 입력값과 반올림 값을 함께(같으면 괄호 없음).
+    3 Word ESS 부록 투자비 한 줄 · Excel 은 세 줄. 4 조정률 칸은 한 값(0줄).
+    5 배치 요약 CSV 권장 조합은 규격 이름. 6 조합 ESS 안내에 사양이 한 번.
+    """
+    _s264_check(item, request, tmp_path)

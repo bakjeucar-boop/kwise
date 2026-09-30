@@ -249,7 +249,7 @@ class MeasureEntry:
     :func:`~kwise.measures.spec_mark_note` 가 **표에 실제로 붙은 표식만** 골라
     적는다 — 셋을 늘 깔면 없는 표식을 설명하게 된다."""
     ess_sizing: tuple[float, float, float] | None = None
-    """2단계 ESS (목표 kW, 출력 kW, 용량 kWh) — PPT 조합 장 ESS 크기 안내가 견준다 (S264 결정 1)."""
+    """2단계 ESS (목표 kW, 출력 kW, 용량 kWh) — PPT 조합 장 ESS 크기 안내가 읽는다 (S264 결정 1)."""
 
     @property
     def slide_saving(self) -> str:
