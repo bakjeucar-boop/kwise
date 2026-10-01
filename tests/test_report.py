@@ -213,15 +213,20 @@ PROGRAM_SYMBOL = re.compile(r"\b(?:True|False|None|[a-z]+(?:_[a-z0-9]+)*)\b")
 UNNAMED_VALUES = {"all_to_light", "peak_to_mid"}
 
 
-def test_부록_B_값_칸에_프로그램_기호가_없다(sample_sheets: dict[str, pd.DataFrame]) -> None:
+def test_부록_B_값_칸에_프로그램_기호가_없다(
+    sample_sections: ReportSections, tariff: TariffTable
+) -> None:
     """**부록 B 값 칸은 사람이 읽는 글자다** (S270 결정 5).
 
     참 · 거짓이 「True」 · 「False」 로, 열쇠가 「south」 · 「normal」 · 「education_a」 꼴로 섰다.
     참 · 거짓은 「적용」 · 「적용 안 함」, 열쇠는 기준 데이터나 화면이 이미 쓰는 이름이다.
     쓰는 이름이 없는 열쇠(요일 계량 규칙)는 그대로 낸다 — 그 둘만 남는다. 기준 데이터
     파일은 그대로다. Word 부록 B 도 같은 `reference_rows` 를 쓴다.
+
+    **요금표를 실어 만든다** — 계약종별 이름은 요금표가 쥔다(앱은 언제나 싣는다).
     """
-    frame = sample_sheets["부록 B 기준 데이터"]
+    sections = dataclasses.replace(sample_sections, tariff_table=tariff)
+    frame = build_sheets(sections)["부록 B 기준 데이터"]
     values = dict(zip(frame["항목"], frame["값"], strict=True))
     # 재료 — 기호가 서던 항목이 실렸다(항목 이름으로 본다).
     expected = {
