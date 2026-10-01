@@ -372,13 +372,16 @@ def test_문서는_기준_데이터_항목_수를_숫자로_적지_않는다() -
     assert not stuck, " · ".join(stuck)
 
 
-def test_화면_감사_네_수가_개요와_현재_상태에서_같다() -> None:
-    """``project-overview.md`` 4절의 감사 수가 「현재 상태」 의 「화면 감사」 칸과 같다 (S167 4절).
+def test_개요는_화면_감사_수를_숫자로_적지_않는다() -> None:
+    """``project-overview.md`` 4절은 감사 수를 **숫자로 적지 않고 가리킨다** (S270 결정 3).
+
+    정본은 「현재 상태」 의 「화면 감사」 칸이다 — 판마다 감사를 돌려 적는 자리. S167 4절은
+    개요의 네 수를 그 칸과 맞댔는데, 화면 글자가 한 줄 늘거나 줄 때마다 프로젝트 지식
+    문서가 바뀌었다(S269 에도 814 → 811 · 815 → 812). 기준 데이터 항목 수와 같은 꼴로
+    걷었다(S269 결정 4 · S233 — 한 사실은 한 자리). **정본 칸은 조건 넷의 수를 다 적는다.**
 
     **감사를 여기서 돌리지 않는다** — 한 판 35초이고 태양광 기상이 들어 시험의
-    기상 격리(``conftest.isolated_weather_archive``)와 부딪친다. 대신 판마다 감사를
-    돌려 적는 칸과 맞댄다. **한계** — 그 칸마저 낡으면 둘이 같이 낡아 안 잡힌다.
-    S166 이 본 개요는 S153 판 값(957·807·961·808)에 열세 판을 서 있었다.
+    기상 격리(``conftest.isolated_weather_archive``)와 부딪친다.
 
     조건 이름은 ``tools\\screen_audit.py`` 의 ``CASES`` 에서 읽는다 — 조건이 늘면 따라간다.
     """
@@ -404,7 +407,8 @@ def test_화면_감사_네_수가_개요와_현재_상태에서_같다() -> None
     assert len(measured) == len(screen_audit.CASES), (
         f"「화면 감사」 칸에서 {measured} 만 읽었습니다."
     )
-    assert counts(overview, r"(?<!\S){} (\d[\d,]*)") == measured, (overview, measured)
+    assert "「화면 감사」 칸" in overview, overview
+    assert counts(overview, r"(?<!\S){} (\d[\d,]*)") == {}, overview
 
 
 # ------------------------------------- 번호가 아니라 이름으로 부른다 (S131 2절)

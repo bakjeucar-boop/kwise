@@ -206,6 +206,44 @@ def test_부록_B_값_칸에_열쇠_값_객체_글자가_없다(
     assert found == {}, found
 
 
+#: 프로그램 기호 — 참 · 거짓과 영문 열쇠 이름 (S270 결정 5).
+PROGRAM_SYMBOL = re.compile(r"\b(?:True|False|None|[a-z]+(?:_[a-z0-9]+)*)\b")
+
+#: 쓰는 이름이 없어 열쇠 그대로 내는 값 (S270 결정 5 — 새 이름을 짓지 않는다).
+UNNAMED_VALUES = {"all_to_light", "peak_to_mid"}
+
+
+def test_부록_B_값_칸에_프로그램_기호가_없다(sample_sheets: dict[str, pd.DataFrame]) -> None:
+    """**부록 B 값 칸은 사람이 읽는 글자다** (S270 결정 5).
+
+    참 · 거짓이 「True」 · 「False」 로, 열쇠가 「south」 · 「normal」 · 「education_a」 꼴로 섰다.
+    참 · 거짓은 「적용」 · 「적용 안 함」, 열쇠는 기준 데이터나 화면이 이미 쓰는 이름이다.
+    쓰는 이름이 없는 열쇠(요일 계량 규칙)는 그대로 낸다 — 그 둘만 남는다. 기준 데이터
+    파일은 그대로다. Word 부록 B 도 같은 `reference_rows` 를 쓴다.
+    """
+    frame = sample_sheets["부록 B 기준 데이터"]
+    values = dict(zip(frame["항목"], frame["값"], strict=True))
+    # 재료 — 기호가 서던 항목이 실렸다(항목 이름으로 본다).
+    expected = {
+        "임시공휴일 제외 여부": "적용",
+        "저압 고객의 야간 진상역률 요금 적용 여부": "적용 안 함",
+        "요금적용전력 대상 시간대": "중간부하, 최대부하",
+        "DR 거래일 제외 요일": "토요일, 일요일, 공휴일",
+        "초·중·고교·유치원 특례를 신청할 수 있는 계약종별": "교육용전력(갑), 교육용전력(을)",
+        "기본 방위": "남",
+        "기본 설치 밀도": "보통",
+    }
+    assert {item: values.get(item) for item in expected} == expected
+    found = {
+        item: value
+        for item, value in values.items()
+        if set(PROGRAM_SYMBOL.findall(str(value))) - UNNAMED_VALUES
+    }
+    assert found == {}, found
+    # 이름 없는 열쇠는 값을 낸다 — 사라지지도 지어내지도 않는다.
+    assert {values[f"{day} 계량 규칙"] for day in ("토요일", "일요일", "공휴일")} == UNNAMED_VALUES
+
+
 def test_timeseries_sheet_carries_every_slot(
     sample_sheets: dict[str, pd.DataFrame], sample_usage: UsageData
 ) -> None:

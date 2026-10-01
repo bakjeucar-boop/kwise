@@ -1956,12 +1956,16 @@ def _s256_check(item: str) -> None:
             "없음",
             "없음",
         )
-        # 판정은 반올림 값이라 두 값을 함께 밝힌다 (S264 결정 2).
+        # 판정은 반올림 값이라 안내 줄은 두 값을 함께 밝힌다 (S264 결정 2). 결론 한 줄(PPT
+        # 역률 장 첫 문장)은 99.68 → 100 이 판정을 안 바꾸므로 넣은 값만 적는다 (S270 결정 4).
         assert [
             t
             for t in lines
-            if "지상역률 99.7% (요금 계산은 1% 단위 반올림 100%) 는 감액 상한 97% 이상이라" in t
+            if "현재 지상역률 99.7% (요금 계산은 1% 단위 반올림 100%) 는 감액 상한 97% 이상" in t
         ]
+        said = "지상역률 99.7% 는 감액 상한 97% 이상이라 개선할 것이 없습니다."
+        assert [row for row in ppt if row[-1] == said], [r for r in ppt if "감액 상한" in r[-1]]
+        assert not [row for row in ppt if "단위 반올림" in str(row[-1])]
         assert not [t for t in lines if "지상역률 100% 는" in t]
         legend = [r[-1] for r in confirm.figures if "power_triangle_png" in r[1] and r[2] == "범례"]
         assert legend and all(t.startswith("현재 — 역률 99.7% · ") for t in legend), legend
@@ -3038,10 +3042,35 @@ def _s264_check(item: str, request: pytest.FixtureRequest, tmp_path: Path) -> No
         assert mixed.no_headroom
         head = "지상역률 96.7% (요금 계산은 1% 단위 반올림 97%)"
         assert f"현재 {head}{tail}" in [n.text for n in mixed.notices]
-        assert _power_factor_conclusion(mixed) == f"{head}{tail}"
+        # 결론 한 줄(PPT 역률 장 첫 문장 · Word)은 반올림이 판정을 바꿀 때만 반올림 값을
+        # 적고, 괄호 뒤에 조사를 달지 않는다 (S270 결정 4). 안내 줄은 위 그대로다.
+        crossed = (
+            "지상역률 96.7% 는 요금 계산에서 1% 단위 반올림으로 97% 가 되어, "
+            "감액 상한 97% 이상이라 개선할 것이 없습니다."
+        )
+        assert _power_factor_conclusion(mixed) == crossed
         same = evaluate_power_factor(usage, tariff, selection, current_pct=98.0)
         assert f"현재 지상역률 98.0%{tail}" in [n.text for n in same.notices]
         assert _power_factor_conclusion(same) == f"지상역률 98.0%{tail}"
+        # 99.68 → 100 은 넣은 값도 상한 이상이라 판정이 안 갈린다 — 결론에 괄호가 없다.
+        above = evaluate_power_factor(usage, tariff, selection, current_pct=99.68)
+        noted = f"현재 지상역률 99.7% (요금 계산은 1% 단위 반올림 100%){tail}"
+        assert noted in [n.text for n in above.notices]
+        assert _power_factor_conclusion(above) == f"지상역률 99.7%{tail}"
+        # 실제로 만든 PPT — 역률 장 첫 문장이 그 글자다.
+        from kwise.report import slides_bytes
+        from kwise.report.document import DocumentSections, measure_entries
+
+        for result, sentence in ((mixed, crossed), (above, f"지상역률 99.7%{tail}")):
+            sections = DocumentSections(
+                usage=usage,
+                bill=request.getfixturevalue("sample_bill"),
+                diagnosis=request.getfixturevalue("sample_diagnosis"),
+                measures=measure_entries(power_factor=result),
+            )
+            deck = _deck(slides_bytes(sections)[0])
+            assert sentence in deck, [t for t in deck if "감액 상한" in t]
+            assert not [t for t in deck if ") 는" in t and "반올림" in t], deck
     elif item == "3":
         rendered = _render("large-b-over")
         word = [
@@ -3112,7 +3141,8 @@ def test_S264_조합_ESS_크기_안내_역률_상한_글_ESS_투자비_한_줄_�
     """**S264 결정 1 ~ 6** (사람 결정 1 · 웹 대화창 판단 2 ~ 6).
 
     1 조합 ESS 가 2단계보다 작고 태양광이 들면 PPT 조합 장 ※ 한 줄. 1안 참이 아니면 안 선다.
-    2 역률 상한 판정 글은 입력값과 반올림 값을 함께(같으면 괄호 없음).
+    2 역률 상한 판정 글은 입력값과 반올림 값을 함께(같으면 괄호 없음) — 결론 한 줄(PPT 역률 장
+      첫 문장)은 반올림이 판정을 바꿀 때만 반올림 값을 문장으로 적는다(S270 결정 4).
     3 Word ESS 부록 투자비 한 줄 · Excel 은 세 줄. 4 조정률 칸은 한 값(0줄).
     5 배치 요약 CSV 권장 조합은 규격 이름. 6 조합 ESS 안내에 사양이 한 번.
     """
@@ -3341,7 +3371,9 @@ def test_저압_건물에는_야간_진상_안내와_입력칸이_안_선다() -
     약관 제43조 ② 2호 다목(S268 결정 1). 덱의 저압 벌(`small-ind-a1` · 산업용(갑)Ⅰ 저압)과
     같은 자료의 고압 벌(`small-ind-a2` · 고압A)을 앱으로 띄워 네 산출물을 맞댄다. 저압은
     야간 진상 안내 다섯 갈래가 0줄이고 「야간 진상역률을 안다」 입력칸이 없다. 고압은 다 선다.
-    매뉴얼 가리킴 툴팁과 기준 데이터 표의 진상 줄은 두 벌 다 그대로다(건물을 말하지 않는다).
+    「역률 (선택)」 아래 「모르면 지상으로 간주해 추가요금이 없습니다.」 줄과 그 줄의 매뉴얼
+    안내도 저압에는 없다(S270 결정 1). 2단계 카드의 매뉴얼 가리킴 툴팁과 기준 데이터 표의
+    진상 줄은 두 벌 다 그대로다(건물을 말하지 않는다).
     """
     low, high = _render("small-ind-a1"), _render("small-ind-a2")
 
@@ -3351,6 +3383,18 @@ def test_저압_건물에는_야간_진상_안내와_입력칸이_안_선다() -
     box = "야간 진상역률을 안다"
     assert box not in [text for _slot, text in low.screen]
     assert box in [text for _slot, text in high.screen]
+
+    # 그 칸을 두고 하던 말(「역률 (선택)」 아래 지상 간주 한 줄)과 그 줄에 달린 매뉴얼
+    # 안내도 저압에는 안 선다 (S270 결정 1). 고압은 둘 다 선다. 같은 매뉴얼 안내는 2단계
+    # 역률 개선 카드에 따로 달려 있어 저압에도 그 한 줄은 남는다.
+    deemed = "모르면 지상으로 간주해 추가요금이 없습니다."
+    block = "역률 (선택)"
+    tip = "야간 진상 조항과 지상 간주"
+    assert _cells_with(low, deemed) == [], _cells_with(low, deemed)
+    assert [kind for kind, _where in _cells_with(high, deemed)] == ["화면"]
+    assert not [where for _kind, where in _cells_with(low, tip) if where.endswith(block)]
+    assert [where for _kind, where in _cells_with(high, tip) if where.endswith(block)]
+    assert len(_cells_with(low, tip)) == len(_cells_with(high, tip)) - 1 > 0
 
     # 빼기만 했다 — 제도 한 줄은 야간 구절 없이 서고, 남은 「진상」 은 가리킴 툴팁과
     # 기준 데이터 표다.

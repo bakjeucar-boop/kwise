@@ -24,6 +24,7 @@ import pandas as pd
 from kwise.notices import Notice, report_appendix
 from kwise.progress import STAGES
 from kwise.report.columns import VALUE_LABELS
+from kwise.report.frames import DAY_TYPE_LABELS
 from kwise.report.notices import (
     ESTIMATED_POWER_FACTOR_FACTS,
     LIMIT_FACTS,
@@ -94,12 +95,14 @@ def reference_rows(table: TariffTable | None = None) -> tuple[tuple[str, ...], .
             )
         )
 
+    names = _value_names(table)
+
     def add(kind: str, item: RuleItem) -> None:
         rows.append(
             (
                 kind,
                 item.label or item.key,
-                _short(item.value),
+                _short(item.value, names),
                 item.source or "—",
                 item.verified_on.isoformat() if item.verified_on else "—",
             )
@@ -144,25 +147,48 @@ def _key(key: object) -> str:
     return f"{key}월 " if str(key).isdigit() else f"{key}="
 
 
-def _short(value: object) -> str:
+#: 참 · 거짓 값의 글자 (S270 결정 5) — 「적용 여부」 를 묻는 항목이다.
+_BOOL_NAMES: dict[bool, str] = {True: "적용", False: "적용 안 함"}
+
+
+def _value_names(table: TariffTable | None) -> dict[str, str]:
+    """값 칸에 서는 열쇠의 이름 — **이름을 바꾸는 자리는 여기 하나다** (S270 결정 5 · S233).
+
+    새 이름을 짓지 않는다. 기준 데이터와 화면이 이미 쓰는 이름만 모은다 — 시간대 · 요일 ·
+    방위 · 설치 밀도 · 계약종별(요금표가 쥔다 — 요금표 없이 부르면 열쇠 그대로다).
+    **이름이 없는 열쇠는 그대로 낸다** (요일 계량 규칙 ``all_to_light`` 따위).
+    """
+    names = {**VALUE_LABELS["band"], **DAY_TYPE_LABELS}
+    for key in ("pv.azimuths", "pv.densities"):
+        names.update({item["key"]: item["label"] for item in assumptions()[key].value})
+    if table is not None:
+        names.update({key: kind.label for key, kind in table.contract_types.items()})
+    return names
+
+
+def _short(value: object, names: dict[str, str]) -> str:
     """값 한 칸. **길면 자른다** — 표 한 칸에 목록 전체를 넣지 않는다.
 
     **「열쇠=값」 객체 글자로 적지 않는다** (S243 · 결정 2) — 이름(``label``)을 가진 항목의
     목록은 이름만(방위 · 설치 밀도 · 건물 용도), 사전은 열쇠를 이미 있는 이름으로 적는다.
+    **프로그램 기호로도 적지 않는다** (S270 결정 5) — 참 · 거짓은 「적용」 · 「적용 안 함」,
+    글자 값은 ``names`` 에 이름이 있으면 그 이름이다.
     """
     if isinstance(value, list | tuple):
         if value and all(isinstance(item, dict) and "label" in item for item in value):
             text = ", ".join(str(item["label"]) for item in value)
         else:
-            text = ", ".join(_short(item) for item in value)
+            text = ", ".join(_short(item, names) for item in value)
     elif isinstance(value, dict):
-        text = " · ".join(f"{_key(key)}{_short(item)}" for key, item in value.items())
+        text = " · ".join(f"{_key(key)}{_short(item, names)}" for key, item in value.items())
+    elif isinstance(value, bool):
+        text = _BOOL_NAMES[value]
     elif isinstance(value, float):
         text = f"{value:,.6g}"
-    elif isinstance(value, int) and not isinstance(value, bool):
+    elif isinstance(value, int):
         text = f"{value:,}"  # 실수와 같은 쉼표 (S235 ③)
     else:
-        text = str(value)
+        text = names.get(str(value), str(value))
     return text if len(text) <= 60 else text[:57] + "…"
 
 

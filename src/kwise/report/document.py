@@ -109,7 +109,12 @@ from kwise.report.notices import (
 from kwise.report.worksheet import COLUMNS, Worksheet, ess_investment_rows
 from kwise.tariff import BillingResult, TariffTable
 from kwise.tariff.labels import option_label
-from kwise.tariff.power_factor import billed_note, lagging_rebate_cap_pct, lagging_standard_pct
+from kwise.tariff.power_factor import (
+    billed_pct,
+    lagging_rebate_cap_pct,
+    lagging_standard_pct,
+    rounding_unit_pct,
+)
 
 __all__ = [
     "CHAPTER_COMPARISON",
@@ -402,13 +407,22 @@ def _power_factor_conclusion(result: PowerFactorResult) -> str:
     current = f"{result.current_pct:,.0f}%"
     target = f"{result.target_pct:,.0f}%"
     if result.no_headroom:
-        cap = f"{lagging_rebate_cap_pct():,.0f}%"
+        cap_pct = lagging_rebate_cap_pct()
+        cap = f"{cap_pct:,.0f}%"
         # 현재 역률은 카드 · 안내 · 요약표와 같은 한 자리 소수다 — 99.68 이 「100%」 로
         # 섰다 (S256 고5 · S233).
         current_shown = f"{result.current_pct:,.1f}%"
-        # 판정은 반올림 값이라 입력값과 다르면 두 값을 함께 밝힌다 (S264 결정 2).
-        if note := billed_note(result.current_pct):
-            current_shown += f" ({note})"
+        # **반올림 값은 판정을 바꿀 때만 적는다** (S270 결정 4) — 넣은 값은 상한 아래인데
+        # 반올림 값이 상한 이상인 건물(96.5 ~ 97 미만)이다. 같은 쪽이면(99.68 → 100) 넣은
+        # 값만으로 문장이 참이다. 이 갈래는 반올림 값이 상한 이상이라 기준(92%) 쪽은 늘
+        # 같다. 괄호 뒤에 조사를 달지 않고 문장으로 적는다. 안내 줄
+        # (`power_factor.no_headroom`)은 두 값을 그대로 밝힌다 (S264 결정 2).
+        if result.current_pct < cap_pct:
+            billed = f"{billed_pct(result.current_pct):,.0f}%"
+            return (
+                f"지상역률 {current_shown} 는 요금 계산에서 {rounding_unit_pct():g}% 단위 "
+                f"반올림으로 {billed} 가 되어, 감액 상한 {cap} 이상이라 개선할 것이 없습니다."
+            )
         return f"지상역률 {current_shown} 는 감액 상한 {cap} 이상이라 개선할 것이 없습니다."
     if result.improvement_pct <= 0:
         return f"지상역률 {current} 에서 목표 {target} 로 올릴 여지가 없습니다."

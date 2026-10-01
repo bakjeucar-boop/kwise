@@ -483,7 +483,9 @@ def _power_factor_block(form: ContractForm | None) -> None:
         with right:
             # **저압은 야간 진상역률 요금 대상이 아니다** (제43조 ② 2호 다목) — 넣어도 결과에
             # 안 닿는 입력칸을 그리지 않는다 (S269 결정 1). 전압을 모르면(확정 전) 그린다.
-            known = (form is None or leading_charge_applies(form.voltage)) and st.checkbox(
+            # 그 칸을 두고 하는 말(아래 캡션과 매뉴얼 가리킴)도 같이 안 그린다 (S270 결정 1).
+            leading_applies = form is None or leading_charge_applies(form.voltage)
+            known = leading_applies and st.checkbox(
                 "야간 진상역률을 안다",
                 value=saved.leading_power_factor_pct is not None if saved else False,
                 key=_PF_KNOWN,
@@ -497,10 +499,11 @@ def _power_factor_block(form: ContractForm | None) -> None:
                     step=0.1,
                     key=_PF_LEADING,
                 )
-        st.caption(
-            "모르면 지상으로 간주해 추가요금이 없습니다.",
-            help=manual_tip("measure-power-factor"),
-        )
+        if leading_applies:
+            st.caption(
+                "모르면 지상으로 간주해 추가요금이 없습니다.",
+                help=manual_tip("measure-power-factor"),
+            )
 
         lagging, leading = _saved_power_factor()
         if form is None:
