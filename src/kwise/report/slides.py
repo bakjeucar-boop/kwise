@@ -60,11 +60,13 @@ from kwise.report.document import (
 from kwise.report.narrative import GLOSSARY_KEYS
 from kwise.report.notices import (
     AMI_BASIS_NOTICE,
+    COMBINATION_FIGURE_CAPTION,
     CONTRACT_CHANGE_WARNING,
     NOT_INCLUDED_NOTICE,
     SETTLED_ROW_NAME,
     TRUNCATION_FOOTNOTE,
     UNPRICED,
+    WHOLE_PERIOD_NOTE,
     applied_basis_line,
     billing_demand_text,
     demand_split,
@@ -1265,7 +1267,7 @@ def _build_building(
             "결측",
             f"{meta.missing_rows:,}구간 ({meta.missing_ratio:.1%}) — 보간하지 않고 뺐습니다",
         ],
-        ["적용 요금표 시행일", f"{bill.effective_date}"],
+        ["적용 요금표 시행일", f"{bill.effective_date}{WHOLE_PERIOD_NOTE}"],
         # **어느 기준으로 계산했는가** (56세션 3절 · S260 결정 1 — 고객이 읽는 이름으로).
         # 바꾼 값이 있으면 그 사실만 적는다 — 전문은 Excel 부록 B 에 있다.
         ["적용 기준", applied_basis_line(market_rules=market_rules)],
@@ -2423,7 +2425,7 @@ def _build_combination(
         guide,
         lambda: figures.combination_png(comparison),
         "조합구성 · 조합별 절감",
-        "조합별 누적 기간 절감액과 누적 투자비",
+        COMBINATION_FIGURE_CAPTION,
         left=right_left,
         top=chart_top,
         width=half,

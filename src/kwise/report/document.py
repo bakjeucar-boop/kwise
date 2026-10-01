@@ -71,6 +71,7 @@ from kwise.report import figures, frames, narrative
 from kwise.report.appendix import APPENDIX_TITLES, AppendixData, known_limits, reference_rows
 from kwise.report.days import RepresentativeDay
 from kwise.report.notices import (
+    COMBINATION_FIGURE_CAPTION,
     CONTRACT_CHANGE_WARNING,
     DATA_SOURCES,
     ESS_NO_EXCESS,
@@ -80,6 +81,7 @@ from kwise.report.notices import (
     TRUNCATION_FOOTNOTE,
     UNPRICED,
     UNPRICED_REASONS,
+    WHOLE_PERIOD_NOTE,
     Peers,
     bill_lines,
     billing_demand_text,
@@ -101,6 +103,7 @@ from kwise.report.notices import (
     surplus_split_kwh,
     switch_annual_saving,
     switch_saving,
+    traceability_lines,
     without_arbitrage,
 )
 from kwise.report.worksheet import COLUMNS, Worksheet, ess_investment_rows
@@ -1579,7 +1582,7 @@ def _cover(document: DocumentType, sections: DocumentSections) -> None:
                 f"({bill.period_days:.0f}일, 기본요금 {bill.base_fee_months:.2f}개월분)",
             ],
             ["작성일", f"{sections.prepared:%Y-%m-%d}"],
-            ["적용 요금표 시행일", f"{bill.effective_date}"],
+            ["적용 요금표 시행일", f"{bill.effective_date}{WHOLE_PERIOD_NOTE}"],
             [
         "계약종별",
         f"{bill.contract_label} {bill.voltage_label} {option_label(bill.selection.option)}",
@@ -1965,7 +1968,7 @@ def _chapter_comparison(document: DocumentType, sections: DocumentSections, numb
     _add_figure(
         document,
         figures.combination_png(comparison),
-        f"그림 {number}-1. 조합별 기간 절감액과 투자비",
+        f"그림 {number}-1. {COMBINATION_FIGURE_CAPTION}",
     )
 
     if sections.sensitivity:
@@ -2014,7 +2017,7 @@ def _chapter_scope(document: DocumentType, sections: DocumentSections, number: i
         part = 3
 
     _heading(document, f"{number}.{part} 추적성", level=2)
-    _add_bullets(document, sections.bill.traceability())
+    _add_bullets(document, traceability_lines(sections.bill))
     _add_bullets(document, DATA_SOURCES)
 
     # **참고 등급은 부록 C 로 옮겼다** (22세션 3절). 19세션에 여기 5.5절을 두었는데

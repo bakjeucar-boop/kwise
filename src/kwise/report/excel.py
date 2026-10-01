@@ -100,6 +100,7 @@ from kwise.report.notices import (
     surplus_kwh_text,
     switch_annual_saving,
     switch_saving,
+    traceability_lines,
 )
 from kwise.report.worksheet import Worksheet, low_load_threshold_line
 from kwise.tariff import BillingResult, TariffTable
@@ -357,7 +358,7 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
     bill = sections.bill
     rows: list[tuple[str, str, str]] = []
 
-    for line in bill.traceability():  # 요구사항서 5.8
+    for line in traceability_lines(bill):  # 요구사항서 5.8
         label, _, value = line.partition(": ")
         rows.append(("적용 근거", label, value or line))
 

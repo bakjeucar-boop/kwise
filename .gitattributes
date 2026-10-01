@@ -9,3 +9,8 @@
 *.csv -text
 *.xlsx binary
 *.xls binary
+
+# 약관 · 규칙 원문 사본은 줄끝을 바꾸지 않는다 (S266 결정 9 · 뽑은 그대로 보존).
+data/source/*_검색용.txt -text
+# 판정 근거 PDF 는 바이트 그대로 싣는다 (S266 결정 10).
+data/source/*.pdf binary

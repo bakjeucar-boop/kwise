@@ -124,6 +124,10 @@ LARGE_USAGE_NAME = "사용량조회_20240429.csv"
 #: 300 kW 이상이므로(기본공급약관 제57조 ②) 성립하는 수다.
 SHORT_CONTRACT_KW = 4_000.0
 
+#: C9 의 계약전력. 덱 벌 `large-ind-b` 와 **같은 수**다 (S137 · S266). 산업용전력(을)은
+#: 계약전력 300 kW 이상이므로(기본공급약관 제59조 ② 2호) 성립하는 수다.
+INDUSTRIAL_CONTRACT_KW = 6_000.0
+
 # PV 용량 축 (11.3). 0 이 있어야 "PV 0 이면 절감 0" 을 확인할 수 있다.
 DEFAULT_CAPACITIES_KWP: tuple[float, ...] = (0.0, 500.0, 1_000.0, 2_000.0)
 
@@ -288,7 +292,7 @@ class CaseStudy:
                 "항목": "기상 캐시 적중",
                 "값": (
                     f"{len(self.results) - self.weather_calls}/{len(self.results)} "
-                    "(C1~C8 은 좌표·기간이 같아 첫 건만 취득한다. "
+                    "(C1~C9 는 좌표·기간이 같아 첫 건만 취득한다. "
                     "실측 R1~R4 도 서로 같아 그중 첫 건만 취득한다)"
                 ),
             }
@@ -303,9 +307,10 @@ class CaseStudy:
 
 
 def build_case_definitions(directory: Path) -> tuple[CaseDefinition, ...]:
-    """``input\\cases\\`` 의 여섯과 **그 밖의 여섯**으로 케이스 정의를 만든다.
+    """``input\\cases\\`` 의 여섯과 **그 밖의 일곱**으로 케이스 정의를 만든다.
 
-    **C4 만 산업용(을)이다** — 봄·가을 주말 할인 특례를 태우기 위해서다.
+    **산업용(을)은 C4 와 C9 둘이다** — C4 는 봄·가을 주말 할인 특례를 태우는 합성이고
+    C9 은 대형 실측에 종별만 간 벌이다 (S266).
     **실측은 R1~R4 넷이고 셋은 종별이, 하나는 역률이 다르다** (95세션 0절 ·
     S150 4절 · S195 2-2) — 일반용(갑)Ⅱ · 산업용(갑)Ⅱ · 산업용(갑)Ⅰ 저압 ·
     일반용(갑)Ⅱ 역률 100. **R3 만 계약전력 기준**이라 그 갈래가 회귀에 서는
@@ -369,6 +374,21 @@ def build_case_definitions(directory: Path) -> tuple[CaseDefinition, ...]:
             contract_type="general_b",
             note="주간 지상역률 85% — 역률요금이 0원이 아닌 유일한 벌",
             power_factor_pct=85.0,
+        )
+    )
+
+    # **C9 은 덱 벌 `large-ind-b` 를 회귀에 올린 것이다** (S266 사람 결정 — 진단 대상은
+    # 일반용과 산업용). 자료(대형 실측 정본)·전압·선택요금·계약전력이 그 벌과 같고
+    # **종별만 산업용(을)**이다 — C4 는 합성 주말 가동형이라 실측 자료에 산업용(을)
+    # 단가가 서는 자리가 회귀에 없었다. 좌표는 C1~C8 과 같아 기상 요청이 늘지 않는다.
+    definitions.append(
+        CaseDefinition(
+            key="C9",
+            name="산업용(을) 대형",
+            usage_path=large,
+            contract_type="industrial_b",
+            note="대형 실측에 산업용(을) 단가 — 덱 벌 large-ind-b 와 같은 조건",
+            contract_kw=INDUSTRIAL_CONTRACT_KW,
         )
     )
 
@@ -864,7 +884,7 @@ def run_case_study(
     """케이스를 **순차로** 돌린다. 여덟 벌의 시계열을 동시에 들지 않는다.
 
     단위 발전 프로파일은 케이스마다 다시 만든다 (부하 인덱스에 정렬해야 한다).
-    C1~C8 은 좌표·기간이 같아 **첫 건만 취득하고 나머지는 캐시**를 타고,
+    C1~C9 는 좌표·기간이 같아 **첫 건만 취득하고 나머지는 캐시**를 타고,
     **실측(R1)은 좌표도 기간도 달라 요청이 하나 더 선다.**
     """
     started = time.perf_counter()

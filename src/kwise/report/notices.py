@@ -17,10 +17,11 @@ if TYPE_CHECKING:
     from kwise.measures.solar import SolarPoint
     from kwise.measures.tariff_switch import TariffSwitchResult
     from kwise.notices import Notice
-    from kwise.tariff import TariffSelection
+    from kwise.tariff import BillingResult, TariffSelection
 
 __all__ = [
     "AMI_BASIS_NOTICE",
+    "COMBINATION_FIGURE_CAPTION",
     "CONTRACT_CHANGE_WARNING",
     "DATA_SOURCES",
     "ESTIMATED_POWER_FACTOR_FACTS",
@@ -36,6 +37,7 @@ __all__ = [
     "TRUNCATION_FOOTNOTE",
     "UNPRICED",
     "UNPRICED_REASONS",
+    "WHOLE_PERIOD_NOTE",
     "BillLines",
     "Peers",
     "applied_basis_line",
@@ -69,6 +71,7 @@ __all__ = [
     "surplus_split_kwh",
     "switch_annual_saving",
     "switch_saving",
+    "traceability_lines",
     "without_arbitrage",
 ]
 
@@ -136,6 +139,23 @@ def applied_basis_line(*, market_rules: bool) -> str:
     """
     line = APPLIED_BASIS + (APPLIED_BASIS_MARKET if market_rules else "")
     return line + (APPLIED_BASIS_CHANGED if diff_from_defaults() else "")
+
+
+#: 요금표 판 하나로 분석 기간 전체를 계산한다 (S266 결정 2) — 개선 효과는 앞으로 낼
+#: 요금 기준이다. 요금표 시행일을 적는 자리에 붙인다. **새 글자는 이 괄호 하나다.**
+WHOLE_PERIOD_NOTE = " (분석 기간 전체에 적용)"
+
+
+def traceability_lines(bill: BillingResult) -> tuple[str, ...]:
+    """적용 근거 줄 (5.8) — 요금표 줄에 :data:`WHOLE_PERIOD_NOTE` 를 붙인다 (Excel 요약 · Word)."""
+    return tuple(
+        line + WHOLE_PERIOD_NOTE if line.startswith("적용 요금표:") else line
+        for line in bill.traceability()
+    )
+
+
+#: 조합 그림의 글 — PPT 그림 제목과 Word 캡션이 함께 쓴다 (S258 결정 5 · S266 결정 4).
+COMBINATION_FIGURE_CAPTION = "조합별 누적 기간 절감액과 누적 투자비"
 
 
 #: 학교 교육용(갑) 고압 안내 한 줄 (S253 사람 결정 · 결정 1). **계산에는 넣지 않는다** —

@@ -18,6 +18,9 @@ cache/
 # 코드가 PDF 를 읽지 않으므로 pdftotext -layout 으로 뽑은 .txt 만 커밋한다.
 # 원본이 필요하면 한전·전력거래소 사이트에서 다시 받는다.
 data/source/*.pdf
+# 판정 근거로 쓰는 정본 둘은 추적한다 (S266 결정 10 · 합 3.4 MB) — PC 를 바꿔도 같은 원문을 본다.
+!data/source/2026-06-01_기본공급약관시행세칙(합본).pdf
+!data/source/2026-08-01_전기요금표(종합).pdf
 
 # 사전 취득 실패 목록은 실행마다 달라진다 (data\weather\ 자체는 커밋한다).
 data/weather/fetch_failures.json

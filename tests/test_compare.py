@@ -41,6 +41,7 @@ from kwise.tariff import (
     BillingResult,
     TariffSelection,
     TariffTable,
+    billed_pct,
     calculate_bill,
     deemed_lagging_pct,
 )
@@ -107,14 +108,6 @@ def _after_pct(usage: UsageData, unit: pd.Series, capacity: float, start: float)
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "S198 2절 — 정본이 뒤집혔다 (요구사항서 8.1). 태양광 전 역률의 출발점이 "
-        "목표(97%)가 아니라 원 부하 역률이다 · 아래 ② 의 기대값이 낡았고 이 판에서 "
-        "갱신하지 않는다 · 빨간 값은 91.1163158109249 대 96.6383108636579 다"
-    ),
-)
 def test_조합이_태양광이_떨어뜨린_역률로_요금을_다시_계산한다(
     sample_usage: UsageData,
     sample_report: QualityReport,
@@ -129,10 +122,11 @@ def test_조합이_태양광이_떨어뜨린_역률로_요금을_다시_계산�
     **뺀다는 결정은 기록에 없다** (76세션 조사). 대형 을 자료에서 조합 절감액이
     2,095,077원/년(0.64%) 부풀어 있었다.
 
-    **떨어진 뒤에서 개선이 시작한다** (77세션에 사람이 정했다 — 갈래 ㄴ).
-    목표 97% 는 PV 전 값이고 PV 가 그것을 끌어내린다. 도구가 설비 크기를
-    모르므로(투자비가 사용자 입력이다) 「악화분까지 끌어올린다」 로 두면
-    **더 큰 설비를 값 없이** 가정하는 셈이 된다.
+    **역률 개선을 켠 조합은 목표 역률로 요금을 셈한다** (S202 2절 · S266 결정 5 가
+    정본으로 굳혔다). 출발점은 원 부하 역률이고(S198) 도달점은 목표다 — 2단계 카드와
+    같은 잣대다.
+    [S266 곁 — 77세션 갈래 ㄴ 「떨어진 뒤에서 개선이 시작한다」 는 옛 규칙이다 · 이 시험은
+    S198 부터 그 규칙의 기대값(켠 조합 96.6383108636579%)을 문 채 xfail 로 서 있었다]
 
     **이 시험은 조합이 실제로 쓴 역률을 본다** — 「돌아간다」 가 아니다.
     59세션이 `test_slides.py` 에 박아 둔 못
@@ -151,19 +145,19 @@ def test_조합이_태양광이_떨어뜨린_역률로_요금을_다시_계산�
     start_off = deemed_lagging_pct()
     after_off = _after_pct(sample_usage, sample_unit_pv, PV_KWP, start_off)
     assert after_off < start_off, "PV 를 넣었는데 역률이 안 떨어졌습니다."
-    assert off.bill.power_factor.lagging_pct == pytest.approx(after_off)
+    # 요금은 1% 반올림한 역률로 셈한다 (S262 결정 1 · 제7조 ①) — 91.1163… → 91.
+    assert off.bill.power_factor.lagging_pct == billed_pct(after_off) == 91.0
 
-    # ② 역률 수단을 켠 조합 — 목표에서 시작해 PV 가 끌어내린다 (ㄴ).
+    # ② 역률 수단을 켠 조합 — 목표로 요금을 낸다 (S202 2절 · S266 결정 5).
     on = evaluate_combination(
         sample_usage,
         tariff,
         CombinationSpec("역률+태양광", CURRENT, pv_capacity_kwp=PV_KWP, power_factor_pct=97.0),
         **kwargs,
     )
-    after_on = _after_pct(sample_usage, sample_unit_pv, PV_KWP, 97.0)
-    assert 97.0 > after_on > after_off, "목표에서 떨어져 시작하는 것이 아닙니다."
-    assert on.bill.power_factor.lagging_pct == pytest.approx(after_on)
-    # **목표에 못 미쳐도 개선은 개선이다** — 켠 쪽이 그래도 돈이 된다.
+    assert on.bill.power_factor.lagging_pct == 97.0
+    # 켠 쪽이 돈이 된다 — 금액(6,011,179.20원)은
+    # `test_조합에_켠_역률_수단은_태양광_뒤에도_목표로_요금을_낸다` 가 문다.
     assert on.saving_won > off.saving_won
 
 
@@ -396,15 +390,6 @@ def test_여지_없는_같은_금액_계약전력_줄은_조합_표에_서지_�
     assert busy.combinations[1].saving_won != busy.combinations[0].saving_won
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "S198 2절 — 정본이 뒤집혔다 (요구사항서 8.1). ③ 갈래가 「목표 97 에서 시작하면 "
-        "기준 위로 남는다」 를 전제하는데 출발점이 원 부하 역률(92)이 되어 91.1% 로 "
-        "떨어지고 경고가 뜬다 · 경고는 맞고 기대값이 낡았다 · 이 판에서 갱신하지 않는다 · "
-        "①② 갈래는 여전히 선다"
-    ),
-)
 def test_역률이_기준_아래로_떨어지면_조합이_말한다(
     sample_usage: UsageData,
     sample_report: QualityReport,
@@ -420,6 +405,11 @@ def test_역률이_기준_아래로_떨어지면_조합이_말한다(
     **문구는 2단계 태양광 카드가 쓰던 것을 그대로 쓴다**
     (:func:`~kwise.measures.solar.power_factor_drop_warning`). 어휘가 두 벌이면
     한쪽만 고쳐진다 (결함 유형 ③).
+
+    **경고는 원 부하 역률에서 잰 태양광 뒤 역률로 뜬다** (S198 · S266 결정 5 가 정본으로
+    굳혔다) — 역률 수단을 켰는지와 무관하다.
+    [S266 곁 — ③ 은 S198 부터 「목표 97 을 켜면 기준 위로 남아 안 뜬다」(77세션 옛 규칙)를
+    문 채 xfail 로 서 있었다]
     """
     kwargs = {
         "baseline_bill": sample_bill,
@@ -427,11 +417,14 @@ def test_역률이_기준_아래로_떨어지면_조합이_말한다(
         "quality": sample_report,
     }
 
-    def facts(capacity: float, target: float | None = None) -> list[str]:
+    def facts(
+        capacity: float, target: float | None = None, current: float | None = None
+    ) -> list[str]:
         result = evaluate_combination(
             sample_usage,
             tariff,
             CombinationSpec("태양광", CURRENT, pv_capacity_kwp=capacity, power_factor_pct=target),
+            options=None if current is None else BillingOptions(power_factor_pct=current),
             **kwargs,
         )
         return [item.text for item in result.notices if item.fact == "solar.power_factor_drop"]
@@ -450,9 +443,13 @@ def test_역률이_기준_아래로_떨어지면_조합이_말한다(
     # ② 태양광이 없으면 뜰 일이 없다.
     assert facts(0.0) == []
 
-    # ③ **기준 위로 남으면 안 뜬다.** 뜨는 조건만 보면 늘 뜨는 경고가 된다.
-    assert _after_pct(sample_usage, sample_unit_pv, PV_KWP, 97.0) >= power_factor_floor_pct()
-    assert facts(PV_KWP, 97.0) == []
+    # ③ **역률 수단을 켜도 같은 경고가 뜬다** — 출발점이 목표가 아니라 원 부하 역률이다.
+    assert facts(PV_KWP, 97.0) == below
+
+    # ④ **기준 위로 남으면 안 뜬다.** 뜨는 조건만 보면 늘 뜨는 경고가 된다 —
+    #    원 부하 역률 100 은 무효전력이 없어 태양광이 못 떨어뜨린다.
+    assert _after_pct(sample_usage, sample_unit_pv, PV_KWP, 100.0) >= power_factor_floor_pct()
+    assert facts(PV_KWP, current=100.0) == []
 
 
 def test_baseline_has_no_saving(sample_comparison: ComparisonResult) -> None:
