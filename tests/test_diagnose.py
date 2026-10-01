@@ -1009,5 +1009,3 @@ def test_계약전력_조정의_없음을_가르는_잣대는_한_곳이다() ->
             if _RAW_ZERO.search(몸):
                 떠도는것.append(f"{path.relative_to(PROJECT_ROOT)}:{number}: {line.strip()}")
     assert not 떠도는것, f"계약 절감액을 날값 0 으로 재는 자리가 생겼다 — {떠도는것}"
-
-

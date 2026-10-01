@@ -52,7 +52,7 @@ from kwise.tariff import (
     power_factor_charge,
 )
 
-CURRENT =TariffSelection("general_b", "high_a", "I")
+CURRENT = TariffSelection("general_b", "high_a", "I")
 
 
 # --------------------------------------------------------------------- 제43조 ② 산식

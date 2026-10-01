@@ -90,6 +90,7 @@ def interval_label(interval_minutes: int) -> str:
     """
     return "1시간" if interval_minutes == 60 else f"{interval_minutes}분"
 
+
 _HOUR24_PATTERN = r"24:00(?::00)?$"
 _CSV_SUFFIXES = frozenset({".csv", ".txt"})
 _EXCEL_SUFFIXES = frozenset({".xls", ".xlsx", ".xlsm"})

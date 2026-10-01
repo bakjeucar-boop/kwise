@@ -578,7 +578,7 @@ def test_실제_항목_전부에_원문_확인처가_붙는다() -> None:
     # S252 에 종별 문턱 셋이 빠졌다 — 요금표 종별 층 한 자리로(결정 5) — 36+49.
     # S253 에 입찰 시간대가 판단값으로 옮고 제주 창이 붙었다(결정 2) — 35+51.
     # S262 에 역률 계산단위(제7조 ①)가 하나를 더했다 — 36+51.
-    assert len(rows) == len(items) == 87  # rules_kr 36 + assumptions 51
+    assert len(rows) == len(items) == 88  # rules_kr 37 + assumptions 51
     assert all(row.link.startswith(("한국", "국가", "에너지", "Open", "기술서")) for row in rows)
     # **바깥에 원문이 없는 값도 있다** (22세션). 화면 예산은 우리가 정한 규약이라
     # 확인처가 기술서다 — 그래도 따라갈 데는 있어야 한다.

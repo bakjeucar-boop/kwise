@@ -3224,17 +3224,15 @@ def _interval_words(rendered: Rendered, word: str) -> dict[str, int]:
         "산출물 그림 범례": rf"^{word} 부하$",
         "시계열 시트 체크박스": rf"^{word} 시계열 시트 포함$",
     }
-    return {
-        name: sum(1 for cell in cells if re.search(mark, cell)) for name, mark in kinds.items()
-    }
+    return {name: sum(1 for cell in cells if re.search(mark, cell)) for name, mark in kinds.items()}
 
 
 def test_1시간_자료면_주의와_간격_글자가_서고_15분_자료에는_안_선다() -> None:
     """**1시간 평균은 15분 최대수요보다 낮다 — 그 사실을 결과 곁에 세운다** (S268 결정 2).
 
     같은 건물(`small-a2` · 용인 15분 실물)을 그대로 올린 벌과 1시간으로 합쳐 올린 벌을
-    맞댄다 — 둘 다 쪽을 문다. 1시간이면 주의 한 줄이 화면 1단계(한 번) · PPT 3장 · Excel 요약 ·
-    Word 에 서고 그림 · 표 이름의 간격 글자가 「1시간」 이다. 15분이면 그 줄이 없고 「15분」 이다.
+    맞댄다 — 둘 다 쪽을 문다. 1시간이면 주의 한 줄이 화면 1단계(한 번) · PPT 3장 · Excel 요약에
+    서고 그림 · 표 이름의 간격 글자가 「1시간」 이다. 15분이면 그 줄이 없고 「15분」 이다.
     계산은 안 건드린다(보정하지 않는다).
     """
     from openpyxl import load_workbook
@@ -3252,12 +3250,11 @@ def test_1시간_자료면_주의와_간격_글자가_서고_15분_자료에는_
 
     hourly, quarter = _render_hourly(), _render("small-a2")
 
+    # 서는 자리는 셋이고 저마다 한 번이다 — Word 는 품질 주의를 싣는 자리가 없어 0 이다.
     stood = caution(hourly)
-    screen = [where for kind, where in stood if kind == "화면"]
-    assert len(screen) == 1 and screen[0].endswith("1단계 · 진단"), stood
-    assert ("PPT", "3") in stood, stood
-    assert ("Excel", "요약") in stood, stood
-    assert [kind for kind, _where in stood if kind == "Word"], stood
+    assert [kind for kind, _where in stood] == ["Excel", "PPT", "화면"], stood
+    assert stood[0] == ("Excel", "요약") and stood[1] == ("PPT", "3"), stood
+    assert stood[2][1].endswith("1단계 · 진단"), stood
     assert caution(quarter) == []
 
     assert all(count > 0 for count in _interval_words(hourly, "1시간").values()), hourly.key
