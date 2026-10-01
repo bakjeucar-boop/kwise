@@ -65,10 +65,13 @@
 
 **판단값과 법령 유래를 가른다.** 기준 데이터가 두 파일로 갈라져 있다.
 
-    data\rules_kr.json      37항목   source = 「기본공급약관 제57조」 같은 조문
-                                     source_date · verified_on 이 붙는다
-    data\assumptions.json   51항목   source = 「판단값」
-                                     화면에서 [판단] 으로 보이고 고칠 수 있다
+    data\rules_kr.json      source = 「기본공급약관 제57조」 같은 조문
+                            source_date · verified_on 이 붙는다
+    data\assumptions.json   source = 「판단값」
+                            화면에서 [판단] 으로 보이고 고칠 수 있다
+
+**항목 수는 그 두 파일이 쥔다 — 문서에 숫자로 적지 않는다** (S269). 항목이 늘 때마다
+이 문서가 바뀌던 자리다.
 
 **조문을 못 찾으면 판단값 쪽이다** (89세션에 둘을 옮겼다). `dr.event_hours` 는
 감축**시험** 규정에서 온 수였고 `dr.max_events_per_day` 는 상한 조문 자체가

@@ -45,7 +45,7 @@ from kwise.tariff.labels import billing_month_label, option_label
 from kwise.tariff.power_factor import (
     PowerFactorCharge,
     lagging_standard_pct,
-    leading_applies_to_low_voltage,
+    leading_charge_applies,
     power_factor_charge,
 )
 from kwise.tariff.schema import (
@@ -583,16 +583,14 @@ def calculate_bill(
         base_demand[month] * rates.base_won_per_kw * factors[month] for month in months
     )
     # 제43조 ② 2호 다목 — 제42조 ② 단서 고객(저압)은 진상역률 요금을 적용하지 않는다
-    # (S268 결정 1). 넣은 값을 셈에 안 넘기므로 진상을 안 넣은 저압 건물과 같은 결과다.
-    leading_pct = (
-        None
-        if selection.voltage == "low" and not leading_applies_to_low_voltage()
-        else opts.leading_power_factor_pct
-    )
+    # (S268 결정 1). 넣은 값을 셈에 안 쓰므로 진상을 안 넣은 저압 건물과 같은 결과이고,
+    # 야간 진상을 말하는 안내도 서지 않는다 (S269 결정 1).
+    leading_applies = leading_charge_applies(selection.voltage)
     power_factor = power_factor_charge(
         total_base_before_pf,
         lagging_pct=opts.power_factor_pct,
-        leading_pct=leading_pct,
+        leading_pct=opts.leading_power_factor_pct,
+        leading_applies=leading_applies,
     )
     power_factor_ratio = power_factor.total_ratio
 
@@ -716,7 +714,8 @@ def calculate_bill(
             power_factor = power_factor_charge(
                 float(monthly["base_won"].sum()),
                 lagging_pct=opts.power_factor_pct,
-                leading_pct=leading_pct,
+                leading_pct=opts.leading_power_factor_pct,
+                leading_applies=leading_applies,
             )
 
     limited_months = tuple(

@@ -44,6 +44,7 @@ from kwise.quality.checks import HOURLY_INTERVAL_FACT
 from kwise.report import localize, narrative, notices
 from kwise.tariff import AMI_BASIS_NOTICE, TENTATIVE_BASE_FEE_BASIS_WARNING, TariffTable
 from kwise.tariff.labels import SEASON_LABELS
+from kwise.tariff.power_factor import leading_charge_applies
 from kwise.ui import callout, charts, tables
 from kwise.ui import text as fmt
 from kwise.ui.anchors import manual_tip
@@ -137,7 +138,8 @@ def render(table: TariffTable, building: BuildingInfo | None = None) -> Analysis
 
     _headline_block(usage, diagnosis)
     _notice_block(quality, diagnosis)
-    _quality_block(usage, quality)  # ④
+    # 진단이 든 품질 결과를 그린다 — 계약전력 기준이면 1시간 주의 글이 갈린다 (S269 결정 3).
+    _quality_block(usage, diagnosis.quality)  # ④
     _pattern_block(diagnosis, usage, building)  # ⑤
     _peak_block(diagnosis)  # ⑥
     _structure_block(usage, diagnosis, building)  # ⑦
@@ -479,7 +481,9 @@ def _power_factor_block(form: ContractForm | None) -> None:
                 help="모르면 그대로 두십시오. 이 값에서 조정액이 0원입니다.",
             )
         with right:
-            known = st.checkbox(
+            # **저압은 야간 진상역률 요금 대상이 아니다** (제43조 ② 2호 다목) — 넣어도 결과에
+            # 안 닿는 입력칸을 그리지 않는다 (S269 결정 1). 전압을 모르면(확정 전) 그린다.
+            known = (form is None or leading_charge_applies(form.voltage)) and st.checkbox(
                 "야간 진상역률을 안다",
                 value=saved.leading_power_factor_pct is not None if saved else False,
                 key=_PF_KNOWN,

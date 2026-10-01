@@ -344,7 +344,8 @@ S128 에 여덟, S142 에 아홉, S150 에 열하나, **S195 에 열둘**이 됐
       compare\          3단계
       report\           Excel · PPT · Word
       ui\               Streamlit. 계산은 안 한다
-    data\               tariff_*.json (8종별 · **schema 0.5**) · rules_kr.json 37항목 · assumptions.json 51항목
+    data\               tariff_*.json (8종별 · **schema 0.5**) · rules_kr.json · assumptions.json
+                        (기준 데이터 항목 수는 그 두 파일이 쥔다)
                         data\defaults\ 는 출고 복원용 사본
     tools\              render_deck.py · capture_screen.py · run_casestudy.py
                         screen_audit.py · run_benchmark.py · build_docs.py

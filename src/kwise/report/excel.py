@@ -89,6 +89,7 @@ from kwise.report.notices import (
     ess_unpriced_reason,
     format_mwh,
     format_won,
+    interval_words,
     known_limit_lines,
     lowering_recommended,
     max_demand_text,
@@ -105,6 +106,7 @@ from kwise.report.notices import (
 from kwise.report.worksheet import Worksheet, low_load_threshold_line
 from kwise.tariff import BillingResult, TariffTable
 from kwise.tariff.labels import option_label
+from kwise.tariff.power_factor import leading_charge_applies
 
 if TYPE_CHECKING:
     from openpyxl.worksheet.worksheet import Worksheet as Sheet
@@ -483,8 +485,9 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
     ):
         rows.append(("계약전력 변경 경고", "필수 안내", CONTRACT_CHANGE_WARNING))
     limits = known_limit_lines(power_factor_billed=sections.power_factor_billed)
+    interval_minutes = sections.usage.meta.interval_minutes
     for number, limit in enumerate(limits, start=1):  # 부록 D
-        rows.append(("알려진 한계", f"{number}", limit))
+        rows.append(("알려진 한계", f"{number}", interval_words(limit, interval_minutes)))
     for source in DATA_SOURCES:  # 출처 표기 (7.5)
         rows.append(("데이터 출처", "", source))
     if sections.sensitivity is not None:  # 9.2
@@ -683,9 +686,12 @@ def measure_summary_frame(
                     f"(한전 기본공급약관 제43조). 현재 역률요금 "
                     f"{format_won(power_factor_charges(power_factor)[0])} 원 → "
                     f"{format_won(power_factor_charges(power_factor)[1])} 원."
+                    # 야간 진상 조항은 그 요금의 대상인 건물에만 적는다 — 저압은 아니다
+                    # (S269 결정 1 · 제43조 ② 2호 다목).
                     + (
                         ""
                         if power_factor.no_headroom
+                        or not leading_charge_applies(power_factor.current_bill.selection.voltage)
                         else " 야간 진상 95% 조항에 걸리지 않도록 시간대별 투입을 제어하십시오."
                     )
                 ),
@@ -1170,7 +1176,15 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
     if sections.comparison is not None:
         groups.append(sections.comparison.notices)
     sheets["부록 C 한계와 전제"] = pd.DataFrame(
-        {"항목": list(known_limits(*groups, power_factor_billed=sections.power_factor_billed))}
+        {
+            "항목": list(
+                known_limits(
+                    *groups,
+                    power_factor_billed=sections.power_factor_billed,
+                    interval_minutes=sections.usage.meta.interval_minutes,
+                )
+            )
+        }
     )
     if sections.sensitivity is not None:
         # **범위로 보여 준다.** 3열 나열은 근거표(감도 상세)로 내린다 (9.2).

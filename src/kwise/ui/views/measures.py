@@ -1323,7 +1323,8 @@ def _surplus_verdict(
         fmt.kwp(free_kwp),
         f"면적 {fmt.count(free_area, ' m²', decimals=0)}",
         delta_color="off",
-        help=fmt.tip("surplus_free"),
+        # 「어느 15분 구간에서도」 는 올린 자료의 간격이다 — 판정한 간격을 따른다 (S269 결정 2).
+        help=fmt.tip("surplus_free").replace("15분", interval_label(usage.meta.interval_minutes)),
     )
 
 

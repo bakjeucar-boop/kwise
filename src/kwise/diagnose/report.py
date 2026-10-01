@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
@@ -28,7 +28,7 @@ from kwise.diagnose.summary import (
     judge_pv_potential,
     pv_basis_label,
 )
-from kwise.io import UsageData
+from kwise.io import HOURLY_INTERVAL_WARNING_ON_CONTRACT, UsageData
 
 # **1단계가 2단계 판정을 받아 온다** (100세션). 묶음(``kwise.measures``)이 아니라
 # 이 한 모듈만 들인다 — 묶음을 들이면 ``demand_response`` 를 지나 ``diagnose``
@@ -43,6 +43,7 @@ from kwise.quality import (
     load_pattern,
     outage_slot_mask,
 )
+from kwise.quality.checks import HOURLY_INTERVAL_FACT
 from kwise.tariff import (
     BillingOptions,
     TariffSelection,
@@ -115,6 +116,23 @@ def diagnose(
     # 요금적용전력은 중간·최대부하 시간대만 대상이다 (요구사항서 5.2 ①).
     contract_type = contract.selection.contract_type if contract else None
     type_rules = table.contract(contract_type) if contract_type else None
+    # **계약전력 기준 건물은 1시간 자료라도 기본요금이 낮게 서지 않는다** (S269 결정 3).
+    # 품질 검사는 종별을 모른다 — 계약 정보를 받은 이 자리에서 그 주의의 글자만 간다.
+    # 화면 「데이터 품질」 · PPT 3장 · Excel 요약이 다 이 품질 결과를 읽는다.
+    if (
+        type_rules is not None
+        and contract is not None
+        and type_rules.base_fee_on_contract_at(contract.selection.voltage)
+    ):
+        report = replace(
+            report,
+            notices=tuple(
+                replace(item, text=HOURLY_INTERVAL_WARNING_ON_CONTRACT)
+                if item.fact == HOURLY_INTERVAL_FACT
+                else item
+                for item in report.notices
+            ),
+        )
     index = pd.DatetimeIndex(usage.kw.index)
     calendar = build_calendar(
         range(index[0].year - 1, index[-1].year + 2),

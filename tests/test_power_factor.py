@@ -334,6 +334,60 @@ def test_저압은_야간_진상역률_요금과_과보상_경고가_안_선다(
         assert texts(entered.notices) == texts(without.notices)
 
 
+#: 야간 진상을 말하는 안내의 사실 ID — 저압 건물에는 서지 않는다 (S269 결정 1).
+NIGHT_LEADING_FACTS = {
+    "power_factor.leading_deemed",
+    "power_factor.leading_unchecked",
+    "power_factor.leading_overshoot",
+}
+
+
+@pytest.mark.parametrize(("voltage", "선다"), [("low", False), ("high_a", True)])
+def test_저압_건물에는_야간_진상_안내가_안_선다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    voltage: str,
+    선다: bool,
+) -> None:
+    """**저압에는 진상역률 요금이 없다 — 그 요금을 말하는 안내도 세우지 않는다** (S269 결정 1).
+
+    S268 은 금액과 「과보상」 경고를 걷었고 「95% 에 못 미치면 기본요금이 추가됩니다」 류의
+    안내는 저압에도 고압과 같은 글로 남았다. 같은 종별에서 **전압만** 갈아 청구서 안내와
+    역률 개선 카드 안내를 본다 — 저압은 「진상」 이 든 글이 0 이고 고압은 그대로 선다.
+    새 글을 짓지 않았다: 제도 한 줄과 자동제어 한 줄은 야간 문장만 빠진 꼴이다.
+    """
+    selection = TariffSelection(
+        "general_a_1", voltage, list_options(tariff, "general_a_1", voltage)[0]
+    )
+    options = BillingOptions(contract_kw=6_000.0)
+    bill = calculate_bill(sample_usage, tariff, selection, options=options, quality=sample_report)
+    card = evaluate_power_factor(
+        sample_usage, tariff, selection, current_pct=90.0, options=options, quality=sample_report
+    )
+    notices = (*bill.notices, *card.notices)
+
+    진상 = [item.text for item in notices if "진상" in item.text]
+    assert bool(진상) is 선다, 진상
+    stood = NIGHT_LEADING_FACTS & {item.fact for item in notices}
+    assert stood == (NIGHT_LEADING_FACTS if 선다 else set()), stood
+
+    rule = next(item.text for item in bill.notices if item.fact == "power_factor.rule")
+    auto = next(item.text for item in card.notices if item.fact == "power_factor.auto_control")
+    if 선다:
+        assert "주간(08~22시) 지상 92%, 야간(22~08시) 진상 95% 가 기준이며" in rule
+        assert "야간에 되돌려 주게 됩니다. 설치비는" in auto
+    else:
+        assert rule == (
+            "역률요금은 기본요금에 대한 추가·감액입니다 (한전 기본공급약관 제43조). "
+            "주간(08~22시) 지상 92% 가 기준이며 매 1%당 0.2% 입니다."
+        )
+        assert auto == (
+            "설치비는 설비 구성에 따라 달라 본 도구가 산출하지 않습니다 — "
+            "견적을 「역률 개선 투자비」 에 넣으면 회수기간이 나옵니다."
+        )
+
+
 def test_monthly_rows_carry_the_power_factor_column(
     sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
 ) -> None:

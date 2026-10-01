@@ -316,6 +316,23 @@ COUNTS: tuple[tuple[str, Callable[[], int], str], ...] = (
 )
 
 
+#: **문서가 수를 안 적는 줄** (S269 결정 4 · S233 — 한 사실은 한 자리). 기준 데이터 항목
+#: 수는 그 파일이 쥐고 문서는 파일을 가리킨다 — 항목이 늘 때마다 문서가 바뀌고 사람이
+#: 프로젝트 지식을 다시 올렸다(S262 · S268). 표식이 어느 문서에도 없으면 그 자리를
+#: 안 본다. **숫자가 다시 박히면 실물과 맞대는 것은 그대로다.**
+POINTED = ("rules_kr.json 항목 수", "assumptions.json 항목 수")
+
+
+def _marks(mark: str) -> list[tuple[str, int, int]]:
+    """표식이 문서에서 읽은 (문서, 줄, 수)."""
+    found: list[tuple[str, int, int]] = []
+    for source, text in _texts():
+        for hit in re.finditer(mark, text):
+            line = text[: hit.start()].count("\n") + 1
+            found.append((source, line, int(hit.group(1).replace(",", ""))))
+    return found
+
+
 @pytest.mark.parametrize("name,count,mark", COUNTS, ids=[row[0] for row in COUNTS])
 def test_문서가_적은_수가_실물과_같다(name: str, count: Callable[[], int], mark: str) -> None:
     """**문서에서 읽은 수**와 **실물을 센 수**가 같아야 한다.
@@ -323,11 +340,9 @@ def test_문서가_적은_수가_실물과_같다(name: str, count: Callable[[],
     기대값을 여기 적지 않는다 — 양쪽 다 밖에서 가져온다.
     """
     actual = count()
-    found: list[tuple[str, int, int]] = []
-    for source, text in _texts():
-        for hit in re.finditer(mark, text):
-            line = text[: hit.start()].count("\n") + 1
-            found.append((source, line, int(hit.group(1).replace(",", ""))))
+    found = _marks(mark)
+    if not found and name in POINTED:
+        return
 
     assert found, (
         f"{name} 의 표식이 어느 문서에도 없습니다 ({mark!r}). "
@@ -338,6 +353,23 @@ def test_문서가_적은_수가_실물과_같다(name: str, count: Callable[[],
     assert not wrong, f"{name} 이 문서와 갈립니다 — 실물은 {actual} 입니다. " + " · ".join(
         f"{src}:{line} 이 {value}" for src, line, value in wrong
     )
+
+
+def test_문서는_기준_데이터_항목_수를_숫자로_적지_않는다() -> None:
+    """기준 데이터 두 파일의 항목 수를 **문서가 숫자로 적지 않는다** (S269 결정 4).
+
+    수는 파일(``data\\rules_kr.json`` · ``data\\assumptions.json``)이 쥔다. 문서에 박으면
+    항목이 하나 늘 때마다 프로젝트 지식 문서가 바뀐다. 표식은 위 그물의 것을 그대로 쓴다 —
+    사람 매뉴얼의 「전체 N개 · 변경됨」 은 고객이 읽는 글이라 그 줄이 따로 문다.
+    """
+    marks = {name: mark for name, _count, mark in COUNTS if name in POINTED}
+    assert set(marks) == set(POINTED), marks
+    stuck = [
+        f"{name} — {source}:{line} 이 {value}"
+        for name, mark in marks.items()
+        for source, line, value in _marks(mark)
+    ]
+    assert not stuck, " · ".join(stuck)
 
 
 def test_화면_감사_네_수가_개요와_현재_상태에서_같다() -> None:

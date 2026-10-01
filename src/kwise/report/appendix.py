@@ -28,6 +28,7 @@ from kwise.report.notices import (
     ESTIMATED_POWER_FACTOR_FACTS,
     LIMIT_FACTS,
     LIMIT_YIELDS,
+    interval_words,
     known_limit_lines,
 )
 from kwise.report.worksheet import COLUMNS, Worksheet
@@ -173,7 +174,7 @@ def basis_data_frame(table: TariffTable | None = None) -> pd.DataFrame:
 
 
 def known_limits(
-    *notices: tuple[Notice, ...], power_factor_billed: bool = False
+    *notices: tuple[Notice, ...], power_factor_billed: bool = False, interval_minutes: int = 15
 ) -> tuple[str, ...]:
     """부록 C — 알려진 한계 + **참고 등급 문구** (5.5절에서 옮겼다).
 
@@ -186,6 +187,8 @@ def known_limits(
 
     ``power_factor_billed`` — 청구서 역률을 넣었으면 「역률은 추정값」 을 말하는 한계 글과
     안내를 싣지 않는다 (S256 고2).
+
+    ``interval_minutes`` — 자료 간격을 말하는 한계 글은 판정한 간격으로 적는다 (S269 결정 2).
     """
     appendix = tuple(
         item
@@ -210,4 +213,4 @@ def known_limits(
         if item.fact_base not in seen:
             seen.add(item.fact_base)
             out.append(first[item.fact_base].text)
-    return tuple(out)
+    return tuple(interval_words(line, interval_minutes) for line in out)

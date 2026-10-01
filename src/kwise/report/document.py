@@ -1472,7 +1472,11 @@ class DocumentSections:
             worksheets=self.worksheets,
             grounds=grounds,
             cases=self.ess_cases,
-            limits=known_limits(*groups, power_factor_billed=self.power_factor_billed),
+            limits=known_limits(
+                *groups,
+                power_factor_billed=self.power_factor_billed,
+                interval_minutes=self.usage.meta.interval_minutes,
+            ),
             assumptions_rows=reference_rows(self.tariff_table),
         )
 

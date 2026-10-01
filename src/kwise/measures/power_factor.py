@@ -51,7 +51,7 @@ from kwise.tariff import (
     leading_floor_pct,
     leading_standard_pct,
 )
-from kwise.tariff.power_factor import billed_note
+from kwise.tariff.power_factor import billed_note, leading_charge_applies
 
 __all__ = [
     "NO_HEADROOM_LABEL",
@@ -263,23 +263,38 @@ def evaluate_power_factor(
             "역률 개선은 요금표와 약관만으로 확정되는 계산입니다. 감도를 적용하지 않습니다.",
             fact="power_factor.no_sensitivity",
         ),
+    ]
+    # **야간 진상을 말하는 안내는 그 요금의 대상인 건물에만 세운다** (S269 결정 1). 저압은
+    # 제43조 ② 2호 다목으로 대상이 아니라 「추가됩니다」 · 「되돌려 주게 됩니다」 가 참이
+    # 아니다 — 새 글을 짓지 않고 그 문장만 뺀다.
+    night_leading = leading_charge_applies(selection.voltage)
+    if night_leading:
+        notices.append(
+            info(
+                "**고정형 역률 개선 설비를 키우면 야간 경부하에서 진상으로 넘어갑니다.** "
+                "주간 부하에 맞춘 용량이 야간에는 과다해지기 때문입니다. "
+                "야간(22~08시) 진상역률 기준은 "
+                f"{leading_standard_pct():.0f}% 이며 미달 시 매 1%당 기본요금의 0.2% 가 "
+                f"추가됩니다 (하한 {leading_floor_pct():.0f}%, 한전 기본공급약관 제43조 ② 2호). "
+                "지상으로 유지되는 한 야간 역률은 100% 로 간주되어 추가가 0 이므로 "
+                "(같은 조 나목), 이 추가요금은 곧 **역률 개선 설비 과투자의 신호**입니다.",
+                fact="power_factor.leading_overshoot",
+            )
+        )
+    notices.append(
         info(
-            "**고정형 역률 개선 설비를 키우면 야간 경부하에서 진상으로 넘어갑니다.** 주간 부하에 "
-            f"맞춘 용량이 야간에는 과다해지기 때문입니다. 야간(22~08시) 진상역률 기준은 "
-            f"{leading_standard_pct():.0f}% 이며 미달 시 매 1%당 기본요금의 0.2% 가 "
-            f"추가됩니다 (하한 {leading_floor_pct():.0f}%, 한전 기본공급약관 제43조 ② 2호). "
-            "지상으로 유지되는 한 야간 역률은 100% 로 간주되어 추가가 0 이므로 "
-            "(같은 조 나목), 이 추가요금은 곧 **역률 개선 설비 과투자의 신호**입니다.",
-            fact="power_factor.leading_overshoot",
-        ),
-        info(
-            "**자동제어형 역률 개선 설비를 쓰면 부하에 따라 투입 단수가 조절되어 야간 "
-            "진상을 피할 수 있습니다.** 고정형 역률 개선 설비 한 벌로 주간 97% 를 맞추면 "
-            "야간에 되돌려 주게 됩니다. 설치비는 설비 구성에 따라 달라 본 도구가 "
+            (
+                "**자동제어형 역률 개선 설비를 쓰면 부하에 따라 투입 단수가 조절되어 야간 "
+                "진상을 피할 수 있습니다.** 고정형 역률 개선 설비 한 벌로 주간 97% 를 맞추면 "
+                "야간에 되돌려 주게 됩니다. "
+                if night_leading
+                else ""
+            )
+            + "설치비는 설비 구성에 따라 달라 본 도구가 "
             "산출하지 않습니다 — 견적을 「역률 개선 투자비」 에 넣으면 회수기간이 나옵니다.",
             fact="power_factor.auto_control",
-        ),
-    ]
+        )
+    )
     return PowerFactorResult(
         current_pct=current_pct,
         target_pct=target_pct,

@@ -56,6 +56,7 @@ __all__ = [
     "excess_not_measured_line",
     "format_mwh",
     "format_won",
+    "interval_words",
     "known_limit_lines",
     "lowering_recommended",
     "max_demand_text",
@@ -82,6 +83,7 @@ __all__ = [
 # 에서 바로 들여왔다. 한 파일 안에서 같은 갈래가 두 문으로 들어오면 다음 사람이
 # 셋째를 붙일 때 문을 아무 데나 고른다.
 from kwise import money
+from kwise.io import interval_label
 from kwise.measures.catalog import measure_kind
 from kwise.money import TRUNCATION_FOOTNOTE
 from kwise.rules import diff_from_defaults
@@ -267,6 +269,17 @@ LIMIT_YIELDS: frozenset[str] = frozenset({"tariff.not_included"})
 ESTIMATED_POWER_FACTOR_FACTS: frozenset[str] = frozenset(
     {"solar.power_factor_estimated", "power_factor.estimated_only"}
 )
+
+
+def interval_words(line: str, interval_minutes: int) -> str:
+    """자료 간격을 말하는 글자를 **판정한 간격**으로 적는다 (S269 결정 2).
+
+    「본 데이터는 15분 유효전력뿐입니다」 는 올린 자료를 말한다 — 1시간 자료면 「1시간」 이다.
+    15분 자료에서는 한 글자도 안 바뀐다. 요금 제도를 말하는 「15분 최대수요」 는 사실이라
+    건드리지 않는다. 사실 ID 로 거른 뒤(:data:`LIMIT_FACTS` 의 열쇠가 원문이다) 싣는
+    자리에서 부른다.
+    """
+    return line.replace("본 데이터는 15분", f"본 데이터는 {interval_label(interval_minutes)}")
 
 
 def known_limit_lines(*, power_factor_billed: bool = False) -> tuple[str, ...]:

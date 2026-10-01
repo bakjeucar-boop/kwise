@@ -41,6 +41,7 @@ from kwise.io.columns import (
 __all__ = [
     "DEFAULT_ENCODINGS",
     "HOURLY_INTERVAL_WARNING",
+    "HOURLY_INTERVAL_WARNING_ON_CONTRACT",
     "SUPPORTED_INTERVALS",
     "USAGE_DATE_COLUMN_CANDIDATES",
     "USAGE_ENERGY_COLUMN_CANDIDATES",
@@ -80,6 +81,12 @@ SUPPORTED_INTERVALS: tuple[int, ...] = (15, 60)
 HOURLY_INTERVAL_WARNING = (
     "1시간 간격 자료입니다. 요금적용전력은 15분 최대수요로 정해지므로, "
     "이 자료로 낸 최대수요와 기본요금은 실제보다 낮을 수 있습니다."
+)
+
+#: 기본요금을 **계약전력으로** 매기는 건물의 같은 주의 (S269 결정 3). 그 건물은 1시간
+#: 자료라도 기본요금이 낮게 서지 않는다 — 최대수요 쪽만 참이다. 진단이 갈아 끼운다.
+HOURLY_INTERVAL_WARNING_ON_CONTRACT = (
+    "1시간 간격 자료입니다. 이 자료로 낸 최대수요는 15분 최대수요보다 낮을 수 있습니다."
 )
 
 

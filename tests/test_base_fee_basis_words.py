@@ -216,11 +216,14 @@ def _render_human() -> Rendered:
     return _RENDERED[slot]
 
 
-def _render_hourly() -> Rendered:
-    """S268 결정 2 확인 입력 — 용인 15분 실물(`small-a2`)을 1시간으로 합쳐 올린 벌."""
-    slot = "hourly"
+def _render_hourly(contract_type: str = "") -> Rendered:
+    """S268 결정 2 확인 입력 — 용인 15분 실물(`small-a2`)을 1시간으로 합쳐 올린 벌.
+
+    ``contract_type`` 을 주면 그 종별로 띄운다 (S269 결정 3 — 계약전력 기준 확인 입력).
+    """
+    slot = f"hourly|{contract_type}" if contract_type else "hourly"
     if slot not in _RENDERED:
-        _RENDERED[slot] = _build("small-a2", hourly=True)
+        _RENDERED[slot] = _build("small-a2", hourly=True, contract_type=contract_type)
     return _RENDERED[slot]
 
 
@@ -242,6 +245,7 @@ def _build(
     confirm: bool = False,
     human: bool = False,
     hourly: bool = False,
+    contract_type: str = "",
 ) -> Rendered:
     from dataclasses import replace
 
@@ -261,6 +265,8 @@ def _build(
     case = render_deck.BY_KEY[case_key]
     if confirm:
         case = replace(case, power_factor_pct=99.68)
+    if contract_type:
+        case = replace(case, contract_type=contract_type, option="")
     if not case.csv.is_file():
         pytest.skip(f"자료가 없습니다: {case.csv}")
     patch = pytest.MonkeyPatch()
@@ -2908,7 +2914,7 @@ def _s263_check(item: str, request: pytest.FixtureRequest) -> None:
     elif item == "7":
         from kwise.tariff import power_factor_charge
 
-        def said(**kwargs: float) -> list[str]:
+        def said(**kwargs: Any) -> list[str]:
             return [n.text for n in power_factor_charge(1_000_000.0, **kwargs).notices]
 
         # (가1) 99.68 — 입력값과 반올림 값을 함께 · 폭과 감액률은 정수
@@ -3264,3 +3270,92 @@ def test_1시간_자료면_주의와_간격_글자가_서고_15분_자료에는_
     assert all(count > 0 for count in _interval_words(quarter, "15분").values()), quarter.key
     assert not any(_interval_words(quarter, "1시간").values()), _interval_words(quarter, "1시간")
     assert sheets(quarter) == ["15분 시계열"]
+
+
+#: S269 결정 3 의 주의 글 — 기본요금을 계약전력으로 매기는 건물의 1시간 주의(글자를 다시 적는다).
+HOURLY_CAUTION_ON_CONTRACT = (
+    "1시간 간격 자료입니다. 이 자료로 낸 최대수요는 15분 최대수요보다 낮을 수 있습니다."
+)
+
+
+def _cells_with(rendered: Rendered, word: str) -> list[tuple[str, str]]:
+    """``word`` 가 든 줄의 (산출물, 자리) — 줄마다 한 번."""
+    return sorted(
+        (str(row[0]), str(row[1]))
+        for row in rendered.rows
+        if any(word in str(cell) for cell in row[2:])
+    )
+
+
+def test_1시간_자료의_간격_문장과_계약전력_기준_주의_글() -> None:
+    """**자료 간격을 말하는 문장은 판정한 간격을 따른다** (S269 결정 2 · 3).
+
+    S268 은 그림 · 표 이름만 「1시간」 으로 갈았다 — 한계 글 「본 데이터는 15분 유효전력뿐입니다」
+    와 툴팁 「어느 15분 구간에서도 …」 가 1시간 자료에도 그대로 섰다. 같은 건물을 15분 그대로 ·
+    1시간으로 합쳐(요금적용전력 기준) · 1시간으로 합쳐 계약전력 기준 종별로 띄운 세 벌을 맞댄다.
+
+    요금 제도를 말하는 「15분 최대수요」 는 사실이라 1시간 자료에서도 그대로다. 기본요금을
+    계약전력으로 매기는 건물은 1시간 자료라도 기본요금이 낮게 서지 않는다 — 그 건물의
+    주의는 최대수요만 말한다.
+    """
+    hourly, quarter = _render_hourly(), _render("small-a2")
+    on_contract = _render_hourly("general_a_1")
+
+    # 결정 2 — 한계 글은 Excel 요약 · 부록 C · Word 세 자리, 툴팁은 화면 한 자리.
+    for rendered, here, gone in ((hourly, "1시간", "15분"), (quarter, "15분", "1시간")):
+        limit = _cells_with(rendered, f"본 데이터는 {here} 유효전력뿐입니다")
+        assert [kind for kind, _where in limit] == ["Excel", "Excel", "Word"], (rendered.key, limit)
+        tip = _cells_with(rendered, f"어느 {here} 구간에서도 발전이 부하를 넘지 않는")
+        assert [kind for kind, _where in tip] == ["화면"], (rendered.key, tip)
+        assert _cells_with(rendered, f"본 데이터는 {gone}") == [], rendered.key
+        assert _cells_with(rendered, f"어느 {gone} 구간에서도") == [], rendered.key
+
+    # 결정 3 — 주의가 서는 자리는 같은 셋이고 글만 갈린다. 두 글이 한 벌에 함께 서지 않는다.
+    assert [kind for kind, _where in _cells_with(hourly, HOURLY_CAUTION)] == [
+        "Excel",
+        "PPT",
+        "화면",
+    ]
+    assert _cells_with(hourly, HOURLY_CAUTION_ON_CONTRACT) == []
+    stood = _cells_with(on_contract, HOURLY_CAUTION_ON_CONTRACT)
+    assert [kind for kind, _where in stood] == ["Excel", "PPT", "화면"], stood
+    assert stood[0] == ("Excel", "요약") and stood[1] == ("PPT", "3"), stood
+    assert _cells_with(on_contract, HOURLY_CAUTION) == []
+    assert _cells_with(on_contract, "본 데이터는 1시간 유효전력뿐입니다")
+    assert _cells_with(quarter, "1시간 간격 자료입니다") == []
+
+
+#: 저압 건물에 서지 않는 야간 진상 안내 — 줄마다 그 글에만 든 조각 (S269 결정 1).
+NIGHT_LEADING_WORDS = (
+    "진상 추가요금 0원입니다",
+    "야간 진상 여부를 확인하지 않았습니다",
+    "야간(22~08시) 진상 95% 가 기준이며",
+    "야간 경부하에서 진상으로 넘어갑니다",
+    "야간 진상을 피할 수 있습니다",
+)
+
+
+def test_저압_건물에는_야간_진상_안내와_입력칸이_안_선다() -> None:
+    """**저압에는 진상역률 요금이 없다 — 안내도 입력칸도 세우지 않는다** (S269 결정 1).
+
+    약관 제43조 ② 2호 다목(S268 결정 1). 덱의 저압 벌(`small-ind-a1` · 산업용(갑)Ⅰ 저압)과
+    같은 자료의 고압 벌(`small-ind-a2` · 고압A)을 앱으로 띄워 네 산출물을 맞댄다. 저압은
+    야간 진상 안내 다섯 갈래가 0줄이고 「야간 진상역률을 안다」 입력칸이 없다. 고압은 다 선다.
+    매뉴얼 가리킴 툴팁과 기준 데이터 표의 진상 줄은 두 벌 다 그대로다(건물을 말하지 않는다).
+    """
+    low, high = _render("small-ind-a1"), _render("small-ind-a2")
+
+    for word in NIGHT_LEADING_WORDS:
+        assert _cells_with(low, word) == [], (word, _cells_with(low, word))
+        assert _cells_with(high, word), word
+    box = "야간 진상역률을 안다"
+    assert box not in [text for _slot, text in low.screen]
+    assert box in [text for _slot, text in high.screen]
+
+    # 빼기만 했다 — 제도 한 줄은 야간 구절 없이 서고, 남은 「진상」 은 가리킴 툴팁과
+    # 기준 데이터 표다.
+    assert _cells_with(low, "주간(08~22시) 지상 92% 가 기준이며 매 1%당 0.2% 입니다.")
+    for row in low.rows:
+        line = " | ".join(str(cell) for cell in row)
+        if "진상" in line:
+            assert "야간 진상 조항과 지상 간주" in line or "기본공급약관 제43조 ② 2호" in line, row

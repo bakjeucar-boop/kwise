@@ -32,8 +32,9 @@
                  **다목**  「나」 에도 불구하고 **제42조 ② 단서에 해당하는
                           고객은 진상역률 요금을 적용하지 않는다** — 곧 저압
                           고객은 야간 진상요금 대상이 아니다.
-                          엔진이 저압이면 야간 진상을 이 셈에 안 넘긴다
-                          (S268 결정 1 · :func:`leading_applies_to_low_voltage`).
+                          저압이면 넣은 야간 진상을 셈에 안 쓰고 (S268 결정 1)
+                          야간 진상 안내도 세우지 않는다 (S269 결정 1 ·
+                          :func:`leading_charge_applies`).
            ③ 추가요금이 발생하는 첫 달은 **예고**, 두 번째 달부터 청구.
 
 **야간 진상 페널티는 '역률 개선 설비 과투자의 결과'다.**
@@ -77,6 +78,7 @@ __all__ = [
     "lagging_standard_pct",
     "leading_adjustment_ratio",
     "leading_applies_to_low_voltage",
+    "leading_charge_applies",
     "leading_floor_pct",
     "leading_lagging_deemed_pct",
     "leading_standard_pct",
@@ -141,6 +143,15 @@ def leading_lagging_deemed_pct() -> float:
 def leading_applies_to_low_voltage() -> bool:
     """저압 고객에게 야간 진상역률 요금을 매기는가 — 제43조 ② 2호 다목은 매기지 않는다."""
     return bool(rule_value("power_factor.leading_applies_to_low_voltage"))
+
+
+def leading_charge_applies(voltage: str) -> bool:
+    """이 전압의 고객이 야간 진상역률 요금 대상인가 — 저압은 다목으로 아니다.
+
+    **묻는 자리가 하나다** (S269 결정 1). 엔진 · 역률 개선 카드 · Excel · 화면이 다
+    이 함수로 가른다 — 대상이 아니면 야간 진상 안내와 입력칸을 세우지 않는다.
+    """
+    return voltage != "low" or leading_applies_to_low_voltage()
 
 
 def rounding_unit_pct() -> float:
@@ -289,6 +300,7 @@ def power_factor_charge(
     *,
     lagging_pct: float | None = None,
     leading_pct: float | None = None,
+    leading_applies: bool = True,
 ) -> PowerFactorCharge:
     """기본요금에 대한 역률 추가·감액을 낸다 (제43조).
 
@@ -299,7 +311,12 @@ def power_factor_charge(
         leading_pct: 야간 **진상**역률. None 이면 제43조 ② 2호 나목에 따라
             지상으로 보아 100% 로 간주하고 추가를 0 으로 둔다. 진상은 고정
             역률 개선 설비가 부하 대비 과다할 때 생기므로, 그 사실을 경고로 남긴다.
+        leading_applies: 야간 진상역률 요금 대상인가 (:func:`leading_charge_applies`).
+            거짓이면(저압 · 다목) ``leading_pct`` 를 셈에 안 쓰고 야간 진상을 말하는
+            안내를 세우지 않는다 — 그 건물에서 참이 아닌 말이다 (S269 결정 1).
     """
+    if not leading_applies:
+        leading_pct = None
     standard = lagging_standard_pct()
     floor = lagging_floor_pct()
     cap = lagging_rebate_cap_pct()
@@ -311,8 +328,9 @@ def power_factor_charge(
         # 제도 설명은 **참고**, 계산에서 뺀 규칙은 **근거**다.
         info(
             "역률요금은 기본요금에 대한 추가·감액입니다 (한전 기본공급약관 제43조). "
-            "주간(08~22시) 지상 92%, 야간(22~08시) 진상 95% 가 기준이며 "
-            "매 1%당 0.2% 입니다.",
+            "주간(08~22시) 지상 92%"
+            + (", 야간(22~08시) 진상 95%" if leading_applies else "")
+            + " 가 기준이며 매 1%당 0.2% 입니다.",
             fact="power_factor.rule",
         ),
         basis(
@@ -394,7 +412,9 @@ def power_factor_charge(
     # 입력값과 반올림 값이 다르면 머리에 함께 밝힌다 (S263 결정 7 · 지상 머리와 같은 꼴).
     leading_note = billed_note(leading_pct) if leading_pct is not None else ""
     leading_tail = f" ({leading_note})" if leading_note else ""
-    if leading_pct is None:
+    if not leading_applies:
+        pass  # 대상이 아닌 고객(저압)에게는 야간 진상 안내를 세우지 않는다 (S269 결정 1)
+    elif leading_pct is None:
         notices.append(
             basis(
                 "야간(22~08시)은 **지상으로 보아 역률 100% 간주**, 진상 추가요금 0원입니다 "
