@@ -39,7 +39,7 @@ from kwise import money
 from kwise.compare import ComparisonResult
 from kwise.diagnose import ChargeStructure, PeakProfile
 from kwise.diagnose.dr import JUDGE_WINDOW, DrProfile
-from kwise.io import UsageData
+from kwise.io import UsageData, interval_label
 from kwise.measures import (
     ContractAdjustment,
     DispatchResult,
@@ -846,7 +846,7 @@ def solar_day_png(
             arrowprops={"arrowstyle": "->", "color": chart_palette().highlight},
         )
     axes.set_ylabel(DAY_LOAD_AXIS)
-    axes.set_xlabel(f"{day.title} · 15분")
+    axes.set_xlabel(f"{day.title} · {interval_label(usage.meta.interval_minutes)}")
     time_axis(axes)
     axes.tick_params(axis="x", rotation=45, labelsize=8)
     add_legend(axes)
@@ -894,7 +894,7 @@ def ess_day_png(
     """
     apply_style()
     frame = ess_day_frame(usage, dispatch, day.date)
-    title = f"{day.title} · 15분"
+    title = f"{day.title} · {interval_label(usage.meta.interval_minutes)}"
     if len(frame) and zoom:
         frame = peak_window(frame)
         title = f"{day.title} · 피크 앞뒤 {PEAK_ZOOM_HOURS}시간"
@@ -1085,6 +1085,8 @@ def power_factor_day_png(
     """
     apply_style()
     marks = chart_palette()
+    # 간격 글자는 판정한 간격을 따른다 — 1시간 자료면 「1시간」 (S268 결정 2).
+    interval = interval_label(usage.meta.interval_minutes)
     frame = power_factor_day_frame(usage, day.date, current_pct=current_pct, target_pct=target_pct)
     figure, axes = plt.subplots(figsize=size or _SIZE)
     if len(frame):
@@ -1093,7 +1095,7 @@ def power_factor_day_png(
             frame["부하(kW)"],
             color=marks.series[0],
             linewidth=1.6,
-            label="15분 부하",
+            label=f"{interval} 부하",
         )
         window = frame[frame["구간"].str.startswith("주간")]
         if len(window):
@@ -1106,7 +1108,7 @@ def power_factor_day_png(
                 label="지상역률 판정 구간",
             )
     axes.set_ylabel(DAY_LOAD_AXIS)
-    axes.set_xlabel(f"{day.title} · 15분")
+    axes.set_xlabel(f"{day.title} · {interval}")
     time_axis(axes)
     axes.tick_params(axis="x", rotation=45, labelsize=8)
     add_legend(axes)

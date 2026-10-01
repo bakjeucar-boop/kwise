@@ -198,7 +198,6 @@ def test_diagnose_works_without_contract_info(
     assert result.summary.pv_potential is PvPotential.HIGH
     assert result.summary.tariff_switch_saving_won is None
     assert any("계약 정보가 없어" in message for message in texts(result.notices))
-    assert len(result.summary.lines) == 3
 
 
 def test_diagnose_warns_about_a_pending_option(tmp_path: Path, tariff: TariffTable) -> None:
@@ -828,13 +827,23 @@ def test_every_option_is_priced_but_only_totals_are_kept(sample_diagnosis: Diagn
     assert min(totals, key=lambda key: totals[key]) == "general_b/high_a/II"
 
 
-def test_summary_lines_are_ready_for_the_screen(sample_diagnosis: Diagnosis) -> None:
-    lines = sample_diagnosis.summary.lines
-    assert len(lines) == 3
-    assert lines[0].startswith("선택요금 전환")
-    assert "5,358만원" in lines[0]
-    assert "투자 불필요" in lines[1]
-    assert "높음" in lines[2]
+def test_1단계_요약_세_줄은_걷혔다() -> None:
+    """**쓰이지 않는 길은 두지 않는다** (S268 결정 4).
+
+    `ImprovementSummary.lines` 와 그것을 짓던 `build_lines` 는 `src\\` 에서 읽는 자리가
+    없었다 — 어느 화면 · 산출물에도 안 떴다. 이름이 `src\\` 에 다시 서면 여기서 걸린다.
+    """
+    import dataclasses
+
+    from kwise.diagnose import ImprovementSummary
+
+    assert "lines" not in {item.name for item in dataclasses.fields(ImprovementSummary)}
+    남은것 = [
+        str(path.relative_to(PROJECT_ROOT))
+        for path in sorted((PROJECT_ROOT / "src").rglob("*.py"))
+        if "build_lines" in path.read_text(encoding="utf-8")
+    ]
+    assert 남은것 == [], 남은것
 
 
 def test_contract_saving_is_zero_when_the_floor_does_not_bind(
@@ -1002,36 +1011,3 @@ def test_계약전력_조정의_없음을_가르는_잣대는_한_곳이다() ->
     assert not 떠도는것, f"계약 절감액을 날값 0 으로 재는 자리가 생겼다 — {떠도는것}"
 
 
-@pytest.mark.parametrize(
-    ("contract_kw", "여지없음", "칸"),
-    [
-        (CONTRACT_KW, True, "없음"),  # 하한 1,650 kW < 요금적용전력 5,293 kW — 낮춰도 안 준다
-        (20_000.0, False, "만원"),  # 하한 6,000 kW > 5,293 kW — 하한이 걸려 낮출 자리가 있다
-    ],
-)
-def test_1단계_요약의_계약_칸이_여지_판정과_한_말을_한다(
-    sample_usage: UsageData,
-    sample_report: QualityReport,
-    tariff: TariffTable,
-    contract_kw: float,
-    여지없음: bool,
-    칸: str,
-) -> None:
-    """**걸러짐이 서는 벌과 안 서는 벌 둘 다에서 문다** (S208 3-2).
-
-    한쪽만 보면 다른 쪽이 갈려도 초록이다. 두 벌은 같은 자료에 계약전력만
-    다르다 — 하한(30%)이 요금적용전력을 넘느냐가 갈림이다.
-    """
-    result = diagnose(
-        sample_usage,
-        tariff,
-        ContractInfo(CURRENT, contract_kw=contract_kw),
-        quality=sample_report,
-    )
-    assert result.contract is not None
-    assert result.contract.adjustment.no_saving is 여지없음
-    계약줄 = result.summary.lines[1]
-    assert 계약줄.startswith("계약전력 조정")
-    assert 칸 in 계약줄
-    # **판정과 글자가 같은 말을 한다** — 여지가 없을 때만 「없음」 이다.
-    assert ("없음" in 계약줄) is 여지없음

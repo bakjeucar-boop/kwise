@@ -32,9 +32,8 @@
                  **다목**  「나」 에도 불구하고 **제42조 ② 단서에 해당하는
                           고객은 진상역률 요금을 적용하지 않는다** — 곧 저압
                           고객은 야간 진상요금 대상이 아니다.
-                          **코드에도 ``rules_kr.json`` 에도 없다** (S152 가
-                          값으로 봤다 · 미해결에 이름으로 서 있다). 지금은
-                          야간 진상을 입력받지 않으므로 값이 안 갈린다.
+                          엔진이 저압이면 야간 진상을 이 셈에 안 넘긴다
+                          (S268 결정 1 · :func:`leading_applies_to_low_voltage`).
            ③ 추가요금이 발생하는 첫 달은 **예고**, 두 번째 달부터 청구.
 
 **야간 진상 페널티는 '역률 개선 설비 과투자의 결과'다.**
@@ -77,6 +76,7 @@ __all__ = [
     "lagging_rebate_cap_pct",
     "lagging_standard_pct",
     "leading_adjustment_ratio",
+    "leading_applies_to_low_voltage",
     "leading_floor_pct",
     "leading_lagging_deemed_pct",
     "leading_standard_pct",
@@ -136,6 +136,11 @@ def leading_floor_pct() -> float:
 def leading_lagging_deemed_pct() -> float:
     """같은 나목 — 야간에 **지상**이면 이 역률로 간주한다. 추가요금이 0이 된다."""
     return float(rule_value("power_factor.leading_lagging_deemed_pct"))
+
+
+def leading_applies_to_low_voltage() -> bool:
+    """저압 고객에게 야간 진상역률 요금을 매기는가 — 제43조 ② 2호 다목은 매기지 않는다."""
+    return bool(rule_value("power_factor.leading_applies_to_low_voltage"))
 
 
 def rounding_unit_pct() -> float:

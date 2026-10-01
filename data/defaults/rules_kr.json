@@ -262,6 +262,14 @@
       "value": 92.0,
       "verified_on": "2026-09-02"
     },
+    "power_factor.leading_applies_to_low_voltage": {
+      "label": "저압 고객의 야간 진상역률 요금 적용 여부",
+      "note": "“나”에도 불구하고, 제42조(역률의 계산) 제2항의 단서에 해당하는 고객은 진상역률 요금을 적용하지 않습니다 — 그 단서가 저압으로 전기를 공급받는 고객이다.",
+      "source": "기본공급약관 제43조 ② 2호 다목",
+      "source_date": "2026-06-01",
+      "value": false,
+      "verified_on": "2026-10-01"
+    },
     "power_factor.leading_floor_pct": {
       "label": "야간 진상역률 하한 (%)",
       "note": "추정이 아니라 원문에 명시된 하한이다.",

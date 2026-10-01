@@ -203,8 +203,8 @@ def monthly_charge_frame(structure: ChargeStructure) -> pd.DataFrame:
     """월별 요금 구성 — 기본요금과 계시별 전력량요금 (27세션 3-2).
 
     **기본요금에 역률요금을 합쳐 적는다.** 역률요금은 기본요금의 ±% 조정이라
-    따로 세우면 막대에 뜻 없는 실오라기가 하나 늘고, 요금 엔진의 12개월 환산
-    (:meth:`~kwise.tariff.BillingResult.annualize`)도 이미 둘을 함께 묶는다.
+    따로 세우면 막대에 뜻 없는 실오라기가 하나 늘고, 요금 엔진도 둘을 함께 묶은 값
+    (:attr:`~kwise.tariff.BillingResult.base_with_power_factor_won`)을 낸다.
 
     **초과사용부가금은 따로 세운다** (S140 2절). 기본요금에 접으면 용어집
     (:data:`~kwise.report.narrative.GLOSSARY`)에 고정으로 박힌 기본요금 산식이

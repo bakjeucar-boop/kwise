@@ -37,7 +37,7 @@ from kwise.compare import (
 )
 from kwise.diagnose import Diagnosis
 from kwise.diagnose.dr import DrProfile
-from kwise.io import UsageData
+from kwise.io import UsageData, interval_label
 from kwise.measures import (
     Certainty,
     ContractAdjustment,
@@ -1342,7 +1342,10 @@ def _download_block(
             "부록 셋을 포함한 통합문서입니다. 파일명에 날짜·시각이 붙습니다.",
             help=manual_tip("excel-report"),
         )
-        include_timeseries = st.checkbox("15분 시계열 시트 포함", value=True)
+        # 시트 이름은 판정한 간격을 따른다 — 1시간 자료면 「1시간 시계열」 (S268 결정 2).
+        include_timeseries = st.checkbox(
+            f"{interval_label(usage.meta.interval_minutes)} 시계열 시트 포함", value=True
+        )
         excel_token = f"{token}|{include_timeseries}|{area}"
         for line in blocked:
             callout.caution(line)

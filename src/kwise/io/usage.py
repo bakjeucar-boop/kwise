@@ -40,6 +40,7 @@ from kwise.io.columns import (
 
 __all__ = [
     "DEFAULT_ENCODINGS",
+    "HOURLY_INTERVAL_WARNING",
     "SUPPORTED_INTERVALS",
     "USAGE_DATE_COLUMN_CANDIDATES",
     "USAGE_ENERGY_COLUMN_CANDIDATES",
@@ -56,6 +57,7 @@ __all__ = [
     "detect_grid_phase_seconds",
     "detect_interval_minutes",
     "detect_usage_columns",
+    "interval_label",
     "load_usage",
     "load_usage_bytes",
     "match_usage_column",
@@ -72,6 +74,21 @@ __all__ = [
 DEFAULT_ENCODINGS: tuple[str, ...] = ("utf-8-sig", "cp949", "euc-kr", "utf-8")
 
 SUPPORTED_INTERVALS: tuple[int, ...] = (15, 60)
+
+#: 1시간 간격 자료의 주의 (S268 결정 2). **한 글자다** — 업로드 경고와 품질 검사가
+#: 이 상수를 쓴다. 1시간 평균은 15분 최대수요보다 낮다(용인 실물 132 → 120 kW).
+HOURLY_INTERVAL_WARNING = (
+    "1시간 간격 자료입니다. 요금적용전력은 15분 최대수요로 정해지므로, "
+    "이 자료로 낸 최대수요와 기본요금은 실제보다 낮을 수 있습니다."
+)
+
+
+def interval_label(interval_minutes: int) -> str:
+    """판정한 검침 간격의 글자 — 그림 · 표 이름이 쓴다 (S268 결정 2).
+
+    15 → 「15분」 · 60 → 「1시간」.
+    """
+    return "1시간" if interval_minutes == 60 else f"{interval_minutes}분"
 
 _HOUR24_PATTERN = r"24:00(?::00)?$"
 _CSV_SUFFIXES = frozenset({".csv", ".txt"})
@@ -700,10 +717,7 @@ def _build_warnings(
     """업로드 직후 표시할 경고. 조용히 넘어가지 않는다 (요구사항서 4장)."""
     messages: list[str] = list(detection.warnings)  # 열 판정에 확신이 없으면 먼저 알린다
     if interval != 15:
-        messages.append(
-            f"{interval}분 간격 데이터입니다. 15분 최대수요를 직접 관측할 수 없어 "
-            "기본요금 판정에 한계가 있습니다."
-        )
+        messages.append(HOURLY_INTERVAL_WARNING)
     if period_days < 365:
         # **일수를 여기 다시 적지 않는다** (S156 4-5). 앞서는
         # 「기간이 {period_days:.0f}일로 12개월 미만입니다」 였는데 `:.0f` 가

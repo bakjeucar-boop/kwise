@@ -216,7 +216,33 @@ def _render_human() -> Rendered:
     return _RENDERED[slot]
 
 
-def _build(case_key: str, use: str = "", *, confirm: bool = False, human: bool = False) -> Rendered:
+def _render_hourly() -> Rendered:
+    """S268 결정 2 확인 입력 — 용인 15분 실물(`small-a2`)을 1시간으로 합쳐 올린 벌."""
+    slot = "hourly"
+    if slot not in _RENDERED:
+        _RENDERED[slot] = _build("small-a2", hourly=True)
+    return _RENDERED[slot]
+
+
+def _hourly_bytes(source: Path) -> bytes:
+    """15분 실물을 1시간으로 합친 업로드 바이트 — 저장소에 파일을 안 남긴다."""
+    from kwise.io import load_usage
+
+    energy = load_usage(source).energy_kwh()
+    hourly = energy.resample("60min", label="right", closed="right").sum(min_count=1)
+    lines = ["날짜시간,사용량(kWh)"]
+    lines += [f"{stamp:%Y-%m-%d %H:%M},{value:.2f}" for stamp, value in hourly.items()]
+    return ("\n".join(lines) + "\n").encode("utf-8-sig")
+
+
+def _build(
+    case_key: str,
+    use: str = "",
+    *,
+    confirm: bool = False,
+    human: bool = False,
+    hourly: bool = False,
+) -> Rendered:
     from dataclasses import replace
 
     from streamlit.testing.v1 import AppTest
@@ -251,8 +277,8 @@ def _build(case_key: str, use: str = "", *, confirm: bool = False, human: bool =
     try:
         app = AppTest.from_file(str(render_deck.APP), default_timeout=900)
         state = app.session_state
-        state["upload_bytes"] = case.csv.read_bytes()
-        state["upload_name"] = case.csv.name
+        state["upload_bytes"] = _hourly_bytes(case.csv) if hourly else case.csv.read_bytes()
+        state["upload_name"] = "hourly.csv" if hourly else case.csv.name
         state["contract_form"] = ContractForm(
             contract_type=case.contract_type,
             voltage=case.voltage,
@@ -3178,3 +3204,66 @@ def test_S266_요금표_시행일_괄호_Word_조합_캡션_산업용_벌_원문
     `test_ui_screen.py` 의 세 시험이 문다.
     """
     _s266_check(item, request)
+
+
+#: S268 결정 2 의 주의 글 — 글자를 여기 다시 적는다(상수를 들이면 글자가 바뀌어도 초록이다).
+HOURLY_CAUTION = (
+    "1시간 간격 자료입니다. 요금적용전력은 15분 최대수요로 정해지므로, "
+    "이 자료로 낸 최대수요와 기본요금은 실제보다 낮을 수 있습니다."
+)
+
+
+def _interval_words(rendered: Rendered, word: str) -> dict[str, int]:
+    """그림 · 표 이름에 간격 글자 ``word`` 가 선 자리 수 — 갈래마다."""
+    cells = [str(cell) for row in (*rendered.rows, *rendered.figures) for cell in row[1:]]
+    kinds = {
+        "화면 그림 축 이름": rf"· {word} 부하$",
+        "화면 그림 캡션": rf"· {word} 부하와 판정 창$",
+        "화면 캡션 툴팁": rf"^대표일의 {word} 부하이고",
+        "산출물 그림 축 이름": rf"· {word}$",
+        "산출물 그림 범례": rf"^{word} 부하$",
+        "시계열 시트 체크박스": rf"^{word} 시계열 시트 포함$",
+    }
+    return {
+        name: sum(1 for cell in cells if re.search(mark, cell)) for name, mark in kinds.items()
+    }
+
+
+def test_1시간_자료면_주의와_간격_글자가_서고_15분_자료에는_안_선다() -> None:
+    """**1시간 평균은 15분 최대수요보다 낮다 — 그 사실을 결과 곁에 세운다** (S268 결정 2).
+
+    같은 건물(`small-a2` · 용인 15분 실물)을 그대로 올린 벌과 1시간으로 합쳐 올린 벌을
+    맞댄다 — 둘 다 쪽을 문다. 1시간이면 주의 한 줄이 화면 1단계(한 번) · PPT 3장 · Excel 요약 ·
+    Word 에 서고 그림 · 표 이름의 간격 글자가 「1시간」 이다. 15분이면 그 줄이 없고 「15분」 이다.
+    계산은 안 건드린다(보정하지 않는다).
+    """
+    from openpyxl import load_workbook
+
+    def caution(rendered: Rendered) -> list[tuple[str, str]]:
+        return sorted(
+            (str(row[0]), str(row[1]))
+            for row in rendered.rows
+            if any(HOURLY_CAUTION in str(cell) for cell in row[2:])
+        )
+
+    def sheets(rendered: Rendered) -> list[str]:
+        book = load_workbook(io.BytesIO(rendered.payloads["excel"]), read_only=True)
+        return [name for name in book.sheetnames if "시계열" in name]
+
+    hourly, quarter = _render_hourly(), _render("small-a2")
+
+    stood = caution(hourly)
+    screen = [where for kind, where in stood if kind == "화면"]
+    assert len(screen) == 1 and screen[0].endswith("1단계 · 진단"), stood
+    assert ("PPT", "3") in stood, stood
+    assert ("Excel", "요약") in stood, stood
+    assert [kind for kind, _where in stood if kind == "Word"], stood
+    assert caution(quarter) == []
+
+    assert all(count > 0 for count in _interval_words(hourly, "1시간").values()), hourly.key
+    assert not any(_interval_words(hourly, "15분").values()), _interval_words(hourly, "15분")
+    assert sheets(hourly) == ["1시간 시계열"]
+
+    assert all(count > 0 for count in _interval_words(quarter, "15분").values()), quarter.key
+    assert not any(_interval_words(quarter, "1시간").values()), _interval_words(quarter, "1시간")
+    assert sheets(quarter) == ["15분 시계열"]

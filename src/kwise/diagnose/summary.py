@@ -19,16 +19,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING
 
-from kwise import money
 from kwise.diagnose.peak import PeakProfile
 from kwise.tariff import TariffSelection
-
-if TYPE_CHECKING:  # 형만 쓴다 — 실행 시점에 들이면 import 가 맞물린다.
-    from kwise.diagnose.contract import ContractAdequacy
 
 __all__ = [
     "DEFAULT_HIGH_SHARE",
@@ -118,45 +113,8 @@ class ImprovementSummary:
     pv_midday_share: float
     pv_basis: str = ""
     period_label: str | None = None
-    lines: tuple[str, ...] = field(default=())
 
     @property
     def no_investment_saving_won(self) -> float:
         """투자 없이 나오는 절감액 합계. 모르는 항목은 0 으로 센다."""
         return (self.tariff_switch_saving_won or 0.0) + (self.contract_saving_won or 0.0)
-
-
-def _won(value: float | None) -> str:
-    """**표기 규칙은 :mod:`kwise.money` 한 곳이 쥔다** (14세션)."""
-    return money.won_short(value, reason="산출 보류")
-
-
-def build_lines(
-    summary: ImprovementSummary, adequacy: ContractAdequacy | None = None
-) -> tuple[str, ...]:
-    """화면 최상단에 그대로 쓸 수 있는 세 줄.
-
-    ``adequacy`` 는 계약전력 적정성 판정이다. 없으면 계약 정보가 없는 판이라
-    절감액 자리가 「산출 보류」 로 남는다.
-    """
-    switch = _won(summary.tariff_switch_saving_won)
-    if summary.best_selection is not None and summary.tariff_switch_saving_won == 0.0:
-        switch = "현행이 최적"
-    contract = _won(summary.contract_saving_won)
-    if adequacy is not None and adequacy.adjustment.no_saving:
-        # **하한이 안 걸리면 줄 것이 없다** (83세션). 「0원」 은 계산이 덜 된
-        # 것처럼 읽히고, 「여유 없음」 은 이용률 이야기라 판정과 어긋났다.
-        #
-        # **「없음」 은 여지 판정 `no_saving` 하나가 가른다** (S205 2절 · S208 2절).
-        # 83세션이 여기에 날값 ``contract_saving_won == 0.0`` 을 두었는데 그것은
-        # **ㄱ 「계산해서 0원」** 이라 같은 칸을 적는 아홉 자리와 뜻이 갈렸다 —
-        # `money.NO_SAVING` 이 「없음」 을 **ㄴ 여지**에 매어 두었으므로 정본은
-        # `ContractAdjustment.no_saving` 이다. 덱 19벌에서는 두 잣대가 한 벌도
-        # 안 갈린다(S208 1-5 · 칸 152 에서 0).
-        contract = money.NO_SAVING
-    return (
-        f"선택요금 전환    {switch}      투자 불필요",
-        f"계약전력 조정    {contract}      투자 불필요",
-        f"태양광 검토      피크 기여 가능성 {summary.pv_potential} "
-        f"(상위 구간의 {summary.pv_midday_share:.0%}가 정오 시간대)",
-    )

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
-from kwise.io import UsageData
+from kwise.io import HOURLY_INTERVAL_WARNING, UsageData
 from kwise.notices import Notice, basis, warn
 from kwise.quality.missing import (
     DEFAULT_PEAK_HOURS,
@@ -27,6 +27,7 @@ from kwise.quality.outage import OutageEvent, detect_outages, outage_slot_mask
 
 __all__ = [
     "DEFAULT_LOW_LOAD_KW",
+    "HOURLY_INTERVAL_FACT",
     "MISSING_RATIO_THRESHOLD",
     "IntervalConsistency",
     "OutlierSummary",
@@ -35,6 +36,8 @@ __all__ = [
 ]
 
 MISSING_RATIO_THRESHOLD = 0.03
+#: 1시간 간격 자료 주의의 사실 ID (S268 결정 2) — 화면 데이터 품질 절과 PPT 3장이 이 줄을 뽑는다.
+HOURLY_INTERVAL_FACT = "quality.hourly_interval"
 DEFAULT_LOW_LOAD_KW = 100.0
 _SPIKE_RATIO = 0.30  # 최대수요 대비 인접 슬롯 변화폭
 
@@ -269,6 +272,10 @@ def _with_warnings(report: QualityReport) -> QualityReport:
                 fact="quality.short_period",
             )
         )
+    if report.interval_minutes != 15:
+        # **주의** — 1시간 평균은 15분 최대수요보다 낮아 기본요금이 낮게 선다 (S268 결정 2).
+        # 보정하지 않는다 — 그 사실만 알린다.
+        messages.append(warn(HOURLY_INTERVAL_WARNING, fact=HOURLY_INTERVAL_FACT))
     if report.missing_ratio > MISSING_RATIO_THRESHOLD:
         messages.append(
             warn(

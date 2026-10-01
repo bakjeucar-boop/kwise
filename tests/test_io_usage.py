@@ -9,12 +9,14 @@ import pandas as pd
 import pytest
 
 from kwise.io import (
+    HOURLY_INTERVAL_WARNING,
     EnergyToDemandError,
     OffGridEnergyError,
     UsageData,
     UsageLoadError,
     detect_grid_phase_seconds,
     detect_interval_minutes,
+    interval_label,
     load_usage,
     match_usage_column,
     parse_usage_datetime,
@@ -159,7 +161,7 @@ def test_detects_hourly_interval_and_warns(tmp_path: Path) -> None:
     assert usage.meta.interval_minutes == 60
     assert usage.meta.expected_rows == 24
     assert usage.kw.iloc[0] == pytest.approx(100.0)  # 100 kWh / 1 h
-    assert any("기본요금 판정에 한계" in message for message in usage.meta.warnings)
+    assert HOURLY_INTERVAL_WARNING in usage.meta.warnings
 
 
 def test_용인_15분_실물을_1시간으로_합치면_간격_60_과_주의_한_줄이_선다(tmp_path: Path) -> None:
@@ -170,7 +172,8 @@ def test_용인_15분_실물을_1시간으로_합치면_간격_60_과_주의_한
     한 줄이 서며, 15분 원본에서는 판정이 15 이고 그 줄이 안 선다 — 둘 다 문다.
 
     1시간 합은 15분 최대를 못 본다 — 최대수요가 132.28 → 119.9 kW 로 낮아진다.
-    그 주의가 말하는 한계가 이 값이다.
+    그 주의가 말하는 사실이 이 값이다 — 글자는 S268 결정 2 가 「실제보다 낮을 수 있습니다」
+    로 갈았다(옛 글은 「한계가 있습니다」 까지였다).
     """
     source = Path(__file__).resolve().parent.parent / "input" / "전기사용량_소형건물.xlsx"
     if not source.is_file():
@@ -181,19 +184,21 @@ def test_용인_15분_실물을_1시간으로_합치면_간격_60_과_주의_한
     rows = [(f"{stamp:%Y-%m-%d %H:%M}", float(kwh)) for stamp, kwh in hourly.items()]
     usage = load_usage(write_csv(tmp_path / "hourly.csv", rows))
 
-    caution = "15분 최대수요를 직접 관측할 수 없어 기본요금 판정에 한계가 있습니다."
     assert usage.meta.interval_minutes == 60
     assert usage.meta.valid_rows == 8_760  # 365일 × 24 — 15분 35,040행의 넷에 하나
-    assert [text for text in usage.meta.warnings if caution in text] == [
-        f"60분 간격 데이터입니다. {caution}"
+    assert [text for text in usage.meta.warnings if "간격 자료" in text] == [
+        "1시간 간격 자료입니다. 요금적용전력은 15분 최대수요로 정해지므로, "
+        "이 자료로 낸 최대수요와 기본요금은 실제보다 낮을 수 있습니다."
     ]
+    assert interval_label(usage.meta.interval_minutes) == "1시간"
     # 합치기만 했다 — 사용량은 같고(0.01 kWh 반올림 안) 최대수요만 낮아진다.
     assert usage.total_kwh == pytest.approx(quarter.total_kwh, rel=1e-4)
     assert quarter.meta.max_demand_kw == pytest.approx(132.28)
     assert usage.meta.max_demand_kw == pytest.approx(119.9, abs=0.05)
 
     assert quarter.meta.interval_minutes == 15
-    assert not [text for text in quarter.meta.warnings if "간격 데이터" in text]
+    assert not [text for text in quarter.meta.warnings if "간격 자료" in text]
+    assert interval_label(quarter.meta.interval_minutes) == "15분"
 
 
 def test_interval_detection_survives_gaps() -> None:

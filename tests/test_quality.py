@@ -308,6 +308,27 @@ def test_short_period_warning(tmp_path: Path) -> None:
     assert any("12개월 미만" in message for message in texts(report.notices))
 
 
+@pytest.mark.parametrize(("interval", "선다"), [(60, True), (15, False)])
+def test_1시간_자료의_주의는_품질_검사가_한_줄_내고_15분_자료에는_없다(
+    tmp_path: Path, interval: int, 선다: bool
+) -> None:
+    """**1시간 평균은 15분 최대수요보다 낮다** (S268 결정 2).
+
+    품질 검사가 주의 등급 한 줄을 내야 화면 데이터 품질 절 · PPT 3장 · Excel 요약이 그 줄을
+    받는다 — 앞서는 업로드 경고 칸(``UsageMeta.warnings``)에만 들어 아무 데도 안 떴다.
+    글자는 업로드 경고와 한 글자다.
+    """
+    usage = load_usage(one_day(tmp_path / "day.csv", interval=interval))
+    stood = [
+        item for item in check_quality(usage).notices if item.fact == "quality.hourly_interval"
+    ]
+    assert len(stood) == (1 if 선다 else 0)
+    if 선다:
+        assert str(stood[0].severity) == "주의"
+        assert stood[0].text in usage.meta.warnings
+        assert "실제보다 낮을 수 있습니다" in stood[0].text
+
+
 def test_12개월_미만_경고가_네_자리에서_한_꼴이다(tmp_path: Path, tariff: TariffTable) -> None:
     """**같은 사실은 한 꼴로 선다** (S214 1-4 · 울타리 ㄴ1~ㄴ3).
 
@@ -320,12 +341,10 @@ def test_12개월_미만_경고가_네_자리에서_한_꼴이다(tmp_path: Path
     **둘째 문장은 코드에게 하는 말이었다** — 「경고를 붙여야 합니다」·「붙이십시오」 는
     만드는 쪽에 하는 지시라 고객이 읽는 자리에서 참이 아니다 (S207 기준).
 
-    **「환산」 자리는 한 꼴에서 뺀다** (S214 4-1 이 값으로 갈랐다).
-    `tariff\\engine.py` 의 `AnnualEstimate.annualize()` 는 「… ×N 환산값은 계절
-    편중이 있어 신뢰도가 낮습니다」 라 **그 벌의 배수를 적는 말**이고, 고객에게
-    하는 참인 말이라 S207 기준이 남기라고 한다. 덱 19벌 산출물에는 **0곳**이다.
+    **「환산」 자리는 S268 에 걷혔다** (결정 3) — `tariff\\engine.py` 의 12개월 환산 길은
+    `src\\` 에서 부른 적이 없어 길째 걷었다. 남은 자리는 셋이다.
 
-    `test_꼭_365일치_자료는_12개월_미만으로_판정되지_않는다` 와 **같은 네 자리**를
+    `test_꼭_365일치_자료는_12개월_미만으로_판정되지_않는다` 와 **같은 세 자리**를
     본다 — 그쪽은 「안 뜬다」 를, 이쪽은 「뜨면 한 꼴이다」 를 문다.
     """
     rows = [(label, 100.0) for date in march_2024_dates() for label in make_labels(date)]
@@ -336,7 +355,6 @@ def test_12개월_미만_경고가_네_자리에서_한_꼴이다(tmp_path: Path
         "품질": texts(report.notices),
         "업로드": list(usage.meta.warnings),
         "요금": texts(bill.notices),
-        "환산": texts(bill.annualize().notices),
     }
     assert not report.has_full_year  # 전제 — 12개월 미만 자료다
 
@@ -350,7 +368,7 @@ def test_12개월_미만_경고가_네_자리에서_한_꼴이다(tmp_path: Path
     꼴 = sorted({m for where in ("품질", "업로드", "요금") for m in 선말[where]})
     assert len(꼴) == 1, f"경고가 {len(꼴)} 꼴입니다 — 한 꼴이어야 합니다: {꼴}"
 
-    # **넷 다 코드에게 말하지 않고 「연간」 이라 부르지 않는다.**
+    # **셋 다 코드에게 말하지 않고 「연간」 이라 부르지 않는다.**
     샌말 = [
         f"{where} 「{m}」"
         for where, ms in 선말.items()
@@ -369,9 +387,10 @@ def test_꼭_365일치_자료는_12개월_미만으로_판정되지_않는다(
     364.989… 일이 됐다. S184 가 길 ㄱ(기간에 한 슬롯을 더해 잰다 · `io\\usage.py` 의
     ``period_days``)으로 고쳤고 문턱(365)은 그대로다.
 
-    **품질 문턱만이 아니라 같은 판정을 내는 자리 넷을 다 문다** (S183 2-2). 앞서는
+    **품질 문턱만이 아니라 같은 판정을 내는 자리를 다 문다** (S183 2-2). 앞서는
     품질 하나만 물어 그 문턱만 갈아도 XPASS 였다 — 업로드 경고 · 요금 안내(Excel
-    「요금」 · PPT 기간 각주 · Word 부록이 읽는다) · 12개월 환산 안내가 그대로 남는다.
+    「요금」 · PPT 기간 각주 · Word 부록이 읽는다)가 그대로 남는다. 넷째 자리였던
+    12개월 환산 안내는 S268 에 길째 걷혔다(결정 3).
     """
     dates = pd.date_range("2025-01-01", "2025-12-31").strftime("%Y-%m-%d")
     rows = [(label, 100.0) for date in dates for label in make_labels(date)]
@@ -383,7 +402,6 @@ def test_꼭_365일치_자료는_12개월_미만으로_판정되지_않는다(
         "품질": texts(report.notices),
         "업로드": usage.meta.warnings,
         "요금": texts(bill.notices),
-        "환산": texts(bill.annualize().notices),
     }
     short = {where for where, messages in said.items() if any("12개월 미만" in m for m in messages)}
     assert report.has_full_year and short == set(), short

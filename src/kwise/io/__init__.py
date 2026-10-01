@@ -12,6 +12,7 @@ from kwise.io.columns import (
 )
 from kwise.io.usage import (
     DEFAULT_ENCODINGS,
+    HOURLY_INTERVAL_WARNING,
     SUPPORTED_INTERVALS,
     USAGE_DATE_COLUMN_CANDIDATES,
     USAGE_ENERGY_COLUMN_CANDIDATES,
@@ -25,6 +26,7 @@ from kwise.io.usage import (
     count_hour24,
     detect_grid_phase_seconds,
     detect_interval_minutes,
+    interval_label,
     load_usage,
     load_usage_bytes,
     match_usage_column,
@@ -37,6 +39,7 @@ from kwise.io.usage import (
 
 __all__ = [
     "DEFAULT_ENCODINGS",
+    "HOURLY_INTERVAL_WARNING",
     "SUPPORTED_INTERVALS",
     "USAGE_DATE_COLUMN_CANDIDATES",
     "USAGE_ENERGY_COLUMN_CANDIDATES",
@@ -55,6 +58,7 @@ __all__ = [
     "detect_interval_minutes",
     "detect_usage_columns",
     "find_header_row",
+    "interval_label",
     "load_usage",
     "load_usage_bytes",
     "match_usage_column",

@@ -48,6 +48,7 @@ from kwise import money
 from kwise.diagnose import ChargeStructure
 from kwise.measures import IMMEDIATE as _IMMEDIATE
 from kwise.measures import NO_SAVING, payback_label
+from kwise.quality.checks import HOURLY_INTERVAL_FACT
 from kwise.report import figures, narrative
 from kwise.report.design import DesignGuide, load_design_guide
 from kwise.report.document import (
@@ -1247,6 +1248,15 @@ def _build_building(
     short_period = next(
         (item.text for item in bill.notices if item.fact == "quality.short_period"), ""
     )
+    # 1시간 자료의 주의도 같은 꼴로 이 장 각주에 얹는다 (S268 결정 2) — 검침 간격을 적는 장이다.
+    hourly = next(
+        (
+            item.text
+            for item in (quality.notices if quality is not None else ())
+            if item.fact == HOURLY_INTERVAL_FACT
+        ),
+        "",
+    )
     # 경제성DR 장이 서는 덱이면 전력시장운영규칙도 적용 기준이다 (S260 결정 1).
     market_rules = any(entry.kind.key == "demand_response" for entry in sections.measures)
     rows = [
@@ -1289,12 +1299,14 @@ def _build_building(
         top=top,
         width=geometry.content_width_in,
         height=min(
-            _table_room_above(guide, top=top, note_top=_note_top(guide, note, short_period)),
+            _table_room_above(
+                guide, top=top, note_top=_note_top(guide, note, short_period, hourly)
+            ),
             0.44 * len(rows),
         ),
         widths=(0.26, 0.74),
     )
-    _note(slide, guide, note, short_period)
+    _note(slide, guide, note, short_period, hourly)
 
 
 def _build_usage_pattern(

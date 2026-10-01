@@ -540,19 +540,23 @@ def test_single_partial_month_falls_back_to_prorating(tmp_path: Path, tariff: Ta
     assert any("합칠 짝이 없어" in note for note in texts(result.notices))
 
 
-def test_annualize_scales_to_twelve_months(sample_bill: BillingResult) -> None:
-    annual = sample_bill.annualize()
-    assert annual.factor == pytest.approx(1.0)  # 이미 12개월분이다
-    assert annual.total_won == pytest.approx(sample_bill.total_won)
-    assert texts(annual.notices) == ()
+def test_요금_청구서의_12개월_환산_길은_걷혔다() -> None:
+    """**쓰이지 않는 길은 두지 않는다** (S268 결정 3).
 
+    `BillingResult.annualize()` 와 그 결과 형 `AnnualEstimate` 는 3세션에 선 뒤
+    `src\\` 에서 부른 적이 없었다 — 12개월 환산은 `measures\\base.py::annualize` 가 한다.
+    이름이 `src\\` 에 다시 서면 여기서 걸린다.
+    """
+    import kwise.tariff as tariff_package
 
-def test_annualize_warns_for_short_periods(tmp_path: Path, tariff: TariffTable) -> None:
-    result = bill(month_usage(tmp_path, 2023, 7), tariff)
-    annual = result.annualize()
-    assert annual.factor == pytest.approx(12.0)
-    assert annual.total_won == pytest.approx(result.total_won * 12)
-    assert any("12개월 미만" in message for message in texts(annual.notices))
+    assert not hasattr(BillingResult, "annualize")
+    assert not hasattr(tariff_package, "AnnualEstimate")
+    남은것 = [
+        str(path)
+        for path in sorted(Path("src").rglob("*.py"))
+        if "AnnualEstimate" in path.read_text(encoding="utf-8")
+    ]
+    assert 남은것 == [], 남은것
 
 
 def test_period_label_is_used_instead_of_annual(sample_bill: BillingResult) -> None:

@@ -65,6 +65,13 @@ def _positive(key: str, value: Any) -> list[ValidationIssue]:
     return []
 
 
+def _flag(key: str, value: Any) -> list[ValidationIssue]:
+    """참 · 거짓. 다른 꼴이 들면 갈래가 조용히 뒤집힌다."""
+    if not isinstance(value, bool):
+        return [ValidationIssue(key, f"참 또는 거짓이어야 합니다: {value!r}")]
+    return []
+
+
 def _months(key: str, value: Any) -> list[ValidationIssue]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return [ValidationIssue(key, f"월 목록이어야 합니다: {value!r}")]
@@ -234,6 +241,8 @@ _SINGLE: Mapping[str, Callable[[str, Any], list[ValidationIssue]]] = {
     "power_factor.leading_standard_pct": _percent,
     "power_factor.leading_floor_pct": _percent,
     "power_factor.leading_lagging_deemed_pct": _percent,
+    # 제43조 ② 2호 다목 (S268 결정 1).
+    "power_factor.leading_applies_to_low_voltage": _flag,
     "power_factor.adjustment_per_percent": _ratio,
     "power_factor.day_window": _hour_window,
     # 역률 계산단위 (제7조 ① · S262) — 0 이면 반올림이 0 으로 나눈다.

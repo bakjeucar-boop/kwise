@@ -41,7 +41,7 @@ from kwise.compare.sensitivity import (
 )
 from kwise.diagnose import Diagnosis
 from kwise.diagnose.dr import JUDGE_WINDOW
-from kwise.io import UsageData
+from kwise.io import UsageData, interval_label
 from kwise.measures import (
     DR_ADVISORY,
     MARGIN_FACT,
@@ -1186,8 +1186,10 @@ def build_sheets(sections: ReportSections) -> dict[str, pd.DataFrame]:
     # **표기는 한 문에서 한다** (S161 2절). 절사 뒤에 :func:`display_frame` 이
     # 자릿수를 접고 마크다운 표식을 벗기고 불리언을 한글로 적는다 — 시트마다
     # 하면 새 시트가 붙을 때 빠뜨리고, 그 빠뜨림이 조용하다.
+    # 시계열 시트 이름은 판정한 간격을 따른다 — 1시간 자료면 「1시간 시계열」 (S268 결정 2).
+    interval = interval_label(sections.usage.meta.interval_minutes)
     shown = {
-        name: display_frame(truncate_money_columns(sheets[name]))
+        name.replace("15분", interval): display_frame(truncate_money_columns(sheets[name]))
         for name in SHEET_ORDER
         if name in sheets
     }

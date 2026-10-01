@@ -29,7 +29,7 @@ import streamlit as st
 from kwise import money
 from kwise.diagnose import Diagnosis
 from kwise.diagnose.dr import JUDGE_WINDOW, dr_event_hours, dr_max_events_per_day
-from kwise.io import UsageData
+from kwise.io import UsageData, interval_label
 from kwise.measures import (
     CURTAIL_SCENARIO,
     EXTERNAL_SCENARIO,
@@ -788,9 +788,12 @@ def _power_factor(
                 ),
                 width="stretch",
             )
+            # 간격 글자는 판정한 간격을 따른다 — 1시간 자료면 「1시간」 (S268 결정 2).
+            # 15분 자료에서는 캡션도 툴팁도 한 글자도 안 바뀐다.
+            interval = interval_label(usage.meta.interval_minutes)
             st.caption(
-                f"{day.title} · 15분 부하와 판정 창",
-                help=fmt.chart_tip("chart.power_factor_day"),
+                f"{day.title} · {interval} 부하와 판정 창",
+                help=fmt.chart_tip("chart.power_factor_day").replace("15분", interval),
             )
     # **92% 미달 경고는 화면에 남긴다** — 결과 해석을 바꾼다 (10.2 예외).
     from kwise.tariff import lagging_standard_pct

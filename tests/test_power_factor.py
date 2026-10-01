@@ -48,10 +48,11 @@ from kwise.tariff import (
     leading_floor_pct,
     leading_lagging_deemed_pct,
     leading_standard_pct,
+    list_options,
     power_factor_charge,
 )
 
-CURRENT = TariffSelection("general_b", "high_a", "I")
+CURRENT =TariffSelection("general_b", "high_a", "I")
 
 
 # --------------------------------------------------------------------- 제43조 ② 산식
@@ -286,6 +287,51 @@ def test_night_leading_clause_reaches_the_bill(
     )
     assert bill.total_power_factor_won == pytest.approx(sample_bill.total_base_won * 0.010)
     assert any("야간 진상역률" in message for message in texts(bill.notices))
+
+
+@pytest.mark.parametrize(("voltage", "붙는다"), [("low", False), ("high_a", True)])
+def test_저압은_야간_진상역률_요금과_과보상_경고가_안_선다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    voltage: str,
+    붙는다: bool,
+) -> None:
+    """**약관이 저압에 매기지 않으면 도구도 매기지 않는다** (S268 결정 1).
+
+    제43조 ② 2호 다목 — 「“나”에도 불구하고, 제42조(역률의 계산) 제2항의 단서에 해당하는
+    고객은 진상역률 요금을 적용하지 않습니다」 · 그 단서가 「저압으로 전기를 공급받는 고객」
+    이다. 같은 종별에서 **전압만** 갈아 둘 다 쪽을 문다 — 저압은 진상 85% 를 넣어도 안 넣은
+    결과와 같고(금액 · 안내 글자), 고압은 기본요금의 2% 가 붙고 「과보상」 경고가 선다.
+    """
+    selection = TariffSelection(
+        "general_a_1", voltage, list_options(tariff, "general_a_1", voltage)[0]
+    )
+
+    def run(leading: float | None) -> BillingResult:
+        return calculate_bill(
+            sample_usage,
+            tariff,
+            selection,
+            options=BillingOptions(contract_kw=6_000.0, leading_power_factor_pct=leading),
+            quality=sample_report,
+        )
+
+    without, entered = run(None), run(85.0)
+    경고 = [
+        item.text for item in entered.notices if item.fact == "power_factor.leading_below_standard"
+    ]
+    assert (entered.power_factor.leading_won > 0) is 붙는다
+    assert bool(경고) is 붙는다
+    if 붙는다:
+        assert entered.power_factor.leading_won == pytest.approx(entered.total_base_won * 0.020)
+        assert entered.total_won == pytest.approx(
+            without.total_won + entered.power_factor.leading_won
+        )
+        assert "과보상" in 경고[0]
+    else:
+        assert entered.total_won == pytest.approx(without.total_won)
+        assert texts(entered.notices) == texts(without.notices)
 
 
 def test_monthly_rows_carry_the_power_factor_column(

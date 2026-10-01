@@ -40,6 +40,7 @@ from kwise.quality import (
     QualityReport,
     monthly_longest_gaps,
 )
+from kwise.quality.checks import HOURLY_INTERVAL_FACT
 from kwise.report import localize, narrative, notices
 from kwise.tariff import AMI_BASIS_NOTICE, TENTATIVE_BASE_FEE_BASIS_WARNING, TariffTable
 from kwise.tariff.labels import SEASON_LABELS
@@ -186,6 +187,8 @@ MISSING_FACTS = (
     # **버린 행도 같은 자리다** (31세션 0-2). 결측과 나란히 읽어야 「빠진 값이
     # 얼마나 되나」 가 한 번에 잡힌다 — 위쪽 확인사항에 두면 결측률과 떨어진다.
     "quality.dropped_rows",
+    # 1시간 자료의 주의도 「데이터 품질」 절이 낸다 — 검침 간격 지표 곁이다 (S268 결정 2).
+    HOURLY_INTERVAL_FACT,
 )
 
 #: 「데이터 품질」 절이 **문구 그대로** 다시 그리는 사실 (31세션 0-2).
@@ -658,6 +661,10 @@ def _quality_block(usage: UsageData, quality: QualityReport) -> None:
         # 「0건」 이 화면 한 줄을 영영 차지한다.
         for line in dropped_row_lines(quality):
             st.write(line)
+        # 1시간 자료면 최대수요가 낮게 잡힌다는 주의 — 품질 검사의 글 그대로 (S268 결정 2).
+        for notice in quality.notices:
+            if notice.fact == HOURLY_INTERVAL_FACT:
+                st.write(fmt.markdown_safe(notice.text))
     # **달마다 다른 값은 표로 낸다** (30세션 2절). 본문 두 줄은 전체와 「결측이
     # 있는 달」 이라는 덩어리까지만 말하고, 어느 달이 얼마나 비었는지는 여기서 본다.
     frame = missing_month_frame(quality)
@@ -891,8 +898,7 @@ def _structure_block(usage: UsageData, diagnosis: Diagnosis, building: BuildingI
     # 그 합이 청구액인지도 알 수 없었다.
     #
     # **역률요금은 기본요금에 합쳐 적는다.** 기본요금의 ±% 조정이라 따로 세울
-    # 값이 아니고, 요금 엔진의 12개월 환산도 둘을 함께 묶는다
-    # (:meth:`~kwise.tariff.BillingResult.annualize`). **세는 자리는 하나다**
+    # 값이 아니다. **세는 자리는 하나다**
     # (109세션 — :attr:`ChargeStructure.base_with_power_factor_won`).
     #
     # **초과사용부가금은 붙은 자료에서만 한 칸을 더 쓴다** (109세션). 접으면

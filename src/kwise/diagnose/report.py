@@ -25,7 +25,6 @@ from kwise.diagnose.peak import DEFAULT_TOP_N, PeakProfile, peak_profile
 from kwise.diagnose.structure import ChargeStructure, charge_structure
 from kwise.diagnose.summary import (
     ImprovementSummary,
-    build_lines,
     judge_pv_potential,
     pv_basis_label,
 )
@@ -198,7 +197,7 @@ def diagnose(
             pattern=pattern,
             peak=peak,
             dr=dr,
-            summary=summary.__class__(**{**summary.__dict__, "lines": build_lines(summary)}),
+            summary=summary,
             notices=tuple(notices),
         )
 
@@ -274,7 +273,6 @@ def diagnose(
         pv_basis=pv_basis,
         period_label=current_bill.period_label,
     )
-    summary = ImprovementSummary(**{**summary.__dict__, "lines": build_lines(summary, adequacy)})
 
     return Diagnosis(
         quality=report,

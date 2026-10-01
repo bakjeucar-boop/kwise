@@ -36,7 +36,6 @@ from kwise.diagnose.summary import (
     MIDDAY_HOURS,
     ImprovementSummary,
     PvPotential,
-    build_lines,
     judge_pv_potential,
     pv_basis_label,
 )
@@ -57,7 +56,6 @@ __all__ = [
     "PeakProfile",
     "PvPotential",
     "assess_contract",
-    "build_lines",
     "charge_structure",
     "deemed_power_factor_pct",
     "diagnose",

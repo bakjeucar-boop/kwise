@@ -21,7 +21,7 @@ from kwise import money
 from kwise.compare import ComparisonResult, SensitivityRange
 from kwise.diagnose import ChargeStructure, PeakProfile
 from kwise.diagnose.dr import JUDGE_WINDOW, DrProfile
-from kwise.io import UsageData
+from kwise.io import UsageData, interval_label
 from kwise.measures import (
     CapacityVerdict,
     DispatchResult,
@@ -1100,7 +1100,12 @@ def power_factor_day_chart(
         alt.Chart(frame)
         .mark_line(color="#08519c")
         .encode(
-            x=alt.X("시각:T", title=f"{day.title} · 15분 부하", axis=time_axis()),
+            # 간격 글자는 판정한 간격을 따른다 — 1시간 자료면 「1시간」 (S268 결정 2).
+            x=alt.X(
+                "시각:T",
+                title=f"{day.title} · {interval_label(usage.meta.interval_minutes)} 부하",
+                axis=time_axis(),
+            ),
             y=alt.Y("부하(kW):Q", title=DAY_LOAD_AXIS, scale=_CUT_SCALE, axis=FLAT_TITLE),
             tooltip=[time_tooltip(), alt.Tooltip("부하(kW):Q", format=",.0f"), "구간"],
         )
@@ -1172,7 +1177,7 @@ def solar_day_chart(
             간격이 좁아 보이므로 확대본을 곁들인다.
     """
     frame = solar_day_frame(usage, generation_kw, day.date)
-    title = f"{day.title} · 15분"
+    title = f"{day.title} · {interval_label(usage.meta.interval_minutes)}"
     if len(frame) and zoom:
         frame = peak_window(frame)
         title = f"{day.title} · 피크 앞뒤 {PEAK_ZOOM_HOURS}시간"
@@ -1274,7 +1279,7 @@ def ess_day_chart(
     아래 운전 문구가 시각으로 정확히 적는다.
     """
     frame = ess_day_frame(usage, dispatch, day.date)
-    title = f"{day.title} · 15분"
+    title = f"{day.title} · {interval_label(usage.meta.interval_minutes)}"
     if len(frame) and zoom:
         frame = peak_window(frame)
         title = f"{day.title} · 피크 앞뒤 {PEAK_ZOOM_HOURS}시간"

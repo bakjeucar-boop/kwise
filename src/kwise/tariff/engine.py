@@ -45,6 +45,7 @@ from kwise.tariff.labels import billing_month_label, option_label
 from kwise.tariff.power_factor import (
     PowerFactorCharge,
     lagging_standard_pct,
+    leading_applies_to_low_voltage,
     power_factor_charge,
 )
 from kwise.tariff.schema import (
@@ -69,7 +70,6 @@ __all__ = [
     "NOT_INCLUDED_NOTICE",
     "OVER_CONTRACT_FACT",
     "TENTATIVE_BASE_FEE_BASIS_WARNING",
-    "AnnualEstimate",
     "BillingOptions",
     "BillingResult",
     "ExcessCharge",
@@ -165,24 +165,6 @@ class BillingOptions:
             object.__setattr__(self, "contract_kw", round_kw(self.contract_kw))
 
 
-@dataclass(frozen=True)
-class AnnualEstimate:
-    """12개월 환산값. '연간' 이라는 말 대신 환산이라고 적는다 (5.5)."""
-
-    factor: float
-    base_with_power_factor_won: float
-    """**역률요금까지 담는다.** 이름이 그 사실을 말하게 둔다 (S117 · ②) —
-    앞서는 ``base_won`` 이었는데 저장소의 다른 모든 ``base_won`` 은 역률을 뺀
-    값이라 **한 이름이 두 값을 가리켰다.** 세는 몫은
-    :attr:`~kwise.diagnose.structure.RateStructure.base_with_power_factor_won`
-    과 같으므로 이름도 같게 뒀다."""
-    energy_won: float
-    total_won: float
-    energy_won_adjusted: float
-    total_won_adjusted: float
-    notices: tuple[Notice, ...] = field(default=())
-
-
 @dataclass(frozen=True, eq=False)
 class BillingResult:
     """요금 계산 결과.
@@ -247,14 +229,13 @@ class BillingResult:
     def base_with_power_factor_won(self) -> float:
         """화면·PPT·Excel·Word 의 「기본요금」 조각이 세는 값 (S140 2절).
 
-        **역률요금까지다.** 기본요금의 ±% 조정이라 따로 세울 값이 아니고
-        (제43조), :meth:`annualize` 의 12개월 환산도 둘을 함께 묶는다.
+        **역률요금까지다.** 기본요금의 ±% 조정이라 따로 세울 값이 아니다 (제43조).
         **초과사용부가금은 안 접는다** (109세션) — 접으면 용어집에 박힌
         기본요금 산식(:attr:`mean_base_demand_kw` 를 곱하는 문장)이 거짓이 된다.
 
         **엔진 밖에서 다시 만들지 않는다.** 앞서 이 덧셈이 세 자리에 있었다 —
         :attr:`~kwise.diagnose.structure.ChargeStructure.base_with_power_factor_won` ·
-        :meth:`annualize` · 선택요금 조합. 요금적용전력이 그 병으로 뿌리에서
+        12개월 환산(S268 에 걷었다) · 선택요금 조합. 요금적용전력이 그 병으로 뿌리에서
         두 번 돋았다 (⑭ 116세션 · ⑳ 118세션).
         """
         return self.total_base_won + self.total_power_factor_won
@@ -307,33 +288,6 @@ class BillingResult:
             ),
             f"산출 기간: {self.period_label}",
         )
-
-    def annualize(self) -> AnnualEstimate:
-        """12개월로 환산한다. 12개월 미만이면 경고를 붙인다."""
-        if self.base_fee_months <= 0:
-            raise ValueError("기본요금 개월수가 0 이라 환산할 수 없습니다.")
-        factor = demand_window_months() / self.base_fee_months
-        notices: list[Notice] = []
-        if self.period_days < 365:
-            notices.append(
-                warn(
-                    # **일수를 여기 다시 적지 않는다** (S156 4-5) — 반올림이라
-                    # 364.99 가 「365일」 로 찍혀 문장이 제 말을 부정했다.
-                    "분석 기간이 12개월 미만입니다. "
-                    f"×{factor:.3f} 환산값은 계절 편중이 있어 신뢰도가 낮습니다.",
-                    fact="quality.short_period",
-                )
-            )
-        return AnnualEstimate(
-            factor=factor,
-            base_with_power_factor_won=self.base_with_power_factor_won * factor,
-            energy_won=self.total_energy_won * factor,
-            total_won=self.total_won * factor,
-            energy_won_adjusted=self.total_energy_won_adjusted * factor,
-            total_won_adjusted=self.total_won_adjusted * factor,
-            notices=tuple(notices),
-        )
-
 
 # --------------------------------------------------------------------- 요금적용전력
 
@@ -627,10 +581,17 @@ def calculate_bill(
     total_base_before_pf = sum(
         base_demand[month] * rates.base_won_per_kw * factors[month] for month in months
     )
+    # 제43조 ② 2호 다목 — 제42조 ② 단서 고객(저압)은 진상역률 요금을 적용하지 않는다
+    # (S268 결정 1). 넣은 값을 셈에 안 넘기므로 진상을 안 넣은 저압 건물과 같은 결과다.
+    leading_pct = (
+        None
+        if selection.voltage == "low" and not leading_applies_to_low_voltage()
+        else opts.leading_power_factor_pct
+    )
     power_factor = power_factor_charge(
         total_base_before_pf,
         lagging_pct=opts.power_factor_pct,
-        leading_pct=opts.leading_power_factor_pct,
+        leading_pct=leading_pct,
     )
     power_factor_ratio = power_factor.total_ratio
 
@@ -754,7 +715,7 @@ def calculate_bill(
             power_factor = power_factor_charge(
                 float(monthly["base_won"].sum()),
                 lagging_pct=opts.power_factor_pct,
-                leading_pct=opts.leading_power_factor_pct,
+                leading_pct=leading_pct,
             )
 
     limited_months = tuple(
