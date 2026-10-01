@@ -377,6 +377,14 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 ---
 
+## 오늘 (2026-10-01) 266세션 — **고침 판 · S265 사람 물음 열넷을 닫는다(사람 결정 하나 · 웹 대화창 열둘) · 산업용(을) 시험 건물을 회귀 점검에 올린다 · 계산 변경 없음**
+
+**0-1. PC — 1번 PC** — `run_tool open_values`(`open_values_20261001_101739.txt`) 첫 줄 `BOOK-DC2VCGD99B · Intel(R) Core(TM) Ultra 7 258V · cpu 8 · RAM 33834070016 B (31.5 GB) · -n auto 일꾼 8`. **저장소** — `git pull` Already up to date · HEAD **14cb5cf** = `origin/master`(S265 보고 값과 같다) · 워크트리 깨끗.
+**0-2. 미해결 80** — 가 1 · 나 3 · 다 9 · 라 54 · 마 13(`daily_brief --cells` 끝 줄 · `daily_brief_20261001_101758.txt`) · 미해결 칸 항목 80(스크래치 `s266_items.py` 가 `daily_brief.open_items` 로 폈다 · `s266_items_20261001_101931.txt`). **회귀값 여덟 · 케이스 스터디 기준선(174)** — S264 3-5 판 xlsx(그 판 스크래치 `case_after\casestudy_20261001.xlsx` · 그 뒤 커밋은 기록뿐)를 이 판 스크래치 `case_before\` 로 옮겼다. **덱 스냅 기준선** — S264 3-4 뒤 스냅 `cache\deck_words\s264_after.json` 이 이 PC 에 있다(새로 뜨지 않았다). **확인 사례 스냅(지금 코드)** — S264 스크래치 `s263_case.py` 를 이 판 스크래치로 옮겨 그대로 돌렸다((다) 방위 남동 · 쉬는 날 2023-05-01 · 2023-10-02) → `cache\deck_words\s266_case_before.json`(가1 2,653줄 · 다 2,757줄 · 나 2,747줄 · `s263_case_20261001_101943.txt` · PPT · Excel 실물은 스크래치 `files_before\`). S264 3-2 뒤 스냅 `s264_case_after.json` 과 줄 모음으로 맞대니 **세 벌 다 빠진 0 · 새 0**(`s263_rowdiff_20261001_102016.txt`) — (가1) 합산효과 528만원 · 끝 줄 5,282,000 · (다) 8,698만원 · 5억 4,989만원 · 6.3년은 S263 3-2 가 칸마다 맞댄 값 그대로다.
+**0절 벽시계** 10:17:31 ~ 10:20:16(시각 명령 출력 · 커밋 앞).
+
+---
+
 ## 오늘 (2026-10-01) 265세션 — **재기 판 · 미해결 83건을 뿌리로 묶고 닫힌 것을 걷는다 · 코드 0줄**
 
 **0-1. PC — 1번 PC** — `run_tool open_values`(`open_values_20261001_095015.txt`) 첫 줄 `BOOK-DC2VCGD99B · Intel(R) Core(TM) Ultra 7 258V · cpu 8 · RAM 33834070016 B (31.5 GB) · -n auto 일꾼 8`. **저장소** — `git pull` Already up to date · HEAD **59fad00** = `origin/master`(S264 보고 값과 같다) · 워크트리 깨끗.
