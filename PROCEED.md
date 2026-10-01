@@ -380,6 +380,14 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 ---
 
+## 오늘 (2026-10-01) 269세션 — **고침 판 · S268 사람 물음 셋(저압 진상 안내 · 1시간 자료의 「15분」 문장 · 계약전력 기준 건물의 1시간 주의) · 문서에 박힌 기준 데이터 항목 수 걷기 · 계산 변경 없음**
+
+**0-1. PC — 1번 PC** — `run_tool open_values`(`open_values_20261001_142002.txt`) 첫 줄 `BOOK-DC2VCGD99B · Intel(R) Core(TM) Ultra 7 258V · cpu 8 · RAM 33834070016 B (31.5 GB) · -n auto 일꾼 8`. **저장소** — `git pull` Already up to date · HEAD **7c602ea** = `origin/master`(S268 보고 값과 같다) · 워크트리 깨끗 · `git worktree list` 한 줄.
+**0-2. 미해결 52** — 갈래 절 제목 가 0 · 나 2 · 다 0 · 라 46 · 마 4(`daily_brief_20261001_142009.txt`). **회귀값 여덟 · 케이스 스터디 기준선(188)** — S268 3-5 판 xlsx(그 판 스크래치 `case_after\casestudy_20261001.xlsx`)를 이 판 스크래치 `case_before\` 로 옮겼다 · S268 3절 커밋 뒤 `src\` · `tools\` · `data\` 0줄(`git diff --stat 162d012 HEAD -- src tools data` 빈칸). **덱 스냅 기준선** — S268 3-4 뒤 스냅 `cache\deck_words\s268_after.json` 이 이 PC 에 있다(새로 뜨지 않았다). **확인 사례 스냅(지금 코드)** — S268 스크래치 `s263_case.py` 를 이 판 스크래치로 옮겨 그대로 돌렸다((다) 방위 남동 · 쉬는 날 2023-05-01 · 2023-10-02) → `cache\deck_words\s269_case_before.json`(`s263_case_20261001_142208.txt`). S268 3-2 뒤 스냅 `s268_case_after.json` 과 줄 모음으로 맞대니 **세 벌 다 빠진 0 · 새 0**(가1 2,655줄 · 다 2,759줄 · 나 2,749줄 · `s263_rowdiff_20261001_142418.txt`) — (가1) 합산효과 528만원 · 끝 줄 5,282,000 · (다) 8,698만원 · 5억 4,989만원 · 6.3년은 S263 3-2 가 칸마다 맞댄 값 그대로다. **확인 입력 셋 스냅(지금 코드)** — 스크래치 `s269_probe.py`(S267 `s267_probe.py` 의 벌을 그대로 쓰고 하나를 더 지었다 · `s269_probe_20261001_142501.txt`): `low-leading`(덱 `small-ind-a1` 산업용(갑)Ⅰ 저압 75 kW · 진상 85 · 2,570줄) · `hourly`(용인 1시간 · 일반용(갑)Ⅱ 고압A 290 kW · 요금적용전력 기준 · 2,667줄) · **`hourly-contract`**(같은 1시간 자료 · 일반용(갑)Ⅰ 고압A 290 kW · `base_fee_on_contract_at` 참 · 2,605줄 — 이 판이 지은 계약전력 기준 확인 입력 · 저장소에 안 남긴다).
+**0절 벽시계** 14:20:00 ~ 14:25:22(시각 명령 출력 · 커밋 앞).
+
+---
+
 ## 오늘 (2026-10-01) 268세션 — **고침 판 · S267 사람 물음 다섯(저압 진상역률 · 1시간 자료 주의 · 죽은 길 둘 · 범위 밖 시험 건물) · 청구서 대조 항목 닫기 · 계산 변경은 저압 진상역률 하나**
 
 **0-1. PC — 1번 PC** — `run_tool open_values`(`open_values_20261001_122408.txt`) 첫 줄 `BOOK-DC2VCGD99B · Intel(R) Core(TM) Ultra 7 258V · cpu 8 · RAM 33834070016 B (31.5 GB) · -n auto 일꾼 8`. **저장소** — `git pull` Already up to date · HEAD **73e878f** = `origin/master`(S267 보고 값과 같다) · 워크트리 깨끗 · `git worktree list` 한 줄.
