@@ -379,6 +379,14 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 ---
 
+## 오늘 (2026-10-01) 268세션 — **고침 판 · S267 사람 물음 다섯(저압 진상역률 · 1시간 자료 주의 · 죽은 길 둘 · 범위 밖 시험 건물) · 청구서 대조 항목 닫기 · 계산 변경은 저압 진상역률 하나**
+
+**0-1. PC — 1번 PC** — `run_tool open_values`(`open_values_20261001_122408.txt`) 첫 줄 `BOOK-DC2VCGD99B · Intel(R) Core(TM) Ultra 7 258V · cpu 8 · RAM 33834070016 B (31.5 GB) · -n auto 일꾼 8`. **저장소** — `git pull` Already up to date · HEAD **73e878f** = `origin/master`(S267 보고 값과 같다) · 워크트리 깨끗 · `git worktree list` 한 줄.
+**0-2. 미해결 58** — ① 5 · ② 53(`daily_brief_20261001_122415.txt`). **회귀값 여덟 · 케이스 스터디 기준선(188)** — S267 3-5 판 xlsx(그 판 스크래치 `case_after\casestudy_20261001.xlsx`)를 이 판 스크래치 `case_before\` 로 옮겼다 · S267 은 `src\` · `tools\` · `data\` 를 안 고쳤다(`git diff --stat 267bbf8 HEAD -- src tools data` 빈칸). **덱 스냅 기준선** — S267 3-4 뒤 스냅 `cache\deck_words\s267_after.json` 이 이 PC 에 있다(새로 뜨지 않았다). **확인 사례 스냅(지금 코드)** — S267 스크래치 `s263_case.py` 를 이 판 스크래치로 옮겨 그대로 돌렸다((다) 방위 남동 · 쉬는 날 2023-05-01 · 2023-10-02) → `cache\deck_words\s268_case_before.json`(가1 2,653줄 · 다 2,757줄 · 나 2,747줄 · `s263_case_20261001_122618.txt`). S267 3-2 뒤 스냅 `s267_case_after.json` 과 줄 모음으로 맞대니 **세 벌 다 빠진 0 · 새 0**(`s263_rowdiff_20261001_122644.txt`) — (가1) 합산효과 528만원 · 끝 줄 5,282,000 · (다) 8,698만원 · 5억 4,989만원 · 6.3년은 S263 3-2 가 칸마다 맞댄 값 그대로다.
+**0절 벽시계** 12:24:05 ~ 12:26:49(시각 명령 출력 · 커밋 앞).
+
+---
+
 ## 오늘 (2026-10-01) 267세션 — **고침 판 · 뿌리 「갈래가 실물에 안 섰다」 묶음을 실물로 세워 가른다 · 자료 대기 일곱 정리 · 「현재 상태」 낡은 칸 · 계산 변경 없음**
 
 **0-1. PC — 1번 PC** — `run_tool open_values`(`open_values_20261001_112159.txt`) 첫 줄 `BOOK-DC2VCGD99B · Intel(R) Core(TM) Ultra 7 258V · cpu 8 · RAM 33834070016 B (31.5 GB) · -n auto 일꾼 8`. **저장소** — `git pull` Already up to date · HEAD **e26404d** = `origin/master`(S266 보고 값과 같다) · 워크트리 깨끗 · `git worktree list` 한 줄.
