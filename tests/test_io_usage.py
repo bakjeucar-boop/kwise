@@ -162,6 +162,40 @@ def test_detects_hourly_interval_and_warns(tmp_path: Path) -> None:
     assert any("기본요금 판정에 한계" in message for message in usage.meta.warnings)
 
 
+def test_용인_15분_실물을_1시간으로_합치면_간격_60_과_주의_한_줄이_선다(tmp_path: Path) -> None:
+    """**1시간 간격 실물을 기다리지 않는다** (S267 결정 3 — 「1시간 간격 자료」 를 닫은 못).
+
+    위 못은 지은 하루치다. 여기서는 **용인 15분 실물 한 해**를 1시간으로 합친 확인
+    입력을 시험 안에서 짓는다(저장소에 파일을 안 남긴다). 간격 판정이 60 이고 주의
+    한 줄이 서며, 15분 원본에서는 판정이 15 이고 그 줄이 안 선다 — 둘 다 문다.
+
+    1시간 합은 15분 최대를 못 본다 — 최대수요가 132.28 → 119.9 kW 로 낮아진다.
+    그 주의가 말하는 한계가 이 값이다.
+    """
+    source = Path(__file__).resolve().parent.parent / "input" / "전기사용량_소형건물.xlsx"
+    if not source.is_file():
+        pytest.skip(f"용인 실측 자료가 없습니다: {source}")
+    quarter = load_usage(source)
+    energy = quarter.energy_kwh()
+    hourly = energy.resample("60min", label="right", closed="right").sum(min_count=1)
+    rows = [(f"{stamp:%Y-%m-%d %H:%M}", float(kwh)) for stamp, kwh in hourly.items()]
+    usage = load_usage(write_csv(tmp_path / "hourly.csv", rows))
+
+    caution = "15분 최대수요를 직접 관측할 수 없어 기본요금 판정에 한계가 있습니다."
+    assert usage.meta.interval_minutes == 60
+    assert usage.meta.valid_rows == 8_760  # 365일 × 24 — 15분 35,040행의 넷에 하나
+    assert [text for text in usage.meta.warnings if caution in text] == [
+        f"60분 간격 데이터입니다. {caution}"
+    ]
+    # 합치기만 했다 — 사용량은 같고(0.01 kWh 반올림 안) 최대수요만 낮아진다.
+    assert usage.total_kwh == pytest.approx(quarter.total_kwh, rel=1e-4)
+    assert quarter.meta.max_demand_kw == pytest.approx(132.28)
+    assert usage.meta.max_demand_kw == pytest.approx(119.9, abs=0.05)
+
+    assert quarter.meta.interval_minutes == 15
+    assert not [text for text in quarter.meta.warnings if "간격 데이터" in text]
+
+
 def test_interval_detection_survives_gaps() -> None:
     stamps = pd.date_range("2024-01-01 00:15", periods=96, freq="15min").to_series()
     gapped = pd.concat([stamps.iloc[:20], stamps.iloc[60:]])

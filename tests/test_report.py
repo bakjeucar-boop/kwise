@@ -1169,6 +1169,86 @@ def test_덱_벌_갑Ⅰ_둘이_배치에서_돈다(
         assert summary.baseline_won == pytest.approx(expected.total_won), key
 
 
+#: **배치 벌 목록** (S267) — 진단 대상 종별 · 전압 행이다. 일반용과 산업용이고
+#: 154 kV 이상(고압B · 고압C)은 대상이 아니다 (S266 결정 1).
+BATCH_TARGET_ROWS = [
+    ("general_a_1", "high_a"),
+    ("general_a_1", "low"),
+    ("general_a_2", "high_a"),
+    ("general_b", "high_a"),
+    ("industrial_a_1", "high_a"),
+    ("industrial_a_1", "low"),
+    ("industrial_a_2", "high_a"),
+    ("industrial_b", "high_a"),
+]
+
+
+def test_배치가_진단_대상_종별과_전압_행마다_선다(
+    tmp_path: Path, tariff: TariffTable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**배치 벌 목록을 저장소에 둔다** (S267 · 104세션 2절 「배치에는 벌 목록이 없어 …」).
+
+    위 두 못은 계약전력 기준 종별 하나만 문다 — 산업용 셋과 저압 행은 배치에서
+    한 번도 안 돌았다. 여기서 **요금표가 가진 진단 대상 행을 다** 돌린다. 산업용
+    (갑)Ⅰ 고압A(제59조 ⑤ 저압계량 예외 경로)도 이 목록 안이다 — 덱 벌이 없는 행이다.
+
+    **목록은 요금표에서 읽고 위 상수와 맞댄다** — 요금표에 행이 늘면 여기서 걸린다.
+    **금액까지 맞댄다** — 예외만 안 나면 통과하게 두면 엉뚱한 행의 단가가 실려도 초록이다.
+    요금표에 없는 짝(갑Ⅱ 저압)은 서지 않는다.
+    """
+    from kwise.io import load_usage
+    from kwise.report.batch import CaseSpec, run_case
+    from kwise.tariff import BillingOptions, TariffDataError, calculate_bill, list_options
+
+    monkeypatch.setenv("PROJECT_CACHE", str(tmp_path / "cache"))
+    usage_path = write_month(tmp_path / "행.csv", 2024, 3, kwh=25.0)
+    usage = load_usage(usage_path)
+
+    rows = sorted(
+        (key, voltage)
+        for key, contract in tariff.contract_types.items()
+        if key.startswith(("general_", "industrial_"))
+        for voltage in contract.voltages
+        if voltage in ("low", "high_a")
+    )
+    assert rows == BATCH_TARGET_ROWS
+
+    totals: dict[tuple[str, str], float] = {}
+    for contract_type, voltage in rows:
+        option = list_options(tariff, contract_type, voltage)[0]
+        selection = TariffSelection(contract_type, voltage, option)
+        # 갑은 300 kW 미만 · 을은 300 kW 이상 종별이다 — 범위 안 값으로 세운다.
+        contract_kw = 500.0 if contract_type.endswith("_b") else 200.0
+        spec = CaseSpec(
+            name=f"{contract_type}-{voltage}",
+            usage=usage_path,
+            contract_type=contract_type,
+            voltage=voltage,
+            option=option,
+            contract_kw=contract_kw,
+        )
+        summary = run_case(spec, tariff, output_dir=tmp_path / "out", include_timeseries=False)
+        expected = calculate_bill(
+            usage, tariff, selection, options=BillingOptions(contract_kw=contract_kw)
+        )
+        assert expected.total_won > 0, (contract_type, voltage)
+        assert summary.baseline_won == pytest.approx(expected.total_won), (contract_type, voltage)
+        totals[(contract_type, voltage)] = summary.baseline_won
+    # 재료 — 행마다 다른 단가를 탔다(같은 자료인데 총액이 행마다 갈린다).
+    assert len({round(value) for value in totals.values()}) == len(rows), totals
+
+    missing = CaseSpec(
+        name="없는 짝",
+        usage=usage_path,
+        contract_type="general_a_2",
+        voltage="low",
+        option="I",
+        contract_kw=200.0,
+    )
+    with pytest.raises(TariffDataError):
+        run_case(missing, tariff, output_dir=tmp_path / "out", include_timeseries=False)
+
+
 def test_peak_window_on_a_day_without_observations() -> None:
     """**관측이 하나도 없는 날** (25세션 1절).
 
