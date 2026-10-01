@@ -204,7 +204,8 @@ def test_차트_3종이_삽입된다(diagnosis_only: DocumentType) -> None:
 def test_조합_차트가_더해진다(full_document: DocumentType) -> None:
     # 진단 3장 + 조합 1장 + 수단별 차트 (15세션 2절 — 화면과 같은 프레임을 쓴다).
     assert len(full_document.inline_shapes) >= 4
-    assert "조합별 기간 절감액과 투자비" in _all_text(full_document)
+    # Word 캡션이 PPT 그림 글과 같다 (S266 결정 4).
+    assert "조합별 누적 기간 절감액과 누적 투자비" in _all_text(full_document)
 
 
 def test_수단별_차트가_보고서에도_실린다(full_document: DocumentType) -> None:

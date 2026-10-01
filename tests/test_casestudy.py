@@ -125,6 +125,9 @@ def test_six_synthetic_cases_and_three_measured(case_dir: Path) -> None:
     한 번도 안 섰다. **C8 과 갈리는 것은 잣대가 보는 둘이다** — C8 은
     계약전력이 관측 최대 × 1.1 로 지어낸 값이라 C 이고, R4 는 자료도
     계약전력(290 kW)도 그 건물이 실제로 쓰는 값이라 **R** 이다.
+
+    **C9 은 S266 에 붙었다** (사람 결정 — 진단 대상은 일반용과 산업용). 덱 벌
+    `large-ind-b` 와 같은 조건(대형 실측 · 산업용(을) · 6,000 kW)이고 종별만 합성이라 C 다.
     """
     definitions = build_case_definitions(case_dir)
     assert [item.key for item in definitions] == [
@@ -136,13 +139,14 @@ def test_six_synthetic_cases_and_three_measured(case_dir: Path) -> None:
         "C6",
         "C7",
         "C8",
+        "C9",
         "R1",
         "R2",
         "R3",
         "R4",
     ]
     industrial = [item.key for item in definitions if item.contract_type == "industrial_b"]
-    assert industrial == ["C4"]
+    assert industrial == ["C4", "C9"]
     # **갑Ⅱ 는 이제 둘이다** (S195). R4 가 R1 에서 역률만 갈았으므로 종별이 같다.
     type_a_2 = [item.key for item in definitions if item.contract_type == "general_a_2"]
     assert type_a_2 == ["R1", "R4"]
@@ -173,6 +177,12 @@ def test_six_synthetic_cases_and_three_measured(case_dir: Path) -> None:
     short = next(item for item in definitions if item.key == "C7")
     assert short.contract_kw == 4_000.0  # 지어낸 값. 덱 벌 `large-b-short` 와 같다
     assert not short.contract_is_actual
+    # **C9 은 덱 벌 `large-ind-b` 와 자료 · 계약전력이 같다** (S266) — 종별만 합성이다.
+    industrial_large = next(item for item in definitions if item.key == "C9")
+    assert industrial_large.usage_path == short.usage_path
+    assert industrial_large.contract_kw == 6_000.0
+    assert industrial_large.selection == TariffSelection("industrial_b", "high_a", "I")
+    assert not industrial_large.contract_is_actual
 
     # **역률을 박는 벌은 둘이고 갈래가 반대다** (S195). C8 은 기준 92 **미달**
     # 이라 추가요금 쪽이고 R4 는 감액 상한 97 **초과**라 감액 쪽이다. 나머지 열은
@@ -516,9 +526,9 @@ def test_case_study_runs_sequentially_and_hits_the_weather_cache(
     """
     assert study.weather_calls == weather_cache_state.cold
     assert study.weather_calls <= weather_cache_state.requests
-    # **S195 2-2 에 `R4` 가 붙어 11 → 12 다.** 새 벌이 낸 수이지 기대값을 갱신한
-    # 것이 아니다 — R1 과 좌표·기간이 같아 기상 요청은 안 늘었다.
-    assert len(study.results) == 12
+    # **S195 2-2 에 `R4` 가 붙어 11 → 12 · S266 에 `C9` 이 붙어 13 이다.** 새 벌이 낸
+    # 수이지 기대값을 갱신한 것이 아니다 — 좌표·기간이 같은 벌이라 기상 요청은 안 늘었다.
+    assert len(study.results) == 13
     assert study.elapsed_sec > 0
 
 

@@ -235,7 +235,9 @@ PERIOD_NAME_PIECES: tuple[tuple[str, str, int], ...] = (
     ("report/document.py", "예상 절감액", 0),
     # S219 에 Word 3장 수단 칸 이름(`_measure_saving_label`)이 하나 더했다 (규칙 다).
     ("report/document.py", "기간 절감액", 3),
-    ("report/document.py", "-1. 조합별 기간 절감액과 투자비", 1),
+    # S266 결정 4 — Word 캡션이 PPT 그림 글과 한 원천(`notices`)을 쓴다. 옛 조각은 0 이다.
+    ("report/notices.py", "조합별 누적 기간 절감액과 누적 투자비", 1),
+    ("report/document.py", "-1. 조합별 기간 절감액과 투자비", 0),
     ("report/document.py", "-1. 조합별 절감액과 투자비", 0),
     # Excel 요약 · 진단 (X1 · X2)
     ("report/excel.py", "선택요금 전환 (기간)", 1),

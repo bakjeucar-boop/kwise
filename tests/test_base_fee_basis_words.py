@@ -3085,3 +3085,96 @@ def test_S264_조합_ESS_크기_안내_역률_상한_글_ESS_투자비_한_줄_�
     5 배치 요약 CSV 권장 조합은 규격 이름. 6 조합 ESS 안내에 사양이 한 번.
     """
     _s264_check(item, request, tmp_path)
+
+
+# ============================================ S266 — 사람 물음 열넷 (결정 1 · 2 · 4 · 9 · 10)
+
+#: 줄끝을 안 바꾸는 원문 사본 둘 (S266 결정 9).
+S266_COPIES = ("2024-02_전력시장운영규칙_검색용.txt", "2024-10-24_기본공급약관_검색용.txt")
+#: 판정 근거로 저장소에 싣는 정본 둘 (S266 결정 10).
+S266_PDFS = ("2026-06-01_기본공급약관시행세칙(합본).pdf", "2026-08-01_전기요금표(종합).pdf")
+
+
+def _s266_settings(root: Path, item: str) -> None:
+    """저장소 설정 둘 — 원문 사본 줄끝(결정 9) · 판정 근거 PDF(결정 10). ``root`` 는 뿌리다."""
+    source = root / "data" / "source"
+    if item == "9":
+        rules = (root / ".gitattributes").read_text(encoding="utf-8").splitlines()
+        assert "data/source/*_검색용.txt -text" in rules, rules
+        for name in S266_COPIES:
+            # 뽑은 그대로다 — git 이 줄끝을 LF 로 고쳐 실었으면 CRLF 가 없다.
+            assert b"\r\n" in (source / name).read_bytes(), name
+    else:
+        ignored = (root / ".gitignore").read_text(encoding="utf-8").splitlines()
+        sizes = []
+        for name in S266_PDFS:
+            assert f"!data/source/{name}" in ignored, name
+            assert (source / name).read_bytes()[:4] == b"%PDF", name
+            sizes.append((source / name).stat().st_size)
+        assert sum(sizes) <= 20 * 1024 * 1024, sizes
+
+
+def _s266_check(item: str, request: pytest.FixtureRequest) -> None:
+    """S266 결정 1 · 2 · 4 · 9 · 10 을 실제로 만든 산출물의 글자와 저장소 실물로 본다."""
+    if item in ("9", "10"):
+        _s266_settings(PROJECT_ROOT, item)
+        return
+    if item == "1":
+        from kwise.report.casestudy import build_case_definitions
+
+        sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+        import render_deck
+
+        cases = PROJECT_ROOT / "input" / "cases"
+        if not cases.is_dir():
+            pytest.skip(f"케이스 파일이 없습니다: {cases}")
+        case = {d.key: d for d in build_case_definitions(cases)}["C9"]
+        deck = render_deck.BY_KEY["large-ind-b"]
+        assert (
+            case.usage_path.name,
+            case.contract_type,
+            case.voltage,
+            case.option,
+            case.contract_kw,
+        ) == (deck.csv.name, "industrial_b", deck.voltage, deck.option, deck.contract_kw)
+        assert deck.contract_type == "industrial_b"
+        return
+    rendered = _render("large-b-over")
+    if item == "2":
+        date = request.getfixturevalue("tariff").effective_date
+        note = " (분석 기간 전체에 적용)"
+        hits = [row for row in rendered.rows if any(note.strip() in str(v) for v in row)]
+        # 새 글자는 이 괄호 하나이고 네 자리다 — 화면에는 없다.
+        assert sorted((str(row[0]), str(row[-1])) for row in hits) == [
+            ("Excel", f"{date} 시행{note}"),
+            ("PPT", f"{date}{note}"),
+            ("Word", f"{date}{note}"),
+            ("Word", f"적용 요금표: {date} 시행{note}"),
+        ], hits
+        tables = [row for row in hits if row[0] in ("PPT", "Word") and len(row) == 4]
+        assert [row[2] for row in tables] == ["적용 요금표 시행일"] * 2, tables
+    elif item == "4":
+        caption = "조합별 누적 기간 절감액과 누적 투자비"
+        word = [str(row[-1]) for row in rendered.rows if row[0] == "Word"]
+        assert [t for t in word if re.fullmatch(rf"그림 \d+-1\. {caption}", t)], [
+            t for t in word if t.startswith("그림")
+        ]
+        assert caption in [str(row[-1]) for row in rendered.rows if row[0] == "PPT"]
+        assert not [t for t in rendered.texts if "조합별 기간 절감액과 투자비" in t]
+    else:
+        pytest.fail(f"모르는 항목 {item}")
+
+
+@pytest.mark.parametrize("item", ["1", "2", "4", "9", "10"])
+def test_S266_요금표_시행일_괄호_Word_조합_캡션_산업용_벌_원문_사본_정본_PDF(
+    item: str, request: pytest.FixtureRequest
+) -> None:
+    """**S266 결정 1 · 2 · 4 · 9 · 10** (사람 결정 1 · 웹 대화창 판단 2 · 4 · 9 · 10).
+
+    1 케이스 스터디 C9 이 덱 벌 `large-ind-b` 와 같은 조건이다(산업용(을) · 대형 실측 · 6,000 kW).
+    2 요금표 시행일을 적는 네 자리에 「 (분석 기간 전체에 적용)」 · 화면 0.
+    4 Word 조합 그림 캡션이 PPT 그림 글과 같다. 9 원문 사본 둘은 줄끝을 안 바꾼다.
+    10 판정 근거 PDF 둘이 저장소에 있다(합 20 MB 이하). 결정 5 는 `test_compare.py` ·
+    `test_ui_screen.py` 의 세 시험이 문다.
+    """
+    _s266_check(item, request)
