@@ -386,6 +386,14 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 ---
 
+## 오늘 (2026-10-02) 275세션 — **일반용 마지막 코드 판 · 같은 문장 사본을 한 자리로 · 매뉴얼 · 순서 탓 못 · 시험 파일 mypy · 남은 미해결 정리**
+
+**0-1. PC — 1번 PC** — `run_tool open_values`(`open_values_20261002_155022.txt`) 첫 줄 `BOOK-DC2VCGD99B · Intel(R) Core(TM) Ultra 7 258V · cpu 8 · RAM 33834070016 B (31.5 GB) · -n auto 일꾼 8`. **저장소** — `git pull` Already up to date · HEAD **56eeee7** = `origin/master`(S274 보고 값과 같다) · 워크트리 깨끗(`git status --short` 빈칸) · `git worktree list` 한 줄.
+**0-2. 미해결 11** — `daily_brief --branch`(`daily_brief_20261002_155029.txt`) 갈래 가 0 · 나 2 · 다 0 · 라 5 · 마 4. **S274 3절 커밋(bf672f9) 뒤 `src\` · `tools\` · `data\` · `tests\` 0줄**(`git diff --stat bf672f9 HEAD -- src tools data tests` 빈칸)이라 기준선은 S274 3절 판의 것을 쓴다. **덱 스냅 기준선** `cache\deck_words\s274_after.json`(19벌 · 6,299,963 B) · **확인 사례 셋 기준선** `s274_case_after.json`(1,027,874 B) · **`small-ind-a1` 기준선** `s274_ind.json`(285,742 B) · **케이스 스터디 기준선(188)과 회귀값 여덟** — S274 3-4 판 xlsx(`casestudy_20261002_1522.xlsx`)를 이 판 스크래치 `case_before\` 로 옮겼다 · **화면 감사 넷** 955 · 815 · 964 · 816(S274 뒤 `--list` 판 `screen_audit_20261002_152339.txt`). **정적 검사 다섯은 새로 돌렸다** — `ruff check .` 통과(`ruff_20261002_155107.txt`) · `ruff format --check .` 어긋남 0 · 통과 177(`ruff_20261002_155108.txt`) · `scan_ctrl` 0곳(`scan_ctrl_20261002_155108.txt`) · 맨 `mypy` **8건 · 3파일**(`mypy_20261002_155111.txt`) · `mypy tests tools` **35건 · 10파일**(`mypy_20261002_155114.txt`) — 다 S274 3-7 과 같다.
+**0절 벽시계** 15:50:20 ~ 15:51:14(시각 명령 출력).
+
+---
+
 ## 오늘 (2026-10-02) 274세션 — **정리 판 · 미해결 (라) 걷기 · 산출물에 안 닿는 (가) 묶음 여섯과 홀로 둘 · 주말 가동 DR 곁 글 셋**
 
 **0-1. PC — 1번 PC** — `run_tool open_values`(`open_values_20261002_142448.txt`) 첫 줄 `BOOK-DC2VCGD99B · Intel(R) Core(TM) Ultra 7 258V · cpu 8 · RAM 33834070016 B (31.5 GB) · -n auto 일꾼 8`. **저장소** — `git pull` Already up to date · HEAD **2f3f5ed** = `origin/master`(S273 보고 값과 같다) · 워크트리 깨끗(`git status --short` 빈칸) · `git worktree list` 한 줄.
