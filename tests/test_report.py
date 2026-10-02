@@ -209,8 +209,14 @@ def test_부록_B_값_칸에_열쇠_값_객체_글자가_없다(
 #: 프로그램 기호 — 참 · 거짓과 영문 열쇠 이름 (S270 결정 5).
 PROGRAM_SYMBOL = re.compile(r"\b(?:True|False|None|[a-z]+(?:_[a-z0-9]+)*)\b")
 
-#: 쓰는 이름이 없어 열쇠 그대로 내는 값 (S270 결정 5 — 새 이름을 짓지 않는다).
-UNNAMED_VALUES = {"all_to_light", "peak_to_mid"}
+#: 요일 계량 규칙 값 둘의 글자 (S271 결정 5) — 이름을 짓지 않고 그 규칙을 정한 원문
+#: 글자를 쓴다: 전기요금표(종합) 2쪽 「※ 토요일 및 공휴일 계산기준(임시공휴일 제외)」.
+#: S270 에는 쓰는 이름이 없어 열쇠(`all_to_light` · `peak_to_mid`) 그대로 냈다.
+DAY_RULE_TEXTS = {
+    "토요일": "최대부하 시간대의 사용전력량 → 중간부하 시간대로 계량",
+    "일요일": "최대수요전력 및 사용전력량 → 경부하 시간대로 계량",
+    "공휴일": "최대수요전력 및 사용전력량 → 경부하 시간대로 계량",
+}
 
 
 def test_부록_B_값_칸에_프로그램_기호가_없다(
@@ -220,8 +226,9 @@ def test_부록_B_값_칸에_프로그램_기호가_없다(
 
     참 · 거짓이 「True」 · 「False」 로, 열쇠가 「south」 · 「normal」 · 「education_a」 꼴로 섰다.
     참 · 거짓은 「적용」 · 「적용 안 함」, 열쇠는 기준 데이터나 화면이 이미 쓰는 이름이다.
-    쓰는 이름이 없는 열쇠(요일 계량 규칙)는 그대로 낸다 — 그 둘만 남는다. 기준 데이터
-    파일은 그대로다. Word 부록 B 도 같은 `reference_rows` 를 쓴다.
+    **요일 계량 규칙 셋은 원문 글자다** (S271 결정 5) — 이름이 없어 S270 에 열쇠 그대로
+    남았던 둘(`all_to_light` · `peak_to_mid`)이 요금표 원문 글자로 선다. 기호가 남는 값은
+    이제 없다. 기준 데이터 파일은 그대로다. Word 부록 B 도 같은 `reference_rows` 를 쓴다.
 
     **요금표를 실어 만든다** — 계약종별 이름은 요금표가 쥔다(앱은 언제나 싣는다).
     """
@@ -239,14 +246,12 @@ def test_부록_B_값_칸에_프로그램_기호가_없다(
         "기본 설치 밀도": "보통",
     }
     assert {item: values.get(item) for item in expected} == expected
-    found = {
-        item: value
-        for item, value in values.items()
-        if set(PROGRAM_SYMBOL.findall(str(value))) - UNNAMED_VALUES
-    }
+    found = {item: value for item, value in values.items() if PROGRAM_SYMBOL.search(str(value))}
     assert found == {}, found
-    # 이름 없는 열쇠는 값을 낸다 — 사라지지도 지어내지도 않는다.
-    assert {values[f"{day} 계량 규칙"] for day in ("토요일", "일요일", "공휴일")} == UNNAMED_VALUES
+    # 요일 계량 규칙 셋은 원문 글자 그대로다 — 열쇠도 지은 이름도 아니다.
+    assert {day: values[f"{day} 계량 규칙"] for day in DAY_RULE_TEXTS} == DAY_RULE_TEXTS
+    # 그 글자는 60자 안이라 잘리지 않는다(값 칸은 60자를 넘으면 자른다).
+    assert all(len(text) <= 60 and not text.endswith("…") for text in DAY_RULE_TEXTS.values())
 
 
 def test_timeseries_sheet_carries_every_slot(

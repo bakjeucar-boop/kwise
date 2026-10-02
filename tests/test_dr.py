@@ -368,6 +368,54 @@ def test_저부하일이_없으면_영을_내고_이유를_적는다(
     assert any("저부하 평일이 없습니다" in message for message in texts(profile.notices))
 
 
+def test_주말_부하가_판단값_이상이면_저부하_평일을_세지_않는다(
+    sample_usage: UsageData, calendar: HolidayCalendar, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**주말에도 평일만큼 가동하는 건물은 저부하 평일이 0일이다** (S271 결정 3 · 사람 결정).
+
+    판정 시간대의 주말·공휴일 평균 ÷ 평일 평균이 판단값(``dr.weekend_operating_ratio`` ·
+    0.9) 이상이면 주말·공휴일이 「쉬는 날 수준」 이 아니다. 대형 실측은 그 비율이 0.548 이라
+    판단값을 그 바로 아래 · 위로 옮겨 **이상이면 0일 · 아래면 그대로**를 같은 자료에서 문다.
+    """
+    import kwise.diagnose.dr as dr_module
+
+    assert dr_module.weekend_operating_ratio() == 0.9  # 기준 데이터의 값
+    plain = dr_profile(sample_usage.kw, 15, calendar, contract_type="general_b")
+    assert plain.weekend_baseline_kw is not None and plain.weekday_mean_kw is not None
+    share = plain.weekend_baseline_kw / plain.weekday_mean_kw
+    assert 0.4 < share < 0.7 < 0.9  # 전제 — 판단값 아래라 그대로 센다
+    assert plain.low_load_days_count > 0 and plain.low_load_threshold_kw is not None
+    assert dr_module.WEEKEND_OPERATING_FACT not in {item.fact for item in plain.notices}
+
+    # 아래 — 판단값이 비율보다 조금 크면 여전히 센다.
+    monkeypatch.setattr(dr_module, "weekend_operating_ratio", lambda: share + 0.001)
+    below = dr_profile(sample_usage.kw, 15, calendar, contract_type="general_b")
+    assert below.low_load_days == plain.low_load_days
+    assert below.annual_reducible_kwh == plain.annual_reducible_kwh
+
+    # 이상 — 판단값이 비율과 같으면(이상) 세지 않는다: 0일 · 0 kWh · 문턱 없음 · 그 한 줄.
+    monkeypatch.setattr(dr_module, "weekend_operating_ratio", lambda: share)
+    gated = dr_profile(sample_usage.kw, 15, calendar, contract_type="general_b")
+    assert gated.low_load_days == () and gated.low_load_threshold_kw is None
+    assert gated.period_reducible_kwh == gated.annual_reducible_kwh == 0.0
+    assert gated.registered_capacity_kw == 0.0
+    assert gated.weekend_baseline_kw == plain.weekend_baseline_kw  # 기준선 값은 그대로다
+    lines = [item.text for item in gated.notices if item.fact == dr_module.WEEKEND_OPERATING_FACT]
+    assert lines == [
+        f"주말·공휴일의 판정 시간대 평균 부하가 평일의 {share:.0%} 로 기준 {share:.0%} 이상이라, "
+        "저부하 평일을 세지 않았습니다."
+    ]
+    # 「비어 있을 때의 수준」 근거 줄과 「저부하 평일이 없습니다 — 문턱 이하인 날이 없습니다」
+    # 는 이 갈래에서 참이 아니라 안 선다.
+    facts = {item.fact for item in gated.notices}
+    assert "dr.baseline" not in facts and "dr.no_low_days" not in facts
+    # 보고서의 DR 결론은 그 한 줄을 그대로 쓴다.
+    from kwise.report.narrative import dr_lead
+
+    assert dr_lead(gated) == lines[0]
+    assert "쉬는 날 수준까지" in dr_lead(plain)
+
+
 def test_정전일은_저부하_평일이_아니다(sample_usage: UsageData, calendar: HolidayCalendar) -> None:
     """정전으로 부하가 낮았던 날은 감축 여력이 아니다."""
     without = dr_profile(
@@ -925,9 +973,11 @@ def test_저부하_기준선_줄은_접은_값으로_다시_곱하지_않는다(
     assert f"{folded:,.1f}" == "43.2"
     assert "43.2" not in (line or "")
 
-    # 기준선이나 문턱이 없으면 줄을 안 짓는다 — 부르는 쪽이 「산출 보류」 를 적는다.
+    # 기준선이 없으면 줄을 안 짓는다 — 부르는 쪽이 「산출 보류」 를 적는다.
     assert low_load_threshold_line(None, YONGIN_THRESHOLD_KW) is None
-    assert low_load_threshold_line(YONGIN_BASELINE_KW, None) is None
+    # 기준선은 섰는데 문턱을 안 세운 벌(주말에도 가동 · S271 결정 3)은 기준선 값을 적는다 —
+    # 「주말·공휴일 관측치 없음」 으로 메우면 그 벌에서 거짓이다.
+    assert low_load_threshold_line(YONGIN_BASELINE_KW, None) == "36.3 kW — 문턱 미산출"
 
 
 def test_기준선_줄을_밖에서_다시_짓지_않는다() -> None:

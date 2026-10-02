@@ -611,7 +611,12 @@ def _demand_response(
     # **기준선 근처로 내려온 평일이 감축 가능일이다** (15세션 2-2). 요일 갈래를
     # 색으로 나누고 저부하 평일에 표식을 찍으면 그 사실이 그림 하나로 읽힌다.
     st.altair_chart(charts.dr_daily_chart(diagnosis.dr), width="stretch")
-    st.caption(f"일별 {JUDGE_WINDOW} 평균 부하", help=fmt.chart_tip("chart.dr_daily"))
+    # 문턱을 안 세운 벌(주말에도 가동 · S271 결정 3)은 「문턱 아래 평일이 입찰할 수 있는
+    # 날」 이라는 읽는 법 문단을 뺀다.
+    st.caption(
+        f"일별 {JUDGE_WINDOW} 평균 부하",
+        help=fmt.chart_tip("chart.dr_daily", reading=result.low_load_threshold_kw is not None),
+    )
     # **어떤 날인지 보여 준다.** 창립기념일·워크숍처럼 사무실을 비우는 날일 가능성이
     # 높아, 목록을 보면 사용자가 스스로 맞는 날인지 판정할 수 있다 (14세션 4절).
     #

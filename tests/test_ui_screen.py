@@ -474,10 +474,15 @@ def test_월별_명세는_결론_열만_낸다() -> None:
 
 
 def test_부분_월에_뜻을_붙인다() -> None:
-    """체크만 있고 뜻이 없으면 무엇을 보라는 것인지 알 수 없다 (21세션 3-3)."""
+    """값만 있고 뜻이 없으면 무엇을 보라는 것인지 알 수 없다 (21세션 3-3).
+
+    **값은 「예」 · 「아니오」 글자다** (S271 결정 6) — 참 · 거짓 기호를 체크 열로 그리던
+    자리가 글자 열이 됐다. 뜻(열 도움말)은 그대로 붙는다.
+    """
     source = (VIEWS / "diagnose.py").read_text(encoding="utf-8")
     assert "검침 기간이 한 달에 못 미치는 달입니다." in source
-    assert "CheckboxColumn" in source
+    assert '"부분 월": st.column_config.TextColumn(' in source
+    assert "CheckboxColumn" not in source
 
 
 def test_감도를_기준값_괄호_범위로_적는다() -> None:
@@ -2714,7 +2719,8 @@ def test_화면이_그래프마다_툴팁을_단다() -> None:
     for path in sorted(VIEWS.rglob("*.py")):
         source = path.read_text(encoding="utf-8")
         charts_drawn += source.count("st.altair_chart(")
-        keys |= set(re.findall(r'chart_tip\("([a-z_.]+)"\)', source))
+        # 열쇠는 첫 인자다 — 뒤에 `reading=` 이 붙는 자리(S271)와 줄을 나눈 자리도 센다.
+        keys |= set(re.findall(r'chart_tip\(\s*"([a-z_.]+)"', source))
     assert charts_drawn >= 12, "차트를 못 찾았습니다."
     # 화면에 그리는 차트 수만큼 툴팁 열쇠가 있어야 한다 (같은 차트를 두 번 그리지 않는다).
     assert len(keys) >= 12, sorted(keys)

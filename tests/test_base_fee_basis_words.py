@@ -300,6 +300,9 @@ def _build(
         # 연면적도 `render_deck` 과 같게 위젯 키로 (S252 결정 9 · `small-a2-pf100-offset-area`)
         if case.floor_area_m2 is not None:
             state["building_area"] = case.floor_area_m2
+        # 운영 시간대도 `render_deck` 과 같게 (S271 결정 4 · `small-ind-a1` 은 0 ~ 24시)
+        if case.operating_hours is not None:
+            state["building_hours"] = case.operating_hours
         # 잉여 처리도 `render_deck` 과 같게 (S234 — `small-b-sell` 은 외부 판매)
         if case.surplus_use:
             state["measure_solar_surplus_use"] = case.surplus_use
@@ -3403,3 +3406,187 @@ def test_저압_건물에는_야간_진상_안내와_입력칸이_안_선다() -
         line = " | ".join(str(cell) for cell in row)
         if "진상" in line:
             assert "야간 진상 조항과 지상 간주" in line or "기본공급약관 제43조 ② 2호" in line, row
+
+
+# ─────────────────────────────────── S271 — 산업용(갑)Ⅰ 저압 실측 벌의 실물
+#
+# 세 벌을 앱으로 띄워 네 산출물을 맞댄다.
+#
+#     small-ind-a1   122일 · 저압 · 계약전력 기준 · 24시간 가동(주말 부하 = 평일의 97%)
+#     small-ind-a2   365일 · 고압A · 요금적용전력 기준 · 주말 부하 = 평일의 59%
+#     large-a        368일 · 고압A · 계약전력 기준
+#
+# 서는 쪽(산업용 벌)과 안 서는 쪽(맞수 둘)을 함께 문다.
+
+
+def _kinds(rendered: Rendered, word: str) -> list[str]:
+    """``word`` 가 든 줄의 산출물 이름 — 줄마다 한 번 · 이름 차례."""
+    return [kind for kind, _where in _cells_with(rendered, word)]
+
+
+def _diagnosis_sheet(rendered: Rendered) -> dict[str, str]:
+    """Excel 「진단」 시트의 항목 → 값."""
+    return {
+        str(row[2]): str(row[3])
+        for row in rendered.rows
+        if row[:2] == ("Excel", "진단") and len(row) > 3
+    }
+
+
+#: 12개월 미만 문장의 몸 (S271 결정 1) — 화면은 물결표를 escape 하므로 날짜 뒤 조각으로 찾는다.
+SHORT_PERIOD_BODY = (
+    "(여름 92일, 봄·가을 30일, 겨울 0일)의 값을 12개월로 늘린 값이라 "
+    "겨울이 반영되지 않았고, 실제보다 클 수 있습니다."
+)
+#: 계약전력 권고의 기간 기준 문장의 뒷몸 (S271 결정 2).
+CONTRACT_PERIOD_BODY = "최대 기준입니다. 나머지 달의 최대를 확인한 뒤 신청하십시오."
+#: 주말에도 가동하는 건물의 DR 한 줄 (S271 결정 3) — 수는 그 벌 값이다.
+WEEKEND_OPERATING_LINE = (
+    "주말·공휴일의 판정 시간대 평균 부하가 평일의 97% 로 기준 90% 이상이라, "
+    "저부하 평일을 세지 않았습니다."
+)
+
+
+def test_S271_12개월_미만_문장과_계약전력_권고의_기간_기준() -> None:
+    """**12개월 미만 자료는 기간과 계절 구성을 밝히고, 계약전력 권고에 기간 기준을 단다**
+    (S271 결정 1 · 2 — 사람 결정).
+
+    산업용 벌(122일 — 여름 92 · 봄·가을 30 · 겨울 0)에서 그 문장이 다섯 자리(화면 1단계 ·
+    2단계 선택요금 카드 · PPT 3장 · Excel 요약 · Word)에 **한 글자**로 서고, 머리 문장만 선
+    자리가 없다. 계약전력 필수 안내가 서는 여섯 자리마다 기간 기준 한 줄이 따라 선다.
+    12개월 벌에는 둘 다 0줄이다.
+    """
+    low, high, over = _render("small-ind-a1"), _render("small-ind-a2"), _render("large-b-over")
+
+    assert _kinds(low, SHORT_PERIOD_BODY) == ["Excel", "PPT", "Word", "화면", "화면"]
+    assert _cells_with(low, "2026-09-08 " + SHORT_PERIOD_BODY)[:3] == [
+        ("Excel", "요약"),
+        ("PPT", "3"),
+        ("Word", "List Bullet"),
+    ]
+    head = "분석 기간이 12개월 미만입니다."
+    assert len(_cells_with(low, head)) == 5  # 머리 문장은 그 다섯 줄에만 선다
+    assert _cells_with(high, "12개월 미만") == [] and _cells_with(over, "12개월 미만") == []
+
+    # 결정 2 — 필수 안내가 선 자리 수만큼 기간 기준 줄이 선다(자리마다 바로 아래).
+    margin = "충분한 여유를 확보하십시오"
+    assert _kinds(low, margin) == ["Excel", "PPT", "Word", "Word", "Word", "화면"]
+    assert _kinds(low, CONTRACT_PERIOD_BODY) == _kinds(low, margin)
+    assert _cells_with(low, "분석 기간(2026년 5월 ") != []
+    # 12개월 이상이면 하향을 권해도 안 선다.
+    assert _cells_with(over, margin) != [] and _cells_with(over, CONTRACT_PERIOD_BODY) == []
+    assert _cells_with(high, CONTRACT_PERIOD_BODY) == []
+
+
+def test_S271_주말에도_가동하는_건물은_저부하_평일이_0일이다() -> None:
+    """**주말·공휴일 부하가 평일의 90% 이상이면 저부하 평일을 세지 않는다** (S271 결정 3 —
+    사람 결정 · 판단값 ``dr.weekend_operating_ratio``).
+
+    산업용 벌은 판정 시간대 주말·공휴일 평균이 평일의 97% 다 — 앞서는 평일 82일 가운데
+    67일을 「쉬는 날 수준」 으로 세고 12개월 환산 감축 가능량 10,242 kWh 를 냈다. 이제 0일 ·
+    0 kWh 이고 그 사실이 한 줄로 선다. 「쉬는 날 수준」 을 전제한 글은 그 벌에 안 선다.
+    주말 부하가 평일의 59% 인 맞수 벌은 그대로 센다.
+    """
+    low, high = _render("small-ind-a1"), _render("small-ind-a2")
+
+    assert set(_kinds(low, WEEKEND_OPERATING_LINE)) == {"PPT", "Word", "화면"}
+    diagnosis = _diagnosis_sheet(low)
+    assert diagnosis["DR 저부하 평일"] == "0일"
+    assert diagnosis["DR 등록 권장 용량 (저부하일 여력 하위값)"] == "0 kW"
+    assert [v for k, v in diagnosis.items() if k.startswith("DR 12개월 환산 감축 가능량")] == [
+        "0 kWh"
+    ]
+    # 기준선 값은 서고 문턱은 「미산출」 이다 — 「관측치 없음」 은 거짓이다.
+    assert diagnosis["DR 저부하 판정 기준선 (주말·공휴일 평균 × 배수)"].endswith("문턱 미산출")
+    for gone in (
+        "쉬는 날 수준까지 내려옵니다",
+        "쉬는 날 수준까지 내려오는 평일이 없어",
+        "건물이 사실상 비어 있을 때의 수준입니다",
+        "주말·공휴일 관측치 없음",
+        "붉은 선 아래가 감축 가능일입니다",
+        "문턱 아래로 내려온 평일",
+    ):
+        assert _cells_with(low, gone) == [], (gone, _cells_with(low, gone))
+
+    # 맞수 — 주말 부하가 평일의 59% 라 그 한 줄이 안 서고 저부하 평일을 그대로 센다.
+    assert _cells_with(high, "저부하 평일을 세지 않았습니다") == []
+    assert _diagnosis_sheet(high)["DR 저부하 평일"] == "30일"
+    assert _cells_with(high, "건물이 사실상 비어 있을 때의 수준입니다") != []
+    assert _cells_with(high, "붉은 선 아래가 감축 가능일입니다") != []
+
+
+def test_S271_산업용_실물의_참이_아닌_글_여덟과_운영시간() -> None:
+    """**그 벌에서 참인 말만 선다** (S271 결정 4 · 6 · S207).
+
+    계약전력 기준 건물(산업용 벌 · `large-a`)에는 요금적용전력이 기본요금을 정한다거나 피크를
+    낮추면 요금이 준다고 읽히는 글이 안 서고, 12개월 미만 자료에는 「직전 12개월 최대」 가,
+    여름 · 겨울이 다 들지 않은 자료에는 「여름에 높고 겨울에 낮다」 가, 저압에는 「야간 지상
+    간주 (나목)」 이 안 선다. 월별 표의 「부분 월」 은 참 · 거짓 기호가 아니라 「예」 ·
+    「아니오」 다.
+    요금적용전력 기준 · 12개월 · 고압 맞수(`small-ind-a2`)에는 그 글들이 그대로 선다.
+    """
+    low, high, contract = _render("small-ind-a1"), _render("small-ind-a2"), _render("large-a")
+
+    # 1 · 3 · 4 · 5 — 계약전력 기준이면 0줄, 요금적용전력 기준이면 선다.
+    for word in (
+        "이 시기에 요금적용전력이 결정됩니다",  # 1 PPT 5장
+        "ESS 가 피크를 낮춥니다",  # 3 PPT 6장
+        "태양광 피크 기여",  # 4 Excel 요약 · Word 요약 표
+        "태양광 판정 모집단",  # 4 Excel 요약
+        "태양광이 피크를 낮출 여지가 큽니다",  # 4 화면 툴팁
+        "피크 저감은 기본요금 절감 가치가 거의 없습니다",  # 5 요금 안내
+    ):
+        assert _cells_with(low, word) == [], (word, _cells_with(low, word))
+        assert _cells_with(contract, word) == [], (word, _cells_with(contract, word))
+        assert _cells_with(high, word) != [], word
+    assert ("PPT", "5") in _cells_with(low, "8월에 최대수요가 가장 높습니다.")
+    assert ("PPT", "6") in _cells_with(low, "낮 시간에 발생해 태양광 발전 시간과 겹칩니다.")
+
+    # 2 — 12개월 미만이면 「직전 12개월 최대」 가 0줄(각주 · 근거표). 12개월 벌에는 선다.
+    assert _cells_with(low, "직전 12개월 최대") == [], _cells_with(low, "직전 12개월 최대")
+    assert {"Excel", "PPT", "Word"} <= set(_kinds(high, "직전 12개월 최대"))
+    assert {"Excel", "PPT", "Word"} <= set(_kinds(contract, "직전 12개월 최대"))
+
+    # 6 — 자료에 겨울이 없다. 캡션은 뒷말 없이 서고 툴팁 뒷문단은 빠진다.
+    assert _cells_with(low, "여름에 높고 겨울에 낮") == []
+    assert ("PPT", "13") in _cells_with(low, "일별 발전량")
+    assert set(_kinds(high, "여름에 높고 겨울에 낮")) == {"PPT", "화면"}
+
+    # 7 — 저압은 야간 조각 없이 선다.
+    # (2단계 역률 카드의 매뉴얼 가리킴 툴팁 「… 지상 간주 100%, …」 는 건물을 말하지 않아 남는다.)
+    deemed = "지상 간주 100% (한전 기본공급약관 제43조 ② 2호 나목)"
+    assert _cells_with(low, deemed) == []
+    assert {"Excel", "Word"} <= set(_kinds(low, "주간(08~22시) 지상 100.0%"))
+    assert {"Excel", "Word"} <= set(_kinds(high, deemed))
+
+    # 8 — 월별 표의 「부분 월」 은 「예」 · 「아니오」 다 (Excel 월별 집계 · 화면 월별 명세).
+    for rendered in (low, high):
+        monthly = [row for row in rendered.rows if row[:2] == ("Excel", "월별 집계")]
+        cells = {str(cell) for row in monthly[1:] for cell in row[2:]}
+        assert not cells & {"True", "False"}, (rendered.key, cells & {"True", "False"})
+        assert cells & {"예", "아니오"}, rendered.key
+        screen = [text for slot, text in rendered.screen if text in ("예", "아니오")]
+        assert screen, rendered.key
+    assert [row[5] for row in low.rows if row[:2] == ("Excel", "월별 집계")][1:] == [
+        "예",
+        "아니오",
+        "아니오",
+        "아니오",
+        "예",
+    ]
+
+    # 결정 4 — 24시간 가동. 운영시간 글자가 0 ~ 24시이고 「문 닫은 동안」 을 말하지 않는다.
+    assert ("PPT", "4") in _cells_with(low, "운영시간(평일 0–24시) 밖 사용량 ÷ 전체")
+    assert _cells_with(low, "평일 0~24시 밖") != []
+    assert _cells_with(low, "문 닫은 동안") == []
+    assert _cells_with(high, "문 닫은 동안") != []
+    assert _cells_with(low, "13~20시") != [] and _cells_with(low, "13~18시") == []
+
+    # 결정 5 — 부록 B 요일 계량 규칙은 원문 글자다(Excel · Word). 열쇠는 안 선다.
+    for rendered in (low, high):
+        assert _cells_with(rendered, "all_to_light") == [] == _cells_with(rendered, "peak_to_mid")
+        for text in (
+            "최대수요전력 및 사용전력량 → 경부하 시간대로 계량",
+            "최대부하 시간대의 사용전력량 → 중간부하 시간대로 계량",
+        ):
+            assert set(_kinds(rendered, text)) == {"Excel", "Word"}, (rendered.key, text)

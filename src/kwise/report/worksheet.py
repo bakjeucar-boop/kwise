@@ -32,6 +32,7 @@ from kwise.measures.power_factor import PowerFactorResult
 from kwise.measures.solar import SolarCurve, SolarPoint
 from kwise.measures.tariff_switch import TariffSwitchResult
 from kwise.report.notices import (
+    UNPRICED,
     bill_lines,
     charge_lines,
     contract_saving,
@@ -157,11 +158,16 @@ def low_load_threshold_line(baseline_kw: float | None, threshold_kw: float | Non
     값 자체는 늘 날값에서 나온다 (:mod:`kwise.diagnose.dr` 이 ``기준선 × 배수``
     를 날값으로 계산한다). 여기서 하는 일은 **표시 직전의 반올림 하나**다.
 
+    **기준선은 섰는데 문턱을 안 세운 벌**(주말에도 가동하는 건물 · S271 결정 3)은 기준선
+    값을 적고 문턱은 「미산출」 이다 — 부르는 쪽이 「관측치 없음」 으로 메우면 거짓이 된다.
+
     Returns:
-        기준선이나 문턱이 없으면 ``None``.
+        기준선이 없으면 ``None``.
     """
-    if baseline_kw is None or threshold_kw is None:
+    if baseline_kw is None:
         return None
+    if threshold_kw is None:
+        return f"{_kw(baseline_kw)} — 문턱 {UNPRICED}"
     multiple = low_load_multiple_text(baseline_kw, threshold_kw)
     return f"{_kw(baseline_kw)} × {multiple} = {_kw(threshold_kw)}"
 

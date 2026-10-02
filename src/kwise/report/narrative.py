@@ -198,7 +198,11 @@ def terms(pattern: LoadPattern | None = None) -> dict[str, Term]:
         "off_hours_energy_share": Term(
             "운영시간 외 부하 비중",
             f"운영시간({operating_text}) 밖 사용량 ÷ 전체 사용량. 주말은 전부 밖입니다.",
-            "높을수록 문 닫은 동안 쓰는 전기가 많아 운전 개선 여지가 큽니다.",
+            # 24시간 가동(0 ~ 24시)이면 평일에 문 닫은 시간이 없다 — 「문 닫은 동안」 을
+            # 말하는 읽는 법 줄을 뺀다 (S271 결정 4 · S207).
+            ""
+            if (operating[0], operating[1]) == (0, 24)
+            else "높을수록 문 닫은 동안 쓰는 전기가 많아 운전 개선 여지가 큽니다.",
             f"운영시간({operating_short}) 밖 사용량 ÷ 전체",
         ),
         # 아래는 화면에서 지표 옆 매뉴얼 앵커가 받던 것들이다. 슬라이드에는

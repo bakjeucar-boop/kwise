@@ -452,18 +452,18 @@ def _set_lagging(page: object, pct: float) -> None:
 def _set_hours(page: object, hours: tuple[int, int]) -> None:
     """옆단 「운영 시간대」 의 두 손잡이를 옮긴다 (S271 결정 4).
 
-    손잡이는 ``role="slider"`` 둘이고 ``aria-valuenow`` 가 지금 시각이다(선택지가 0 ~ 24시라
-    차례가 곧 시각). 손잡이에 초점을 두고 화살표 키로 한 칸씩 옮긴다 — 끌기는 뷰포트 폭에
-    따라 한 칸의 픽셀이 달라져 값이 흔들린다.
+    손잡이는 ``input[type=range]`` 둘이고 그 값이 지금 시각이다(선택지가 0 ~ 24시라 차례가
+    곧 시각 · 실물 DOM 으로 봤다). 손잡이에 초점을 두고 화살표 키로 한 칸씩 옮긴다 — 끌기는
+    뷰포트 폭에 따라 한 칸의 픽셀이 달라져 값이 흔들린다.
     """
     _wait_idle(page)
     thumbs = page.locator(  # type: ignore[attr-defined]
-        '[data-testid="stSlider"]:has-text("운영 시간대") [role="slider"]'
+        '[data-testid="stSlider"]:has-text("운영 시간대") input[type="range"]'
     )
     for index, want in enumerate(hours):
         thumb = thumbs.nth(index)
         thumb.focus()
-        move = want - int(thumb.get_attribute("aria-valuenow") or 0)
+        move = want - int(thumb.input_value())
         for _ in range(abs(move)):
             thumb.press("ArrowRight" if move > 0 else "ArrowLeft")
         _wait_idle(page)

@@ -137,7 +137,9 @@ def render(table: TariffTable, building: BuildingInfo | None = None) -> Analysis
     )
 
     _headline_block(usage, diagnosis)
-    _notice_block(quality, diagnosis)
+    # 진단이 든 품질 결과를 그린다 — 12개월 미만 주의의 완성 문장이 거기 있다 (S271 결정 1).
+    # 캐시된 품질 결과를 넘기면 머리 문장만 든 옛 글자가 먼저 서서 그것이 남는다.
+    _notice_block(diagnosis.quality, diagnosis)
     # 진단이 든 품질 결과를 그린다 — 계약전력 기준이면 1시간 주의 글이 갈린다 (S269 결정 3).
     _quality_block(usage, diagnosis.quality)  # ④
     _pattern_block(diagnosis, usage, building)  # ⑤

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
 
-from kwise.io import UsageData, load_usage
+from kwise.diagnose import ContractInfo, diagnose
+from kwise.io import SHORT_PERIOD_WARNING, UsageData, load_usage
 from kwise.notices import texts
 from kwise.quality import (
     QualityReport,
@@ -20,6 +22,7 @@ from kwise.quality import (
     peak_hour_skew,
 )
 from kwise.tariff import TariffSelection, TariffTable, calculate_bill
+from kwise.tariff.engine import _short_period_direction
 from tests._synthetic import (
     label_timestamps,
     make_labels,
@@ -346,11 +349,18 @@ def test_12개월_미만_경고가_네_자리에서_한_꼴이다(tmp_path: Path
 
     `test_꼭_365일치_자료는_12개월_미만으로_판정되지_않는다` 와 **같은 세 자리**를
     본다 — 그쪽은 「안 뜬다」 를, 이쪽은 「뜨면 한 꼴이다」 를 문다.
+
+    **S271 결정 1(사람 결정)이 문장을 구체적으로 바꿨다** — 분석 기간(날짜) · 계절별 일수 ·
+    「12개월로 늘린 값」 · 빠진 계절 · 방향(요금표 단가만으로 갈릴 때만). 그 문장을 만드는
+    자리는 요금 엔진 하나(`short_period_warning`)이고, 요금표를 모르는 로더와 품질 검사는
+    **머리 문장 한 상수**만 낸다. 진단이 품질 쪽 글자를 완성 문장으로 갈아 끼우므로
+    그려지는 자리에서는 여전히 **한 꼴**이다 — 그것을 진단 결과로 문다.
     """
     rows = [(label, 100.0) for date in march_2024_dates() for label in make_labels(date)]
     usage = load_usage(write_csv(tmp_path / "short.csv", rows))
     report = check_quality(usage)
-    bill = calculate_bill(usage, tariff, TariffSelection("general_b", "high_a", "I"))
+    selection = TariffSelection("general_b", "high_a", "I")
+    bill = calculate_bill(usage, tariff, selection)
     said = {
         "품질": texts(report.notices),
         "업로드": list(usage.meta.warnings),
@@ -365,10 +375,37 @@ def test_12개월_미만_경고가_네_자리에서_한_꼴이다(tmp_path: Path
     빈자리 = [where for where, ms in 선말.items() if not ms]
     assert 빈자리 == [], f"12개월 미만인데 경고가 없는 자리: {빈자리}"
 
-    꼴 = sorted({m for where in ("품질", "업로드", "요금") for m in 선말[where]})
-    assert len(꼴) == 1, f"경고가 {len(꼴)} 꼴입니다 — 한 꼴이어야 합니다: {꼴}"
+    # 요금표를 모르는 두 자리는 머리 문장 한 상수다.
+    assert 선말["품질"] == 선말["업로드"] == [SHORT_PERIOD_WARNING]
+    # 요금 엔진이 완성 문장을 만든다 — 머리 · 날짜 · 계절 일수 · 늘린 값 · 빠진 계절.
+    (완성,) = 선말["요금"]
+    span = f"{usage.meta.start:%Y-%m-%d} ~ {usage.meta.end:%Y-%m-%d}"
+    assert 완성.startswith(f"{SHORT_PERIOD_WARNING} 12개월 환산값은 {span} ")
+    days = f"봄·가을 {usage.meta.period_days:.0f}일"  # 3월 한 달이 다 봄·가을이다
+    assert f"(여름 0일, {days}, 겨울 0일)의 값을 12개월로 늘린 값이라" in 완성
+    assert "여름, 겨울이 반영되지 않았고, " in 완성
+    # 방향은 요금표 단가만으로 가른다 — 3월은 봄·가을이고 이 요금제는 세 시간대 다 봄·가을
+    # 단가가 12개월 일수 가중 평균보다 낮다(전제를 요금표에서 읽어 확인한다).
+    rates = tariff.rates(selection)
+    year_days = {"summer": 92, "spring_fall": 153, "winter": 120}
+    for band in ("light", "mid", "peak"):
+        year = sum(days * rates.rate(key, band) for key, days in year_days.items()) / 365
+        assert rates.rate("spring_fall", band) < year, band
+    assert 완성.endswith("실제보다 작을 수 있습니다.")
 
-    # **셋 다 코드에게 말하지 않고 「연간」 이라 부르지 않는다.**
+    # 그려지는 자리에서는 한 꼴이다 — 진단이 품질 쪽 글자를 청구 쪽 글자로 간다.
+    billed = diagnose(usage, tariff, ContractInfo(selection))
+    assert {item.text for item in billed.notices if item.fact == "quality.short_period"} == {완성}
+    assert [
+        item.text for item in billed.quality.notices if item.fact == "quality.short_period"
+    ] == [완성]
+    # 계약 정보가 없으면 방향을 적지 않는다(단가를 모른다) — 기간과 계절 일수는 선다.
+    bare = diagnose(usage, tariff)
+    (계약없음,) = [item.text for item in bare.notices if item.fact == "quality.short_period"]
+    assert span in 계약없음 and days in 계약없음
+    assert 계약없음.endswith("실제 12개월 값과 다를 수 있습니다.")
+
+    # **어느 자리도 코드에게 말하지 않고 「연간」 이라 부르지 않는다.**
     샌말 = [
         f"{where} 「{m}」"
         for where, ms in 선말.items()
@@ -376,6 +413,52 @@ def test_12개월_미만_경고가_네_자리에서_한_꼴이다(tmp_path: Path
         if "경고를 붙" in m or "연간" in m
     ]
     assert 샌말 == [], 샌말
+
+
+class _Rates:
+    """계절 · 시간대 단가만 든 대역 — 방향 판정의 재료다."""
+
+    def __init__(self, table: dict[str, dict[str, float]]) -> None:
+        self.table = table
+
+    def rate(self, season: str, band: str) -> float:
+        return self.table[season][band]
+
+
+@pytest.mark.parametrize(
+    ("days", "table", "expected"),
+    [
+        # 여름만 든 기간 · 여름 단가가 세 시간대 다 높다 → 크다.
+        ({"summer": 30.0}, {"summer": (3, 3, 3), "spring_fall": (1, 1, 1), "winter": (2, 2, 2)}, 1),
+        # 봄·가을만 든 기간 · 그 단가가 세 시간대 다 낮다 → 작다.
+        (
+            {"spring_fall": 30.0},
+            {"summer": (3, 3, 3), "spring_fall": (1, 1, 1), "winter": (2, 2, 2)},
+            -1,
+        ),
+        # 시간대마다 쪽이 갈린다 → 방향을 적지 않는다.
+        ({"summer": 30.0}, {"summer": (3, 1, 3), "spring_fall": (1, 3, 1), "winter": (2, 2, 2)}, 0),
+        # 계절 구성이 12개월과 같다 → 같아서 방향이 없다.
+        (
+            {"summer": 92.0, "spring_fall": 153.0, "winter": 120.0},
+            {"summer": (3, 3, 3), "spring_fall": (1, 1, 1), "winter": (2, 2, 2)},
+            0,
+        ),
+    ],
+)
+def test_12개월_미만_방향은_요금표_단가만으로_갈릴_때만_선다(
+    days: dict[str, float], table: dict[str, tuple[float, float, float]], expected: int
+) -> None:
+    """**방향은 계절 일수로 가중한 평균 단가로만 가른다** (S271 결정 1 · 사람 결정).
+
+    세 시간대가 다 같은 쪽일 때만 「크다」 · 「작다」 이고 섞이거나 같으면 0(「다를 수
+    있습니다」)이다. 사용량은 안 쓴다.
+    """
+    bands = ("light", "mid", "peak")
+    rates: Any = _Rates({key: dict(zip(bands, row, strict=True)) for key, row in table.items()})
+    period = {key: days.get(key, 0.0) for key in table}
+    year = {"summer": 92.0, "spring_fall": 153.0, "winter": 120.0}
+    assert _short_period_direction(period, year, rates) == expected
 
 
 def test_꼭_365일치_자료는_12개월_미만으로_판정되지_않는다(

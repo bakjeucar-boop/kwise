@@ -1068,7 +1068,14 @@ def measure_entries(
                 if dr_profile is not None
                 else None
             ),
-            figure_caption=f"일별 {JUDGE_WINDOW} 평균 부하 — 붉은 선 아래가 감축 가능일입니다.",
+            # 문턱을 안 세운 벌(주말에도 가동 · S271 결정 3)은 붉은 선이 주말·공휴일 평균
+            # 하나뿐이고 감축 가능일이 없다 — 「붉은 선 아래가 감축 가능일」 을 뺀다.
+            figure_caption=f"일별 {JUDGE_WINDOW} 평균 부하"
+            + (
+                " — 붉은 선 아래가 감축 가능일입니다."
+                if demand_response.low_load_threshold_kw is not None
+                else ""
+            ),
         )
 
     if power_factor is not None:
@@ -1769,7 +1776,9 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
             [
                 "운영시간 외 부하 비중",
                 f"{(pattern.off_hours_energy_share or 0) * 100:,.1f}%",
-                f"운영 {pattern.operating_hours[0]}~{pattern.operating_hours[1]}시 밖",
+                # 「평일」 을 적는다 (S271 결정 4) — 주말은 전부 밖이라 0 ~ 24시 벌에서
+                # 「운영 0~24시 밖」 이 뜻 없는 말이 됐다. 화면 · PPT 각주와 같은 꼴이다.
+                f"평일 {pattern.operating_hours[0]}~{pattern.operating_hours[1]}시 밖",
             ],
         ],
     )
