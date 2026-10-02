@@ -382,6 +382,14 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 ---
 
+## 오늘 (2026-10-02) 271세션 — **고침 판 · 사람 결정 넷(12개월 미만 환산 경고 · 짧은 자료의 계약전력 권고 · 주말 가동 건물의 DR · 산업용 벌 24시간 가동) · 산업용 실물 (가) 여덟 · 부록 B 요일 계량 규칙 글자 · DR 값은 산업용 벌에서만 움직인다**
+
+**0-1. PC — 1번 PC** — `run_tool open_values`(`open_values_20261002_090300.txt`) 첫 줄 `BOOK-DC2VCGD99B · Intel(R) Core(TM) Ultra 7 258V · cpu 8 · RAM 33834070016 B (31.5 GB) · -n auto 일꾼 8`. **저장소** — `git pull` Already up to date · HEAD **f9bb9fc** = `origin/master`(S270 보고 값과 같다) · 워크트리 깨끗 · `git worktree list` 한 줄.
+**0-2. 미해결 55** — 브리핑 「미해결 55건」(`daily_brief_20261002_090331.txt`). **기준선은 다 S270 3절 판의 것을 쓴다(새로 뜨지 않았다)** — S270 3절 커밋(d00397a) 뒤 `src\` · `tools\` · `data\` · `tests\` 0줄(`git diff --stat d00397a HEAD -- src tools data tests` 빈칸). **덱 스냅 기준선** `cache\deck_words\s270_after.json`(19벌 · 6,305,321 B) · **확인 사례 셋 기준선** `s270_case_after.json`(1,021,673 B — (가1) 528만원/년 · (다) 8,698만원/년 · 5억 4,989만원 · 6.3년은 S270 3-2 가 맞댄 값) · **케이스 스터디 기준선(188 · C9 포함)과 회귀값 여덟** — S270 3-5 판 xlsx(`casestudy_20261002.xlsx`)를 이 판 스크래치 `case_before\` 로 옮겼다. **산업용 벌 실물(지금 코드)** — `s270_after.json` 의 `small-ind-a1` 2,556줄을 산출물마다 폈다(화면 1,159 · Excel 326 · PPT 513 · Word 558 · `s270_dump_20261002_090358.txt`).
+**0절 벽시계** 09:02:58 ~ 09:03:58(시각 명령 출력 · 0절 커밋은 1절 조사를 시작한 뒤에 했다).
+
+---
+
 ## 오늘 (2026-10-02) 270세션 — **고침 판 · 저압 역률 한 줄 · PPT 역률 반올림 괄호 · Excel 부록 B 내부 기호 · 문서 수 가리킴 · 산업용(갑) 저압 실측(122일)의 이력과 실물을 잰다 · 계산 변경 없음**
 
 **0-1. PC — 1번 PC** — `run_tool open_values`(`open_values_20261002_071738.txt`) 첫 줄 `BOOK-DC2VCGD99B · Intel(R) Core(TM) Ultra 7 258V · cpu 8 · RAM 33834070016 B (31.5 GB) · -n auto 일꾼 8`. **저장소** — `git pull` Already up to date · HEAD **15798c4** = `origin/master` · 워크트리 깨끗. **지시서가 적은 S269 보고 값 52347a0 과 다르다** — 15798c4 는 그 뒤에 선 「S269 뒤: 마감 대조 (기록만 · 코드 0줄)」 커밋이다(`PROCEED.md` 한 파일 +3 −1).
