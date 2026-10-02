@@ -70,14 +70,18 @@ from kwise.report.notices import (
     WHOLE_PERIOD_NOTE,
     applied_basis_line,
     billing_demand_text,
+    contract_change_warnings,
     demand_split,
     excess_not_measured_line,
     format_mwh,
+    is_on_contract,
+    is_short_period,
     lowering_recommended,
     max_demand_text,
     plain_text,
     settled_composition,
     settled_row,
+    with_contract_period,
 )
 from kwise.report.worksheet import COLUMNS, ess_investment_rows
 from kwise.tariff.labels import SEASON_LABELS, option_label
@@ -361,7 +365,7 @@ def combination_notes(sections: DocumentSections) -> tuple[str, ...]:
     if lowering_recommended(None, sections.comparison) and not lowering_recommended(
         adjustment, None
     ):
-        notes.append(CONTRACT_CHANGE_WARNING)
+        notes.extend(contract_change_warnings(sections.bill))
     if (size := ess_size_note(sections)) is not None:
         notes.append(size)
     return tuple(notes)
@@ -1440,9 +1444,12 @@ def _peak_stats(sections: DocumentSections) -> list[tuple[str, str]]:
 
 def _glossary_keys(sections: DocumentSections, key: str) -> tuple[str, ...]:
     """장에 깔 용어. **특례 벌에서는 요금적용전력 산식을 뺀다** (S252 결정 1 · S207) —
-    특례는 당월분이라 「직전 12개월 최대수요」 가 그 벌에서 거짓이다."""
+    특례는 당월분이라 「직전 12개월 최대수요」 가 그 벌에서 거짓이다. **12개월 미만 자료에서도
+    뺀다** (S271 결정 6) — 그 최대는 분석 기간의 것이지 직전 12개월의 것이 아니다."""
     keys = GLOSSARY_KEYS.get(key, ())
-    if any(item.fact == "tariff.school_exception" for item in sections.bill.notices):
+    if is_short_period(sections.bill) or any(
+        item.fact == "tariff.school_exception" for item in sections.bill.notices
+    ):
         return tuple(name for name in keys if name != "billing_demand")
     return keys
 
@@ -1465,7 +1472,12 @@ def _build_peak_summary(
     top = _lead(
         slide,
         guide,
-        narrative.peak_month_lead(diagnosis, quality, sections.tariff_table),
+        narrative.peak_month_lead(
+            diagnosis,
+            quality,
+            sections.tariff_table,
+            on_contract=is_on_contract(sections.bill),
+        ),
         top=top,
     )
     bottom = _stats(
@@ -1505,7 +1517,12 @@ def _build_peak_detail(
     top = _title(slide, guide, spec.title)
     assert sections.diagnosis is not None  # `build_slides` 가 한 자리에서 막는다
     diagnosis = sections.diagnosis
-    top = _lead(slide, guide, narrative.peak_detail_lead(diagnosis), top=top)
+    top = _lead(
+        slide,
+        guide,
+        narrative.peak_detail_lead(diagnosis, on_contract=is_on_contract(sections.bill)),
+        top=top,
+    )
     peak = diagnosis.peak
     gap = geometry.block_gap_in
     half = (geometry.content_width_in - gap) / 2
@@ -2136,7 +2153,8 @@ def _build_measure(
     # 「·」 로 이어 붙이면 「역률 영향 반영 시 279,249,000원」 이 또 하나의
     # 미산출 사유처럼 읽힌다 — 다른 종류의 말이므로 ※ 를 따로 단다.
     # 옮겨 온 주의사항은 그 아래 줄마다 ※ 하나 (S258 결정 3).
-    cautions = caution_notes(entry)
+    # 12개월 미만이면 필수 안내 아래에 기간 기준 한 줄이 선다 (S271 결정 2).
+    cautions = with_contract_period(caution_notes(entry), sections.bill)
     # ESS 단순 회수기간 단서는 사양 표 아래 ※ 글상자에 잇는다 (S263 결정 1).
     tail = tuple(line for line in cautions if entry.spec_table and line == ESS_PAYBACK_CAVEAT)
     notes = (terms_note, note, entry.slide_note, *(line for line in cautions if line not in tail))

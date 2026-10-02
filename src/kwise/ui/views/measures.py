@@ -488,8 +488,12 @@ def _contract(
         st.caption("현재 부하 기준입니다. 다른 수단을 함께 켜면 3단계에서 다시 계산됩니다.")
         # **계약전력 변경 경고는 이 카드에 둔다** (16세션 3절). 1단계에 있을 때는
         # 계약전력을 바꿀 생각을 하기 전에 읽혀 지나쳤다 — 바꾸자고 제안하는 자리가
-        # 이 경고의 제자리다. **문구는 산출물과 같은 원문 그대로다.**
+        # 이 경고의 제자리다. **문구는 산출물과 같은 원문 그대로다.** 12개월 미만이면 기간
+        # 기준 한 줄이 그 아래에 선다 (S271 결정 2 · 사람 결정).
         _caution(CONTRACT_CHANGE_WARNING)
+        period_note = notices.contract_period_note(baseline)  # type: ignore[arg-type]
+        if period_note:
+            _caution(period_note)
     # **거르는 잣대는 사실 ID 하나다** (S210 2절). 앞서는 위 경고를 **글자**로,
     # 판정 줄을 **사실 ID** 로 걸러 한 식에 두 잣대가 섞여 있었다.
     _notices(
@@ -1159,7 +1163,13 @@ def _solar(
     st.caption(
         "날짜별 발전량"
         + (f" · 기간 사용량의 **{fmt.ratio_pct(ratio)}** 를 줄입니다" if ratio else ""),
-        help=fmt.chart_tip("chart.solar_annual"),
+        # 자료에 여름이나 겨울이 없으면 「여름에 높고 겨울에 낮은 굴곡」 문단을 뺀다 —
+        # 그림에 그 굴곡이 없다 (S271 결정 6 · S207).
+        help=fmt.chart_tip(
+            "chart.solar_annual",
+            reading=diagnosis.structure is None
+            or notices.covers_summer_and_winter(diagnosis.structure.bill),
+        ),
     )
     if day is not None:
         # **하루 전체 곡선을 지웠다** (23세션 5-3). 스물넷을 다 그리면 저감 구간이

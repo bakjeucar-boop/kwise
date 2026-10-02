@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
@@ -47,8 +48,11 @@ __all__ = [
     "combination_annual_saving",
     "combination_saving",
     "contract_annual_saving",
+    "contract_change_warnings",
+    "contract_period_note",
     "contract_saving",
     "contract_unpriced_reason",
+    "covers_summer_and_winter",
     "demand_split",
     "ess_capacity_text",
     "ess_lines",
@@ -57,6 +61,8 @@ __all__ = [
     "format_mwh",
     "format_won",
     "interval_words",
+    "is_on_contract",
+    "is_short_period",
     "known_limit_lines",
     "lowering_recommended",
     "max_demand_text",
@@ -73,6 +79,7 @@ __all__ = [
     "switch_annual_saving",
     "switch_saving",
     "traceability_lines",
+    "with_contract_period",
     "without_arbitrage",
 ]
 
@@ -187,6 +194,66 @@ def without_arbitrage(notices: tuple[Notice, ...]) -> tuple[Notice, ...]:
 CONTRACT_CHANGE_WARNING = (
     "계약전력을 하향할 경우, 예측 오차와 기상 변동을 고려하여 충분한 여유를 확보하십시오."
 )
+
+
+#: 12개월 미만 자료의 하향 권고에 붙는 한 줄 (S271 결정 2 · 사람 결정). 목표 계약전력은 분석
+#: 기간의 최대에서 나온다 — 나머지 달의 최대를 모르는 채 권한다는 사실을 권고 곁에 적는다.
+CONTRACT_PERIOD_NOTE = (
+    "분석 기간({first} ~ {last}) 최대 기준입니다. 나머지 달의 최대를 확인한 뒤 신청하십시오."
+)
+
+
+def is_short_period(bill: BillingResult) -> bool:
+    """분석 기간이 12개월 미만인가 — 요금 엔진이 그 주의를 세우는 조건과 같다."""
+    return bool(bill.period_days < 365)
+
+
+def is_on_contract(bill: BillingResult) -> bool:
+    """기본요금을 **계약전력으로** 매기는 건물인가 (제68조 ②).
+
+    요금 엔진이 그 건물에만 세우는 주의(``tariff.tentative_base_fee_basis``)로 가른다 —
+    산출물이 「요금적용전력이 기본요금을 정한다」 · 「피크를 낮추면 요금이 준다」 로 읽히는
+    글을 그 건물에서 빼는 자리가 다 이 한 판정을 쓴다 (S271 결정 6 · S207).
+    """
+    return any(item.fact == "tariff.tentative_base_fee_basis" for item in bill.notices)
+
+
+def covers_summer_and_winter(bill: BillingResult) -> bool:
+    """자료가 여름과 겨울을 다 담았는가 — 「여름에 높고 겨울에 낮다」 는 그때만 참이다
+    (S271 결정 6). 계절은 요금표가 달마다 가른 것(청구 표의 계절 칸)을 읽는다.
+    """
+    return {"summer", "winter"} <= {str(season) for season in bill.monthly["season"]}
+
+
+def contract_period_note(bill: BillingResult) -> str:
+    """12개월 미만이면 그 한 줄, 아니면 빈 글 — **만드는 자리는 여기 하나다** (S271 결정 2)."""
+    if not is_short_period(bill):
+        return ""
+    first, last = bill.monthly.index[0], bill.monthly.index[-1]
+    return CONTRACT_PERIOD_NOTE.format(
+        first=f"{first.year}년 {first.month}월", last=f"{last.year}년 {last.month}월"
+    )
+
+
+def with_contract_period(lines: Iterable[str], bill: BillingResult) -> tuple[str, ...]:
+    """필수 안내(:data:`CONTRACT_CHANGE_WARNING`) 바로 아래에 기간 기준 한 줄을 끼운다.
+
+    12개월 이상이면 받은 줄 그대로다. 줄 묶음으로 싣는 자리(Word 주의사항 · PPT ※)가 쓴다.
+    """
+    period = contract_period_note(bill)
+    out: list[str] = []
+    for line in lines:
+        out.append(line)
+        if period and line == CONTRACT_CHANGE_WARNING:
+            out.append(period)
+    return tuple(out)
+
+
+def contract_change_warnings(bill: BillingResult) -> tuple[str, ...]:
+    """하향을 권하는 자리에 서는 필수 안내 줄들 — 여유 확보 한 줄과, 12개월 미만이면 기간 기준
+    한 줄 (S271 결정 2). 권고가 서는 자리(화면 카드 · PPT ※ · Excel 요약 · Word)가 다 이것을 읽는다.
+    """
+    return with_contract_period((CONTRACT_CHANGE_WARNING,), bill)
 
 
 def lowering_recommended(

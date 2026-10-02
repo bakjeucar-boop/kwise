@@ -865,7 +865,15 @@ def _peak_block(diagnosis: Diagnosis) -> None:
         "chart.hourly_profile",
     )
     st.altair_chart(charts.top_hour_chart(peak, split=split), width="stretch")
-    st.caption(f"상위 {peak.top_n}구간 발생 시각", help=fmt.chart_tip("chart.top_hour"))
+    # 계약전력 기준 건물은 피크를 낮춰도 기본요금이 그대로라 「태양광이 피크를 낮출 여지」 를
+    # 말하는 읽는 법 문단을 뺀다 (S271 결정 6 · S207).
+    on_contract = diagnosis.structure is not None and notices.is_on_contract(
+        diagnosis.structure.bill
+    )
+    st.caption(
+        f"상위 {peak.top_n}구간 발생 시각",
+        help=fmt.chart_tip("chart.top_hour", reading=not on_contract),
+    )
 
 
 # --------------------------------------------------------------------- 요금 구조
@@ -1000,7 +1008,7 @@ SCREEN_MONTHLY_COLUMNS: tuple[str, ...] = (
 def _monthly_table(monthly: pd.DataFrame) -> None:
     """월별 명세 — **사용자가 확인할 열만.**
 
-    ``is_partial`` 은 체크만 보여서는 뜻을 알 수 없어 열 도움말을 붙인다
+    ``is_partial`` 은 값만 보여서는 뜻을 알 수 없어 열 도움말을 붙인다
     (21세션 3-3).
     """
     columns = [name for name in SCREEN_MONTHLY_COLUMNS if name in monthly.columns]
@@ -1018,7 +1026,8 @@ def _monthly_table(monthly: pd.DataFrame) -> None:
         localize(monthly[columns], index_name="월"),
         width="stretch",
         column_config={
-            "부분 월": st.column_config.CheckboxColumn(
+            # 값이 「예」 · 「아니오」 글자다 (S271 결정 6 · Excel 월별 집계와 같은 표).
+            "부분 월": st.column_config.TextColumn(
                 "부분 월", help="검침 기간이 한 달에 못 미치는 달입니다."
             ),
         },

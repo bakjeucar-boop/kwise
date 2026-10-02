@@ -42,6 +42,7 @@ __all__ = [
     "DEFAULT_ENCODINGS",
     "HOURLY_INTERVAL_WARNING",
     "HOURLY_INTERVAL_WARNING_ON_CONTRACT",
+    "SHORT_PERIOD_WARNING",
     "SUPPORTED_INTERVALS",
     "USAGE_DATE_COLUMN_CANDIDATES",
     "USAGE_ENERGY_COLUMN_CANDIDATES",
@@ -88,6 +89,11 @@ HOURLY_INTERVAL_WARNING = (
 HOURLY_INTERVAL_WARNING_ON_CONTRACT = (
     "1시간 간격 자료입니다. 이 자료로 낸 최대수요는 15분 최대수요보다 낮을 수 있습니다."
 )
+
+#: 12개월 미만 자료의 주의 — **머리 문장** (S271 결정 1 · 사람 결정). 로더와 품질 검사는
+#: 요금표를 몰라 이 머리만 낸다. 기간 · 계절 일수 · 방향을 단 완성 문장은 요금 엔진의
+#: :func:`~kwise.tariff.engine.short_period_warning` 한 자리가 만들고 진단이 갈아 끼운다.
+SHORT_PERIOD_WARNING = "분석 기간이 12개월 미만입니다."
 
 
 def interval_label(interval_minutes: int) -> str:
@@ -736,7 +742,7 @@ def _build_warnings(
         # **셋째 꼴이었다** (S214). 그려지는 자리가 0 이지만(``UsageMeta.warnings``
         # 는 화면도 산출물도 안 읽는다 · 31세션 0-2) 글자가 남아 있으면 다음 판이
         # 다시 갈라 적는다 — 위 두 자리와 **한 꼴**로 둔다.
-        messages.append("분석 기간이 12개월 미만입니다.")
+        messages.append(SHORT_PERIOD_WARNING)
     if missing_rows:
         level = "경고" if missing_ratio > 0.03 else "참고"
         messages.append(

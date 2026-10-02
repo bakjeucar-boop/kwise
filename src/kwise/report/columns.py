@@ -91,6 +91,9 @@ VALUE_LABELS: dict[str, dict[str, str]] = {
     "season": SEASON_LABELS,
     "band": {"light": "경부하", "mid": "중간부하", "peak": "최대부하"},
     "day_type": {"weekday": "평일", "saturday": "토요일", "holiday": "휴일"},
+    # 「부분 월」 열의 참 · 거짓 (S271 결정 6) — 프로그램 기호를 사람이 읽는 표에 내지 않는다.
+    # 월별 표의 이 한 열만이다 — 시계열 시트의 결측 열은 셀 수 있게 불리언 그대로 둔다.
+    "is_partial": {"True": "예", "False": "아니오"},
 }
 
 
@@ -164,6 +167,9 @@ DISPLAY_DECIMALS: tuple[tuple[str, int], ...] = (
     ("율", 4),
 )
 
+# **월별 표의 「부분 월」 한 열만 글자로 간다** (S271 결정 6 · 위 값 번역표). 아래 S161 의
+# 까닭은 시계열 열의 것이라 그 열은 그대로 둔다.
+#
 # **불리언은 안 건드린다** (S161 2절에 값으로 보고 되돌렸다). 미해결이 「영어
 # 불리언」 이라 적은 자리 둘은 둘 다 영문 글자가 아니었다 — 화면은
 # `st.column_config.CheckboxColumn` 이 체크로 그리고, Excel 은 **셀 자체가

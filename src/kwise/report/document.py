@@ -87,6 +87,7 @@ from kwise.report.notices import (
     billing_demand_text,
     combination_saving,
     contract_annual_saving,
+    contract_change_warnings,
     contract_saving,
     contract_unpriced_reason,
     demand_split,
@@ -94,6 +95,7 @@ from kwise.report.notices import (
     ess_unpriced_reason,
     excess_not_measured_line,
     format_mwh,
+    is_on_contract,
     lowering_recommended,
     max_demand_text,
     plain_text,
@@ -104,6 +106,7 @@ from kwise.report.notices import (
     switch_annual_saving,
     switch_saving,
     traceability_lines,
+    with_contract_period,
     without_arbitrage,
 )
 from kwise.report.worksheet import COLUMNS, Worksheet, ess_investment_rows
@@ -911,11 +914,16 @@ def measure_entries(
     surplus_free_kwp: float | None = None,
     area_m2: float | None = None,
     base_fee_months: float | None = None,
+    covers_summer_winter: bool = True,
 ) -> tuple[MeasureEntry, ...]:
     """검토한 수단을 **7장 순서 그대로** 항목으로 만든다.
 
     차트 재료(``usage`` 이하)를 주면 수단마다 그림을 함께 굽는다 (15세션 2절).
     주지 않으면 표만 나온다 — 그림이 없다고 보고서가 실패하지 않는다.
+
+    ``covers_summer_winter`` — 자료가 여름과 겨울을 다 담았는가
+    (:func:`~kwise.report.notices.covers_summer_and_winter`). 거짓이면 태양광 일별 발전량
+    그림 캡션이 계절 굴곡을 말하지 않는다 (S271 결정 6).
 
     주지 않은 수단은 만들지 않는다 — 켜지 않은 수단이 보고서에 들어가면
     "검토하지 않은 것" 이 "검토했더니 이만큼" 으로 둔갑한다.
@@ -1235,7 +1243,14 @@ def measure_entries(
             figure=solar_day,
             figure_caption=_SOLAR_DAY_CAPTION,
             figures=_pair(
-                (solar_annual, _SOLAR_ANNUAL_CAPTION),
+                # 자료에 여름이나 겨울이 없으면 「여름에 높고 겨울에 낮습니다」 를 뺀다 —
+                # 그림에 그 굴곡이 없다 (S271 결정 6 · S207).
+                (
+                    solar_annual,
+                    _SOLAR_ANNUAL_CAPTION
+                    if covers_summer_winter
+                    else _SOLAR_ANNUAL_CAPTION.partition(" — ")[0],
+                ),
                 (solar_day, _SOLAR_DAY_CAPTION),
             ),
             facts=(
@@ -1666,7 +1681,10 @@ def _chapter_summary(document: DocumentType, sections: DocumentSections, number:
                 ),
             ]
         )
-        rows.append(["태양광 피크 기여 가능성", str(summary.pv_potential)])
+        # 계약전력 기준 건물은 피크를 낮춰도 기본요금이 그대로라 이 줄을 세우지 않는다
+        # (S271 결정 6 · S207 — Excel 요약과 같은 판정).
+        if not is_on_contract(sections.bill):
+            rows.append(["태양광 피크 기여 가능성", str(summary.pv_potential)])
 
     comparison = sections.comparison
     best = comparison.best if comparison is not None else None
@@ -1882,7 +1900,9 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
             ],
         )
         if adequacy.reducible:
-            _para(document, CONTRACT_CHANGE_WARNING)
+            # 12개월 미만이면 기간 기준 한 줄이 함께 선다 (S271 결정 2).
+            for line in contract_change_warnings(sections.bill):
+                _para(document, line)
     document.add_page_break()
 
 
@@ -1917,11 +1937,15 @@ def _chapter_measures(document: DocumentType, sections: DocumentSections, number
                 _para(document, entry.spec_caption)
         if entry.figure is not None:
             _add_figure(document, entry.figure, f"그림 {number}-{index}. {entry.figure_caption}")
-        # 필수 안내는 하향을 권하는 벌에서만 (S258 결정 4).
-        cautions = tuple(
-            line
-            for line in entry.cautions
-            if line != CONTRACT_CHANGE_WARNING or sections.lowering_recommended
+        # 필수 안내는 하향을 권하는 벌에서만 (S258 결정 4). 12개월 미만이면 그 아래에 기간
+        # 기준 한 줄이 선다 (S271 결정 2).
+        cautions = with_contract_period(
+            (
+                line
+                for line in entry.cautions
+                if line != CONTRACT_CHANGE_WARNING or sections.lowering_recommended
+            ),
+            sections.bill,
         )
         if cautions:
             _para(document, "주의사항")
@@ -2031,7 +2055,8 @@ def _chapter_scope(document: DocumentType, sections: DocumentSections, number: i
     part = 2
     if sections.lowering_recommended:
         _heading(document, f"{number}.2 계약전력 변경 시 주의", level=2)
-        _para(document, CONTRACT_CHANGE_WARNING)
+        for line in contract_change_warnings(sections.bill):
+            _para(document, line)
         part = 3
 
     _heading(document, f"{number}.{part} 추적성", level=2)

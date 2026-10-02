@@ -68,6 +68,7 @@ __all__ = [
     "JUDGE_WINDOW",
     "LIBRARY_HOLIDAY_GAPS",
     "PARTICIPATION_NOTICE",
+    "WEEKEND_OPERATING_FACT",
     "DrPotential",
     "DrProfile",
     "DrResourceType",
@@ -88,6 +89,7 @@ __all__ = [
     "registration_percentile",
     "resource_type_labels",
     "small_medium_dr_industrial_max_kw",
+    "weekend_operating_ratio",
 ]
 
 type DateLike = dt.date | str | pd.Timestamp
@@ -96,6 +98,10 @@ type DateLike = dt.date | str | pd.Timestamp
 #: 사용자가 쉬는 날로 지목한 날을 뺐다는 사실의 ID (29세션).
 #: **보고서가 이 안내를 이름으로 찾는다** — 문구를 다듬어도 어긋나지 않는다.
 DR_OFF_DAYS_FACT = "dr.user_off_days"
+
+#: 주말에도 가동하는 건물이라 저부하 평일을 세지 않았다는 사실의 ID (S271 결정 3).
+#: **보고서의 DR 결론 문장이 이 안내를 이름으로 찾아 그대로 쓴다** — 글자는 한 자리다.
+WEEKEND_OPERATING_FACT = "dr.weekend_operating"
 
 #: 쉬는 날일 수 있고, 그것을 데이터만 보고 가릴 방법이 없다.
 #:
@@ -243,6 +249,15 @@ def low_load_multiple() -> float:
     창립기념일·워크숍처럼 감축 여력이 실제로 있는 날이다.
     """
     return float(assumption("dr.low_load_multiple"))
+
+
+def weekend_operating_ratio() -> float:
+    """주말에도 가동하는 건물로 보는 문턱 (S271 결정 3 · 사람 결정).
+
+    판정 시간대의 주말·공휴일 평균 ÷ 평일 평균이 이 값 이상이면 주말·공휴일을 「쉬는 날
+    수준」 으로 볼 수 없어 저부하 평일을 세지 않는다.
+    """
+    return float(assumption("dr.weekend_operating_ratio"))
 
 
 def registration_percentile() -> float:
@@ -690,6 +705,33 @@ def dr_profile(
         )
 
     baseline_kw = float(weekend_slots.mean())
+    # **주말에도 평일만큼 가동하는 건물은 저부하 평일을 세지 않는다** (S271 결정 3 · 사람
+    # 결정). 주말·공휴일 평균이 「쉬는 날 수준」 이 아니라서 그 배수 아래의 평일이 한가한
+    # 날이 아니다 — 0일로 두고 그 사실을 한 줄로 적는다. 기준선이 「비어 있을 때의 수준」
+    # 이라는 근거 줄과 문턱은 이 갈래에서 세우지 않는다 (그 건물에서 참이 아니다).
+    weekend_share = baseline_kw / weekday_mean if weekday_mean else 0.0
+    if weekend_share >= weekend_operating_ratio():
+        notices.append(
+            warn(
+                f"주말·공휴일의 {JUDGE_WINDOW} 평균 부하가 평일의 {weekend_share:.0%} 로 "
+                f"기준 {weekend_operating_ratio():.0%} 이상이라, 저부하 평일을 세지 않았습니다.",
+                fact=WEEKEND_OPERATING_FACT,
+            )
+        )
+        return _empty_profile(
+            eligible_days=len(eligible_days),
+            total_days=len(all_days),
+            windows=windows,
+            weekend_days=weekend_days,
+            weekend_baseline_kw=baseline_kw,
+            daily_window_kw=daily_window,
+            eligible_day_index=eligible_index,
+            multiple=multiple,
+            threshold=None,
+            weekday_mean=weekday_mean,
+            resource_types=resource_types,
+            notices=notices,
+        )
     threshold = baseline_kw * multiple
     notices.append(
         # **기준선과 문턱 값은 카드 본문이 이미 낸다** (25세션 3-3 · E). 반올림

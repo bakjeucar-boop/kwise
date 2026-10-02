@@ -37,6 +37,7 @@ from kwise.report.notices import (
     contract_saving,
     ess_capacity_text,
     ess_lines,
+    is_short_period,
     max_demand_text,
     plain_text,
     power_factor_charges,
@@ -340,13 +341,14 @@ def contract_worksheet(result: ContractAdjustment, bill: BillingResult | None = 
     22,642,000 − 25,809,000 이 21,810,000 이라고 적혀 있었다.
     """
     ratio = result.contract_floor_ratio
+    # **12개월 미만 자료에서는 「직전 12개월 최대」 가 참이 아니다** (S271 결정 6) — 그 최대는
+    # 분석 기간의 것이다. 그 조각을 빼고, 하한이 있는 종별이면 「하한 적용 전」 만 남긴다.
+    basis = "직전 12개월 최대 (하한 적용 전)"
+    if bill is not None and is_short_period(bill):
+        basis = "하한 적용 전" if ratio is not None else ""
     rows: list[WorkRow] = [
         WorkRow("현재 계약전력", "", _kw(result.contract_kw, decimals=0)),
-        WorkRow(
-            "최대수요",
-            "직전 12개월 최대 (하한 적용 전)",
-            max_demand_text(result.demand_before_floor_kw),
-        ),
+        WorkRow("최대수요", basis, max_demand_text(result.demand_before_floor_kw)),
     ]
     if ratio is not None and result.floor_kw is not None:
         # **걸린 달을 적는다** (105세션 5절 · ②-13). 앞서는 「걸린다/걸리지

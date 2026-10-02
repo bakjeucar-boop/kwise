@@ -9,7 +9,7 @@ from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
-from kwise.io import HOURLY_INTERVAL_WARNING, UsageData
+from kwise.io import HOURLY_INTERVAL_WARNING, SHORT_PERIOD_WARNING, UsageData
 from kwise.notices import Notice, basis, warn
 from kwise.quality.missing import (
     DEFAULT_PEAK_HOURS,
@@ -268,7 +268,9 @@ def _with_warnings(report: QualityReport) -> QualityReport:
                 # 하는 말**이라 고객이 읽는 자리에서 참이 아니다 — 남는 말은 그 벌에서
                 # 참인 한 문장이고, 그것이 `tariff\engine.py` 의 같은 사실
                 # (``quality.short_period``)과 **한 꼴**이 된다.
-                "분석 기간이 12개월 미만입니다.",
+                # **머리 문장이다** (S271 결정 1) — 품질 검사는 요금표를 몰라 여기까지만
+                # 낸다. 기간 · 계절 일수 · 방향을 단 문장은 진단이 갈아 끼운다.
+                SHORT_PERIOD_WARNING,
                 fact="quality.short_period",
             )
         )

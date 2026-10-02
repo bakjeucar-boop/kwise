@@ -22,7 +22,7 @@ from typing import Any, Literal
 import pandas as pd
 
 from kwise import money
-from kwise.io import UsageData
+from kwise.io import SHORT_PERIOD_WARNING, UsageData
 from kwise.notices import Notice, basis, info, warn
 from kwise.quality import QualityReport, monthly_missing
 from kwise.tariff.demand import (
@@ -41,7 +41,7 @@ from kwise.tariff.excess import (
     excess_kwh_per_kw_limit,
 )
 from kwise.tariff.holiday import DateLike, build_calendar
-from kwise.tariff.labels import billing_month_label, option_label
+from kwise.tariff.labels import billing_month_label, option_label, season_label
 from kwise.tariff.power_factor import (
     PowerFactorCharge,
     lagging_standard_pct,
@@ -51,6 +51,7 @@ from kwise.tariff.power_factor import (
 from kwise.tariff.schema import (
     BANDS,
     DEFAULT_REGION_GROUP,
+    OptionRates,
     TariffDataError,
     TariffSelection,
     TariffTable,
@@ -79,6 +80,7 @@ __all__ = [
     "calculate_bill",
     "demand_window_months",
     "lagging_standard_pct",
+    "short_period_warning",
 ]
 
 MISSING_LIMIT_RATIO = 0.05
@@ -280,11 +282,15 @@ class BillingResult:
             f"{option_label(self.selection.option)}",
             f"기본요금 단가: {self.base_rate_won_per_kw:,.0f} 원/kW",
             f"계절·시간대 구분: {self.tariff_label}",
-            f"적용 역률: 주간(08~22시) 지상 {self.power_factor.lagging_pct:.1f}%, "
+            # 저압은 야간 진상역률 요금의 대상이 아니라 야간 조각을 적지 않는다
+            # (제43조 ② 2호 다목 · S269 결정 1 · S271 결정 6).
+            f"적용 역률: 주간(08~22시) 지상 {self.power_factor.lagging_pct:.1f}%"
             + (
-                f"야간(22~08시) 진상 {self.power_factor.leading_pct:.1f}%"
+                ""
+                if not leading_charge_applies(self.selection.voltage)
+                else f", 야간(22~08시) 진상 {self.power_factor.leading_pct:.1f}%"
                 if self.power_factor.leading_pct is not None
-                else "야간(22~08시) 지상 간주 100% (한전 기본공급약관 제43조 ② 2호 나목)"
+                else ", 야간(22~08시) 지상 간주 100% (한전 기본공급약관 제43조 ② 2호 나목)"
             ),
             f"산출 기간: {self.period_label}",
         )
@@ -397,6 +403,78 @@ def _lower_of_counterpart(
             monthly.loc[month, column] = counterpart.loc[month, column]
         replaced.append(month)
     return tuple(replaced)
+
+
+# --------------------------------------------------------------------- 12개월 미만 (5.5)
+
+#: 계절을 적는 차례 — 여름 · 봄·가을 · 겨울 (S271 결정 1). 요금표에 다른 계절이 있으면 뒤에 선다.
+_SEASON_ORDER: tuple[str, ...] = ("summer", "spring_fall", "winter")
+#: 달력 12개월의 달마다 일수(평년).
+_MONTH_DAYS: tuple[int, ...] = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+#: 12개월로 늘린 값이 어느 쪽으로 서는가 — 요금표 단가만으로 가를 수 있을 때만 방향을 적는다.
+_SHORT_PERIOD_TAILS: dict[int, str] = {
+    1: "실제보다 클 수 있습니다",
+    -1: "실제보다 작을 수 있습니다",
+    0: "실제 12개월 값과 다를 수 있습니다",
+}
+
+
+def _short_period_direction(
+    days: Mapping[str, float], year_days: Mapping[str, float], rates: OptionRates
+) -> int:
+    """기간의 계절 구성으로 가중한 평균 단가가 달력 12개월의 것보다 큰가(1) · 작은가(-1).
+
+    **단가와 일수만 본다 — 사용량을 지어내지 않는다** (S271 결정 1). 시간대 셋이 다 같은
+    쪽일 때만 방향이고, 섞이거나 같으면 0 이다.
+    """
+    period_total, year_total = sum(days.values()), sum(year_days.values())
+    if not period_total or not year_total:
+        return 0
+    signs: set[int] = set()
+    for band in BANDS:
+        period = sum(count * rates.rate(key, band) for key, count in days.items()) / period_total
+        year = sum(count * rates.rate(key, band) for key, count in year_days.items()) / year_total
+        signs.add(0 if abs(period - year) < 1e-9 else (1 if period > year else -1))
+    return signs.pop() if len(signs) == 1 else 0
+
+
+def short_period_warning(
+    seasons: pd.Series,
+    interval_minutes: int,
+    table: TariffTable,
+    *,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    rates: OptionRates | None = None,
+) -> str:
+    """12개월 미만 자료의 주의 한 문장 — **만드는 자리는 여기 하나다** (S271 결정 1 · S233).
+
+    분석 기간(날짜) · 계절별 일수 · 「12개월로 늘린 값」 이라는 것 · 빠진 계절이 반영되지
+    않았다는 것을 적는다. 방향(크다 · 작다)은 ``rates`` 를 받았고 그 계절 단가만으로 갈릴
+    때만 적는다 — 아니면 「다를 수 있습니다」 다. 환산 식은 건드리지 않는다.
+
+    Args:
+        seasons: 구간마다의 계절 (:func:`~kwise.tariff.tou.classify_slots` 의 ``season`` 열).
+            결측 구간도 든 온 격자라 구간 수 × 간격이 곧 일수다.
+        rates: 고른 선택요금의 단가. 계약 정보가 없으면 ``None`` — 방향을 적지 않는다.
+    """
+    counted = seasons.astype(str).value_counts()
+    keys = [key for key in _SEASON_ORDER if key in table.seasons]
+    keys += [key for key in table.seasons if key not in keys]
+    days = {key: float(counted.get(key, 0)) * interval_minutes / 1440.0 for key in keys}
+    year_days = dict.fromkeys(keys, 0.0)
+    for month, key in table.month_seasons.items():
+        year_days[key] += _MONTH_DAYS[int(month) - 1]
+    direction = _short_period_direction(days, year_days, rates) if rates is not None else 0
+    listed = ", ".join(f"{season_label(key)} {days[key]:.0f}일" for key in keys)
+    missing = ", ".join(season_label(key) for key in keys if round(days[key]) == 0)
+    tail = _SHORT_PERIOD_TAILS[direction]
+    # 계절 이름 셋(여름 · 봄·가을 · 겨울)이 다 받침으로 끝나 「이」 가 맞다.
+    body = f"{missing}이 반영되지 않았고, {tail}" if missing else tail
+    return (
+        f"{SHORT_PERIOD_WARNING} 12개월 환산값은 {start:%Y-%m-%d} ~ {end:%Y-%m-%d} "
+        f"({listed})의 값을 12개월로 늘린 값이라 {body}."
+    )
 
 
 # --------------------------------------------------------------------- 본체
@@ -888,7 +966,18 @@ def calculate_bill(
                 # 364.99 가 「365일」 로 찍혀 문장이 제 말을 부정했다.
                 # **둘째 문장을 걷었다** (S214) — `quality\checks.py` 와 같은 사실
                 # (``quality.short_period``)인데 두 꼴로 갈려 같은 벌에 나란히 섰다.
-                "분석 기간이 12개월 미만입니다.",
+                # **기간 · 계절 일수 · 방향을 단다** (S271 결정 1 · 사람 결정). 기본요금이
+                # 12개월분에 닿은 벌은 금액을 늘리지 않으므로 머리 문장만 둔다.
+                short_period_warning(
+                    slots["season"],
+                    interval,
+                    table,
+                    start=usage.meta.start,
+                    end=usage.meta.end,
+                    rates=rates,
+                )
+                if sum(factors.values()) < 12.0 - 1e-9
+                else SHORT_PERIOD_WARNING,
                 fact="quality.short_period",
             )
         )
@@ -970,10 +1059,11 @@ def calculate_bill(
         # 하한이 전 달에 걸린 벌에서는 그 기여가 0원이라 거짓이었다.
         info(NOT_INCLUDED_NOTICE, fact="tariff.not_included"),
         # 특례는 당월분이라 봄·가을 피크 저감도 그 달 기본요금을 깎는다 — 거짓이 되는
-        # 갈래에서는 세우지 않는다 (S252 결정 1 · S207).
+        # 갈래에서는 세우지 않는다 (S252 결정 1 · S207). 계약전력 기준 건물은 열두 달 다
+        # 피크 저감이 기본요금을 안 줄여 달을 가르는 말이 거짓이다 (S271 결정 6).
         *(
             []
-            if school
+            if school or base_on_contract
             else [
                 # 9월은 대상월이라 「봄·가을」 이 거짓이었다 — 요금적용전력 안내가 적는
                 # 대상월 밖 달로 좁힌다 (S256 고8 ㄹ).

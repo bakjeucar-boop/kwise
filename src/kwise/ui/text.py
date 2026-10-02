@@ -211,10 +211,15 @@ def tip(key: str) -> str:
         raise KeyError(f"등록되지 않은 툴팁입니다: {key!r}") from exc
 
 
-def chart_tip(key: str) -> str:
-    """그래프 툴팁. **없는 열쇠는 곧바로 드러낸다** — 조용히 빈 물음표를 두지 않는다."""
+def chart_tip(key: str, *, reading: bool = True) -> str:
+    """그래프 툴팁. **없는 열쇠는 곧바로 드러낸다** — 조용히 빈 물음표를 두지 않는다.
+
+    ``reading=False`` 면 첫 문단(① 무엇을 그렸나)만 낸다 — 뒷문단(② 무엇을 읽나)이 그
+    건물에서 참이 아닐 때 부르는 쪽이 끈다 (S271 결정 6 · S207).
+    """
     try:
-        return markdown_safe(CHART_TIPS[key])
+        tip = CHART_TIPS[key]
+        return markdown_safe(tip if reading else tip.partition("\n\n")[0])
     except KeyError as exc:  # pragma: no cover - 개발 중 오타를 잡는 자리다
         raise KeyError(f"등록되지 않은 그래프 툴팁입니다: {key!r}") from exc
 

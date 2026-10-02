@@ -91,6 +91,10 @@ class Spot:
     #: 올릴 사용량 파일. 비면 ``--usage`` 를 쓴다. **벌마다 자료가 다르다** —
     #: 산업용(갑)Ⅰ 저압은 제 실측이 있어야 역률 100 이 선다.
     usage: Path | None = None
+    #: 옆단 「운영 시간대」. 비면 화면 기본값(평일 9 ~ 18시)을 안 건드린다.
+    #: **산업용(갑)Ⅰ 저압 실측을 쓰는 자리 넷만 값을 든다** (S271 결정 4 · 사람 결정) —
+    #: `render_deck.py` 의 `small-ind-a1` 과 같은 0 ~ 24시다.
+    hours: tuple[int, int] | None = None
 
 
 #: 용인 소규모 건물 · 갑Ⅱ 고압A 선택Ⅱ (61세션에 확보한 실측).
@@ -124,6 +128,8 @@ EDUCATION_A_LOW = Contract("교육용전력(갑)", "저압", 200.0, "전체시�
 #: 여기서만 선다. 자료도 이 벌 것을 쓴다 (`usage`).
 SMALL_IND_A1 = Contract("산업용전력(갑)Ⅰ", "저압", 75.0, "전체시간", lagging_pct=100.0)
 IND_LOW_XLSX = PROJECT_ROOT / "input" / "전력사용량_산업용(갑)저압.xlsx"
+#: 그 공장의 운영 시간대 — 24시간 가동이다 (S271 결정 4 · 사람 결정).
+IND_LOW_HOURS: tuple[int, int] = (0, 24)
 
 #: 역률 상한(97%) 갈래를 화면으로 보는 조건. **자료가 아니라 역률이 가른다** —
 #: 같은 을 조건에서 주간 지상역률만 갈아 세 자리를 뽑는다 (S157 2-2).
@@ -203,6 +209,7 @@ SPOTS: tuple[Spot, ...] = (
         wait_for="피크 특성",
         contract=SMALL_IND_A1,
         usage=IND_LOW_XLSX,
+        hours=IND_LOW_HOURS,
     ),
     Spot(
         key="데이터품질-산업갑1저압",
@@ -210,6 +217,7 @@ SPOTS: tuple[Spot, ...] = (
         anchor="데이터 품질",
         wait_for="데이터 품질",
         usage=IND_LOW_XLSX,
+        hours=IND_LOW_HOURS,
     ),
     Spot(
         key="기간경고-산업갑1저압",
@@ -220,6 +228,7 @@ SPOTS: tuple[Spot, ...] = (
         anchor="분석 기간",
         wait_for="데이터 품질",
         usage=IND_LOW_XLSX,
+        hours=IND_LOW_HOURS,
     ),
     # ------------------------------------------------- 2단계 · 역률 상한 갈래 셋
     Spot(
@@ -247,6 +256,7 @@ SPOTS: tuple[Spot, ...] = (
         wait_for="피크 특성",
         contract=SMALL_IND_A1,
         usage=IND_LOW_XLSX,
+        hours=IND_LOW_HOURS,
         tab="2단계 · 개선 수단",
         measures=("4. 역률 개선",),
     ),
@@ -439,6 +449,26 @@ def _set_lagging(page: object, pct: float) -> None:
     _wait_idle(page)
 
 
+def _set_hours(page: object, hours: tuple[int, int]) -> None:
+    """옆단 「운영 시간대」 의 두 손잡이를 옮긴다 (S271 결정 4).
+
+    손잡이는 ``role="slider"`` 둘이고 ``aria-valuenow`` 가 지금 시각이다(선택지가 0 ~ 24시라
+    차례가 곧 시각). 손잡이에 초점을 두고 화살표 키로 한 칸씩 옮긴다 — 끌기는 뷰포트 폭에
+    따라 한 칸의 픽셀이 달라져 값이 흔들린다.
+    """
+    _wait_idle(page)
+    thumbs = page.locator(  # type: ignore[attr-defined]
+        '[data-testid="stSlider"]:has-text("운영 시간대") [role="slider"]'
+    )
+    for index, want in enumerate(hours):
+        thumb = thumbs.nth(index)
+        thumb.focus()
+        move = want - int(thumb.get_attribute("aria-valuenow") or 0)
+        for _ in range(abs(move)):
+            thumb.press("ArrowRight" if move > 0 else "ArrowLeft")
+        _wait_idle(page)
+
+
 def _anchor(page: object, text: str) -> object:
     """앵커 글자를 **보이는 것 가운데** 찾는다.
 
@@ -504,6 +534,8 @@ def capture(spot: Spot, usage: Path, out_dir: Path, *, port: int, width: int, he
                     page.wait_for_timeout(4_000)
                 if spot.contract is not None:
                     _fill_contract(page, spot.contract)
+                if spot.hours is not None:
+                    _set_hours(page, spot.hours)
                 # **카드는 2단계 탭 안에 있다.** 켜는 일을 먼저 하고 탭을 옮긴다 —
                 # 3단계 자리도 2단계에서 켠 것을 본다 (`views\compare.py`).
                 if spot.measures:

@@ -70,7 +70,6 @@ from kwise.report.appendix import basis_data_frame, known_limits, worksheet_fram
 from kwise.report.columns import display_frame, localize, season_label, value_label
 from kwise.report.notices import (
     AMI_BASIS_NOTICE,
-    CONTRACT_CHANGE_WARNING,
     DATA_SOURCES,
     NOT_INCLUDED_NOTICE,
     SETTLED_ROW_NAME,
@@ -83,6 +82,7 @@ from kwise.report.notices import (
     combination_annual_saving,
     combination_saving,
     contract_annual_saving,
+    contract_change_warnings,
     contract_saving,
     contract_unpriced_reason,
     ess_capacity_text,
@@ -90,6 +90,7 @@ from kwise.report.notices import (
     format_mwh,
     format_won,
     interval_words,
+    is_on_contract,
     known_limit_lines,
     lowering_recommended,
     max_demand_text,
@@ -459,16 +460,20 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
                 ),
             )
         )
-        rows.append(
-            (
-                "개선 여지",
-                "태양광 피크 기여",
-                f"{summary.pv_potential} (상위 구간의 {summary.pv_midday_share:.0%}가 정오 시간대)",
+        # 계약전력 기준 건물은 피크를 낮춰도 기본요금이 그대로라 「피크 기여」 줄과 그 모집단
+        # 줄을 세우지 않는다 (S271 결정 6 · S207).
+        if not is_on_contract(bill):
+            rows.append(
+                (
+                    "개선 여지",
+                    "태양광 피크 기여",
+                    f"{summary.pv_potential} "
+                    f"(상위 구간의 {summary.pv_midday_share:.0%}가 정오 시간대)",
+                )
             )
-        )
-        if summary.pv_basis:
-            # 어느 모집단으로 판정했는지 밝힌다. 부록 B 원값과 섞이지 않게 한다.
-            rows.append(("개선 여지", "태양광 판정 모집단", summary.pv_basis))
+            if summary.pv_basis:
+                # 어느 모집단으로 판정했는지 밝힌다. 부록 B 원값과 섞이지 않게 한다.
+                rows.append(("개선 여지", "태양광 판정 모집단", summary.pv_basis))
 
     # **재현 조건을 한 줄로** (56세션 3절). 계약종별·선택요금·계약전력은 위에
     # 이미 있고 ESS 단가 경로는 「수단별 결과」 비고가 적는다 — 빠진 것은
@@ -483,7 +488,10 @@ def _summary_rows(sections: ReportSections) -> list[tuple[str, str, str]]:
     if lowering_recommended(
         adequacy.adjustment if adequacy is not None else None, sections.comparison
     ):
-        rows.append(("계약전력 변경 경고", "필수 안내", CONTRACT_CHANGE_WARNING))
+        # 12개월 미만이면 기간 기준 한 줄이 함께 선다 (S271 결정 2).
+        rows.extend(
+            ("계약전력 변경 경고", "필수 안내", line) for line in contract_change_warnings(bill)
+        )
     limits = known_limit_lines(power_factor_billed=sections.power_factor_billed)
     interval_minutes = sections.usage.meta.interval_minutes
     for number, limit in enumerate(limits, start=1):  # 부록 D

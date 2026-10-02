@@ -103,6 +103,12 @@ class Case:
     (kWh/m²·년) 한 줄을 얹는다 (`ui\\building.py::intensity_kwh_per_m2`).
     **S194 까지 이 필드가 없어 덱 벌 열여덟이 다 연면적 0 이었다.**
     """
+    operating_hours: tuple[int, int] | None = None
+    """옆단 「운영 시간대」. ``None`` 이면 안 넣은 것이고 화면 기본값(평일 9 ~ 18시)이 선다.
+
+    **`small-ind-a1` 하나만 값을 든다** (S271 결정 4 · 사람 결정) — 주말에도 평일만큼 도는
+    공장이라 0 ~ 24시다. 「운영시간 외 부하 비중」 과 DR 판정 시간대에 닿는다.
+    """
 
     @property
     def province(self) -> str:
@@ -442,7 +448,12 @@ CASES: tuple[Case, ...] = (
         # 케이스 열하나가 전부 92(간주) 아니면 85 다. `large-b-pf85` 는 92 미달
         # 추가요금 쪽이고, 이 벌이 **92 초과 감액 쪽을 처음 세운다.**
         power_factor_pct=100.0,
+        # **1,000 m² 는 가정이다 — 사람이 준 값이 아니다** (S270 1-1 · S271 결정 4 가 그대로
+        # 두라고 정했다). 연면적도 받은 값이 없어 안 넣는다.
         area_m2=1_000.0,
+        # **24시간 가동이다** (S271 결정 4 · 사람 결정). 앞서는 칸이 없어 사무실 기본값
+        # (평일 9 ~ 18시)이 섰다 — 주말 부하가 평일의 98.5% 인 공장이다.
+        operating_hours=(0, 24),
         building_name="소규모 공장(산업용 갑Ⅰ 저압 실측)",
         # **사람이 답한 좌표다** (S154 5-2 · S155 2-2 에 넣었다). 실측 자료는
         # `날짜시간`·`사용량(kWh)` 두 열뿐이고 청구서에도 지번이 없어 S153 이
@@ -594,6 +605,9 @@ def build_app(case: Case, *, timeout: int = 1800) -> AppTest:
     # 실행에 덮인다.
     if case.floor_area_m2 is not None:
         state["building_area"] = case.floor_area_m2
+    # 운영 시간대도 위젯 키로 심는다 (S271 결정 4) — 연면적과 같은 까닭이다.
+    if case.operating_hours is not None:
+        state["building_hours"] = case.operating_hours
     # **태양광은 「계산」 을 누른 상태로 시작한다.** 위젯에 키가 없어 면적을
     # 세션으로 심을 수 없다 — 눌린 결과(``solar_inputs``)를 바로 넣는다.
     state["solar_inputs"] = solar_inputs_for(case)

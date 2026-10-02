@@ -150,15 +150,25 @@ def _key(key: object) -> str:
 #: 참 · 거짓 값의 글자 (S270 결정 5) — 「적용 여부」 를 묻는 항목이다.
 _BOOL_NAMES: dict[bool, str] = {True: "적용", False: "적용 안 함"}
 
+#: 요일 계량 규칙 값 둘의 글자 (S271 결정 5) — **이름을 짓지 않고 원문 글자를 그대로 쓴다.**
+#: 전기요금표(종합) 2쪽 「※ 토요일 및 공휴일 계산기준(임시공휴일 제외)」 의 두 줄이다
+#: (`data\source\2026-08-01_전기요금표(종합).pdf` · 확인 2026-10-02). 일요일은 「관공서의
+#: 공휴일에 관한 규정」 의 공휴일이라 공휴일 줄의 값이고 같은 글자가 선다.
+_DAY_RULE_NAMES: dict[str, str] = {
+    "peak_to_mid": "최대부하 시간대의 사용전력량 → 중간부하 시간대로 계량",
+    "all_to_light": "최대수요전력 및 사용전력량 → 경부하 시간대로 계량",
+}
+
 
 def _value_names(table: TariffTable | None) -> dict[str, str]:
     """값 칸에 서는 열쇠의 이름 — **이름을 바꾸는 자리는 여기 하나다** (S270 결정 5 · S233).
 
     새 이름을 짓지 않는다. 기준 데이터와 화면이 이미 쓰는 이름만 모은다 — 시간대 · 요일 ·
     방위 · 설치 밀도 · 계약종별(요금표가 쥔다 — 요금표 없이 부르면 열쇠 그대로다).
-    **이름이 없는 열쇠는 그대로 낸다** (요일 계량 규칙 ``all_to_light`` 따위).
+    요일 계량 규칙 둘은 이름이 없어 그 규칙을 정한 요금표 원문 글자다 (S271 결정 5).
+    **그 밖에 이름이 없는 열쇠는 그대로 낸다.**
     """
-    names = {**VALUE_LABELS["band"], **DAY_TYPE_LABELS}
+    names = {**VALUE_LABELS["band"], **DAY_TYPE_LABELS, **_DAY_RULE_NAMES}
     for key in ("pv.azimuths", "pv.densities"):
         names.update({item["key"]: item["label"] for item in assumptions()[key].value})
     if table is not None:

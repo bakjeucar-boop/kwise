@@ -31,7 +31,7 @@ from typing import Protocol
 
 from kwise import money
 from kwise.diagnose import ChargeStructure, ImprovementSummary, PeakProfile
-from kwise.diagnose.dr import JUDGE_WINDOW, DrProfile
+from kwise.diagnose.dr import JUDGE_WINDOW, WEEKEND_OPERATING_FACT, DrProfile
 from kwise.diagnose.summary import PvPotential
 from kwise.measures.catalog import measure_kind
 from kwise.quality import (
@@ -624,6 +624,8 @@ def peak_month_lead(
     diagnosis: PeakSource,
     quality: FlaggedMonthSource | None = None,
     table: TariffTable | None = None,
+    *,
+    on_contract: bool = False,
 ) -> str:
     """5장 — **월별 최대수요 그림이 말하는 것** (53세션 4-3).
 
@@ -641,6 +643,9 @@ def peak_month_lead(
 
     셋 다 아니면 기본 문장이다. 차례는 **먼저 걸리는 것이 이긴다** — 못 믿을 달을
     두고 계절 이야기를 하는 것은 앞뒤가 바뀐 것이다.
+
+    ``on_contract`` — 기본요금을 계약전력으로 매기는 건물이면 요금적용전력이 금액에 안
+    닿는다. 「요금적용전력이 결정됩니다」 를 말하는 조각(뒷말과 ①)을 뺀다 (S271 결정 6).
     """
     peak = diagnosis.peak
     demands = peak.monthly["max_demand_kw"].dropna().sort_values(ascending=False)
@@ -659,7 +664,7 @@ def peak_month_lead(
         return f"{head} 결측이 적은 달 가운데는 {clean[0].month}월이 가장 높습니다."
 
     # ① 대상월이 아니면 그 피크는 이월되지 않는다.
-    if top.month not in peak.demand_months:
+    if top.month not in peak.demand_months and not on_contract:
         basis = peak.monthly["demand_basis_kw"]
         carried = [month for month in basis.index if month.month in peak.demand_months]
         if carried:
@@ -679,7 +684,12 @@ def peak_month_lead(
         gap = (float(demands.iloc[0]) - float(demands.iloc[1])) / float(demands.iloc[0] or 1.0)
         season = table.season_of(top.month)
         if gap <= peak_month_close() and table.season_of(second.month) == season:
-            return f"{_season_span(table, season)}에 최대수요가 높고, {tail}"
+            span = _season_span(table, season)
+            if on_contract:
+                return f"{span}에 최대수요가 높습니다."
+            return f"{span}에 최대수요가 높고, {tail}"
+    if on_contract:
+        return f"{top.month}월에 최대수요가 가장 높습니다."
     return f"{top.month}월에 최대수요가 가장 높고, {tail}"
 
 
@@ -697,7 +707,7 @@ class PeakDetailSource(PeakSource, SummarySource, Protocol):
     """
 
 
-def peak_detail_lead(diagnosis: PeakDetailSource) -> str:
+def peak_detail_lead(diagnosis: PeakDetailSource, *, on_contract: bool = False) -> str:
     """6장 — **설명 뒤에 판정이 온다** (53세션 4-4).
 
     39세션까지는 「무엇을 보는 그림인가」 만 적고 **이 건물이 어느 쪽인지는 적지
@@ -707,7 +717,13 @@ def peak_detail_lead(diagnosis: PeakDetailSource) -> str:
     「태양광 피크 기여 가능성 높음/보통/낮음」 이고, 39세션이 5장에 두었던
     바로 그 문장이다. 그림(상위 구간 시각 분포)이 여기 있으므로 판정도 여기
     온다. **PPT 가 제 문구를 따로 적지 않는다.**
+
+    ``on_contract`` — 기본요금을 계약전력으로 매기는 건물이면 앞문장을 뺀다 (S271 결정 6).
+    「태양광이 · ESS 가 피크를 낮춥니다」 가 요금이 준다고 읽히는데 그 건물은 피크를 낮춰도
+    기본요금이 그대로다 — 시각만 말하는 뒷문장이 남는다.
     """
+    if on_contract:
+        return peak_summary_lead(diagnosis)
     head = PEAK_DETAIL_LEAD.replace("상위 구간", f"상위 {diagnosis.peak.top_n}구간", 1)
     return f"{head} {peak_summary_lead(diagnosis)}"
 
@@ -828,6 +844,11 @@ def dr_lead(profile: DrProfile | None) -> str:
     """
     if profile is None:
         return ""
+    # 주말에도 가동하는 건물은 저부하 평일을 세지 않았다 — 「쉬는 날 수준까지 내려오는
+    # 평일이 없어」 가 그 건물에서 참이 아니라 진단이 적은 그 한 줄을 그대로 쓴다 (S271 결정 3).
+    gate = next((n.text for n in profile.notices if n.fact == WEEKEND_OPERATING_FACT), "")
+    if gate:
+        return gate
     if not profile.low_load_days:
         return (
             f"거래 가능일 {profile.eligible_days:,}일 가운데 부하가 쉬는 날 수준까지 "

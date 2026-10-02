@@ -84,6 +84,7 @@ from kwise.report.notices import (
     SCHOOL_HIGH_VOLTAGE_NOTICE,
     Peers,
     combination_saving,
+    covers_summer_and_winter,
     settled_saving_shown,
     standalone_savings,
 )
@@ -1061,6 +1062,9 @@ class _MeasureResults:
             area_m2=self.solar_area_m2,
             # **역률 조정값을 같은 기준으로 적으려면 개월수가 필요하다** (59세션 12절).
             base_fee_months=self.base_fee_months or None,
+            # 자료에 여름이나 겨울이 없으면 태양광 그림 캡션이 그 굴곡을 말하지 않는다
+            # (S271 결정 6).
+            covers_summer_winter=self.bill is None or covers_summer_and_winter(self.bill),
         )
 
 

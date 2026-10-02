@@ -56,6 +56,7 @@ from kwise.tariff import (
     pending_option_notices,
     switchable_selections,
 )
+from kwise.tariff.engine import short_period_warning
 
 __all__ = ["Diagnosis", "diagnose"]
 
@@ -188,9 +189,17 @@ def diagnose(
         jeju=jeju,
     )
 
-    notices: list[Notice] = list(report.notices)
-
     if contract is None:
+        # **12개월 미만 주의는 요금표를 아는 이 자리에서 완성한다** (S271 결정 1). 품질 검사는
+        # 머리 문장만 낸다 — 기간과 계절 일수를 달고, 계약 정보가 없어 방향은 적지 않는다.
+        report = _retext(
+            report,
+            SHORT_PERIOD_FACT,
+            short_period_warning(
+                slots["season"], interval, table, start=usage.meta.start, end=usage.meta.end
+            ),
+        )
+        notices: list[Notice] = list(report.notices)
         summary = ImprovementSummary(
             current_selection=None,
             current_total_won=None,
@@ -221,6 +230,14 @@ def diagnose(
 
     current_bill = calculate_bill(usage, table, contract.selection, options=opts, quality=report)
     structure = charge_structure(usage, table, current_bill, options=opts)
+    # 12개월 미만 주의는 청구 결과가 낸 글자 하나로 맞춘다 (S271 결정 1) — 화면 1단계가 읽는
+    # 품질 쪽 안내와 PPT · Excel · Word 가 읽는 청구 쪽 안내가 한 글자다.
+    billed = next(
+        (item.text for item in current_bill.notices if item.fact == SHORT_PERIOD_FACT), ""
+    )
+    if billed:
+        report = _retext(report, SHORT_PERIOD_FACT, billed)
+    notices = list(report.notices)
     notices.extend(current_bill.notices)
 
     # 조합을 순차로 돌며 합계만 남긴다. 월별 명세는 현행 조합만 들고 있는다.
@@ -302,6 +319,20 @@ def diagnose(
         contract=adequacy,
         option_totals=totals,
         notices=tuple(notices),
+    )
+
+
+#: 12개월 미만 주의의 사실 ID — 품질 검사와 요금 엔진이 같은 ID 로 낸다.
+SHORT_PERIOD_FACT = "quality.short_period"
+
+
+def _retext(report: QualityReport, fact: str, text: str) -> QualityReport:
+    """품질 결과에서 그 사실의 안내 글자만 간 사본 (S271 결정 1). 그 안내가 없으면 그대로다."""
+    return replace(
+        report,
+        notices=tuple(
+            replace(item, text=text) if item.fact == fact else item for item in report.notices
+        ),
     )
 
 
