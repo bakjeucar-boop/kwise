@@ -476,6 +476,35 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - **번진 것** — 생성물 `docs\MANUAL.html` · 「현재 상태」 「문서」 칸 한 줄 · `ruff format` 이 지적한 빈 줄 하나(`notices.py` — 9/0 안). 1-5 가 「둘 이상」 이라 적은 못 파일은 셋(`test_docsite` · `test_notices` · `test_money`)이다.
 **2절 벽시계** 16:04:29 ~ 16:11:57(시각 명령 출력 · 커밋 앞 · 글은 그 뒤에 적었다).
 
+**3-1. 좁은 확인 — 두 명령 · 둘 다 첫 판 초록.** 고른 파일과 까닭 — 첫 명령 열두 파일: 고친 소스 · 매뉴얼 · 기록 칸을 무는 시험(`test_notices` · `test_money` · `test_docsite` · `test_diagnose` · `test_report` · `test_document` · `test_measures` · `test_doc_counts` · `test_deployment` · `test_artifact_words` · `test_slides` · `test_base_fee_basis_words`) — **757 passed**(`python_20261002_162447.txt`). 둘째 명령 화면 시험 두 파일(`test_ui_screen` · `test_integration` — 기온 기준선 못이 든 파일과 갈랐다) — **345 passed**(`python_20261002_163230.txt`). `test_casestudy` 는 안 골랐다 — 고친 것이 형을 적은 석 줄이고 3-6 이 본다. 옛 글자를 문 채 빨개진 시험 0.
+**3-2. 결정 3 순서 재현 — 고치기 전 2 failed → 고친 뒤 3 passed.** 같은 순서 · 같은 꼴(`test_integration.py::test_기상_취득에_실패해도_화면이_살아_있다` → `test_base_fee_basis_words.py::test_12개월_환산값_자리가_네_산출물에서_연이라_말하지_않는다`) — 앞 `python_20261002_160206.txt`(2 failed · 1 passed) · 뒤 `python_20261002_163358.txt`(3 passed).
+**3-3. 못 — 새 못 셋 · S274 가 되돌려 확인 안 한 못 셋 · 되돌려 확인 여덟 갈래**(스크래치 플러그인 `s275_revert.py` — 환경 변수 `PYTEST_PLUGINS` 로 싣는다 · 저장소 0줄 · 길 셋: 파일을 읽는 자리의 글자를 갈거나 덧붙인다 · 모듈 소스를 읽는 자리의 글자를 간다 · 시험 모듈의 이름 하나를 갈아 끼운다 · 끝에 갈아 낀 자리 수를 찍는다). **여덟 갈래 다 되돌림이 섰고(갈아 낀 자리 1 이상) 다 빨갰다.**
+
+| 갈래 | 되돌린 것(갈아 낀 자리) | 빨간 못 | 받은 파일 |
+|---|---|---|---|
+| 결정 1 넷째 사본 | `report\slides.py` 를 읽는 글자에 그 문장을 덧붙인다(1) | 새 `test_notices.py::test_계약전력_하향_여유_안내_글자는_한_자리에서_만든다` — 1 failed | `python_20261002_163504.txt` |
+| 결정 1 제 사본 | `measures\contract.py` 가 그 문장을 제 값으로 다시 든다(1) | 같은 못 — 1 failed | `python_20261002_163506.txt` |
+| 결정 1 줄 합 자리 | `report\document.py` 를 읽는 글자에 `money.balance_won(` 부름을 덧붙인다(1) | 새 `test_money.py::test_줄_합을_합계에_맞추는_자리는_사실마다_한_곳이다` — 1 failed | `python_20261002_163509.txt` |
+| 결정 2 약속 | 매뉴얼에서 「**신뢰성DR 과 다르다.**」 를 뺀다(1) | 새 `test_docsite.py::test_앵커가_약속한_전문이_매뉴얼에_있다` — 1 failed | `python_20261002_163511.txt` |
+| 결정 2 한계 표 | 한계 표의 한 줄(결측)을 표 밖으로 뺀다(1) | 같은 못 — 1 failed | `python_20261002_163514.txt` |
+| S274 판정 수 | 개요에 「케이스 스터디 174/174 통과」 를 덧붙인다(2 — 그 문서를 두 번 읽는다) | `test_doc_counts.py::test_문서는_케이스_판정_수를_숫자로_적지_않는다` — 1 failed | `python_20261002_163516.txt` |
+| S274 세 칸 | 인수인계 1절의 「188/188」 을 「187/187」 로(1) | `test_doc_counts.py::test_현재_상태_세_칸의_수가_인수인계_1절과_같다` — 1 failed | `python_20261002_163519.txt` |
+| S274 통째 훑기 | 그물의 `RECORD_READERS` 에서 `scan` 을 뺀다(1) | `test_doc_counts.py::test_저장소를_통째로_훑는_시험도_묶음_밖이면_잡힌다` — 1 failed | `python_20261002_163521.txt` |
+
+- 되돌림 없이 그 여섯 못 — 6 passed(`python_20261002_163524.txt` · 끝 줄 「되돌림 없음」).
+- **결정 3 의 되돌림은 3-2 가 그것이다** — 고치기 전 판(빨감)과 고친 뒤 판(초록)이 같은 순서 · 같은 꼴이다. 새 못은 안 지었다 — 한 프로세스의 순서를 무는 못은 전체 판의 일꾼 나눔에 따라 만나지 않는다.
+- **결정 4 는 못이 아니라 검사가 문다** — 맨 `mypy` 0건(3-7).
+- 명령 꼴은 3-1 그대로(`-p` 0)이고 인자는 못 이름(node id)이다.
+**3-4. 확인 사례 셋 · 덱 19벌 · 케이스 스터디 — 차례대로 한 판씩 · 갈린 줄 0.**
+- **확인 사례 셋**(`s263_case.py` → `s275_case_after.json` · (다) 방위 남동 · 쉬는 날 2023-05-01 · 2023-10-02 · `s263_case_20261002_163719.txt`)을 `s274_case_after.json` 과 줄 모음으로 맞댔다(`s269_rowdiff_all_20261002_163719.txt`) — **(가1) 2,670 · (다) 2,774 · (나) 2,764줄 · 세 벌 다 빠진 0 · 새 0** · 화면 지표 갈림 0(`s263_cards_20261002_163719.txt`). (가1) 528만원/년 · (다) 8,698만원/년 · 5억 4,989만원 · 6.3년 그대로.
+- **덱 19벌 한 판(끊김 0)** — `cache\deck_words\s275_after.json`(19벌 · 50,267줄 — 화면 20,996 · Excel 6,928 · PPT 10,688 · Word 11,655 · `deck_words_20261002_164518.txt`)을 `s274_after.json` 과 줄 모음으로 맞대니(`s269_rowdiff_all_20261002_164529.txt`) **19벌 다 빠진 0 · 새 0 — `small-ind-a1`(2,334줄) 포함.** 화면 지표 19벌 갈림 0(`s263_cards_20261002_164529.txt`). `deck_words --diff`(`deck_words_20261002_164531.txt`) — 갈린 글자 짝 없음 · **수치 조각 앞 13,728 · 뒤 13,728 — 준 것 · 는 것 없다.**
+- **케이스 스터디 — 188/188 · 기상 취득 0회**(`s263_case_run_20261002_164807.txt` · 스크래치 `case_after\casestudy_20261002_1648.xlsx` · 벌 13). 0-2 기준선과 칸마다 맞대니(C9 줄 포함 · `s266_case_cmp_20261002_164923.txt`) **맞댄 4,723 · 갈린 27 = 전부 소요 칸**(케이스 「소요(초)」 13 · 성능 「값」 14) — 타당성 판정 그대로 · **회귀값 여덟 0.** **멈출 자리 없다.**
+**3-5. 화면 감사 — 전 955 · 815 · 964 · 816 → 후 955 · 815 · 964 · 816 · 규칙 위반 없음**(`screen_audit_20261002_164909.txt` · `--list`). 문구 전수를 앞 판(`screen_audit_20261002_152339.txt`)과 맞대니(`s272_audit_diff_20261002_164923.txt`) **네 조건 다 준 0 · 는 0** — 결정 2 로 문을 뺀 화면 자리가 없다.
+**3-6. 전체 pytest — 1번 PC · 지시서 명령 그대로 · 백그라운드 셸 · 한 판 · 첫 판 초록.** **2,048 passed · failed 0**(끝 줄 「2048 passed, 5 warnings」 — xfailed · skipped 낱말이 없다 · 받은 자리는 백그라운드 셸 출력이다) = S274 2,045 + 새 3(`test_notices.py` · `test_money.py` · `test_docsite.py` 하나씩).
+**3-7. 계산 폴더 · 정적 검사**(`git diff --numstat 56eeee7 -- src tools data tests docs CLAUDE.md`) — 계산 폴더는 **1-5 가 센 두 파일뿐이다**: `diagnose\contract.py` 2/4 · `measures\contract.py` 5/6(둘 다 문장 사본을 가리킴으로 · 금액 식 0줄) · `compare\` · `pv\` · `tariff\` · `quality\` 0. 그 밖 `src\` — `notices.py` 9/0 · `report\notices.py` 3/4 · `report\document.py` 3/3. **`tools\` 0줄 · `data\` 0줄 · `CLAUDE.md` 0줄.** 시험 일곱 파일(`test_casestudy.py` 3/2 · `test_docsite.py` 197/0 · `test_document.py` 1/0 · `test_integration.py` 4/0 · `test_measures.py` 2/0 · `test_money.py` 22/0 · `test_notices.py` 28/0) · 문서(`MANUAL.md` 191/15 · `MANUAL.html` 50/15). **정적 검사 다섯 전 → 후** — `ruff check .` 통과 → 통과(`ruff_20261002_170245.txt`) · `ruff format --check .` 어긋남 0 → 0 · 통과 177(`ruff_20261002_170245-2.txt`) · `scan_ctrl` 0곳 → 0곳(`scan_ctrl_20261002_170246.txt`) · 맨 `mypy` **8건 · 3파일 → 0건**(`mypy_20261002_170246.txt` — 176파일) · `mypy tests tools` 35건 → 35건 · 10파일(`mypy_20261002_170249.txt` — 맨 `mypy` 의 여덟은 이 서른다섯에 없던 것이다).
+**차례** — 3-1 → 3-2 → 3-3 → 3-4 → 3-5 → 3-6 → 3-7. 판을 겹쳐 띄우지 않았다 · 멈춘 자리 0 · 끊긴 판 0 · 다시 돈 판 0.
+**3절 벽시계** 16:12:39 ~ 17:02:49(시각 명령 출력 · 커밋 앞 · 글은 그 뒤에 적었다).
+
 ---
 
 ## 오늘 (2026-10-02) 274세션 — **정리 판 · 미해결 (라) 걷기 · 산출물에 안 닿는 (가) 묶음 여섯과 홀로 둘 · 주말 가동 DR 곁 글 셋**
