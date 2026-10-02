@@ -659,8 +659,14 @@ def measure_summary_frame(
                         else ""
                     )
                     + f"{demand_response.participation_notice} "
-                    "투자비는 0원이지만 감축 미달 시 실적위약금이 있습니다 "
-                    "(전력시장운영규칙 별표26). " + DR_ADVISORY
+                    # 세지 않은 벌에는 위약금 조각을 안 적는다 (S274 결정 3).
+                    + (
+                        "투자비는 0원이지만 감축 미달 시 실적위약금이 있습니다 "
+                        "(전력시장운영규칙 별표26). "
+                        if counted
+                        else ""
+                    )
+                    + DR_ADVISORY
                 ),
             }
         )
@@ -1014,7 +1020,8 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
                 ),
                 ("DR 참여 안내", dr.notice),
                 ("DR 자원 유형", ", ".join(str(item) for item in dr.resource_types)),
-                ("DR 적합성", str(dr.potential)),
+                # 세지 않은 벌의 등급은 잰 것이 아니다 (S274 결정 3).
+                ("DR 적합성", str(dr.potential) if counted else UNPRICED),
             ]
         )
     if diagnosis.structure is not None:

@@ -21,10 +21,13 @@ r"""문서가 적은 「수」 를 실물과 맞댄다 (121세션).
 있다 — 「현재 상태」 표와 「pytest 분할 실행」 절만 보고, 그 표 안에서도
 **「최근 세션」 칸은 뺀다**(그 칸이 세션 기록이다).
 
-**못이 못 잡는 것 셋을 여기 적어 둔다.** 미해결에도 이름으로 남겼다.
+**못이 못 잡는 것 셋을 여기 적어 둔다.** 이 그물의 한계다 (할 일이 아니다 — S274).
 
-    ① 실물을 세는 데 케이스나 덱을 돌려야 하는 것 — 케이스 판정 118건 ·
-      화면 감사 넷 · PPT 장 수. 매 시험에 도는 자리에 못 온다.
+    ① 실물을 세는 데 케이스나 덱을 돌려야 하는 것 — 케이스 판정 수 ·
+      화면 감사 넷 · PPT 장 수. 매 시험에 도는 자리에 못 온다. **그래서 문서는
+      그 수를 숫자로 안 적고 정본 칸을 가리키고**(S269 결정 4 의 꼴 — 아래
+      「숫자로 적지 않는다」 못 셋), 정본 칸은 판마다 고치는 인수인계 1절과
+      맞댄다(S274 · `test_현재_상태_세_칸의_수가_인수인계_1절과_같다`).
     ② 고유어로 적힌 수 — ``아홉`` 은 ``(\d+)시트`` 에 안 걸린다. **122세션에
       Excel 앵커의 「아홉 시트」 를 실물 값 ``13시트`` 로 고치자 아래
       「Excel 시트 수」 줄이 그 자리를 함께 물었다** (``MANUAL_ANCHORS.md``
@@ -411,6 +414,69 @@ def test_개요는_화면_감사_수를_숫자로_적지_않는다() -> None:
     assert counts(overview, r"(?<!\S){} (\d[\d,]*)") == {}, overview
 
 
+#: 케이스 스터디 판정 수가 문서에 박히던 두 꼴 — 「174/174 통과」 · 「판정 132건」.
+VERDICT_MARKS = (r"(\d[\d,]*)/\1\s*통과", r"판정\s*\*{0,2}(\d[\d,]*)\*{0,2}\s*건")
+
+
+def test_문서는_케이스_판정_수를_숫자로_적지_않는다() -> None:
+    """케이스 스터디 판정 수를 **문서가 숫자로 적지 않는다** (S274 · S269 결정 4 의 꼴).
+
+    실물을 세려면 케이스 스터디를 돌려야 해 이 그물이 못 맞댄다 — 그 사이 개요는 「174/174」,
+    기술서는 「132건」 을 적은 채 실물(188)과 갈려 있었다. 정본은 「현재 상태」 의
+    「케이스 스터디」 칸이고 문서는 그 칸을 가리킨다.
+    """
+    stuck = [
+        f"{source}:{line} 이 {value}"
+        for mark in VERDICT_MARKS
+        for source, line, value in _marks(mark)
+        if not source.startswith("PROCEED.md")
+    ]
+    assert not stuck, " · ".join(stuck)
+
+
+#: 「현재 상태」 칸 이름 → (인수인계 1절 줄 이름, 그 줄과 칸에서 **처음** 읽는 수의 꼴).
+STATE_AGAINST_HANDOVER = {
+    "테스트 상태": ("pytest", r"(\d[\d,]*) passed"),
+    "케이스 스터디": ("케이스 스터디", r"(\d+/\d+)"),
+}
+
+
+def test_현재_상태_세_칸의_수가_인수인계_1절과_같다() -> None:
+    """「현재 상태」 의 세 칸이 **인수인계 1절과 같은 수다** (S274).
+
+    테스트 상태 · 케이스 스터디 · 화면 감사 칸이다. 판마다 회귀 값으로 고치는 자리인데
+    (S267 결정 2) 고치라는 못이 없어 S235 값에 서른한 판을 서 있었다. 인수인계 1절은
+    지시서가 판마다 고친다 — **한쪽만 낡으면 여기서 빨개진다.** 기대값을 적지 않는다 —
+    두 자리에서 읽어 맞댄다. 두 자리가 함께 낡는 것은 이 못 밖이다(실물을 세려면
+    그 판들을 돌려야 한다).
+    """
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    try:
+        import screen_audit
+    finally:
+        sys.path.pop(0)
+    state = _proceed_now().splitlines()
+    handover = _section(_read("docs/HANDOVER.md").splitlines(), "## 1. 지금 상태")
+
+    def row(lines: list[str], name: str) -> str:
+        return next(line for line in lines if line.startswith(f"| {name} |"))
+
+    def first(text: str, mark: str) -> str:
+        hit = re.search(mark, text)
+        assert hit, (mark, text[:120])
+        return hit.group(1)
+
+    for cell, (name, mark) in STATE_AGAINST_HANDOVER.items():
+        ours, theirs = first(row(state, cell), mark), first(row(handover, name), mark)
+        assert ours == theirs, f"「{cell}」 칸은 {ours} · 인수인계 1절 「{name}」 은 {theirs}"
+
+    audit, summary = row(state, "화면 감사"), row(handover, "화면 감사 네 수")
+    for case in screen_audit.CASES:
+        ours = first(audit, rf"\*\*{re.escape(case)} (\d[\d,]*)\*\*")
+        theirs = first(summary, rf"(?<![가-힣]){re.escape(case)} \*\*(\d[\d,]*)\*\*")
+        assert ours == theirs, f"화면 감사 {case} — 칸은 {ours} · 인수인계 1절은 {theirs}"
+
+
 # ------------------------------------- 번호가 아니라 이름으로 부른다 (S131 2절)
 
 #: 이름 대신 번호로 부른 자리 — 「②-32」 처럼 갈래 표식에 번호가 붙은 꼴.
@@ -777,8 +843,9 @@ def test_갈래_넷이_시험_파일을_빠짐없이_한_번씩_문다() -> None
 #: 기록·문서 경로로 읽히는 문자열 — `.md` 로 끝나는 이름 · `docs` 폴더.
 RECORD_PATH = re.compile(r"\.md$|^docs(?:[/\\]|$)")
 
-#: 경로 문자열 없이 기록을 읽는 도구 함수.
-RECORD_READERS = frozenset({"read_proceed"})
+#: 경로 문자열 없이 기록을 읽는 도구 함수. ``scan`` 은 저장소를 통째로 훑는다
+#: (``tools\scan_ctrl.py`` — 기록도 함께 읽는다 · S274).
+RECORD_READERS = frozenset({"read_proceed", "scan"})
 
 
 def _records_outside(tree: ast.Module) -> list[str]:
@@ -845,3 +912,17 @@ def test_기록을_읽는_시험은_records_묶음_안에_있다() -> None:
         f"기록·문서를 읽는데 records 묶음 밖인 시험이 있습니다 — {outside}. "
         "@pytest.mark.records 를 붙이십시오 (CLAUDE.md 9항)."
     )
+
+
+def test_저장소를_통째로_훑는_시험도_묶음_밖이면_잡힌다() -> None:
+    """**경로 문자열이 없어도 잡는다** (S274 · S176 5절이 남긴 꼴).
+
+    ``scan(PROJECT_ROOT)`` 처럼 저장소를 통째로 훑는 시험은 ``.md`` 글자도 ``read_proceed`` 도
+    안 쓴다 — 그 꼴이 묶음 밖에 새로 서면 위 못이 못 잡았다. 표본 소스로 그물을 직접 부른다.
+    """
+    swept = "def test_훑는다():\n    assert not scan_ctrl.scan(PROJECT_ROOT)\n"
+    plain = "def test_안_훑는다():\n    assert sorted([2, 1]) == [1, 2]\n"
+    marked = "import pytest\n\n\n@pytest.mark.records\n" + swept
+    assert _records_outside(ast.parse(swept)) == ["test_훑는다"]
+    assert _records_outside(ast.parse(plain)) == []
+    assert _records_outside(ast.parse(marked)) == []

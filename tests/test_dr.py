@@ -550,7 +550,7 @@ def test_단가가_없으면_사유를_낸다(sample_diagnosis: Diagnosis) -> No
 
 
 def test_DR_정산_단가_설명은_규칙_원문_글자를_쓴다(
-    sample_usage: UsageData, sample_bill: object, sample_diagnosis: Diagnosis
+    sample_usage: UsageData, sample_bill: BillingResult, sample_diagnosis: Diagnosis
 ) -> None:
     """**설명이 「순편익가격」 에 달렸다고 적었는데 규칙은 SMP 로 정산한다** (S247 결정 3 · 나-22).
 

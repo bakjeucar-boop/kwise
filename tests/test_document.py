@@ -148,8 +148,22 @@ def test_다섯_장이_모두_나온다(full_document: DocumentType) -> None:
     ]
 
 
+def _cover_text(document: DocumentType) -> str:
+    """표지 — 첫 장 제목(Heading 1) **앞**의 문단과 표 글자."""
+    parts: list[str] = []
+    for item in document.iter_inner_content():
+        if isinstance(item, Paragraph):
+            if _style_name(item) == "Heading 1":
+                break
+            parts.append(item.text)
+        else:
+            parts.extend(cell.text for row in item.rows for cell in row.cells)
+    return "\n".join(parts)
+
+
 def test_표지에_넷이_있다(full_document: DocumentType) -> None:
-    text = _all_text(full_document)
+    """**문서 전체가 아니라 표지를 본다** (S274 · S191 1-5) — 뒤 장의 같은 낱말로도 초록이었다."""
+    text = _cover_text(full_document)
     assert DOCUMENT_TITLE in text
     for label in ("건물명", "분석 기간", "작성일", "적용 요금표 시행일"):
         assert label in text
@@ -317,13 +331,13 @@ def test_금액에_단위가_붙는다(full_document: DocumentType) -> None:
 
 
 def test_요금_구조_표의_기본_더하기_전력량이_합계다(
-    sample_usage: UsageData, sample_report: object, tariff: TariffTable
+    sample_usage: UsageData, sample_report: QualityReport, tariff: TariffTable
 ) -> None:
     """**표가 스스로 산수로 맞아야 한다** (S124 · ②-40).
 
     「현재 요금 구조」 는 앞서 ``base_won``(역률요금을 뺀 값)을 적고 비중은
     그것을 ``total_won``(담은 값)으로 나눈 몫을 적었다 — 역률 85% 를 걸면
-    기본 + 전력량이 합계보다 317,220원 모자라고 비중 합이 99.8% 가 된다.
+    기본 + 전력량이 합계보다 6,339,264원 모자라고 비중 합이 99.8% 가 된다.
     화면·PPT 는 앞서부터 역률요금을 담아 세고 있었다.
 
     **간주 92% 벌에서는 역률요금이 0원이라 값이 그대로다** — 이 못이 벌을
@@ -347,7 +361,7 @@ def test_요금_구조_표의_기본_더하기_전력량이_합계다(
     document = build_document(DocumentSections(usage=sample_usage, bill=bill, diagnosis=diagnosis))
     table = _table_with_header(document, "구분", "금액·비중")
     cells = {
-        row.cells[0].text: row.cells[1].text  # type: ignore[attr-defined]
+        row.cells[0].text: row.cells[1].text
         for row in table.rows[1:]  # type: ignore[attr-defined]
     }
 
@@ -968,9 +982,7 @@ def test_Word_7_2_주의사항에_같은_경고가_두_번_서지_않는다(
     )
     paragraphs = list(document.paragraphs)
     heads = [
-        index
-        for index, para in enumerate(paragraphs)
-        if _style_name(para).startswith("Heading")
+        index for index, para in enumerate(paragraphs) if _style_name(para).startswith("Heading")
     ]
     start = next(index for index in heads if "7.2 계약전력 조정" in paragraphs[index].text)
     end = next((index for index in heads if index > start), len(paragraphs))

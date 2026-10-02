@@ -1108,9 +1108,7 @@ def calculate_bill(
         total_excess_won=total_excess,
         total_won=total_base + total_power_factor + total_energy + total_excess,
         total_energy_won_adjusted=total_energy_adjusted,
-        total_won_adjusted=(
-            total_base + total_power_factor + total_energy_adjusted + total_excess
-        ),
+        total_won_adjusted=(total_base + total_power_factor + total_energy_adjusted + total_excess),
         power_factor=power_factor,
         limited_months=limited_months,
         prior_peaks_supplied=bool(opts.prior_peaks),

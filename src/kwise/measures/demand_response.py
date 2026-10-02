@@ -230,7 +230,8 @@ def evaluate_demand_response(
     price_term = f"Max({price_name}, 0)" if jeju else price_name
 
     # 감축 가능량이 0 이면 참여를 전제로 한 주의(위약금 · 정산 단가 · 참고 문턱)를 세우지
-    # 않는다 — 그 벌에서 참인 말만 (S261 고침 1 · S207). 「저부하 평일이 없습니다」 는 선다.
+    # 않는다 — 그 벌에서 참인 말만 (S261 고침 1 · S207). 「저부하 평일이 없습니다」 는
+    # 세어 본 0일의 벌에만 선다 (아래 · S274 결정 3).
     reducible = annual_kwh > 0
     notices: list[Notice] = [
         # **주의** — 위약·리스크. 결과를 그대로 받아들이면 안 되는 것들이다.
@@ -327,9 +328,10 @@ def evaluate_demand_response(
                 fact="dr.below_reference",
             )
         )
-    if not profile.low_load_days_count:
+    if not profile.low_load_days_count and not unassessed:
         # **진단이 내는 것과 같은 사실이다.** 줄표 유무로 지문이 갈려 두 번
-        # 나왔다 (20세션 2절 결함 ②).
+        # 나왔다 (20세션 2절 결함 ②). **세지 않은 벌(주말에도 가동)에는 안 세운다**
+        # (S274 결정 3) — 「없습니다」 는 세어 본 0일의 말이다.
         notices.append(
             warn(
                 "저부하 평일이 없습니다. 감축이 실제 운영 축소를 뜻하므로 "

@@ -7,7 +7,7 @@
 **UI 는 만들지 않는다.** 계산 로직은 :mod:`kwise.report.casestudy` 에 있고
 판정은 :mod:`kwise.report.validity` 에 있다. 여기는 얇은 진입점이다.
 
-결과는 ``output\\casestudy_YYYYMMDD.xlsx`` 로 저장한다.
+결과는 ``output\\casestudy_YYYYMMDD_HHMM.xlsx`` 로 저장한다.
 **타당성 판정이 하나라도 실패하면 종료 코드가 1 이다** — 계산 오류이므로
 다음 단계로 넘어가면 안 된다.
 """
@@ -148,7 +148,8 @@ def main(argv: list[str] | None = None) -> int:
         "성능": study.performance_frame(),
         "안내": notice_frame(),
     }
-    stamp = dt.datetime.now().strftime("%Y%m%d")
+    # 날짜만 붙이면 같은 날 두 판이 서로 덮는다 (`CLAUDE.md` 「실행마다 타임스탬프」).
+    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M")
     target = Path(args.output_dir) / f"casestudy_{stamp}.xlsx"
     write_workbook(sheets, target)
     console.print(f"[green]저장[/green] {target}")

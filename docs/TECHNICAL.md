@@ -1731,7 +1731,8 @@ data\backup\     편집 직전 스냅샷 (최근 10개, .gitignore)
 .venv\Scripts\python.exe -m mypy
 ```
 
-**827 passed / ruff pass / mypy strict 120 files.**
+**통과 건수와 정적 검사의 지금 값은 여기 숫자로 적지 않는다** — `PROCEED.md`
+「현재 상태」 의 「테스트 상태」 · 「mypy 범위」 칸이 쥔다.
 
 시험 파일이 계층 하나에 대응한다. 특별한 것 셋을 적어 둔다.
 
@@ -1739,7 +1740,7 @@ data\backup\     편집 직전 스냅샷 (최근 10개, .gitignore)
 |---|---|
 | `test_progress.py` | **계산 모듈에 `import streamlit` 이 없다.** AST 로 훑는다 |
 | `test_ui.py` | 매뉴얼 앵커 목록과 문서가 어긋나지 않는다 |
-| `test_casestudy.py` | 타당성 판정 132건 |
+| `test_casestudy.py` | 타당성 판정 전부 (수는 `PROCEED.md` 「케이스 스터디」 칸) |
 
 ### 6.2 케이스 스터디 C1~C6 {#tech-casestudy}
 

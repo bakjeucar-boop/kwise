@@ -11,6 +11,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -243,9 +244,7 @@ def test_every_validity_check_passes(study: CaseStudy) -> None:
     assert not failed, "\n".join(f"{item.scope} · {item.name} — {item.detail}" for item in failed)
 
 
-def test_케이스_스터디가_하한_갈래를_C6_에서_돈다(
-    study: CaseStudy, tariff: TariffTable
-) -> None:
+def test_케이스_스터디가_하한_갈래를_C6_에서_돈다(study: CaseStudy, tariff: TariffTable) -> None:
     """**회귀가 하한 갈래를 밟는 유일한 자리다** (107세션 3절 · ②-15 · ②-30).
 
     105세션 6절이 박아 둔 못은 그 반대를 봤다 — 「케이스 스터디가 하한 갈래를
@@ -267,8 +266,7 @@ def test_케이스_스터디가_하한_갈래를_C6_에서_돈다(
     전부 걸린다.
     """
     bound = {
-        result.definition.key: len(result.baseline.floor_bound_months)
-        for result in study.results
+        result.definition.key: len(result.baseline.floor_bound_months) for result in study.results
     }
     c6 = study.find("C6")
     assert bound["C6"] == len(c6.baseline.monthly), f"C6 에서 하한이 빠졌다 — {bound}"
@@ -380,7 +378,7 @@ def test_케이스_스터디의_역률_개선은_넣은_역률에서_출발한�
         pct = result.definition.power_factor_pct
         rows = [row for row in result.measure_rows if str(row["수단"]).startswith("7.4 역률 개선")]
         assert len(rows) == 1, result.definition.key
-        row = rows[0]
+        row: dict[str, Any] = rows[0]
         name = expected_names.get(result.definition.key, "7.4 역률 개선 (92→97%)")
         assert row["수단"] == name, (result.definition.key, row["수단"])
         ratio = lagging_adjustment_ratio(pct or 92.0) - lagging_adjustment_ratio(

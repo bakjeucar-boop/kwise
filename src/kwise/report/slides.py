@@ -1605,11 +1605,7 @@ def _build_structure(
             [
                 ("기본요금", _won(base_with_power_factor_won)),
                 ("전력량요금", _won(structure.energy_won)),
-                *(
-                    [("초과사용부가금", _won(structure.excess_won))]
-                    if structure.excess_won
-                    else []
-                ),
+                *([("초과사용부가금", _won(structure.excess_won))] if structure.excess_won else []),
                 (
                     # **비중을 여기서 나누지 않는다** (S133 2절 · ②-39).
                     # 산식은 ``ChargeStructure.base_with_power_factor_share``

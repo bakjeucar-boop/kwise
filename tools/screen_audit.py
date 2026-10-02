@@ -294,7 +294,7 @@ CASES: Mapping[str, ContractForm] = {
 BASELINE_CASE = "을"
 
 
-def run(*, solar: bool = True, steps: int = 4, case: str = BASELINE_CASE) -> AppTest:
+def run(*, solar: bool = True, case: str = BASELINE_CASE) -> AppTest:
     """수단 일곱을 모두 켠 화면 한 벌.
 
     ``solar`` 를 켜면 태양광 입력까지 세션에 넣어 **결과가 나온 상태**로 띄운다 —
@@ -317,11 +317,13 @@ def run(*, solar: bool = True, steps: int = 4, case: str = BASELINE_CASE) -> App
         province = list_provinces()[0]
         region_key = list_sigungu(province)[0].key
         app.session_state["building_info"] = BuildingInfo(region_key=region_key)
+        # **곡선 점 수(`steps`)를 심지 않는다** (S274 · S259 결정 2). 위젯이 짓는 입력은
+        # 그 기본값을 쓰므로, 다른 값을 심으면 화면이 「입력이 변경되었습니다」 로 보고
+        # 태양광을 묵은 결과로 띄운다 — 감사가 막힘 줄을 문구로 세었다.
         app.session_state["solar_inputs"] = SolarInputs(
             region_key=region_key,
             area_m2=20_000.0,
             unit_cost_won_per_kwp=1_200_000.0,
-            steps=steps,
         )
     return app.run()
 

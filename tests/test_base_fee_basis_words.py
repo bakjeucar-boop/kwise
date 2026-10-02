@@ -3649,6 +3649,34 @@ def test_S272_주말에도_가동하는_건물의_DR_칸은_0_이_아니라_미�
     assert _cells_with(none, "미산출 — 정산 단가 미입력") != []
 
 
+def test_S274_주말에도_가동하는_건물에는_0일을_전제한_곁_글이_안_선다() -> None:
+    """**세지 않은 벌에 「세어 보니 없다」 는 글을 세우지 않는다** (S274 결정 3).
+
+    산업용 벌은 감축 가능량이 「미산출」 인데(S272 결정 1) 곁에 0일을 전제한 글 셋이 남아
+    있었다 — ① 「저부하 평일이 없습니다 …」 주의 ② Excel 수단별 결과 비고의 위약금 조각
+    ③ Excel 진단 「DR 적합성 낮음」. ① ② 는 안 서고 ③ 은 「미산출」 이다. ④ 옆단 운영 시간대
+    풀이는 그대로 둔다(옆단은 진단보다 먼저 그려진다).
+
+    갈래 밖은 그대로다 — 저부하 평일을 센 벌(`small-ind-a2`)과, 세어 보니 0일인 벌(`small-b`).
+    """
+    low, high, none = _render("small-ind-a1"), _render("small-ind-a2"), _render("small-b")
+    no_low_days, penalty = "저부하 평일이 없습니다", "감축 미달 시 실적위약금이 있습니다"
+
+    assert _cells_with(low, no_low_days) == [], _cells_with(low, no_low_days)
+    assert _cells_with(low, penalty) == [], _cells_with(low, penalty)
+    assert _diagnosis_sheet(low)["DR 적합성"] == "미산출"
+    # ④ 는 그대로다.
+    assert _cells_with(low, "평일 이 시간대 밖의 부하를 따로 셉니다") != []
+
+    # 맞수 ① — 세어 보니 0일인 벌은 셋 다 그대로 선다 (재어 본 0 이다).
+    assert _cells_with(none, no_low_days) != []
+    assert set(_kinds(none, penalty)) == {"Excel"}
+    assert _diagnosis_sheet(none)["DR 적합성"] not in ("", "미산출")
+    # 맞수 ② — 저부하 평일을 센 벌은 위약금 조각과 등급이 선다.
+    assert set(_kinds(high, penalty)) == {"Excel"}
+    assert _diagnosis_sheet(high)["DR 적합성"] not in ("", "미산출")
+
+
 def test_S272_주말에도_가동하는_건물은_운영시간을_모든_날에_적용한다() -> None:
     """**주말을 통째로 「운영시간 외」 로 세지 않는다** (S272 결정 2).
 

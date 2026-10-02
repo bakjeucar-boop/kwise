@@ -1642,9 +1642,7 @@ def test_월별_명세_표가_달을_하나도_빼지_않는다(app: AppTest) ->
     **달 수를 자료에서 센다** — 화면이 쓰는 프레임을 다시 읽으면 잘려도 같이
     잘린다(결함 유형 ⑤). 부분 월도 한 달로 센다.
     """
-    frame = next(
-        item.value for item in app.dataframe if "계량 일수" in list(item.value.columns)
-    )
+    frame = next(item.value for item in app.dataframe if "계량 일수" in list(item.value.columns))
     months = load_usage(SAMPLE).kw.index.to_period("M").nunique()
     assert len(frame) == months, (
         f"월별 명세 표가 {len(frame)}행인데 자료의 달은 {months}개입니다 — "
@@ -2367,21 +2365,25 @@ def test_결측_안내가_두_줄을_넘지_않는다() -> None:
 
 
 def test_계약전력_변경_경고가_7_2_카드에_있다() -> None:
-    """**바꾸자고 제안하는 자리가 이 경고의 제자리다** (16세션 3절)."""
+    """**바꾸자고 제안하는 자리가 이 경고의 제자리다** (16세션 3절).
+
+    **그 카드 자리의 줄을 본다** (S274 · S191 1-5). 앞서는 카드를 켠 화면의 글자를 통째로
+    이어 「있다」 를 보고, 1단계에 없다는 것은 카드를 안 켠 **다른** 화면에서 봤다 — 경고가
+    1단계로 옮겨 가도 초록이었다. 자리는 감사 도구가 적는 그대로다(접힘 이름).
+    """
     from kwise.report import CONTRACT_CHANGE_WARNING
 
     # **낮출 자리가 있을 때만 낸다** (83세션). 계약 20,000 kW 면 하한이 이긴다.
     screen = _running(contract_kw=20_000.0, measure_on_contract=True)
     assert not screen.exception, screen.exception
-    body = " ".join(
-        str(item.value) for group in (screen.markdown, screen.caption) for item in group
-    )
-    assert CONTRACT_CHANGE_WARNING in body
+    lines = _audit().collect(screen)
+    card = [line.text for line in lines if line.where.endswith("2. 계약전력 조정 — 입력과 결과")]
+    assert card, "계약전력 조정 카드의 줄을 하나도 못 읽었습니다."
+    assert [text for text in card if CONTRACT_CHANGE_WARNING in text] != []
     # 1단계에는 없다 — 같은 경고를 두 자리에 두지 않는다.
-    plain = _running()
-    assert CONTRACT_CHANGE_WARNING not in " ".join(
-        str(item.value) for group in (plain.markdown, plain.caption) for item in group
-    )
+    diagnose = [line.text for line in lines if "1단계 · 진단" in line.where]
+    assert diagnose, "1단계의 줄을 하나도 못 읽었습니다."
+    assert [text for text in diagnose if CONTRACT_CHANGE_WARNING in text] == []
 
 
 def test_판정을_가르는_수가_7_2_카드에_선다() -> None:
@@ -5131,13 +5133,10 @@ def test_조건_넷이_함께_서는_벌이_저장소에_있다() -> None:
     import render_deck
 
     candidates = [
-        case
-        for case in render_deck.CASES
-        if case.power_factor_pct == 100.0 and case.floor_area_m2
+        case for case in render_deck.CASES if case.power_factor_pct == 100.0 and case.floor_area_m2
     ]
     assert candidates, (
-        "역률 100 과 연면적을 함께 든 덱 벌이 하나도 없습니다 — "
-        "S192 3-2 의 0/18 로 돌아갔습니다."
+        "역률 100 과 연면적을 함께 든 덱 벌이 하나도 없습니다 — S192 3-2 의 0/18 로 돌아갔습니다."
     )
 
     case = candidates[0]
@@ -5184,9 +5183,7 @@ def test_여지_없는_수단을_2단계는_빼고_3단계_조합은_담는다()
     import render_deck
 
     case = next(
-        item
-        for item in render_deck.CASES
-        if item.power_factor_pct == 100.0 and item.floor_area_m2
+        item for item in render_deck.CASES if item.power_factor_pct == 100.0 and item.floor_area_m2
     )
     screen = render_deck.build_app(case).run()
     assert not screen.exception, screen.exception
@@ -5225,20 +5222,15 @@ def test_여지_없는_수단을_2단계는_빼고_3단계_조합은_담는다()
 
 
 def test_역률_체크를_풀면_차이가_0원이고_요약표에는_남는다() -> None:
-    """**짝의 다른 쪽을 문다** (S197 4-2). 위 못과 한 쌍이다.
+    """**뺀 수단도 개선안별 요약에는 남는다** (매뉴얼 5장 · 16세션) — 얼마짜리를
+    뺐는지 보여야 뺄지 말지 정할 수 있다.
 
-    S197 1-5 가 값으로 봤다 — 단순 합과 합산효과는 **같은 수단 집합**을 보고,
-    그 벌의 차이 25,055.99원은 **역률 조각 하나**에서 나온다. 체크를 풀면
-    단순 합은 한 원도 안 움직이고(역률 카드가 0원이다) 차이가 **0원**이 된다.
+    [S274 곁 — 「차이가 0원」 줄을 걷었다. S197 에는 그 벌의 차이 25,055.99원이 역률 조각
+    하나에서 나와 「체크를 풀면 0원」 이 위 못과 짝으로 물었는데, 출발점이 원 부하 역률이
+    된 뒤로(S198 · S266 결정 5) 켜도 빼도 0원이라 아무것도 못 갈랐다(S199 4-3 날값 켬 0.0 ·
+    뺌 0.0). 켠 쪽의 0원은 위 못이 문다. 이름은 기록이 부르는 그대로 두었다.]
 
-    **두 못이 양쪽을 문다** — 위 못은 조합 쪽만 갈리면 빨개지고, 이 못은
-    단순 합 쪽만 갈리면 빨개진다. 한쪽만 고치면 매뉴얼 5장이 말한 대로
-    「차이가 상호작용이 아니라 뺀 만큼」 이 된다.
-
-    **뺀 수단도 개선안별 요약에는 남는다** (매뉴얼 5장 · 16세션) — 얼마짜리를
-    뺐는지 보여야 뺄지 말지 정할 수 있다. 그 사실도 함께 문다.
-
-    **소스 글자를 다시 적지 않는다** — 화면에 그려진 표 두 개를 읽는다.
+    **소스 글자를 다시 적지 않는다** — 화면에 그려진 표를 읽는다.
     고치는 것은 세션 키 ``combination_pick`` 하나이고 ``src\\`` 는 안 건드린다.
     """
     import sys
@@ -5247,9 +5239,7 @@ def test_역률_체크를_풀면_차이가_0원이고_요약표에는_남는다(
     import render_deck
 
     case = next(
-        item
-        for item in render_deck.CASES
-        if item.power_factor_pct == 100.0 and item.floor_area_m2
+        item for item in render_deck.CASES if item.power_factor_pct == 100.0 and item.floor_area_m2
     )
     app = render_deck.build_app(case)
     app.session_state["combination_pick"] = tuple(
@@ -5271,19 +5261,6 @@ def test_역률_체크를_풀면_차이가_0원이고_요약표에는_남는다(
     # 여지 없는 역률은 「0원」 이 아니라 「없음」 이다 (256세션 고5).
     assert str(rows[0]["12개월 환산 절감액"]) == "없음", (
         f"{case.key} — 조합에서 뺀 역률의 절감액이 「{rows[0]['12개월 환산 절감액']}」 입니다."
-    )
-
-    # ── 그 조각을 빼면 차이가 통째로 사라진다
-    basis = next(
-        frame
-        for frame in frames
-        if list(frame.columns) == ["구분", "산식", "값"]
-        and "차이" in [str(row["구분"]) for row in frame.to_dict("records")]
-    )
-    gap = next(str(row["값"]) for row in basis.to_dict("records") if str(row["구분"]) == "차이")
-    assert gap in ("0원", "-0원"), (
-        f"{case.key} — 역률을 뺐는데 차이가 「{gap}」 입니다. 그 벌의 차이는 전부 "
-        "역률 조각 몫이어야 합니다 (S197 1-5)."
     )
 
 

@@ -452,6 +452,41 @@ def test_역률이_기준_아래로_떨어지면_조합이_말한다(
     assert facts(PV_KWP, current=100.0) == []
 
 
+#: 출발점이 목표(97%)였다면 태양광 뒤 역률이 기준 아래로 가는 용량 — 아래 못이 값으로 본다.
+PV_KWP_DEEP = 20_000.0
+
+
+def test_원_부하_역률_100_벌은_역률_수단을_켠_조합에서도_출발점이_100_이다(
+    sample_usage: UsageData,
+    sample_report: QualityReport,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_unit_pv: pd.Series,
+) -> None:
+    """**켠 수단의 목표가 출발점으로 새지 않는다** (S274 · S198 · S266 결정 5).
+
+    원 부하 역률 100 은 무효전력이 없어 태양광이 아무리 커도 역률이 안 떨어진다. S197 까지는
+    역률 수단을 켠 조합의 출발점이 **목표(97%)** 였다 — 그 값에서 재면 큰 태양광이 기준 아래로
+    끌어내려 **있지도 않은 악화 경고**가 선다. S203 4-4 가 500 · 3,000 kWp 에서는 값이 한 자도
+    안 갈려 물 자리가 없다고 적었다 — 그래서 **갈리는 용량**에서 문다.
+    """
+    floor = power_factor_floor_pct()
+    # 재료 — 이 용량이 가르는 자리다: 97 에서 재면 기준 아래 · 100 에서 재면 그대로.
+    assert _after_pct(sample_usage, sample_unit_pv, PV_KWP_DEEP, 97.0) < floor
+    assert _after_pct(sample_usage, sample_unit_pv, PV_KWP_DEEP, 100.0) == pytest.approx(100.0)
+
+    on = evaluate_combination(
+        sample_usage,
+        tariff,
+        CombinationSpec("역률+태양광", CURRENT, pv_capacity_kwp=PV_KWP_DEEP, power_factor_pct=97.0),
+        baseline_bill=sample_bill,
+        unit_pv_kw_per_kwp=sample_unit_pv,
+        quality=sample_report,
+        options=BillingOptions(power_factor_pct=100.0),
+    )
+    assert [item.text for item in on.notices if item.fact == "solar.power_factor_drop"] == []
+
+
 def test_baseline_has_no_saving(sample_comparison: ComparisonResult) -> None:
     baseline = sample_comparison.baseline
     assert baseline.saving_won == pytest.approx(0.0)
@@ -995,20 +1030,102 @@ def test_조합_이름의_계약전력은_목표다(
     assert none_left.composition() == "현행 유지"
 
 
-def test_조합_비교_열쇠가_잉여_수익을_안_본다() -> None:
-    """**요금과 무관한 값이 열쇠에 있으면 캐시가 죽는다** (57세션 2절)."""
-    import inspect
+class _Remembered:
+    """기억에서 꺼낸 조합 비교 결과의 자리 — 잉여 수익을 붙이는 이음매만 받는다."""
 
+    def with_surplus_revenue(self, revenue: float | None, scenario: str) -> tuple[Any, ...]:
+        return (revenue, scenario)
+
+
+def _memo_keys(monkeypatch: pytest.MonkeyPatch) -> tuple[Any, list[str]]:
+    """``kwise.ui.cache`` 와, 그 모듈이 세션 기억에 넘긴 **열쇠**를 받아 적는 목록.
+
+    조합 비교와 감도는 ``session_memo`` 를 써서 세션이 있어야 돈다 (S194 4-4). 그 한 자리를
+    받아 적는 것으로 갈아 끼우면 **계산을 안 돌리고** 실제로 지어진 열쇠를 본다 —
+    열쇠 코드를 여기 다시 적지 않는다.
+    """
     # **`from kwise.ui import cache` 가 아니다** (70세션 2절). `kwise.ui` 는
     # 그 하위 모듈을 내보내지 않아 형이 안 잡힌다 — 모듈을 곧장 부른다.
     import kwise.ui.cache as cache
 
-    source = inspect.getsource(cache.cached_comparison)
-    assert "stripped" in source
-    assert "surplus_revenue_won=None" in source
-    # **발전 프로파일 지문이 S194 2절에 붙었다.** 잉여 수익은 여전히 없다.
-    assert 'key = f"compare|{token}|{unit_token(_unit)}|{stripped}|{options_key}|{stamp}"' in source
-    assert "with_surplus_revenue" in source
+    keys: list[str] = []
+
+    def remember(key: str, build: Any) -> _Remembered:
+        keys.append(key)
+        return _Remembered()
+
+    monkeypatch.setattr(cache, "session_memo", remember)
+    return cache, keys
+
+
+def test_조합_비교_열쇠가_잉여_수익을_안_본다(
+    monkeypatch: pytest.MonkeyPatch,
+    sample_usage: UsageData,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_unit_pv: pd.Series,
+) -> None:
+    """**요금과 무관한 값이 열쇠에 있으면 캐시가 죽는다** (57세션 2절).
+
+    **뜻을 문다** (S274 · S194 5-2) — 앞서는 ``inspect.getsource`` 로 열쇠 한 줄을 글자로
+    맞대, 지문 한 조각이 붙자 값이 안 틀렸는데 빨개졌다. 잉여 수익과 시나리오만 다른 두
+    명세가 **같은 열쇠**이고, 그 값은 기억 밖에서 다시 붙는지를 본다.
+    """
+    cache, keys = _memo_keys(monkeypatch)
+
+    def run(revenue: float | None, scenario: str, capacity: float = PV_KWP) -> Any:
+        spec = CombinationSpec(
+            "태양광",
+            CURRENT,
+            pv_capacity_kwp=capacity,
+            surplus_revenue_won=revenue,
+            surplus_scenario=scenario,
+        )
+        return cache.cached_comparison(
+            sample_usage, tariff, sample_bill, sample_unit_pv, None, "token", (spec,), "", "stamp"
+        )
+
+    assert run(1_000_000.0, "외부 판매") == (1_000_000.0, "외부 판매")
+    assert run(None, "") == (None, "")
+    assert keys[0] == keys[1], "잉여 수익만 다른데 조합 비교 열쇠가 갈립니다."
+    # 맞수 — 요금을 가르는 값(용량)은 열쇠를 가른다. 안 갈리면 위가 늘 참이다.
+    run(None, "", capacity=PV_KWP * 2)
+    assert keys[2] != keys[0]
+
+
+def test_조합_비교와_감도의_열쇠가_발전_프로파일을_문다(
+    monkeypatch: pytest.MonkeyPatch,
+    sample_usage: UsageData,
+    tariff: TariffTable,
+    sample_bill: BillingResult,
+    sample_unit_pv: pd.Series,
+) -> None:
+    """**방위를 바꾸면 조합과 감도도 새로 계산된다** (S274 · S194 2절 · 결함 유형 ④).
+
+    발전 프로파일은 밑줄 인자라 해시에서 빠진다 — 그것을 대표하는 지문이 열쇠에 없으면
+    방위 · 경사각처럼 **용량을 안 바꾸는 입력**을 고쳤을 때 조합만 옛 값으로 남는다. 잉여
+    쪽은 `test_ui.py::test_발전_프로파일을_갈면_잉여도_갈린다` 가 물고 있었고 이 둘은
+    실물로만 봤다 (S194 4-4).
+    """
+    cache, keys = _memo_keys(monkeypatch)
+    spec = CombinationSpec("태양광", CURRENT, pv_capacity_kwp=PV_KWP)
+    shifted = sample_unit_pv.shift(4).fillna(0.0)
+    assert not shifted.equals(sample_unit_pv)
+
+    for unit in (sample_unit_pv, shifted, sample_unit_pv):
+        cache.cached_comparison(
+            sample_usage, tariff, sample_bill, unit, None, "token", (spec,), "", "stamp"
+        )
+    assert keys[0] != keys[1], "프로파일을 갈았는데 조합 비교 열쇠가 그대로입니다."
+    assert keys[0] == keys[2]
+
+    del keys[:]
+    for unit in (sample_unit_pv, shifted, sample_unit_pv):
+        cache.cached_sensitivity(
+            sample_usage, tariff, sample_bill, unit, None, "token", spec, "", "stamp"
+        )
+    assert keys[0] != keys[1], "프로파일을 갈았는데 감도 열쇠가 그대로입니다."
+    assert keys[0] == keys[2]
 
 
 # ------------------------------------------ 수단을 켠 뒤 선택요금을 다시 (⑱)

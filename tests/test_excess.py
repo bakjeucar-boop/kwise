@@ -52,9 +52,7 @@ def test_구간_여섯이_각각_선다() -> None:
     """**금액까지 본다.** 배수만 보면 곱하는 자리가 틀려도 초록이다."""
     # 맨 앞의 달은 예고에 쓴다 (제4항). 그래야 뒤 여섯이 모두 **청구**된다.
     ratios = [0.05, *(ratio for ratio, _ in TIER_CASES)]
-    charge = excess_charges(
-        _months(ratios), contract_kw=CONTRACT_KW, base_rate_won_per_kw=RATE
-    )
+    charge = excess_charges(_months(ratios), contract_kw=CONTRACT_KW, base_rate_won_per_kw=RATE)
 
     assert len(charge.exceeded_months) == 7
     assert len(charge.charged_months) == 6
@@ -100,9 +98,7 @@ def test_경계에서_부동소수_부스러기를_턴다() -> None:
 
 def test_계약전력을_모르면_0원이_아니라_산출하지_않는다() -> None:
     """``applicable`` 이 둘을 가른다. 섞으면 산출물이 0 을 두 뜻으로 말한다."""
-    charge = excess_charges(
-        _months([0.5, 0.5]), contract_kw=None, base_rate_won_per_kw=RATE
-    )
+    charge = excess_charges(_months([0.5, 0.5]), contract_kw=None, base_rate_won_per_kw=RATE)
     assert charge.applicable is False
     assert charge.total_won == 0.0
     assert charge.exceeded_months == ()
@@ -320,7 +316,10 @@ def test_저압_계약형_20kW_이상은_조문_식대로_부가금을_세고_�
     rate = tariff.rates(low).base_won_per_kw
     contract_kw = 3_000.0
     bill = calculate_bill(
-        sample_usage, tariff, low, options=BillingOptions(contract_kw=contract_kw),
+        sample_usage,
+        tariff,
+        low,
+        options=BillingOptions(contract_kw=contract_kw),
         quality=sample_report,
     )
     expected = _first_clause_expected(bill.monthly, contract_kw, rate)
@@ -346,15 +345,25 @@ def test_저압_계약형_20kW_이상은_조문_식대로_부가금을_세고_�
 
     # 넘지 않는 입력 — 0원이고 「안 쟀다」 도 아니다.
     calm = calculate_bill(
-        sample_usage, tariff, low, options=BillingOptions(contract_kw=6_000.0),
+        sample_usage,
+        tariff,
+        low,
+        options=BillingOptions(contract_kw=6_000.0),
         quality=sample_report,
     )
     assert (calm.excess.applicable, calm.total_excess_won) == (True, 0.0)
 
     # 경계 — 20 kW 이상이 1호, 미만은 2호(산출하지 않는다).
-    assert calculate_bill(
-        sample_usage, tariff, low, options=BillingOptions(contract_kw=20.0), quality=sample_report
-    ).excess.applicable is True
+    assert (
+        calculate_bill(
+            sample_usage,
+            tariff,
+            low,
+            options=BillingOptions(contract_kw=20.0),
+            quality=sample_report,
+        ).excess.applicable
+        is True
+    )
     under = calculate_bill(
         sample_usage, tariff, low, options=BillingOptions(contract_kw=19.0), quality=sample_report
     )
@@ -362,8 +371,11 @@ def test_저압_계약형_20kW_이상은_조문_식대로_부가금을_세고_�
 
     # 고압 계약형 — 2호 · 그대로 「산출하지 않았다」.
     high = calculate_bill(
-        sample_usage, tariff, TariffSelection("industrial_a_1", "high_a", "I"),
-        options=BillingOptions(contract_kw=contract_kw), quality=sample_report,
+        sample_usage,
+        tariff,
+        TariffSelection("industrial_a_1", "high_a", "I"),
+        options=BillingOptions(contract_kw=contract_kw),
+        quality=sample_report,
     )
     assert (high.excess.applicable, high.total_excess_won) == (False, 0.0)
     assert NOT_MEASURED_TAIL in excess_not_measured_line(high)
@@ -389,7 +401,10 @@ def test_부가금_경고는_호마다_조문_문턱을_댄다(
 
     def over_contract(selection: TariffSelection, contract_kw: float) -> tuple[list[str], Any]:
         bill = calculate_bill(
-            sample_usage, tariff, selection, options=BillingOptions(contract_kw=contract_kw),
+            sample_usage,
+            tariff,
+            selection,
+            options=BillingOptions(contract_kw=contract_kw),
             quality=sample_report,
         )
         return [n.text for n in bill.notices if n.fact == "quality.over_contract"], bill

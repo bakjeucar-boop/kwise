@@ -1624,9 +1624,9 @@ def _cover(document: DocumentType, sections: DocumentSections) -> None:
             ["작성일", f"{sections.prepared:%Y-%m-%d}"],
             ["적용 요금표 시행일", f"{bill.effective_date}{WHOLE_PERIOD_NOTE}"],
             [
-        "계약종별",
-        f"{bill.contract_label} {bill.voltage_label} {option_label(bill.selection.option)}",
-    ],
+                "계약종별",
+                f"{bill.contract_label} {bill.voltage_label} {option_label(bill.selection.option)}",
+            ],
         ],
     )
     document.add_page_break()
@@ -1820,7 +1820,7 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
         _heading(document, f"{number}.4 현재 요금 구조", level=2)
         # **화면·PPT 와 같은 몫을 센다** (S124 · ②-40). 앞서는 ``base_won``(역률요금
         # 을 뺀 값)을 ``total_won``(담은 값)으로 나누고 있어 **짝이 안 맞았다** —
-        # 역률 85% 를 걸면 이 표의 기본 + 전력량이 합계보다 317,220원 모자라고
+        # 역률 85% 를 걸면 이 표의 기본 + 전력량이 합계보다 6,339,264원 모자라고
         # 비중 합이 99.8% 가 된다. 역률요금이 0원인 자료(간주 92%)에서는 값이 그대로다.
         #
         # **금액은 청구 표와 같은 표기 값이다** (S233 ㄱ · :func:`bill_lines`). 비중은

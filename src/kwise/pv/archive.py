@@ -11,7 +11,7 @@ Open-Meteo 는 호출 제한이 있어 실패할 때가 있다. 실패해도 검
     ④ 둘 다 없으면 중단        0 으로 계산하거나 인접 격자로 대체하지 않는다
 
 저장 단위는 **격자 셀 × 연도** 다. 좌표는
-:data:`kwise.pv.region.GRID_RESOLUTION_DEG` 로 반올림하므로 229개 시군구가
+:data:`kwise.pv.region.GRID_RESOLUTION_DEG` 로 반올림하므로 228개 시군구가
 135개 셀로 뭉친다 (9차 세션의 캐시 키 규약과 같다).
 
 용량은 ``int16 + 스케일 팩터`` 로 줄인다 (:data:`SCALE_FACTORS`). 일사는 0.1 W/m²,
@@ -714,7 +714,7 @@ def fetch_cell_year(
 def grid_cells_for(regions: Iterable[Region]) -> tuple[tuple[float, float], ...]:
     """시군구 목록을 격자 셀로 접는다. **중복이 여기서 사라진다.**
 
-    229개 시군구가 0.25° 격자에서 135개 셀이 된다. 서울 25개 구는 4셀이다.
+    228개 시군구가 0.25° 격자에서 135개 셀이 된다. 서울 25개 구는 4셀이다.
     """
     seen: dict[str, tuple[float, float]] = {}
     for region in regions:

@@ -39,8 +39,8 @@ if TYPE_CHECKING:  # streamlit 을 도구 시작에 들이지 않는다 — 형�
 APP = PROJECT_ROOT / "src" / "kwise" / "ui" / "app.py"
 LARGE_CSV = PROJECT_ROOT / "input" / "사용량조회_20240429.csv"
 SMALL_CSV = PROJECT_ROOT / "input" / "사용량조회_소형사무빌딩.csv"
-#: 용인 소규모 건물 실측 (61세션). **회귀 케이스가 아니라 디버깅용**이다 —
-#: 케이스 스터디 목록에는 넣지 않았다 (61세션 8절).
+#: 용인 소규모 건물 실측 (61세션). 케이스 스터디도 이 자료를 쓴다 — 95세션에 R1 로
+#: 올랐다 (`kwise.report.casestudy.YONGIN_USAGE_NAME`).
 YONGIN_XLSX = PROJECT_ROOT / "input" / "전기사용량_소형건물.xlsx"
 #: 산업용(갑)저압 실측 (S152 에 들어왔다 · `docs\TEST_DATA.md` 7절).
 #: **저장소에서 실물 청구서와 맞대 볼 수 있는 유일한 자료다** — 계약종별 ·

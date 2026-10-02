@@ -361,9 +361,7 @@ def test_최대수요전력은_접지_않는다(sample_usage: UsageData, sample_
     observed = sample_usage.meta.max_demand_kw
     assert observed == pytest.approx(5_293.44)  # 접히면 5,293.0 이 된다
     assert observed != round_kw(observed)
-    assert sample_usage.meta.load_factor == pytest.approx(
-        sample_usage.meta.mean_kw / observed
-    )
+    assert sample_usage.meta.load_factor == pytest.approx(sample_usage.meta.mean_kw / observed)
     # 요금 쪽은 접혀 있다 — 같은 자료에서 둘이 다른 값인 것이 이 판의 결론이다.
     assert sample_bill.billing_demand_kw == pytest.approx(5_293.0)
 
