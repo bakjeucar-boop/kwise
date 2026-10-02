@@ -1778,7 +1778,9 @@ def _chapter_diagnosis(document: DocumentType, sections: DocumentSections, numbe
                 f"{(pattern.off_hours_energy_share or 0) * 100:,.1f}%",
                 # 「평일」 을 적는다 (S271 결정 4) — 주말은 전부 밖이라 0 ~ 24시 벌에서
                 # 「운영 0~24시 밖」 이 뜻 없는 말이 됐다. 화면 · PPT 각주와 같은 꼴이다.
-                f"평일 {pattern.operating_hours[0]}~{pattern.operating_hours[1]}시 밖",
+                # 주말에도 가동하는 건물은 모든 날에 적용해 「평일」 을 뺀다 (S272 결정 2).
+                ("" if pattern.operating_every_day else "평일 ")
+                + f"{pattern.operating_hours[0]}~{pattern.operating_hours[1]}시 밖",
             ],
         ],
     )

@@ -112,8 +112,6 @@ def diagnose(
     interval = usage.meta.interval_minutes
     opts = options if options is not None else BillingOptions()
 
-    pattern = load_pattern(usage.kw, interval, operating_hours=operating_hours)
-
     # 요금적용전력은 중간·최대부하 시간대만 대상이다 (요구사항서 5.2 ①).
     contract_type = contract.selection.contract_type if contract else None
     type_rules = table.contract(contract_type) if contract_type else None
@@ -187,6 +185,15 @@ def diagnose(
         operating_hours=operating_hours,
         off_days=dr_off_days,
         jeju=jeju,
+    )
+    # **주말에도 가동하는 건물은 운영시간을 모든 날에 적용한다** (S272 결정 2). 판정은 DR
+    # 진단의 그 갈래 하나다 — 주말을 통째로 「운영시간 외」 로 세면 24시간 공장의 주말 몫이
+    # 그 이름으로 선다. 갈래가 안 서면 평일만 적용하던 그대로다.
+    pattern = load_pattern(
+        usage.kw,
+        interval,
+        operating_hours=operating_hours,
+        operating_every_day=bool(dr.unassessed_reason),
     )
 
     if contract is None:

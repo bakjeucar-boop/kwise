@@ -143,6 +143,11 @@ class DemandResponseResult:
     investment_won: float = 0.0
     certainty: Certainty = Certainty.MEDIUM
     notices: tuple[Notice, ...] = field(default=())
+    unassessed_reason: str = ""
+    """감축 가능량을 **산출하지 못한 까닭** (S272 결정 1 · :attr:`DrProfile.unassessed_reason`).
+
+    있으면 감축 가능량 · 등록 권장 용량 · 참여 시간 · 정산금 칸은 0 이 아니라 「미산출」 이고
+    이 글이 그 사유다. 수는 0 그대로 둔다 — 금액을 만드는 식은 건드리지 않는다."""
 
     @property
     def has_low_load_days(self) -> bool:
@@ -156,13 +161,16 @@ class DemandResponseResult:
     @property
     def period_settlement_won(self) -> float | None:
         """기간 정산금 — 관측 기간 감축 가능량 × 단가 (S246 결정 1 의 식 · S256 고4 · 고7)."""
-        if self.unit_price_won_per_kwh is None:
+        if self.unit_price_won_per_kwh is None or self.unassessed_reason:
             return None
         return self.period_reducible_kwh * self.unit_price_won_per_kwh
 
     @property
     def settlement_label(self) -> str:
         """금액 또는 사유. **빈칸으로 두지 않는다.**"""
+        if self.unassessed_reason:
+            # 단가를 넣어도 금액이 안 선다 — 사유는 실제로 막은 것을 말한다 (S238 결정 3).
+            return f"미산출 — {self.unassessed_reason}"
         if self.settlement_won is None:
             return UNPRICED_REASON
         return f"{self.settlement_won:,.0f}"
@@ -202,7 +210,14 @@ def evaluate_demand_response(
     annual_kwh = profile.annual_reducible_kwh * scale
     period_kwh = profile.period_reducible_kwh * scale
 
-    settlement = None if unit_price_won_per_kwh is None else annual_kwh * unit_price_won_per_kwh
+    # **주말에도 가동해 저부하 평일을 세지 않은 벌은 0 이 아니라 「미산출」 이다** (S272 결정 1).
+    # 단가를 넣어도 정산금을 세우지 않는다 — 0 kWh × 단가 = 0원은 잰 값이 아니다.
+    unassessed = profile.unassessed_reason
+    settlement = (
+        None
+        if unit_price_won_per_kwh is None or unassessed
+        else annual_kwh * unit_price_won_per_kwh
+    )
     penalty_per_kw = (
         None
         if penalty_price_won_per_kwh is None
@@ -285,7 +300,15 @@ def evaluate_demand_response(
         f"정산 단가는 전력거래소가 지역별 SMP로 정산하는 몫과 사업자 수수료에, 위약금은 "
         f"{price_name}에 달려 있습니다 (전력시장운영규칙 별표26)."
     )
-    if unit_price_won_per_kwh is None:
+    if unassessed:
+        # 0 을 값으로 적는 근거 둘과 「감축 가능량(kWh)만 참고」 는 이 벌에서 참이 아니다 —
+        # 안 세운다 (S207 · S261 꼴). 까닭은 진단이 낸 그 한 줄이 말한다.
+        notices = [
+            item
+            for item in notices
+            if item.fact not in {"dr.registered_capacity", "dr.annual_reducible"}
+        ]
+    elif unit_price_won_per_kwh is None:
         notices.append(
             block(
                 "정산 단가를 입력하지 않아 금액을 산출하지 않았습니다. "
@@ -337,4 +360,5 @@ def evaluate_demand_response(
         bid_restriction_months=months,
         participation_notice=profile.notice,
         notices=tuple(notices),
+        unassessed_reason=unassessed,
     )

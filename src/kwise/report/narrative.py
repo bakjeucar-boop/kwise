@@ -31,7 +31,7 @@ from typing import Protocol
 
 from kwise import money
 from kwise.diagnose import ChargeStructure, ImprovementSummary, PeakProfile
-from kwise.diagnose.dr import JUDGE_WINDOW, WEEKEND_OPERATING_FACT, DrProfile
+from kwise.diagnose.dr import JUDGE_WINDOW, DrProfile
 from kwise.diagnose.summary import PvPotential
 from kwise.measures.catalog import measure_kind
 from kwise.quality import (
@@ -170,9 +170,13 @@ def terms(pattern: LoadPattern | None = None) -> dict[str, Term]:
     night = pattern.night_hours if pattern is not None else DEFAULT_NIGHT_HOURS
     operating = pattern.operating_hours if pattern is not None else DEFAULT_OPERATING_HOURS
     night_text = f"{night[0]}시{_RANGE}{night[1]}시"
-    operating_text = f"평일 {operating[0]}시{_RANGE}{operating[1]}시"
+    # 주말에도 가동하는 건물은 운영시간을 모든 날에 적용했다 — 「평일」 과 「주말은 전부
+    # 밖」 이 그 벌에서 참이 아니다 (S272 결정 2).
+    every_day = pattern is not None and pattern.operating_every_day
+    weekday = "" if every_day else "평일 "
+    operating_text = f"{weekday}{operating[0]}시{_RANGE}{operating[1]}시"
     night_short = f"{night[0]}{_RANGE}{night[1]}시"
-    operating_short = f"평일 {operating[0]}{_RANGE}{operating[1]}시"
+    operating_short = f"{weekday}{operating[0]}{_RANGE}{operating[1]}시"
     # **기본요금이 무엇에 매이는지는 여기서 말하지 않는다** (S170 2절). 피크형이면
     # 피크가, 하한형이면 계약전력 × 하한비율이, 계약형(제68조 ②)이면 계약전력이
     # 기본요금을 정한다 — 이 표는 갈래를 모르므로 kW 와 모양만 적는다. 갈래마다
@@ -197,7 +201,8 @@ def terms(pattern: LoadPattern | None = None) -> dict[str, Term]:
         ),
         "off_hours_energy_share": Term(
             "운영시간 외 부하 비중",
-            f"운영시간({operating_text}) 밖 사용량 ÷ 전체 사용량. 주말은 전부 밖입니다.",
+            f"운영시간({operating_text}) 밖 사용량 ÷ 전체 사용량."
+            + ("" if every_day else " 주말은 전부 밖입니다."),
             # 24시간 가동(0 ~ 24시)이면 평일에 문 닫은 시간이 없다 — 「문 닫은 동안」 을
             # 말하는 읽는 법 줄을 뺀다 (S271 결정 4 · S207).
             ""
@@ -850,9 +855,8 @@ def dr_lead(profile: DrProfile | None) -> str:
         return ""
     # 주말에도 가동하는 건물은 저부하 평일을 세지 않았다 — 「쉬는 날 수준까지 내려오는
     # 평일이 없어」 가 그 건물에서 참이 아니라 진단이 적은 그 한 줄을 그대로 쓴다 (S271 결정 3).
-    gate = next((n.text for n in profile.notices if n.fact == WEEKEND_OPERATING_FACT), "")
-    if gate:
-        return gate
+    if profile.unassessed_reason:
+        return profile.unassessed_reason
     if not profile.low_load_days:
         return (
             f"거래 가능일 {profile.eligible_days:,}일 가운데 부하가 쉬는 날 수준까지 "

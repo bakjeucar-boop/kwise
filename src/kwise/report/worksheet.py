@@ -452,6 +452,9 @@ def demand_response_worksheet(result: DemandResponseResult) -> Worksheet:
     """7.3 경제성DR — **기준선 → 문턱 → 저부하일 → 감축량.**"""
     baseline = result.weekend_baseline_kw
     threshold = result.low_load_threshold_kw
+    # 저부하 평일을 세지 않은 벌(주말에도 가동)은 0 이 아니라 「미산출」 이다 (S272 결정 1).
+    counted = not result.unassessed_reason
+    hours = f" {result.participation_hours:,.0f}시간" if counted else ""
     rows: list[WorkRow] = [
         WorkRow("기준선", f"주말·공휴일 {JUDGE_WINDOW} 평균", _kw(baseline)),
         WorkRow(
@@ -464,24 +467,30 @@ def demand_response_worksheet(result: DemandResponseResult) -> Worksheet:
         ),
         WorkRow("평일 정상 평균", "", _kw(result.normal_weekday_mean_kw)),
         WorkRow(
-            "등록 권장 용량", "저부하일 여력 분포의 하위값", _kw(result.registered_capacity_kw)
+            "등록 권장 용량",
+            "저부하일 여력 분포의 하위값",
+            _kw(result.registered_capacity_kw if counted else None),
         ),
         WorkRow(
             "감축 가능량",
-            f"Σ(저부하일 여력 × 참여 시간 {result.participation_hours:,.0f}시간)",
-            _kwh(result.period_reducible_kwh),
+            f"Σ(저부하일 여력 × 참여 시간{hours})",
+            _kwh(result.period_reducible_kwh if counted else None),
         ),
         # **「연간 환산」 이 아니라 「12개월 환산」 이다** (S214 · 요구사항서 5.5).
         # 바로 윗줄이 기간 값(「감축 가능량」)이라 **한 표에 두 수가 나란히 선다** —
         # 이름이 갈려야 어느 쪽인지 읽힌다.
-        WorkRow("12개월 환산", "관측 기간 → 365일", _kwh(result.annual_reducible_kwh)),
+        WorkRow(
+            "12개월 환산",
+            "관측 기간 → 365일",
+            _kwh(result.annual_reducible_kwh if counted else None),
+        ),
     ]
     if result.unit_price_won_per_kwh is not None:
         rows.append(
             WorkRow(
                 "정산금",
-                f"{result.annual_reducible_kwh:,.0f} kWh × "
-                f"{result.unit_price_won_per_kwh:,.0f} 원/kWh",
+                (f"{result.annual_reducible_kwh:,.0f} kWh" if counted else "12개월 환산")
+                + f" × {result.unit_price_won_per_kwh:,.0f} 원/kWh",
                 _won(result.settlement_won),
                 total=True,
             )

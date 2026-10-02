@@ -59,6 +59,8 @@ class LoadPattern:
     operating_mean_kw: float | None
     off_hours_mean_kw: float | None
     off_hours_energy_share: float | None
+    operating_every_day: bool = False
+    """운영시간을 주말에도 적용했는가 (S272 결정 2). 풀이 글자가 이 값을 읽는다."""
 
 
 def _mean(series: pd.Series) -> float | None:
@@ -77,6 +79,7 @@ def load_pattern(
     *,
     night_hours: tuple[int, int] = DEFAULT_NIGHT_HOURS,
     operating_hours: tuple[int, int] = DEFAULT_OPERATING_HOURS,
+    operating_every_day: bool = False,
 ) -> LoadPattern:
     """부하 패턴 지표를 산출한다.
 
@@ -85,6 +88,8 @@ def load_pattern(
         interval_minutes: 검침 간격. 라벨을 구간 시작으로 되돌리는 데 쓴다.
         night_hours: 야간 구간 ``(시작, 끝)``. 자정을 넘는 구간을 허용한다.
         operating_hours: 운영시간 ``(시작, 끝)``. 평일 이 시간대 밖이 운영시간 외다.
+        operating_every_day: 주말에도 가동하는 건물인가 (S272 결정 2). 참이면 운영시간을
+            **모든 날**에 적용한다 — 주말을 통째로 「밖」 으로 세지 않는다.
 
     Returns:
         :class:`LoadPattern`. 관측치가 없으면 ValueError.
@@ -105,7 +110,9 @@ def load_pattern(
     is_weekend = weekday >= 5
 
     open_start, open_end = operating_hours
-    is_operating = (hour >= open_start) & (hour < open_end) & ~is_weekend
+    is_operating = (hour >= open_start) & (hour < open_end)
+    if not operating_every_day:
+        is_operating &= ~is_weekend
 
     mean_kw = float(observed.mean())
     max_kw = float(observed.max())
@@ -137,4 +144,5 @@ def load_pattern(
         operating_mean_kw=operating_mean,
         off_hours_mean_kw=off_hours_mean,
         off_hours_energy_share=_ratio(off_hours_energy, total_energy),
+        operating_every_day=operating_every_day,
     )

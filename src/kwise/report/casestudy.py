@@ -844,10 +844,15 @@ def run_one_case(
                 SAVING: None,
                 "12개월 환산(원)": None,
                 "확실성": str(response.certainty),
+                # 저부하 평일을 세지 않은 벌은 0 이 아니라 「미산출」 이다 (S272 결정 1).
                 "비고": (
                     f"거래 가능일 {diagnosis.dr.eligible_days}일 · "
-                    f"등록 권장 {diagnosis.dr.registered_capacity_kw:,.0f} kW · "
-                    f"연간 감축 {response.annual_reducible_kwh:,.0f} kWh"
+                    + (
+                        "등록 권장 · 연간 감축 미산출"
+                        if response.unassessed_reason
+                        else f"등록 권장 {diagnosis.dr.registered_capacity_kw:,.0f} kW · "
+                        f"연간 감축 {response.annual_reducible_kwh:,.0f} kWh"
+                    )
                 ),
             }
         )

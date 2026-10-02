@@ -199,7 +199,12 @@ def standalone_rows(
         rows.append(
             StandaloneRow(
                 kind=measure_kind("demand_response"),
-                reduction=f"{demand_response.annual_reducible_kwh:,.0f} kWh 입찰",
+                # 저부하 평일을 세지 않은 벌은 0 kWh 가 아니라 「미산출」 이다 (S272 결정 1).
+                reduction=(
+                    UNPRICED
+                    if demand_response.unassessed_reason
+                    else f"{demand_response.annual_reducible_kwh:,.0f} kWh 입찰"
+                ),
                 annual_saving_won=demand_response.settlement_won,
                 investment_won=0.0,
                 payback_years=payback_years(0.0, demand_response.settlement_won or 0.0),

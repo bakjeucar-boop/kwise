@@ -621,9 +621,17 @@ def measure_summary_frame(
             }
         )
     if demand_response is not None:
+        # 저부하 평일을 세지 않은 벌(주말에도 가동)은 0 이 아니라 「미산출」 이다 (S272 결정 1) —
+        # 등록 용량과 감축량 조각을 적지 않고(사양을 못 정한 ESS 줄의 꼴), 12개월 칸의 사유가
+        # 그 까닭을 말한다.
+        counted = not demand_response.unassessed_reason
         rows.append(
             {
-                "수단": f"경제성DR (등록 {demand_response.registered_capacity_kw:,.0f} kW)",
+                "수단": (
+                    f"경제성DR (등록 {demand_response.registered_capacity_kw:,.0f} kW)"
+                    if counted
+                    else "경제성DR"
+                ),
                 "투자비(원)": format_won(0.0),
                 # **기간 칸은 기간 정산금이다** (S246 결정 1 · S256 고7) — 관측 기간 감축
                 # 가능량 × 단가. 두 칸 다 이 표의 다른 줄처럼 천 원 절사다. 단가가 없으면
@@ -640,12 +648,17 @@ def measure_summary_frame(
                 "비고": (
                     f"거래 가능일 {demand_response.eligible_days}일 중 저부하 평일 "
                     # **「연간」 이 아니라 「12개월 환산」 이다** (S214).
-                    f"{demand_response.low_load_days}일. 12개월 환산 감축 가능량 "
-                    f"{demand_response.annual_reducible_kwh:,.0f} kWh "
-                    f"= Σ(저부하일별 감축 여력 × 참여 가능 시간, 합 "
-                    f"{demand_response.participation_hours:,.0f}시간, 하루 상한 "
-                    f"{demand_response.daily_hours_cap:,.0f}시간). "
-                    f"{demand_response.participation_notice} "
+                    f"{demand_response.low_load_days}일. "
+                    + (
+                        "12개월 환산 감축 가능량 "
+                        f"{demand_response.annual_reducible_kwh:,.0f} kWh "
+                        f"= Σ(저부하일별 감축 여력 × 참여 가능 시간, 합 "
+                        f"{demand_response.participation_hours:,.0f}시간, 하루 상한 "
+                        f"{demand_response.daily_hours_cap:,.0f}시간). "
+                        if counted
+                        else ""
+                    )
+                    + f"{demand_response.participation_notice} "
                     "투자비는 0원이지만 감축 미달 시 실적위약금이 있습니다 "
                     "(전력시장운영규칙 별표26). " + DR_ADVISORY
                 ),
@@ -968,15 +981,20 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
         )
     if diagnosis.dr is not None:  # 6.6 경제성DR
         dr = diagnosis.dr
+        # 저부하 평일을 세지 않은 벌(주말에도 가동)은 0 이 아니라 「미산출」 이다 (S272 결정 1).
+        counted = not dr.unassessed_reason
         rows.extend(
             [
                 ("DR 거래 가능일", f"{dr.eligible_days}일 / 전체 {dr.total_days}일"),
                 ("DR 제외일 (토·일·공휴일)", f"{dr.excluded_days}일"),
                 (
                     "DR 등록 권장 용량 (저부하일 여력 하위값)",
-                    f"{dr.registered_capacity_kw:,.0f} kW",
+                    f"{dr.registered_capacity_kw:,.0f} kW" if counted else UNPRICED,
                 ),
-                ("DR 평균 기준 여력", f"{dr.mean_reducible_kw:,.0f} kW"),
+                (
+                    "DR 평균 기준 여력",
+                    f"{dr.mean_reducible_kw:,.0f} kW" if counted else UNPRICED,
+                ),
                 (f"DR {JUDGE_WINDOW}", dr.window_label),
                 (
                     "DR 저부하 판정 기준선 (주말·공휴일 평균 × 배수)",
@@ -989,9 +1007,10 @@ def _diagnosis_frame(diagnosis: Diagnosis) -> pd.DataFrame:
                 ("DR 저부하 평일", f"{dr.low_load_days_count}일"),
                 (
                     # **「연간」 이 아니라 「12개월 환산」 이다** (S214).
-                    f"DR 12개월 환산 감축 가능량 (참여 {dr.total_participation_hours:,.0f}시간, "
-                    f"하루 상한 {dr.daily_hours_cap:,.0f}시간)",
-                    f"{dr.annual_reducible_kwh:,.0f} kWh",
+                    "DR 12개월 환산 감축 가능량 (참여 "
+                    + (f"{dr.total_participation_hours:,.0f}시간" if counted else UNPRICED)
+                    + f", 하루 상한 {dr.daily_hours_cap:,.0f}시간)",
+                    f"{dr.annual_reducible_kwh:,.0f} kWh" if counted else UNPRICED,
                 ),
                 ("DR 참여 안내", dr.notice),
                 ("DR 자원 유형", ", ".join(str(item) for item in dr.resource_types)),

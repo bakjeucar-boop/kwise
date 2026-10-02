@@ -450,6 +450,15 @@ class DrProfile:
         return self.registered_capacity_kw >= dr_reference_capacity_kw()
 
     @property
+    def unassessed_reason(self) -> str:
+        """감축 가능량을 **산출하지 못한 까닭** — 주말에도 가동하는 건물의 그 한 줄 (S272 결정 1).
+
+        이 갈래의 0 은 「재어 보니 0」 이 아니라 「세지 않았다」 다. 화면 · 산출물은 이
+        글이 있으면 그 칸을 「미산출」 로 적고 이 글을 사유로 쓴다. 산출했으면 빈 글이다.
+        """
+        return next((n.text for n in self.notices if n.fact == WEEKEND_OPERATING_FACT), "")
+
+    @property
     def low_load_days_count(self) -> int:
         return len(self.low_load_days)
 

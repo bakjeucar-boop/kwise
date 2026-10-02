@@ -554,6 +554,9 @@ def _demand_response(
     # **넷 다 툴팁을 단다** (31세션 3-2). 이름만으로는 무엇을 센 것인지 알 수
     # 없다 — 「거래 가능일」 이 평일 전부인지 참여할 수 있는 날인지, 「등록 권장
     # 용량」 이 평균인지 보수값인지가 갈린다.
+    # 저부하 평일을 세지 않은 벌(주말에도 가동)은 0 이 아니라 「미산출」 이다 (S272 결정 1) —
+    # 까닭은 아래 주의(⚠) 한 줄이 말한다.
+    counted = not result.unassessed_reason
     columns = st.columns(4)
     columns[0].metric(
         "거래 가능일",
@@ -576,7 +579,7 @@ def _demand_response(
         "등록 권장 용량",
         # **소수점을 없앤다** (31세션 3-3). 저부하일 여력 분포의 분위수라 원래
         # 소수 자리에 뜻이 없고, 사업자와 계약할 때 적는 값도 정수다.
-        fmt.kw(result.registered_capacity_kw, decimals=0),
+        fmt.kw(result.registered_capacity_kw, decimals=0) if counted else notices.UNPRICED,
         help=fmt.markdown_safe(
             "사업자 등록 시 제시할 보수적인 감축 가능 용량입니다.\n\n"
             "저부하일 여력 분포의 하위값이라 어느 참여일에나 지킬 수 있습니다 — "
@@ -587,7 +590,7 @@ def _demand_response(
         # **「연간」 이 아니라 「12개월 환산」 이다** (S214). 값에 「/년」 꼬리표가
         # 없어 **이름이 유일한 표식**이다.
         "12개월 환산 감축 가능량",
-        fmt.kwh(result.annual_reducible_kwh),
+        fmt.kwh(result.annual_reducible_kwh) if counted else notices.UNPRICED,
         help=fmt.markdown_safe(
             "실제 참여 가능 시간과 일별 감축 여력을 반영한 12개월 환산 감축 잠재량입니다.\n\n"
             "저부하일마다 (그날 여력 × 그날 참여 가능 시간)을 더해 365일로 "
@@ -599,7 +602,7 @@ def _demand_response(
         f"{JUDGE_WINDOW} {fmt.markdown_safe(diagnosis.dr.window_label)} · 하루 한도(가정) "
         f"{dr_max_events_per_day()}회 × 최대 {fmt.hours(dr_event_hours()[1], decimals=0)} "
         f"(하루 {fmt.hours(result.daily_hours_cap, decimals=0)}) · 참여 가능 시간 합 "
-        f"{fmt.hours(result.participation_hours, decimals=0)}"
+        f"{fmt.hours(result.participation_hours, decimals=0) if counted else notices.UNPRICED}"
     )
     if result.weekend_baseline_kw is not None and result.low_load_threshold_kw is not None:
         st.caption(
@@ -633,7 +636,7 @@ def _demand_response(
             if result.low_load_days:
                 tables.show(result.low_load_day_table, hide_index=True, width="stretch")
             _off_day_picker(result, off_days)
-    if not result.low_load_days:
+    if not result.low_load_days and counted:
         st.write("저부하 평일이 없어 감축 가능량을 0 으로 두었습니다.")
     if result.is_priced:
         # 정산금은 12개월 환산 감축 가능량 × 단가다 — 이름을 단다 (S219 규칙 나).
