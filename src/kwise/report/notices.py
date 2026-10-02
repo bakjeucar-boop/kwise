@@ -93,6 +93,7 @@ from kwise import money
 from kwise.io import interval_label
 from kwise.measures.catalog import measure_kind
 from kwise.money import TRUNCATION_FOOTNOTE
+from kwise.notices import CONTRACT_MARGIN_NOTICE
 from kwise.rules import diff_from_defaults
 from kwise.tariff import (
     AMI_BASIS_NOTICE as _SCREEN_AMI_BASIS_NOTICE,
@@ -190,10 +191,8 @@ def without_arbitrage(notices: tuple[Notice, ...]) -> tuple[Notice, ...]:
     return tuple(item for item in notices if not item.fact_base.startswith(_ARBITRAGE_FACTS))
 
 
-# 요구사항서 9.4 — 필수 경고
-CONTRACT_CHANGE_WARNING = (
-    "계약전력을 하향할 경우, 예측 오차와 기상 변동을 고려하여 충분한 여유를 확보하십시오."
-)
+# 요구사항서 9.4 — 필수 경고. 글자는 :data:`kwise.notices.CONTRACT_MARGIN_NOTICE` 한 자리다 (S275).
+CONTRACT_CHANGE_WARNING = CONTRACT_MARGIN_NOTICE
 
 
 #: 12개월 미만 자료의 하향 권고에 붙는 한 줄 (S271 결정 2 · 사람 결정). 목표 계약전력은 분석

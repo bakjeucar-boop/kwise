@@ -395,6 +395,34 @@ def test_Excel_요약이_여유_확보_안내를_한_번만_싣는다(
     ], 조합
 
 
+def test_계약전력_하향_여유_안내_글자는_한_자리에서_만든다() -> None:
+    """**같은 문장을 세 자리가 따로 적지 않는다** (S275 결정 1 · 102세션에 올린 뿌리).
+
+    `diagnose\\contract.py` · `measures\\contract.py` · `report\\notices.py` 가 같은 글자를
+    날 문자열로 하나씩 들고 있었다 — 글자가 같은지는 못이 물었지만 자리가 셋이라 한 자리만
+    고치면 갈렸다. 이제 글자는 :data:`kwise.notices.CONTRACT_MARGIN_NOTICE` 하나이고 세 이름은
+    그것을 가리킨다. **소스에 그 문장을 적은 파일이 하나뿐인지도 본다** — 넷째 사본이 서면 운다.
+    """
+    from kwise import notices as home
+    from kwise.diagnose.contract import _MARGIN_NOTICE
+    from kwise.measures import MARGIN_NOTICE
+    from kwise.report.notices import CONTRACT_CHANGE_WARNING
+
+    for name, text in (
+        ("diagnose.contract", _MARGIN_NOTICE),
+        ("measures.contract", MARGIN_NOTICE),
+        ("report.notices", CONTRACT_CHANGE_WARNING),
+    ):
+        assert text is home.CONTRACT_MARGIN_NOTICE, name
+    root = Path("src") / "kwise"
+    written = [
+        path.relative_to(root).as_posix()
+        for path in sorted(root.rglob("*.py"))
+        if "충분한 여유를 확보하십시오" in path.read_text(encoding="utf-8")
+    ]
+    assert written == ["notices.py"], written
+
+
 # ==================================================== ⑤ 사실 ID (20세션)
 
 

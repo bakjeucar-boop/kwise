@@ -388,10 +388,11 @@ def test_케이스_스터디의_역률_개선은_넣은_역률에서_출발한�
             result.baseline.total_base_won * ratio, abs=1.0
         ), result.definition.key
     # 재료 — 두 벌이 92 벌과 갈린다(갈리지 않으면 입력을 안 읽어도 초록이다).
-    c1, c8, r4 = (
+    picked: list[dict[str, Any]] = [
         next(row for row in study.find(key).measure_rows if str(row["수단"]).startswith("7.4"))
         for key in ("C1", "C8", "R4")
-    )
+    ]
+    c1, c8, r4 = picked
     assert float(c8[SAVING]) > float(c1[SAVING]) > float(r4[SAVING]) == 0.0
     checks = {
         item.scope: item.name

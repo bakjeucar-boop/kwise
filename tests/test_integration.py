@@ -641,6 +641,10 @@ def test_기상_취득에_실패해도_화면이_살아_있다(monkeypatch: pyte
 
     app = _app(**_on("solar"))
     app.button(key="solar_run").click().run(timeout=900)
+    # **모의 실패로 채운 캐시를 남기지 않는다** (S275 결정 3). 1단계가 기온을 못 받아
+    # ``cached_daily_temperature`` 에 ``None`` 을 남기는데, 그 열쇠(같은 자료 · 같은 지역)를
+    # 같은 프로세스의 뒤 시험이 받아 기온 그림이 사라졌다 — S235 에 덱 벌 두 못이 빨갰다.
+    st.cache_data.clear()
     assert not app.exception, app.exception
     assert any("기상 자료를 얻지 못해" in str(item.value) for item in app.error)
 

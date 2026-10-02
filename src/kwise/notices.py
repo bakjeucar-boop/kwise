@@ -46,6 +46,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 
 __all__ = [
+    "CONTRACT_MARGIN_NOTICE",
     "Notice",
     "Severity",
     "basis",
@@ -64,6 +65,14 @@ __all__ = [
     "unidentified",
     "warn",
 ]
+
+#: 계약전력 하향 여유 안내 (요구사항서 9.4 필수 경고). **글자는 여기 하나다** (S275 결정 1) —
+#: `diagnose\contract.py` · `measures\contract.py` · `report\notices.py` 가 제 이름으로 이 값을
+#: 가리킨다. 102세션부터 세 자리에 같은 글자가 따로 적혀 있었다. 여기 두는 까닭은 셋이 다
+#: 들일 수 있는 자리가 이 모듈뿐이어서다 (`diagnose\` 는 `measures\` 를 실행 때 못 들인다).
+CONTRACT_MARGIN_NOTICE = (
+    "계약전력을 하향할 경우, 예측 오차와 기상 변동을 고려하여 충분한 여유를 확보하십시오."
+)
 
 
 class Severity(Enum):

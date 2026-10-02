@@ -30,7 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from kwise.notices import Notice, block, warn
+from kwise.notices import CONTRACT_MARGIN_NOTICE, Notice, block, warn
 from kwise.rules import rule_value
 from kwise.tariff import TariffSelection, round_kw
 
@@ -54,9 +54,7 @@ def deemed_power_factor_pct() -> float:
     return float(rule_value("power_factor.deemed_lagging_pct"))
 
 
-_MARGIN_NOTICE = (
-    "계약전력을 하향할 경우, 예측 오차와 기상 변동을 고려하여 충분한 여유를 확보하십시오."
-)
+_MARGIN_NOTICE = CONTRACT_MARGIN_NOTICE
 _FLOOR_UNKNOWN = (
     "요금적용전력 하한 비율이 요금 데이터에 없어 절감액을 산출하지 않았습니다. "
     "기본요금이 계약전력에 붙는 종별이면 저압·고압 전제부터 청구서로 "

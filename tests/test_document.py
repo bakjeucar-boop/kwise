@@ -372,6 +372,7 @@ def test_요금_구조_표의_기본_더하기_전력량이_합계다(
         return float(cells[label].split("(")[1].rstrip("%)"))
 
     # 두 칸이 각자 천원 절사되므로 합계와 1,000원까지 어긋난다.
+    assert diagnosis.structure is not None
     total = int(
         money.won(diagnosis.structure.total_won, reason="—").removesuffix("원").replace(",", "")
     )

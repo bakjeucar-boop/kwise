@@ -613,6 +613,7 @@ def test_목표는_초과_0_안의_총액_최저이고_동점이면_현행에_�
             usage, bill, contract_kw=contract_kw, table=tariff, options=options
         )
         target = result.target_contract_kw
+        assert target is not None
         assert target == pytest.approx(expected_target)
 
         # ㄱ. 목표에서 초과사용부가금이 0 이다 — 「초과 0 인 값 가운데」 의 앞 절반.
@@ -2758,6 +2759,7 @@ def test_계약전력을_낮추면_선택요금_순위가_실제로_뒤집힌다
         options=BillingOptions(contract_kw=FLIP19_CONTRACT_KW),
     )
     target = adjustment.target_contract_kw
+    assert target is not None
     assert target == pytest.approx(4_000.0)
 
     now = _flip19_totals(usage, table, FLIP19_CONTRACT_KW)

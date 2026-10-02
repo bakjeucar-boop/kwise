@@ -72,6 +72,28 @@ def test_단수_차이_조정은_다른_표에서_선_줄을_그대로_두고_�
     assert shown[0] - shown[1] + shown[2] == money.truncate_won(66_100.0)
 
 
+#: 줄 합을 적힌 합계에 맞추는 식을 부르는 자리 — 「파일 → 부름 수」 (S275 결정 1).
+#: 청구서 줄 · 태양광 줄 · ESS 줄 · 역률 표 / 계약전력 표 / 월별 명세(두 셈을 함께 못 세우는 달).
+BALANCE_SITES = {"report/excel.py": 1, "report/notices.py": 4, "report/worksheet.py": 1}
+
+
+def test_줄_합을_합계에_맞추는_자리는_사실마다_한_곳이다() -> None:
+    """**부분 합의 표기 값은 사실마다 한 자리가 만든다** (S233 ㄱ · S243 결정 1 · S275 결정 1).
+
+    한 표의 줄을 올려 셈을 맞추면 그 줄이 **다른 산출물에도 서서** 거기서는 옛 글자로
+    남는다(S232). 그래서 맞추는 식(:func:`kwise.money.balance_won`)을 부르는 자리가 사실마다
+    하나다 — 새 자리가 서면 여기서 빨개진다. 같은 사실이면 있는 자리의 값을 읽고, 새 사실이면
+    이 표에 그 자리를 적는다.
+    """
+    found = {
+        path.relative_to(root).as_posix(): count
+        for root in (SRC, SRC.parents[1] / "tools")
+        for path in sorted(root.rglob("*.py"))
+        if (count := len(re.findall(r"(?<!def )\bbalance_won\(", path.read_text(encoding="utf-8"))))
+    }
+    assert found == BALANCE_SITES, found
+
+
 @pytest.mark.parametrize(
     ("current", "best"),
     [(3_351_089_400.0, 3_297_509_600.0), (154_645_100.0, 152_684_900.0), (5_000.0, 5_000.0)],

@@ -50,7 +50,7 @@ import pandas as pd
 from kwise.io import UsageData
 from kwise.measures.base import Certainty, annualize
 from kwise.money import NO_SAVING, won
-from kwise.notices import Notice, basis, block, warn
+from kwise.notices import CONTRACT_MARGIN_NOTICE, Notice, basis, block, warn
 from kwise.tariff import (
     BillingOptions,
     BillingResult,
@@ -152,14 +152,13 @@ def covering_contract_kw(observed_max_kw: float, step_kw: float = 1.0) -> float:
     return math.ceil(observed_max_kw / step_kw - 1e-9) * step_kw
 
 
-MARGIN_NOTICE = (
-    "계약전력을 하향할 경우, 예측 오차와 기상 변동을 고려하여 충분한 여유를 확보하십시오."
-)
+MARGIN_NOTICE = CONTRACT_MARGIN_NOTICE
 MARGIN_FACT = "contract.margin"
 """**여유 확보 안내를 거르는 잣대** (S210 2절).
 
 :data:`MARGIN_NOTICE` 는 `report\\notices.py` 의 `CONTRACT_CHANGE_WARNING` 과
-**글자까지 같은 사본**이라, 앞에 한 번 세운 줄과 안내에서 온 줄이 잇달아 두 번
+**같은 글자**라(S275 부터 둘 다 :data:`kwise.notices.CONTRACT_MARGIN_NOTICE` 한 값을
+가리킨다), 앞에 한 번 세운 줄과 안내에서 온 줄이 잇달아 두 번
 서는 자리가 셋 있다 — Excel 요약 · Word 7.2 주의사항 · 화면 2단계 카드.
 **그 셋이 글자를 맞대고 있었다.** 중복 판정의 정본 잣대는 사실 ID 이고
 (:func:`kwise.notices.dedupe_key`), 화면 카드는 **한 식 안에서** 글자와 사실 ID
@@ -170,7 +169,7 @@ MARGIN_FACT = "contract.margin"
 조합 쪽을 뺀다 — S210 은 걸러지는 집합이 갈린다고 앞부분으로 안 쟀다.
 
 `diagnose\\contract.py` 도 같은 ID 로 낸다. 그쪽은 `measures\\` 를 런타임에
-들이지 않아(형에만 쓴다) 글자 사본과 같은 까닭으로 날 문자열을 그대로 두었고,
+들이지 않아(형에만 쓴다) ID 는 날 문자열을 그대로 두었고,
 둘이 갈리지 않는 것은 ``tests\\test_diagnose.py`` 가 문다.
 """
 _PENALTY_NOTICE = (

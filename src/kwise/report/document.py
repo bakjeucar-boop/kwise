@@ -987,14 +987,14 @@ def measure_entries(
             ),
             certainty=str(contract.certainty),
             # **같은 문장을 두 번 싣지 않는다** (102세션 4절). `MARGIN_NOTICE`
-            # 가 `CONTRACT_CHANGE_WARNING` 과 **글자까지 같은 사본**이라, 앞에
+            # 가 `CONTRACT_CHANGE_WARNING` 과 **같은 글자**라, 앞에
             # 세운 한 줄과 `contract.notices` 에서 온 한 줄이 7.2 주의사항에
             # **잇달아 두 번** 섰다 (84·100세션). **화면과 같은 방식이다** —
             # `ui\views\measures.py` 가 같은 안내를 걸러 내고 있다.
             # **글자가 아니라 사실 ID 로 견준다** (S210 2절) — 글자를 만드는 쪽으로
             # 줄을 거르면 잣대가 여기만 다르다. 걸러 낸 뒤에 글자로 편다.
-            # **사본 둘을 합치는 것은 여기서 안 한다** — 쓰는 자리 여섯을 함께
-            # 옮기는 일이라, 뿌리는 미해결에 이름으로 남겼다.
+            # **글자는 S275 에 한 자리로 모았다** (`kwise.notices.CONTRACT_MARGIN_NOTICE`) —
+            # 줄이 두 번 서는 것은 글자가 아니라 싣는 자리의 일이라 걸름은 그대로다.
             cautions=(
                 CONTRACT_CHANGE_WARNING,
                 *body_lines(tuple(item for item in contract.notices if item.fact != MARGIN_FACT)),
