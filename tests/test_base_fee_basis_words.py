@@ -3483,19 +3483,18 @@ def test_S271_주말에도_가동하는_건물은_저부하_평일이_0일이다
     사람 결정 · 판단값 ``dr.weekend_operating_ratio``).
 
     산업용 벌은 판정 시간대 주말·공휴일 평균이 평일의 97% 다 — 앞서는 평일 82일 가운데
-    67일을 「쉬는 날 수준」 으로 세고 12개월 환산 감축 가능량 10,242 kWh 를 냈다. 이제 0일 ·
-    0 kWh 이고 그 사실이 한 줄로 선다. 「쉬는 날 수준」 을 전제한 글은 그 벌에 안 선다.
+    67일을 「쉬는 날 수준」 으로 세고 12개월 환산 감축 가능량 10,242 kWh 를 냈다. 이제 0일
+    이고 그 사실이 한 줄로 선다. 「쉬는 날 수준」 을 전제한 글은 그 벌에 안 선다.
     주말 부하가 평일의 59% 인 맞수 벌은 그대로 센다.
+
+    감축량 칸은 0 이 아니라 「미산출」 이다 (S272 결정 1 — 아래 S272 못이 문다).
     """
     low, high = _render("small-ind-a1"), _render("small-ind-a2")
 
-    assert set(_kinds(low, WEEKEND_OPERATING_LINE)) == {"PPT", "Word", "화면"}
+    # 금액 칸의 사유로도 서므로 Excel 에도 선다 (S272 결정 1).
+    assert set(_kinds(low, WEEKEND_OPERATING_LINE)) == {"Excel", "PPT", "Word", "화면"}
     diagnosis = _diagnosis_sheet(low)
     assert diagnosis["DR 저부하 평일"] == "0일"
-    assert diagnosis["DR 등록 권장 용량 (저부하일 여력 하위값)"] == "0 kW"
-    assert [v for k, v in diagnosis.items() if k.startswith("DR 12개월 환산 감축 가능량")] == [
-        "0 kWh"
-    ]
     # 기준선 값은 서고 문턱은 「미산출」 이다 — 「관측치 없음」 은 거짓이다.
     assert diagnosis["DR 저부하 판정 기준선 (주말·공휴일 평균 × 배수)"].endswith("문턱 미산출")
     for gone in (
@@ -3576,8 +3575,9 @@ def test_S271_산업용_실물의_참이_아닌_글_여덟과_운영시간() -> 
     ]
 
     # 결정 4 — 24시간 가동. 운영시간 글자가 0 ~ 24시이고 「문 닫은 동안」 을 말하지 않는다.
-    assert ("PPT", "4") in _cells_with(low, "운영시간(평일 0–24시) 밖 사용량 ÷ 전체")
-    assert _cells_with(low, "평일 0~24시 밖") != []
+    # (주말에도 가동하는 벌이라 「평일」 은 빠졌다 — S272 결정 2 · 아래 S272 못이 문다.)
+    assert ("PPT", "4") in _cells_with(low, "0–24시) 밖 사용량 ÷ 전체")
+    assert _cells_with(low, "0~24시 밖") != []
     assert _cells_with(low, "문 닫은 동안") == []
     assert _cells_with(high, "문 닫은 동안") != []
     assert _cells_with(low, "13~20시") != [] and _cells_with(low, "13~18시") == []
@@ -3590,3 +3590,84 @@ def test_S271_산업용_실물의_참이_아닌_글_여덟과_운영시간() -> 
             "최대부하 시간대의 사용전력량 → 중간부하 시간대로 계량",
         ):
             assert set(_kinds(rendered, text)) == {"Excel", "Word"}, (rendered.key, text)
+
+
+def _dr_worksheet(rendered: Rendered) -> dict[str, str]:
+    """Excel 부록 A 「경제성DR 계산 근거」 의 구분 → 값."""
+    head = ("Excel", "부록 A 산출 근거", "경제성DR 계산 근거")
+    return {str(row[3]): str(row[-1]) for row in rendered.rows if row[:3] == head}
+
+
+def test_S272_주말에도_가동하는_건물의_DR_칸은_0_이_아니라_미산출이다() -> None:
+    """**세지 않은 것은 「0」 이 아니라 「미산출」 이고 그 까닭이 사유로 선다** (S272 결정 1).
+
+    산업용 벌은 주말에도 가동해 저부하 평일을 세지 않았다 (S271 결정 3). 그 벌의 등록 권장
+    용량 · 감축 가능량 · 참여 시간 · 정산금 · 개선 방안 칸이 「0 kW」 · 「0 kWh」 · 「0시간」 ·
+    「0 kWh 입찰」 로 서면 재어 본 0 으로 읽힌다. 사유는 진단이 낸 그 한 줄이다.
+
+    갈래 밖은 그대로다 — 저부하 평일을 센 벌(`small-ind-a2`)과, 세어 보니 0일인 벌(`small-b`).
+    """
+    low, high, none = _render("small-ind-a1"), _render("small-ind-a2"), _render("small-b")
+
+    diagnosis = _diagnosis_sheet(low)
+    assert diagnosis["DR 등록 권장 용량 (저부하일 여력 하위값)"] == "미산출"
+    assert diagnosis["DR 평균 기준 여력"] == "미산출"
+    assert {k: v for k, v in diagnosis.items() if k.startswith("DR 12개월 환산 감축 가능량")} == {
+        "DR 12개월 환산 감축 가능량 (참여 미산출, 하루 상한 8시간)": "미산출"
+    }
+    sheet = _dr_worksheet(low)
+    assert sheet["등록 권장 용량"] == sheet["감축 가능량"] == sheet["12개월 환산"] == "미산출"
+    assert sheet["저부하 평일"] == "0일"  # S271 결정 3 의 글자는 그대로다
+
+    # 사유 — 금액 칸(Excel 수단별 결과 · 화면 3단계 표 · PPT 수단 장 ※)에 그 한 줄이 선다.
+    reason = "미산출 — " + WEEKEND_OPERATING_LINE
+    assert {"Excel", "PPT", "화면"} <= set(_kinds(low, reason)), _kinds(low, reason)
+    screen = [text for _slot, text in low.screen]
+    assert "미산출" in screen and "0 kWh 입찰" not in screen
+    # 0 을 값으로 적는 글과, 단가를 넣으면 나온다고 읽히는 글은 그 벌에 안 선다.
+    for gone in (
+        "0 kWh 입찰",
+        "등록 0 kW",
+        "등록 권장 용량 0 kW",
+        "감축 가능량 0 kWh",
+        "0시간",
+        "감축 가능량을 0 으로 두었습니다",
+        "감축 가능량(kWh)만 참고하십시오",
+        "정산 단가 미입력",
+    ):
+        assert _cells_with(low, gone) == [], (gone, _cells_with(low, gone))
+
+    # 맞수 ① — 저부하 평일을 센 벌은 값이 그대로 선다.
+    assert _diagnosis_sheet(high)["DR 등록 권장 용량 (저부하일 여력 하위값)"] == "28 kW"
+    assert _dr_worksheet(high)["12개월 환산"] == "5,882 kWh"
+    assert _cells_with(high, "5,882 kWh 입찰") != [] and _cells_with(high, reason) == []
+    # 맞수 ② — 세어 보니 0일인 벌은 「0」 그대로다 (재어 본 0 이다).
+    assert _diagnosis_sheet(none)["DR 등록 권장 용량 (저부하일 여력 하위값)"] == "0 kW"
+    assert _dr_worksheet(none)["12개월 환산"] == "0 kWh"
+    assert _cells_with(none, "0 kWh 입찰") != []
+    assert _cells_with(none, "감축 가능량을 0 으로 두었습니다") != []
+    assert _cells_with(none, "미산출 — 정산 단가 미입력") != []
+
+
+def test_S272_주말에도_가동하는_건물은_운영시간을_모든_날에_적용한다() -> None:
+    """**주말을 통째로 「운영시간 외」 로 세지 않는다** (S272 결정 2).
+
+    산업용 벌은 운영 0 ~ 24시인데 「운영시간 외 부하 비중 29.2%」 가 섰다 — 주말 사용량 몫이다.
+    주말에도 가동하는 건물(DR 진단의 그 갈래)은 운영시간을 모든 날에 적용한다 — 0 ~ 24시면
+    밖이 없어 0.0% 다. 풀이 글자의 「평일」 과 「주말은 전부 밖입니다」 가 함께 빠진다.
+    갈래 밖(`small-ind-a2`)은 평일만 적용하던 그대로다.
+    """
+    low, high = _render("small-ind-a1"), _render("small-ind-a2")
+
+    assert _diagnosis_sheet(low)["운영시간 외 부하 비중"] == "0.0%"
+    assert ("PPT", "4") in _cells_with(low, "운영시간(0–24시) 밖 사용량 ÷ 전체")
+    assert _cells_with(low, "운영시간(0시–24시) 밖 사용량 ÷ 전체 사용량.") != []
+    word = [row for row in low.rows if row[0] == "Word" and "운영시간 외 부하 비중" in row]
+    assert [tuple(row[-2:]) for row in word] == [("0.0%", "0~24시 밖")], word
+    for gone in ("주말은 전부 밖입니다", "평일 0~24시", "평일 0–24시", "평일 0시–24시", "29.2%"):
+        assert _cells_with(low, gone) == [], (gone, _cells_with(low, gone))
+
+    assert _diagnosis_sheet(high)["운영시간 외 부하 비중"] == "70.8%"
+    assert ("PPT", "4") in _cells_with(high, "운영시간(평일 9–18시) 밖 사용량 ÷ 전체")
+    assert _cells_with(high, "주말은 전부 밖입니다") != []
+    assert _cells_with(high, "평일 9~18시 밖") != []

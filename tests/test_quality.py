@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from kwise.diagnose import ContractInfo, diagnose
-from kwise.io import SHORT_PERIOD_WARNING, UsageData, load_usage
+from kwise.io import SHORT_PERIOD_WARNING, UsageData, load_usage, slot_start
 from kwise.notices import texts
 from kwise.quality import (
     QualityReport,
@@ -623,6 +623,32 @@ def test_load_pattern_ratios_are_computed_from_slot_start(tmp_path: Path) -> Non
     assert pattern.day_mean_kw == pytest.approx(400.0)
     assert pattern.base_load_ratio == pytest.approx(0.5)
     assert pattern.weekend_ratio == pytest.approx(1.0)
+
+
+def test_주말에도_가동하는_건물은_운영시간을_모든_날에_적용한다(sample_usage: UsageData) -> None:
+    """**평일만 적용하던 운영시간을 그 갈래에서만 모든 날에** (S272 결정 2).
+
+    기본은 평일 그 시간대만 「안」 이고 주말은 전부 「밖」 이다. ``operating_every_day`` 면
+    주말의 그 시간대도 「안」 이다 — 0 ~ 24시면 밖이 없어 0 이다.
+    """
+    kw, interval = sample_usage.kw, sample_usage.meta.interval_minutes
+    weekdays = load_pattern(kw, interval, operating_hours=(9, 18))
+    every = load_pattern(kw, interval, operating_hours=(9, 18), operating_every_day=True)
+    assert not load_pattern(kw, interval).operating_every_day  # 기본은 평일만이다
+    assert not weekdays.operating_every_day and every.operating_every_day
+    assert weekdays.off_hours_energy_share is not None and every.off_hours_energy_share is not None
+    assert every.off_hours_energy_share < weekdays.off_hours_energy_share  # 주말 낮이 안으로 든다
+    # 운영시간 밖 갈래만 움직인다.
+    assert every.weekend_ratio == weekdays.weekend_ratio
+    assert every.base_load_ratio == weekdays.base_load_ratio
+
+    around = load_pattern(kw, interval, operating_hours=(0, 24))
+    observed = kw.dropna()
+    weekend = slot_start(pd.DatetimeIndex(observed.index), interval).weekday >= 5
+    # 평일만 적용하면 주말 사용량 몫이 남는다.
+    assert around.off_hours_energy_share == pytest.approx(observed[weekend].sum() / observed.sum())
+    always = load_pattern(kw, interval, operating_hours=(0, 24), operating_every_day=True)
+    assert always.off_hours_energy_share == 0.0 and always.off_hours_mean_kw is None
 
 
 def test_load_pattern_needs_observations() -> None:

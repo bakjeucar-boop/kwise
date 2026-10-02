@@ -415,6 +415,30 @@ def test_주말_부하가_판단값_이상이면_저부하_평일을_세지_않�
     assert dr_lead(gated) == lines[0]
     assert "쉬는 날 수준까지" in dr_lead(plain)
 
+    # **세지 않은 것은 0 이 아니라 「미산출」 이다** (S272 결정 1). 그 한 줄이 까닭이고,
+    # 정산 단가를 넣어도 정산금이 서지 않는다. 갈래 밖은 값이 그대로 선다.
+    from kwise.measures import evaluate_demand_response
+    from kwise.report.worksheet import demand_response_worksheet
+
+    assert gated.unassessed_reason == lines[0] and plain.unassessed_reason == ""
+    for price in (None, 120.0):
+        result = evaluate_demand_response(gated, unit_price_won_per_kwh=price)
+        assert result.unassessed_reason == lines[0]
+        assert result.settlement_won is None and result.period_settlement_won is None
+        assert result.settlement_label == f"미산출 — {lines[0]}"
+        facts = {item.fact for item in result.notices}
+        assert not facts & {"dr.registered_capacity", "dr.annual_reducible", "dr.no_price"}
+        values = {row.label: row.value for row in demand_response_worksheet(result).rows}
+        for label in ("등록 권장 용량", "감축 가능량", "12개월 환산"):
+            assert values[label] == "미산출", label
+        assert values.get("정산금", "미산출") == "미산출"
+    counted = evaluate_demand_response(plain, unit_price_won_per_kwh=120.0)
+    assert counted.unassessed_reason == "" and counted.settlement_won == pytest.approx(
+        plain.annual_reducible_kwh * 120.0
+    )
+    assert "미산출" not in {row.value for row in demand_response_worksheet(counted).rows}
+    assert evaluate_demand_response(plain).settlement_label == "미산출 — 정산 단가 미입력"
+
 
 def test_정전일은_저부하_평일이_아니다(sample_usage: UsageData, calendar: HolidayCalendar) -> None:
     """정전으로 부하가 낮았던 날은 감축 여력이 아니다."""
