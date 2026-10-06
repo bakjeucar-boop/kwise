@@ -129,6 +129,7 @@ from kwise.ui.progress import progress_panel
 from kwise.ui.session import build_report_bytes
 from kwise.ui.spec import ReviewScope, measure, review_scope
 from kwise.ui.state import (
+    dr_unit_price,
     enabled_measures,
     ess_pricing,
     ess_quote,
@@ -336,16 +337,10 @@ def render(
         )
 
     # 원 부하로 잰 DR 정산금(2단계 카드 값) — 조합에서 DR 을 뺐으면 없다 (S257 결정 2).
-    dr_won = (
-        _combined_dr_won(diagnosis, measure_float("demand_response", "unit_price"))
-        if "demand_response" in enabled
-        else None
-    )
+    dr_won = _combined_dr_won(diagnosis, dr_unit_price()) if "demand_response" in enabled else None
     # PPT · Word 기간 합산효과와 권장안도 같은 정산금을 담는다 (S246 결정 1).
     if "demand_response" in enabled:
-        comparison = comparison.with_demand_response(
-            diagnosis.dr, measure_float("demand_response", "unit_price")
-        )
+        comparison = comparison.with_demand_response(diagnosis.dr, dr_unit_price())
     # **② 합산효과 — 단순 합과의 차이가 3단계의 존재 이유다** (14세션 5-2).
     # 묵은 수단을 쓴 합산효과도 같은 흐림으로 둔다 — 막힘 줄은 단추 위에 섰다 (S259 결정 2).
     if stale or any(key in enabled for key in stale_measures()):
@@ -1114,7 +1109,7 @@ def _measure_results(
     if "demand_response" in enabled and diagnosis.dr is not None:
         demand_response = evaluate_demand_response(
             diagnosis.dr,
-            unit_price_won_per_kwh=measure_float("demand_response", "unit_price"),
+            unit_price_won_per_kwh=dr_unit_price(),
             jeju=jeju,
         )
 

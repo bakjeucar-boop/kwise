@@ -96,12 +96,12 @@ from kwise.ui.pipeline import ContractForm, SolarInputs
 from kwise.ui.progress import progress_panel
 from kwise.ui.spec import DR_PRICED_HEADLINE, MEASURES, NO_HEADROOM_OVERVIEW, MeasureSpec
 from kwise.ui.state import (
+    dr_unit_price,
     ess_pricing,
     ess_quote,
     get_solar_inputs,
     hold_choice,
     input_key,
-    measure_float,
     set_solar_inputs,
     surplus_prices,
     toggle_key,
@@ -330,7 +330,7 @@ def _card(
     st.session_state[opened_key] = True
     with st.expander(f"{title} — 입력과 결과", expanded=True):
         # DR 캡션은 그 벌의 단가로 참인 말만 한다 — 3단계가 읽는 칸과 같은 값 (S245 결정 2).
-        priced = spec.key == "demand_response" and measure_float("demand_response", "unit_price")
+        priced = spec.key == "demand_response" and dr_unit_price()
         st.caption(DR_PRICED_HEADLINE if priced else spec.headline, help=manual_tip(spec.anchor))
         handler = _HANDLERS[spec.key]
         handler(spec, usage, table, form, diagnosis, quality, baseline, day, building)
@@ -530,7 +530,7 @@ def _demand_response(
         value=False,
         key=input_key("demand_response", "priced"),
     )
-    unit_price = (
+    if priced:
         st.number_input(
             "정산 단가 (원/kWh)",
             min_value=0.0,
@@ -538,12 +538,10 @@ def _demand_response(
             step=1.0,
             key=input_key("demand_response", "unit_price"),
         )
-        if priced
-        else None
-    )
+    # 체크와 단가를 함께 읽는 한 자리 — 3단계 · 산출물과 같은 값이다 (S277 결정 1).
     result = evaluate_demand_response(
         diagnosis.dr,
-        unit_price_won_per_kwh=unit_price or None,
+        unit_price_won_per_kwh=dr_unit_price(),
         jeju=building is not None and building.jeju,
     )
 

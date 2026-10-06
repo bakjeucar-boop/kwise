@@ -420,7 +420,7 @@ def _contract_block(table: TariffTable, building: BuildingInfo | None) -> Contra
                 help="청구서에 적힌 현행 선택요금입니다.",
             )
 
-        lagging, leading = _saved_power_factor()
+        lagging, leading = _saved_power_factor(voltage)
         form = ContractForm(
             contract_type=contract_type,
             voltage=voltage,
@@ -445,7 +445,7 @@ def _contract_block(table: TariffTable, building: BuildingInfo | None) -> Contra
 # --------------------------------------------------------------------- ③ 역률
 
 
-def _saved_power_factor() -> tuple[float, float | None]:
+def _saved_power_factor(voltage: str | None) -> tuple[float, float | None]:
     """역률 입력의 **현재 값**. 위젯은 아래 블록이 그리고 값은 세션에 남는다.
 
     계약 정보 블록이 역률 블록보다 위에 있으므로 위젯 객체를 참조할 수 없다.
@@ -453,10 +453,14 @@ def _saved_power_factor() -> tuple[float, float | None]:
     세션에 이미 새 값이 들어와 있다.
 
     **야간 칸을 비워 두면 「모름」 이다** (S276 결정 3 · 사람 결정) — 빈칸의 세션 값이
-    ``None`` 이라 그대로 넘긴다. 저압은 그 칸을 안 그려 늘 ``None`` 이다.
+    ``None`` 이라 그대로 넘긴다. **저압은 그 칸을 안 그리므로 늘 ``None`` 이다** (S277 결정 2)
+    — 고압에서 넣었던 값은 세션에 남아 있어(:func:`~kwise.ui.state.carry_inputs`) 전압을
+    함께 봐야 한다. 전압을 모르면(확정 전 · ``None``) 칸이 서므로 그 값을 읽는다.
     """
     lagging = st.session_state.get(_PF_LAGGING)
     leading = st.session_state.get(_PF_LEADING)
+    if voltage is not None and not leading_charge_applies(voltage):
+        leading = None
     return (
         float(lagging) if lagging is not None else default_lagging_pct(),
         float(leading) if leading is not None else None,
@@ -509,7 +513,7 @@ def _power_factor_block(form: ContractForm | None) -> None:
                 help=manual_tip("measure-power-factor"),
             )
 
-        lagging, leading = _saved_power_factor()
+        lagging, leading = _saved_power_factor(form.voltage if form else None)
         if form is None:
             return
         changed = lagging != form.lagging_pct or leading != form.leading_power_factor_pct

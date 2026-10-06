@@ -29,6 +29,7 @@ __all__ = [
     "SESSION_ID",
     "carry_inputs",
     "clear_upload",
+    "dr_unit_price",
     "enabled_measures",
     "ess_pricing",
     "ess_quote",
@@ -190,6 +191,18 @@ def measure_price(measure_key: str, field: str, default: float) -> float | None:
     if input_key(measure_key, field) not in st.session_state:
         return default
     return measure_float(measure_key, field)
+
+
+def dr_unit_price() -> float | None:
+    """경제성DR 정산 단가 — **「정산 단가를 안다」 를 체크했을 때만** (S277 결정 1).
+
+    :func:`ess_quote` 와 같은 꼴이다. 체크를 풀면 단가 칸을 안 그리지만
+    :func:`carry_inputs` 가 그 키를 되살려 둔다 — 단가 키만 읽으면 푼 뒤에도 옛 단가가
+    3단계와 산출물에 남는다. 2단계 카드와 3단계가 이 한 자리를 읽는다.
+    """
+    if not st.session_state.get(input_key("demand_response", "priced")):
+        return None
+    return measure_float("demand_response", "unit_price")
 
 
 def surplus_prices() -> tuple[float | None, float | None]:
