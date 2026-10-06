@@ -323,7 +323,6 @@ def _build(
             state["building_year"] = 2000
             state["contract_form"] = replace(state["contract_form"], leading_power_factor_pct=100.0)
             state["diag_pf_lagging"] = 99.68
-            state["diag_pf_leading_known"] = True
             state["diag_pf_leading"] = 100.0
             state["solar_inputs"] = SolarInputs(
                 region_key=case.sigungu,
@@ -2319,6 +2318,7 @@ def _s259_flow() -> dict[str, Any]:
         "면적": input_key("solar", "area"),
         "설치 단가": input_key("solar", "unit_cost"),
         "총 투자비": input_key("solar", "total_cost"),
+        "총 투자비를 안다": input_key("solar", "total_cost_known"),
         "벽면 면적": input_key("solar", "wall_area"),
         "정산 단가를 안다": input_key("demand_response", "priced"),
     }
@@ -2329,6 +2329,7 @@ def _s259_flow() -> dict[str, Any]:
         "면적": 400.0,
         "설치 단가": 2_500_000.0,
         "총 투자비": 80_000_000.0,
+        "총 투자비를 안다": True,
         "벽면 면적": 100.0,
         "정산 단가를 안다": True,
     }
@@ -2360,6 +2361,8 @@ def _s259_flow() -> dict[str, Any]:
 
         step("시작")
         app.checkbox(key=keys["정산 단가를 안다"]).check()
+        # 총 투자비도 같은 꼴이다 — 체크해야 금액 칸이 열린다 (S276 결정 4).
+        app.checkbox(key=keys["총 투자비를 안다"]).check()
         step("정산 단가")
         app.number_input(key=input_key("demand_response", "unit_price")).set_value(120.0)
         app.number_input(key=keys["면적"]).set_value(400.0)
@@ -3373,7 +3376,7 @@ def test_저압_건물에는_야간_진상_안내와_입력칸이_안_선다() -
 
     약관 제43조 ② 2호 다목(S268 결정 1). 덱의 저압 벌(`small-ind-a1` · 산업용(갑)Ⅰ 저압)과
     같은 자료의 고압 벌(`small-ind-a2` · 고압A)을 앱으로 띄워 네 산출물을 맞댄다. 저압은
-    야간 진상 안내 다섯 갈래가 0줄이고 「야간 진상역률을 안다」 입력칸이 없다. 고압은 다 선다.
+    야간 진상 안내 다섯 갈래가 0줄이고 「야간 진상역률 (%)」 입력칸이 없다. 고압은 다 선다.
     「역률 (선택)」 아래 「모르면 지상으로 간주해 추가요금이 없습니다.」 줄과 그 줄의 매뉴얼
     안내도 저압에는 없다(S270 결정 1). 2단계 카드의 매뉴얼 가리킴 툴팁과 기준 데이터 표의
     진상 줄은 두 벌 다 그대로다(건물을 말하지 않는다).
@@ -3383,9 +3386,12 @@ def test_저압_건물에는_야간_진상_안내와_입력칸이_안_선다() -
     for word in NIGHT_LEADING_WORDS:
         assert _cells_with(low, word) == [], (word, _cells_with(low, word))
         assert _cells_with(high, word), word
-    box = "야간 진상역률을 안다"
+    # 체크는 걷혔고 고압에는 칸이 늘 선다 (S276 결정 3) — 저압에는 그 칸이 없다.
+    box = "야간 진상역률 (%)"
     assert box not in [text for _slot, text in low.screen]
     assert box in [text for _slot, text in high.screen]
+    for rendered in (low, high):
+        assert "야간 진상역률을 안다" not in [text for _slot, text in rendered.screen]
 
     # 그 칸을 두고 하던 말(「역률 (선택)」 아래 지상 간주 한 줄)과 그 줄에 달린 매뉴얼
     # 안내도 저압에는 안 선다 (S270 결정 1). 고압은 둘 다 선다. 같은 매뉴얼 안내는 2단계
@@ -3641,12 +3647,13 @@ def test_S272_주말에도_가동하는_건물의_DR_칸은_0_이_아니라_미�
     assert _diagnosis_sheet(high)["DR 등록 권장 용량 (저부하일 여력 하위값)"] == "28 kW"
     assert _dr_worksheet(high)["12개월 환산"] == "5,882 kWh"
     assert _cells_with(high, "5,882 kWh 입찰") != [] and _cells_with(high, reason) == []
-    # 맞수 ② — 세어 보니 0일인 벌은 「0」 그대로다 (재어 본 0 이다).
+    # 맞수 ② — 세어 보니 0일인 벌은 「0」 그대로다 (재어 본 0 이다). 정산금 칸은 「없음」 이고
+    # 「미산출」 이 아니다 (S276 결정 5).
     assert _diagnosis_sheet(none)["DR 등록 권장 용량 (저부하일 여력 하위값)"] == "0 kW"
     assert _dr_worksheet(none)["12개월 환산"] == "0 kWh"
-    assert _cells_with(none, "0 kWh 입찰") != []
+    assert _cells_with(none, "0 kWh · 개선 여지 없음") != []
     assert _cells_with(none, "감축 가능량을 0 으로 두었습니다") != []
-    assert _cells_with(none, "미산출 — 정산 단가 미입력") != []
+    assert _cells_with(none, "정산 단가 미입력") == []
 
 
 def test_S274_주말에도_가동하는_건물에는_0일을_전제한_곁_글이_안_선다() -> None:

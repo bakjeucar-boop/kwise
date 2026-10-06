@@ -491,11 +491,15 @@ def _power_factor_block(form: ContractForm | None) -> None:
             # 비워 두면 「모름」 이고 기본값 95 를 넣지 않는다.
             leading_applies = form is None or leading_charge_applies(form.voltage)
             if leading_applies:
+                # 확정한 값은 세션 키로 심는다 — 처음 값을 늘 빈칸(``None``)으로 두어야
+                # 넣었던 값을 지워 「모름」 으로 되돌릴 수 있다.
+                if _PF_LEADING not in st.session_state and saved is not None:
+                    st.session_state[_PF_LEADING] = saved.leading_power_factor_pct
                 st.number_input(
                     "야간 진상역률 (%)",
                     min_value=1.0,
                     max_value=100.0,
-                    value=saved.leading_power_factor_pct if saved else None,
+                    value=None,
                     step=0.1,
                     key=_PF_LEADING,
                 )

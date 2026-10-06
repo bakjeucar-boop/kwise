@@ -1903,7 +1903,9 @@ def test_ESS_카드에는_견적_총액만_남는다(ess_screen: AppTest) -> Non
     """
     assert not ess_screen.exception, ess_screen.exception
     labels = [str(item.label) for item in ess_screen.number_input]
-    assert any("견적 총액 직접 입력" in item for item in labels), labels
+    # 체크 꼴이다 — 체크하기 전에는 금액 칸이 없다 (S276 결정 4).
+    assert "견적 총액을 안다" in [str(item.label) for item in ess_screen.checkbox]
+    assert not [item for item in labels if "견적 총액" in item], labels
     assert not [item for item in labels if "고정비 (원)" in item], labels
     assert not [item for item in labels if "용량단가 (원/kWh)" in item], labels
     # **어느 경로로 계산했는지 결과에 한 줄로 적는다** (3-5).
@@ -3257,7 +3259,8 @@ def test_입력_끝값을_훑어도_화면이_죽지_않는다() -> None:
     """
     # 태양광만 뺀다 — 시험은 기상 사전 취득분에서 격리되어 있다.
     keys = ("tariff_switch", "contract", "demand_response", "power_factor", "ess", "surplus")
-    screen = _running(on=keys)
+    # ESS 견적 칸은 체크해야 열린다 (S276 결정 4).
+    screen = _running(on=keys, measure_ess_total_cost_known=True)
     assert not screen.exception, screen.exception
 
     touched = 0
@@ -5326,3 +5329,167 @@ def test_역률_이유_줄은_조합_역률_몫의_방향과_반대로_말하지
         f"{case.key} — 역률 몫이 카드보다 {interaction:,.0f}원 큰데 이유 줄이 "
         f"작아진다고 적습니다: 「{lines[0]}」"
     )
+
+
+# ─────────────────────────────────── S276 — 사람 수정 의견 (결정 1 · 3 · 4)
+
+
+def test_S276_옆단은_버전만_적고_버전_글자는_한_자리에서_만든다(app: AppTest) -> None:
+    """**화면에 「대한민국 전용」 을 적지 않고 버전은 1.0.0 이다** (S276 결정 1 · 사람 결정).
+
+    kWise 의 k 에 그 뜻이 있다. 제품 성질을 설명하는 글(산출물 한계 · 문서)은 그대로다 —
+    화면 코드(``ui\\``)에만 그 낱말이 없다. 버전 글자를 적은 자리는 ``__init__.py`` 하나이고
+    ``pyproject.toml`` 은 그 값을 읽는다 (S233).
+    """
+    import kwise
+
+    captions = [str(item.value) for item in app.sidebar.caption]
+    assert f"버전 {kwise.__version__}" in captions, captions
+    assert kwise.__version__ == "1.0.0"
+    shown = [str(item.value) for group in (app.caption, app.markdown) for item in group]
+    assert not [line for line in shown if "대한민국 전용" in line]
+    root = Path("src") / "kwise"
+    assert not [
+        path
+        for path in (root / "ui").rglob("*.py")
+        if "대한민국 전용" in path.read_text(encoding="utf-8")
+    ]
+    holders = [
+        path.name
+        for path in root.rglob("*.py")
+        if re.search(r"^__version__\s*=", path.read_text(encoding="utf-8"), re.MULTILINE)
+    ]
+    assert holders == ["__init__.py"], holders
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+    assert not re.search(r'^version\s*=\s*"', pyproject, re.MULTILINE)
+    assert 'version = { attr = "kwise.__version__" }' in pyproject
+
+
+def test_S276_야간_진상역률은_체크_없이_빈칸으로_서고_비우면_모름이다() -> None:
+    """**고압 이상은 주간 · 야간 두 칸이 늘 나란히 선다** (S276 결정 3 · 사람 결정).
+
+    「야간 진상역률을 안다」 체크가 없다. 야간 칸은 빈칸으로 시작하고(95 를 넣지 않는다)
+    비워 두면 계약 정보의 야간 진상역률이 ``None`` — 앞서 체크를 안 했을 때의 「모름」 그
+    값이다. 값을 넣고 「역률 반영」 을 누르면 그 값이 들고, 지우면 다시 「모름」 이다.
+    저압은 야간 칸이 서지 않는다 (S269 · S270).
+    """
+    night_key, day_key = "diag_pf_leading", "diag_pf_lagging"
+    screen = _running()
+    assert not screen.exception, screen.exception
+    assert "야간 진상역률을 안다" not in [str(item.label) for item in screen.checkbox]
+    day, night = screen.number_input(key=day_key), screen.number_input(key=night_key)
+    assert (day.value, night.value) == (92.0, None)
+    assert screen.session_state["contract_form"].leading_power_factor_pct is None
+    # 바뀐 것이 없으면 「역률 반영」 이 없다 — 빈칸이 곧 지금 값(모름)이다.
+    assert not [item for item in screen.button if item.key == "apply_power_factor"]
+    # 두 칸이 한 줄(같은 열 묶음의 이웃 열)에 선다.
+    columns = list(screen.columns)
+    left = next(
+        index
+        for index, column in enumerate(columns)
+        if any(item.key == day_key for item in column.number_input)
+    )
+    assert any(item.key == night_key for item in columns[left + 1].number_input)
+
+    # 값을 넣으면 반영 전에는 계산에 안 든다 (S258) — 눌러야 든다.
+    night.set_value(90.0).run()
+    assert screen.session_state["contract_form"].leading_power_factor_pct is None
+    screen.button(key="apply_power_factor").click().run()
+    assert not screen.exception, screen.exception
+    form = screen.session_state["contract_form"]
+    assert (form.lagging_pct, form.leading_power_factor_pct) == (92.0, 90.0)
+    assert screen.number_input(key=night_key).value == 90.0
+    # 지우면 다시 「모름」 이다. AppTest 의 수 입력칸은 ``set_value(None)`` 이 세션 값으로
+    # 되돌아가 빈칸을 못 보낸다 — 세션 값을 비워 같은 상태를 만든다.
+    screen.session_state[night_key] = None
+    screen.run()
+    assert screen.number_input(key=night_key).value is None
+    screen.button(key="apply_power_factor").click().run()
+    assert screen.session_state["contract_form"].leading_power_factor_pct is None
+
+    low = _running(
+        contract_form=ContractForm(
+            contract_type="general_a_1", voltage="low", option="single", contract_kw=200.0
+        )
+    )
+    assert not low.exception, low.exception
+    assert [item.key for item in low.number_input if item.key in (day_key, night_key)] == [day_key]
+
+
+def test_S276_ESS_견적_총액은_체크해야_열리고_체크를_풀면_기준_단가다() -> None:
+    """**단가 직접 입력은 「… 를 안다」 체크 꼴이다** (S276 결정 4 · 경제성DR 의 꼴).
+
+    체크하지 않으면 기준 데이터의 단가로 산정한다 — 앞서 0 을 넣던 것과 같다. 체크하고
+    금액을 넣으면 그 금액이 투자비다. **체크를 풀면 넣었던 금액이 남아 있어도 기준 단가로
+    돌아간다** — 금액 키는 화면을 다녀와도 남게 지키는 값이라(S259) 3단계가 그 키만 읽으면
+    푼 뒤에도 옛 견적이 든다. 3단계는 체크와 금액을 함께 읽는 한 자리를 읽는다.
+    """
+    known_key, cost_key = "measure_ess_total_cost_known", "measure_ess_total_cost"
+    screen = _running(nav_page="2단계 · 개선 수단", measure_on_ess=True)
+    assert not screen.exception, screen.exception
+
+    def card() -> tuple[str, str]:
+        item = next(item for item in screen.metric if item.label == "투자비")
+        return str(item.value), str(item.delta)
+
+    base = card()
+    assert not [item for item in screen.number_input if item.key == cost_key]
+    screen.checkbox(key=known_key).check().run()
+    assert screen.number_input(key=cost_key).value == 0.0
+    assert card() == base  # 체크만 하고 금액이 0 이면 기준 단가 그대로다
+    screen.number_input(key=cost_key).set_value(300_000_000.0).run()
+    assert card()[0] == "3억원" and card() != base
+    # 기준 데이터 화면을 다녀와도 넣은 값이 남는다 (S259).
+    screen.button(key="nav_rules").click().run()
+    screen.button(key="nav_analysis").click().run()
+    assert not screen.exception, screen.exception
+    assert screen.checkbox(key=known_key).value is True
+    assert screen.number_input(key=cost_key).value == 300_000_000.0
+    assert card()[0] == "3억원"
+    # 체크를 풀면 기준 단가다 — 한 번 더 그려 금액 키가 되살아난 뒤에도 그대로다.
+    screen.checkbox(key=known_key).uncheck().run()
+    assert card() == base
+    screen.run()
+    assert screen.session_state[cost_key] == 300_000_000.0 and card() == base
+
+    compare = (VIEWS / "compare.py").read_text(encoding="utf-8")
+    assert 'measure_float("ess", "total_cost")' not in compare and "ess_quote()" in compare
+
+
+def test_S276_태양광_총_투자비는_체크해야_열리고_바꾸면_다시_계산해야_든다() -> None:
+    """**총 투자비도 같은 꼴이고 계산 뒤에 바꾸면 낡은 결과로 막힌다** (S276 결정 4 · S258).
+
+    체크하지 않으면 설치 단가를 쓴다(저장 입력의 총 투자비 ``None`` — 앞서 0 을 넣던 것).
+    계산 뒤에 체크하고 금액을 넣으면 「입력이 변경되었습니다」 가 서고, 다시 계산해야 그
+    금액이 든다. 체크를 풀어도 같다.
+    """
+    from kwise.ui.pipeline import SolarInputs
+
+    known_key, cost_key = "measure_solar_total_cost_known", "measure_solar_total_cost"
+    screen = _running(
+        nav_page="2단계 · 개선 수단",
+        measure_on_solar=True,
+        solar_inputs=SolarInputs(
+            region_key=TEST_REGION, area_m2=1_000.0, unit_cost_won_per_kwp=2_000_000.0
+        ),
+    )
+    assert not screen.exception, screen.exception
+
+    def stale() -> bool:
+        return any("입력이 변경되었습니다" in str(item.value) for item in screen.markdown)
+
+    assert not stale() and not [item for item in screen.number_input if item.key == cost_key]
+    assert screen.session_state["solar_inputs"].total_investment_won is None
+    screen.checkbox(key=known_key).check().run()
+    assert screen.number_input(key=cost_key).value == 0.0 and not stale()  # 0 은 단가 그대로다
+    screen.number_input(key=cost_key).set_value(80_000_000.0).run()
+    assert stale()
+    assert screen.session_state["solar_inputs"].total_investment_won is None
+    screen.button(key="solar_run").click().run()
+    assert not screen.exception, screen.exception
+    assert screen.session_state["solar_inputs"].total_investment_won == 80_000_000.0
+    assert not stale()
+    screen.checkbox(key=known_key).uncheck().run()
+    assert stale()
+    screen.button(key="solar_run").click().run()
+    assert screen.session_state["solar_inputs"].total_investment_won is None and not stale()

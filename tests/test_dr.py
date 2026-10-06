@@ -842,6 +842,49 @@ def test_수단_시트가_사유로_채워진다(sample_diagnosis: Diagnosis) ->
     assert "저부하 평일" in row["비고"]
 
 
+def test_S276_감축_가능량이_0_이면_정산금은_없음이고_단가_차단이_안_선다(
+    sample_usage: UsageData, calendar: HolidayCalendar, sample_diagnosis: Diagnosis
+) -> None:
+    """**세어 보니 0 kWh 인 건물은 단가를 넣었든 안 넣었든 「없음」 이다** (S276 결정 5).
+
+    여지가 없으면 「없음」 이다 (S205 · S237 ㄴ) — 「0원」 은 계산해 본 0 으로, 「미산출 — 정산
+    단가 미입력」 은 단가를 넣으면 금액이 서는 것으로 읽힌다. 「정산 단가를 입력하지 않아 …」
+    차단 줄도 그 건물에는 안 선다. 금액은 그대로다(0 · 단가가 없으면 ``None``).
+    감축이 0 보다 큰 건물과 세지 않은 건물(「미산출」 · S272 결정 1)은 그대로다.
+    """
+    from kwise.report import measure_entries, measure_summary_frame
+    from kwise.report.standalone import standalone_frame, standalone_rows
+    from kwise.report.worksheet import demand_response_worksheet
+
+    none = dr_profile(sample_usage.kw, 15, calendar, contract_type="general_b", low_load_ratio=0.1)
+    assert none.low_load_days_count == 0 and none.unassessed_reason == ""
+    for price in (None, 120.0):
+        result = evaluate_demand_response(none, unit_price_won_per_kwh=price)
+        assert result.no_reduction
+        assert result.settlement_won == (None if price is None else 0.0)  # 금액 식은 그대로다
+        assert result.settlement_label == "없음"
+        assert "dr.no_price" not in {item.fact for item in result.notices}
+        frame = standalone_frame(standalone_rows(demand_response=result))
+        assert frame.iloc[0]["개선 방안"] == "0 kWh · 개선 여지 없음"
+        assert frame.iloc[0]["12개월 환산 절감액"] == "없음"
+        row = measure_summary_frame(demand_response=result).iloc[0]
+        assert (row["기간 절감액(원)"], row["12개월 환산(원)"]) == ("없음", "없음")
+        assert measure_entries(demand_response=result)[0].saving == "없음"
+        sheet = {item.label: item.value for item in demand_response_worksheet(result).rows}
+        assert sheet.get("정산금", "없음") == "없음" and ("정산금" in sheet) == (price is not None)
+
+    # 감축이 0 보다 큰 건물은 0줄이다.
+    profile = sample_diagnosis.dr
+    assert profile is not None and profile.annual_reducible_kwh > 0
+    plain = evaluate_demand_response(profile)
+    assert not plain.no_reduction and plain.settlement_label == UNPRICED_REASON
+    assert "dr.no_price" in {item.fact for item in plain.notices}
+    row = standalone_frame(standalone_rows(demand_response=plain)).iloc[0]
+    assert row["개선 방안"].endswith("kWh 입찰") and row["12개월 환산 절감액"] == UNPRICED_REASON
+    priced = evaluate_demand_response(profile, unit_price_won_per_kwh=120.0)
+    assert not priced.no_reduction and "없음" not in priced.settlement_label
+
+
 def test_시장_시간대와_건물_운영_시간대를_가른다(
     sample_usage: UsageData, calendar: HolidayCalendar
 ) -> None:
