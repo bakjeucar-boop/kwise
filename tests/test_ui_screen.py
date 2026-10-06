@@ -5493,3 +5493,82 @@ def test_S276_태양광_총_투자비는_체크해야_열리고_바꾸면_다시
     assert stale()
     screen.button(key="solar_run").click().run()
     assert screen.session_state["solar_inputs"].total_investment_won is None and not stale()
+
+
+# ─────────────────────────────────── S277 — 체크를 풀면 값도 풀린다 (결정 1 · 2)
+
+
+def test_S277_정산_단가는_체크를_풀면_어느_단계에도_남지_않는다() -> None:
+    """**「정산 단가를 안다」 를 풀면 2단계 · 3단계가 다 「단가 없음」 이다** (S277 결정 1).
+
+    단가 키는 화면을 다녀와도 남게 지키는 값이라(S259) 체크를 푼 뒤에도 세션에 남는다 —
+    그 키만 읽으면 2단계 지표는 사라지는데 3단계 요약 · 합산효과 · 산출물 재료에는 옛
+    정산금이 선다(대형 표본 412만원). 읽는 자리는 체크와 단가를 함께 보는 하나다 —
+    ESS 견적(``ess_quote``)과 같은 꼴.
+    """
+    priced_key, price_key = "measure_demand_response_priced", "measure_demand_response_unit_price"
+    # 역률을 함께 켠다 — 합산효과(조합)에 얹히는 정산금 자리까지 그려야 한다.
+    screen = _running(on=("demand_response", "power_factor"))
+    assert not screen.exception, screen.exception
+
+    def view() -> tuple[list[tuple[str, str]], list[str], list[str]]:
+        return (
+            [(str(item.label), str(item.value)) for item in screen.metric],
+            [item.value.astype(str).to_csv() for item in screen.dataframe],
+            [str(item.value) for item in screen.caption],
+        )
+
+    base = view()
+    assert "12개월 환산 정산금" not in dict(base[0])
+    screen.checkbox(key=priced_key).check().run()
+    screen.number_input(key=price_key).set_value(120.0).run()
+    assert not screen.exception, screen.exception
+    priced = view()
+    assert "12개월 환산 정산금" in dict(priced[0])
+    # 단가가 3단계 표와 합산효과까지 든다 — 아래 「풀면 처음과 같다」 가 빈말이 아니게.
+    assert priced[1] != base[1] and dict(priced[0])["합산효과"] != dict(base[0])["합산효과"]
+    # 체크를 풀고 한 번 더 그린다 — 단가 키가 되살아난 뒤에도 어디에도 안 선다.
+    screen.checkbox(key=priced_key).uncheck().run()
+    screen.run()
+    assert not screen.exception, screen.exception
+    assert screen.session_state[price_key] == 120.0
+    assert view() == base
+
+    for name in ("compare.py", "measures.py"):
+        source = (VIEWS / name).read_text(encoding="utf-8")
+        assert 'measure_float("demand_response"' not in source and "dr_unit_price()" in source
+
+
+def test_S277_저압은_세션에_남은_야간_진상역률을_읽지_않는다() -> None:
+    """**야간 칸이 안 서는 전압이면 고압에서 넣었던 야간 값도 안 읽는다** (S277 결정 2).
+
+    저압은 야간 진상역률 칸을 안 그린다(S269). 그런데 그 칸의 값은 화면을 다녀와도 남게
+    지키는 값이라 세션에 남는다 — 그 값만 읽으면 칸이 없는데 「역률 반영」 단추가 서고,
+    계약 정보를 저압으로 확정하면 옛 야간 값이 그대로 실린다.
+    """
+    night_key = "diag_pf_leading"
+    low = _running(
+        contract_form=ContractForm(
+            contract_type="general_a_1", voltage="low", option="single", contract_kw=200.0
+        ),
+        diag_pf_leading=90.0,
+    )
+    assert not low.exception, low.exception
+    assert not [item for item in low.number_input if item.key == night_key]
+    assert not [item for item in low.button if item.key == "apply_power_factor"]
+    assert not [item for item in low.caption if "역률 반영" in str(item.value)]
+
+    # 고압에서 야간 90 을 반영한 건물을 저압으로 다시 확정한다 — 옛 값이 따라가지 않는다.
+    screen = _running()
+    screen.number_input(key=night_key).set_value(90.0).run()
+    screen.button(key="apply_power_factor").click().run()
+    assert screen.session_state["contract_form"].leading_power_factor_pct == 90.0
+    next(item for item in screen.selectbox if item.label == "계약종별").set_value(
+        "general_a_1"
+    ).run()
+    next(item for item in screen.selectbox if item.label == "전압구분").set_value("low").run()
+    next(item for item in screen.button if item.label == "계약 정보 확정").click().run()
+    assert not screen.exception, screen.exception
+    form = screen.session_state["contract_form"]
+    assert (form.voltage, form.leading_power_factor_pct) == ("low", None)
+    assert screen.session_state[night_key] == 90.0  # 값은 세션에 남아 있다 — 읽지 않을 뿐이다
