@@ -398,6 +398,47 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - **정적 검사 다섯** — `ruff check .` 통과(`ruff_20261006_115150.txt`) · `ruff format --check .` 어긋남 0 · 통과 177(`ruff_20261006_115150-2.txt`) · `scan_ctrl` 0곳(`scan_ctrl_20261006_115154.txt`) · 맨 `mypy` **0건 · 176파일**(`mypy_20261006_115207.txt`) · `mypy tests tools` **35건 · 10파일**(`mypy_20261006_115213.txt`) — 다 S275 3-7 뒤 값과 같다.
 **0절 벽시계** 11:10:14 ~ 11:52:13(시각 명령 출력).
 
+**사람이 정했다(`docs\HANDOVER.md` 5절 S276 사람 행)** — **결정 1** 화면의 「대한민국 전용」 표시를 뺀다(kWise 의 k 에 그 뜻이 있다) · 버전 표시는 1.0.0 · 버전 번호를 만드는 자리는 하나로(S233) · 기록 · 문서가 제품 성질로 설명하는 글은 그대로. **결정 2** 청구서의 최대수요전력을 입력받는 것은 하지 않는다 — 지금의 AMI 안내 그대로(S268 결정 6) · 코드 0줄. **결정 3** 고압 이상 건물은 「야간 진상역률을 안다」 체크를 없애고 주간 지상역률 · 야간 진상역률 두 칸을 늘 나란히 보인다 · 주간 기본값 그대로(92) · 야간은 빈칸으로 시작하고 비워 두면 「모름」(추가요금 없음 · 산출물 글자 그대로) · 95 를 넣지 않는다 · 저압은 야간 칸이 서지 않는다 · 계산 0줄. **(사람 의견)** 개선수단의 단가 입력 방식을 통일해 달라 — 결정 4 로 받는다.
+**웹 대화창이 정했다(사람 결정이 아니다 · 같은 절 S276 웹 대화창 행)** — **결정 4** 기준 데이터 단가를 덮어쓰는 「직접 입력」 칸(ESS 견적 총액 · 태양광 상세의 총 투자비)을 경제성DR 의 꼴(「… 를 안다」 체크 → 입력칸)로 맞춘다 · 체크하지 않으면 지금 0 과 같다 · 그 밖의 입력 0줄 · 계산 0줄. **결정 5** 감축 가능량이 0 kWh 인 건물은 정산 단가를 넣었든 안 넣었든 정산금 칸을 「없음」 으로 적는다(S205 · S237 결정 ㄴ) · 3단계 요약의 「0 kWh 입찰」 은 다른 「없음」 수단의 꼴을 따른다 · 정산 단가 주의는 감축이 0 이면 서지 않는다 · 주말 가동 갈래의 「미산출」(S272 결정 1)은 그대로 · 감축이 0 보다 큰 건물은 0줄.
+
+**1-1. 결정 1 — 화면 한 자리 · 버전 두 자리.** 「대한민국 전용」 이 화면에 서는 자리는 **`ui\app.py` 56행 하나**(`st.sidebar.caption(f"버전 {__version__} · 대한민국 전용")`)다. 그 낱말이 선 다른 자리(찾기 도구 — `PROCEED.md` · 지시서 밖 14줄)는 다 제품 성질을 설명하는 글이라 0줄: `report\notices.py` 300행(`KNOWN_LIMITS` 의 「**대한민국 전용 도구입니다.**」 — 산출물 한계 줄) · `tools\make_bundle.py` 156행(꾸러미 안내) · `README.txt` · `docs\MANUAL.md` 둘 · `REQUIREMENTS_kwise.md` 둘 · `TECHNICAL.md` · `project-overview.md` · 생성물 html 둘 · `tests\test_report.py` 주석 둘. **버전 번호를 만드는 자리는 둘**(찾기 도구 「0.1.0」 · `__version__`) — `pyproject.toml` 7행 `version = "0.1.0"` · `src\kwise\__init__.py` 20행 `__version__ = "0.1.0"`. 읽는 자리 둘(`ui\app.py` 옆단 캡션 · `cli.py` 84행)은 `__version__` 을 읽는다 · 산출물 · 문서 · 시험에 버전 글자 0곳. **고친 뒤(예정)** — 옆단 캡션 「버전 1.0.0」 · 만드는 자리는 `__init__.py` 하나(`pyproject.toml` 은 `dynamic = ["version"]` 과 `[tool.setuptools.dynamic]` 으로 그 값을 읽는다).
+**1-2. 결정 3 — `ui\views\diagnose.py` 한 파일.** 칸 자리 `_power_factor_block`(474 ~ 508행 · 두 열) — 왼쪽 「주간 지상역률 (%)」(키 `diag_pf_lagging`) · 오른쪽에 체크 「야간 진상역률을 안다」(키 `diag_pf_leading_known`)와 체크했을 때만 서는 「야간 진상역률 (%)」(키 `diag_pf_leading` · 처음 값 95). **「모름」 을 정하는 자리** `_saved_power_factor`(449 ~ 462행) — 체크가 꺼져 있으면 `leading = None` · `ContractForm.leading_power_factor_pct = None` 이 계산과 산출물의 「모름」 이다(`ui\pipeline.py` 122행 「기본값이 없다 — 모르면 지상 간주」). **빈칸을 같은 값으로 넘기는 길** — 수 입력칸을 `value=None` 으로 그리면 비었을 때 세션 값이 `None` 이라 `_saved_power_factor` 가 그대로 `None` 을 넘긴다(체크를 읽는 줄만 걷는다). **저압 갈래** 489행 `leading_applies`(전압을 모르면 그린다 · S269 · S270) 그대로. **산출물 「모름」 글자** — 폼 값이 같으므로 0줄(3-3 이 값으로 본다).
+**1-3. 결정 4 — 칸 둘 · 읽는 자리 넷.** ESS `ui\views\measures.py` `_ess_cost_inputs`(1906 ~ 1913행 — 「견적 총액 직접 입력 (원) — 0 이면 기준 데이터의 단가로 산정」 · 키 `measure_ess_total_cost`) · 읽는 자리 셋: 그 카드(1790행 `total_cost or None`) · `ui\views\compare.py` 291행 · 1184행(`measure_float("ess", "total_cost")`). 태양광 상세 956 ~ 962행(「총 투자비 직접 입력 (원) — 0 이면 단가 사용」 · 키 `measure_solar_total_cost`) · 읽는 자리 하나(995행 `total_cost or None` — 저장 입력 `SolarInputs.total_investment_won`). **DR 꼴** 527 ~ 542행 — 체크 「정산 단가를 안다 (사업자 제시값)」(키 `…_priced` · 처음 꺼짐) → 켜면 「정산 단가 (원/kWh)」. **체크 안 함을 0 과 같은 값으로 넘기는 길** — 태양광은 그 자리에서 `None`. ESS 는 3단계가 세션 키를 따로 읽으므로 **체크와 금액을 함께 읽는 한 자리**(`ui\state.py`)를 두고 세 자리가 그것을 읽는다 — 칸이 안 그려져도 `carry_inputs` 가 `measure_` 키를 되살리므로(S259) 금액 키만 읽으면 체크를 푼 뒤에도 옛 금액이 남는다. 「계산 전 태양광 위젯」 목록(`compare.py` `_SOLAR_WIDGETS`)에 새 체크 키 한 줄.
+**1-4. 결정 5 — 서는 벌과 자리**(`s276_find_20261006_115248.txt` · `…_115307.txt`). **19벌 가운데 감축 0 kWh 인 벌 여섯** — `small-b` · `small-a` · `small-a-short` · `small-b-sell` · `small-edu-a` · `small-edu-a-over`(다 소형 사무빌딩 자료 · 저부하 평일 0일 · 덱은 단가를 안 넣는다) · 확인 사례 (다)(단가 넣은 판 · 안 넣은 판). 주말 가동 벌 `small-ind-a1` 은 「미산출」 갈래라 0줄.
+
+| 자리 | 단가 안 넣음(전) | 단가 넣음(전) | 후(예정) | 만드는 줄 |
+|---|---|---|---|---|
+| 화면 3단계 요약 「개선 방안」 | 0 kWh 입찰 | 0 kWh 입찰 | 0 kWh · 개선 여지 없음 | `report\standalone.py` |
+| 화면 3단계 요약 절감액 칸 | 미산출 — 정산 단가 미입력 | 0원 | 없음 | 같은 줄(`zero_reason`) |
+| 화면 2단계 지표 「12개월 환산 정산금」 | (안 선다) | 0원 | 없음(넣은 판만) | `ui\views\measures.py` |
+| 화면 2단계 차단 줄 「정산 단가를 입력하지 않아 …」 | 선다 | — | 안 선다 | `measures\demand_response.py` |
+| 계산 근거 표 「정산금」(화면 · Excel 부록 A · Word) | (안 선다) | 0원 | 없음 | `report\worksheet.py` |
+| Excel 「수단별 결과」 기간 · 12개월 칸 | — · 미산출 — 정산 단가 미입력 | 0 · 0 | 없음 · 없음 | `report\excel.py` |
+| PPT 8장 표 경제성DR 줄 | 미산출 | 0원 | 없음 | `report\document.py`(수단 항목의 절감 칸) |
+| PPT 11장 각주 「※ 12개월 환산 절감액 미산출 — 정산 단가 미입력」 | 선다 | — | 「없음」 꼴 | 같은 칸 |
+| Word 표 「12개월 환산 절감액」 | 미산출 — 정산 단가 미입력 | 0원 | 없음 | 같은 칸 |
+| Word 주의 「정산 단가를 입력하지 않아 …」 | 선다 | — | 안 선다 | `measures\demand_response.py` |
+
+- **따를 「없음」 꼴** — 역률 「99.7% · 개선 여지 없음」(`f"{현재} · {NO_HEADROOM_LABEL}"`)을 따라 **「0 kWh · 개선 여지 없음」**(있는 글자 둘 — 그 칸의 「0 kWh」 와 `NO_HEADROOM_LABEL`). 금액 칸은 `money.NO_SAVING`(「없음」).
+- **판정은 한 자리** — `DemandResponseResult` 에 「세어 보니 감축 가능량이 0」 을 묻는 속성 하나를 두고 위 자리들이 그것을 읽는다(S233). 수는 0 그대로 · 금액 식 0줄.
+**1-5. 입력 칸 교훈 재료.**
+
+| 칸 | 위젯 키 | 라벨(후) | 낡은 결과 막힘이 보나 |
+|---|---|---|---|
+| 주간 지상역률 | `diag_pf_lagging`(그대로) | 그대로 | 「역률 반영」 을 눌러야 든다(안 누르면 「바꾼 역률은 …」 줄) — 계산이 폼만 읽는다 |
+| 야간 진상역률 | `diag_pf_leading`(그대로) · 체크 키는 걷는다 | 그대로 | 같다 |
+| 태양광 총 투자비 | 체크 `measure_solar_total_cost_known`(새) · 금액 `measure_solar_total_cost`(그대로) | 「총 투자비를 안다」 · 「총 투자비 (원)」 | 본다 — 저장 입력과 지금 입력이 다르면 `STALE_INPUT`(1019행) · 3단계 · 산출물 단추가 막힌다(S259 결정 2) |
+| ESS 견적 총액 | 체크 `measure_ess_total_cost_known`(새) · 금액 `measure_ess_total_cost`(그대로) | 「견적 총액을 안다」 · 「견적 총액 (원)」 | 계산 단추가 없다 — 바꾸면 카드 · 조합 · 산출물 토큰이 그 자리에서 다시 돈다(막을 낡은 결과가 없다) |
+
+- 라벨이 실행 사이에 바뀌는 칸은 없다(S259 의 뿌리는 계산 뒤 라벨이 바뀌는 라디오였다) — 새 칸은 다 키가 있고 `measure_` · `diag_` 머리라 `carry_inputs` 가 지킨다.
+**1-6. 고칠 자리 수 — 울타리이고 하한이다.**
+- **코드 `src\` 11파일 · `pyproject.toml`** — 계산 폴더 **1**: `measures\demand_response.py`(결정 5 — 판정 속성 하나 · 사유 글자 갈래 하나 · 차단 줄 조건 하나 · 금액 식 0줄). 그 밖 **10**: `__init__.py` · `ui\app.py`(결정 1) · `ui\views\diagnose.py`(결정 3) · `ui\views\measures.py`(결정 4 둘 · 결정 5 지표) · `ui\state.py` · `ui\views\compare.py`(결정 4) · `report\standalone.py` · `report\document.py` · `report\excel.py` · `report\worksheet.py`(결정 5). `compare\` · `diagnose\` · `pv\` · `tariff\` · `quality\` 0줄.
+- **`tools\` 0줄**(바뀌는 입력 칸을 찾는 도구 줄 0 — 찾기 도구) · **`data\` 0줄 · `CLAUDE.md` 0줄.**
+- **시험 3파일 이상** — `test_base_fee_basis_words.py`(옛 체크 키 · 「0 kWh 입찰」 · 「총 투자비」 흐름) · `test_ui_screen.py`(「견적 총액 직접 입력」) · `test_dr.py`(감축 0 벌의 옛 사유)와 새 못. 3-1 이 더 확정한다.
+- **문서 0 이상** — `docs\MANUAL.md` 의 「34,350 kWh 입찰」 예(1665행)는 감축이 있는 벌이라 그대로 · 3-1 의 문서 못이 가른다.
+- **기록 4**(`PROCEED.md` · `docs\HANDOVER.md` · `docs\OPEN_ITEMS.md` · `docs\directives\S276.md`).
+**1절 벽시계** 11:52:42 ~ 11:53:53(시각 명령 출력 · 읽기는 0절 기준선이 도는 동안 찾기 · 읽기 도구로 했다 · 글은 그 뒤에 적었다).
+
 ---
 
 ## 오늘 (2026-10-02) 275세션 — **일반용 마지막 코드 판 · 같은 문장 사본을 한 자리로 · 매뉴얼 · 순서 탓 못 · 시험 파일 mypy · 남은 미해결 정리**
