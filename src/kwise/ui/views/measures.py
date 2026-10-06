@@ -97,6 +97,7 @@ from kwise.ui.progress import progress_panel
 from kwise.ui.spec import DR_PRICED_HEADLINE, MEASURES, NO_HEADROOM_OVERVIEW, MeasureSpec
 from kwise.ui.state import (
     ess_pricing,
+    ess_quote,
     get_solar_inputs,
     hold_choice,
     input_key,
@@ -640,7 +641,11 @@ def _demand_response(
         st.write("저부하 평일이 없어 감축 가능량을 0 으로 두었습니다.")
     if result.is_priced:
         # 정산금은 12개월 환산 감축 가능량 × 단가다 — 이름을 단다 (S219 규칙 나).
-        st.metric("12개월 환산 정산금", fmt.won_short(result.settlement_won))
+        # 감축 가능량이 0 이면 「없음」 이다 (S276 결정 5).
+        st.metric(
+            "12개월 환산 정산금",
+            NO_SAVING if result.no_reduction else fmt.won_short(result.settlement_won),
+        )
     st.caption(
         "자원 유형 — " + (", ".join(str(item) for item in result.resource_types) or "판정 불가")
     )
@@ -953,12 +958,22 @@ def _solar(
                 format="%.2f",
                 key=input_key("solar", "system_loss"),
             )
-            total_cost = st.number_input(
-                "총 투자비 직접 입력 (원) — 0 이면 단가 사용",
-                min_value=0.0,
-                value=0.0,
-                step=1_000_000.0,
-                key=input_key("solar", "total_cost"),
+            # **경제성DR 의 꼴이다** (S276 결정 4) — 체크하지 않으면 설치 단가를 쓴다.
+            total_known = st.checkbox(
+                "총 투자비를 안다",
+                value=False,
+                key=input_key("solar", "total_cost_known"),
+            )
+            total_cost = (
+                st.number_input(
+                    "총 투자비 (원)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=1_000_000.0,
+                    key=input_key("solar", "total_cost"),
+                )
+                if total_known
+                else 0.0
             )
         # **다중 어레이** (15세션 1-1). 벽면은 경사 90° 라 방위 영향이 훨씬 크다.
         st.markdown("**벽면 어레이** — 지붕과 방위를 따로 고릅니다. 0 이면 지붕 한 벌입니다.")
@@ -1903,16 +1918,24 @@ def _ess_cost_inputs() -> tuple[float, str, float | None, float | None]:
         ``(견적 총액, 단가 경로, 고정비, 용량단가)``. 뒤 셋은 기준 데이터
         화면에서 고른 값을 세션에서 읽은 것이다.
     """
-    total = st.number_input(
-        "견적 총액 직접 입력 (원) — 0 이면 기준 데이터의 단가로 산정",
-        min_value=0.0,
-        value=0.0,
-        step=1_000_000.0,
-        key=input_key("ess", "total_cost"),
+    # **경제성DR 의 꼴이다** (S276 결정 4) — 체크하면 칸이 열리고, 체크하지 않으면
+    # 기준 데이터의 단가로 산정한다(앞서 0 을 넣던 것과 같다).
+    known = st.checkbox(
+        "견적 총액을 안다",
+        value=False,
+        key=input_key("ess", "total_cost_known"),
         help=manual_tip("ess-cost-reference"),
     )
+    if known:
+        st.number_input(
+            "견적 총액 (원)",
+            min_value=0.0,
+            value=0.0,
+            step=1_000_000.0,
+            key=input_key("ess", "total_cost"),
+        )
     path, fixed, per_kwh = ess_pricing()
-    return float(total), path, fixed, per_kwh
+    return ess_quote() or 0.0, path, fixed, per_kwh
 
 
 # --------------------------------------------------------------------- 7.7

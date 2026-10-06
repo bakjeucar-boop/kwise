@@ -75,7 +75,6 @@ __all__ = ["render"]
 
 _COLUMN_KEYS = ("diag_date_column", "diag_energy_column")
 _PF_LAGGING = "diag_pf_lagging"
-_PF_KNOWN = "diag_pf_leading_known"
 _PF_LEADING = "diag_pf_leading"
 
 
@@ -452,10 +451,12 @@ def _saved_power_factor() -> tuple[float, float | None]:
     계약 정보 블록이 역률 블록보다 위에 있으므로 위젯 객체를 참조할 수 없다.
     탭 구조라 두 블록이 매 실행에 함께 그려지고, 확정 단추를 누른 실행에서는
     세션에 이미 새 값이 들어와 있다.
+
+    **야간 칸을 비워 두면 「모름」 이다** (S276 결정 3 · 사람 결정) — 빈칸의 세션 값이
+    ``None`` 이라 그대로 넘긴다. 저압은 그 칸을 안 그려 늘 ``None`` 이다.
     """
     lagging = st.session_state.get(_PF_LAGGING)
-    known = bool(st.session_state.get(_PF_KNOWN))
-    leading = st.session_state.get(_PF_LEADING) if known else None
+    leading = st.session_state.get(_PF_LEADING)
     return (
         float(lagging) if lagging is not None else default_lagging_pct(),
         float(leading) if leading is not None else None,
@@ -486,18 +487,15 @@ def _power_factor_block(form: ContractForm | None) -> None:
             # **저압은 야간 진상역률 요금 대상이 아니다** (제43조 ② 2호 다목) — 넣어도 결과에
             # 안 닿는 입력칸을 그리지 않는다 (S269 결정 1). 전압을 모르면(확정 전) 그린다.
             # 그 칸을 두고 하는 말(아래 캡션과 매뉴얼 가리킴)도 같이 안 그린다 (S270 결정 1).
+            # **체크 없이 늘 나란히 선다 · 빈칸으로 시작한다** (S276 결정 3 · 사람 결정) —
+            # 비워 두면 「모름」 이고 기본값 95 를 넣지 않는다.
             leading_applies = form is None or leading_charge_applies(form.voltage)
-            known = leading_applies and st.checkbox(
-                "야간 진상역률을 안다",
-                value=saved.leading_power_factor_pct is not None if saved else False,
-                key=_PF_KNOWN,
-            )
-            if known:
+            if leading_applies:
                 st.number_input(
                     "야간 진상역률 (%)",
                     min_value=1.0,
                     max_value=100.0,
-                    value=float(saved.leading_power_factor_pct or 95.0) if saved else 95.0,
+                    value=saved.leading_power_factor_pct if saved else None,
                     step=0.1,
                     key=_PF_LEADING,
                 )

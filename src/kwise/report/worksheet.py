@@ -491,7 +491,8 @@ def demand_response_worksheet(result: DemandResponseResult) -> Worksheet:
                 "정산금",
                 (f"{result.annual_reducible_kwh:,.0f} kWh" if counted else "12개월 환산")
                 + f" × {result.unit_price_won_per_kwh:,.0f} 원/kWh",
-                _won(result.settlement_won),
+                # 감축 가능량이 0 이면 「없음」 이다 (S276 결정 5).
+                NO_SAVING if result.no_reduction else _won(result.settlement_won),
                 total=True,
             )
         )

@@ -636,10 +636,15 @@ def measure_summary_frame(
                 # **기간 칸은 기간 정산금이다** (S246 결정 1 · S256 고7) — 관측 기간 감축
                 # 가능량 × 단가. 두 칸 다 이 표의 다른 줄처럼 천 원 절사다. 단가가 없으면
                 # 기간 칸은 이 표의 빈 꼴(「—」) · 12개월 칸은 사유 그대로다.
-                "기간 절감액(원)": format_won(demand_response.period_settlement_won, reason="—"),
+                # 감축 가능량이 0 이면 두 칸 다 「없음」 이다 — 계약전력 줄의 꼴 (S276 결정 5).
+                "기간 절감액(원)": (
+                    NO_SAVING
+                    if demand_response.no_reduction
+                    else format_won(demand_response.period_settlement_won, reason="—")
+                ),
                 "12개월 환산(원)": (
                     format_won(demand_response.settlement_won)
-                    if demand_response.is_priced
+                    if demand_response.is_priced and not demand_response.no_reduction
                     else demand_response.settlement_label
                 ),
                 "회수기간": payback_label(

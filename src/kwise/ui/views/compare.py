@@ -131,6 +131,7 @@ from kwise.ui.spec import ReviewScope, measure, review_scope
 from kwise.ui.state import (
     enabled_measures,
     ess_pricing,
+    ess_quote,
     get_combination_pick,
     get_form,
     get_solar_inputs,
@@ -167,6 +168,7 @@ _SOLAR_WIDGETS = frozenset(
         "capacity",
         "azimuth_override",
         "total_cost",
+        "total_cost_known",
         "wall_area",
     )
 )
@@ -288,7 +290,7 @@ def render(
         pv_unit_cost_won_per_kwp=inputs.unit_cost_won_per_kwp if inputs else None,
         pv_total_investment_won=inputs.total_investment_won if inputs else None,
         ess_target_kw=ess_target,
-        ess_total_investment_won=measure_float("ess", "total_cost"),
+        ess_total_investment_won=ess_quote(),
         ess_fixed_won=measure_float("ess", "fixed_cost"),
         ess_per_kwh_won=measure_float("ess", "per_kwh_cost"),
         power_factor_pct=(
@@ -1181,7 +1183,7 @@ def _measure_results(
             token,
             form,
             ess_target,
-            measure_float("ess", "total_cost"),
+            ess_quote(),
             stamp,
             measure_float("ess", "fixed_cost"),
             measure_float("ess", "per_kwh_cost"),

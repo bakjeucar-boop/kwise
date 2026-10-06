@@ -53,7 +53,7 @@ def main() -> None:
     carry_inputs()
 
     st.sidebar.title("kWise")
-    st.sidebar.caption(f"버전 {__version__} · 대한민국 전용")
+    st.sidebar.caption(f"버전 {__version__}")
     # **옆단은 건물 이야기다** (16세션 2절). 계약 정보는 건물이 아니라 계약이라
     # 1단계 탭으로 내렸다.
     info = building_view.render_sidebar()

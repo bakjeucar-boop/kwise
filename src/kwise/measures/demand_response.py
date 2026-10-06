@@ -45,6 +45,7 @@ from kwise.diagnose.dr import (
     dr_market_windows,
 )
 from kwise.measures.base import Certainty
+from kwise.money import NO_SAVING
 from kwise.notices import Notice, basis, block, info, warn
 from kwise.rules import rule_value
 
@@ -155,6 +156,12 @@ class DemandResponseResult:
         return self.low_load_days > 0
 
     @property
+    def no_reduction(self) -> bool:
+        """**세어 보니 감축 가능량이 0 이다** (S276 결정 5) — 정산금 칸은 단가를 넣었든 안
+        넣었든 「없음」 이다 (S205 · S237 ㄴ). 세지 않은 벌(주말에도 가동)은 「미산출」 이다."""
+        return not self.unassessed_reason and self.annual_reducible_kwh <= 0
+
+    @property
     def is_priced(self) -> bool:
         return self.settlement_won is not None
 
@@ -171,6 +178,8 @@ class DemandResponseResult:
         if self.unassessed_reason:
             # 단가를 넣어도 금액이 안 선다 — 사유는 실제로 막은 것을 말한다 (S238 결정 3).
             return f"미산출 — {self.unassessed_reason}"
+        if self.no_reduction:
+            return NO_SAVING
         if self.settlement_won is None:
             return UNPRICED_REASON
         return f"{self.settlement_won:,.0f}"
@@ -309,7 +318,8 @@ def evaluate_demand_response(
             for item in notices
             if item.fact not in {"dr.registered_capacity", "dr.annual_reducible"}
         ]
-    elif unit_price_won_per_kwh is None:
+    elif unit_price_won_per_kwh is None and reducible:
+        # 감축이 0 이면 단가를 넣어도 금액이 「없음」 이라 세우지 않는다 (S276 결정 5).
         notices.append(
             block(
                 "정산 단가를 입력하지 않아 금액을 산출하지 않았습니다. "

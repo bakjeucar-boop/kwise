@@ -439,6 +439,15 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 - **기록 4**(`PROCEED.md` · `docs\HANDOVER.md` · `docs\OPEN_ITEMS.md` · `docs\directives\S276.md`).
 **1절 벽시계** 11:52:42 ~ 11:53:53(시각 명령 출력 · 읽기는 0절 기준선이 도는 동안 찾기 · 읽기 도구로 했다 · 글은 그 뒤에 적었다).
 
+**2-1. 고친 자리 — 자리마다 고친 줄 수(`git diff --numstat` · +/−)와 전 · 후.** `src\` **11파일**(1-6 그대로 · 계산 폴더 **1**) · `pyproject.toml` · `tools\` 0 · `data\` 0 · `CLAUDE.md` 0. **금액을 만드는 식 0줄.**
+- **결정 1.** `ui\app.py` 1/1 — 옆단 캡션 「버전 0.1.0 · 대한민국 전용」 → 「버전 1.0.0」. `__init__.py` 2/1 — `__version__ = "0.1.0"` → `"1.0.0"`(「한 자리」 주석 한 줄). `pyproject.toml` 5/1 — `version = "0.1.0"` → `dynamic = ["version"]` 과 `[tool.setuptools.dynamic] version = { attr = "kwise.__version__" }`(버전 글자를 적은 자리가 `__init__.py` 하나가 됐다).
+- **결정 3.** `ui\views\diagnose.py` 8/10 — 체크 「야간 진상역률을 안다」 와 그 키 상수(`_PF_KNOWN`)를 걷었다 · 「야간 진상역률 (%)」 칸이 고압 이상에서 늘 서고 처음 값이 95 → 빈칸(`value=None` · 확정한 값이 있으면 그 값) · `_saved_power_factor` 가 체크 대신 그 칸의 세션 값(빈칸이면 `None`)을 그대로 넘긴다. 저압 갈래(`leading_applies`) · 아래 캡션 · 「역률 반영」 단추 0줄.
+- **결정 4.** `ui\views\measures.py` 37/14 가운데 — ESS `_ess_cost_inputs`: 「견적 총액 직접 입력 (원) — 0 이면 기준 데이터의 단가로 산정」 한 칸 → 체크 「견적 총액을 안다」(키 `measure_ess_total_cost_known` · 매뉴얼 툴팁은 체크로 옮겼다)와 체크했을 때만 서는 「견적 총액 (원)」(키 그대로). 태양광 상세: 「총 투자비 직접 입력 (원) — 0 이면 단가 사용」 → 체크 「총 투자비를 안다」(키 `measure_solar_total_cost_known`)와 「총 투자비 (원)」(키 그대로) · 체크 안 하면 0. `ui\state.py` 12/0 — 새 함수 `ess_quote()`(체크가 켜졌을 때만 금액을 읽는다). `ui\views\compare.py` 4/2 — 3단계의 두 자리가 `measure_float("ess", "total_cost")` → `ess_quote()` · 「계산 전 태양광 위젯」 목록에 `total_cost_known` 한 줄.
+- **결정 5.** `measures\demand_response.py` 11/1(계산 폴더) — 속성 `no_reduction`(세어 보니 감축 가능량이 0 · 세지 않은 벌은 아니다) · `settlement_label` 에 「없음」 갈래 · 차단 줄 「정산 단가를 입력하지 않아 …」 가 감축이 0 보다 클 때만 선다. `report\standalone.py` 4/0 — 3단계 요약 「개선 방안」 「0 kWh 입찰」 → 「0 kWh · 개선 여지 없음」 · 절감액 칸 `zero_reason` 「없음」. `report\document.py` 2/1 — 수단 항목의 절감 칸(PPT 8장 표 · 11장 · Word 표). `report\excel.py` 7/2 — 「수단별 결과」 기간 · 12개월 두 칸. `report\worksheet.py` 2/1 — 계산 근거 「정산금」 줄. `ui\views\measures.py`(위 37/14 가운데 5/1) — 2단계 지표 「12개월 환산 정산금」.
+- **정적 검사(고친 직후)** — `ruff check .` 통과(`ruff_20261006_115633.txt`) · `ruff format --check .` 어긋남 0 · 통과 177(`ruff_20261006_115633-2.txt`) · 맨 `mypy` 0건 · 176파일(`mypy_20261006_115625.txt`).
+**2-2. 적게 닫았거나 번진 자리.** 적게 닫은 것 0 · 번진 것 0(1-6 의 파일 그대로). 옛 글자 · 옛 입력 칸을 문 시험은 3-1 에서 고친다.
+**2절 벽시계** 11:54:58 ~ 11:56:33(시각 명령 출력 · 커밋 앞 · 글은 그 뒤에 적었다).
+
 ---
 
 ## 오늘 (2026-10-02) 275세션 — **일반용 마지막 코드 판 · 같은 문장 사본을 한 자리로 · 매뉴얼 · 순서 탓 못 · 시험 파일 mypy · 남은 미해결 정리**

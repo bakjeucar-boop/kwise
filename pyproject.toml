@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kwise"
-version = "0.1.0"
+# 버전 번호는 `src\kwise\__init__.py` 한 자리에서 만든다 (S276 결정 1) — 아래 dynamic 이 읽는다.
+dynamic = ["version"]
 description = "건물 전력 비용 진단 및 개선안 비교 도구"
 readme = "README.txt"
 requires-python = ">=3.12"
@@ -70,6 +71,9 @@ dev = [
 
 [tool.setuptools]
 package-dir = { "" = "src" }
+
+[tool.setuptools.dynamic]
+version = { attr = "kwise.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1036,8 +1036,9 @@ def measure_entries(
             saving=(
                 # 사유는 이미 「미산출 — …」 꼴이다. 앞에 한 번 더 붙이지 않는다
                 # (28세션 1-4 에 문구를 줄이면서 겹침이 드러났다).
+                # 감축 가능량이 0 이면 단가를 넣었어도 「없음」 이다 (S276 결정 5).
                 _won(demand_response.settlement_won)
-                if demand_response.is_priced
+                if demand_response.is_priced and not demand_response.no_reduction
                 else demand_response.settlement_label
             ),
             investment=_won(0.0),
