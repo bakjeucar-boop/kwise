@@ -3377,9 +3377,9 @@ def test_저압_건물에는_야간_진상_안내와_입력칸이_안_선다() -
     약관 제43조 ② 2호 다목(S268 결정 1). 덱의 저압 벌(`small-ind-a1` · 산업용(갑)Ⅰ 저압)과
     같은 자료의 고압 벌(`small-ind-a2` · 고압A)을 앱으로 띄워 네 산출물을 맞댄다. 저압은
     야간 진상 안내 다섯 갈래가 0줄이고 「야간 진상역률 (%)」 입력칸이 없다. 고압은 다 선다.
-    「역률 (선택)」 아래 「모르면 지상으로 간주해 추가요금이 없습니다.」 줄과 그 줄의 매뉴얼
-    안내도 저압에는 없다(S270 결정 1). 2단계 카드의 매뉴얼 가리킴 툴팁과 기준 데이터 표의
-    진상 줄은 두 벌 다 그대로다(건물을 말하지 않는다).
+    「역률 (선택)」 안 야간 칸 아래 「야간 진상역률을 모르면 비워 두십시오 — …」 줄(S278 결정 1 에
+    자리와 글자를 고쳤다)과 그 줄의 매뉴얼 안내도 저압에는 없다(S270 결정 1). 2단계 카드의
+    매뉴얼 가리킴 툴팁과 기준 데이터 표의 진상 줄은 두 벌 다 그대로다(건물을 말하지 않는다).
     """
     low, high = _render("small-ind-a1"), _render("small-ind-a2")
 
@@ -3396,7 +3396,9 @@ def test_저압_건물에는_야간_진상_안내와_입력칸이_안_선다() -
     # 그 칸을 두고 하던 말(「역률 (선택)」 아래 지상 간주 한 줄)과 그 줄에 달린 매뉴얼
     # 안내도 저압에는 안 선다 (S270 결정 1). 고압은 둘 다 선다. 같은 매뉴얼 안내는 2단계
     # 역률 개선 카드에 따로 달려 있어 저압에도 그 한 줄은 남는다.
-    deemed = "모르면 지상으로 간주해 추가요금이 없습니다."
+    deemed = (
+        "야간 진상역률을 모르면 비워 두십시오 — 지상으로 간주해 야간 추가요금을 매기지 않습니다."
+    )
     block = "역률 (선택)"
     tip = "야간 진상 조항과 지상 간주"
     assert _cells_with(low, deemed) == [], _cells_with(low, deemed)
@@ -3412,6 +3414,47 @@ def test_저압_건물에는_야간_진상_안내와_입력칸이_안_선다() -
         line = " | ".join(str(cell) for cell in row)
         if "진상" in line:
             assert "야간 진상 조항과 지상 간주" in line or "기본공급약관 제43조 ② 2호" in line, row
+
+
+def test_S278_개선안별_요약의_없음_행은_회수기간도_없음이다() -> None:
+    """**절감액이 「없음」 인 행은 회수기간도 「없음」 이다 — 세 산출물 다** (S278 결정 4).
+
+    S258 결정 9 가 「모든 자리에서」 로 정했는데 S276 결정 5 가 감축 가능량 0 인 경제성DR 의
+    절감 칸만 「없음」 으로 바꿔 회수기간이 「—」 로 남았다. 화면 3단계 요약 · PPT 요약표 ·
+    Excel 「수단별 결과」 를 행째로 본다. 벌은 감축 0 인 `small-b-sell` 이다.
+    투자비 칸은 이 못이 안 문다(「0원」 과 「—」 — 기록끼리 어긋나 S278 이 값만 냈다).
+    """
+    rendered = _render("small-b-sell")
+
+    # 화면 표는 칸이 열 차례로 온다 — 머리 넷 뒤에 수단 · 개선 방안 · 절감 · 투자비 · 회수.
+    cells = [
+        row[4]
+        for row in rendered.rows
+        if row[0] == "화면" and row[2] == "Dataframe" and "3단계" in row[1]
+    ]
+    head = ["개선 방안", "12개월 환산 절감액", "투자비", "회수기간"]
+    at = next(i for i in range(len(cells)) if cells[i : i + 4] == head)
+    body = cells[at + 4 :]
+    count = body.index("합계") + 1
+    names, _way, saving, _invest, payback = (body[k * count : (k + 1) * count] for k in range(5))
+    found = {"화면": list(zip(names, saving, payback, strict=True))}
+
+    slide_head = next(
+        row for row in rendered.rows if row[0] == "PPT" and {"투자비", "회수기간"} <= set(row[2:])
+    )
+    found["PPT"] = [
+        (row[2], row[3], row[5])
+        for row in rendered.rows
+        if row[:2] == slide_head[:2] and row is not slide_head
+    ]
+    sheet = [row for row in rendered.rows if row[:2] == ("Excel", "수단별 결과")]
+    assert sheet[0][2:7] == ("수단", "투자비(원)", "기간 절감액(원)", "12개월 환산(원)", "회수기간")
+    found["Excel"] = [(row[2], row[5], row[6]) for row in sheet[1:] if len(row) > 6]
+
+    for kind, table in found.items():
+        none = [(name, back) for name, value, back in table if value == NO_SAVING_WORD]
+        assert any("경제성DR" in name for name, _back in none), (kind, table)
+        assert [back for _name, back in none] == [NO_SAVING_WORD] * len(none), (kind, none)
 
 
 # ─────────────────────────────────── S271 — 산업용(갑)Ⅰ 저압 실측 벌의 실물

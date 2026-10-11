@@ -5572,3 +5572,92 @@ def test_S277_저압은_세션에_남은_야간_진상역률을_읽지_않는다
     form = screen.session_state["contract_form"]
     assert (form.voltage, form.leading_power_factor_pct) == ("low", None)
     assert screen.session_state[night_key] == 90.0  # 값은 세션에 남아 있다 — 읽지 않을 뿐이다
+
+
+# ─────────────────────────────────── S278 — 역률 안내 줄의 자리 · SMP 칸 (결정 1 · 3)
+
+#: 야간 칸 아래 한 줄 (S278 결정 1 · 사람 결정).
+NIGHT_UNKNOWN_NOTE = (
+    "야간 진상역률을 모르면 비워 두십시오 — 지상으로 간주해 야간 추가요금을 매기지 않습니다."
+)
+
+
+def test_S278_역률_안내_줄은_야간_칸_아래에_서고_저압에는_없다() -> None:
+    """**「모르면 …」 한 줄은 야간 칸을 두고 하는 말이다 — 그 칸 아래에 선다** (S278 결정 1).
+
+    앞서는 두 칸 아래 온 폭으로 서서 왼쪽 주간 칸의 말로 읽혔고, 무슨 추가요금인지도
+    안 적었다. 야간 칸과 같은 열에 서고(주간 칸 열에는 없다) 야간 칸이 없는 저압에는
+    줄도 없다 (S269 · S270).
+    """
+    night_key, day_key = "diag_pf_leading", "diag_pf_lagging"
+
+    def holders(screen: AppTest) -> list[list[str | None]]:
+        """그 줄을 품은 열마다 그 열의 수 입력칸 키."""
+        return [
+            [item.key for item in column.number_input]
+            for column in screen.columns
+            if any(str(item.value) == NIGHT_UNKNOWN_NOTE for item in column.caption)
+        ]
+
+    screen = _running()
+    assert not screen.exception, screen.exception
+    assert [str(item.value) for item in screen.caption].count(NIGHT_UNKNOWN_NOTE) == 1
+    assert holders(screen) == [[night_key]], holders(screen)
+    assert day_key in [item.key for item in screen.number_input]
+    assert not [item for item in screen.caption if "추가요금이 없습니다" in str(item.value)]
+
+    low = _running(
+        contract_form=ContractForm(
+            contract_type="general_a_1", voltage="low", option="single", contract_kw=200.0
+        )
+    )
+    assert not low.exception, low.exception
+    assert NIGHT_UNKNOWN_NOTE not in [str(item.value) for item in low.caption]
+    assert holders(low) == []
+
+
+def test_S278_SMP_단가_칸은_기간_말_잔여가_있을_때만_선다() -> None:
+    """**상계거래의 SMP 는 당월 차감 뒤 기간 말에 남은 몫에만 곱해진다** (S278 결정 3).
+
+    잔여가 0 이면 단가를 바꿔도 수익이 그대로라 칸을 세우지 않는다(S260 결정 3 을 입력
+    칸에도) — 근거 줄 「당월 차감 …」 이 그대로 선다. 잔여가 있는 벌(`small-ind-a1`)은 칸이
+    서고 단가를 바꾸면 수익이 따라 바뀐다. 용인 벌(`small-a2-pf100-offset`)은 잔여가 0 이다.
+    """
+    import sys
+
+    sys.path.insert(0, str(Path("tools").resolve()))
+    import render_deck
+
+    from kwise.measures.surplus import OFFSET_SCENARIO
+
+    smp_key = "measure_solar_smp_price"
+
+    def offset(key: str) -> AppTest:
+        case = replace(render_deck.BY_KEY[key], surplus_use=OFFSET_SCENARIO)
+        app = render_deck.build_app(case).run()
+        assert not app.exception, app.exception
+        return app
+
+    def view(app: AppTest) -> tuple[bool, str, str]:
+        """(SMP 칸이 서는가, 근거 줄, 12개월 환산 수익)."""
+        return (
+            any(item.key == smp_key for item in app.number_input),
+            next(str(item.value) for item in app.caption if "당월 차감" in str(item.value)),
+            next(str(item.value) for item in app.metric if item.label == "12개월 환산 수익"),
+        )
+
+    left = offset("small-ind-a1")
+    shown, basis, revenue = view(left)
+    assert shown and "잔여" in basis and "SMP" in basis, basis
+    left.number_input(key=smp_key).set_value(1200.0).run()
+    assert not left.exception, left.exception
+    assert view(left)[0] and view(left)[2] != revenue
+
+    none = offset("small-a2-pf100-offset")
+    shown, basis, revenue = view(none)
+    assert not shown and "잔여" not in basis, basis
+    # 칸이 없으니 넣을 길도 없다 — 세션에 단가가 남아 있어도 수익은 그대로다.
+    none.session_state[smp_key] = 1200.0
+    none.run()
+    assert not none.exception, none.exception
+    assert view(none) == (False, basis, revenue)
