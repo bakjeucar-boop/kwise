@@ -1044,8 +1044,13 @@ def measure_entries(
             investment=_won(0.0),
             # **Excel 과 같은 말이다** (83세션 13). 절감이 없는데 「즉시」 라
             # 적으면 즉시 회수된다고 읽힌다 — 같은 표의 같은 칸이므로 함께 맞췄다.
-            # 판정은 S134 3절에 ``payback_years`` 한 자리로 모았다.
-            payback=_payback_text(payback_years(0.0, demand_response.settlement_won or 0.0), 0.0),
+            # 판정은 S134 3절에 ``payback_years`` 한 자리로 모았다. 절감 「없음」 이면
+            # 회수기간도 「없음」 (S258 결정 9 · S278 결정 4).
+            payback=(
+                NO_SAVING
+                if demand_response.no_reduction
+                else _payback_text(payback_years(0.0, demand_response.settlement_won or 0.0), 0.0)
+            ),
             certainty=str(demand_response.certainty),
             has_saving=demand_response.is_priced and bool(demand_response.settlement_won),
             cautions=(

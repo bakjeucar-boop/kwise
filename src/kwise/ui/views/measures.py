@@ -1414,7 +1414,15 @@ def _surplus_handling(
                 key=input_key("solar", "surplus_price"),
                 help="우리가 파는 쪽의 단가입니다. 비우면 금액을 산출하지 않습니다.",
             )
-        elif choice == OFFSET_SCENARIO and offset_settles_cash(point.capacity_kwp):
+        # **SMP 칸은 기간 말 잔여가 있을 때만 선다** (S278 결정 3 · S260 결정 3 을 입력 칸에도) —
+        # 잔여가 0 이면 SMP 가 곱해질 몫이 없어 단가를 바꿔도 수익이 그대로다. 잔여는 단가와
+        # 무관하므로 위에서 받은 ``surplus`` 로 본다.
+        elif (
+            choice == OFFSET_SCENARIO
+            and offset_settles_cash(point.capacity_kwp)
+            and surplus.offset is not None
+            and surplus.offset.remaining_kwh > 0
+        ):
             st.number_input(
                 "SMP 단가 (원/kWh) — 0 이면 미산출",
                 min_value=0.0,

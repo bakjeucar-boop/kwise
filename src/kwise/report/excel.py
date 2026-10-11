@@ -647,8 +647,13 @@ def measure_summary_frame(
                     if demand_response.is_priced and not demand_response.no_reduction
                     else demand_response.settlement_label
                 ),
-                "회수기간": payback_label(
-                    payback_years(0.0, demand_response.settlement_won or 0.0), 0.0
+                # 절감 「없음」 이면 회수기간도 「없음」 (S258 결정 9 · S278 결정 4).
+                "회수기간": (
+                    NO_SAVING
+                    if demand_response.no_reduction
+                    else payback_label(
+                        payback_years(0.0, demand_response.settlement_won or 0.0), 0.0
+                    )
                 ),
                 "비고": (
                     f"거래 가능일 {demand_response.eligible_days}일 중 저부하 평일 "

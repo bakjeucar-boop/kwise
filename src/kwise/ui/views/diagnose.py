@@ -507,11 +507,12 @@ def _power_factor_block(form: ContractForm | None) -> None:
                     step=0.1,
                     key=_PF_LEADING,
                 )
-        if leading_applies:
-            st.caption(
-                "모르면 지상으로 간주해 추가요금이 없습니다.",
-                help=manual_tip("measure-power-factor"),
-            )
+                # 야간 칸을 두고 하는 말이라 그 칸 바로 아래에 둔다 (S278 결정 1 · 사람 결정).
+                st.caption(
+                    "야간 진상역률을 모르면 비워 두십시오 — "
+                    "지상으로 간주해 야간 추가요금을 매기지 않습니다.",
+                    help=manual_tip("measure-power-factor"),
+                )
 
         lagging, leading = _saved_power_factor(form.voltage if form else None)
         if form is None:

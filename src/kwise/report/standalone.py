@@ -214,6 +214,8 @@ def standalone_rows(
                 certainty=demand_response.certainty,
                 saving_reason=demand_response.settlement_label,
                 zero_reason=NO_SAVING if demand_response.no_reduction else "",
+                # 절감 「없음」 이면 회수기간도 「없음」 (S258 결정 9 · S278 결정 4).
+                payback_reason=NO_SAVING if demand_response.no_reduction else "",
             )
         )
     if power_factor is not None:
