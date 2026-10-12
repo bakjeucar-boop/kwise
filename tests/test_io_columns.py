@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import struct
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -116,6 +117,37 @@ def test_S281_xls_를_올리면_읽힌다(tmp_path: Path, month_rows: list[tuple
     assert xls.meta.total_kwh == pytest.approx(xlsx.meta.total_kwh)
     assert xls.meta.max_demand_kw == pytest.approx(xlsx.meta.max_demand_kw)
     pd.testing.assert_series_equal(xls.kw, xlsx.kw)
+
+
+def test_S282_웹_표_xls_를_올리면_우리말_안내가_선다() -> None:
+    """**확장자만 `.xls` 인 웹 표는 읽지 않고 우리말로 알린다** (S282 결정 1).
+
+    한전 월별 자료가 그 꼴이다 — 속이 HTML 표라 pandas 가 형식을 못 정하고 그 영어
+    오류가 화면까지 갔다. 표본은 여기서 짓는다 (`input\\` 은 저장소에 없다).
+    """
+    html = (
+        '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><body><table>'
+        "<tr><td>년월</td><td>사용량(kWh)</td></tr><tr><td>2025-08</td><td>41,200</td></tr>"
+        "</table></body></html>"
+    )
+    with pytest.raises(UsageLoadError, match="웹 표 형식이거나") as caught:
+        load_usage_bytes(html.encode("utf-8"), "월별.xls")
+    assert "15분 단위 사용량을 내려받아" in str(caught.value)
+    assert "cannot be determined" not in str(caught.value)
+
+
+@pytest.mark.parametrize("missing", ["xlrd", "openpyxl"])
+def test_S282_읽는_꾸러미가_없으면_빠진_쪽을_말한다(
+    monkeypatch: pytest.MonkeyPatch, month_rows: list[tuple[str, float]], missing: str
+) -> None:
+    """**`.xls` 는 xlrd · `.xlsx` 는 openpyxl 을 말한다** (S282 결정 2).
+
+    앞서는 xlrd 가 빠져도 「openpyxl 설치를 확인해 주세요」 였다.
+    """
+    data = _biff2_xls(month_rows[:8]) if missing == "xlrd" else FIXTURE.read_bytes()
+    monkeypatch.setitem(sys.modules, missing, None)
+    with pytest.raises(UsageLoadError, match=f"{missing} 설치를 확인해 주세요"):
+        load_usage_bytes(data, "사용량.xls" if missing == "xlrd" else "사용량.xlsx")
 
 
 def test_one_row_form_says_why_it_cannot_guess_the_interval() -> None:
