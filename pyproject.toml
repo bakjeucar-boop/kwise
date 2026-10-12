@@ -19,6 +19,8 @@ dependencies = [
     "streamlit>=1.35",
     "altair>=5.3",
     "openpyxl>=3.1",
+    # S281 결정 1 — 화면이 `.xls` 올리기를 받는다. pandas 가 `.xls` 를 이 꾸러미로 읽는다.
+    "xlrd>=2.0.1",
     # 9세션 — 의사결정자용 Word 보고서. 표는 Word 표 객체로, 차트만 png 다.
     # **36세션에 화면에서 감췄다.** 만드는 코드와 시험은 그대로라 의존성도 남긴다.
     "python-docx>=1.1",

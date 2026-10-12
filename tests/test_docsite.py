@@ -519,12 +519,16 @@ def test_사용법은_매뉴얼에만_있다() -> None:
     assert "매뉴얼 2장" in technical, "기술서가 매뉴얼을 가리키지 않습니다."
 
 
-def test_캡처_목록이_매뉴얼_자리와_맞는다() -> None:
+def test_매뉴얼에_캡처_자리표시가_없다() -> None:
+    """**그림 없는 자리표시를 매뉴얼에 두지 않는다** (S281 결정 2 · 사람 결정).
+
+    앞서는 자리표시 11곳이 `CAPTURES.md` 목록과 맞는지를 물었다. 그림이 없는 채
+    점선 상자만 서 있어 걷었다 — 목록은 나중에 넣을 때의 재료로 남는다.
+    """
     manual = (DOCS / "MANUAL.md").read_text(encoding="utf-8")
-    captures = set(re.findall(r"!\[캡처 (C-\d+)\]", manual))
+    assert not re.findall(r"!\[캡처[^\]]*\]", manual)
     listed = set(re.findall(r"\*\*(C-\d+)\*\*", (DOCS / "CAPTURES.md").read_text(encoding="utf-8")))
-    assert captures == listed, f"매뉴얼 {sorted(captures)} vs 목록 {sorted(listed)}"
-    assert len(captures) >= 8
+    assert len(listed) >= 8
 
 
 def _manual_items() -> list[str]:

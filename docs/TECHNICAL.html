@@ -108,13 +108,19 @@ li.task input { margin-right:.5rem; }
 <p>건물 전력 비용 진단·개선안 비교 도구. <strong>개발자와 1년 뒤의 본인</strong>이 읽는다.</p>
 <p>이 문서는 <strong>왜 그렇게 만들었는가</strong>를 남긴다. 무엇을 하는지는 코드가 말하고, 어떻게 쓰는지는 매뉴얼이 말한다. 코드가 바뀔 때 갱신한다.</p>
 <div class="table-wrap"><table><thead><tr><th></th><th></th></tr></thead><tbody><tr><td><strong>처음 넘겨받았다면</strong></td><td>이 문서 <a href="#tech-start">0장</a> — 무엇부터 열지 차례대로 적었다</td></tr><tr><td>사용법</td><td><code>MANUAL.html</code> — 화면 조작과 결과 읽는 법</td></tr><tr><td>요구사항</td><td><code>REQUIREMENTS_kwise.md</code> — 무엇을 만들기로 했는가</td></tr><tr><td>진행 이력</td><td><code>PROCEED.md</code> — 세션별 기록과 결정 사항</td></tr><tr><td>근거 조문</td><td>이 문서 <a href="#부록-c-근거-조문-색인">부록 C</a> — <strong>한 곳에 모았다</strong></td></tr></tbody></table></div>
-<p><strong>이 문서는 버전 1.0.0 (git 표지 <code>v1.0.0</code>) 뒤의 코드에 맞춰 있다</strong> (S280). 본문에는 세션 번호가 붙은 옛 경위가 많이 남아 있다 — <strong>그 글은 「왜 그렇게 되었나」 의 기록이고 지금 값이 아니다.</strong> 지금 값은 0장이 가리키는 정본에서 본다.</p>
+<p><strong>이 문서는 버전 1.0.1 (git 표지 <code>v1.0.1</code>)의 코드에 맞춰 있다</strong> (S280 · S281). 본문에는 세션 번호가 붙은 옛 경위가 많이 남아 있다 — <strong>그 글은 「왜 그렇게 되었나」 의 기록이고 지금 값이 아니다.</strong> 지금 값은 0장이 가리키는 정본에서 본다.</p>
 <hr>
 <h2 id="tech-start">0. 여기서 시작하십시오</h2>
 <p><strong>이 프로젝트를 넘겨받아 보완하려는 사람이 가장 먼저 읽는 장이다.</strong> 본문을 옮겨 적지 않았다 — 항목마다 한두 줄과 <strong>정본이 있는 자리</strong>만 적는다. 건수·금액· 소요 같은 값은 정본 쪽이 쥐므로 여기 숫자로 적지 않는다. <strong>아래 차례대로 열면 된다.</strong></p>
 <h3 id="tech-start-state">0.1 지금 어디까지 왔나</h3>
 <ul>
-<li><strong>버전은 1.0.0 이다.</strong> 번호를 만드는 자리는 <code>src\kwise\__init__.py</code> 의 <code>__version__</code> 하나이고 <code>pyproject.toml</code> 이 그것을 읽는다 (<a href="#tech-layout">2.2</a>). git 표지 <code>v1.0.0</code> 이 그 판을 가리킨다.</li>
+<li><strong>버전은 1.0.1 이다.</strong> 번호를 만드는 자리는 <code>src\kwise\__init__.py</code> 의 <code>__version__</code> 하나이고 <code>pyproject.toml</code> 이 그것을 읽는다 (<a href="#tech-layout">2.2</a>). git 표지 <code>v1.0.1</code> 이 그 판을 가리킨다 (<code>v1.0.0</code> 은 그 앞 판이다).</li>
+<li><strong>1.0.1 에서 바뀐 것</strong> (S281 · 금액은 한 원도 안 움직였다).</li>
+<ul>
+<li><code>.xls</code> 를 읽는 꾸러미 <code>xlrd</code> 를 의존 목록에 넣었다 — 화면은 <code>.xls</code> 올리기를 받는데 읽는 꾸러미가 빠져 있었다 (<code>requirements.txt</code> · <code>pyproject.toml</code>).</li>
+<li>산출물 한계 글의 「시군구 좌표 229개」 에서 수를 걷었다 (<code>src\kwise\report\notices.py</code>) · <code>README.txt</code> 의 낡은 글을 실물대로 고쳤다.</li>
+<li>문서 보완 — 매뉴얼의 그림 자리표시를 걷고, 이 문서 부록 B 와 매뉴얼 부록의 금액을 지금 값으로 맞췄다.</li>
+</ul>
 <li><strong>원격은 하나다</strong> — <code>https://github.com/bakjeucar-boop/kwise.git</code> 의 가지 <code>master</code>. PC 두 대가 이 원격을 사이에 두고 번갈아 쓰므로 <strong>시작할 때 <code>git pull</code>, 마칠 때 <code>git push</code></strong> 다 (<code>CLAUDE.md</code> 「작업 시작 전 필독」 0항).</li>
 <li><strong>지금 상태의 값</strong>(미해결 수 · 시험 건수 · 케이스 스터디 · 화면 감사 · 정적 검사)은 <code>PROCEED.md</code> 의 「현재 상태」 표가 쥐고, <code>docs\HANDOVER.md</code> 1절이 그것을 한 표로 추려 둔다.</li>
 <li><strong><code>PROCEED.md</code> 를 통째로 열지 않는다.</strong> 한 줄이 수만 자인 칸이 있다. 필요한 칸만 도구로 뜬다 — <code>.venv\Scripts\python.exe tools\run_tool.py daily_brief --cells</code> (칸 목록) · <code>daily_brief --branch 마</code>(미해결 이름). 쓰는 법은 <code>CLAUDE.md</code> 「백그라운드 실행」 4항에 있다.</li>
@@ -702,6 +708,7 @@ data\backup\     편집 직전 스냅샷 (최근 10개, .gitignore)</code></pre>
 <p>Windows 작업 집합을 <code>GetProcessMemoryInfo</code> 로 직접 읽는다. <code>tracemalloc</code> 은 파이썬 할당자만 보므로 <strong>NumPy 배열이 빠지는데</strong>, 이 도구에서 메모리를 쥐는 것이 바로 그 배열이다.</p>
 <blockquote><code>ctypes</code> 호출에서 <code>argtypes</code> 를 지정하지 않아 64비트에서 핸들이 잘렸고, 호출이 <strong>조용히 실패해 0 이 돌아왔다.</strong> 표에 &quot;0 MB&quot;로 찍혀 있었다 — 못 잰 것을 안 썼다고 읽을 뻔했다. 지금은 못 재면 <code>None</code> 이고 표에 <code>—</code> 로 나온다.</blockquote>
 <h4 id="tech-cloud">Streamlit Cloud 대비</h4>
+<p><strong>이 표도 2026-08-11 그날 값이다.</strong> 「weather 20 MB」 는 그때 크기이고, 지금 <code>data\weather\</code> 는 406파일 42,509,521 B(약 40 MB)다 (<a href="#tech-data">2.3</a> 의 값과 같다 · S281 이 쟀다). 얕은 클론 크기는 다시 재지 않았다.</p>
 <div class="table-wrap"><table><thead><tr><th>항목</th><th>실측</th><th>판단</th></tr></thead><tbody><tr><td>최대 RSS</td><td>273 MB</td><td>한도 1 GB 의 <strong>27%</strong></td></tr><tr><td>최대 구간</td><td>Excel 쓰기 +45.8 MB</td><td>15분 시계열 시트. 체크박스로 끌 수 있다</td></tr><tr><td>업로드</td><td>3년치 <strong>2.5 MB</strong></td><td>기본 상한 200 MB — 79배 여유</td></tr><tr><td>얕은 클론</td><td>23 MB (weather 20 MB)</td><td>pip 설치 수백 MB 에 비하면 무시할 수준</td></tr></tbody></table></div>
 <p><strong>동시 사용.</strong> <code>st.cache_data</code> 는 프로세스 전역이라 접속자가 캐시를 공유한다. 키가 요약 정보(파일명·기간·총량)뿐이면 다른 파일이 같은 키를 가질 여지가 남고 그때 옆 사람 결과가 나온다 — <strong>업로드 바이트의 내용 해시</strong>를 키에 물렸다. 가장 무거운 셋(태양광 곡선·조합 비교·감도)은 세션 기억으로 옮겨 세션 밖으로 나가지 않는다.</p>
 <p><strong>임시 파일.</strong> 업로드 바이트는 메모리에만 있다. 산출물은 세션별 uuid 폴더에 만들었다가 <strong>바이트로 읽은 즉시 지운다.</strong> 앱을 켤 때 묵은 폴더(6시간)를 쓸어내는 그물을 함께 둔다.</p>
@@ -771,7 +778,7 @@ data\backup\     편집 직전 스냅샷 (최근 10개, .gitignore)</code></pre>
 <div class="table-wrap"><table><thead><tr><th>종별</th><th>89세션까지</th><th>90세션</th><th>근거</th></tr></thead><tbody><tr><td>교육용(갑)</td><td><code>null</code> (미적용)</td><td><strong>0.3</strong></td><td>제68조 ①</td></tr><tr><td>교육용(을)</td><td>0.15</td><td><strong>0.3</strong></td><td>제68조 ① (15% 는 별표4 8. 의 신청 특례)</td></tr><tr><td>나머지 여섯</td><td>0.3 또는 <code>null</code></td><td><strong>그대로</strong></td><td>갑Ⅰ 둘만 <code>null</code> — 전 전압이 계약전력 기준이다</td></tr></tbody></table></div>
 <p><strong>하한을 거는 자리도 함께 옮겼다.</strong> 종별 값이 아니라 <strong>그 전압의 기본요금 기준</strong>이 정한다 — 계약전력 기준(제68조 ②) 전압에서는 값이 있어도 걸지 않고 결과에도 싣지 않는다. 그러지 않으면 교육용(갑) <strong>저압</strong>이 없는 하한으로 계약전력 조정 목표를 세운다.</p>
 <h3 id="tech-extension">7.3 확장 방향</h3>
-<div class="table-wrap"><table><thead><tr><th>방향</th><th>메모</th></tr></thead><tbody><tr><td>종별 확대</td><td>요금표 JSON 에 종별을 더하면 된다. 검증 규칙이 먼저 깨지지 않도록 <a href="#부록-a-요금-데이터-스키마">부록 A</a> 참조</td></tr><tr><td>편차 보정</td><td>분위수 사상으로 예측 분포를 실측에 맞춘다. <strong>실측 발전 데이터가 쌓인 뒤</strong></td></tr><tr><td>신뢰성DR</td><td>설비 요건 판정이 필요하다. 현재 범위 밖</td></tr><tr><td>다중 사업장</td><td>CLI 배치가 이미 순차 처리한다. 화면은 한 건 기준</td></tr><tr><td>화면 캡처</td><td>매뉴얼에 자리만 잡아 두었다. <code>CAPTURES.md</code> 참조</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>방향</th><th>메모</th></tr></thead><tbody><tr><td>종별 확대</td><td>요금표 JSON 에 종별을 더하면 된다. 검증 규칙이 먼저 깨지지 않도록 <a href="#부록-a-요금-데이터-스키마">부록 A</a> 참조</td></tr><tr><td>편차 보정</td><td>분위수 사상으로 예측 분포를 실측에 맞춘다. <strong>실측 발전 데이터가 쌓인 뒤</strong></td></tr><tr><td>신뢰성DR</td><td>설비 요건 판정이 필요하다. 현재 범위 밖</td></tr><tr><td>다중 사업장</td><td>CLI 배치가 이미 순차 처리한다. 화면은 한 건 기준</td></tr><tr><td>화면 캡처</td><td>매뉴얼의 그림 자리표시는 S281 에 걷었다. 찍을 목록은 <code>CAPTURES.md</code> 에 남아 있다</td></tr></tbody></table></div>
 <p><strong>메모리 여유가 생겼다고 다중 시나리오를 동시 적재하지 않는다.</strong> 순차 처리를 유지한다 — 케이스 스터디가 벌들의 시계열을 동시에 들지 않는 것이 그 규약이다.</p>
 <hr>
 <h2 id="부록-a-요금-데이터-스키마">부록 A. 요금 데이터 스키마</h2>
@@ -783,7 +790,8 @@ data\backup\     편집 직전 스냅샷 (최근 10개, .gitignore)</code></pre>
 <hr>
 <h2 id="부록-b-샘플-회귀값">부록 B. 샘플 회귀값</h2>
 <p><code>input\사용량조회_20240429.csv</code>. <strong>어긋나면 요구사항서 부록 B 를 따른다.</strong></p>
-<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>기간</td><td>2023-04-25 00:15 ~ 2024-04-27 00:00</td></tr><tr><td>원본 행 수</td><td>34,358 (그리드 이탈 2건 포함)</td></tr><tr><td>그리드 구간</td><td>35,328</td></tr><tr><td>결측</td><td>972 (2.8%)</td></tr><tr><td><code>24:00</code> 표기</td><td>357건</td></tr><tr><td>연간 사용량</td><td>22,285 MWh</td></tr><tr><td>최대수요</td><td>5,293.4 kW @ 2023-07-03(월) 09:30</td></tr><tr><td>부하율</td><td>49.0%</td></tr><tr><td>결측 구간 1</td><td>2023-11-03 17:30 ~ 11-13 09:45 (930슬롯, 9.69일, 통신 장애 추정)</td></tr><tr><td>결측 구간 2</td><td>2024-04-06 19:30 ~ 04-07 05:45 (42슬롯, 정전)</td></tr><tr><td>11월 결측률</td><td>32.3% → 신뢰 제한 표시</td></tr><tr><td>최적 선택요금</td><td>선택Ⅱ (현행 선택Ⅰ 대비 절감)</td></tr><tr><td><strong>기본요금</strong></td><td><strong>452,832,624원</strong></td></tr><tr><td><strong>요금적용전력</strong></td><td><strong>5,293.44 kW</strong></td></tr><tr><td><strong>총액</strong></td><td><strong>3,351,117,349원</strong></td></tr><tr><td>선택요금 전환 절감액</td><td>53,575,280원</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>기간</td><td>2023-04-25 00:15 ~ 2024-04-27 00:00</td></tr><tr><td>원본 행 수</td><td>34,358 (그리드 이탈 2건 포함)</td></tr><tr><td>그리드 구간</td><td>35,328</td></tr><tr><td>결측</td><td>972 (2.8%)</td></tr><tr><td><code>24:00</code> 표기</td><td>357건</td></tr><tr><td>연간 사용량</td><td>22,285 MWh</td></tr><tr><td>최대수요</td><td>5,293.4 kW @ 2023-07-03(월) 09:30</td></tr><tr><td>부하율</td><td>49.0%</td></tr><tr><td>결측 구간 1</td><td>2023-11-03 17:30 ~ 11-13 09:45 (930슬롯, 9.69일, 통신 장애 추정)</td></tr><tr><td>결측 구간 2</td><td>2024-04-06 19:30 ~ 04-07 05:45 (42슬롯, 정전)</td></tr><tr><td>11월 결측률</td><td>32.3% → 신뢰 제한 표시</td></tr><tr><td>최적 선택요금</td><td>선택Ⅱ (현행 선택Ⅰ 대비 절감)</td></tr><tr><td><strong>기본요금</strong></td><td><strong>452,804,556원</strong></td></tr><tr><td><strong>요금적용전력</strong></td><td><strong>5,293 kW</strong></td></tr><tr><td><strong>총액</strong></td><td><strong>3,351,089,281원</strong></td></tr><tr><td>선택요금 전환 절감액</td><td>53,579,556원</td></tr></tbody></table></div>
+<p><strong>금액 셋과 요금적용전력은 버전 1.0.1 로 다시 돌린 값이다</strong> (S281). 조건은 일반용(을) 고압A 선택Ⅰ 이고 계약전력은 넣지 않는다 — <code>tests\conftest.py</code> 의 <code>sample_bill</code> · <code>tests\test_measures.py</code> 의 <code>sample_switch</code> 와 같은 부름이다. 관측 최대수요는 5,293.44 kW 그대로이고 요금으로 가는 값만 1 kW 단위로 접힌다 (약관 제7조 ① · 119세션).</p>
 <p><strong>기간이 13개 월 버킷이며 앞뒤 두 개가 부분 월이다.</strong> 기본요금을 13개월분 부과하지 말고 실제 기간 또는 12개월 환산으로 표기한다.</p>
 <hr>
 <h2 id="부록-c-근거-조문-색인">부록 C. 근거 조문 색인</h2>

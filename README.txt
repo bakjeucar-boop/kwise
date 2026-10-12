@@ -7,7 +7,7 @@ kWise - Windows 시작 파일 묶음
 ---------
 kWise 는 대한민국 전용 도구입니다. 요금 체계(한전 기본공급약관·전기요금표),
 역률 규정(약관 제41~43조), 경제성DR(전력시장운영규칙 제12장), 공휴일,
-시군구 좌표 229개가 모두 한국 제도에 묶여 있습니다. 해외 부지에는
+시군구 좌표가 모두 한국 제도에 묶여 있습니다. 해외 부지에는
 적용할 수 없습니다. 자세한 내용은 docs\REQUIREMENTS_kwise.md 1.4 절.
 
 데이터 출처
@@ -18,22 +18,22 @@ kWise 는 대한민국 전용 도구입니다. 요금 체계(한전 기본공급
           tools\fetch_weather.py 로 갱신·확장할 수 있습니다.
 요금 자료: 한국전력공사 전기요금표 (data\source\, data\tariff_*.json)
 약관·규칙: 한전 기본공급약관 / 전력거래소 전력시장운영규칙
-          (data\source\*.txt - PDF 원본은 저장소에 두지 않습니다)
+          (data\source\ - 무엇이 있고 무엇이 정본인지는 data\source\SOURCES.md)
 
 실행하는 법
 -----------
 화면 (Streamlit)
      .venv\Scripts\streamlit.exe run streamlit_app.py
-     브라우저가 열립니다. 옆단에서 화면을 고릅니다.
+     브라우저가 열립니다. 세 단계는 위쪽 탭으로, 기준 데이터는 옆단에서 엽니다.
      뿌리의 streamlit_app.py 로만 띄우십시오 - 배포지와 같은 경로입니다.
 
        1단계 · 진단       파일만 올려도 결과가 나옵니다. 계약 정보 넷만 묻습니다
        2단계 · 개선 수단   카드로 켜고 끕니다. 투자비 순으로 놓았습니다
-       3단계 · 비교       조합·감도·검토 범위·산출물 내려받기
+       3단계 · 개선안 조합  검토 범위·조합 구성·합산효과·산출물 내려받기
        기준 데이터        값 옆에 근거·확인일을 두고 고칩니다
 
      산출물은 두 가지입니다.
-       Excel   아홉 시트. 분석자용 데이터입니다
+       Excel   분석자용 데이터입니다 (시트 구성은 docs\MANUAL.md 6.1)
        PPT     한 장에 한 가지만 담은 슬라이드입니다. 의사결정자용이며
                켠 수단만 한 장씩 들어갑니다
 
@@ -43,12 +43,13 @@ kWise 는 대한민국 전용 도구입니다. 요금 체계(한전 기본공급
      업로드한 파일은 서버에 저장하지 않습니다. 내려받기용 산출물도 만든 즉시
      지웁니다. 앱을 켤 때 묵은 임시 폴더를 쓸어냅니다.
 
-     화면의 [자세히] 링크는 매뉴얼의 해당 절로 갑니다.
+     화면의 물음표 툴팁은 매뉴얼의 해당 절 이름과 요지를 적습니다 (링크는 없습니다).
      문서를 고쳤으면 다시 만드십시오 - html 은 생성물입니다.
        .venv\Scripts\python.exe tools\build_docs.py
 
      오래 걸리는 계산은 단계별 진행과 전체 진행률(%)을 보여 줍니다.
-     태양광 용량 곡선이 전체의 절반가량이라 그 구간이 가장 깁니다.
+     개선 수단 구간이 가장 깁니다 (구간별 가중치는 data\assumptions.json 의
+     progress.weights 에 있습니다).
 
 배치 (CLI)
      .venv\Scripts\python.exe -m kwise.cli run --cases cases.yaml
@@ -56,17 +57,18 @@ kWise 는 대한민국 전용 도구입니다. 요금 체계(한전 기본공급
        --progress 를 주면 단계별 진행이 표시됩니다 (화면과 같은 콜백입니다).
 
 시험
-     .venv\Scripts\python.exe -m pytest -n 4 --dist load
-     1,358건이 5분대에 끝납니다 (순차는 13분입니다).
+     .venv\Scripts\python.exe -m pytest tests -n auto --dist load
+     건수는 PROCEED.md 「현재 상태」 가, 명령 꼴과 PC 별 메모리는 CLAUDE.md
+     「백그라운드 실행」 9항이 쥡니다. -n 에 수를 박지 마십시오 - PC 마다
+     코어 수가 다릅니다.
      --dist loadfile 은 쓰지 마십시오 - 무거운 단일 파일을 못 쪼갭니다.
-     -n auto 는 이 PC(6코어·RAM 7.4GB)에서 9%만 빠르고 메모리가 빠듯해집니다.
      갈래를 나눠 돌리는 법은 PROCEED.md 「pytest 분할 실행」에 있습니다.
 
 성능 실측
      .venv\Scripts\python.exe tools\run_benchmark.py
      구간별 소요·메모리·요금 재계산 횟수를 잽니다. 진행률 가중치의 근거이므로
      계산을 고쳤으면 다시 돌려 assumptions.json 의 progress.* 를 갱신하십시오.
-     샘플 한 벌 9.4초 · 최대 RSS 273 MB (2026-08-11).
+     지금 값은 도구를 돌려 봅니다 (기록해 둔 값과 그 날짜는 docs\TECHNICAL.md 6.4).
 
 기준 데이터 갱신 절차
 ---------------------
@@ -99,7 +101,7 @@ kWise 는 대한민국 전용 도구입니다. 요금 체계(한전 기본공급
 
 갱신하는 법 — 셋 중 하나
   1) 화면에서 (권장)
-     8세션 UI 의 「기준 데이터 관리」에서 값·근거·확인일을 함께 보고 고칩니다.
+     옆단의 「기준 데이터」 화면에서 값·근거·확인일을 함께 보고 고칩니다.
      값을 고치면 확인일이 오늘로 자동 갱신되고 이력이 남습니다.
      원문을 다시 보았는데 값이 그대로면 "확인함"만 눌러 기록하십시오.
 
@@ -113,6 +115,8 @@ kWise 는 대한민국 전용 도구입니다. 요금 체계(한전 기본공급
      data\source\ 의 요금표 xlsx 를 새 판으로 바꾸고
      .venv\Scripts\python.exe tools\build_tariff.py
      검증에 실패하면 파일을 쓰지 않습니다.
+     원본 파일 이름과 시행일은 tools\build_tariff.py 가 쥡니다 - 이름이나
+     시행일이 바뀌면 data\source\SOURCES.md 대로 함께 고칩니다.
 
   기상은 별도입니다.
      .venv\Scripts\python.exe tools\fetch_weather.py --start 2026-01-01 --end 2026-12-31
@@ -140,9 +144,12 @@ kWise 는 대한민국 전용 도구입니다. 요금 체계(한전 기본공급
 2. 이 묶음의 파일을 폴더에 그대로 푼다 (docs 폴더 구조 유지)
 3. SETUP.html 을 브라우저로 열어 Step 0 부터 순서대로 진행
 
-포함 파일
----------
-SETUP.html                   설치 안내 (먼저 읽으세요)
+먼저 읽을 문서
+--------------
+코드는 src\ · tools\ · tests\ 에, 기준 데이터는 data\ 에 있습니다. 폴더 구성과
+넘겨받은 사람이 여는 차례는 docs\TECHNICAL.md 0장과 2.2 가 쥡니다.
+
+SETUP.html                  설치 안내 (먼저 읽으세요)
 PROJECT_GUIDE.html           세션별 프롬프트와 순서
 CLAUDE.md                    프로젝트 규약 - 클로드코드가 자동으로 읽음
 PROCEED.md                   진행 이력 - 이전 결정사항이 채워져 있음
@@ -155,5 +162,4 @@ docs\CAPTURES.md             화면 캡처 필요 목록
 
 별도로 준비할 것
 ----------------
-reference\  mg_pv_core.py, mg_weather_openmeteo.py, streamlit_app.py
-input\      사용량조회_20240429.csv
+input\      사용량조회_20240429.csv (저장소에 없습니다 - 앞 사람에게서 받습니다)

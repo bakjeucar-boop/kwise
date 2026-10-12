@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import struct
 from pathlib import Path
 
 import pandas as pd
@@ -23,11 +24,12 @@ from kwise.io import (
     detect_usage_columns,
     find_header_row,
     load_usage,
+    load_usage_bytes,
     normalize_column_name,
     score_date_column,
     score_energy_column,
 )
-from tests._synthetic import KEPCO_HEADER, kepco_month_rows, write_kepco_file
+from tests._synthetic import HEADER, KEPCO_HEADER, kepco_month_rows, write_kepco_file
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "사용량조회_양식.xlsx"
 OPAQUE_HEADER = ("AAA", "BBB", "CCC", "DDD")
@@ -71,6 +73,49 @@ def test_four_column_form_loads_through_the_xlsx_path() -> None:
     assert usage.meta.energy_column == "순방향 유효전력량(KWH)"
     assert usage.meta.raw_rows == 1
     assert float(usage.kw.iloc[0]) == pytest.approx(321.84 * 4)  # 15분 kWh → kW
+
+
+def _biff2_xls(rows: list[tuple[str, float]], header: tuple[str, str] = HEADER) -> bytes:
+    """두 열짜리 옛 `.xls`(BIFF2 워크시트) 바이트를 손으로 짓는다.
+
+    저장소에 `.xls` 표본이 없고 쓰는 꾸러미(xlwt)도 없다 — BIFF2 는 레코드를 이어
+    붙이면 되는 가장 단순한 `.xls` 꼴이고 pandas 가 머리 여덟 바이트로 알아본다.
+    한글 머리글은 코드페이지 949 레코드와 함께 싣는다.
+    """
+
+    def record(code: int, body: bytes) -> bytes:
+        return struct.pack("<HH", code, len(body)) + body
+
+    def label(row: int, col: int, text: str) -> bytes:
+        raw = text.encode("cp949")
+        return record(0x0004, struct.pack("<HH3xB", row, col, len(raw)) + raw)
+
+    out = [record(0x0009, struct.pack("<HH", 7, 0x0010)), record(0x0042, struct.pack("<H", 949))]
+    out += [label(0, col, name) for col, name in enumerate(header)]
+    for index, (stamp, kwh) in enumerate(rows, start=1):
+        out.append(label(index, 0, stamp))
+        out.append(record(0x0003, struct.pack("<HH3xd", index, 1, kwh)))
+    out.append(record(0x000A, b""))
+    return b"".join(out)
+
+
+def test_S281_xls_를_올리면_읽힌다(tmp_path: Path, month_rows: list[tuple[str, float]]) -> None:
+    """**화면이 받는 `.xls` 가 실제로 읽힌다** (S281 결정 1 · 사람 결정).
+
+    화면 업로더는 `csv · xls · xlsx` 를 받는데 `.xls` 를 읽는 꾸러미(xlrd)가 의존
+    목록에 없었다 — 올리면 못 읽었다. 같은 한 달치를 `.xls` 와 `.xlsx` 로 읽어
+    **값이 같은지**까지 본다.
+    """
+    xls = load_usage_bytes(_biff2_xls(month_rows), "사용량.xls")
+    assert xls.meta.encoding is None
+    assert xls.meta.date_column == "검침일"
+    assert xls.meta.energy_column == "순방향 유효전력량(KWH)"
+    assert xls.meta.interval_minutes == 15
+    assert xls.meta.raw_rows == len(month_rows) == 2_976
+    xlsx = load_usage(write_kepco_file(tmp_path / "same.xlsx", month_rows))
+    assert xls.meta.total_kwh == pytest.approx(xlsx.meta.total_kwh)
+    assert xls.meta.max_demand_kw == pytest.approx(xlsx.meta.max_demand_kw)
+    pd.testing.assert_series_equal(xls.kw, xlsx.kw)
 
 
 def test_one_row_form_says_why_it_cannot_guess_the_interval() -> None:

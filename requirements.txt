@@ -12,6 +12,8 @@ holidays==0.102
 streamlit==1.61.1
 altair==6.2.2
 openpyxl==3.1.5
+# S281 결정 1 — 화면이 받는 `.xls` 를 pandas 가 이 꾸러미로 읽는다 (없으면 `.xls` 를 못 읽는다).
+xlrd==2.0.2
 python-docx==1.2.0
 python-pptx==1.0.2
 matplotlib==3.11.1
