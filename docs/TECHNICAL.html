@@ -108,13 +108,14 @@ li.task input { margin-right:.5rem; }
 <p>건물 전력 비용 진단·개선안 비교 도구. <strong>개발자와 1년 뒤의 본인</strong>이 읽는다.</p>
 <p>이 문서는 <strong>왜 그렇게 만들었는가</strong>를 남긴다. 무엇을 하는지는 코드가 말하고, 어떻게 쓰는지는 매뉴얼이 말한다. 코드가 바뀔 때 갱신한다.</p>
 <div class="table-wrap"><table><thead><tr><th></th><th></th></tr></thead><tbody><tr><td><strong>처음 넘겨받았다면</strong></td><td>이 문서 <a href="#tech-start">0장</a> — 무엇부터 열지 차례대로 적었다</td></tr><tr><td>사용법</td><td><code>MANUAL.html</code> — 화면 조작과 결과 읽는 법</td></tr><tr><td>요구사항</td><td><code>REQUIREMENTS_kwise.md</code> — 무엇을 만들기로 했는가</td></tr><tr><td>진행 이력</td><td><code>PROCEED.md</code> — 세션별 기록과 결정 사항</td></tr><tr><td>근거 조문</td><td>이 문서 <a href="#부록-c-근거-조문-색인">부록 C</a> — <strong>한 곳에 모았다</strong></td></tr></tbody></table></div>
-<p><strong>이 문서는 버전 1.0.1 (git 표지 <code>v1.0.1</code>)의 코드에 맞춰 있다</strong> (S280 · S281). 본문에는 세션 번호가 붙은 옛 경위가 많이 남아 있다 — <strong>그 글은 「왜 그렇게 되었나」 의 기록이고 지금 값이 아니다.</strong> 지금 값은 0장이 가리키는 정본에서 본다.</p>
+<p><strong>이 문서는 버전 1.0.2 (git 표지 <code>v1.0.2</code>)의 코드에 맞춰 있다</strong> (S280 · S281 · S282). 본문에는 세션 번호가 붙은 옛 경위가 많이 남아 있다 — <strong>그 글은 「왜 그렇게 되었나」 의 기록이고 지금 값이 아니다.</strong> 지금 값은 0장이 가리키는 정본에서 본다.</p>
 <hr>
 <h2 id="tech-start">0. 여기서 시작하십시오</h2>
 <p><strong>이 프로젝트를 넘겨받아 보완하려는 사람이 가장 먼저 읽는 장이다.</strong> 본문을 옮겨 적지 않았다 — 항목마다 한두 줄과 <strong>정본이 있는 자리</strong>만 적는다. 건수·금액· 소요 같은 값은 정본 쪽이 쥐므로 여기 숫자로 적지 않는다. <strong>아래 차례대로 열면 된다.</strong></p>
 <h3 id="tech-start-state">0.1 지금 어디까지 왔나</h3>
 <ul>
-<li><strong>버전은 1.0.1 이다.</strong> 번호를 만드는 자리는 <code>src\kwise\__init__.py</code> 의 <code>__version__</code> 하나이고 <code>pyproject.toml</code> 이 그것을 읽는다 (<a href="#tech-layout">2.2</a>). git 표지 <code>v1.0.1</code> 이 그 판을 가리킨다 (<code>v1.0.0</code> 은 그 앞 판이다).</li>
+<li><strong>버전은 1.0.2 이다.</strong> 번호를 만드는 자리는 <code>src\kwise\__init__.py</code> 의 <code>__version__</code> 하나이고 <code>pyproject.toml</code> 이 그것을 읽는다 (<a href="#tech-layout">2.2</a>). git 표지 <code>v1.0.2</code> 가 그 판을 가리킨다 (<code>v1.0.0</code> · <code>v1.0.1</code> 은 그 앞 판이다).</li>
+<li><strong>1.0.2 에서 바뀐 것</strong> (S282 · 금액은 한 원도 안 움직였다) — 올린 파일을 못 읽을 때의 안내 글 둘: 확장자만 <code>.xls</code> 인 웹 표에 우리말 안내를 세우고, 읽는 꾸러미가 없을 때 빠진 쪽(<code>xlrd</code> · <code>openpyxl</code>)을 말한다 (<code>src\kwise\io\usage.py</code>).</li>
 <li><strong>1.0.1 에서 바뀐 것</strong> (S281 · 금액은 한 원도 안 움직였다).</li>
 <ul>
 <li><code>.xls</code> 를 읽는 꾸러미 <code>xlrd</code> 를 의존 목록에 넣었다 — 화면은 <code>.xls</code> 올리기를 받는데 읽는 꾸러미가 빠져 있었다 (<code>requirements.txt</code> · <code>pyproject.toml</code>).</li>

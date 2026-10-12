@@ -5335,7 +5335,7 @@ def test_역률_이유_줄은_조합_역률_몫의_방향과_반대로_말하지
 
 
 def test_S276_옆단은_버전만_적고_버전_글자는_한_자리에서_만든다(app: AppTest) -> None:
-    """**화면에 「대한민국 전용」 을 적지 않고 버전은 1.0.1 이다** (S276 결정 1 · S281 결정 6).
+    """**화면에 「대한민국 전용」 을 적지 않고 버전은 1.0.2 이다** (S276 결정 1 · S282 결정 5).
 
     kWise 의 k 에 그 뜻이 있다. 제품 성질을 설명하는 글(산출물 한계 · 문서)은 그대로다 —
     화면 코드(``ui\\``)에만 그 낱말이 없다. 버전 글자를 적은 자리는 ``__init__.py`` 하나이고
@@ -5345,7 +5345,7 @@ def test_S276_옆단은_버전만_적고_버전_글자는_한_자리에서_만�
 
     captions = [str(item.value) for item in app.sidebar.caption]
     assert f"버전 {kwise.__version__}" in captions, captions
-    assert kwise.__version__ == "1.0.1"
+    assert kwise.__version__ == "1.0.2"
     shown = [str(item.value) for group in (app.caption, app.markdown) for item in group]
     assert not [line for line in shown if "대한민국 전용" in line]
     root = Path("src") / "kwise"

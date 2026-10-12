@@ -529,9 +529,15 @@ def _read_frame(
     if suffix in _EXCEL_SUFFIXES:
         try:
             raw = _read_raw(data, suffix, None)
-        except ImportError as exc:  # openpyxl / xlrd 미설치
+        except ImportError as exc:  # openpyxl / xlrd 미설치 — 빠진 쪽을 말한다 (S282)
+            library = "xlrd" if "xlrd" in str(exc) else "openpyxl"
             raise UsageLoadError(
-                "엑셀 파일을 읽는 데 필요한 라이브러리가 없습니다. openpyxl 설치를 확인해 주세요."
+                f"엑셀 파일을 읽는 데 필요한 라이브러리가 없습니다. {library} 설치를 확인해 주세요."
+            ) from exc
+        except ValueError as exc:  # 속이 엑셀이 아니다 — 확장자만 .xls 인 웹 표 (S282)
+            raise UsageLoadError(
+                "이 파일은 엑셀이 아닌 웹 표 형식이거나 15분·1시간 사용량 자료가 아닙니다. "
+                "한전에서 15분 단위 사용량을 내려받아 올려 주세요."
             ) from exc
         try:
             detection = detect_usage_columns(raw)

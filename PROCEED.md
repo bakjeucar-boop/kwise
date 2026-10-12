@@ -400,7 +400,11 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 **0-1. PC — 1번 PC**(`open_values_20261012_115758.txt` 첫 줄 `BOOK-DC2VCGD99B · Intel(R) Core(TM) Ultra 7 258V · cpu 8`). `git pull` Already up to date · HEAD **646603a** = `origin/master` · 표지 `v1.0.0` · `v1.0.1`(`v1.0.1` = 646603a) · `v1.0.2` 는 없다 · 워크트리 깨끗.
 **0-2. 미해결 6**(`daily_brief_20261012_115807.txt` 「미해결 6건」). **기준선은 S281 뒤 것을 그대로 쓴다 — 이 PC 에 있다**: 확인 사례 셋 `cache\deck_words\s281_case_after.json`(1,027,110 B · (가1) 528만원/년 · (다) 8,698만원/년 · 5억 4,989만원 · 6.3년 — 281세션 절 3-3) · **회귀값 여덟**은 pytest 가 문다(대형 넷 `tests\test_diagnose.py` · 용인 넷 `tests\test_casestudy.py`).
-**0절 벽시계** 11:57:51 ~(시각 명령 출력).
+**0절 벽시계** 11:57:51 ~ 11:59:42(시각 명령 출력).
+
+**1-1. 판정 자리와 글자.** 올린 파일은 화면(`ui\views\diagnose.py:287` `except Exception` → 292행 「파일을 읽지 못했습니다. {까닭}」) → `io\usage.py` `load_usage_bytes` → `_read_frame` 의 엑셀 갈래 `_read_raw`(`pd.read_excel` — 엔진을 안 적어 pandas 가 파일 머리로 형식을 고른다) 길을 탄다. **웹 표 `.xls`** — pandas 가 형식을 못 정해 `ValueError: Excel file format cannot be determined, you must specify an engine manually.` 를 내는데 `_read_frame` 이 `ImportError` 만 받아 그 영어 글이 그대로 화면까지 갔다. **`xlrd` 없음 갈래** — 같은 자리 `except ImportError` 가 빠진 꾸러미와 무관하게 「… openpyxl 설치를 확인해 주세요.」 를 냈다(281세션 절 3-2 되돌림에서 선 글자). **고칠 자리 — 코드 한 파일 한 자리**(`io\usage.py` `_read_frame` 의 그 `try`) **와 버전 한 자리**(`src\kwise\__init__.py`) · 따라 움직이는 것은 버전 값을 문 시험 한 줄(`tests\test_ui_screen.py`) · 문서 글자(`docs\MANUAL.md` 2.1 · `docs\TECHNICAL.md` 머리 · 0.1) · html 둘.
+**1-2. 고쳤다.** `io\usage.py` `_read_frame` — `except ImportError` 가 pandas 가 낸 글에 `xlrd` 가 있으면 「… xlrd 설치를 확인해 주세요.」 · 아니면 「… openpyxl 설치를 확인해 주세요.」(앞 문장 「엑셀 파일을 읽는 데 필요한 라이브러리가 없습니다.」 는 그대로) · 새 `except ValueError` 가 **「이 파일은 엑셀이 아닌 웹 표 형식이거나 15분·1시간 사용량 자료가 아닙니다. 한전에서 15분 단위 사용량을 내려받아 올려 주세요.」** 를 낸다(끝말은 있는 안내 「… 올려 주세요.」 에 맞췄다). **실물** — `input\전기사용량_소형건물_월별.xls`(11,174 B · 머리 `<html xmlns:x=…`)를 로더와 화면으로(`s281_xls_20261012_115951.txt`): `UsageLoadError` 그 글자 · 원인 `ValueError: Excel file format cannot be determined, …` · 화면 error 한 줄 **「파일을 읽지 못했습니다. 이 파일은 엑셀이 아닌 웹 표 형식이거나 15분·1시간 사용량 자료가 아닙니다. 한전에서 15분 단위 사용량을 내려받아 올려 주세요.」** · 예외 0 · 지표 0. **버전** `src\kwise\__init__.py` `"1.0.1"` → `"1.0.2"` · `tests\test_ui_screen.py` 값을 문 한 줄과 문서말 · `docs\MANUAL.md` 2.1 「버전 1.0.2」 · `docs\TECHNICAL.md` 머리 한 줄 · 0.1(「버전은 1.0.2 이다」 · 「1.0.2 에서 바뀐 것」 한 항) · html 을 다시 지었다(`build_docs_20261012_115952.txt` — TECHNICAL 87절 227 KB · MANUAL 83절 195 KB · 앵커 31개).
+**1절 벽시계** 11:59:42 ~ 12:01(시각 명령 출력 — 커밋 줄).
 
 ---
 
