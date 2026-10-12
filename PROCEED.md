@@ -420,6 +420,36 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 3-1 에서 남은 하나(화면 제목)를 매뉴얼 2.1 에 넣고 html 을 다시 지은 뒤 넷을 한 판 더 — **197 passed**(`python_20261012_104615.txt`).
 **3절 벽시계** 10:40:35 ~ 10:46:15(문서 시험 첫 판 ~ 마지막 판 · 시각 명령 출력).
 
+**4절 — 백업 재료를 쟀다(고치지 않았다 · 짓지 않았다).** 4-1 · 4-2 는 스크래치 `s280_backup.py`(저장소 밖 · `s280_backup_20261012_102453.txt` · 수와 크기만 · 내용은 안 열었다) · 4-4 는 조사 에이전트가 코드를 읽었다(앱은 안 띄웠다).
+**4-1. 이 PC `kwise` 폴더의 추적 밖** — 추적 파일 827 · `.git\` 474파일 207,274,104 B · `.venv\` 21,893파일 815,235,310 B(크기만) · 그 둘을 뺀 추적 밖 **845파일 — 다 무시 대상 · 미추적 0.**
+
+| 자리 | 파일 · 크기 | 다시 만들 수 있나 |
+|---|---|---|
+| `input\` 5 · `input\cases\` 6 | 3,302,706 B · 5,176,285 B | **실측 셋은 못 만든다**(`사용량조회_20240429.csv` · `전기사용량_소형건물.xlsx` · `전력사용량_산업용(갑)저압.xlsx` — 사람 자료) · `전기사용량_소형건물_월별.xls` 도 사람 자료 · 합성 일곱(`cases\` 여섯 · `사용량조회_소형사무빌딩.csv`)은 `tools\make_cases.py` · `make_office_case.py` 가 대형 실측에서 다시 짓는다 |
+| `data\source\*.pdf` 넷 | 16,758,387 B | 한전 · 전력거래소에서 다시 받을 수 있으나 **옛 판(2024-02 · 2024-10-24 · 2026-04 · 2026-04-16)은 그 사이트에 남아 있는지 모른다** |
+| `output\` 4 · `output\decks\` 325 · `output\office\` 2 | 56,476,587 B · 38,757,782 B · 638,152 B | S279 zip(`kwise_v1.0.0_20261012_0945.zip` 54,748,726 B)과 덱은 도구로 다시 짓는다 · `result_*.xlsx` 둘과 `rules.xlsx` 는 사람이 낸 결과물 |
+| `review\ui_text_20260813.zip` | 264,468 B | 못 만든다(사람 자료) |
+| `start-kwise.txt` | 131 B | 개인 스니펫 |
+| `cache\` 3(기상 캐시 하나 · 취득 로그 둘) | 161,321 B | 만든다 |
+| `__pycache__` · egg-info 250 · `.mypy_cache` 19 · `.pytest_cache` 5 · `.ruff_cache` 220 | 20,900,788 B · 92,463,333 B · 205,061 B · 271,630 B | 만든다(생성물) |
+
+**4-2. `kwise` 폴더 밖** — `PROJECT_CACHE` = `C:\Users\SAMSUNG\AppData\Local\kwise\cache` · 합 2,880파일 278,545,463 B(`deck_words\` 83파일 243,078,050 B — 덱 스냅 · `runs\` 2,680파일 22,611,520 B — 도구 출력 · `screens\` 56파일 7,291,894 B · `s216_decks\` 45파일 3,849,622 B · `weather\` 13파일 1,712,322 B · `batch\` 3파일 · `ui_sessions\` 0). **다 다시 만들 수 있다** — 다만 덱 스냅은 그 판의 기준선이라 지우면 「그때 값」 과 맞댈 수 없고, 기상 캐시 가운데 사전 취득분 밖(용인 2025-08 ~ 2026-08 · 산업용 2026-05 ~ 09)은 인터넷이 있어야 다시 받는다. 클로드코드 — `C:\Users\SAMSUNG\.claude\CLAUDE.md` 613 B · `settings.json` 328 B · `skills\` 231파일 4,063,013 B · `projects\C--Users-SAMSUNG-Documents-kwise\` 162파일 338,531,632 B(세션 기록) · 그 안 `memory\` 2파일 1,273 B · 저장소 안 `.claude\` 없음. 브라우저 바이너리 `%LOCALAPPDATA%\ms-playwright` 1,213파일 1,417,848,002 B(다시 받는다). **2번 PC 몫은 이 PC 에서 못 쟀다 — 2번 PC 에서 같은 항(4-1 · 4-2)을 돌려야 한다.**
+**4-3. 원격** — 가지는 `master` 하나 · `origin/master` 와 같다(0절 f534d92 · `git ls-remote --tags --heads origin`) · 표지는 `v1.0.0` 하나 · 로컬과 origin 이 같은 커밋 5183f8d(표지 개체 ee846d9) · 이 판의 커밋은 5-3 에서 올린다(올라가지 않은 커밋 0 은 5-3 값).
+**4-4. 최소 실행 묶음 재료(S281 몫).** **넣을 것** — `streamlit_app.py` · `src\kwise\**\*.py` · `data\` 가운데 `tariff_kr_20260601.json` · `rules_kr.json` · `assumptions.json` · `defaults\` 둘 · `sigungu_kr.json` · `ess_spec_grid.json` · `ess_cost_reference.json` · `ess_cost_model.json` · `ppt_design.json` · `weather\index.json` 과 parquet 405 · 설치용 `requirements.txt`. **뺄 것과 근거(`src\kwise` 를 Grep — import · 경로 조합 0건 · 걸린 것은 주석과 안내 글)** — `tests\` · `tools\` · `reference\` · `docs\` 전부(화면은 매뉴얼 · 기술문서를 열지 않는다 — `ui\anchors.py` 의 `manual_path` 는 정의만 있고 부르는 자리 0 · `docsite.py` 를 들이는 `src` 모듈 0) · `input\`(화면 입력은 `st.file_uploader` 하나 · `input\` 을 읽는 `report\casestudy.py` 는 앱이 들이지 않는다) · `data\source\` · `data\ess_cost_cases.json`(`tools\fit_ess_cost.py` 만) · `data\kepco_pdf_rows_20260801.json`(`tariff\source_excel.py` 만 · 그 모듈을 들이는 `src` 모듈 0) · `pyproject.toml`(버전은 `__init__.py` — 다만 CLI 를 `python -m kwise.cli` 로 돌리려면 `-e` 설치나 `PYTHONPATH` 가 든다) · `README.txt` · `PROJECT_GUIDE.html` · `SETUP.html` · `packages.txt` · `CLAUDE.md` · `PROCEED.md` · `output\` · `cache\`. **앱이 눈에 안 띄게 읽는 것 다섯** — `ui\cache.py` 가 `src\kwise` 의 `*.py` 전체의 크기 · 수정시각으로 캐시 지문을 낸다(파일을 빼면 캐시 열쇠가 바뀐다) · `data\weather\index.json` 을 앱을 켤 때마다 읽는다(태양광을 안 켜도) · `data\defaults\` 는 현재 값이 없거나 깨졌을 때와 기준 데이터 화면에서 읽는다 · `data\ppt_design.json` 은 PPT 말고 보고서 그림 색에도 쓴다 · `report\figures.py` 가 OS 글꼴 폴더를 훑는다(저장소 안 글꼴 파일 0). **뼈대 둘** — `data\` 를 `Path(__file__).resolve().parents[3] / "data"` 로 찾으므로 묶음 안에서 `src\kwise\` 와 `data\` 가 지금과 같은 자리여야 한다 · `PROJECT_CACHE` 가 없으면 캐시가 실행한 자리의 `.\cache` 다. **`tools\make_bundle.py`(59세션)와의 차** — 앱에 꼭 드는데 빠뜨리는 것 0 · 앱이 안 읽는데 담는 것: `input\` 전부 · `data\ess_cost_cases.json` · `data\kepco_pdf_rows_20260801.json` · html 둘 · `README.txt` · `pyproject.toml`. **바깥 패키지** — `dev` 에만 있는데 앱이 들이는 것 0 · **`[project.dependencies]` 에 없는데 앱이 기대는 것 하나: `xlrd`**(화면이 `.xls` 올리기를 받는데 `.venv` 와 `requirements.txt` 에 없다 · 올리면 `io\usage.py` 가 ImportError 를 받아 「openpyxl 설치를 확인해 주세요」 로 안내한다 — 죽지 않으나 `.xls` 를 못 읽고 글자가 원인과 어긋난다 · **이 판은 고치지 않았다 · 실물로 안 띄워 봤다**). `.streamlit\config.toml` 의 `enableStaticServing` 은 쓰는 자리가 없다(`static\` 폴더 0).
+**4절 벽시계** 10:24:53(스크래치) · 조사 에이전트는 1절과 함께 돌았다.
+
+**지시서 꼴 밖으로 나간 것 · 예상과 달랐던 것.**
+- **지시서의 「10-02 판」 은 기술문서만 맞다** — 매뉴얼은 S275(b7aef07 · +206줄) · S278(5a8fdcd)이 고쳐 10-12 판이었다. 그래도 화면 요소 137묶음 가운데 51이 옛 글 · 없음이었다 — S270 ~ S278 몫보다 **그 앞 판들이 남긴 옛 글**(계약전력 가늠값 21세션 · 카드 일곱 41세션 · 태양광 지역 입력 · ESS 계수 패널 50세션 · 잉여 단위 S232)이 더 많았다.
+- **시험 한 줄을 고쳤다**(2절 끝 줄 — 지시서가 연 예외).
+- **3절 커밋에 5절 몫 둘이 실렸다** — 세션 목록표 280 행과 「다음 작업」 칸. `PROCEED.md` 한 파일이라 갈라 올리지 못했다(부분 스테이징을 안 썼다). `HANDOVER.md` · 지시서 · 4 · 5절 글은 5절 커밋에 있다.
+- **`README.txt` 가 낡았다 — 이 판의 고칠 범위 밖이라 안 고쳤다**: 「Excel 아홉 시트」(실물 13) · 「시군구 좌표 229개」(228) · 시험 「`-n 4` · 1,358건」(`-n auto` · 2,058) · 「-n auto 는 이 PC(6코어)에서 9%만 빠르고」 · 「포함 파일」 목록. `src\kwise\report\notices.py` 의 한계 글 「시군구 좌표 229개」 도 같다(코드 0줄이라 안 고쳤다 — 산출물에 나가는 글자다).
+- **`xlrd`**(4-4 끝) · **`docs\ENVIRONMENT.md` 의 프로젝트 경로 `C:\work\kwise`** 는 이 PC 의 실제 자리(`C:\Users\SAMSUNG\Documents\kwise`)와 다르다(안 고쳤다 — 범위 밖).
+
+**5-1.** 이 절 · 세션 목록표 280 행(「(10-12)」 · 「늘어난 것」 낱말) · 「다음 작업」 칸 앞머리 「S281: 최소 실행 묶음 · 백업 안내(4절 재료)」 · 「현재 상태」 「문서」 칸(기술서 0장 + 7장 + 부록 3 · 매뉴얼 2,500줄 · html 83절) · `docs\HANDOVER.md` 머리 사슬 S280 단락과 S279 한 줄 · 5절 제목 · 5절 행 둘(사람 결정 1 · 2 · 웹 대화창 판단 결정 3 ~ 5) · 지시서 본문을 `docs\directives\S280.md` 로 앉혔다(편집 도구로 글자 그대로). **미해결 대조 — 전 6 → 후 6** · 줄어든 것 0 · 늘어난 것 0(이름으로 적을 것 없음 · 남은 여섯은 자료 대기 다섯과 「2026년 기상은 해가 끝난 뒤 넣는다」). `HANDOVER.md` 1절의 값(pytest 2,058 · 케이스 188/188 · 화면 감사 넷 · 정적 검사)은 이 판이 다시 재지 않아 S278 값 그대로 두었다 — 전체 pytest · 케이스 스터디 · 덱 스냅 · 맨 mypy 는 안 돌렸다(지시서 「pytest 는 3-2 꼴 · 5-2 꼴만」).
+**5-2. 기록 묶음 — 148 passed · 1,910 deselected · 첫 판 초록**(`python_20261012_104807.txt` · 합 2,058 = S278 · S279 값 · 기록을 다 고친 뒤 · 지시서 명령 그대로 · `pytest_counts_20261012_104807.txt`).
+**5-3.** 커밋 · `git push`. 이 판이 띄운 백그라운드 셸 0(조사 에이전트 넷은 다 끝 알림을 받았다 · 앱 · 서버를 띄우지 않았다).
+**5절 벽시계** 10:46:15 ~ 10:48:07(시각 명령 출력 · 커밋 앞).
+
 ---
 
 ## 오늘 (2026-10-12) 279세션 — **실행 묶음 판 · v1.0.0 을 다른 PC 에서 혼자 돌 수 있는 zip 으로 묶는다 (코드 0줄)**
