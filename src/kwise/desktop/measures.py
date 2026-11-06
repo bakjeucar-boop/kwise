@@ -30,6 +30,8 @@ from kwise.measures import (
     NO_SAVING,
     SHORTEST_PAYBACK,
     EssCostInput,
+    EssOptimum,
+    EssTargetCurve,
     default_target_pct,
     ess_target_curve,
     evaluate_contract_adjustment,
@@ -38,7 +40,6 @@ from kwise.measures import (
     evaluate_power_factor,
     evaluate_tariff_switch,
     high_rate_discharge_hours,
-    load_ess_cost_model,
     power_factor_floor_pct,
     refine_ess_target,
 )
@@ -62,6 +63,7 @@ from kwise.ui.spec import DR_PRICED_HEADLINE, MEASURES, NO_HEADROOM_OVERVIEW, Me
 from . import solar, vega
 from . import widgets as w
 from .building import BuildingInfo
+from .rules import ess_model
 from .solar import SolarForm
 
 #: 카드 지표의 절감액 이름 — 값이 12개월 환산이다 (Streamlit ``SAVING_LABEL`` 과 같다).
@@ -126,6 +128,10 @@ class Choices:
     ess_total: float | None = None
     #: ESS 가 고른 목표 요금적용전력 — 3단계가 같은 값을 읽는다 (고를 것이 없으면 0).
     ess_target: float = 0.0
+    #: 「기준 데이터」 화면의 ESS 단가 경로 · 두 계수 — 비었으면 출고값 (이 화면을 연 동안만).
+    ess_path: str = ""
+    ess_fixed: float | None = None
+    ess_per_kwh: float | None = None
     #: 태양광 카드의 입력칸 값과 마지막으로 계산한 입력.
     solar: SolarForm = field(default_factory=SolarForm)
     #: 3단계 — 조합 체크(기본 참) · 「합산효과 계산」 을 누른 그 선택 · 시계열 시트 포함.
@@ -145,6 +151,26 @@ class Choices:
 
 
 Card = Callable[["Context", "Choices", RepresentativeDay | None], Awaitable[None]]
+
+
+async def _swap(body: ui.column, fill: Callable[[], Awaitable[None]]) -> None:
+    """다시 그리기 — 옛 본문을 흐려 둔 채 새 본문을 보이지 않게 짓고, 다 되면 한 번에 바꾼다.
+
+    비우고 다시 채우면 계산하는 몇 초 동안 본문이 스피너 한 줄로 줄었다가 다시 자라
+    아래 카드가 위아래로 튄다. 새 본문은 같은 폭(``absolute w-full``)으로 지어 그래프 폭이 맞다.
+    """
+    old = list(body.default_slot.children)
+    for element in old:
+        element.classes(add="k-dim")
+    with body:
+        fresh = ui.column().classes("w-full gap-3 invisible absolute top-0 left-0")
+    try:
+        with fresh:
+            await fill()
+    finally:
+        for element in old:
+            element.delete()
+        fresh.classes(remove="invisible absolute top-0 left-0")
 
 
 def _one_at_a_time(draw: Callable[[], Awaitable[None]]) -> Callable[[], Awaitable[None]]:
@@ -539,9 +565,7 @@ async def _power_factor(ctx: Context, choices: Choices, day: RepresentativeDay |
 
     @_one_at_a_time
     async def draw() -> None:
-        body.clear()
-        with body:
-            await _power_factor_result(ctx, choices, day, spec, structure)
+        await _swap(body, lambda: _power_factor_result(ctx, choices, day, spec, structure))
 
     async def changed() -> None:
         new_target = float(target.value) if target.value is not None else None
@@ -561,7 +585,7 @@ async def _power_factor(ctx: Context, choices: Choices, day: RepresentativeDay |
     for field_in in (target, invest):  # 칸을 떠날 때 · Enter 에 다시 계산
         field_in.on("blur", changed)
         field_in.on("keydown.enter", changed)
-    body = ui.column().classes("w-full gap-3")
+    body = ui.column().classes("w-full gap-3 relative")
     await draw()
 
 
@@ -642,7 +666,7 @@ async def _power_factor_result(
 async def _ess(ctx: Context, choices: Choices, day: RepresentativeDay | None) -> None:
     """목표를 사람이 찍지 않는다 — 회수기간이 가장 짧은 목표를 공용 계산이 고른다.
 
-    단가는 기준 데이터의 조달 사례 모델 그대로다(데스크톱에는 「기준 데이터」 화면이 없다).
+    단가는 조달 사례 모델 — 경로 · 계수는 「기준 데이터」 탭에서 고친다(이 화면을 연 동안만).
     견적 총액을 알면 그 값이 이긴다 (Streamlit 과 같다).
     """
     spec = _spec("ess")
@@ -666,13 +690,11 @@ async def _ess(ctx: Context, choices: Choices, day: RepresentativeDay | None) ->
         total.set_visibility(choices.ess_known)
         total.on("blur", total_changed)
         total.on("keydown.enter", total_changed)
-    body = ui.column().classes("w-full gap-3")
+    body = ui.column().classes("w-full gap-3 relative")
 
     @_one_at_a_time
     async def draw() -> None:
-        body.clear()
-        with body:
-            await _ess_result(ctx, choices, day, spec)
+        await _swap(body, lambda: _ess_result(ctx, choices, day, spec))
 
     await draw()
 
@@ -710,6 +732,16 @@ def _ess_spec_view(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+#: ESS 목표 훑기 결과 — (곡선, 정밀화). 열쇠는 자료 · 계약 · 단가 모델이다.
+_ESS_MEMO: dict[tuple[object, ...], tuple[EssTargetCurve, EssOptimum | None]] = {}
+
+
+def forget() -> None:
+    """화면 쪽 기억을 비운다 — 기준 데이터를 고친 뒤 (Streamlit ``clear_calc_cache`` 자리)."""
+    _ESS_MEMO.clear()
+    solar.forget()
+
+
 async def _ess_result(
     ctx: Context, choices: Choices, day: RepresentativeDay | None, spec: MeasureSpec
 ) -> None:
@@ -722,39 +754,56 @@ async def _ess_result(
     baseline = structure.bill if structure is not None else None
     # 기본요금단가는 현행 요금제 기준 — 최적 요금제 단가를 쓰면 독립 평가가 깨진다.
     base_fee = float(ctx.table.rates(ctx.form.selection).base_won_per_kw)
-    model = load_ess_cost_model()
+    model = ess_model(choices)  # 「기준 데이터」 화면에서 고른 경로 · 계수 (안 골랐으면 출고값)
     w.overview(spec.overview)
 
-    curve = await run.io_bound(
-        ess_target_curve,
-        ctx.usage.kw,
-        ctx.usage.meta.interval_minutes,
-        baseline_demand_kw=float(peak),
-        base_fee_won_per_kw=base_fee,
-        model=model,
+    # 목표 훑기는 자료 · 계약 · 단가 모델에만 매인다 — 견적 총액만 바꿨으면 다시 안 돈다.
+    key = (
+        id(ctx.usage),
+        ctx.usage.meta.total_kwh,
+        repr(ctx.form),
+        model.pricing_path,
+        model.fixed_won,
+        model.per_kwh_won,
     )
-    if curve.best is None:
+    if key not in _ESS_MEMO:
+        curve = await run.io_bound(
+            ess_target_curve,
+            ctx.usage.kw,
+            ctx.usage.meta.interval_minutes,
+            baseline_demand_kw=float(peak),
+            base_fee_won_per_kw=base_fee,
+            model=model,
+        )
+        optimum = None
+        if curve.best is not None:
+            # 한 점당 요금을 다시 계산해 몇 초 걸린다 — 아무 말 없이 멈추지 않게 돈다고 적는다.
+            with ui.row().classes("items-center gap-2") as wait:
+                ui.spinner(size="sm")
+                ui.label("ESS 목표를 고르는 중…").classes("k-note")
+            try:
+                optimum = await run.io_bound(
+                    refine_ess_target,
+                    ctx.usage,
+                    ctx.table,
+                    ctx.form.selection,
+                    curve=curve,
+                    baseline=baseline,
+                    quality=ctx.quality,
+                    options=ctx.form.billing_options(),
+                    model=model,
+                )
+            finally:
+                wait.delete()
+        if len(_ESS_MEMO) >= 8:  # ponytail: 작은 기억 — 오래된 것부터가 아니라 통째로 비운다
+            _ESS_MEMO.clear()
+        _ESS_MEMO[key] = (curve, optimum)
+    curve, cached = _ESS_MEMO[key]
+    if curve.best is None or cached is None:
         choices.ess_target = 0.0
         w.caution(notices.ESS_NO_EXCESS)
         return
-    # 한 점당 요금을 다시 계산해 몇 초 걸린다 — 아무 말 없이 멈추지 않게 돈다고 적는다.
-    with ui.row().classes("items-center gap-2") as wait:
-        ui.spinner(size="sm")
-        ui.label("ESS 목표를 고르는 중…").classes("k-note")
-    try:
-        optimum = await run.io_bound(
-            refine_ess_target,
-            ctx.usage,
-            ctx.table,
-            ctx.form.selection,
-            curve=curve,
-            baseline=baseline,
-            quality=ctx.quality,
-            options=ctx.form.billing_options(),
-            model=model,
-        )
-    finally:
-        wait.delete()
+    optimum = cached
 
     if optimum.below_minimum:
         # 살 물건이 없다 — 이 건물의 사실(필요 출력 · 용량 · 방전시간)만 낸다.

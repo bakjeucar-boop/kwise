@@ -33,9 +33,14 @@ body { font-family: system-ui, sans-serif; line-height: 1.5; }
 .k-overview { border-left: 3px solid rgba(142, 142, 147, 0.45); padding-left: 0.75rem; }
 .k-overview p { margin: 0; }
 .k-tip { white-space: pre-line; max-width: 22rem; font-size: 0.8rem; }
+.k-info { color: var(--k-muted); min-height: 1.4rem; min-width: 1.4rem; }
+.k-info:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 .q-btn:active { transform: scale(0.97); transition: transform 100ms ease-out; }
 @media (prefers-reduced-motion: reduce) { .q-btn:active { transform: none; } }
 """
+
+#: ⓘ 단추의 이름 (화면 읽기용).
+INFO_LABEL = "풀이"
 
 #: 풀이는 옆에 띄운다 — 아래에 띄우면 바로 밑 입력칸을 덮는다.
 TIP_SIDE = 'anchor="center right" self="center left" :offset="[8, 0]"'
@@ -47,11 +52,26 @@ def tip(text: str) -> None:
         ui.markdown(fmt.markdown_safe(text))
 
 
+def info(text: str) -> None:
+    """ⓘ — 마우스를 올리면 풀이가 뜨고, Tab 으로 닿아 Enter(또는 누름)로도 연다.
+
+    풀이를 글자에만 걸면 키보드로는 못 연다 — 단추로 세워 초점을 받게 한다.
+    """
+    button = ui.button("ⓘ").props("flat round dense size=xs").classes("k-info")
+    # 화면 읽기 프로그램이 읽는 이름 — 코드 식별자와 한 문자열에 섞지 않는다 (화면 문구 잣대).
+    button.props["aria-label"] = INFO_LABEL
+    with button:
+        tip(text)
+        with ui.menu().classes("k-tip p-3"):
+            ui.markdown(fmt.markdown_safe(text))
+
+
 def metric(label: str, value: str, sub: str = "", help_text: str = "") -> None:
     with ui.card().tight().classes("k-card p-4 min-w-[10rem] flex-1"):
-        with ui.label(f"{label} ⓘ" if help_text else label).classes("k-label"):
+        with ui.row().classes("items-center gap-0 no-wrap"):
+            ui.label(label).classes("k-label")
             if help_text:
-                tip(help_text)
+                info(help_text)
         ui.label(value).classes("k-value")
         if sub:
             ui.label(sub).classes("k-sub")
@@ -65,9 +85,12 @@ def metrics(cells: list[tuple[str, ...]]) -> None:
 
 
 def caption(text: str, help_text: str = "") -> None:
-    with ui.label(f"{text} ⓘ" if help_text else text).classes("k-note"):
-        if help_text:
-            tip(help_text)
+    if not help_text:
+        ui.label(text).classes("k-note")
+        return
+    with ui.row().classes("items-center gap-0"):
+        ui.label(text).classes("k-note")
+        info(help_text)
 
 
 def caution(text: str) -> None:

@@ -102,6 +102,7 @@ from kwise.ui.session import build_report_bytes
 from kwise.ui.spec import MEASURES, ReviewScope, measure, review_scope
 
 from . import widgets as w
+from .rules import ess_model
 from .solar import STALE_INPUT, _chosen_revenue, _surplus
 
 if TYPE_CHECKING:
@@ -367,7 +368,7 @@ def _measure_results(ctx: Context, choices: Choices) -> _Results:
     ess = ess_curve = ess_optimum = None
     ess_target = None
     if "ess" in enabled and diagnosis.peak.billing_demand_kw > 0:
-        model = load_ess_cost_model()
+        model = ess_model(choices)  # 2단계 카드와 같은 단가 경로 · 계수
         ess_curve = ess_target_curve(
             usage.kw,
             usage.meta.interval_minutes,
@@ -469,6 +470,8 @@ def _specs(
         pv_total_investment_won=inputs.total_investment_won if inputs else None,
         ess_target_kw=results.ess_target if "ess" in enabled else None,
         ess_total_investment_won=choices.ess_quote,
+        ess_fixed_won=choices.ess_fixed,
+        ess_per_kwh_won=choices.ess_per_kwh,
         power_factor_pct=(
             (choices.pf_target or default_target_pct()) if "power_factor" in enabled else None
         ),

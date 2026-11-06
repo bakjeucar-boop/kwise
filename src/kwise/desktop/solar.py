@@ -313,6 +313,11 @@ async def card(
 _azimuth_memo: dict[tuple[str, float, float], tuple[AzimuthOption, ...]] = {}
 
 
+def forget() -> None:
+    """기준 데이터를 고친 뒤 방위 비율을 다시 낸다."""
+    _azimuth_memo.clear()
+
+
 async def _result(
     ctx: Context,
     choices: Choices,

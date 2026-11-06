@@ -46,6 +46,7 @@ from kwise.ui.pipeline import (
 )
 
 from . import compare, measures, vega
+from . import rules as rules_view
 from . import widgets as w
 from .building import (
     NAME_MISSING,
@@ -700,6 +701,12 @@ def build(state: _State) -> None:
             tab1 = ui.tab("stage1", label="1단계 · 진단")
             tab2 = ui.tab("stage2", label="2단계 · 개선 수단")
             tab3 = ui.tab("stage3", label="3단계 · 개선안 조합")
+            # 단계가 아니라 설정이다 — Streamlit 은 옆단 아래 들머리로 연다. 데스크톱은 맨 끝 탭.
+            tab4 = ui.tab("rules", label="기준 데이터")
+        # 손상 복구 · 만료 경고는 모든 화면 위에 건다 (Streamlit ``render_alerts`` 와 같다).
+        alert_box = ui.column().classes("w-full gap-1")
+        with alert_box:
+            rules_view.alerts()
     panels = ui.tab_panels(tabs, value=tab1).classes("w-full max-w-5xl mx-auto bg-transparent")
     with panels, ui.tab_panel(tab2):
         stage2 = ui.column().classes("w-full gap-3")
@@ -709,6 +716,18 @@ def build(state: _State) -> None:
         stage3 = ui.column().classes("w-full gap-3")
         with stage3:
             w.note(_NOT_READY)
+
+    async def rules_saved() -> None:
+        """기준 데이터를 고쳤으면 알림을 새로 걸고 1단계부터 다시 계산한다."""
+        alert_box.clear()
+        with alert_box:
+            rules_view.alerts()
+        # 기준 데이터가 바뀌면 화면 쪽 기억(ESS 목표 훑기 · 방위 비율)도 낡는다.
+        measures.forget()
+        await analyse()
+
+    with panels, ui.tab_panel(tab4):
+        rules_view.render(state.choices, rules_saved)
     last: list[measures.Context] = []  # 2·3단계가 함께 보는 한 벌 — 1단계가 끝날 때마다 갈린다
 
     async def open_stage3() -> None:
