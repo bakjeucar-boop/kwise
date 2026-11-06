@@ -65,6 +65,11 @@ def _inside(block: Block, key: str = "children") -> Iterator[None]:
         _CURRENT.reset(token)
 
 
+def raw(block: Block) -> Block:
+    """이름 붙은 함수가 없는 조각 — 화면이 따로 아는 꼴(잉여 처리 고르기 같은 것)."""
+    return _add(block)
+
+
 # --------------------------------------------------------------------- 글
 
 

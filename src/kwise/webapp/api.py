@@ -10,6 +10,7 @@ pywebview 는 부름마다 따로 실(thread)을 띄운다 — 무거운 계산�
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import json
 import os
 import threading
@@ -41,7 +42,7 @@ from kwise.ui.pipeline import (
 )
 
 from . import blocks as b
-from . import stage1
+from . import stage1, stage2
 from .building import BuildingInfo, building_uses, narrow_contract_types
 from .state import Choices
 
@@ -69,6 +70,7 @@ class _Session:
     usage: UsageData | None = None
     quality: QualityReport | None = None
     diagnosis: Diagnosis | None = None
+    last_request: dict[str, Any] = field(default_factory=dict)
 
 
 class Api:
@@ -154,6 +156,7 @@ class Api:
 
     def _analyse(self, request: dict[str, Any]) -> dict[str, Any]:
         s = self._s
+        s.last_request = {**request, "columns": None}  # 2단계가 1단계를 다시 돌릴 때 쓴다
         s.building = _building(request.get("building") or {})
         s.form = self._form(request.get("form"))
         columns = request.get("columns") or {}
@@ -215,6 +218,111 @@ class Api:
             "ready": s.form is not None and diagnosis.structure is not None,
         }
 
+    # ------------------------------------------------------------------ 2단계
+
+    def _ctx(self) -> stage2.Context | None:
+        s = self._s
+        if s.usage is None or s.diagnosis is None or s.quality is None or s.form is None:
+            return None
+        if s.diagnosis.structure is None:
+            return None
+        return stage2.Context(
+            usage=s.usage,
+            table=s.table,
+            form=s.form,
+            diagnosis=s.diagnosis,
+            quality=s.quality,
+            building=s.building,
+        )
+
+    def stage2(self) -> dict[str, Any]:
+        """2단계 머리 — 계약 정보를 확정하기 전에는 ``ready`` 가 거짓이다."""
+        ctx = self._ctx()
+        if ctx is None:
+            return {"ready": False}
+        return _jsonable({"ready": True, **stage2.frame(ctx, self._s.choices)})
+
+    def set_day(self, key: str, custom: str = "") -> None:
+        """일일 곡선 대표일 — 역률 · 태양광 · ESS 의 하루 곡선이 모두 이 날을 쓴다."""
+        self._s.choices.day_key = key
+        try:
+            self._s.choices.custom_day = dt.date.fromisoformat(custom) if custom else None
+        except ValueError:
+            self._s.choices.custom_day = None
+
+    def toggle(self, key: str, on: bool) -> None:
+        """카드를 켜고 끈다 — 켠 것만 3단계 조합에 들어간다."""
+        (self._s.choices.enabled.add if on else self._s.choices.enabled.discard)(key)
+
+    def card(self, key: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """카드 한 장을 계산한다 — ``params`` 는 그 카드의 입력칸 값이다."""
+        with self._lock:
+            try:
+                rediagnosed = self._apply(key, params or {})
+                ctx = self._ctx()
+                if ctx is None:
+                    return {"ok": False, "error": "1단계 결과가 없습니다."}
+                return _jsonable(
+                    {
+                        "ok": True,
+                        "rediagnosed": rediagnosed,
+                        **stage2.card(ctx, self._s.choices, key),
+                    }
+                )
+            except Exception as exc:
+                traceback.print_exc()
+                return {"ok": False, "error": f"계산하지 못했습니다. {exc}"}
+
+    def _apply(self, key: str, params: dict[str, Any]) -> bool:
+        """카드 입력칸 값을 고른 것에 담는다. 1단계를 다시 돌렸으면 참 (DR 쉬는 날)."""
+        c = self._s.choices
+        if key == "power_factor":
+            if "target" in params:
+                c.pf_target = _number(params.get("target"))
+            if "investment" in params:
+                c.pf_investment = _number(params.get("investment")) or None
+        elif key == "demand_response":
+            if "priced" in params:
+                c.dr_priced = bool(params["priced"])
+            if "price" in params:
+                c.dr_price = _number(params.get("price")) or None
+            if "off_days" in params:
+                off = tuple(sorted(str(d) for d in params["off_days"] or ()))
+                if off != c.dr_off_days:
+                    # 쉬는 날은 1단계 진단이 읽는다 — 그 값으로 1단계부터 다시 (Streamlit 과 같다).
+                    c.dr_off_days = off
+                    self._analyse(self._s.last_request)
+                    return True
+        elif key == "ess":
+            if "known" in params:
+                c.ess_known = bool(params["known"])
+            if "total" in params:
+                c.ess_total = _number(params.get("total")) or None
+        elif key == "solar":
+            form = c.solar
+            for name, value in (params.get("form") or {}).items():
+                if hasattr(form, name):
+                    setattr(form, name, value)
+            if params.get("calculate"):
+                form.ran_form = form.fields()
+            if "surplus_use" in params:
+                form.surplus_use = str(params["surplus_use"])
+            if "surplus_price" in params:
+                form.surplus_price = _number(params["surplus_price"])
+            if "smp_price" in params:
+                form.smp_price = _number(params["smp_price"])
+        return False
+
+    def solar_options(self, form: dict[str, Any]) -> dict[str, Any]:
+        """태양광 칸을 고칠 때 — 밀도 라벨(환산 용량) · 방위 라벨 · 묵은 결과 여부만 다시."""
+        ctx = self._ctx()
+        if ctx is None:
+            return {}
+        for name, value in form.items():
+            if hasattr(self._s.choices.solar, name):
+                setattr(self._s.choices.solar, name, value)
+        return _jsonable(stage2.solar_options(ctx, self._s.choices))
+
     def _form(self, raw: dict[str, Any] | None) -> ContractForm | None:
         if not raw:
             return None
@@ -238,6 +346,13 @@ class Api:
             ),
             school_exception=choice.school_exception,
         )
+
+
+def _number(value: object) -> float | None:
+    """칸 값 — 비었으면 ``None``."""
+    if value is None or value == "":
+        return None
+    return float(value)  # type: ignore[arg-type]
 
 
 def _building(raw: dict[str, Any]) -> BuildingInfo:
