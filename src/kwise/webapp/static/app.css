@@ -32,9 +32,16 @@ body { font-family: system-ui, "Malgun Gothic", sans-serif; line-height: 1.5; }
 .k-info { color: var(--k-muted); min-height: 1.4rem; min-width: 1.4rem; }
 .k-info:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 .k-bar { background: var(--k-bar); color: inherit; border-bottom: 1px solid var(--k-line); }
-.k-steps .q-tab { min-height: 3rem; padding: 0 1.25rem; }
+/* 단계 탭 — 지금 단계는 알약(색 바탕 · 진한 글)으로. 누르는 순간 살짝 줄어 눌린 것을 알린다. */
+.k-steps .q-tab { min-height: 2.25rem; margin: 0.375rem 0.2rem; padding: 0 1rem; border-radius: 999px;
+                  transition: background-color 150ms ease-out, color 150ms ease-out, transform 100ms ease-out; }
+.k-steps .q-tab:active { transform: scale(0.97); }
 .k-steps .q-tab__label { font-size: 0.95rem; font-weight: 600; }
-.k-steps .q-tab--inactive { opacity: 0.6; }
+.k-steps .q-tab--inactive { color: var(--k-muted); }
+.k-steps .q-tab--active { background: color-mix(in srgb, var(--q-primary) 14%, transparent); color: var(--q-primary); }
+.k-steps .q-tab--active .q-tab__label { font-weight: 700; }
+.k-steps .q-focus-helper { border-radius: 999px; }
+@media (prefers-reduced-motion: reduce) { .k-steps .q-tab { transition: none; } .k-steps .q-tab:active { transform: none; } }
 .k-page { max-width: 64rem; margin: 0 auto; }
 .k-drop { border: 1px dashed var(--k-line); border-radius: 12px; padding: 1.25rem; text-align: center; cursor: pointer; }
 .k-drop:hover, .k-drop.k-over { border-color: var(--q-primary); }

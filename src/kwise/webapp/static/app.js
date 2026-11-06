@@ -671,10 +671,10 @@ const App = {
           </q-menu>
         </q-btn>
         <q-separator vertical inset class="q-mx-sm" />
-        <q-tabs v-model="tab" no-caps inline-label class="k-steps" align="left">
-          <q-tab name="s1" label="① 진단" />
-          <q-tab name="s2" label="② 개선 수단" />
-          <q-tab name="s3" label="③ 개선안 조합" />
+        <q-tabs v-model="tab" no-caps inline-label class="k-steps" align="left" indicator-color="transparent">
+          <q-tab name="s1" label="🩺 진단" />
+          <q-tab name="s2" label="🛠️ 개선 수단" />
+          <q-tab name="s3" label="🧩 개선안 조합" />
         </q-tabs>
       </q-toolbar>
     </q-header>
@@ -715,9 +715,9 @@ const App = {
         <div class="k-page">
           <div v-if="alerts.length" class="k-stack-sm q-mb-md"><k-blocks :blocks="alerts" /></div>
           <q-tab-panels v-model="tab" animated keep-alive class="bg-transparent">
-            <!-- ① 진단 -->
+            <!-- 진단 -->
             <q-tab-panel name="s1" class="q-pa-none k-stack">
-              <div class="k-h1">① 진단</div>
+              <div class="k-h1">🩺 진단</div>
               <div class="k-note">파일만 올려도 결과가 나옵니다. 금액은 계약 정보를 확정하면 나옵니다.</div>
               <q-card flat class="k-card q-pa-md">
                 <div class="k-label q-mb-sm">계약 정보</div>
@@ -777,10 +777,10 @@ const App = {
               </div>
             </q-tab-panel>
 
-            <!-- ② 개선 수단 -->
+            <!-- 개선 수단 -->
             <q-tab-panel name="s2" class="q-pa-none k-stack">
-              <div class="k-h1">② 개선 수단</div>
-              <div v-if="!s2 || !s2.ready" class="k-note">「① 진단」 탭에서 사용량 파일을 올리고 계약 정보를 확정하면 여기에 결과가 나옵니다.</div>
+              <div class="k-h1">🛠️ 개선 수단</div>
+              <div v-if="!s2 || !s2.ready" class="k-note">「진단」 탭에서 사용량 파일을 올리고 계약 정보를 확정하면 여기에 결과가 나옵니다.</div>
               <template v-else>
                 <div class="k-note">{{ s2.baseline }}</div>
                 <div v-if="s2.days.length" class="k-line">
@@ -802,11 +802,11 @@ const App = {
               </template>
             </q-tab-panel>
 
-            <!-- ③ 개선안 조합 -->
+            <!-- 개선안 조합 -->
             <q-tab-panel name="s3" class="q-pa-none k-stack">
-              <div class="k-h1">③ 개선안 조합</div>
+              <div class="k-h1">🧩 개선안 조합</div>
               <div v-if="s3loading" class="k-line"><q-spinner size="sm" /><span class="k-note">켠 개선안을 모으는 중…</span></div>
-              <div v-else-if="!s3 || !s3.ready" class="k-note">{{ s3 && s3.error ? s3.error : "「① 진단」 탭에서 사용량 파일을 올리고 계약 정보를 확정하면 여기에 결과가 나옵니다." }}</div>
+              <div v-else-if="!s3 || !s3.ready" class="k-note">{{ s3 && s3.error ? s3.error : "「진단」 탭에서 사용량 파일을 올리고 계약 정보를 확정하면 여기에 결과가 나옵니다." }}</div>
               <template v-else>
                 <k-blocks :blocks="s3.scope" />
                 <k-blocks :blocks="s3.summary" />

@@ -33,7 +33,7 @@ _SESSION = uuid.uuid4().hex
 def make(s: _Session, ctx: Context | None, kind: str, *, include_timeseries: bool) -> Path:
     """``kind`` 는 ``excel`` 또는 ``ppt``. 저장한 경로를 돌려준다."""
     if ctx is None or s.results is None:
-        raise RuntimeError("3단계 결과가 없습니다 — 「③ 개선안 조합」 을 먼저 여십시오.")
+        raise RuntimeError("3단계 결과가 없습니다 — 「개선안 조합」 탭을 먼저 여십시오.")
     if stage3.stale_lines(ctx, s.choices):
         raise RuntimeError("태양광 입력이 변경되었습니다 — 2단계에서 다시 계산하십시오.")
     c = s.choices
