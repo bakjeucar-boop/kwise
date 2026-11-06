@@ -37,14 +37,21 @@ const KChart = {
   props: { spec: Object },
   template: `<div class="k-chart"></div>`,
   mounted() { this.draw(); },
-  watch: { spec() { this.draw(); } },
+  computed: { dark() { return this.$q.dark.isActive; } },
+  watch: { spec() { this.draw(); }, dark() { this.draw(); } },
   methods: {
     draw() {
       // Vue 가 사양을 반응형 대리자(Proxy)로 감싼다 — Vega 가 structuredClone 하지 못하므로
       // 순수 사본을 건넨다.
       const plain = JSON.parse(JSON.stringify(this.spec));
-      vegaEmbed(this.$el, plain, { actions: false, renderer: "svg" })
-        .catch((e) => console.error("vega", e));
+      // 다크 모드 — 축 · 범례 · 제목 글자를 어두운 바탕용으로 (vega-embed 에 든 dark 주제).
+      // 바탕은 투명하게 두어 카드 색을 그대로 쓴다.
+      const options = { actions: false, renderer: "svg" };
+      if (this.dark) {
+        options.theme = "dark";
+        plain.config = { ...(plain.config || {}), background: "transparent" };
+      }
+      vegaEmbed(this.$el, plain, options).catch((e) => console.error("vega", e));
     },
   },
 };
