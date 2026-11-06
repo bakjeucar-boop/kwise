@@ -272,14 +272,13 @@ ESS_PRICING_PATH = "pricing_path"
 
 
 def ess_quote() -> float | None:
-    """ESS 견적 총액 — **「견적 총액을 안다」 를 체크했을 때만** (S276 결정 4).
+    """ESS 견적 총액 — **화면 입력을 뺐다, 늘 ``None``** (2026-11-06 사람 결정).
 
-    체크를 풀면 금액 칸을 안 그리지만 :func:`carry_inputs` 가 그 키를 되살려 둔다 —
-    금액 키만 읽으면 푼 뒤에도 옛 견적이 남는다. 2단계 카드와 3단계가 이 한 자리를 읽는다.
+    견적을 넣으면 ESS 카드에 회수기간이 둘 섰다(목표별 표는 조달 사례 단가 · 지표는 견적).
+    투자비는 늘 기준 데이터의 단가로 산정한다. 2단계 카드와 3단계가 이 한 자리를 읽으므로
+    자리는 남긴다 — 계산 쪽의 견적 경로(일괄 산출 등)는 그대로다.
     """
-    if not st.session_state.get(input_key("ess", "total_cost_known")):
-        return None
-    return measure_float("ess", "total_cost")
+    return None
 
 
 def ess_pricing() -> tuple[str, float | None, float | None]:

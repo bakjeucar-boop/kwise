@@ -116,8 +116,6 @@ class Choices:
     dr_price: float | None = None
     #: 쉬는 날이어서 뺄 날짜(ISO) — 1단계 진단이 읽는다.
     dr_off_days: tuple[str, ...] = ()
-    ess_known: bool = False
-    ess_total: float | None = None
     #: ESS 가 고른 목표 요금적용전력 — 3단계가 같은 값을 읽는다 (고를 것이 없으면 0).
     ess_target: float = 0.0
     #: 「기준 데이터」 의 ESS 단가 경로 · 두 계수 — 비었으면 출고값.
@@ -132,8 +130,8 @@ class Choices:
 
     @property
     def ess_quote(self) -> float | None:
-        """「견적 총액을 안다」 를 체크했을 때만 — 0 은 미입력 (Streamlit ``ess_quote``)."""
-        return (self.ess_total or None) if self.ess_known else None
+        """ESS 견적 — 화면 입력을 뺐다, 늘 ``None`` (2026-11-06 · Streamlit 과 같다)."""
+        return None
 
     @property
     def dr_unit_price(self) -> float | None:

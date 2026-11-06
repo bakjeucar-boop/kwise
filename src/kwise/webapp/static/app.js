@@ -159,7 +159,6 @@ const KCard = {
       on: false, loading: false, blocks: [], extra: {}, error: "",
       pf: { target: null, investment: 0 },
       dr: { priced: false, price: 0, off_days: [] },
-      ess: { known: false, total: 0 },
       solar: { area: 1000, density: "", azimuth: "", unit_cost: 0, capacity: 0, azimuth_override: 0,
                loss: 0.14, total_known: false, total: 0, wall_area: 0, wall_azimuth: "" },
       sopts: null,
@@ -200,7 +199,7 @@ const KCard = {
     refresh() { if (this.on) this.run({}, false); },
     restore(state, on) {
       // 작업 열기 — 파이썬 쪽 고른 것은 이미 갈렸다. 입력칸만 맞추고 켠 카드는 다시 계산.
-      const box = { power_factor: "pf", demand_response: "dr", ess: "ess", solar: "solar" }[this.meta.key];
+      const box = { power_factor: "pf", demand_response: "dr", solar: "solar" }[this.meta.key];
       if (box && state) Object.assign(this[box], state);
       this.on = on;
       this.blocks = [];
@@ -234,12 +233,7 @@ const KCard = {
             <q-tooltip anchor="center right" self="center left">근로자의 날이나 임시공휴일이 섞여 있을 수 있습니다. 고른 날은 거래 가능일에서 빼고 감축량을 다시 계산합니다.</q-tooltip>
           </q-select>
         </div>
-        <!-- 6 ESS -->
-        <div v-if="meta.key === 'ess'" class="k-line">
-          <q-checkbox v-model="ess.known" label="견적 총액을 안다" @update:model-value="run({ known: ess.known, total: ess.total })" />
-          <q-input v-if="ess.known" v-model.number="ess.total" type="number" dense label="견적 총액 (원)"
-            style="width: 14rem" @change="run({ total: ess.total })" />
-        </div>
+        <!-- 6 ESS — 입력칸 없음 (견적 입력을 뺐다 · 투자비는 기준 데이터 단가) -->
         <!-- 5 태양광 -->
         <div v-if="meta.key === 'solar' && sopts" class="k-stack-sm">
           <div class="row q-col-gutter-md items-start">

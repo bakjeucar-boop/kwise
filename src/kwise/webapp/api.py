@@ -298,11 +298,6 @@ class Api:
                     c.dr_off_days = off
                     self._analyse(self._s.last_request)
                     return True
-        elif key == "ess":
-            if "known" in params:
-                c.ess_known = bool(params["known"])
-            if "total" in params:
-                c.ess_total = _number(params.get("total")) or None
         elif key == "solar":
             form = c.solar
             for name, value in (params.get("form") or {}).items():
@@ -487,7 +482,7 @@ class Api:
                         "price": c.dr_price or 0,
                         "off_days": list(c.dr_off_days),
                     },
-                    "ess": {"known": c.ess_known, "total": c.ess_total or 0},
+                    "ess": None,
                     "solar": c.solar.fields(),
                 },
             }

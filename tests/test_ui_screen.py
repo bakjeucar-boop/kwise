@@ -1916,18 +1916,16 @@ def test_ESS_최소점_표식이_검산값과_맞는다() -> None:
     assert "년" not in label, label  # 회수기간은 카드만 낸다
 
 
-def test_ESS_카드에는_견적_총액만_남는다(ess_screen: AppTest) -> None:
-    """**단가는 성격상 설정이다** (50세션 3-5).
+def test_ESS_카드에는_단가_입력이_없다(ess_screen: AppTest) -> None:
+    """**단가는 성격상 설정이다** (50세션 3-5) · **견적 입력도 뺐다** (2026-11-06 사람 결정).
 
-    49세션까지는 카드의 접힘 안에 고정비·용량단가·총액 셋이 있었다. 접어 두면
-    관심 있는 사람도 못 보고, 펼쳐 두면 모르는 사람에게 어렵다. 두 계수와 kWh
-    구간 단가는 **기준 데이터 화면**으로 옮겼고, 카드에는 견적을 받은 사람이 그
-    금액을 그대로 넣는 자리 하나만 남는다.
+    49세션까지는 카드의 접힘 안에 고정비·용량단가·총액 셋이 있었다. 두 계수와 kWh
+    구간 단가는 **기준 데이터 화면**으로 옮겼고, 남아 있던 견적 총액은 넣으면 한 카드에
+    회수기간이 둘(목표별 표의 조달 사례 단가 · 지표의 견적) 서서 뺐다.
     """
     assert not ess_screen.exception, ess_screen.exception
     labels = [str(item.label) for item in ess_screen.number_input]
-    # 체크 꼴이다 — 체크하기 전에는 금액 칸이 없다 (S276 결정 4).
-    assert "견적 총액을 안다" in [str(item.label) for item in ess_screen.checkbox]
+    assert "견적 총액을 안다" not in [str(item.label) for item in ess_screen.checkbox]
     assert not [item for item in labels if "견적 총액" in item], labels
     assert not [item for item in labels if "고정비 (원)" in item], labels
     assert not [item for item in labels if "용량단가 (원/kWh)" in item], labels
@@ -3259,7 +3257,7 @@ EDGE_VALUES: tuple[tuple[str, float], ...] = (
     ("measure_power_factor_target", 100.0),  # 상한 — 감액 상한을 넘는다
     ("measure_power_factor_investment", 0.0),
     # 여유율 입력 둘은 83세션에 사라졌다 — 근거 없는 판단값이었다.
-    ("measure_ess_total_cost", 1_000_000_000.0),
+    # ESS 견적 총액은 2026-11-06 에 화면에서 뺐다(사람 결정).
     ("measure_surplus_price", 0.0),
 )
 
@@ -3282,8 +3280,7 @@ def test_입력_끝값을_훑어도_화면이_죽지_않는다() -> None:
     """
     # 태양광만 뺀다 — 시험은 기상 사전 취득분에서 격리되어 있다.
     keys = ("tariff_switch", "contract", "demand_response", "power_factor", "ess", "surplus")
-    # ESS 견적 칸은 체크해야 열린다 (S276 결정 4).
-    screen = _running(on=keys, measure_ess_total_cost_known=True)
+    screen = _running(on=keys)
     assert not screen.exception, screen.exception
 
     touched = 0
@@ -3295,7 +3292,7 @@ def test_입력_끝값을_훑어도_화면이_죽지_않는다() -> None:
         screen = widget.set_value(value).run(timeout=900)
         touched += 1
         assert not screen.exception, f"{key} = {value}: {screen.exception}"
-    assert touched >= 4, f"끝값을 넣은 입력이 {touched}개뿐입니다. 키가 바뀌었습니다."
+    assert touched >= 3, f"끝값을 넣은 입력이 {touched}개뿐입니다. 키가 바뀌었습니다."
 
     # **ESS 단가 계수는 기준 데이터 화면에 있다** (50세션 3-5). 거기서 0 을 넣고
     # 수단 화면으로 돌아와 카드가 죽지 않는지 본다 — 자리가 갈렸을 뿐 값은
@@ -3312,7 +3309,8 @@ def test_입력_끝값을_훑어도_화면이_죽지_않는다() -> None:
         measure_ess_per_kwh_cost=0.0,
     )
     assert not back.exception, back.exception
-    assert touched >= 6, f"끝값을 넣은 입력이 {touched}개뿐입니다. 키가 바뀌었습니다."
+    # ESS 견적 총액 칸을 뺐다(2026-11-06) — 끝값 입력이 하나 줄었다.
+    assert touched >= 5, f"끝값을 넣은 입력이 {touched}개뿐입니다. 키가 바뀌었습니다."
 
 
 # ======================================================== 26세션 · 용어와 단위
@@ -5442,13 +5440,12 @@ def test_S276_야간_진상역률은_체크_없이_빈칸으로_서고_비우면
     assert [item.key for item in low.number_input if item.key in (day_key, night_key)] == [day_key]
 
 
-def test_S276_ESS_견적_총액은_체크해야_열리고_체크를_풀면_기준_단가다() -> None:
-    """**단가 직접 입력은 「… 를 안다」 체크 꼴이다** (S276 결정 4 · 경제성DR 의 꼴).
+def test_ESS_견적_입력을_뺐고_투자비는_늘_기준_단가다() -> None:
+    """**ESS 견적 총액 입력을 뺐다** (2026-11-06 사람 결정 · S276 결정 4 의 체크 꼴을 걷었다).
 
-    체크하지 않으면 기준 데이터의 단가로 산정한다 — 앞서 0 을 넣던 것과 같다. 체크하고
-    금액을 넣으면 그 금액이 투자비다. **체크를 풀면 넣었던 금액이 남아 있어도 기준 단가로
-    돌아간다** — 금액 키는 화면을 다녀와도 남게 지키는 값이라(S259) 3단계가 그 키만 읽으면
-    푼 뒤에도 옛 견적이 든다. 3단계는 체크와 금액을 함께 읽는 한 자리를 읽는다.
+    견적을 넣으면 한 카드에 회수기간이 둘(목표별 표의 조달 사례 단가 · 지표의 견적) 섰다.
+    이제 체크도 금액 칸도 없고, 옛 세션에 금액 키가 남아 있어도 투자비는 기준 단가다 —
+    2단계 카드와 3단계는 ``ess_quote()`` 한 자리를 읽고 그 자리는 늘 ``None`` 이다.
     """
     known_key, cost_key = "measure_ess_total_cost_known", "measure_ess_total_cost"
     screen = _running(nav_page="2단계 · 개선 수단", measure_on_ess=True)
@@ -5459,24 +5456,14 @@ def test_S276_ESS_견적_총액은_체크해야_열리고_체크를_풀면_기�
         return str(item.value), str(item.delta)
 
     base = card()
-    assert not [item for item in screen.number_input if item.key == cost_key]
-    screen.checkbox(key=known_key).check().run()
-    assert screen.number_input(key=cost_key).value == 0.0
-    assert card() == base  # 체크만 하고 금액이 0 이면 기준 단가 그대로다
-    screen.number_input(key=cost_key).set_value(300_000_000.0).run()
-    assert card()[0] == "3억원" and card() != base
-    # 기준 데이터 화면을 다녀와도 넣은 값이 남는다 (S259).
-    screen.button(key="nav_rules").click().run()
-    screen.button(key="nav_analysis").click().run()
-    assert not screen.exception, screen.exception
-    assert screen.checkbox(key=known_key).value is True
-    assert screen.number_input(key=cost_key).value == 300_000_000.0
-    assert card()[0] == "3억원"
-    # 체크를 풀면 기준 단가다 — 한 번 더 그려 금액 키가 되살아난 뒤에도 그대로다.
-    screen.checkbox(key=known_key).uncheck().run()
-    assert card() == base
+    assert known_key not in [item.key for item in screen.checkbox]
+    assert cost_key not in [item.key for item in screen.number_input]
+    # 옛 판에서 넣어 둔 값이 세션에 남아 있어도 안 든다.
+    screen.session_state[known_key] = True
+    screen.session_state[cost_key] = 300_000_000.0
     screen.run()
-    assert screen.session_state[cost_key] == 300_000_000.0 and card() == base
+    assert not screen.exception, screen.exception
+    assert card() == base
 
     compare = (VIEWS / "compare.py").read_text(encoding="utf-8")
     assert 'measure_float("ess", "total_cost")' not in compare and "ess_quote()" in compare
