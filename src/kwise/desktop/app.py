@@ -1,4 +1,6 @@
-"""데스크톱 진단 화면 (시제품 · 1단계만).
+"""데스크톱 화면 — 옆단 건물 정보 + 세 단계 탭 (1단계 진단 · 2단계 개선 수단 · 3단계 조합).
+
+2단계는 ``measures.py`` 가 짓는다. 3단계는 아직 없다.
 
 계산·그래프·문구는 공용 함수를 부른다. 여기에 있는 것은 **화면 연결**뿐이다 —
 입력 받기, 공용 함수 부르기, 결과 놓기.
@@ -16,12 +18,10 @@ from nicegui import run, ui
 from kwise.diagnose import Diagnosis
 from kwise.diagnose.dr import BID_WINDOW, dr_market_windows
 from kwise.io import UsageData, load_usage_bytes
-from kwise.notices import tooltip
 from kwise.pv import list_provinces, list_sigungu
 from kwise.quality import DEFAULT_OPERATING_HOURS, QualityReport, monthly_longest_gaps
 from kwise.quality.checks import HOURLY_INTERVAL_FACT
 from kwise.report import localize, narrative, notices
-from kwise.report.columns import display_frame
 from kwise.tariff import (
     AMI_BASIS_NOTICE,
     TENTATIVE_BASE_FEE_BASIS_WARNING,
@@ -33,7 +33,7 @@ from kwise.tariff.power_factor import leading_charge_applies
 from kwise.ui import charts
 from kwise.ui import text as fmt
 from kwise.ui.labels import option_label
-from kwise.ui.notices import Severity, partition_facts, screen_notices, tooltip_text
+from kwise.ui.notices import partition_facts, screen_notices
 from kwise.ui.pipeline import (
     ContractForm,
     contract_type_choices,
@@ -45,7 +45,8 @@ from kwise.ui.pipeline import (
     voltage_choices,
 )
 
-from . import vega
+from . import measures, vega
+from . import widgets as w
 from .building import (
     NAME_MISSING,
     BuildingInfo,
@@ -54,6 +55,14 @@ from .building import (
     narrow_contract_types,
     weather_source_label,
 )
+from .widgets import CSS as _CSS
+from .widgets import TIP_SIDE as _TIP_SIDE
+from .widgets import caption as _caption
+from .widgets import caution as _caution
+from .widgets import metrics as _metrics
+from .widgets import notice_block
+from .widgets import table as _table
+from .widgets import tip as _tip
 
 #: Streamlit 화면의 ``SEASON_CHOICES`` 와 같은 갈래 (그쪽 모듈은 streamlit 을 끌어와 못 부른다).
 _SEASONS: tuple[tuple[str, str | None], ...] = (
@@ -104,24 +113,10 @@ _CONTRACT_FACTS = (
 )
 _TENTATIVE_FACTS = ("tariff.tentative_base_fee_basis",)
 
-_CSS = """
-:root { --k-muted: #6e6e73; }
-.body--dark { --k-muted: #8e8e93; }
-body { font-family: system-ui, sans-serif; line-height: 1.5; }
-.k-title { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
-.k-section { font-size: 1.2rem; font-weight: 650; letter-spacing: -0.01em; margin-top: 1.5rem; }
-.k-label { font-size: 0.8rem; color: var(--k-muted); letter-spacing: 0.01em; }
-.k-value { font-size: 1.6rem; font-weight: 650; letter-spacing: -0.02em; line-height: 1.15; }
-.k-sub { font-size: 0.8rem; color: var(--k-muted); }
-.k-note { font-size: 0.85rem; color: var(--k-muted); }
-.k-card { border: 1px solid rgba(142, 142, 147, 0.3); border-radius: 12px; box-shadow: none; }
-.k-stale { opacity: 0.45; pointer-events: none; }
-.k-dim { opacity: 0.6; }
-.k-caution p { margin: 0; font-size: 0.9rem; }
-.k-tip { white-space: pre-line; max-width: 22rem; font-size: 0.8rem; }
-.q-btn:active { transform: scale(0.97); transition: transform 100ms ease-out; }
-@media (prefers-reduced-motion: reduce) { .q-btn:active { transform: none; } }
-"""
+#: 2·3단계가 아직 못 설 때 — Streamlit ``ui\\app.py`` 의 ``_NOT_READY`` 와 같은 글.
+_NOT_READY = (
+    "「1단계 · 진단」 탭에서 사용량 파일을 올리고 계약 정보를 확정하면 여기에 결과가 나옵니다."
+)
 
 
 @dataclass
@@ -134,6 +129,8 @@ class _State:
     date_column: str | None = None
     energy_column: str | None = None
     building: BuildingInfo = field(default_factory=BuildingInfo)
+    #: 2단계에서 켠 카드와 넣은 값 — 1단계를 다시 계산해도 남는다.
+    choices: measures.Choices = field(default_factory=measures.Choices)
 
 
 def _seasons(available: object) -> tuple[tuple[str, str | None], ...]:
@@ -197,7 +194,7 @@ def _missing_month_frame(quality: QualityReport) -> pd.DataFrame:
 _Temperature = tuple[pd.Series, str] | None
 
 
-def _diagnose(state: _State, usage: UsageData) -> tuple[Diagnosis, _Temperature]:
+def _diagnose(state: _State, usage: UsageData) -> tuple[QualityReport, Diagnosis, _Temperature]:
     """무거운 일 — 일꾼 스레드에서 돈다. 공용 함수만 부른다.
 
     운영 시간대와 제주 여부는 옆단 건물 정보에서 온다 (Streamlit 과 같다). 기온은 지역을
@@ -214,70 +211,11 @@ def _diagnose(state: _State, usage: UsageData) -> tuple[Diagnosis, _Temperature]
         operating_hours=building.operating_hours,
         jeju=building.jeju,
     )
-    return diagnosis, daily_temperature(usage, building.region_key)
+    # 품질은 진단 앞의 것을 함께 넘긴다 — Streamlit 2단계가 받는 것과 같은 값이다.
+    return quality, diagnosis, daily_temperature(usage, building.region_key)
 
 
 # --------------------------------------------------------------------- 놓는 조각
-
-
-def _tip(text: str) -> None:
-    """바로 앞 요소에 마우스를 올리면 뜨는 풀이 (Streamlit ``help=`` 자리 · 마크다운).
-
-    옆에 띄운다 — 아래에 띄우면 바로 밑 입력칸을 덮는다.
-    """
-    with ui.tooltip().classes("k-tip").props(_TIP_SIDE):
-        ui.markdown(fmt.markdown_safe(text))
-
-
-_TIP_SIDE = 'anchor="center right" self="center left" :offset="[8, 0]"'
-
-
-def _metric(label: str, value: str, sub: str = "", tip: str = "") -> None:
-    with ui.card().tight().classes("k-card p-4 min-w-[10rem] flex-1"):
-        with ui.label(f"{label} ⓘ" if tip else label).classes("k-label"):
-            if tip:
-                _tip(tip)
-        ui.label(value).classes("k-value")
-        if sub:
-            ui.label(sub).classes("k-sub")
-
-
-def _metrics(cells: list[tuple[str, ...]]) -> None:
-    with ui.row().classes("w-full gap-3 flex-wrap"):
-        for cell in cells:
-            _metric(*cell)
-
-
-def _caption(text: str, tip: str = "") -> None:
-    with ui.label(f"{text} ⓘ" if tip else text).classes("k-note"):
-        if tip:
-            _tip(tip)
-
-
-def _table(
-    frame: pd.DataFrame, *, width: str = "w-full", tips: dict[str, str] | None = None
-) -> None:
-    """표 하나 — Excel · Streamlit 이 지나는 출구(``display_frame``)를 같이 지난다."""
-
-    def cell(value: object) -> str:
-        # 자릿수는 ``display_frame`` 이 접었다 — 여기서는 세 자리 쉼표만 (Streamlit 표와 같다).
-        if isinstance(value, float):
-            return f"{value:,.0f}" if value.is_integer() else f"{value:,}"
-        return "" if pd.isna(value) else str(value)
-
-    shown = display_frame(frame).astype(object).map(cell)
-    table = ui.table.from_pandas(shown).props("flat dense bordered").classes(width)
-    for column, tip in (tips or {}).items():  # 열 머리 풀이 (Streamlit 의 열 ``help``)
-        table.add_slot(
-            f"header-cell-{column}",
-            f'<q-th :props="props">{{{{ props.col.label }}}} ⓘ<q-tooltip>{tip}</q-tooltip></q-th>',
-        )
-
-
-def _caution(text: str) -> None:
-    """주의 — Streamlit 의 ``callout.caution`` 과 같다: 배경 없이 ⚠ 와 굵기로만."""
-    body = fmt.markdown_safe(text)
-    ui.markdown(f"⚠ {body if '**' in body else f'**{body}**'}").classes("k-caution")
 
 
 def _notices(diagnosis: Diagnosis) -> None:
@@ -286,17 +224,7 @@ def _notices(diagnosis: Diagnosis) -> None:
     _missing, rest = partition_facts(screen_notices(merged), _MISSING_FACTS)
     _contract, rest = partition_facts(rest, _CONTRACT_FACTS)
     _tentative, rest = partition_facts(rest, _TENTATIVE_FACTS)
-    for item in rest:
-        # 안내 글은 굵게(``**``)를 품고 있어 마크다운으로 그린다.
-        if item.severity is Severity.BLOCK:
-            ui.markdown(f"⛔ {fmt.markdown_safe(item.text)}").classes("k-caution text-negative")
-        elif item.severity is Severity.WARN:
-            _caution(item.text)
-        else:
-            ui.markdown(f"· {fmt.markdown_safe(item.text)}").classes("k-caution k-note")
-    grounds = tooltip(merged)
-    if grounds:
-        _caption(f"산출 근거 {len(grounds)}건", tooltip_text(merged))
+    notice_block(rest, merged)
 
 
 def _quality(usage: UsageData, quality: QualityReport) -> None:
@@ -756,8 +684,40 @@ def build(state: _State) -> None:
     with ui.left_drawer(value=True, bordered=True).classes("p-4 gap-2"):
         _sidebar(building_changed)
 
-    with ui.column().classes("w-full max-w-5xl mx-auto p-6 gap-4"):
-        ui.label("kWise · 진단").classes("k-title")
+    with ui.column().classes("w-full max-w-5xl mx-auto px-6 pt-4 gap-0"):
+        ui.label("kWise").classes("k-title")
+        # 세 단계를 탭으로 — 번호를 남긴다 (Streamlit ``TABS`` 와 같은 이름).
+        with ui.tabs().props("align=left no-caps inline-label").classes("w-full") as tabs:
+            tab1 = ui.tab("1단계 · 진단")
+            tab2 = ui.tab("2단계 · 개선 수단")
+            tab3 = ui.tab("3단계 · 개선안 조합")
+    panels = ui.tab_panels(tabs, value=tab1).classes("w-full max-w-5xl mx-auto bg-transparent")
+    with panels, ui.tab_panel(tab2):
+        stage2 = ui.column().classes("w-full gap-3")
+        with stage2:
+            w.note(_NOT_READY)
+    with panels, ui.tab_panel(tab3):
+        ui.label("3단계 · 개선안 조합").classes("k-section")
+        w.note("3단계 화면은 데스크톱에 아직 없습니다. 지금은 Streamlit 화면에서 보십시오.")
+
+    def stages(usage: UsageData, quality: QualityReport, diagnosis: Diagnosis) -> None:
+        """1단계가 끝날 때마다 2단계를 새로 짓는다 — 계약 정보를 확정해야 선다."""
+        stage2.clear()
+        with stage2:
+            if state.form is None:
+                w.note(_NOT_READY)
+                return
+            ctx = measures.Context(
+                usage=usage,
+                table=state.table,
+                form=state.form,
+                diagnosis=diagnosis,
+                quality=quality,
+                building=state.building,
+            )
+            measures.render(ctx, state.choices)
+
+    with panels, ui.tab_panel(tab1), ui.column().classes("w-full gap-4 p-0"):
         _caption("파일만 올려도 결과가 나옵니다. 금액은 계약 정보를 확정하면 나옵니다.")
         # 위에서 아래로: 계약 정보 → 잠정 경고 → 파일 → 상태 한 줄 → 결과.
         busy = pending = False
@@ -802,7 +762,7 @@ def build(state: _State) -> None:
                 with columns_box:
                     _columns(usage, pick_columns)
                 try:
-                    diagnosis, temperature = await run.io_bound(_diagnose, state, usage)
+                    quality, diagnosis, temperature = await run.io_bound(_diagnose, state, usage)
                 except Exception as exc:  # 계약 정보와 자료가 안 맞는 경우 등
                     say(f"계산하지 못했습니다. {exc}", error=True)
                     return
@@ -814,6 +774,7 @@ def build(state: _State) -> None:
                     say(f"결과를 그리지 못했습니다. {exc}", error=True)
                     return
                 say(state.filename)
+                stages(usage, quality, diagnosis)
             finally:
                 results.classes(remove="k-stale")
                 columns_box.classes(remove="k-stale")
