@@ -145,7 +145,7 @@ const KBlocks = {
 /* 2단계 카드 하나 — 입력칸은 여기, 결과는 파이썬이 적은 조각. 다시 계산하는 동안 옛 결과를 흐려 둔다. */
 const KCard = {
   props: { meta: Object },
-  emits: ["rediagnosed"],
+  emits: ["rediagnosed", "changed"],
   components: { KBlocks, KInfo },
   data() {
     return {
@@ -161,13 +161,16 @@ const KCard = {
   methods: {
     async toggled(on) {
       await api().toggle(this.meta.key, on);
+      this.$emit("changed", true);
       if (on) await this.run();
     },
-    async run(params = {}) {
+    async run(params = {}, user = true) {
+      // user — 사람이 칸을 고쳤다 (저장 안 한 작업). 1단계가 다시 돌아 따라 계산한 것은 아니다.
       this.loading = true;
       this.error = "";
       try {
         const r = await api().card(this.meta.key, params);
+        this.$emit("changed", user);
         if (!r.ok) { this.error = r.error; return; }
         this.blocks = r.blocks;
         this.extra = r;
@@ -187,7 +190,7 @@ const KCard = {
       this.sopts = await api().solar_options({ ...this.solar });
     },
     action(a) { this.run(a); },
-    refresh() { if (this.on) this.run(); },
+    refresh() { if (this.on) this.run({}, false); },
     restore(state, on) {
       // 작업 열기 — 파이썬 쪽 고른 것은 이미 갈렸다. 입력칸만 맞추고 켠 카드는 다시 계산.
       const box = { power_factor: "pf", demand_response: "dr", ess: "ess", solar: "solar" }[this.meta.key];
@@ -286,20 +289,30 @@ const KCard = {
 const KRules = {
   components: { KBlocks, KInfo },
   emits: ["saved", "ess"],
-  data() { return { page: null, edits: {}, preview: null, busy: false, failed: [] }; },
+  data() { return { page: null, edits: {}, preview: null, busy: false, failed: null }; },
   async mounted() { this.show(await api().rules_page()); },
   methods: {
-    show(page) {
+    show(page, key = null) {
+      // 한 줄을 고쳤으면 그 줄 값만 새로 — 다른 줄에 쳐 둔 값은 그대로 둔다. 원복은 파일 통째라 전부 새로.
       this.page = page;
-      this.edits = Object.fromEntries(page.rows.map((r) => [r.key, r.value]));
+      const fresh = Object.fromEntries(page.rows.map((r) => [r.key, r.value]));
+      if (key === null) this.edits = fresh;
+      else this.edits = { ...fresh, ...this.edits, [key]: fresh[key] };
     },
     async act(action, key, row = null) {
       this.busy = true;
+      this.failed = null;
       try {
         const r = await api().rule_act(action, key, row ? row.kind : "", row ? this.edits[key] : null);
-        this.failed = r.blocks || [];
-        if (r.page) this.show(r.page);
-        if (r.ok) { this.preview = null; this.$q.notify({ type: "positive", message: `✓ ${r.message}` }); this.$emit("saved"); }
+        const one = ["set", "confirm", "item"].includes(action);
+        if (r.ok) {
+          this.show(r.page, one ? key : null);
+          this.preview = null;
+          this.$emit("saved", r.message);  // 완료 알림은 다시 계산이 끝난 뒤 앱이 낸다
+        } else {
+          // 사유는 누른 줄(원복이면 그 파일 줄) 바로 아래에 — 위쪽 먼 곳에 띄우지 않는다.
+          this.failed = { key, message: r.message, blocks: r.blocks || [] };
+        }
       } finally { this.busy = false; }
     },
     async ask(origin) { this.preview = await api().rules_preview(origin); },
@@ -334,6 +347,9 @@ const KRules = {
         <q-btn flat dense no-caps label="직전 상태로" :disable="busy" @click="act('previous', o.value)" />
         <q-btn flat dense no-caps label="출고 상태로" :disable="busy" @click="ask(o.value)" />
       </div>
+      <div v-if="failed && page.origins.some((o) => o.value === failed.key)" class="k-stack-sm">
+        <div class="k-blocked">⛔ {{ failed.message }}</div><k-blocks :blocks="failed.blocks" />
+      </div>
       <div v-if="preview" class="k-stack-sm">
         <k-blocks :blocks="preview.blocks" />
         <div class="k-line">
@@ -342,7 +358,6 @@ const KRules = {
           <q-btn flat no-caps label="취소" @click="preview = null" />
         </div>
       </div>
-      <k-blocks v-if="failed.length" :blocks="failed" />
       <q-separator />
       <div v-for="row in page.rows" :key="row.key" class="k-card q-pa-md">
         <div class="k-cols">
@@ -371,6 +386,9 @@ const KRules = {
                 <q-tooltip>기본값 {{ row.default }} 로 되돌립니다.</q-tooltip></q-btn>
             </div>
             <div v-if="row.changed" class="k-note">기본값 — {{ row.default }}</div>
+            <div v-if="failed && failed.key === row.key" class="k-stack-sm">
+              <div class="k-blocked">⛔ {{ failed.message }}</div><k-blocks :blocks="failed.blocks" />
+            </div>
           </div>
         </div>
       </div>
@@ -414,9 +432,16 @@ const App = {
       workPath: "",
       rulesOpen: false,
       alerts: [],
+      s3stale: true,            // 입력이 바뀌었다 — 3단계를 다음에 열 때 다시 모은다
+      unsaved: false,           // 사람이 고친 것이 작업 파일에 아직 없다 — 열기 전에 묻는다
+      reduceMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     };
   },
   computed: {
+    steps() {
+      return [{ name: "s1", label: "🩺 진단" }, { name: "s2", label: "🛠️ 개선 수단" }, { name: "s3", label: "🧩 개선안 조합" }];
+    },
+    workName() { return this.workPath.split(/[\\/]/).pop(); },
     dirty() {
       return this.confirmed !== null && JSON.stringify(this.formPayload()) !== JSON.stringify(this.confirmed);
     },
@@ -441,6 +466,7 @@ const App = {
     this.contract.type = o.types[0].value;
     await this.refreshVoltages();
     this.alerts = await api().alerts();
+    window.addEventListener("keydown", this.keydown);
     this.ready = true;
     await api().ready({ ready: true, types: this.types.length });
   },
@@ -495,7 +521,9 @@ const App = {
       this.confirmed = this.formPayload();
       await this.analyse();
     },
-    async analyse(columns = null) {
+    async analyse(columns = null, { user = true } = {}) {
+      this.s3stale = true;
+      if (user) this.unsaved = true;
       if (this.busy) { this.again = true; return; }
       this.busy = true;
       if (this.filename) this.say(`${this.filename} — 분석하는 중…`, { spin: true });
@@ -514,11 +542,20 @@ const App = {
           this.overridden = false;
           this.say(r.filename);
           await this.loadStage2();
+          if (this.tab === "s3") this.openStage3();
         }
       } finally {
         this.busy = false;
-        if (this.again) { this.again = false; await this.analyse(); }
+        if (this.again) { this.again = false; await this.analyse(null, { user: false }); }
       }
+    },
+    cardChanged(user) {
+      this.s3stale = true;
+      if (user) this.unsaved = true;
+    },
+    fail(message) {
+      // 오류는 읽을 때까지 둔다 — 완료 알림처럼 저절로 사라지면 사유를 놓친다.
+      this.$q.notify({ type: "negative", message, timeout: 0, actions: [{ label: "닫기", color: "white" }] });
     },
     pickFile() { this.$refs.file.click(); },
     async fileChosen(ev) {
@@ -560,15 +597,37 @@ const App = {
       return { building: this.buildingPayload(), contract: { ...this.contract }, confirmed: this.confirmed };
     },
     async saveWork() {
+      if (!this.filename) return;
       const r = await api().save_work(this.screenPayload());
-      if (r.ok) { this.workPath = r.path; this.$q.notify({ type: "positive", message: `작업을 저장했습니다 — ${r.path}` }); }
-      else if (!r.cancelled) this.$q.notify({ type: "negative", message: r.error });
+      if (r.ok) {
+        this.workPath = r.path;
+        this.unsaved = false;
+        this.$q.notify({ type: "positive", message: `작업을 저장했습니다 — ${r.path}` });
+      } else if (!r.cancelled) this.fail(r.error);
     },
-    async openWork() {
+    openWork() {
+      // 열면 지금 작업이 통째로 갈린다 — 저장 안 한 것이 있으면 한 번 묻는다.
+      if (!this.filename || !this.unsaved) { this.openWorkNow(); return; }
+      this.$q.dialog({
+        title: "저장하지 않은 작업이 있습니다",
+        message: "다른 작업을 열면 지금 입력과 고른 것이 사라집니다.",
+        persistent: true,
+        ok: { label: "열기", color: "primary", unelevated: true, noCaps: true },
+        cancel: { label: "취소", flat: true, noCaps: true },
+      }).onOk(() => this.openWorkNow());
+    },
+    async openWorkNow() {
       const r = await api().open_work();
       if (r.cancelled) return;
-      if (!r.ok) { this.$q.notify({ type: "negative", message: r.error }); return; }
+      if (!r.ok) { this.fail(r.error); return; }
       await this.restore(r);
+    },
+    keydown(ev) {
+      // Ctrl+O 작업 열기 · Ctrl+S 작업 저장 — 창 안 어디서나.
+      if (!ev.ctrlKey || ev.altKey || ev.shiftKey) return;
+      const key = ev.key.toLowerCase();
+      if (key === "o") { ev.preventDefault(); this.openWork(); }
+      if (key === "s") { ev.preventDefault(); this.saveWork(); }
     },
     async restore(r) {
       // 화면 값을 파일 값으로 — 종별 → 전압 → 선택요금 차례로 목록을 받아 가며 넣는다.
@@ -599,26 +658,37 @@ const App = {
       this.s2 = null; this.s3 = null; this.made = {};
       this.pendingCards = r.cards;
       this.tab = "s1";
-      await this.analyse();
+      await this.analyse(null, { user: false });
+      this.unsaved = false;
     },
     async saveResult() {
-      const r = await api().save_result();
+      // 저장 창을 닫은 뒤 몇 초 다시 모은다 — 그동안 도는 중임을 띄워 둔다.
+      const working = this.$q.notify({ type: "ongoing", message: "결과를 저장하는 중…", spinner: true, timeout: 0 });
+      let r;
+      try { r = await api().save_result(); } finally { working(); }
       if (r.ok) this.$q.notify({ type: "positive", message: `결과를 저장했습니다 — ${r.path}`,
         actions: [{ label: "열어보기", color: "white", handler: () => this.openPath(r.path) }] });
-      else if (!r.cancelled) this.$q.notify({ type: "negative", message: r.error });
+      else if (!r.cancelled) this.fail(r.error);
     },
     async dayChanged() {
       await api().set_day(this.s2.day, this.s2.day === "custom" ? this.s2.custom : "");
+      this.cardChanged(true);
       for (const key of ["power_factor", "solar", "ess"]) this.cardRefs[key]?.refresh();
     },
     async openStage3() {
+      // 입력이 그대로면 앞 결과와 「열어보기」 를 그대로 둔다 — 탭을 다녀올 때마다 다시 모으지 않는다.
+      if (this.s3 && this.s3.ready && !this.s3stale) return;
       this.s3loading = true;
       this.made = {};
       this.makeError = "";
-      try { this.s3 = await api().stage3(); } finally { this.s3loading = false; }
+      try {
+        this.s3 = await api().stage3();
+        this.s3stale = false;
+      } finally { this.s3loading = false; }
     },
     async combine(compute) {
       this.combining = true;
+      this.unsaved = true;
       try {
         const r = await api().combine({ ...this.s3.checked }, compute);
         if (r.ok) Object.assign(this.s3, r);
@@ -637,17 +707,19 @@ const App = {
     },
     async openPath(path) {
       const r = await api().open_path(path);
-      if (!r.ok) this.$q.notify({ type: "negative", message: r.error });
+      if (!r.ok) this.fail(r.error);
     },
-    async rulesSaved() {
-      // 기준 데이터가 바뀌었다 — 알림을 새로 받고 1단계부터 다시 (3단계는 다음에 열 때 새로).
+    async rulesSaved(message) {
+      // 기준 데이터가 바뀌었다 — 알림을 새로 받고 1단계부터 다시. 완료는 다 돈 뒤에 알린다.
       this.alerts = await api().alerts();
-      this.s3 = null;
-      await this.analyse();
+      await this.analyse(null, { user: false });
+      if (this.tab === "s3") await this.openStage3();
+      this.$q.notify({ type: "positive", message: `✓ ${message} — 다시 계산했습니다.` });
     },
-    essPriced() {
-      this.s3 = null;
+    async essPriced() {
+      this.s3stale = true;
       this.cardRefs.ess?.refresh();
+      if (this.tab === "s3") await this.openStage3();
     },
     async rediagnosed() {
       // 경제성DR 쉬는 날 — 파이썬이 1단계부터 다시 돌렸다. 1단계 화면 · 다른 카드도 새로.
@@ -661,8 +733,10 @@ const App = {
         <q-btn flat no-caps label="파일">
           <q-menu>
             <q-list dense style="min-width: 14rem">
-              <q-item clickable v-close-popup @click="openWork"><q-item-section>작업 열기…</q-item-section></q-item>
-              <q-item clickable v-close-popup :disable="!filename" @click="saveWork"><q-item-section>작업 저장…</q-item-section></q-item>
+              <q-item clickable v-close-popup @click="openWork"><q-item-section>작업 열기…</q-item-section>
+                <q-item-section side class="k-note">Ctrl+O</q-item-section></q-item>
+              <q-item clickable v-close-popup :disable="!filename" @click="saveWork"><q-item-section>작업 저장…</q-item-section>
+                <q-item-section side class="k-note">Ctrl+S</q-item-section></q-item>
               <q-separator />
               <q-item clickable v-close-popup :disable="!stage1Ready" @click="saveResult"><q-item-section>결과 저장 (JSON)…</q-item-section></q-item>
               <q-separator />
@@ -672,11 +746,14 @@ const App = {
         </q-btn>
         <q-separator vertical inset class="q-mx-sm" />
         <q-tabs v-model="tab" no-caps inline-label class="k-steps" align="left" indicator-color="transparent">
-          <q-tab name="s1" label="🩺 진단" />
-          <q-tab name="s2" label="🛠️ 개선 수단" />
-          <q-tab name="s3" label="🧩 개선안 조합" />
+          <q-tab v-for="(t, i) in steps" :key="t.name" :name="t.name">
+            <span class="q-tab__label">{{ t.label }}</span><span class="k-step">{{ i + 1 }}단계</span>
+          </q-tab>
         </q-tabs>
+        <q-space />
+        <span v-if="workName" class="k-note q-pr-sm">{{ workName }}{{ unsaved ? " · 저장 안 함" : "" }}</span>
       </q-toolbar>
+      <q-linear-progress v-if="busy || s3loading" indeterminate size="2px" color="primary" class="k-progress" />
     </q-header>
 
     <q-drawer show-if-above side="left" bordered :width="280">
@@ -702,11 +779,13 @@ const App = {
 
     <q-page-container>
       <q-page class="q-pa-lg">
-        <q-dialog v-model="rulesOpen" maximized transition-show="slide-up" transition-hide="slide-down">
+        <q-dialog v-model="rulesOpen" maximized :transition-show="reduceMotion ? 'fade' : 'slide-up'"
+          :transition-hide="reduceMotion ? 'fade' : 'slide-down'">
           <q-card class="k-rules">
             <q-bar class="k-bar">
               <div class="text-weight-bold">기준 데이터</div>
               <q-space />
+              <span v-if="busy || s3loading" class="k-line k-note q-pr-md"><q-spinner size="xs" />다시 계산하는 중…</span>
               <q-btn flat dense no-caps label="닫기" v-close-popup />
             </q-bar>
             <q-card-section class="k-page"><k-rules @saved="rulesSaved" @ess="essPriced" /></q-card-section>
@@ -714,7 +793,7 @@ const App = {
         </q-dialog>
         <div class="k-page">
           <div v-if="alerts.length" class="k-stack-sm q-mb-md"><k-blocks :blocks="alerts" /></div>
-          <q-tab-panels v-model="tab" animated keep-alive class="bg-transparent">
+          <q-tab-panels v-model="tab" :animated="!reduceMotion" keep-alive class="bg-transparent">
             <!-- 진단 -->
             <q-tab-panel name="s1" class="q-pa-none k-stack">
               <div class="k-h1">🩺 진단</div>
@@ -744,7 +823,8 @@ const App = {
               </q-card>
               <k-blocks :blocks="tentative" />
 
-              <div :class="['k-drop', over ? 'k-over' : '']" @click="pickFile"
+              <div :class="['k-drop', over ? 'k-over' : '']" role="button" tabindex="0" @click="pickFile"
+                @keydown.enter.prevent="pickFile" @keydown.space.prevent="pickFile"
                 @dragover.prevent="over = true" @dragleave="over = false" @drop.prevent="fileChosen">
                 <q-icon name="upload_file" size="md" color="primary" />
                 <div>사용량 파일 (csv · xls · xlsx) — 눌러서 고르거나 여기로 끌어 놓으십시오</div>
@@ -780,7 +860,8 @@ const App = {
             <!-- 개선 수단 -->
             <q-tab-panel name="s2" class="q-pa-none k-stack">
               <div class="k-h1">🛠️ 개선 수단</div>
-              <div v-if="!s2 || !s2.ready" class="k-note">「진단」 탭에서 사용량 파일을 올리고 계약 정보를 확정하면 여기에 결과가 나옵니다.</div>
+              <div v-if="busy && (!s2 || !s2.ready)" class="k-line"><q-spinner size="sm" /><span class="k-note">계산하는 중…</span></div>
+              <div v-else-if="!s2 || !s2.ready" class="k-note">「진단」 탭에서 사용량 파일을 올리고 계약 정보를 확정하면 여기에 결과가 나옵니다.</div>
               <template v-else>
                 <div class="k-note">{{ s2.baseline }}</div>
                 <div v-if="s2.days.length" class="k-line">
@@ -794,7 +875,7 @@ const App = {
                 <template v-for="(group, gi) in tiers" :key="gi">
                   <div class="k-h2">{{ group.tier }}</div>
                   <k-card v-for="c in group.cards" :key="c.key" :meta="c" :ref="(el) => cardRefs[c.key] = el"
-                    @rediagnosed="rediagnosed" />
+                    @rediagnosed="rediagnosed" @changed="cardChanged" />
                 </template>
                 <div class="row justify-end q-mt-lg">
                   <q-btn unelevated no-caps color="primary" label="다음 단계 — 개선안 조합  →" @click="go('s3')" />
@@ -805,7 +886,7 @@ const App = {
             <!-- 개선안 조합 -->
             <q-tab-panel name="s3" class="q-pa-none k-stack">
               <div class="k-h1">🧩 개선안 조합</div>
-              <div v-if="s3loading" class="k-line"><q-spinner size="sm" /><span class="k-note">켠 개선안을 모으는 중…</span></div>
+              <div v-if="s3loading || (busy && (!s3 || !s3.ready))" class="k-line"><q-spinner size="sm" /><span class="k-note">켠 개선안을 모으는 중…</span></div>
               <div v-else-if="!s3 || !s3.ready" class="k-note">{{ s3 && s3.error ? s3.error : "「진단」 탭에서 사용량 파일을 올리고 계약 정보를 확정하면 여기에 결과가 나옵니다." }}</div>
               <template v-else>
                 <k-blocks :blocks="s3.scope" />
@@ -857,6 +938,6 @@ const App = {
 };
 
 const app = Vue.createApp(App);
-app.use(Quasar, { lang: Quasar.lang.koKR, plugins: { Notify: Quasar.Notify }, config: { dark: "auto" } });
+app.use(Quasar, { lang: Quasar.lang.koKR, plugins: { Notify: Quasar.Notify, Dialog: Quasar.Dialog }, config: { dark: "auto" } });
 /* pywebview 가 다리를 다 놓은 뒤에 앱을 붙인다 — 그 전에 부르면 api 가 없다. */
 window.addEventListener("pywebviewready", () => app.mount("#app"));

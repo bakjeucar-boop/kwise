@@ -167,9 +167,9 @@ def preview(origin_key: str) -> dict[str, Any]:
 
 
 def result_blocks(result: EditResult) -> list[b.Block]:
+    """실패 사유의 세부 목록 — 사유 한 줄(``message``)은 화면이 그 줄 아래에 따로 낸다."""
     with b.collect() as shown:
-        if not result.ok:
-            b.blocked(result.message)
+        if not result.ok and result.issues:
             b.text(bullet_list(str(issue) for issue in result.issues))
     return shown
 
@@ -209,12 +209,15 @@ def typed(kind: str, value: Value) -> bool | int | float | str:
     """형을 지켜 되돌려 준다 (정수 항목을 실수로 저장하지 않는다)."""
     if kind == "bool":
         return bool(value)
-    if value is None:
+    if value is None or value == "":
         raise ValueError("값을 넣으십시오.")
-    if kind == "int":
-        return int(value)
-    if kind == "float":
-        return float(value)
+    try:
+        if kind == "int":
+            return int(value)
+        if kind == "float":
+            return float(value)
+    except ValueError:
+        raise ValueError("숫자를 넣으십시오.") from None
     return str(value)
 
 

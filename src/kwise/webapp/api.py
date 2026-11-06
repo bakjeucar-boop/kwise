@@ -528,6 +528,8 @@ class Api:
                 result = rules.act(
                     action, key, rules.typed(kind, value) if action == "set" else None
                 )
+            except ValueError as exc:  # 형 검사 — 파일에 닿기 전에 멈췄다
+                return {"ok": False, "message": str(exc), "blocks": []}
             except Exception as exc:
                 traceback.print_exc()
                 return {"ok": False, "message": str(exc), "blocks": []}

@@ -28,6 +28,7 @@ from .state import Choices, SolarForm
 FORMAT = "kwise-work"
 VERSION = 1
 SUFFIX = ".kwise"
+USAGE_SUFFIXES = (".csv", ".xls", ".xlsx")
 
 
 def _choices_dict(choices: Choices) -> dict[str, Any]:
@@ -102,9 +103,16 @@ def dump(
 
 
 def load(path: Path) -> dict[str, Any]:
-    """작업 한 벌을 읽는다 — 사용량 바이트 · 열 지정 · 화면 값 · 고른 것."""
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if payload.get("format") != FORMAT:
+    """작업 한 벌을 읽는다 — 사용량 바이트 · 열 지정 · 화면 값 · 고른 것.
+
+    엉뚱한 파일이면 파이썬 원문 오류 대신 사람이 읽는 한 줄로 (사용량 파일이면 올릴 자리까지)."""
+    if path.suffix.lower() in USAGE_SUFFIXES:
+        raise ValueError("사용량 파일입니다 — 「진단」 탭의 파일 칸에 올리십시오.")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        payload = None
+    if not isinstance(payload, dict) or payload.get("format") != FORMAT:
         raise ValueError("kWise 작업 파일이 아닙니다.")
     if int(payload.get("version", 0)) > VERSION:
         raise ValueError("더 새로운 kWise 에서 저장한 작업 파일입니다 — 새 판을 받으십시오.")

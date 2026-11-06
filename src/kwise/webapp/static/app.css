@@ -41,6 +41,12 @@ body { font-family: system-ui, "Malgun Gothic", sans-serif; line-height: 1.5; }
 .k-steps .q-tab--active { background: color-mix(in srgb, var(--q-primary) 14%, transparent); color: var(--q-primary); }
 .k-steps .q-tab--active .q-tab__label { font-weight: 700; }
 .k-steps .q-focus-helper { border-radius: 999px; }
+/* 단계 표시 — 이름 뒤에 작고 옅게. 지금 단계에서도 이름보다 한 단 낮다. */
+.k-steps .k-step { margin-left: 0.4rem; font-size: 0.72rem; font-weight: 500; opacity: 0.7; letter-spacing: 0.01em; }
+/* 다크 모드 — 기본 파랑은 어두운 바탕에서 글자 대비가 모자라다. 밝게 섞는다. */
+.body--dark .k-steps .q-tab--active { color: color-mix(in srgb, var(--q-primary) 45%, white); }
+.k-progress { position: absolute; left: 0; right: 0; bottom: 0; }
+.k-drop:focus-visible { outline: 2px solid var(--q-primary); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .k-steps .q-tab { transition: none; } .k-steps .q-tab:active { transform: none; } }
 .k-page { max-width: 64rem; margin: 0 auto; }
 .k-drop { border: 1px dashed var(--k-line); border-radius: 12px; padding: 1.25rem; text-align: center; cursor: pointer; }
