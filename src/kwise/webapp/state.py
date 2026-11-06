@@ -1,7 +1,7 @@
 """화면이 쥔 값 — 입력과 고른 것. **작업 파일 저장 · 불러오기가 이것을 그대로 적고 읽는다.**
 
-NiceGUI 판(``kwise.desktop.measures.Choices`` · ``kwise.desktop.solar.SolarForm``)과 같은 칸이다
-(그 모듈은 nicegui 를 끌어와 이 판에서 못 부른다).
+Streamlit 은 같은 값을 세션 상태(``kwise.ui.state``)에 둔다 — 그 모듈은 streamlit 을 끌어와
+이 판에서 못 부르므로 칸을 따로 둔다.
 """
 
 from __future__ import annotations

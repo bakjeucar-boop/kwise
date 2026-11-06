@@ -1,6 +1,6 @@
 """3단계 · 개선안 조합 — 결과를 화면 조각(``blocks``)으로 적는다.
 
-NiceGUI 판(``kwise.desktop.compare``)과 같은 공용 함수 · 같은 인자 · 같은 셈이다. 조합마다
+Streamlit 3단계(``kwise.ui.views.compare``)와 같은 공용 함수 · 같은 인자 · 같은 셈이다. 조합마다
 요금을 다시 계산한다 — 수단별 절감액을 더하지 않는다(규약). Excel · PPT 를 지을 재료도 여기서 낸다.
 """
 

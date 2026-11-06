@@ -1,6 +1,6 @@
 ---
 name: ui-reviewer
-description: 데스크톱 UI(src/kwise/desktop/) 변경을 검토한다. apple-design 스킬 지침을 지키는지와, 그 밖의 사용 불편(흐름·문구·배치·접근성)을 찾는다. 데스크톱 UI 를 고친 뒤 커밋 전에 부른다.
+description: 데스크톱 UI(src/kwise/webapp/ — pywebview + Vue/Quasar · 웹서버 없음) 변경을 검토한다. apple-design 스킬 지침을 지키는지와, 그 밖의 사용 불편(흐름·문구·배치·접근성)을 찾는다. 데스크톱 UI 를 고친 뒤 커밋 전에 부른다.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -12,7 +12,9 @@ tools: Read, Grep, Glob, Bash
    없으면 「apple-design 스킬을 못 찾았다」 고 보고 첫 줄에 적고, 아래 2·3 만으로 검토한다.
 2. 프로젝트 `CLAUDE.md` 의 「화면 문구」 절 — 화면 문구는 늘리지 않는다. 남기는 것은
    「없으면 입력을 못 하는 것 · 없으면 결과를 오독하는 것」 둘뿐이다.
-3. 검토 대상: 부른 쪽이 준 파일 · diff. 없으면 `git diff master -- src/kwise/desktop` 를 본다.
+3. 검토 대상: 부른 쪽이 준 파일 · diff. 없으면 `git diff master -- src/kwise/webapp` 를 본다.
+   화면은 `static\app.js` · `static\app.css`, 파이썬 쪽은 `api.py`(화면이 부르는 함수) · `blocks.py`(결과 조각)
+   · `stage1.py` ~ `stage3.py` 다.
 
 ## 무엇을 보나
 
@@ -29,8 +31,8 @@ tools: Read, Grep, Glob, Bash
 **그 밖의 불편**
 - 사용자가 막히는 자리 (빈 상태, 파일을 잘못 올렸을 때, 계약 정보 없을 때).
 - Streamlit 화면과 같은 값을 다르게 보여 주는 자리 (같은 지표는 같은 이름 · 같은 자릿수).
-- 공용 코드(`src/kwise/` 의 `desktop` 밖)를 고친 자리 — 원칙상 최후의 수단이다. 있으면 꼭 적는다.
-- 계산을 desktop 쪽에 베낀 자리 — 공용 함수를 불러야 한다.
+- 공용 코드(`src/kwise/` 의 `webapp` 밖)를 고친 자리 — 원칙상 최후의 수단이다. 있으면 꼭 적는다.
+- 계산을 webapp 쪽에 베낀 자리 — 공용 함수를 불러야 한다.
 
 ## 보고 형식 (한국어)
 

@@ -1,4 +1,4 @@
-"""웹서버 없는 데스크톱 화면 진입점 (만드는 중) — NiceGUI 판은 ``kwise_desktop.py`` 그대로다.
+"""웹서버 없는 데스크톱 화면 진입점.
 
 띄우기: ``.venv\\Scripts\\python.exe kwise_webapp.py``
 exe: ``.venv\\Scripts\\python.exe tools\\build_webapp.py`` → ``output\\webapp\\kwise\\kwise.exe``

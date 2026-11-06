@@ -3,9 +3,9 @@
     .venv\\Scripts\\python.exe tools\\build_webapp.py            # 배포판 (콘솔 없음)
     .venv\\Scripts\\python.exe tools\\build_webapp.py --console  # 시작하다 터질 때 오류를 보는 판
 
-``tools\\build_desktop.py`` (NiceGUI 판)와 같은 규약이다 — 폴더 배포(onedir)만 되고 ``data\\`` 를
-exe 옆에 복사한다(공용 코드가 기준 데이터를 ``parents[3] / "data"`` 로 찾는다). 중간물은
-``PROJECT_CACHE`` 에, exe 는 ``output\\`` 에 둔다. **nicegui 를 묶지 않는다** — 이 판은 쓰지 않는다.
+폴더 배포(onedir)만 된다 — ``data\\`` 를 exe 옆에 복사한다(공용 코드가 기준 데이터를
+``parents[3] / "data"`` 로 찾는다 · onefile 은 임시 폴더라 빗나간다). 중간물은 ``PROJECT_CACHE`` 에,
+exe 는 ``output\\`` 에 둔다.
 """
 
 from __future__ import annotations
@@ -46,9 +46,6 @@ def main() -> int:
         str(ROOT / "src"),
         "--add-data",
         f"{STATIC};kwise/webapp/static",
-        # NiceGUI 판이 같은 환경에 깔려 있어도 이 판에는 넣지 않는다.
-        "--exclude-module",
-        "nicegui",
         str(ROOT / "kwise_webapp.py"),
     ]
     print(" ".join(command), flush=True)

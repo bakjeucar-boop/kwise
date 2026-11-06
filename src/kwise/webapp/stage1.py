@@ -1,7 +1,6 @@
 """1단계 · 진단 — 결과를 화면 조각(``blocks``)으로 적는다.
 
-NiceGUI 판(``kwise.desktop.app``)의 ``_results`` · ``_quality`` · ``_pattern`` 과 같은 차례 ·
-같은 글이다.
+Streamlit 1단계(``kwise.ui.views.diagnose``)와 같은 차례 · 같은 글이다.
 계산은 공용 ``kwise.ui.pipeline`` 이 하고, 여기는 놓기만 한다.
 """
 

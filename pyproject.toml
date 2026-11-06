@@ -70,12 +70,11 @@ dev = [
     # 없다 — `python-pptx` 를 고른 것과 같은 이유다.
     "pypdf>=5.0",
 ]
-# desktop-ui 브랜치(2026-11-06) — 데스크톱 화면(`src\kwise\desktop\`)과 그 exe 빌드.
+# 웹서버 없는 데스크톱 화면(`src\kwise\webapp\` · 2026-11-06)과 그 exe 빌드.
 # **Streamlit 배포에는 안 깔린다** — `[project.dependencies]` 가 아니다.
 #     .venv\Scripts\python.exe -m pip install -e .[desktop]
-# 판을 못박는다: NiceGUI 4 에서 요소 id 가 `ng-<id>` 로 바뀌어 그래프 자리를 그 이름으로 찾는다.
+# 화면 틀(Vue · Quasar)은 pip 패키지가 아니라 `src\kwise\webapp\static\vendor\` 에 넣어 두었다.
 desktop = [
-    "nicegui>=4.0,<5",
     "pywebview>=6.2,<7",
     "pyinstaller>=6.22,<7",
 ]
