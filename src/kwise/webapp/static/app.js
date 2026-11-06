@@ -940,5 +940,7 @@ const App = {
 
 const app = Vue.createApp(App);
 app.use(Quasar, { lang: Quasar.lang.koKR, plugins: { Notify: Quasar.Notify, Dialog: Quasar.Dialog }, config: { dark: "auto" } });
-/* pywebview 가 다리를 다 놓은 뒤에 앱을 붙인다 — 그 전에 부르면 api 가 없다. */
-window.addEventListener("pywebviewready", () => app.mount("#app"));
+/* pywebview 가 다리를 다 놓은 뒤에 앱을 붙인다 — 그 전에 부르면 api 가 없다.
+   화면 틀(shell.py)이 다리가 선 뒤에 이 파일을 붙이므로 대개 이미 서 있다. */
+if (window.pywebview && window.pywebview.api) app.mount("#app");
+else window.addEventListener("pywebviewready", () => app.mount("#app"));

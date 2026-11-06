@@ -43,7 +43,7 @@ from kwise.ui.pipeline import (
 from kwise.ui.spec import measure
 
 from . import blocks as b
-from . import export, reports, rules, stage1, stage2, stage3, work
+from . import export, reports, rules, shell, stage1, stage2, stage3, work
 from .building import BuildingInfo, building_uses, narrow_contract_types
 from .stage2 import Context  # 메서드 이름 ``stage2`` 가 클래스 안에서 모듈 이름을 가린다
 from .state import Choices
@@ -94,6 +94,10 @@ class Api:
             Path(target).write_text(
                 json.dumps(info, ensure_ascii=False, indent=1), encoding="utf-8"
             )
+
+    def shell_assets(self) -> dict[str, list[str]]:
+        """화면 틀이 붙일 스타일 · 스크립트 — 디스크의 html 을 창이 열지 않게 (``shell``)."""
+        return shell.assets()
 
     # ------------------------------------------------------------------ 고를 것
 

@@ -60,6 +60,14 @@ def main() -> int:
     if done.returncode != 0:
         return done.returncode
     shutil.copytree(ROOT / "data", DIST / "data", ignore=SKIP, dirs_exist_ok=True)
+    # **회사 문서 DRM 이 오피스 파일을 잠근다** (2026-11-06) — PPT · Word 를 지을 때 라이브러리가
+    # 읽는 빈 서식을 오피스 확장자가 아닌 이름으로 바꾼다. 앱은 ``kwise.webapp.shell`` 이 그
+    # 이름(``PPTX_TEMPLATE`` · ``DOCX_TEMPLATE``)을 읽게 한다.
+    for package in ("pptx", "docx"):
+        template = DIST / "_internal" / package / "templates" / f"default.{package}"
+        if template.exists():
+            template.replace(template.with_name(f"default_{package}.bin"))
+            print(f"서식 이름 바꿈: {package}\\templates\\default_{package}.bin", flush=True)
     print(f"완료: {DIST / 'kwise.exe'}", flush=True)
     if "--no-zip" not in sys.argv:
         # 압축 안 맨 위가 ``kwise\\`` 폴더가 되게 — 풀자마자 exe 와 하부 폴더가 한자리에 선다.
