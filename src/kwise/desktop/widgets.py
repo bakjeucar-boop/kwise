@@ -126,8 +126,14 @@ def table(
             return f"{value:,.0f}" if value.is_integer() else f"{value:,}"
         return "" if pd.isna(value) else str(value)
 
-    shown = display_frame(frame).astype(object).map(cell)
+    folded = display_frame(frame)
+    shown = folded.astype(object).map(cell)
     grid = ui.table.from_pandas(shown).props("flat dense bordered").classes(width)
+    # 숫자 열은 오른쪽, 글자 열은 왼쪽 — Streamlit 표와 같다 (글로 바꾸기 전의 열 형으로 가른다).
+    numeric = {str(name) for name in folded.columns if pd.api.types.is_numeric_dtype(folded[name])}
+    for spec in grid.columns:
+        spec["align"] = "right" if spec["name"] in numeric else "left"
+    grid.update()
     for column, text in (tips or {}).items():  # 열 머리 풀이 (Streamlit 의 열 ``help``)
         grid.add_slot(
             f"header-cell-{column}",

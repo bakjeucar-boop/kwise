@@ -110,6 +110,9 @@ if TYPE_CHECKING:
 #: 산출물을 두는 자리 — 데스크톱은 사용자 PC 라 「다운로드」 폴더에 바로 저장한다.
 DOWNLOADS = Path.home() / "Downloads"
 
+#: 조합 체크가 계산한 것과 달라졌을 때 — Streamlit 과 같은 글.
+_SELECTION_STALE = "선택이 변경되었습니다 — 다시 계산하십시오."
+
 #: 이 화면을 연 동안의 이름 — Excel 을 잠깐 쓰는 임시 폴더 이름에 쓴다 (공용 ``session_dir``).
 _SESSION = uuid.uuid4().hex
 
@@ -548,6 +551,8 @@ async def render(ctx: Context, choices: Choices) -> None:
     rows = results.standalone()
     _standalone_block(rows)
     stale = _stale_lines(ctx, choices)
+    # 계산한 조합의 (비교, 감도) — 체크만 바꿀 때는 다시 돌리지 않고 흐림만 바꾼다.
+    memo: dict[tuple[str, ...], tuple[ComparisonResult, pd.DataFrame]] = {}
 
     async def compute() -> None:
         choices.combo_computed = tuple(
@@ -558,7 +563,7 @@ async def render(ctx: Context, choices: Choices) -> None:
     async def draw() -> None:
         combo_box.clear()
         with combo_box:
-            await _combination(ctx, choices, results, rows, scope, reviewed)
+            await _combination(ctx, choices, results, rows, scope, reviewed, memo)
 
     _combination_picker(choices, reviewed, stale, compute, draw)
     combo_box = ui.column().classes("w-full gap-3")
@@ -640,6 +645,7 @@ async def _combination(
     rows: tuple[StandaloneRow, ...],
     scope: ReviewScope,
     reviewed: tuple[str, ...],
+    memo: dict[tuple[str, ...], tuple[ComparisonResult, pd.DataFrame]],
 ) -> None:
     computed = choices.combo_computed
     if computed is None:
@@ -648,7 +654,9 @@ async def _combination(
         _downloads(ctx, choices, results, None, no_pv_sensitivity_frame(), scope)
         return
     picked = tuple(key for key in reviewed if choices.combo_checked.get(key, True))
-    stale = computed != picked
+    selection_stale = computed != picked
+    # 태양광 입력이 묵어도 흐린다 — 단추만 막고 옛 숫자를 선명하게 두면 지금 값으로 읽힌다.
+    stale = selection_stale or bool(_stale_lines(ctx, choices))
     enabled = tuple(key for key in computed if key in reviewed)
     specs = _specs(ctx, choices, results, enabled)
     if len(specs) == 1:
@@ -656,13 +664,20 @@ async def _combination(
         _downloads(ctx, choices, results, None, no_pv_sensitivity_frame(), scope)
         return
 
-    with ui.row().classes("items-center gap-2") as wait:
-        ui.spinner(size="sm")
-        ui.label("조합을 비교하는 중…").classes("k-note")
-    try:
-        comparison = await run.io_bound(_compare, ctx, results, specs)
-    finally:
-        wait.delete()
+    if computed not in memo:
+        with ui.row().classes("items-center gap-2") as wait:
+            ui.spinner(size="sm")
+            ui.label("조합을 비교하는 중…").classes("k-note")
+        try:
+            raw = await run.io_bound(_compare, ctx, results, specs)
+            wait.clear()
+            with wait:
+                ui.spinner(size="sm")
+                ui.label("감도를 훑는 중…").classes("k-note")
+            memo[computed] = (raw, await run.io_bound(_sensitivity, ctx, results, specs))
+        finally:
+            wait.delete()
+    comparison, sensitivity = memo[computed]
     dr_won = None
     if "demand_response" in enabled:
         if choices.dr_unit_price is not None and ctx.diagnosis.dr is not None:
@@ -672,8 +687,8 @@ async def _combination(
             ).settlement_won
         comparison = comparison.with_demand_response(ctx.diagnosis.dr, choices.dr_unit_price)
 
-    if stale:
-        w.caution("선택이 변경되었습니다 — 다시 계산하십시오.")
+    if selection_stale:
+        w.caution(_SELECTION_STALE)
     with ui.column().classes("w-full gap-3" + (" k-stale" if stale else "")):
         _combined_block(
             ctx, comparison, rows, results.contract, enabled, results.peer_savings(), dr_won
@@ -686,15 +701,16 @@ async def _combination(
     grounds = tooltip(fresh)
     if grounds:
         w.caption(f"산출 근거 {len(grounds)}건", tooltip_text(fresh))
-
-    with ui.row().classes("items-center gap-2") as wait:
-        ui.spinner(size="sm")
-        ui.label("감도를 훑는 중…").classes("k-note")
-    try:
-        sensitivity = await run.io_bound(_sensitivity, ctx, results, specs)
-    finally:
-        wait.delete()
-    _downloads(ctx, choices, results, comparison, sensitivity, scope)
+    # 선택이 묵었으면 산출물도 막는다 — 만들면 옛 조합이 파일에 들어간다.
+    _downloads(
+        ctx,
+        choices,
+        results,
+        comparison,
+        sensitivity,
+        scope,
+        extra_block=(_SELECTION_STALE,) if selection_stale else (),
+    )
 
 
 def _measure_notice_heads(comparison: ComparisonResult) -> dict[Notice, Notice]:
@@ -881,17 +897,29 @@ def _downloads(
     comparison: ComparisonResult | None,
     sensitivity: pd.DataFrame,
     scope: ReviewScope,
+    *,
+    extra_block: tuple[str, ...] = (),
 ) -> None:
     """Excel(분석자용) · PPT(의사결정자용) — 만든 파일은 「다운로드」 폴더에 저장한다."""
     ui.label("내려받기").classes("text-base font-semibold mt-2")
     structure = ctx.diagnosis.structure
     assert structure is not None
     baseline = structure.bill
-    blocked = _stale_lines(ctx, choices)
+    blocked = (*_stale_lines(ctx, choices), *extra_block)
     billed = ctx.form.power_factor_pct is not None
     building = ctx.building
 
-    async def make(label: str, build: Callable[[], tuple[bytes, str]], status: ui.column) -> None:
+    async def make(
+        label: str, build: Callable[[], tuple[bytes, str]], status: ui.column, button: ui.button
+    ) -> None:
+        # 만드는 동안 단추를 잠근다 — 두 번 누르면 같은 파일을 두 번 만든다.
+        button.props("loading")
+        try:
+            await _make(label, build, status)
+        finally:
+            button.props(remove="loading")
+
+    async def _make(label: str, build: Callable[[], tuple[bytes, str]], status: ui.column) -> None:
         status.clear()
         with status, ui.row().classes("items-center gap-2") as wait:
             ui.spinner(size="sm")
@@ -954,9 +982,8 @@ def _downloads(
             excel_row = ui.row()
             excel_status = ui.column().classes("w-full")
             with excel_row:
-                excel_button = ui.button(
-                    "Excel 만들기", on_click=lambda: make("Excel", excel, excel_status)
-                ).props("unelevated no-caps")
+                excel_button = ui.button("Excel 만들기").props("unelevated no-caps")
+            excel_button.on_click(lambda: make("Excel", excel, excel_status, excel_button))
             if blocked:
                 excel_button.disable()
         with ui.tab_panel(deck_tab).classes("gap-2 p-0 pt-2"):
@@ -1001,8 +1028,7 @@ def _downloads(
             deck_row = ui.row()
             deck_status = ui.column().classes("w-full")
             with deck_row:
-                deck_button = ui.button(
-                    "PPT 보고서 만들기", on_click=lambda: make("PPT 보고서", deck, deck_status)
-                ).props("unelevated no-caps")
+                deck_button = ui.button("PPT 보고서 만들기").props("unelevated no-caps")
+            deck_button.on_click(lambda: make("PPT 보고서", deck, deck_status, deck_button))
             if blocked:
                 deck_button.disable()

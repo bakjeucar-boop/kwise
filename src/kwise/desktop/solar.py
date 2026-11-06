@@ -131,17 +131,22 @@ async def card(
     if not region_key:
         w.caution("옆단에서 지역(시도·시군구)을 고르십시오. 기상 격자를 정하는 값입니다.")
         return
-    stale_box = ui.column().classes("w-full")
     lock = asyncio.Lock()
 
     def now() -> SolarInputs:
         return _inputs(form, region_key, presets)
 
     def check_stale() -> None:
+        # 경고는 단추 바로 아래, 옛 결과는 흐리게 — 남아 있되 지금 입력의 값이 아니라는 표시다.
         stale_box.clear()
-        if form.ran is not None and form.ran != now():
+        stale = form.ran is not None and form.ran != now()
+        if stale:
             with stale_box:
                 w.caution(f"{STALE_INPUT} 아래는 이전 결과입니다.")
+        if stale:
+            result_box.classes(add="k-dim")
+        else:
+            result_box.classes(remove="k-dim")
 
     # ---- 기본 입력 — 면적과 설치 밀도 (환산 용량은 라벨에, 상충 관계는 풀이에)
     with ui.grid(columns=2).classes("w-full gap-x-6"):
@@ -298,6 +303,7 @@ async def card(
                 button.props(remove="loading")
 
     button = ui.button("태양광 계산", on_click=calculate).props("unelevated no-caps")
+    stale_box = ui.column().classes("w-full")
     result_box = ui.column().classes("w-full gap-3")
     check_stale()
     await draw()

@@ -726,9 +726,25 @@ def build(state: _State) -> None:
 
     tabs.on_value_change(tab_changed)
 
+    async def rediagnose() -> None:
+        """2단계에서 1단계를 다시 돌릴 때(경제성DR 쉬는 날) — 2단계 자리에서도 도는 것을 보인다."""
+        stage2.classes(add="k-stale")
+        with stage2:
+            note = ui.row().classes("items-center gap-2 order-first")
+            with note:
+                ui.spinner(size="sm")
+                ui.label("1단계부터 다시 계산하는 중…").classes("k-note")
+        try:
+            await analyse()  # 잘 끝나면 ``stages`` 가 2단계를 새로 짓는다
+        finally:  # 실패해도 흐린 채 멈춰 두지 않는다 (사유는 1단계 상태 줄에 있다)
+            stage2.classes(remove="k-stale")
+            if not note.is_deleted:
+                note.delete()
+
     def stages(usage: UsageData, quality: QualityReport, diagnosis: Diagnosis) -> None:
         """1단계가 끝날 때마다 2단계를 새로 짓는다 — 계약 정보를 확정해야 선다."""
         last.clear()
+        stage2.classes(remove="k-stale")
         stage2.clear()
         with stage2:
             if state.form is None:
@@ -741,7 +757,7 @@ def build(state: _State) -> None:
                 diagnosis=diagnosis,
                 quality=quality,
                 building=state.building,
-                rediagnose=analyse,
+                rediagnose=rediagnose,
             )
             measures.render(ctx, state.choices)
             last.append(ctx)

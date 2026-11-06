@@ -815,7 +815,10 @@ async def _ess_result(
         [
             (
                 "출력 / 용량",
-                f"{fmt.kw(result.power_kw, decimals=0)} / {fmt.kwh(result.capacity_kwh)}",
+                # 수와 단위 사이는 줄바꿈 없는 빈칸 — 꺾여도 「/」 에서만 꺾인다.
+                f"{fmt.kw(result.power_kw, decimals=0)} / {fmt.kwh(result.capacity_kwh)}".replace(
+                    " k", " k"
+                ),
                 f"방전 {fmt.hours(result.discharge_hours)}",
                 fmt.tip("discharge_hours"),
             ),
