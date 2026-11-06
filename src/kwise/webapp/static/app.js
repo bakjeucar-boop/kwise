@@ -282,10 +282,107 @@ const KCard = {
     </div>`,
 };
 
+/* 「파일 → 기준 데이터」 — 줄마다 값 · 저장 · 확인함 · 되돌리기, 원복 둘, ESS 단가. 고친 것이 서면 saved. */
+const KRules = {
+  components: { KBlocks, KInfo },
+  emits: ["saved", "ess"],
+  data() { return { page: null, edits: {}, preview: null, busy: false, failed: [] }; },
+  async mounted() { this.show(await api().rules_page()); },
+  methods: {
+    show(page) {
+      this.page = page;
+      this.edits = Object.fromEntries(page.rows.map((r) => [r.key, r.value]));
+    },
+    async act(action, key, row = null) {
+      this.busy = true;
+      try {
+        const r = await api().rule_act(action, key, row ? row.kind : "", row ? this.edits[key] : null);
+        this.failed = r.blocks || [];
+        if (r.page) this.show(r.page);
+        if (r.ok) { this.preview = null; this.$q.notify({ type: "positive", message: `✓ ${r.message}` }); this.$emit("saved"); }
+      } finally { this.busy = false; }
+    },
+    async ask(origin) { this.preview = await api().rules_preview(origin); },
+    async essChanged() {
+      const e = this.page.ess;
+      this.page.ess = await api().set_ess_pricing(e.path, e.fixed, e.per_kwh);
+      this.$emit("ess");
+    },
+  },
+  template: `
+    <div v-if="!page" class="k-line"><q-spinner size="sm" /><span class="k-note">읽는 중…</span></div>
+    <div v-else class="k-stack">
+      <k-blocks :blocks="page.head" />
+      <div class="k-card q-pa-md k-stack-sm">
+        <div><b>ESS 투자비 단가</b> — {{ page.ess.formula }}</div>
+        <div class="k-note">{{ page.ess.provenance }}</div>
+        <div class="k-label">단가 경로</div>
+        <q-option-group v-model="page.ess.path" inline dense :options="page.ess.paths.map((p) => ({ label: p, value: p }))"
+          @update:model-value="essChanged" />
+        <div class="k-cols">
+          <q-input v-model.number="page.ess.fixed" type="number" dense step="1000000" min="0"
+            label="고정비 (원) — PCS·PMS·컨테이너·소방·공조·UPS·변압기" @change="essChanged" />
+          <q-input v-model.number="page.ess.per_kwh" type="number" dense step="10000" min="0"
+            label="용량단가 (원/kWh) — 배터리" @change="essChanged" />
+        </div>
+        <k-blocks :blocks="page.ess.detail" />
+      </div>
+      <div class="k-h2">원복</div>
+      <div class="k-note">직전 상태 · 출고 상태 · 항목별 셋을 모두 씁니다. 항목별 되돌리기는 각 줄에 있습니다.</div>
+      <div v-for="o in page.origins" :key="o.value" class="k-line">
+        <span style="flex: 1"><b>{{ o.label }}</b> ({{ o.filename }})</span>
+        <q-btn flat dense no-caps label="직전 상태로" :disable="busy" @click="act('previous', o.value)" />
+        <q-btn flat dense no-caps label="출고 상태로" :disable="busy" @click="ask(o.value)" />
+      </div>
+      <div v-if="preview" class="k-stack-sm">
+        <k-blocks :blocks="preview.blocks" />
+        <div class="k-line">
+          <q-btn unelevated no-caps color="primary" label="확인했습니다 — 기본값으로 되돌립니다" :disable="busy"
+            @click="act('defaults', preview.origin)" />
+          <q-btn flat no-caps label="취소" @click="preview = null" />
+        </div>
+      </div>
+      <k-blocks v-if="failed.length" :blocks="failed" />
+      <q-separator />
+      <div v-for="row in page.rows" :key="row.key" class="k-card q-pa-md">
+        <div class="k-cols">
+          <div class="k-stack-sm">
+            <div><b>{{ row.badge }}</b> · {{ row.label }}<br><code>{{ row.key }}</code></div>
+            <div v-if="row.flags" class="k-note">{{ row.flags }}</div>
+            <div class="k-note">{{ row.source }} <k-info :text="row.tip" /></div>
+            <div class="k-note">{{ row.verified }}</div>
+            <div v-if="row.note" class="k-note">{{ row.note }}</div>
+          </div>
+          <div class="k-stack-sm">
+            <q-checkbox v-if="row.kind === 'bool'" v-model="edits[row.key]" label="값" />
+            <q-input v-else-if="row.kind === 'int' || row.kind === 'float'" v-model.number="edits[row.key]"
+              type="number" dense label="값" :step="row.kind === 'int' ? 1 : 'any'" />
+            <q-input v-else-if="row.kind === 'str'" v-model="edits[row.key]" dense label="값" />
+            <template v-else>
+              <code style="white-space: pre-wrap">{{ row.value }}</code>
+              <div class="k-note">구조가 있는 값은 tools\\export_rules_xlsx.py 로 고칩니다.</div>
+            </template>
+            <div class="k-line">
+              <q-btn v-if="row.kind !== 'other'" unelevated dense no-caps color="primary" label="저장" :disable="busy"
+                @click="act('set', row.key, row)" />
+              <q-btn flat dense no-caps label="확인함" :disable="busy" @click="act('confirm', row.key)">
+                <q-tooltip>값은 그대로 두고 확인일만 갱신합니다.</q-tooltip></q-btn>
+              <q-btn v-if="row.changed" flat dense no-caps label="되돌리기" :disable="busy" @click="act('item', row.key)">
+                <q-tooltip>기본값 {{ row.default }} 로 되돌립니다.</q-tooltip></q-btn>
+            </div>
+            <div v-if="row.changed" class="k-note">기본값 — {{ row.default }}</div>
+          </div>
+        </div>
+      </div>
+      <q-separator />
+      <k-blocks :blocks="page.tail" />
+    </div>`,
+};
+
 /* ------------------------------------------------------------------ 앱 */
 
 const App = {
-  components: { KBlocks, KInfo, KCard },
+  components: { KBlocks, KInfo, KCard, KRules },
   data() {
     return {
       ready: false,
@@ -315,6 +412,8 @@ const App = {
       restoring: false,         // 작업 열기 중 — 종별 · 전압을 바꿔도 기본값으로 되돌리지 않는다
       pendingCards: null,       // 작업 열기 — 2단계가 서면 카드 입력칸에 넣을 값
       workPath: "",
+      rulesOpen: false,
+      alerts: [],
     };
   },
   computed: {
@@ -341,6 +440,7 @@ const App = {
     this.types = o.types;
     this.contract.type = o.types[0].value;
     await this.refreshVoltages();
+    this.alerts = await api().alerts();
     this.ready = true;
     await api().ready({ ready: true, types: this.types.length });
   },
@@ -539,6 +639,16 @@ const App = {
       const r = await api().open_path(path);
       if (!r.ok) this.$q.notify({ type: "negative", message: r.error });
     },
+    async rulesSaved() {
+      // 기준 데이터가 바뀌었다 — 알림을 새로 받고 1단계부터 다시 (3단계는 다음에 열 때 새로).
+      this.alerts = await api().alerts();
+      this.s3 = null;
+      await this.analyse();
+    },
+    essPriced() {
+      this.s3 = null;
+      this.cardRefs.ess?.refresh();
+    },
     async rediagnosed() {
       // 경제성DR 쉬는 날 — 파이썬이 1단계부터 다시 돌렸다. 1단계 화면 · 다른 카드도 새로.
       await this.analyse();
@@ -556,7 +666,7 @@ const App = {
               <q-separator />
               <q-item clickable v-close-popup :disable="!stage1Ready" @click="saveResult"><q-item-section>결과 저장 (JSON)…</q-item-section></q-item>
               <q-separator />
-              <q-item clickable v-close-popup disable><q-item-section>기준 데이터…</q-item-section></q-item>
+              <q-item clickable v-close-popup @click="rulesOpen = true"><q-item-section>기준 데이터…</q-item-section></q-item>
             </q-list>
           </q-menu>
         </q-btn>
@@ -592,7 +702,18 @@ const App = {
 
     <q-page-container>
       <q-page class="q-pa-lg">
+        <q-dialog v-model="rulesOpen" maximized transition-show="slide-up" transition-hide="slide-down">
+          <q-card class="k-rules">
+            <q-bar class="k-bar">
+              <div class="text-weight-bold">기준 데이터</div>
+              <q-space />
+              <q-btn flat dense no-caps label="닫기" v-close-popup />
+            </q-bar>
+            <q-card-section class="k-page"><k-rules @saved="rulesSaved" @ess="essPriced" /></q-card-section>
+          </q-card>
+        </q-dialog>
         <div class="k-page">
+          <div v-if="alerts.length" class="k-stack-sm q-mb-md"><k-blocks :blocks="alerts" /></div>
           <q-tab-panels v-model="tab" animated keep-alive class="bg-transparent">
             <!-- ① 진단 -->
             <q-tab-panel name="s1" class="q-pa-none k-stack">

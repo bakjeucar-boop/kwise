@@ -43,7 +43,7 @@ from kwise.ui.pipeline import (
 from kwise.ui.spec import measure
 
 from . import blocks as b
-from . import export, reports, stage1, stage2, stage3, work
+from . import export, reports, rules, stage1, stage2, stage3, work
 from .building import BuildingInfo, building_uses, narrow_contract_types
 from .stage2 import Context  # 메서드 이름 ``stage2`` 가 클래스 안에서 모듈 이름을 가린다
 from .state import Choices
@@ -510,6 +510,49 @@ class Api:
             except Exception as exc:
                 traceback.print_exc()
                 return {"ok": False, "error": f"저장하지 못했습니다. {exc}"}
+
+    def alerts(self) -> list[b.Block]:
+        """탭 위 알림 — 기준 데이터 손상 복구 · 만료 경고."""
+        return rules.alerts()
+
+    def rules_page(self) -> dict[str, Any]:
+        """기준 데이터 창 한 벌."""
+        return _jsonable(rules.page(self._s.choices))
+
+    def rule_act(
+        self, action: str, key: str, kind: str = "", value: rules.Value = None
+    ) -> dict[str, Any]:
+        """기준 데이터 고치기 — 성공하면 화면이 1단계부터 다시 돈다 (``ok``)."""
+        with self._lock:
+            try:
+                result = rules.act(
+                    action, key, rules.typed(kind, value) if action == "set" else None
+                )
+            except Exception as exc:
+                traceback.print_exc()
+                return {"ok": False, "message": str(exc), "blocks": []}
+            if result.ok:
+                self._s.results = None
+                self._s.combos = {}
+            return _jsonable(
+                {
+                    "ok": result.ok,
+                    "message": result.message,
+                    "blocks": rules.result_blocks(result),
+                    "page": rules.page(self._s.choices),
+                }
+            )
+
+    def rules_preview(self, origin: str) -> dict[str, Any]:
+        """출고 상태로 — 차이 목록 먼저."""
+        return _jsonable(rules.preview(origin))
+
+    def set_ess_pricing(
+        self, path: str, fixed: float | str | None, per_kwh: float | str | None
+    ) -> dict[str, Any]:
+        """ESS 단가 경로 · 두 계수 — 이 창을 연 동안만 쓴다. ESS 카드가 다시 계산한다."""
+        rules.set_ess(self._s.choices, path, _number(fixed) or 0.0, _number(per_kwh) or 0.0)
+        return _jsonable(rules.ess(self._s.choices))
 
     def open_path(self, path: str) -> dict[str, Any]:
         """파일이나 폴더를 그 파일에 정해진 프로그램으로 연다 (Excel · PowerPoint · 탐색기)."""
