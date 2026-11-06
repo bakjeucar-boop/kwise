@@ -7,18 +7,21 @@
 모든 카드는 독립 평가다 — 기준은 현재 요금제와 사용량이고, 카드를 켜고 꺼도 다른 카드의
 숫자가 바뀌지 않는다. 켠 카드만 3단계 조합에 들어간다.
 
-옮긴 카드: 1 선택요금 전환 · 2 계약전력 조정 · 3 경제성DR · 4 역률 개선. 나머지 둘(태양광 ·
-ESS)은 다음 판이다 — 켜면 아직 없다고 적는다.
+옮긴 카드: 1 선택요금 전환 · 2 계약전력 조정 · 3 경제성DR · 4 역률 개선 · 6 ESS.
+남은 하나(5 태양광)는 다음 판이다 — 켜면 아직 없다고 적는다.
 """
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
+import pandas as pd
 from nicegui import run, ui
 
+from kwise import money
 from kwise.diagnose import Diagnosis
 from kwise.diagnose.dr import JUDGE_WINDOW, dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData, interval_label
@@ -26,18 +29,26 @@ from kwise.measures import (
     MARGIN_FACT,
     NO_HEADROOM_LABEL,
     NO_SAVING,
+    SHORTEST_PAYBACK,
+    EssCostInput,
     default_target_pct,
+    ess_target_curve,
     evaluate_contract_adjustment,
     evaluate_demand_response,
+    evaluate_ess,
     evaluate_power_factor,
     evaluate_tariff_switch,
+    high_rate_discharge_hours,
+    load_ess_cost_model,
     power_factor_floor_pct,
+    refine_ess_target,
 )
 from kwise.quality import QualityReport
-from kwise.report import CONTRACT_CHANGE_WARNING, notices
+from kwise.report import CONTRACT_CHANGE_WARNING, frames, notices
 from kwise.report.days import RepresentativeDay, find_day, representative_days
 from kwise.report.worksheet import (
     demand_response_worksheet,
+    ess_worksheet,
     power_factor_worksheet,
     tariff_switch_worksheet,
 )
@@ -111,6 +122,15 @@ class Choices:
     dr_price: float | None = None
     #: 쉬는 날이어서 뺄 날짜(ISO) — 1단계 진단이 읽는다.
     dr_off_days: tuple[str, ...] = ()
+    ess_known: bool = False
+    ess_total: float | None = None
+    #: ESS 가 고른 목표 요금적용전력 — 3단계가 같은 값을 읽는다 (고를 것이 없으면 0).
+    ess_target: float = 0.0
+
+    @property
+    def ess_quote(self) -> float | None:
+        """「견적 총액을 안다」 를 체크했을 때만 — 0 은 미입력 (Streamlit ``ess_quote``)."""
+        return (self.ess_total or None) if self.ess_known else None
 
     @property
     def dr_unit_price(self) -> float | None:
@@ -119,6 +139,20 @@ class Choices:
 
 
 Card = Callable[["Context", "Choices", RepresentativeDay | None], Awaitable[None]]
+
+
+def _one_at_a_time(draw: Callable[[], Awaitable[None]]) -> Callable[[], Awaitable[None]]:
+    """그리기를 한 번에 하나씩 — 비우고 계산을 기다리는 사이에 또 그리면 결과가 두 벌 쌓인다.
+
+    체크와 Enter 처럼 두 번이 겹치면 뒤의 것이 앞의 것이 끝나기를 기다렸다가 다시 비우고 그린다.
+    """
+    lock = asyncio.Lock()
+
+    async def serial() -> None:
+        async with lock:
+            await draw()
+
+    return serial
 
 
 def render(ctx: Context, choices: Choices) -> None:
@@ -135,13 +169,17 @@ def render(ctx: Context, choices: Choices) -> None:
         key = choices.day_key or days[0].key
         return find_day(ctx.usage, key, custom=choices.custom_day)
 
+    locks: dict[str, asyncio.Lock] = {}
+
     async def refresh(key: str) -> None:
-        box = boxes[key]
-        box.clear()
-        if key not in choices.enabled:
-            return
-        with box:
-            await _CARDS.get(key, _not_yet)(ctx, choices, day())
+        # 카드마다 한 번에 하나씩 — 켜기와 대표일 바꾸기가 겹치면 결과가 두 벌 쌓인다.
+        async with locks.setdefault(key, asyncio.Lock()):
+            box = boxes[key]
+            box.clear()
+            if key not in choices.enabled:
+                return
+            with box:
+                await _CARDS.get(key, _not_yet)(ctx, choices, day())
 
     async def day_changed() -> None:
         # 하루 곡선을 쓰는 카드만 다시 — 역률 · 태양광 · ESS 가 같은 날을 본다.
@@ -493,6 +531,7 @@ async def _power_factor(ctx: Context, choices: Choices, day: RepresentativeDay |
     if choices.pf_target is None:
         choices.pf_target = default_target_pct()
 
+    @_one_at_a_time
     async def draw() -> None:
         body.clear()
         with body:
@@ -591,6 +630,230 @@ async def _power_factor_result(
     w.worksheet(power_factor_worksheet(result))
 
 
+# --------------------------------------------------------------------- 6 ESS
+
+
+async def _ess(ctx: Context, choices: Choices, day: RepresentativeDay | None) -> None:
+    """목표를 사람이 찍지 않는다 — 회수기간이 가장 짧은 목표를 공용 계산이 고른다.
+
+    단가는 기준 데이터의 조달 사례 모델 그대로다(데스크톱에는 「기준 데이터」 화면이 없다).
+    견적 총액을 알면 그 값이 이긴다 (Streamlit 과 같다).
+    """
+    spec = _spec("ess")
+    _headline(spec)
+
+    async def known_changed(event: object) -> None:
+        choices.ess_known = bool(event.value)  # type: ignore[attr-defined]
+        total.set_visibility(choices.ess_known)
+        await draw()
+
+    async def total_changed() -> None:
+        value = float(total.value) if total.value else None
+        if value == choices.ess_total:
+            return
+        choices.ess_total = value
+        await draw()
+
+    with ui.row().classes("w-full items-center gap-4"):
+        ui.checkbox("견적 총액을 안다", value=choices.ess_known, on_change=known_changed)
+        total = ui.number("견적 총액 (원)", value=choices.ess_total or 0, min=0, step=1_000_000)
+        total.set_visibility(choices.ess_known)
+        total.on("blur", total_changed)
+        total.on("keydown.enter", total_changed)
+    body = ui.column().classes("w-full gap-3")
+
+    @_one_at_a_time
+    async def draw() -> None:
+        body.clear()
+        with body:
+            await _ess_result(ctx, choices, day, spec)
+
+    await draw()
+
+
+def _ess_spec_view(frame: pd.DataFrame) -> pd.DataFrame:
+    """목표별 사양 표를 사람이 읽는 글로 — Streamlit ``_ess_spec_view`` 의 사본."""
+    if frame.empty:
+        return frame
+    savings = frame["연간 절감액(원)"]
+    in_man = bool((savings.abs() >= 10_000).any())
+
+    def saving(value: float) -> str:
+        # 만원 한 자리는 천 원 절사다 — 한 열은 한 단위로.
+        if in_man and 0 < abs(value) < 10_000:
+            return f"{money.truncate_won(value) / 10_000:,.1f}만원"
+        return fmt.won_short(value)
+
+    return pd.DataFrame(
+        {
+            "목표": [f"{value} kW" for value in frame["목표 요금적용전력(kW)"]],
+            "저감량": [fmt.kw(value, decimals=0) for value in frame["저감량(kW)"]],
+            "출력": [fmt.kw(value, decimals=0) for value in frame["출력(kW)"]],
+            "용량": [fmt.kwh(value) for value in frame["용량(kWh)"]],
+            "방전시간": [fmt.hours(value) for value in frame["방전시간(h)"]],
+            "투자비": [fmt.won_short(value, reason="—") for value in frame["투자비(원)"]],
+            "12개월 환산 절감액": [saving(value) for value in savings],
+            "회수기간": [
+                fmt.payback(years, investment_won=investment)
+                for years, investment in zip(
+                    frame["회수기간(년)"], frame["투자비(원)"], strict=True
+                )
+            ],
+            "표식": frame["표식"],
+        }
+    )
+
+
+async def _ess_result(
+    ctx: Context, choices: Choices, day: RepresentativeDay | None, spec: MeasureSpec
+) -> None:
+    peak = ctx.diagnosis.peak.billing_demand_kw
+    if peak <= 0:
+        choices.ess_target = 0.0
+        w.caution("요금적용전력을 산출하지 못해 ESS 목표를 훑을 수 없습니다.")
+        return
+    structure = ctx.diagnosis.structure
+    baseline = structure.bill if structure is not None else None
+    # 기본요금단가는 현행 요금제 기준 — 최적 요금제 단가를 쓰면 독립 평가가 깨진다.
+    base_fee = float(ctx.table.rates(ctx.form.selection).base_won_per_kw)
+    model = load_ess_cost_model()
+    w.overview(spec.overview)
+
+    curve = await run.io_bound(
+        ess_target_curve,
+        ctx.usage.kw,
+        ctx.usage.meta.interval_minutes,
+        baseline_demand_kw=float(peak),
+        base_fee_won_per_kw=base_fee,
+        model=model,
+    )
+    if curve.best is None:
+        choices.ess_target = 0.0
+        w.caution(notices.ESS_NO_EXCESS)
+        return
+    # 한 점당 요금을 다시 계산해 몇 초 걸린다 — 아무 말 없이 멈추지 않게 돈다고 적는다.
+    with ui.row().classes("items-center gap-2") as wait:
+        ui.spinner(size="sm")
+        ui.label("ESS 목표를 고르는 중…").classes("k-note")
+    try:
+        optimum = await run.io_bound(
+            refine_ess_target,
+            ctx.usage,
+            ctx.table,
+            ctx.form.selection,
+            curve=curve,
+            baseline=baseline,
+            quality=ctx.quality,
+            options=ctx.form.billing_options(),
+            model=model,
+        )
+    finally:
+        wait.delete()
+
+    if optimum.below_minimum:
+        # 살 물건이 없다 — 이 건물의 사실(필요 출력 · 용량 · 방전시간)만 낸다.
+        choices.ess_target = 0.0
+        w.metrics(
+            [
+                ("필요 출력", fmt.kw(optimum.required_power_kw)),
+                ("필요 용량", notices.ess_capacity_text(optimum.required_capacity_kwh)),
+                (
+                    "방전시간",
+                    fmt.hours(optimum.required_discharge_hours),
+                    "",
+                    fmt.tip("discharge_hours"),
+                ),
+            ]
+        )
+        w.notices(optimum.notices)
+        return
+    if not optimum.points:
+        choices.ess_target = 0.0
+        w.notices(optimum.notices)
+        return
+
+    table = frames.ess_spec_frame(optimum, baseline_demand_kw=curve.baseline_demand_kw)
+    w.table(_ess_spec_view(table))
+    w.caption(frames.ess_spec_caption(table), fmt.tip("table.ess_spec"))
+    if not optimum.viable:
+        choices.ess_target = 0.0
+        w.notices(optimum.notices)
+        return
+
+    target = optimum.target_kw
+    choices.ess_target = target
+    cost = (
+        EssCostInput.of_total(choices.ess_quote)
+        if choices.ess_quote is not None
+        else EssCostInput.unpriced()
+    )
+    result = await run.io_bound(
+        evaluate_ess,
+        ctx.usage,
+        ctx.table,
+        ctx.form.selection,
+        target_kw=target,
+        cost=cost,
+        model=model,
+        baseline=baseline,
+        quality=ctx.quality,
+        options=ctx.form.billing_options(),
+    )
+    ui.label(f"{SHORTEST_PAYBACK} 목표 {fmt.kw(target, decimals=0)} 기준").classes(
+        "text-base font-semibold mt-2"
+    )
+    annual_factor = (
+        result.annual_saving_won / result.total_saving_won if result.total_saving_won else 1.0
+    )
+    w.metrics(
+        [
+            (
+                "출력 / 용량",
+                f"{fmt.kw(result.power_kw, decimals=0)} / {fmt.kwh(result.capacity_kwh)}",
+                f"방전 {fmt.hours(result.discharge_hours)}",
+                fmt.tip("discharge_hours"),
+            ),
+            (
+                SAVING_LABEL,
+                fmt.won_short(result.annual_saving_won),
+                "",
+                fmt.ess_saving_line(
+                    result.base_saving_won,
+                    result.energy_saving_won,
+                    result.energy_saving_won * annual_factor,
+                )
+                + " 경부하에 충전해 최대부하에 방전하니 비싼 시간의 사용량이 싼 시간으로 "
+                "옮겨가지만, 왕복효율 손실만큼 총 사용량이 늘어 둘이 맞부딪힙니다.",
+            ),
+            ("투자비", fmt.won_short(result.investment_won), f"단가 — {result.pricing_path}"),
+            ("회수기간", fmt.payback(result.payback_years, investment_won=result.investment_won)),
+        ]
+    )
+    if day is not None:
+        vega.chart(charts.ess_day_chart(ctx.usage, result.dispatch, day))
+        w.caption(
+            f"{day.title} · 피크 앞뒤 {charts.PEAK_ZOOM_HOURS}시간", fmt.chart_tip("chart.ess_day")
+        )
+        frame = charts.ess_day_frame(ctx.usage, result.dispatch, day.date)
+        slot_hours = ctx.usage.meta.interval_minutes / 60.0
+        charged = float(frame["충전(kW)"].sum()) * slot_hours if len(frame) else 0.0
+        discharged = float(frame["방전(kW)"].sum()) * slot_hours if len(frame) else 0.0
+        cut = float(frame["원부하(kW)"].max() - frame["순부하(kW)"].max()) if len(frame) else 0.0
+        charge_span, discharge_span = charts.dispatch_schedule(frame)
+        ui.markdown(
+            f"**{day.title} 운전** — 경부하 {charge_span or fmt.DASH} 충전 "
+            f"{fmt.kwh(charged)} · 최대부하 {discharge_span or fmt.DASH} 방전 "
+            f"{fmt.kwh(discharged)} · 그날 저감 {fmt.kw(cut)}."
+        )
+    if 0 < result.discharge_hours < high_rate_discharge_hours():
+        w.caution(
+            f"방전시간이 {fmt.hours(result.discharge_hours)} 로 짧습니다. 고출력 셀 "
+            "사양이 되어 도입 사례보다 단가가 높아질 수 있습니다."
+        )
+    w.notices(notices.without_arbitrage((*result.notices, *optimum.notices)))
+    w.worksheet(ess_worksheet(result))
+
+
 def _spec(key: str) -> MeasureSpec:
     return next(spec for spec in MEASURES if spec.key == key)
 
@@ -600,4 +863,5 @@ _CARDS: dict[str, Card] = {
     "contract": _contract,
     "demand_response": _demand_response,
     "power_factor": _power_factor,
+    "ess": _ess,
 }
