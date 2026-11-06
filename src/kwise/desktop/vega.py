@@ -33,6 +33,13 @@ _CONFIG = {
 }
 
 
+def _iso(value: object) -> str:
+    """Altair 가 남긴 날짜(``datetime.date``)를 Vega 가 읽는 ISO 글로 — Streamlit 이 하는 일."""
+    if hasattr(value, "isoformat"):
+        return str(value.isoformat())
+    raise TypeError(f"{type(value).__name__} 를 JSON 으로 못 바꿉니다")
+
+
 def setup() -> None:
     """앱 시작 때 한 번 — 정적 파일 경로와 스크립트 태그를 붙인다."""
     app.add_static_files("/vega", STATIC)
@@ -57,7 +64,7 @@ def chart(spec: alt.TopLevelMixin) -> ui.element:
     ui.run_javascript(
         f"(function draw() {{ const el = document.getElementById('{box.html_id}');"
         " if (!el) return setTimeout(draw, 30);"
-        f" vegaEmbed(el, {json.dumps(data, ensure_ascii=False)},"
+        f" vegaEmbed(el, {json.dumps(data, ensure_ascii=False, default=_iso)},"
         " {actions: false, renderer: 'svg'}).catch(e => console.error('vega', e)); })()"
     )
     return box

@@ -8,14 +8,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 from nicegui import run, ui
 
 from kwise.diagnose import Diagnosis
+from kwise.diagnose.dr import BID_WINDOW, dr_market_windows
 from kwise.io import UsageData, load_usage_bytes
 from kwise.notices import tooltip
+from kwise.pv import list_provinces, list_sigungu
 from kwise.quality import DEFAULT_OPERATING_HOURS, QualityReport, monthly_longest_gaps
 from kwise.quality.checks import HOURLY_INTERVAL_FACT
 from kwise.report import localize, narrative, notices
@@ -35,6 +37,7 @@ from kwise.ui.notices import Severity, partition_facts, screen_notices, tooltip_
 from kwise.ui.pipeline import (
     ContractForm,
     contract_type_choices,
+    daily_temperature,
     default_lagging_pct,
     diagnose_usage,
     load_quality,
@@ -43,6 +46,14 @@ from kwise.ui.pipeline import (
 )
 
 from . import vega
+from .building import (
+    NAME_MISSING,
+    BuildingInfo,
+    building_uses,
+    intensity_kwh_per_m2,
+    narrow_contract_types,
+    weather_source_label,
+)
 
 #: Streamlit 화면의 ``SEASON_CHOICES`` 와 같은 갈래 (그쪽 모듈은 streamlit 을 끌어와 못 부른다).
 _SEASONS: tuple[tuple[str, str | None], ...] = (
@@ -122,6 +133,7 @@ class _State:
     #: 열 지정 — ``None`` 이면 자동 판정을 따른다.
     date_column: str | None = None
     energy_column: str | None = None
+    building: BuildingInfo = field(default_factory=BuildingInfo)
 
 
 def _seasons(available: object) -> tuple[tuple[str, str | None], ...]:
@@ -181,23 +193,43 @@ def _missing_month_frame(quality: QualityReport) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["월", "결측 구간 수", "비율", "최장 연속 구간"])
 
 
-def _diagnose(state: _State, usage: UsageData) -> tuple[UsageData, Diagnosis]:
-    """무거운 일 — 일꾼 스레드에서 돈다. 공용 함수만 부른다."""
+#: 기온 — (일평균 기온 계열, 기상 출처) 또는 못 받았으면 ``None``.
+_Temperature = tuple[pd.Series, str] | None
+
+
+def _diagnose(state: _State, usage: UsageData) -> tuple[Diagnosis, _Temperature]:
+    """무거운 일 — 일꾼 스레드에서 돈다. 공용 함수만 부른다.
+
+    운영 시간대와 제주 여부는 옆단 건물 정보에서 온다 (Streamlit 과 같다). 기온은 지역을
+    골랐을 때만 받고, 못 받으면 ``None`` 이다 (공용 ``daily_temperature`` 가 예외를 삼킨다).
+    """
     contract_kw = state.form.contract_kw if state.form else None
     quality = load_quality(usage, contract_kw=contract_kw)
+    building = state.building
     diagnosis = diagnose_usage(
-        usage, state.table, state.form, quality=quality, operating_hours=DEFAULT_OPERATING_HOURS
+        usage,
+        state.table,
+        state.form,
+        quality=quality,
+        operating_hours=building.operating_hours,
+        jeju=building.jeju,
     )
-    return usage, diagnosis
+    return diagnosis, daily_temperature(usage, building.region_key)
 
 
 # --------------------------------------------------------------------- 놓는 조각
 
 
 def _tip(text: str) -> None:
-    """바로 앞 요소에 마우스를 올리면 뜨는 풀이 (Streamlit ``help=`` 자리 · 마크다운)."""
-    with ui.tooltip().classes("k-tip"):
+    """바로 앞 요소에 마우스를 올리면 뜨는 풀이 (Streamlit ``help=`` 자리 · 마크다운).
+
+    옆에 띄운다 — 아래에 띄우면 바로 밑 입력칸을 덮는다.
+    """
+    with ui.tooltip().classes("k-tip").props(_TIP_SIDE):
         ui.markdown(fmt.markdown_safe(text))
+
+
+_TIP_SIDE = 'anchor="center right" self="center left" :offset="[8, 0]"'
 
 
 def _metric(label: str, value: str, sub: str = "", tip: str = "") -> None:
@@ -310,7 +342,7 @@ def _quality(usage: UsageData, quality: QualityReport) -> None:
     _caption("결측은 보간하지 않습니다.")
 
 
-def _pattern(diagnosis: Diagnosis) -> None:
+def _pattern(diagnosis: Diagnosis, usage: UsageData, temperature: _Temperature) -> None:
     """부하 패턴 — 지표 넷과 기준 시간대 (Streamlit ``_pattern_block``). 풀이는 ``narrative``."""
     ui.label("부하 패턴").classes("k-section")
     pattern = diagnosis.pattern
@@ -330,6 +362,13 @@ def _pattern(diagnosis: Diagnosis) -> None:
         f"야간 {pattern.night_hours[0]}{fmt.RANGE}{pattern.night_hours[1]}시 · "
         f"운영 {pattern.operating_hours[0]}{fmt.RANGE}{pattern.operating_hours[1]}시 기준."
     )
+    # 지역이 없거나 기상을 못 받으면 빈 축을 남기지 않고 한 줄로 갈음한다 (Streamlit 과 같다).
+    if temperature is None or temperature[0].empty:
+        _caption("옆단에서 지역을 고르면 일평균 기온을 함께 그립니다.")
+        return
+    series, source = temperature
+    vega.chart(charts.daily_temperature_chart(usage, series))
+    _caption(f"일별 사용량과 일평균 기온 · {weather_source_label(source)}")
 
 
 def _monthly_table(monthly: pd.DataFrame) -> None:
@@ -374,7 +413,9 @@ def _season_chart(draw: object, available: object, caption: str) -> None:
     _caption(caption)
 
 
-def _results(usage: UsageData, diagnosis: Diagnosis) -> None:
+def _results(
+    usage: UsageData, diagnosis: Diagnosis, temperature: _Temperature, building: BuildingInfo
+) -> None:
     meta = usage.meta
     _metrics(
         [
@@ -391,7 +432,7 @@ def _results(usage: UsageData, diagnosis: Diagnosis) -> None:
     )
     _notices(diagnosis)
     _quality(usage, diagnosis.quality)
-    _pattern(diagnosis)
+    _pattern(diagnosis, usage, temperature)
 
     # ---- 피크 특성
     ui.label("피크 특성").classes("k-section")
@@ -459,6 +500,13 @@ def _results(usage: UsageData, diagnosis: Diagnosis) -> None:
                 ui.label(f"{label} · {fmt.mwh(kwh)}").classes("k-label")
                 vega.chart(charts.band_donut_chart(structure, season=key))
     _caption("계시별 사용량 구성")
+    # 연면적을 넣었을 때만 한 줄 — 국내 평균과 견주지 않는다 (Streamlit ``_intensity_line``).
+    intensity = intensity_kwh_per_m2(meta.total_kwh, building)
+    if intensity is not None and building.floor_area_m2 is not None:
+        ui.markdown(
+            f"기간 원단위 **{fmt.count(intensity, 'kWh/m²', decimals=1)}** "
+            f"(연면적 {fmt.count(building.floor_area_m2, 'm²', decimals=0)} 기준)"
+        )
     _caption(
         "기본요금과 전력량요금만 계산합니다. 그 밖의 요금요소는 미포함이며 실제 절감액은 "
         "이보다 큽니다."
@@ -503,7 +551,98 @@ def _columns(usage: UsageData, on_pick: object) -> None:
             )
 
 
-def _contract_inputs(state: _State, on_confirm: object, on_dirty: object) -> ui.button:
+def _sidebar(on_change: object) -> None:
+    """옆단 — 건물 정보 (Streamlit ``render_sidebar`` 와 같은 칸 · 같은 풀이).
+
+    글을 치는 칸(건물명 · 연면적 · 준공연도)은 **칸을 떠날 때** 반영한다 — 한 글자마다 다시
+    계산하지 않는다. 운영 시간대는 손을 뗄 때 반영한다.
+    """
+    unset = "선택 안 함"
+    uses = building_uses()
+    provinces = list_provinces()
+
+    ui.label("건물 정보").classes("k-label")
+    with ui.input("건물명 (선택)", placeholder=NAME_MISSING).classes("w-full") as name_in:
+        _tip("산출물 표지와 본문에 들어갑니다. 넣지 않으면 「건물명 미입력」 으로 나갑니다.")
+    with ui.select(
+        {"": unset} | {u.key: u.label for u in uses}, value="", label="용도 (선택)"
+    ).classes("w-full") as use_sel:
+        _tip(
+            "계약종별 드롭다운의 후보를 좁힙니다. 판정이 아니라 좁히기이며, "
+            "고르지 않으면 전 종별을 보입니다. 최종 판단은 청구서입니다."
+        )
+    # 「안 고른 상태」 가 있어야 한다 — 첫 지역이 고른 것처럼 보이면 일사량이 조용히 틀린다.
+    with ui.select({"": unset} | {p: p for p in provinces}, value="", label="시도 (선택)").classes(
+        "w-full"
+    ) as province_sel:
+        _tip("고르지 않으면 태양광과 기온 그래프를 계산하지 않습니다.")
+    with ui.select({}, label="시군구").classes("w-full") as sigungu_sel:
+        _tip("태양광 기상 격자를 고릅니다. 격자가 25–31 km 라 같은 격자면 결과가 같습니다.")
+    sigungu_sel.set_visibility(False)
+
+    hours_label = ui.label().classes("k-label mt-2")
+    with ui.range(min=0, max=24, step=1, value={"min": 9, "max": 18}).props(
+        "label markers snap"
+    ) as hours_in:
+        hours_tip = ui.tooltip().classes("k-tip").props(_TIP_SIDE)
+    area_in = ui.number("연면적 (m², 선택)", min=0, step=100).classes("w-full")
+    with area_in:
+        _tip("넣으면 기간 원단위(kWh/m²)를 요금 구조에 한 줄 더합니다.")
+    year_in = ui.number("준공연도 (선택)", min=0, max=2100, step=1, format="%d").classes("w-full")
+    with year_in:
+        _tip("비워 두면 넣지 않은 것으로 봅니다.")
+
+    def info() -> BuildingInfo:
+        start, end = int(hours_in.value["min"]), int(hours_in.value["max"])
+        # 시작이 끝보다 늦거나 같으면 뜻이 없다 — 기본값으로 되돌린다 (Streamlit ``_hours``).
+        hours = (start, end) if start < end else DEFAULT_OPERATING_HOURS
+        return BuildingInfo(
+            region_key=(sigungu_sel.value or "") if province_sel.value else "",
+            name=name_in.value or "",
+            use_key=use_sel.value or "",
+            floor_area_m2=float(area_in.value) if area_in.value else None,
+            built_year=int(year_in.value) if year_in.value else None,
+            operating_hours=hours,
+        )
+
+    def hours_text() -> None:
+        start, end = info().operating_hours
+        hours_label.set_text(f"운영 시간대 {start}{fmt.RANGE}{end}시")
+        windows = dr_market_windows(jeju=info().jeju)
+        bid = "·".join(f"{s:02d}–{e:02d}시" for s, e in windows)
+        hours_tip.clear()
+        with hours_tip:
+            ui.markdown(
+                "평일 이 시간대 밖의 부하를 따로 셉니다. 경제성DR 의 저부하일 판정에도 씁니다.\n\n"
+                f"DR {BID_WINDOW}(평일 {bid})와는 다른 값입니다."
+            )
+
+    async def changed(*_: object) -> None:
+        hours_text()
+        await on_change(info())  # type: ignore[operator]
+
+    async def province_changed(*_: object) -> None:
+        regions = list_sigungu(province_sel.value) if province_sel.value else ()
+        sigungu_sel.set_options(
+            {r.key: r.name for r in regions}, value=regions[0].key if regions else None
+        )
+        sigungu_sel.set_visibility(bool(regions))
+        await changed()
+
+    use_sel.on_value_change(changed)
+    province_sel.on_value_change(province_changed)
+    sigungu_sel.on_value_change(changed)
+    hours_in.on("change", changed)  # 손을 뗄 때
+    for typed in (name_in, area_in, year_in):
+        typed.on("blur", changed)
+        typed.on("keydown.enter", changed)
+    hours_text()
+
+
+def _contract_inputs(
+    state: _State, on_confirm: object, on_dirty: object
+) -> tuple[ui.button, object]:
+    """계약 정보 넷과 역률. (확정 단추, 옆단이 용도를 바꿨을 때 부를 종별 새로 고침)."""
     table = state.table
     types = contract_type_choices(table)
     by_key = {c.key: c for c in types}
@@ -511,9 +650,13 @@ def _contract_inputs(state: _State, on_confirm: object, on_dirty: object) -> ui.
     with ui.card().classes("k-card w-full"):
         ui.label("계약 정보").classes("k-label")
         with ui.grid(columns=2).classes("w-full gap-x-4"):
-            type_sel = ui.select(
-                {c.key: c.label for c in types}, value=types[0].key, label="계약종별"
-            )
+            with ui.column().classes("gap-0"):
+                type_sel = ui.select(
+                    {c.key: c.label for c in types}, value=types[0].key, label="계약종별"
+                ).classes("w-full")
+                # 교육시설일 때만 한 줄 — 계산에 넣지 않은 갈래를 후보 곁에 적는다.
+                school = ui.label(notices.SCHOOL_HIGH_VOLTAGE_NOTICE).classes("k-note")
+                school.set_visibility(False)
             kw_in = ui.number("계약전력 (kW)", min=0, step=1, placeholder="청구서 기재값")
             volt_sel = ui.select({}, label="전압구분")
             opt_sel = ui.select({}, label="선택요금")
@@ -581,24 +724,43 @@ def _contract_inputs(state: _State, on_confirm: object, on_dirty: object) -> ui.
         for field in (type_sel, kw_in, volt_sel, opt_sel, lag_in, lead_in):
             field.on_value_change(lambda _: touched())
 
+        def narrow() -> None:
+            """옆단 용도로 종별 후보를 좁힌다 — 판정이 아니라 좁히기다. 고른 값은 남으면 둔다."""
+            narrowed = narrow_contract_types(types, state.building.use_key)
+            keys = [c.key for c in narrowed]
+            keep = type_sel.value if type_sel.value in keys else keys[0]
+            type_sel.set_options({c.key: c.label for c in narrowed}, value=keep)
+            school.set_visibility(state.building.education)
+
         async def confirm() -> None:
             state.form = current()
             dirty.set_visibility(False)
             on_dirty(False)  # type: ignore[operator]
             await on_confirm()  # type: ignore[operator]
 
-        return ui.button("계약 정보 확정", on_click=confirm).props("unelevated no-caps")
+        button = ui.button("계약 정보 확정", on_click=confirm).props("unelevated no-caps")
+        return button, narrow
 
 
 def build(state: _State) -> None:
     ui.add_css(_CSS)
     ui.dark_mode(value=None)  # OS 설정을 따른다
 
+    # 옆단은 건물 이야기다 — 어느 단계에서나 같은 값이다 (Streamlit 옆단과 같은 자리).
+    # 서랍은 페이지 맨 위에 있어야 해서 먼저 짓는다. 아래 이름들은 부를 때 찾는다.
+    async def building_changed(info: BuildingInfo) -> None:
+        state.building = info
+        narrow_types()  # type: ignore[operator]
+        await analyse()
+
+    with ui.left_drawer(value=True, bordered=True).classes("p-4 gap-2"):
+        _sidebar(building_changed)
+
     with ui.column().classes("w-full max-w-5xl mx-auto p-6 gap-4"):
         ui.label("kWise · 진단").classes("k-title")
         _caption("파일만 올려도 결과가 나옵니다. 금액은 계약 정보를 확정하면 나옵니다.")
         # 위에서 아래로: 계약 정보 → 잠정 경고 → 파일 → 상태 한 줄 → 결과.
-        busy = False
+        busy = pending = False
 
         def say(text: str, *, spin: bool = False, error: bool = False) -> None:
             status.clear()
@@ -608,7 +770,7 @@ def build(state: _State) -> None:
                 ui.label(text).classes("text-negative" if error else "k-note")
 
         async def analyse() -> None:
-            nonlocal busy
+            nonlocal busy, pending
             tentative.clear()
             with tentative:
                 _tentative(state.table, state.form)
@@ -616,7 +778,8 @@ def build(state: _State) -> None:
                 if state.form is not None:
                     say("계약 정보를 확정했습니다. 파일을 올리면 금액이 나옵니다.")
                 return
-            if busy:  # 도는 중에 또 누르면 겹치지 않게 — 단추도 잠가 둔다
+            if busy:  # 도는 중에 또 부르면 겹치지 않게 — 끝난 뒤 한 번 더 돈다
+                pending = True
                 return
             busy = True
             confirm_btn.props("loading")
@@ -639,19 +802,26 @@ def build(state: _State) -> None:
                 with columns_box:
                     _columns(usage, pick_columns)
                 try:
-                    usage, diagnosis = await run.io_bound(_diagnose, state, usage)
+                    diagnosis, temperature = await run.io_bound(_diagnose, state, usage)
                 except Exception as exc:  # 계약 정보와 자료가 안 맞는 경우 등
                     say(f"계산하지 못했습니다. {exc}", error=True)
                     return
                 results.clear()
-                with results:
-                    _results(usage, diagnosis)
+                try:
+                    with results:
+                        _results(usage, diagnosis, temperature, state.building)
+                except Exception as exc:  # 그리는 중에 터져도 「분석하는 중」 에 멈춰 두지 않는다
+                    say(f"결과를 그리지 못했습니다. {exc}", error=True)
+                    return
                 say(state.filename)
             finally:
                 results.classes(remove="k-stale")
                 columns_box.classes(remove="k-stale")
                 confirm_btn.props(remove="loading")
                 busy = False
+            if pending:  # 도는 동안 옆단 · 열을 바꿨으면 그 값으로 다시
+                pending = False
+                await analyse()
 
         async def pick_columns(date_column: str, energy_column: str) -> None:
             state.date_column, state.energy_column = date_column, energy_column
@@ -664,7 +834,7 @@ def build(state: _State) -> None:
         def dim(on: bool) -> None:
             results.classes(add="k-dim") if on else results.classes(remove="k-dim")
 
-        confirm_btn = _contract_inputs(state, analyse, dim)
+        confirm_btn, narrow_types = _contract_inputs(state, analyse, dim)
         tentative = ui.column().classes("w-full")
 
         async def received(e: object) -> None:
