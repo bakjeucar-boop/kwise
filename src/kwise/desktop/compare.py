@@ -529,7 +529,7 @@ def _sensitivity(
 
 async def render(ctx: Context, choices: Choices) -> None:
     """3단계 한 벌 — 탭을 열 때 짓는다 (켠 수단을 다시 모으는 데 몇 초 걸린다)."""
-    ui.label("3단계 · 개선안 조합").classes("k-section")
+    w.h1("③ 개선안 조합")
     reviewed = _enabled(choices)
     scope = review_scope(reviewed)
     with ui.card().classes("k-card w-full gap-1"):
@@ -588,7 +588,7 @@ def _stale_lines(ctx: Context, choices: Choices) -> tuple[str, ...]:
 
 
 def _standalone_block(rows: tuple[StandaloneRow, ...]) -> None:
-    ui.label("개선안별 요약").classes("text-base font-semibold mt-2")
+    w.h2("개선안별 요약")
     if not rows:
         w.note("2단계에서 수단을 하나도 켜지 않았습니다.")
         return
@@ -614,7 +614,7 @@ def _combination_picker(
     redraw: Callable[[], Awaitable[None]],
 ) -> None:
     """조합은 사용자가 짠다 — 기본은 2단계에서 켠 수단 전부. 다 고르고 한 번 누른다."""
-    ui.label("조합 구성").classes("text-base font-semibold mt-2")
+    w.h2("조합 구성")
     if not reviewed:
         w.note("2단계에서 개선안을 하나도 켜지 않아 조합할 것이 없습니다.")
         return
@@ -757,7 +757,7 @@ def _combined_block(
     simple_same = money.same_won(simple, actual, combined_shown)
     simple_shown = simple if simple_same is None else simple_same
 
-    ui.label("합산효과").classes("text-base font-semibold mt-2")
+    w.h2("합산효과")
     payback = (
         payback_years(combined.investment_won, actual)
         if combined.investment_won is not None
@@ -893,6 +893,14 @@ def _contract_headroom(
 # ===================================================================== 내려받기
 
 
+def _open(path: Path) -> None:
+    """파일이나 폴더를 Windows 가 정한 프로그램으로 연다 — 못 열면 사유를 띄운다."""
+    try:
+        os.startfile(path)
+    except OSError as exc:
+        ui.notify(f"열지 못했습니다. {exc}", type="negative", multi_line=True)
+
+
 def _downloads(
     ctx: Context,
     choices: Choices,
@@ -904,7 +912,7 @@ def _downloads(
     extra_block: tuple[str, ...] = (),
 ) -> None:
     """Excel(분석자용) · PPT(의사결정자용) — 만든 파일은 「다운로드」 폴더에 저장한다."""
-    ui.label("내려받기").classes("text-base font-semibold mt-2")
+    w.h2("내려받기")
     structure = ctx.diagnosis.structure
     assert structure is not None
     baseline = structure.bill
@@ -945,7 +953,9 @@ def _downloads(
             ui.label(f"저장했습니다 — {path} · {fmt.count(len(payload) / 1024, 'KB')}").classes(
                 "k-note"
             )
-            ui.button("폴더 열기", on_click=lambda: os.startfile(DOWNLOADS)).props("flat no-caps")
+            # 폴더를 찾아가지 않고 바로 연다 — 그 파일에 정해진 프로그램(Excel · PowerPoint).
+            ui.button("열어보기", on_click=lambda: _open(path)).props("unelevated no-caps dense")
+            ui.button("폴더 열기", on_click=lambda: _open(DOWNLOADS)).props("flat no-caps dense")
 
     with ui.tabs().props("align=left no-caps") as tabs:
         excel_tab = ui.tab("Excel — 분석자용")

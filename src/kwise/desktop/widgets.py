@@ -5,7 +5,7 @@ Streamlit 쪽 ``st.metric`` · ``st.caption(help=)`` · ``callout`` · ``tables.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 import pandas as pd
 from nicegui import ui
@@ -21,7 +21,22 @@ CSS = """
 .body--dark { --k-muted: #8e8e93; }
 body { font-family: system-ui, sans-serif; line-height: 1.5; }
 .k-title { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
-.k-section { font-size: 1.2rem; font-weight: 650; letter-spacing: -0.01em; margin-top: 1.5rem; }
+/* 제목 세 층 — 단계(크고 굵게) · 절(왼쪽 색 막대) · 소절(굵게). 크기와 무게로 가른다. */
+.k-h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15;
+        margin: 0.25rem 0 0.25rem; }
+.k-section, .k-h2 { font-size: 1.2rem; font-weight: 650; letter-spacing: -0.01em;
+        margin-top: 1.75rem; padding-left: 0.6rem; border-left: 4px solid var(--q-primary);
+        line-height: 1.3; }
+.k-h3 { font-size: 1rem; font-weight: 650; margin-top: 0.75rem; }
+/* 위 막대 — 파일 메뉴와 단계 탭. 늘 보인다. */
+.k-bar { background: var(--k-bar-bg); color: inherit;
+         border-bottom: 1px solid rgba(142, 142, 147, 0.3); }
+:root { --k-bar-bg: #ffffff; }
+.body--dark { --k-bar-bg: #1d1d1f; }
+.k-steps .q-tab { min-height: 3rem; padding: 0 1.25rem; }
+.k-steps .q-tab__label { font-size: 0.95rem; font-weight: 600; }
+.k-steps .q-tab--inactive { opacity: 0.6; }
+.k-next { margin-top: 2rem; }
 .k-label { font-size: 0.8rem; color: var(--k-muted); letter-spacing: 0.01em; }
 .k-value { font-size: 1.6rem; font-weight: 650; letter-spacing: -0.02em; line-height: 1.15; }
 .k-sub { font-size: 0.8rem; color: var(--k-muted); }
@@ -50,6 +65,30 @@ def tip(text: str) -> None:
     """바로 앞 요소에 마우스를 올리면 뜨는 풀이 (Streamlit ``help=`` 자리 · 마크다운)."""
     with ui.tooltip().classes("k-tip").props(TIP_SIDE):
         ui.markdown(fmt.markdown_safe(text))
+
+
+def h1(text: str) -> None:
+    ui.label(text).classes("k-h1")
+
+
+def h2(text: str) -> None:
+    ui.label(text).classes("k-h2")
+
+
+def h3(text: str) -> None:
+    ui.label(text).classes("k-h3")
+
+
+def next_step(
+    label: str, go: Callable[[], object], *, enabled: bool = True, hint: str = ""
+) -> None:
+    """단계 맨 아래의 「다음 단계」 단추 — 위로 올라가 탭을 누르지 않아도 된다."""
+    with ui.row().classes("w-full justify-end items-center gap-3 k-next"):
+        if hint and not enabled:
+            ui.label(hint).classes("k-note")
+        button = ui.button(f"{label}  →", on_click=go).props("unelevated no-caps size=md")
+        if not enabled:
+            button.disable()
 
 
 def info(text: str) -> None:

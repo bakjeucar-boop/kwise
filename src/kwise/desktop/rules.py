@@ -105,7 +105,6 @@ def render(choices: Choices, on_saved: Callable[[], Awaitable[None]]) -> None:
 
 
 def _body(choices: Choices, saved: Callable[[EditResult], Awaitable[None]]) -> None:
-    ui.label("기준 데이터").classes("k-section")
     w.caption(
         "법령 유래 값과 우리 판단값을 갈라 둡니다. 법령 항목은 함부로 고치지 말고, "
         "판단값은 조정하라고 있는 것입니다."
@@ -259,7 +258,7 @@ def _editor(row: RuleRow, saved: Callable[[EditResult], Awaitable[None]]) -> Non
 
 def _restore_block(saved: Callable[[EditResult], Awaitable[None]]) -> None:
     """원복 세 경로 — 출고 복원은 차이 목록을 먼저 보이고 확인받는다."""
-    ui.label("원복").classes("text-base font-semibold")
+    w.h2("원복")
     w.caption(
         "직전 상태 · 출고 상태 · 항목별 셋을 모두 씁니다. 항목별 되돌리기는 각 줄에 있습니다."
     )
@@ -296,7 +295,7 @@ def _restore_block(saved: Callable[[EditResult], Awaitable[None]]) -> None:
 
 
 def _weather_block() -> None:
-    ui.label("기상 데이터 현황").classes("text-base font-semibold")
+    w.h2("기상 데이터 현황")
     panel = weather_panel(archive_status())
     w.metrics(
         [

@@ -189,7 +189,7 @@ def _one_at_a_time(draw: Callable[[], Awaitable[None]]) -> Callable[[], Awaitabl
 
 def render(ctx: Context, choices: Choices) -> None:
     """2단계 화면 한 벌을 짓는다 — 1단계가 다시 계산될 때마다 새로 짓는다."""
-    ui.label("2단계 · 개선 수단").classes("k-section")
+    w.h1("② 개선 수단")
     ui.label(_BASELINE).classes("k-note")
     day_box = ui.row().classes("w-full items-end gap-4")
     boxes: dict[str, ui.column] = {}
@@ -225,7 +225,7 @@ def render(ctx: Context, choices: Choices) -> None:
     for spec in MEASURES:
         if spec.tier != tier:
             tier = spec.tier
-            ui.label(tier).classes("k-label mt-4")
+            w.h2(tier)  # 투자 0원 · 저투자 · 투자 — 묶음이 절이고, 카드가 그 안의 항목이다
         _toggle(spec, choices, refresh)
         boxes[spec.key] = ui.column().classes("w-full gap-3 pl-8")
     for key in sorted(choices.enabled):
@@ -854,9 +854,7 @@ async def _ess_result(
         quality=ctx.quality,
         options=ctx.form.billing_options(),
     )
-    ui.label(f"{SHORTEST_PAYBACK} 목표 {fmt.kw(target, decimals=0)} 기준").classes(
-        "text-base font-semibold mt-2"
-    )
+    w.h3(f"{SHORTEST_PAYBACK} 목표 {fmt.kw(target, decimals=0)} 기준")
     annual_factor = (
         result.annual_saving_won / result.total_saving_won if result.total_saving_won else 1.0
     )

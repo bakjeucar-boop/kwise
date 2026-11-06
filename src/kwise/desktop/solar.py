@@ -416,7 +416,7 @@ async def _result(
         usage, ctx.table, ctx.form, unit_profile, point, months, surplus, form, redraw_card
     )
 
-    ui.markdown("**용량별 비교**")
+    w.h3("용량별 비교")
     w.table(
         _capacity_view(
             charts.solar_capacity_table(

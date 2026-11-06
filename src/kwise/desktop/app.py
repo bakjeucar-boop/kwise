@@ -45,7 +45,7 @@ from kwise.ui.pipeline import (
     voltage_choices,
 )
 
-from . import compare, measures, vega
+from . import compare, export, measures, vega
 from . import rules as rules_view
 from . import widgets as w
 from .building import (
@@ -580,7 +580,10 @@ def _sidebar(on_change: object) -> None:
 def _contract_inputs(
     state: _State, on_confirm: object, on_dirty: object
 ) -> tuple[ui.button, object]:
-    """계약 정보 넷과 역률. (확정 단추, 옆단이 용도를 바꿨을 때 부를 종별 새로 고침)."""
+    """계약 정보 넷과 역률 둘 — 다 청구서에 나오는 값이라 한 칸에 둔다.
+
+    돌려주는 것: (확정 단추, 옆단이 용도를 바꿨을 때 부를 종별 새로 고침).
+    """
     table = state.table
     types = contract_type_choices(table)
     by_key = {c.key: c for c in types}
@@ -598,22 +601,13 @@ def _contract_inputs(
             kw_in = ui.number("계약전력 (kW)", min=0, step=1, placeholder="청구서 기재값")
             volt_sel = ui.select({}, label="전압구분")
             opt_sel = ui.select({}, label="선택요금")
-
-        # 역률은 아는 사람만 넣는 값이라 접어 둔다 (Streamlit 「역률 (선택)」 과 같다).
-        with (
-            ui.expansion("역률 (선택)").classes("w-full"),
-            ui.grid(columns=2).classes("w-full gap-x-4"),
-        ):
+            # 역률도 청구서에 찍혀 나오는 값이다 — 접지 않고 계약 정보 넷과 나란히 둔다.
             with ui.number(
                 "주간 지상역률 (%)", value=default_lagging_pct(), min=1, max=100, step=0.1
             ) as lag_in:
                 _tip("모르면 그대로 두십시오. 이 값에서 조정액이 0원입니다.")
             with ui.column().classes("gap-0") as lead_box:
-                lead_in = ui.number("야간 진상역률 (%)", min=1, max=100, step=0.1)
-                _caption(
-                    "야간 진상역률을 모르면 비워 두십시오 — "
-                    "지상으로 간주해 야간 추가요금을 매기지 않습니다."
-                )
+                lead_in = ui.number("야간 진상역률 (%)", min=1, max=100, step=0.1).classes("w-full")
 
         # 확정 뒤 입력을 바꾸면 아래 금액이 아직 옛 입력의 값이라는 것을 알린다 — 주의 꼴로,
         # 옛 결과도 함께 흐린다. 확정한 값으로 되돌리면 다시 꺼진다.
@@ -694,27 +688,41 @@ def build(state: _State) -> None:
     with ui.left_drawer(value=True, bordered=True).classes("p-4 gap-2"):
         _sidebar(building_changed)
 
-    with ui.column().classes("w-full max-w-5xl mx-auto px-6 pt-4 gap-0"):
-        ui.label("kWise").classes("k-title")
-        # 세 단계를 탭으로 — 번호를 남긴다 (Streamlit ``TABS`` 와 같은 이름).
-        with ui.tabs().props("align=left no-caps inline-label").classes("w-full") as tabs:
-            tab1 = ui.tab("stage1", label="1단계 · 진단")
-            tab2 = ui.tab("stage2", label="2단계 · 개선 수단")
-            tab3 = ui.tab("stage3", label="3단계 · 개선안 조합")
-            # 단계가 아니라 설정이다 — Streamlit 은 옆단 아래 들머리로 연다. 데스크톱은 맨 끝 탭.
-            tab4 = ui.tab("rules", label="기준 데이터")
+    # ---- 위 막대 — 「파일」 메뉴와 단계 탭. 스크롤해도 늘 보인다 (단독 앱의 차림).
+    # 창 제목이 이미 kWise 라 본문에 이름을 다시 적지 않는다.
+    with ui.header(elevated=False).classes("k-bar px-2 py-0 items-center no-wrap gap-2"):
+        with ui.button("파일").props("flat no-caps").classes("text-sm"), ui.menu():
+            save_item = ui.menu_item("결과 저장 (JSON)…")  # 할 일은 아래에서 단다
+            ui.separator()
+            # 단계가 아니라 설정이다 — 탭 줄에 두면 꼭 거쳐야 하는 단계로 읽힌다.
+            rules_item = ui.menu_item("기준 데이터…")
+        ui.separator().props("vertical")
+        with ui.tabs().props("align=left no-caps inline-label").classes("k-steps") as tabs:
+            tab1 = ui.tab("stage1", label="① 진단")
+            tab2 = ui.tab("stage2", label="② 개선 수단")
+            tab3 = ui.tab("stage3", label="③ 개선안 조합")
+
+    with ui.column().classes("w-full max-w-5xl mx-auto px-6 pt-2 gap-0"):
         # 손상 복구 · 만료 경고는 모든 화면 위에 건다 (Streamlit ``render_alerts`` 와 같다).
         alert_box = ui.column().classes("w-full gap-1")
         with alert_box:
             rules_view.alerts()
     panels = ui.tab_panels(tabs, value=tab1).classes("w-full max-w-5xl mx-auto bg-transparent")
+
+    def go(tab: str) -> None:
+        """다음 단계로 — 탭을 바꾸고 맨 위로 올린다."""
+        tabs.set_value(tab)
+        ui.run_javascript("window.scrollTo({top: 0})")
+
     with panels, ui.tab_panel(tab2):
         stage2 = ui.column().classes("w-full gap-3")
         with stage2:
+            w.h1("② 개선 수단")
             w.note(_NOT_READY)
     with panels, ui.tab_panel(tab3):
         stage3 = ui.column().classes("w-full gap-3")
         with stage3:
+            w.h1("③ 개선안 조합")
             w.note(_NOT_READY)
 
     async def rules_saved() -> None:
@@ -726,8 +734,47 @@ def build(state: _State) -> None:
         measures.forget()
         await analyse()
 
-    with panels, ui.tab_panel(tab4):
-        rules_view.render(state.choices, rules_saved)
+    # 기준 데이터 — 「파일」 메뉴에서 여는 큰 창. 닫으면 보던 단계로 돌아온다.
+    with ui.dialog().props("maximized") as rules_dialog, ui.card().classes("w-full gap-2"):
+        with ui.row().classes("w-full items-center justify-between"):
+            w.h1("기준 데이터")
+            ui.button("닫기", on_click=rules_dialog.close).props("flat no-caps")
+        with (
+            ui.scroll_area().classes("w-full h-[calc(100vh-6rem)]"),
+            ui.column().classes("w-full max-w-5xl mx-auto"),
+        ):
+            rules_view.render(state.choices, rules_saved)
+
+    async def save_result() -> None:
+        """「파일 → 결과 저장」 — 지금 계산한 결과를 JSON 으로 「다운로드」 폴더에 남긴다."""
+        if not last:
+            ui.notify(_NOT_READY, type="warning", multi_line=True)
+            return
+        note = ui.notification("결과를 모으는 중…", spinner=True, timeout=None)
+        try:
+            payload = await run.io_bound(export.build, last[0], state.choices, state.filename)
+            path = export.save(payload)
+        except Exception as exc:
+            note.dismiss()
+            ui.notify(f"저장하지 못했습니다. {exc}", type="negative", multi_line=True)
+            return
+        note.dismiss()
+        with ui.dialog() as saved, ui.card().classes("gap-3"):
+            ui.label("결과를 저장했습니다").classes("k-h3")
+            ui.label(str(path)).classes("k-note")
+            with ui.row().classes("gap-2 justify-end w-full"):
+                ui.button("열어보기", on_click=lambda: compare._open(path)).props(
+                    "unelevated no-caps"
+                )
+                ui.button("폴더 열기", on_click=lambda: compare._open(path.parent)).props(
+                    "flat no-caps"
+                )
+                ui.button("닫기", on_click=saved.close).props("flat no-caps")
+        saved.open()
+
+    save_item.on_click(save_result)
+    rules_item.on_click(rules_dialog.open)
+
     last: list[measures.Context] = []  # 2·3단계가 함께 보는 한 벌 — 1단계가 끝날 때마다 갈린다
 
     async def open_stage3() -> None:
@@ -735,6 +782,7 @@ def build(state: _State) -> None:
         stage3.clear()
         with stage3:
             if not last:
+                w.h1("③ 개선안 조합")
                 w.note(_NOT_READY)
                 return
             await compare.render(last[0], state.choices)
@@ -767,6 +815,7 @@ def build(state: _State) -> None:
         stage2.clear()
         with stage2:
             if state.form is None:
+                w.h1("② 개선 수단")
                 w.note(_NOT_READY)
                 return
             ctx = measures.Context(
@@ -779,11 +828,13 @@ def build(state: _State) -> None:
                 rediagnose=rediagnose,
             )
             measures.render(ctx, state.choices)
+            w.next_step("다음 단계 — 개선안 조합", lambda: go("stage3"))
             last.append(ctx)
         if tabs.value == "stage3":  # 3단계를 보고 있으면 새 결과로 다시 짓는다
             ui.timer(0, open_stage3, once=True)
 
     with panels, ui.tab_panel(tab1), ui.column().classes("w-full gap-4 p-0"):
+        w.h1("① 진단")
         _caption("파일만 올려도 결과가 나옵니다. 금액은 계약 정보를 확정하면 나옵니다.")
         # 위에서 아래로: 계약 정보 → 잠정 경고 → 파일 → 상태 한 줄 → 결과.
         busy = pending = False
@@ -836,6 +887,13 @@ def build(state: _State) -> None:
                 try:
                     with results:
                         _results(usage, diagnosis, temperature, state.building)
+                        # 다 읽었으면 아래에서 바로 다음 단계로 — 맨 위 탭까지 올라가지 않는다.
+                        w.next_step(
+                            "다음 단계 — 개선 수단",
+                            lambda: go("stage2"),
+                            enabled=state.form is not None,
+                            hint="계약 정보를 확정하면 넘어갈 수 있습니다.",
+                        )
                 except Exception as exc:  # 그리는 중에 터져도 「분석하는 중」 에 멈춰 두지 않는다
                     say(f"결과를 그리지 못했습니다. {exc}", error=True)
                     return
