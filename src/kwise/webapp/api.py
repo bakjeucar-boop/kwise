@@ -43,7 +43,7 @@ from kwise.ui.pipeline import (
 from kwise.ui.spec import measure
 
 from . import blocks as b
-from . import reports, stage1, stage2, stage3
+from . import export, reports, stage1, stage2, stage3, work
 from .building import BuildingInfo, building_uses, narrow_contract_types
 from .stage2 import Context  # 메서드 이름 ``stage2`` 가 클래스 안에서 모듈 이름을 가린다
 from .state import Choices
@@ -425,6 +425,92 @@ class Api:
                 traceback.print_exc()
                 return {"ok": False, "error": f"만들지 못했습니다. {exc}"}
 
+    # ------------------------------------------------------------------ 파일 메뉴
+
+    def save_work(self, screen: dict[str, Any], path: str | None = None) -> dict[str, Any]:
+        """작업 저장 — 입력 · 고른 것 · 올린 사용량 파일. ``path`` 가 없으면 저장 창을 띄운다."""
+        target = path or _dialog("save", f"{Path(self._s.filename).stem or 'kwise'}{work.SUFFIX}")
+        if not target:
+            return {"ok": False, "cancelled": True}
+        s = self._s
+        try:
+            saved = work.dump(
+                Path(target),
+                data=s.data,
+                filename=s.filename,
+                date_column=s.date_column,
+                energy_column=s.energy_column,
+                screen=screen,
+                choices=s.choices,
+            )
+            return {"ok": True, "path": str(saved)}
+        except Exception as exc:
+            traceback.print_exc()
+            return {"ok": False, "error": f"저장하지 못했습니다. {exc}"}
+
+    def open_work(self, path: str | None = None) -> dict[str, Any]:
+        """작업 열기 — 세션을 그 파일 값으로 갈고, 화면 값과 카드 입력칸 값을 돌려준다.
+
+        계산은 화면이 ``analyse`` 를 불러 다시 한다 (결과는 파일에 없다)."""
+        target = path or _dialog("open")
+        if not target:
+            return {"ok": False, "cancelled": True}
+        try:
+            loaded = work.load(Path(target))
+        except Exception as exc:
+            return {"ok": False, "error": f"열지 못했습니다. {exc}"}
+        with self._lock:
+            stage2.forget()
+            self._s = _Session(
+                table=self._s.table,
+                data=loaded["data"],
+                filename=loaded["filename"],
+                date_column=loaded["date_column"],
+                energy_column=loaded["energy_column"],
+                choices=loaded["choices"],
+            )
+        c = self._s.choices
+        return _jsonable(
+            {
+                "ok": True,
+                "path": str(target),
+                "filename": self._s.filename,
+                "saved_at": loaded["saved_at"],
+                "screen": loaded["screen"],
+                # 여섯 장 다 — 입력칸이 없는 카드도 켬 · 끔을 맞춰야 한다.
+                "cards": {
+                    "tariff_switch": None,
+                    "contract": None,
+                    "power_factor": {"target": c.pf_target, "investment": c.pf_investment or 0},
+                    "demand_response": {
+                        "priced": c.dr_priced,
+                        "price": c.dr_price or 0,
+                        "off_days": list(c.dr_off_days),
+                    },
+                    "ess": {"known": c.ess_known, "total": c.ess_total or 0},
+                    "solar": c.solar.fields(),
+                },
+            }
+        )
+
+    def save_result(self, path: str | None = None) -> dict[str, Any]:
+        """결과 저장 (JSON) — 지금 계산한 숫자를 그 시점 그대로."""
+        with self._lock:
+            ctx = self._ctx()
+            if ctx is None:
+                return {"ok": False, "error": "계약 정보를 확정하고 파일을 올린 뒤에 저장합니다."}
+            name = f"{Path(self._s.filename).stem}_결과_{dt.datetime.now():%Y%m%d_%H%M}.json"
+            target = path or _dialog("save", name, json_file=True)
+            if not target:
+                return {"ok": False, "cancelled": True}
+            try:
+                payload = export.build(ctx, self._s.choices, self._s.filename)
+                saved = export.save(payload, Path(target))
+                return {"ok": True, "path": str(saved)}
+            except Exception as exc:
+                traceback.print_exc()
+                return {"ok": False, "error": f"저장하지 못했습니다. {exc}"}
+
     def open_path(self, path: str) -> dict[str, Any]:
         """파일이나 폴더를 그 파일에 정해진 프로그램으로 연다 (Excel · PowerPoint · 탐색기)."""
         try:
@@ -456,6 +542,23 @@ class Api:
             ),
             school_exception=choice.school_exception,
         )
+
+
+def _dialog(kind: str, name: str = "", *, json_file: bool = False) -> str | None:
+    """파일 고르는 창 (Windows 기본 창) — 취소하면 ``None``. 처음 여는 폴더는 「다운로드」."""
+    import webview
+
+    kinds = {"save": webview.FileDialog.SAVE, "open": webview.FileDialog.OPEN}
+    types = ("결과 JSON (*.json)",) if json_file else (f"kWise 작업 (*{work.SUFFIX})",)
+    picked = webview.windows[0].create_file_dialog(
+        kinds[kind],
+        directory=str(reports.DOWNLOADS),
+        save_filename=name,
+        file_types=(*types, "모든 파일 (*.*)"),
+    )
+    if not picked:
+        return None
+    return str(picked if isinstance(picked, str) else picked[0])
 
 
 def _number(value: object) -> float | None:

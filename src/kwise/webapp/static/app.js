@@ -188,6 +188,15 @@ const KCard = {
     },
     action(a) { this.run(a); },
     refresh() { if (this.on) this.run(); },
+    restore(state, on) {
+      // 작업 열기 — 파이썬 쪽 고른 것은 이미 갈렸다. 입력칸만 맞추고 켠 카드는 다시 계산.
+      const box = { power_factor: "pf", demand_response: "dr", ess: "ess", solar: "solar" }[this.meta.key];
+      if (box && state) Object.assign(this[box], state);
+      this.on = on;
+      this.blocks = [];
+      this.sopts = null;
+      this.refresh();
+    },
   },
   template: `
     <div class="k-stack-sm">
@@ -303,6 +312,9 @@ const App = {
       cardRefs: {},
       s3: null, s3loading: false, combining: false,
       dlTab: "excel", timeseries: true, making: false, made: {}, makeError: "",
+      restoring: false,         // 작업 열기 중 — 종별 · 전압을 바꿔도 기본값으로 되돌리지 않는다
+      pendingCards: null,       // 작업 열기 — 2단계가 서면 카드 입력칸에 넣을 값
+      workPath: "",
     };
   },
   computed: {
@@ -333,10 +345,13 @@ const App = {
     await api().ready({ ready: true, types: this.types.length });
   },
   watch: {
-    "contract.type"() { this.refreshVoltages(); },
-    "contract.voltage"() { this.refreshTariffs(); },
+    "contract.type"() { if (!this.restoring) this.refreshVoltages(); },
+    "contract.voltage"() { if (!this.restoring) this.refreshTariffs(); },
     // 3단계는 탭을 열 때 짓는다 — 켠 수단을 다시 모으는 데 몇 초 걸린다.
-    tab(value) { if (value === "s3") this.openStage3(); },
+    tab(value) {
+      if (value === "s3") this.openStage3();
+      if (value === "s2") this.$nextTick(() => this.applyPending());
+    },
   },
   methods: {
     md,
@@ -426,7 +441,71 @@ const App = {
       this.s2 = await api().stage2();
       if (!this.s2.ready) return;
       await this.$nextTick();
-      for (const ref of Object.values(this.cardRefs)) if (ref) ref.refresh();
+      for (const [key, ref] of Object.entries(this.cardRefs)) {
+        if (ref && !(this.pendingCards && key in this.pendingCards)) ref.refresh();
+      }
+      this.applyPending();
+    },
+    applyPending() {
+      // 2단계 탭은 처음 열 때 선다 — 아직 안 선 카드는 값을 들고 있다가 그때 넣는다.
+      if (!this.pendingCards || !this.s2?.ready) return;
+      for (const [key, state] of Object.entries(this.pendingCards)) {
+        const ref = this.cardRefs[key];
+        if (!ref) continue;
+        ref.restore(state, this.s2.enabled.includes(key));
+        delete this.pendingCards[key];
+      }
+    },
+    screenPayload() {
+      return { building: this.buildingPayload(), contract: { ...this.contract }, confirmed: this.confirmed };
+    },
+    async saveWork() {
+      const r = await api().save_work(this.screenPayload());
+      if (r.ok) { this.workPath = r.path; this.$q.notify({ type: "positive", message: `작업을 저장했습니다 — ${r.path}` }); }
+      else if (!r.cancelled) this.$q.notify({ type: "negative", message: r.error });
+    },
+    async openWork() {
+      const r = await api().open_work();
+      if (r.cancelled) return;
+      if (!r.ok) { this.$q.notify({ type: "negative", message: r.error }); return; }
+      await this.restore(r);
+    },
+    async restore(r) {
+      // 화면 값을 파일 값으로 — 종별 → 전압 → 선택요금 차례로 목록을 받아 가며 넣는다.
+      const sc = r.screen || {};
+      this.restoring = true;
+      try {
+        const bd = sc.building || {};
+        const hours = bd.hours || this.opts.hours_default;
+        Object.assign(this.building, { ...bd, hours: { min: hours[0], max: hours[1] } });
+        this.types = await api().contract_types(this.building.use || "");
+        this.sigungu = await api().sigungu(this.building.province || "");
+        const c = sc.contract || {};
+        if (c.type) {
+          this.contract.type = c.type;
+          this.voltages = await api().voltages(c.type);
+          this.contract.voltage = c.voltage;
+          const t = await api().tariff_options(c.type, c.voltage);
+          this.tariffs = t.options;
+          this.leadingApplies = t.leading;
+          Object.assign(this.contract, c);
+        }
+        this.confirmed = sc.confirmed ?? null;
+        await this.$nextTick();
+      } finally { this.restoring = false; }
+      this.filename = r.filename;
+      this.workPath = r.path;
+      this.stage1 = []; this.stage1Ready = false; this.columns = null;
+      this.s2 = null; this.s3 = null; this.made = {};
+      this.pendingCards = r.cards;
+      this.tab = "s1";
+      await this.analyse();
+    },
+    async saveResult() {
+      const r = await api().save_result();
+      if (r.ok) this.$q.notify({ type: "positive", message: `결과를 저장했습니다 — ${r.path}`,
+        actions: [{ label: "열어보기", color: "white", handler: () => this.openPath(r.path) }] });
+      else if (!r.cancelled) this.$q.notify({ type: "negative", message: r.error });
     },
     async dayChanged() {
       await api().set_day(this.s2.day, this.s2.day === "custom" ? this.s2.custom : "");
@@ -472,10 +551,10 @@ const App = {
         <q-btn flat no-caps label="파일">
           <q-menu>
             <q-list dense style="min-width: 14rem">
-              <q-item clickable v-close-popup disable><q-item-section>작업 열기…</q-item-section></q-item>
-              <q-item clickable v-close-popup disable><q-item-section>작업 저장…</q-item-section></q-item>
+              <q-item clickable v-close-popup @click="openWork"><q-item-section>작업 열기…</q-item-section></q-item>
+              <q-item clickable v-close-popup :disable="!filename" @click="saveWork"><q-item-section>작업 저장…</q-item-section></q-item>
               <q-separator />
-              <q-item clickable v-close-popup disable><q-item-section>결과 저장 (JSON)…</q-item-section></q-item>
+              <q-item clickable v-close-popup :disable="!stage1Ready" @click="saveResult"><q-item-section>결과 저장 (JSON)…</q-item-section></q-item>
               <q-separator />
               <q-item clickable v-close-popup disable><q-item-section>기준 데이터…</q-item-section></q-item>
             </q-list>
@@ -657,6 +736,6 @@ const App = {
 };
 
 const app = Vue.createApp(App);
-app.use(Quasar, { lang: Quasar.lang.koKR, config: { dark: "auto" } });
+app.use(Quasar, { lang: Quasar.lang.koKR, plugins: { Notify: Quasar.Notify }, config: { dark: "auto" } });
 /* pywebview 가 다리를 다 놓은 뒤에 앱을 붙인다 — 그 전에 부르면 api 가 없다. */
 window.addEventListener("pywebviewready", () => app.mount("#app"));
