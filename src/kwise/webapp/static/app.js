@@ -301,6 +301,8 @@ const App = {
       stage1Ready: false,
       s2: null,                 // 2단계 머리 (기준선 · 대표일 · 카드 목록)
       cardRefs: {},
+      s3: null, s3loading: false, combining: false,
+      dlTab: "excel", timeseries: true, making: false, made: {}, makeError: "",
     };
   },
   computed: {
@@ -333,6 +335,8 @@ const App = {
   watch: {
     "contract.type"() { this.refreshVoltages(); },
     "contract.voltage"() { this.refreshTariffs(); },
+    // 3단계는 탭을 열 때 짓는다 — 켠 수단을 다시 모으는 데 몇 초 걸린다.
+    tab(value) { if (value === "s3") this.openStage3(); },
   },
   methods: {
     md,
@@ -427,6 +431,34 @@ const App = {
     async dayChanged() {
       await api().set_day(this.s2.day, this.s2.day === "custom" ? this.s2.custom : "");
       for (const key of ["power_factor", "solar", "ess"]) this.cardRefs[key]?.refresh();
+    },
+    async openStage3() {
+      this.s3loading = true;
+      this.made = {};
+      this.makeError = "";
+      try { this.s3 = await api().stage3(); } finally { this.s3loading = false; }
+    },
+    async combine(compute) {
+      this.combining = true;
+      try {
+        const r = await api().combine({ ...this.s3.checked }, compute);
+        if (r.ok) Object.assign(this.s3, r);
+      } finally { this.combining = false; }
+    },
+    async makeReport(kind) {
+      this.making = true;
+      this.makeError = "";
+      try {
+        const r = await api().make_report(kind, this.timeseries);
+        if (r.ok) {
+          const folder = r.path.replace(/[\\/][^\\/]+$/, "");
+          this.made = { ...this.made, [kind]: { ...r, folder } };
+        } else this.makeError = r.error;
+      } finally { this.making = false; }
+    },
+    async openPath(path) {
+      const r = await api().open_path(path);
+      if (!r.ok) this.$q.notify({ type: "negative", message: r.error });
     },
     async rediagnosed() {
       // 경제성DR 쉬는 날 — 파이썬이 1단계부터 다시 돌렸다. 1단계 화면 · 다른 카드도 새로.
@@ -573,7 +605,49 @@ const App = {
             <!-- ③ 개선안 조합 -->
             <q-tab-panel name="s3" class="q-pa-none k-stack">
               <div class="k-h1">③ 개선안 조합</div>
-              <div class="k-note">「① 진단」 탭에서 사용량 파일을 올리고 계약 정보를 확정하면 여기에 결과가 나옵니다.</div>
+              <div v-if="s3loading" class="k-line"><q-spinner size="sm" /><span class="k-note">켠 개선안을 모으는 중…</span></div>
+              <div v-else-if="!s3 || !s3.ready" class="k-note">{{ s3 && s3.error ? s3.error : "「① 진단」 탭에서 사용량 파일을 올리고 계약 정보를 확정하면 여기에 결과가 나옵니다." }}</div>
+              <template v-else>
+                <k-blocks :blocks="s3.scope" />
+                <k-blocks :blocks="s3.summary" />
+                <div class="k-h2">조합 구성</div>
+                <div v-if="!s3.reviewed.length" class="k-note">· 2단계에서 개선안을 하나도 켜지 않아 조합할 것이 없습니다.</div>
+                <template v-else>
+                  <div class="k-line">
+                    <q-checkbox v-for="r in s3.reviewed" :key="r.key" v-model="s3.checked[r.key]" :label="r.label"
+                      @update:model-value="combine(false)" />
+                  </div>
+                  <div class="k-note">체크한 개선안만 합산효과에 넣습니다. 체크를 풀어도 위의 개선안별 요약에는 남습니다 — 뺀 것이 얼마짜리였는지 보여야 뺄지 말지 정할 수 있습니다.</div>
+                  <div v-for="line in s3.stale" :key="line" class="k-caution"><b>⚠ {{ line }}</b></div>
+                  <div><q-btn unelevated no-caps color="primary" label="합산효과 계산" :loading="combining"
+                    :disable="s3.stale.length > 0" @click="combine(true)" /></div>
+                </template>
+                <div :class="combining ? 'k-stale' : ''" class="k-stack"><k-blocks :blocks="s3.combined" /></div>
+
+                <div class="k-h2">내려받기</div>
+                <q-tabs v-model="dlTab" no-caps dense align="left" class="text-primary">
+                  <q-tab name="excel" label="Excel — 분석자용" />
+                  <q-tab name="ppt" label="PPT 보고서 — 의사결정자용" />
+                </q-tabs>
+                <div v-if="dlTab === 'excel'" class="k-stack-sm">
+                  <div class="k-note">부록 셋을 포함한 통합문서입니다. 파일명에 날짜·시각이 붙습니다.</div>
+                  <q-checkbox v-model="timeseries" label="시계열 시트 포함" />
+                </div>
+                <div v-else class="k-stack-sm">
+                  <div class="k-note">한 장에 한 가지만 담은 슬라이드입니다. 켠 수단만 한 장씩 들어갑니다.</div>
+                  <div class="k-note">표지 이름 — <b>{{ building.name || "건물명 미입력" }}</b> (옆단 「건물 정보」 에서 고칩니다)</div>
+                </div>
+                <div v-for="line in s3.downloads_blocked" :key="'d' + line" class="k-caution"><b>⚠ {{ line }}</b></div>
+                <div><q-btn unelevated no-caps color="primary" :loading="making"
+                  :label="dlTab === 'excel' ? 'Excel 만들기' : 'PPT 보고서 만들기'"
+                  :disable="s3.downloads_blocked.length > 0" @click="makeReport(dlTab)" /></div>
+                <div v-if="made[dlTab]" class="k-line">
+                  <span class="k-note">저장했습니다 — {{ made[dlTab].path }} · {{ Math.round(made[dlTab].kilobytes).toLocaleString() }} KB</span>
+                  <q-btn unelevated dense no-caps color="primary" label="열어보기" @click="openPath(made[dlTab].path)" />
+                  <q-btn flat dense no-caps label="폴더 열기" @click="openPath(made[dlTab].folder)" />
+                </div>
+                <div v-if="makeError" class="k-blocked">⛔ {{ makeError }}</div>
+              </template>
             </q-tab-panel>
           </q-tab-panels>
         </div>

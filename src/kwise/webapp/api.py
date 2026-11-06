@@ -40,10 +40,12 @@ from kwise.ui.pipeline import (
     option_choices,
     voltage_choices,
 )
+from kwise.ui.spec import measure
 
 from . import blocks as b
-from . import stage1, stage2
+from . import reports, stage1, stage2, stage3
 from .building import BuildingInfo, building_uses, narrow_contract_types
+from .stage2 import Context  # 메서드 이름 ``stage2`` 가 클래스 안에서 모듈 이름을 가린다
 from .state import Choices
 
 #: 자가 점검 — 이 환경 변수에 경로를 주면 화면이 다 선 뒤 그 상태를 거기에 적는다 (시험용).
@@ -71,6 +73,9 @@ class _Session:
     quality: QualityReport | None = None
     diagnosis: Diagnosis | None = None
     last_request: dict[str, Any] = field(default_factory=dict)
+    #: 3단계 — 켠 수단 결과 한 벌과 계산한 조합의 (비교, 감도) 기억.
+    results: stage3.Results | None = None
+    combos: dict[tuple[str, ...], tuple[Any, Any]] = field(default_factory=dict)
 
 
 class Api:
@@ -220,13 +225,13 @@ class Api:
 
     # ------------------------------------------------------------------ 2단계
 
-    def _ctx(self) -> stage2.Context | None:
+    def _ctx(self) -> Context | None:
         s = self._s
         if s.usage is None or s.diagnosis is None or s.quality is None or s.form is None:
             return None
         if s.diagnosis.structure is None:
             return None
-        return stage2.Context(
+        return Context(
             usage=s.usage,
             table=s.table,
             form=s.form,
@@ -322,6 +327,111 @@ class Api:
             if hasattr(self._s.choices.solar, name):
                 setattr(self._s.choices.solar, name, value)
         return _jsonable(stage2.solar_options(ctx, self._s.choices))
+
+    # ------------------------------------------------------------------ 3단계
+
+    def stage3(self) -> dict[str, Any]:
+        """3단계를 연다 — 켠 수단을 2단계와 같은 함수로 다시 모은다 (몇 초 걸린다)."""
+        with self._lock:
+            try:
+                return _jsonable(self._stage3())
+            except Exception as exc:
+                traceback.print_exc()
+                return {"ready": False, "error": f"계산하지 못했습니다. {exc}"}
+
+    def _stage3(self) -> dict[str, Any]:
+        ctx = self._ctx()
+        if ctx is None:
+            return {"ready": False}
+        c = self._s.choices
+        _scope, scope_blocks = stage3.scope_blocks(c)
+        results = stage3.measure_results(ctx, c)
+        self._s.results = results
+        self._s.combos = {}
+        reviewed = stage3.enabled(c)
+        out: dict[str, Any] = {
+            "ready": True,
+            "scope": scope_blocks,
+            "summary": stage3.standalone_blocks(results.standalone(), results.solar_error),
+            "reviewed": [{"key": k, "label": measure(k).label} for k in reviewed],
+            "checked": {k: c.combo_checked.get(k, True) for k in reviewed},
+            "stale": list(stage3.stale_lines(ctx, c)),
+            "computed": list(c.combo_computed) if c.combo_computed is not None else None,
+        }
+        out.update(self._combined(ctx))
+        return out
+
+    def combine(self, checked: dict[str, bool], compute: bool) -> dict[str, Any]:
+        """조합 체크 · 「합산효과 계산」 — 체크만 바꿀 때는 다시 비교하지 않고 흐림만 바꾼다."""
+        with self._lock:
+            try:
+                ctx = self._ctx()
+                if ctx is None or self._s.results is None:
+                    return {"ok": False}
+                c = self._s.choices
+                c.combo_checked.update({k: bool(v) for k, v in checked.items()})
+                if compute:
+                    reviewed = stage3.enabled(c)
+                    c.combo_computed = tuple(k for k in reviewed if c.combo_checked.get(k, True))
+                return _jsonable({"ok": True, **self._combined(ctx)})
+            except Exception as exc:
+                traceback.print_exc()
+                return {"ok": False, "error": f"계산하지 못했습니다. {exc}"}
+
+    def _combined(self, ctx: Context) -> dict[str, Any]:
+        """합산효과 조각 — 계산한 조합이 없으면 안내 한 줄."""
+        s, c = self._s, self._s.choices
+        reviewed = stage3.enabled(c)
+        picked = tuple(k for k in reviewed if c.combo_checked.get(k, True))
+        stale = list(stage3.stale_lines(ctx, c))
+        computed = c.combo_computed
+        with b.collect() as note:
+            if computed is None and reviewed:
+                b.note("개선안을 고르고 「합산효과 계산」 을 누르십시오.")
+        if computed is None or s.results is None:
+            return {"combined": note, "downloads_blocked": stale, "has_comparison": False}
+        keys = tuple(k for k in computed if k in reviewed)
+        combo = stage3.specs(ctx, c, s.results, keys)
+        if len(combo) == 1:
+            with b.collect() as note:
+                b.note("요금에 영향을 주는 개선안을 하나 이상 고르면 합산효과를 계산합니다.")
+            return {"combined": note, "downloads_blocked": stale, "has_comparison": False}
+        if keys not in s.combos:
+            comparison = stage3.compare(ctx, s.results, combo)
+            s.combos[keys] = (comparison, stage3.sensitivity(ctx, s.results, combo))
+        comparison, _sensitivity = s.combos[keys]
+        selection_stale = keys != picked
+        blocks = stage3.combined_blocks(
+            ctx,
+            c,
+            s.results,
+            s.results.standalone(),
+            keys,
+            comparison,
+            selection_stale=selection_stale,
+        )
+        blocked = stale + ([stage3.SELECTION_STALE] if selection_stale else [])
+        return {"combined": blocks, "downloads_blocked": blocked, "has_comparison": True}
+
+    def make_report(self, kind: str, include_timeseries: bool = True) -> dict[str, Any]:
+        """Excel(분석자용) · PPT(의사결정자용) — 「다운로드」 폴더에 저장하고 경로를 돌려준다."""
+        with self._lock:
+            try:
+                path = reports.make(
+                    self._s, self._ctx(), kind, include_timeseries=include_timeseries
+                )
+                return {"ok": True, "path": str(path), "kilobytes": path.stat().st_size / 1024}
+            except Exception as exc:
+                traceback.print_exc()
+                return {"ok": False, "error": f"만들지 못했습니다. {exc}"}
+
+    def open_path(self, path: str) -> dict[str, Any]:
+        """파일이나 폴더를 그 파일에 정해진 프로그램으로 연다 (Excel · PowerPoint · 탐색기)."""
+        try:
+            os.startfile(path)
+            return {"ok": True}
+        except OSError as exc:
+            return {"ok": False, "error": f"열지 못했습니다. {exc}"}
 
     def _form(self, raw: dict[str, Any] | None) -> ContractForm | None:
         if not raw:
