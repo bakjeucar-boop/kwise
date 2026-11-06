@@ -1,6 +1,6 @@
 """데스크톱 화면 — 옆단 건물 정보 + 세 단계 탭 (1단계 진단 · 2단계 개선 수단 · 3단계 조합).
 
-2단계는 ``measures.py`` 가 짓는다. 3단계는 아직 없다.
+2단계는 ``measures.py`` (태양광은 ``solar.py``), 3단계는 ``compare.py`` 가 짓는다.
 
 계산·그래프·문구는 공용 함수를 부른다. 여기에 있는 것은 **화면 연결**뿐이다 —
 입력 받기, 공용 함수 부르기, 결과 놓기.
@@ -45,7 +45,7 @@ from kwise.ui.pipeline import (
     voltage_choices,
 )
 
-from . import measures, vega
+from . import compare, measures, vega
 from . import widgets as w
 from .building import (
     NAME_MISSING,
@@ -697,20 +697,38 @@ def build(state: _State) -> None:
         ui.label("kWise").classes("k-title")
         # 세 단계를 탭으로 — 번호를 남긴다 (Streamlit ``TABS`` 와 같은 이름).
         with ui.tabs().props("align=left no-caps inline-label").classes("w-full") as tabs:
-            tab1 = ui.tab("1단계 · 진단")
-            tab2 = ui.tab("2단계 · 개선 수단")
-            tab3 = ui.tab("3단계 · 개선안 조합")
+            tab1 = ui.tab("stage1", label="1단계 · 진단")
+            tab2 = ui.tab("stage2", label="2단계 · 개선 수단")
+            tab3 = ui.tab("stage3", label="3단계 · 개선안 조합")
     panels = ui.tab_panels(tabs, value=tab1).classes("w-full max-w-5xl mx-auto bg-transparent")
     with panels, ui.tab_panel(tab2):
         stage2 = ui.column().classes("w-full gap-3")
         with stage2:
             w.note(_NOT_READY)
     with panels, ui.tab_panel(tab3):
-        ui.label("3단계 · 개선안 조합").classes("k-section")
-        w.note("3단계 화면은 데스크톱에 아직 없습니다. 지금은 Streamlit 화면에서 보십시오.")
+        stage3 = ui.column().classes("w-full gap-3")
+        with stage3:
+            w.note(_NOT_READY)
+    last: list[measures.Context] = []  # 2·3단계가 함께 보는 한 벌 — 1단계가 끝날 때마다 갈린다
+
+    async def open_stage3() -> None:
+        """3단계는 탭을 열 때 짓는다 — 켠 수단을 다시 모으는 데 몇 초 걸린다."""
+        stage3.clear()
+        with stage3:
+            if not last:
+                w.note(_NOT_READY)
+                return
+            await compare.render(last[0], state.choices)
+
+    async def tab_changed(event: object) -> None:
+        if event.value == "stage3":  # type: ignore[attr-defined]
+            await open_stage3()
+
+    tabs.on_value_change(tab_changed)
 
     def stages(usage: UsageData, quality: QualityReport, diagnosis: Diagnosis) -> None:
         """1단계가 끝날 때마다 2단계를 새로 짓는다 — 계약 정보를 확정해야 선다."""
+        last.clear()
         stage2.clear()
         with stage2:
             if state.form is None:
@@ -726,6 +744,9 @@ def build(state: _State) -> None:
                 rediagnose=analyse,
             )
             measures.render(ctx, state.choices)
+            last.append(ctx)
+        if tabs.value == "stage3":  # 3단계를 보고 있으면 새 결과로 다시 짓는다
+            ui.timer(0, open_stage3, once=True)
 
     with panels, ui.tab_panel(tab1), ui.column().classes("w-full gap-4 p-0"):
         _caption("파일만 올려도 결과가 나옵니다. 금액은 계약 정보를 확정하면 나옵니다.")

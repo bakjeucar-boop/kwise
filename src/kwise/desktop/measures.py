@@ -128,6 +128,10 @@ class Choices:
     ess_target: float = 0.0
     #: 태양광 카드의 입력칸 값과 마지막으로 계산한 입력.
     solar: SolarForm = field(default_factory=SolarForm)
+    #: 3단계 — 조합 체크(기본 참) · 「합산효과 계산」 을 누른 그 선택 · 시계열 시트 포함.
+    combo_checked: dict[str, bool] = field(default_factory=dict)
+    combo_computed: tuple[str, ...] | None = None
+    include_timeseries: bool = True
 
     @property
     def ess_quote(self) -> float | None:
