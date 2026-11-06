@@ -97,6 +97,8 @@ def test_창이_여는_html_파일이_없고_화면_파일은_다리로_넘긴�
     assert not [p.name for p in static.rglob("*") if p.suffix.lower().lstrip(".") in locked]
     assets = shell.assets()
     assert len(assets["scripts"]) == len(shell.SCRIPTS) and assets["scripts"][-1].strip()
+    # 개발자 도구가 오류를 파일 이름 · 줄로 보이게 이름표가 붙는다.
+    assert assets["scripts"][-1].endswith("//# sourceURL=app.js")
     assert "data:font/woff2;base64," in assets["styles"][0]
     assert "./fonts/" not in assets["styles"][0]
     # 창이 한 번에 받는 글자 크기 한도(약 2MB) 안 — 틀만 글자로 넘긴다.

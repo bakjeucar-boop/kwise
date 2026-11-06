@@ -71,11 +71,16 @@ def _inline_fonts(css: str, folder: Path) -> str:
 
 def assets() -> dict[str, list[str]]:
     """스타일 · 스크립트의 글자 — 틀이 이것을 받아 붙인다."""
+    # 끝에 파일 이름표를 붙인다 — 글자로 붙인 스크립트 · 스타일도 개발자 도구가 오류를
+    # 「app.js 몇째 줄」 로 보인다(화면 동작은 그대로).
     styles = []
     for name in STYLES:
         path = STATIC / name
-        styles.append(_inline_fonts(path.read_text(encoding="utf-8"), path.parent))
-    scripts = [(STATIC / name).read_text(encoding="utf-8") for name in SCRIPTS]
+        css = _inline_fonts(path.read_text(encoding="utf-8"), path.parent)
+        styles.append(f"{css}\n/*# sourceURL={name} */")
+    scripts = [
+        f"{(STATIC / name).read_text(encoding='utf-8')}\n//# sourceURL={name}" for name in SCRIPTS
+    ]
     return {"styles": styles, "scripts": scripts}
 
 
