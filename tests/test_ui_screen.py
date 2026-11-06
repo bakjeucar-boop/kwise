@@ -1407,6 +1407,18 @@ def test_화면에_계시별_원_넷이_그려진다(app: AppTest) -> None:
     assert labels.count("여름") == 1, labels
 
 
+def _contrast(color: str, background: str) -> float:
+    """두 색의 대비 (WCAG 상대 휘도 식). 글자는 4.5:1 이 권장값이다."""
+
+    def luminance(hex_color: str) -> float:
+        channels = [int(hex_color[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+        linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+    high, low = sorted((luminance(color), luminance(background)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
 def test_계시별_사용량_구성이_원_넷이다() -> None:
     """**비중을 견주는 그림은 원이 낫다** (33세션 3절 → 34세션 1절에 자리 이동).
 
@@ -1428,8 +1440,19 @@ def test_계시별_사용량_구성이_원_넷이다() -> None:
     # 조각마다 이름과 비중을 적는다 — 범례를 달지 않는다.
     assert spec["layer"][1]["encoding"]["text"]["field"] == "라벨"
     assert spec["layer"][0]["encoding"]["color"]["legend"] is None
-    # **글자색을 박지 않는다** (35세션 1-2). 테마가 칠한다.
-    assert "color" not in spec["layer"][1]["mark"]
+    # **라벨은 두 바탕에서 고르게 읽히는 회색 하나다** (2026-11-06). 35세션 1-2 는 「글자색을
+    # 박지 않는다 — 테마가 칠한다」 였는데 테마는 이 글자를 안 칠했다(어두운 모드에서 검정).
+    # 그리고 색 인코딩이 라벨 층에 있으면 글자가 조각 색이 되어 밝은 바탕에서 경부하,
+    # 어두운 바탕에서 최대부하 라벨이 묻혔다.
+    from kwise.ui.charts import _DONUT_LABEL_COLOR
+
+    assert spec["layer"][1]["mark"]["color"] == _DONUT_LABEL_COLOR
+    for background in ("#ffffff", "#0e1117"):  # 흰 바탕 · Streamlit 어두운 바탕
+        assert _contrast(_DONUT_LABEL_COLOR, background) >= 4.2, background
+    assert "color" not in spec["layer"][1].get("encoding", {})
+    assert "color" not in spec.get("encoding", {})
+    # 쌓는 갈래는 조각과 같다 — 라벨이 제 조각 자리에 선다.
+    assert spec["layer"][1]["encoding"]["detail"]["field"] == "시간대"
     # 33세션이 요금 구성에 붙였던 것은 남기지 않는다.
     from kwise.ui import charts
 

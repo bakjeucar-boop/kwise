@@ -613,6 +613,10 @@ _DONUT_OUTER = 62
 #: 조각 라벨을 놓을 반지름. **바깥보다 24px 밖**이라 글자가 조각을 파고들지 않는다.
 _DONUT_LABEL_RADIUS = _DONUT_OUTER + 24
 
+#: 조각 라벨 글자색 (2026-11-06). 흰 바탕과 Streamlit 어두운 바탕(``#0e1117``)에서 대비가
+#: 같아지는 회색 — 둘 다 약 4.3:1 이다. 두 바탕에 다 4.5:1 인 회색은 셈으로 없다.
+_DONUT_LABEL_COLOR = "#787878"
+
 #: 도넛 하나의 높이. 라벨이 바깥으로 뻗으므로 반지름의 두 배보다 넉넉해야 한다.
 #: 제목이 그림 밖으로 나갔으므로 34세션(230)보다 낮아도 된다.
 _DONUT_HEIGHT = 200
@@ -637,9 +641,12 @@ def _donut(
         group: 조각을 가르는 열. ``라벨`` 열이 그 이름과 비중을 함께 적는다.
         order: 조각 순서. 주지 않으면 자료 순서가 달라질 때 색이 돈다.
     """
-    base = alt.Chart(frame).encode(
+    position = alt.Chart(frame).encode(
         theta=alt.Theta(f"{value}:Q", stack=True),
         order=alt.Order("순서:Q", sort="ascending"),
+        tooltip=list(tooltip),
+    )
+    arc = position.mark_arc(innerRadius=_DONUT_INNER, outerRadius=_DONUT_OUTER).encode(
         color=alt.Color(
             f"{group}:N",
             title=None,
@@ -648,10 +655,24 @@ def _donut(
             # **범례를 달지 않는다** — 조각마다 이름이 적혀 있다.
             legend=None,
         ),
-        tooltip=list(tooltip),
     )
-    arc = base.mark_arc(innerRadius=_DONUT_INNER, outerRadius=_DONUT_OUTER)
-    labels = base.mark_text(radius=_DONUT_LABEL_RADIUS, fontSize=11).encode(text=alt.Text("라벨:N"))
+    # **라벨은 조각 색을 물려받지 않는다** (2026-11-06). 조각과 한 바탕에서 색 인코딩을
+    # 나눠 쓰면 글자가 조각 색이 되어 밝은 바탕에서 옅은 「경부하」, 어두운 바탕에서 짙은
+    # 「최대부하」 가 묻혔다(대비 약 2:1). **테마는 이 글자를 칠하지 않는다** — 색을 비우니
+    # Streamlit 어두운 모드에서 vega 기본 검정으로 그려져 넷이 다 묻혔다(35세션 1-2 의
+    # 「테마가 칠한다」 는 축 · 범례 글자에만 맞다). 그래서 두 바탕에서 고르게 읽히는 회색
+    # 하나로 칠한다. 쌓는 갈래는 ``detail`` 로 조각과 같게 묶는다(색이 빠지면 쌓을 갈래가
+    # 없어 라벨이 조각 자리에서 어긋난다).
+    # **이름과 비중을 두 줄로 쓴다** (2026-11-06). 한 줄이면 「중간부하 31%」 의 반 폭(약 33px)이
+    # 라벨 자리와 고리 사이(24px)보다 넓어 글자가 고리를 파고들었고, 좌우 끝 라벨은 칸 밖으로
+    # 잘렸다. 두 줄이면 반 폭이 이름 길이(약 22px)로 준다.
+    labels = position.mark_text(
+        radius=_DONUT_LABEL_RADIUS,
+        fontSize=11,
+        fontWeight=600,
+        color=_DONUT_LABEL_COLOR,
+        lineBreak=" ",
+    ).encode(text=alt.Text("라벨:N"), detail=alt.Detail(f"{group}:N"))
     return alt.layer(arc, labels).properties(height=_DONUT_HEIGHT)
 
 
