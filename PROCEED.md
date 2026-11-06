@@ -427,6 +427,8 @@ kWise 프로젝트의 세션별 작업 기록. **각 세션 종료 시 클로드
 
 **일곱째 판 — 5 태양광 카드 · 2단계 여섯 다 섰다.** 새 파일 `src\kwise\desktop\solar.py`. 공용 `unit_pv_profile` · `solar_result` · `surplus_capacity_points` · `azimuth_options`(`kwise.ui.pipeline`) · `evaluate_surplus` · `with_surplus_revenue`(`kwise.measures`) · `solar_capacity_table` · `solar_annual_chart` · `solar_day_chart` · `surplus_daily_chart` · `solar_worksheet` 를 부른다. 입력 — 면적 · 설치 밀도(환산 용량 라벨) · 8방위(계산 뒤 상대 발전량이 라벨에 붙는다) · 설치 단가 · 상세(용량 · 방위각 직접 입력 · 시스템 손실 · 총 투자비 · 벽면 어레이). **「태양광 계산」 을 눌러야 돈다** · 계산 뒤 입력을 바꾸면 결과를 두고 「입력이 변경되었습니다 — 다시 계산하십시오. 아래는 이전 결과입니다.」. 잉여 판정 지표 넷 · 잉여 처리(기본 출력제어 · 외부 판매 · 상계 SMP 단가 · 고르면 위 절감액이 다시 그려진다) · 용량별 비교 표 · 날짜별 발전량 · 대표일 확대. 지역은 옆단에서만 받는다. 사본 — `_capacity_view` · `_self_consumption` · 잉여 단가 기본값 읽기(`surplus_prices` 꼴). 마지막 계산 입력은 `Choices.solar.ran` 에 남겨 3단계가 읽는다. 확인 — 소형사무 csv · 서울특별시 · 1,000 m² 로 8.5초 · 80 kWp · 95.8 MWh/년 · 957만원 · 잉여 2,116 kWh · 방위 「남동 −8%」 · 면적을 1,500 으로 바꾸자 묵은 결과 경고. 시험 — `test_desktop` · `test_deployment` · `test_ui` 121 passed. mypy 범위 185 → **186파일**.
 
+**여덟째 판 — 2단계까지 든 exe 확인.** `tools\build_desktop.py` 57.6초 · 폴더 358 MB(앞 판과 같다). 창 exe(포트 8000)에 브라우저 판과 같은 확인 넷을 돌려 다 섰다 — 카드 1 · 2 · 3 · 4(그래프 5 · 목표 역률 99 다시 계산 · 1단계 재계산 뒤 켠 카드 4) · ESS(대형 표본 · 일반용(을) 5,800 kW · 견적 1억원 · 머리 한 벌) · 태양광(서울특별시 · 9.0초 · 방위 「남동 −8%」 · 묵은 결과 경고) · 경제성DR(저부하 평일 30 → 29일 · 탭과 단가 유지). 확인 뒤 exe 를 닫았다.
+
 **미해결 대조 — 전 6 → 후 6.** 늘어난 것 없음 · 줄어든 것 없음(남긴 넷은 이 브랜치 시제품의 할 일이라 이 절에만 적는다).
 **다음 세션이 알 것** — `ui-reviewer` 에이전트는 이 세션 다음부터 이름으로 불린다 · 실행은 `.venv\Scripts\python.exe kwise_desktop.py` · 빌드는 `.venv\Scripts\python.exe tools\build_desktop.py [--console]` · 새 화면에서 AMI 문장 자리를 옮기면 `_AMI_ALLOWED_USERS` 를 함께 고친다.
 
