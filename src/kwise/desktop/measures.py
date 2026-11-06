@@ -7,7 +7,7 @@
 모든 카드는 독립 평가다 — 기준은 현재 요금제와 사용량이고, 카드를 켜고 꺼도 다른 카드의
 숫자가 바뀌지 않는다. 켠 카드만 3단계 조합에 들어간다.
 
-옮긴 카드: 1 선택요금 전환 · 2 계약전력 조정 · 4 역률 개선. 나머지 셋(경제성DR · 태양광 ·
+옮긴 카드: 1 선택요금 전환 · 2 계약전력 조정 · 3 경제성DR · 4 역률 개선. 나머지 둘(태양광 ·
 ESS)은 다음 판이다 — 켜면 아직 없다고 적는다.
 """
 
@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from nicegui import run, ui
 
 from kwise.diagnose import Diagnosis
+from kwise.diagnose.dr import JUDGE_WINDOW, dr_event_hours, dr_max_events_per_day
 from kwise.io import UsageData, interval_label
 from kwise.measures import (
     MARGIN_FACT,
@@ -27,6 +28,7 @@ from kwise.measures import (
     NO_SAVING,
     default_target_pct,
     evaluate_contract_adjustment,
+    evaluate_demand_response,
     evaluate_power_factor,
     evaluate_tariff_switch,
     power_factor_floor_pct,
@@ -34,14 +36,18 @@ from kwise.measures import (
 from kwise.quality import QualityReport
 from kwise.report import CONTRACT_CHANGE_WARNING, notices
 from kwise.report.days import RepresentativeDay, find_day, representative_days
-from kwise.report.worksheet import power_factor_worksheet, tariff_switch_worksheet
+from kwise.report.worksheet import (
+    demand_response_worksheet,
+    power_factor_worksheet,
+    tariff_switch_worksheet,
+)
 from kwise.tariff import TariffTable, lagging_standard_pct
 from kwise.ui import charts
 from kwise.ui import text as fmt
 from kwise.ui.labels import measure_title, option_label, selection_label
 from kwise.ui.notices import partition_facts
 from kwise.ui.pipeline import ContractForm
-from kwise.ui.spec import MEASURES, NO_HEADROOM_OVERVIEW, MeasureSpec
+from kwise.ui.spec import DR_PRICED_HEADLINE, MEASURES, NO_HEADROOM_OVERVIEW, MeasureSpec
 
 from . import vega
 from . import widgets as w
@@ -88,6 +94,8 @@ class Context:
     diagnosis: Diagnosis
     quality: QualityReport
     building: BuildingInfo
+    #: 1단계를 다시 계산하게 한다 — 경제성DR 「쉬는 날」 은 1단계 진단이 쓴다 (Streamlit 과 같다).
+    rediagnose: Callable[[], Awaitable[None]]
 
 
 @dataclass
@@ -99,6 +107,15 @@ class Choices:
     custom_day: dt.date | None = None
     pf_target: float | None = None
     pf_investment: float | None = None
+    dr_priced: bool = False
+    dr_price: float | None = None
+    #: 쉬는 날이어서 뺄 날짜(ISO) — 1단계 진단이 읽는다.
+    dr_off_days: tuple[str, ...] = ()
+
+    @property
+    def dr_unit_price(self) -> float | None:
+        """「정산 단가를 안다」 를 체크했을 때만 — 0 은 미입력 (Streamlit ``dr_unit_price``)."""
+        return (self.dr_price or None) if self.dr_priced else None
 
 
 Card = Callable[["Context", "Choices", RepresentativeDay | None], Awaitable[None]]
@@ -297,6 +314,174 @@ async def _contract(ctx: Context, choices: Choices, day: RepresentativeDay | Non
     )
 
 
+# --------------------------------------------------------------------- 3 경제성DR
+
+#: 요일 이름 — 저부하 평일 표와 같은 말 (Streamlit ``_WEEKDAYS``).
+_WEEKDAYS = ("월", "화", "수", "목", "금", "토", "일")
+
+
+async def _demand_response(ctx: Context, choices: Choices, day: RepresentativeDay | None) -> None:
+    spec = _spec("demand_response")
+    # 캡션은 그 벌의 단가로 참인 말만 한다 — 단가를 넣었으면 뒤 문장만 (Streamlit 과 같다).
+    headline = ui.label().classes("k-note")
+
+    def headline_text() -> None:
+        headline.set_text(DR_PRICED_HEADLINE if choices.dr_unit_price else spec.headline)
+
+    headline_text()
+    dr = ctx.diagnosis.dr
+    if dr is None:
+        w.overview(spec.overview)
+        w.caution("경제성DR 참여 여력을 산출하지 못했습니다.")
+        return
+
+    async def priced_changed(event: object) -> None:
+        choices.dr_priced = bool(event.value)  # type: ignore[attr-defined]
+        price.set_visibility(choices.dr_priced)
+        await draw()
+
+    async def price_changed() -> None:
+        value = float(price.value) if price.value else None
+        if value == choices.dr_price:  # Enter 뒤 칸을 떠날 때 또 그리면 막 연 접힘이 닫힌다
+            return
+        choices.dr_price = value
+        await draw()
+
+    with ui.row().classes("w-full items-center gap-4"):
+        ui.checkbox(
+            "정산 단가를 안다 (사업자 제시값)", value=choices.dr_priced, on_change=priced_changed
+        )
+        price = ui.number("정산 단가 (원/kWh)", value=choices.dr_price or 0, min=0, step=1)
+        price.set_visibility(choices.dr_priced)
+        price.on("blur", price_changed)
+        price.on("keydown.enter", price_changed)
+    body = ui.column().classes("w-full gap-3")
+
+    async def draw() -> None:
+        headline_text()
+        body.clear()
+        with body:
+            _demand_response_result(ctx, choices, spec)
+
+    await draw()
+
+
+def _demand_response_result(ctx: Context, choices: Choices, spec: MeasureSpec) -> None:
+    dr = ctx.diagnosis.dr
+    assert dr is not None
+    result = evaluate_demand_response(
+        dr, unit_price_won_per_kwh=choices.dr_unit_price, jeju=ctx.building.jeju
+    )
+    w.overview(spec.overview)
+    # 저부하 평일을 세지 않은 벌(주말에도 가동)은 0 이 아니라 「미산출」 이다.
+    counted = not result.unassessed_reason
+    w.metrics(
+        [
+            (
+                "거래 가능일",
+                fmt.days(result.eligible_days),
+                "",
+                "분석 기간의 평일 수입니다. 토·일·공휴일은 입찰할 수 없어 뺐습니다.\n\n"
+                "이 가운데 감축할 여력이 있는 날만 아래 「저부하 평일」 로 셉니다.",
+            ),
+            (
+                "저부하 평일",
+                fmt.days(result.low_load_days),
+                "",
+                "거래 가능일 중 부하가 쉬는 날 수준까지 내려온 날 수입니다.\n\n"
+                "**연간 참여 일수 제한이 없으므로 이 날 수가 실질 제약입니다** — "
+                "감축할 여력이 있는 날이 몇 날이냐가 전부입니다.",
+            ),
+            (
+                "등록 권장 용량",
+                fmt.kw(result.registered_capacity_kw, decimals=0) if counted else notices.UNPRICED,
+                "",
+                "사업자 등록 시 제시할 보수적인 감축 가능 용량입니다.\n\n"
+                "저부하일 여력 분포의 하위값이라 어느 참여일에나 지킬 수 있습니다 — "
+                "평균으로 등록하면 절반의 날에 미달하고, 미달은 입찰 제한으로 이어집니다.",
+            ),
+            (
+                "12개월 환산 감축 가능량",
+                fmt.kwh(result.annual_reducible_kwh) if counted else notices.UNPRICED,
+                "",
+                "실제 참여 가능 시간과 일별 감축 여력을 반영한 12개월 환산 감축 잠재량입니다.\n\n"
+                "저부하일마다 (그날 여력 × 그날 참여 가능 시간)을 더해 365일로 "
+                "환산했습니다 — 등록 용량 × 시간이 아닙니다.",
+            ),
+        ]
+    )
+    hours_sum = fmt.hours(result.participation_hours, decimals=0) if counted else notices.UNPRICED
+    w.caption(
+        f"{JUDGE_WINDOW} {dr.window_label} · 하루 한도(가정) "
+        f"{dr_max_events_per_day()}회 × 최대 {fmt.hours(dr_event_hours()[1], decimals=0)} "
+        f"(하루 {fmt.hours(result.daily_hours_cap, decimals=0)}) · 참여 가능 시간 합 {hours_sum}"
+    )
+    if result.weekend_baseline_kw is not None and result.low_load_threshold_kw is not None:
+        w.caption(
+            f"저부하 판정 기준선은 주말·공휴일 {JUDGE_WINDOW} 평균 "
+            f"{fmt.kw(result.weekend_baseline_kw)} 이고, 그 "
+            f"{dr.low_load_multiple:.2g}배인 "
+            f"{fmt.kw(result.low_load_threshold_kw)} 이하인 평일을 셌습니다."
+        )
+    vega.chart(charts.dr_daily_chart(dr))
+    w.caption(
+        f"일별 {JUDGE_WINDOW} 평균 부하",
+        fmt.chart_tip("chart.dr_daily", reading=result.low_load_threshold_kw is not None),
+    )
+    # 뺀 날이 있으면 목록이 비어도 접힘을 남긴다 — 안 남기면 되돌릴 칸이 사라진다.
+    if result.low_load_days or choices.dr_off_days:
+        with ui.expansion(f"저부하 평일 {result.low_load_days}일").classes("w-full"):
+            if result.low_load_days:
+                w.table(result.low_load_day_table)
+            _off_day_picker(ctx, choices, result.low_load_day_table)
+    if not result.low_load_days and counted:
+        ui.label("저부하 평일이 없어 감축 가능량을 0 으로 두었습니다.")
+    if result.is_priced:
+        w.metrics(
+            [
+                (
+                    "12개월 환산 정산금",
+                    NO_SAVING if result.no_reduction else fmt.won_short(result.settlement_won),
+                )
+            ]
+        )
+    w.caption(
+        "자원 유형 — " + (", ".join(str(item) for item in result.resource_types) or "판정 불가")
+    )
+    w.notices(result.notices)
+    w.worksheet(demand_response_worksheet(result))
+
+
+def _off_day_picker(ctx: Context, choices: Choices, frame: object) -> None:
+    """쉬는 날을 사람이 뺀다 — 고른 날은 거래 가능일에서 빠지고 1단계부터 다시 계산한다.
+
+    이미 뺀 날도 선택지에 남긴다 — 빼고 나면 목록에서 사라져 되돌릴 수가 없다.
+    """
+    listed = {str(value) for value in frame["날짜"]}  # type: ignore[index]
+    dates = sorted(listed | set(choices.dr_off_days))
+    labels = {d: f"{d} ({_WEEKDAYS[dt.date.fromisoformat(d).weekday()]})" for d in dates}
+
+    async def changed(event: object) -> None:
+        choices.dr_off_days = tuple(sorted(event.value or ()))  # type: ignore[attr-defined]
+        await ctx.rediagnose()
+
+    with (
+        ui.select(
+            labels,
+            value=list(choices.dr_off_days),
+            label="쉬는 날이어서 뺄 날짜",
+            multiple=True,
+            on_change=changed,
+        )
+        .props("use-chips")
+        .classes("w-full")
+    ):
+        w.tip(
+            "근로자의 날이나 임시공휴일이 섞여 있을 수 있습니다. 고른 날은 거래 "
+            "가능일에서 빼고 감축량을 다시 계산합니다."
+        )
+
+
 # --------------------------------------------------------------------- 4 역률 개선
 
 
@@ -314,8 +499,11 @@ async def _power_factor(ctx: Context, choices: Choices, day: RepresentativeDay |
             await _power_factor_result(ctx, choices, day, spec, structure)
 
     async def changed() -> None:
-        choices.pf_target = float(target.value) if target.value is not None else None
-        choices.pf_investment = float(invest.value) if invest.value else None
+        new_target = float(target.value) if target.value is not None else None
+        new_invest = float(invest.value) if invest.value else None
+        if (new_target, new_invest) == (choices.pf_target, choices.pf_investment):
+            return  # 값이 그대로면 다시 그리지 않는다 — Enter 뒤 칸을 떠날 때 두 번 돈다
+        choices.pf_target, choices.pf_investment = new_target, new_invest
         await draw()
 
     with ui.grid(columns=2).classes("w-full gap-x-4"):
@@ -410,5 +598,6 @@ def _spec(key: str) -> MeasureSpec:
 _CARDS: dict[str, Card] = {
     "tariff_switch": _tariff_switch,
     "contract": _contract,
+    "demand_response": _demand_response,
     "power_factor": _power_factor,
 }

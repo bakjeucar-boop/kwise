@@ -209,6 +209,8 @@ def _diagnose(state: _State, usage: UsageData) -> tuple[QualityReport, Diagnosis
         state.form,
         quality=quality,
         operating_hours=building.operating_hours,
+        # 경제성DR 「쉬는 날」 은 2단계 카드에서 고른다 — DR 판정에만 쓴다 (Streamlit 과 같다).
+        dr_off_days=state.choices.dr_off_days,
         jeju=building.jeju,
     )
     # 품질은 진단 앞의 것을 함께 넘긴다 — Streamlit 2단계가 받는 것과 같은 값이다.
@@ -545,9 +547,16 @@ def _sidebar(on_change: object) -> None:
                 f"DR {BID_WINDOW}(평일 {bid})와는 다른 값입니다."
             )
 
+    last = BuildingInfo()
+
     async def changed(*_: object) -> None:
+        nonlocal last
         hours_text()
-        await on_change(info())  # type: ignore[operator]
+        now = info()
+        if now == last:  # Enter 뒤 칸을 떠날 때 또 오면 다시 계산하지 않는다
+            return
+        last = now
+        await on_change(now)  # type: ignore[operator]
 
     async def province_changed(*_: object) -> None:
         regions = list_sigungu(province_sel.value) if province_sel.value else ()
@@ -714,6 +723,7 @@ def build(state: _State) -> None:
                 diagnosis=diagnosis,
                 quality=quality,
                 building=state.building,
+                rediagnose=analyse,
             )
             measures.render(ctx, state.choices)
 
