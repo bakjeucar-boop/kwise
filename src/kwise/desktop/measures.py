@@ -7,8 +7,7 @@
 모든 카드는 독립 평가다 — 기준은 현재 요금제와 사용량이고, 카드를 켜고 꺼도 다른 카드의
 숫자가 바뀌지 않는다. 켠 카드만 3단계 조합에 들어간다.
 
-옮긴 카드: 1 선택요금 전환 · 2 계약전력 조정 · 3 경제성DR · 4 역률 개선 · 6 ESS.
-남은 하나(5 태양광)는 다음 판이다 — 켜면 아직 없다고 적는다.
+카드 여섯이 다 있다. 태양광은 커서 ``solar.py`` 에 따로 둔다.
 """
 
 from __future__ import annotations
@@ -60,9 +59,10 @@ from kwise.ui.notices import partition_facts
 from kwise.ui.pipeline import ContractForm
 from kwise.ui.spec import DR_PRICED_HEADLINE, MEASURES, NO_HEADROOM_OVERVIEW, MeasureSpec
 
-from . import vega
+from . import solar, vega
 from . import widgets as w
 from .building import BuildingInfo
+from .solar import SolarForm
 
 #: 카드 지표의 절감액 이름 — 값이 12개월 환산이다 (Streamlit ``SAVING_LABEL`` 과 같다).
 SAVING_LABEL = "12개월 환산 절감액"
@@ -126,6 +126,8 @@ class Choices:
     ess_total: float | None = None
     #: ESS 가 고른 목표 요금적용전력 — 3단계가 같은 값을 읽는다 (고를 것이 없으면 0).
     ess_target: float = 0.0
+    #: 태양광 카드의 입력칸 값과 마지막으로 계산한 입력.
+    solar: SolarForm = field(default_factory=SolarForm)
 
     @property
     def ess_quote(self) -> float | None:
@@ -863,5 +865,6 @@ _CARDS: dict[str, Card] = {
     "contract": _contract,
     "demand_response": _demand_response,
     "power_factor": _power_factor,
+    "solar": lambda ctx, choices, day: solar.card(ctx, choices, day, _spec("solar")),
     "ess": _ess,
 }
