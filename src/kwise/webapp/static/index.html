@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>kWise</title>
+  <!-- 넣어 둔 파일만 쓴다 — 인터넷 · 서버 없이 연다 -->
+  <link rel="stylesheet" href="vendor/material-icons.css">
+  <link rel="stylesheet" href="vendor/quasar.prod.css">
+  <style>body { font-family: system-ui, sans-serif; }</style>
+</head>
+<body>
+  <div id="app">
+    <q-layout view="hHh lpR fFf">
+      <q-header bordered class="bg-white text-dark">
+        <q-toolbar>
+          <q-btn flat no-caps label="파일"></q-btn>
+          <q-tabs v-model="tab" no-caps inline-label>
+            <q-tab name="s1" label="① 진단"></q-tab>
+            <q-tab name="s2" label="② 개선 수단"></q-tab>
+            <q-tab name="s3" label="③ 개선안 조합"></q-tab>
+          </q-tabs>
+        </q-toolbar>
+      </q-header>
+      <q-page-container>
+        <q-page padding>
+          <div class="text-h5">시제품 — 웹서버 없음</div>
+          <p id="ping">{{ message }}</p>
+          <q-select v-model="choice" :options="['일반용전력(갑)', '일반용전력(을)']" label="계약종별" style="max-width: 20rem"></q-select>
+          <div id="chart" style="width: 100%; max-width: 40rem"></div>
+        </q-page>
+      </q-page-container>
+    </q-layout>
+  </div>
+  <script src="vendor/vue.global.prod.js"></script>
+  <script src="vendor/quasar.umd.prod.js"></script>
+  <script src="vendor/quasar.ko-KR.umd.prod.js"></script>
+  <script src="vendor/vega.min.js"></script>
+  <script src="vendor/vega-lite.min.js"></script>
+  <script src="vendor/vega-embed.min.js"></script>
+  <script>
+    const app = Vue.createApp({
+      data() { return { tab: "s1", message: "파이썬을 기다리는 중…", choice: "일반용전력(갑)" }; },
+    });
+    app.use(Quasar, { lang: Quasar.lang.koKR });
+    const vm = app.mount("#app");
+    // pywebview 가 다리를 다 놓으면 이 사건이 온다.
+    window.addEventListener("pywebviewready", async () => {
+      const pong = await window.pywebview.api.ping();
+      vm.message = `${pong.message} (kWise ${pong.version})`;
+      const spec = await window.pywebview.api.sample_chart();
+      await vegaEmbed("#chart", spec, { actions: false, renderer: "svg" });
+      await window.pywebview.api.ready({
+        href: location.href,
+        svg: document.querySelectorAll("#chart svg").length,
+        quasar: !!document.querySelector(".q-tabs"),
+        icons: document.fonts.check('24px "Material Icons"'),
+        message: vm.message,
+      });
+    });
+  </script>
+</body>
+</html>
