@@ -68,6 +68,12 @@ def main() -> int:
         if template.exists():
             template.replace(template.with_name(f"default_{package}.bin"))
             print(f"서식 이름 바꿈: {package}\\templates\\default_{package}.bin", flush=True)
+    # html 은 DRM 대상이 아니라고 확인됐다(2026-11-09) — 회사 PC 에서 실제로 보는 쪽을 둔다.
+    # ``kwise.exe --drm-check`` 가 이것을 파일로 연다.
+    sys.path.insert(0, str(ROOT / "src"))
+    from kwise.webapp.shell import DRM_CHECK, DRM_CHECK_PAGE
+
+    (DIST / DRM_CHECK).write_text(DRM_CHECK_PAGE, encoding="utf-8")
     print(f"완료: {DIST / 'kwise.exe'}", flush=True)
     if "--no-zip" not in sys.argv:
         # 압축 안 맨 위가 ``kwise\\`` 폴더가 되게 — 풀자마자 exe 와 하부 폴더가 한자리에 선다.

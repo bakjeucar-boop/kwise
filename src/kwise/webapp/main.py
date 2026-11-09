@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import webview
 
 from .api import Api
-from .shell import SHELL, use_renamed_templates
+from .shell import DRM_CHECK, SHELL, use_renamed_templates
+
+
+def drm_check() -> None:
+    """exe 옆의 확인 쪽을 **파일로** 연다 — 예전 ``index.html`` 이 열리던 길(WebView2 · ``file://``)."""
+    page = Path(sys.executable).parent / DRM_CHECK
+    webview.create_window("kWise — html 잠김 확인", url=page.as_uri(), width=900, height=500)
+    webview.start(http_server=False, private_mode=True)
 
 
 def main(*, debug: bool = False) -> None:

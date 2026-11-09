@@ -1,10 +1,13 @@
 """화면 틀과 화면 파일 — **디스크의 html 파일을 창이 열지 않는다** (2026-11-06 · 회사 문서 DRM).
 
-회사 PC 는 html · txt · 오피스 파일을 자동으로 잠근다. 창이 ``index.html`` 을 파일로 열면 잠긴
-내용을 받아 빈 화면이 된다. 그래서 아주 짧은 틀(:data:`SHELL`)만 글자로 창에 넘기고, 스타일 ·
-스크립트는 그 틀이 다리(``js_api``)로 파이썬에게 받아 붙인다 — 파이썬이 읽으므로 이름이 무엇이든
-상관없고, 웹서버도 없다. 한 번에 다 글자로 넘기지 않는 까닭: 창이 받는 글자 크기에 한도(약 2MB)가
-있고 화면 파일을 다 합치면 그보다 크다.
+회사 PC 는 txt · 오피스 파일을 자동으로 잠근다. **html 은 대상이 아니라고 확인됐다**(2026-11-09 ·
+사람) — 그래도 이 틀은 만일을 위해 둔다(사람 결정). 회사 PC 에서 실제로 보려면 exe 옆의
+:data:`DRM_CHECK` 를 ``kwise.exe --drm-check`` 로 연다(창이 ``index.html`` 을 열던 길 그대로).
+html 이 잠기면 창이 ``index.html`` 을 파일로 열 때 잠긴 내용을 받아 빈 화면이 된다. 그래서
+아주 짧은 틀(:data:`SHELL`)만 글자로 창에 넘기고, 스타일 · 스크립트는 그 틀이 다리(``js_api``)로
+파이썬에게 받아 붙인다 — 파이썬이 읽으므로 이름이 무엇이든 상관없고, 웹서버도 없다. 한 번에
+다 글자로 넘기지 않는 까닭: 창이 받는 글자 크기에 한도(약 2MB)가 있고 화면 파일을 다 합치면
+그보다 크다.
 
 PPT · Word 를 지을 때 라이브러리가 읽는 빈 서식(``default.pptx`` · ``default.docx``)도 잠긴다 — exe
 빌드가 그 둘을 ``.bin`` 이름으로 바꿔 넣고, :func:`use_renamed_templates` 가 그 자리를 읽게 한다.
@@ -31,6 +34,18 @@ SCRIPTS = (
     "vendor/vega-embed.min.js",
     "app.js",
 )
+
+#: html 잠김 확인 쪽 — 빌드가 exe 옆에 쓰고 ``kwise.exe --drm-check`` 가 파일로 연다.
+DRM_CHECK = "drm_check.html"
+DRM_CHECK_PAGE = """<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>kWise — html 잠김 확인</title></head>
+<body style="font-family: sans-serif;padding: 40px; font-size: 20px">
+<h1 style="color: #1a7f37">html 파일이 그대로 열렸습니다</h1>
+<p>이 글이 또렷이 보이면 회사 문서 DRM 이 html 을 잠그지 않은 것입니다.</p>
+<p>빈 창이거나 글자가 깨져 보이면 잠긴 것입니다 — 그 화면을 찍어 보내 주십시오.</p>
+</body>
+</html>"""
 
 #: 창에 넘기는 틀. 다리가 서면(``pywebviewready``) 화면 파일을 받아 차례대로 붙인다.
 SHELL = """<!doctype html>

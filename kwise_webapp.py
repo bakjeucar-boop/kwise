@@ -35,9 +35,12 @@ if __name__ == "__main__":
         sys.stdout = sys.stdout or log
         sys.stderr = sys.stderr or log
     try:
-        from kwise.webapp.main import main
+        from kwise.webapp.main import drm_check, main
 
-        main()
+        if "--drm-check" in sys.argv:  # 회사 PC 에서 html 이 잠기는지 보는 쪽 (``shell``)
+            drm_check()
+        else:
+            main()
     except Exception:
         detail = traceback.format_exc()
         print(detail, file=sys.stderr, flush=True)
